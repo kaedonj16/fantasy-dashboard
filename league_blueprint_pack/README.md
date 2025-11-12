@@ -12,13 +12,13 @@ This pack includes a single Python script that:
 2) Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python3 pip install -r requirements.txt
 ```
 
 3) Run the report (replace with your league ID and current week number):
 
 ```bash
-python league_blueprint_report.py --league 1236152168919072768 --weeks 10
+python league_blueprint_report.py --league 1236152168919072768
 ```
 
 Outputs in the same folder:

@@ -142,7 +142,7 @@ def _matchup_cards_last_week(league_id: str,
         recordR = (0, 0)
         winsR, lossesR = recordR
         for r in rosters:
-            if str(r.get("roster_id")) == ridL:
+            if str(r.get("roster_id")) == ridR:
                 recordR = (
                     r.get("settings", {}).get("wins", 0),
                     r.get("settings", {}).get("losses", 0)

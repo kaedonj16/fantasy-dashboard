@@ -210,6 +210,7 @@ def _render_matchup_slide(m: dict, w: int, proj_week: int, season: int) -> str:
 
     def team_head_2nd(t, proj):
         points = (f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—")
+        print(t)
         if proj:
             val = 0.0
             starters = t['starters']
