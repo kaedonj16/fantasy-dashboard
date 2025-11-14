@@ -544,7 +544,6 @@ def build_week_activity(
 
     roster_name, roster_avatar = build_roster_display_maps(league_id)
     txs = fetch_json(f"/league/{league_id}/transactions/{week}") or []
-    print(txs)
     rows = []
 
     def pinfo(pid: str) -> dict[str, str]:
@@ -579,22 +578,53 @@ def build_week_activity(
         if ttype == "trade":
             adds = t.get("adds") or {}  # {player_id: roster_id_received}
             drops = t.get("drops") or {}  # {player_id: roster_id_sent}
-            team_ids = sorted(set(list(map(str, (t.get("roster_ids") or []))) +
-                                  list({str(v) for v in adds.values()}) +
-                                  list({str(v) for v in drops.values()})))
+            draft_picks = t.get("draft_picks") or []
+
+            # Collect all roster ids that appear anywhere (explicit roster_ids, add targets, drop sources)
+            team_ids = sorted(
+                set(
+                    list(map(str, (t.get("roster_ids") or []))) +
+                    list({str(v) for v in adds.values()}) +
+                    list({str(v) for v in drops.values()})
+                )
+            )
+
             team_objs = []
             for rid in team_ids:
+                # players received by this roster
                 gets = [pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == rid]
+                # players sent by this roster
                 sends = [pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == rid]
+
+                # NOTE: add roster_id (int) so the HTML renderer can align picks:
+                #   - gets picks where owner_id == roster_id
+                #   - sends picks where previous_owner_id == roster_id
+                roster_id_int = None
+                try:
+                    roster_id_int = int(rid)
+                except Exception:
+                    # leave as None if not an int; renderer falls back gracefully
+                    pass
+
                 team_objs.append({
-                    "rid": rid,
+                    "rid": rid,  # keep your original key for backward-compat
+                    "roster_id": roster_id_int,  # new: helps renderer attach draft picks
                     "name": roster_name.get(rid, f"Roster {rid}"),
                     "avatar": roster_avatar.get(rid),
                     "gets": gets,
                     "sends": sends
                 })
+
             if team_objs:
-                rows.append({"kind": "trade", "ts": ts, "data": {"teams": team_objs}})
+                rows.append({
+                    "kind": "trade",
+                    "ts": ts,
+                    "data": {
+                        "teams": team_objs,
+                        # new: pass picks through so html renderer can display them
+                        "draft_picks": draft_picks
+                    }
+                })
             continue
 
     df = pd.DataFrame(rows)
@@ -698,3 +728,294 @@ def compute_sos_by_team(
         v["past_sos"] = v["past_sos"] / v["past_cnt"] if v["past_cnt"] else 0.0
         v["ros_sos"] = v["ros_sos"] / v["ros_cnt"] if v["ros_cnt"] else 0.0
     return out
+
+
+def playoff_bracket(
+        winners_bracket,
+        roster_name_map,
+        roster_avatar_map,
+        match_scores=None,
+):
+    """
+    Render an HTML playoff bracket from Sleeper's /winners_bracket endpoint.
+    """
+    if not winners_bracket:
+        return "<div class='po-empty'>No playoff bracket available.</div>"
+
+    match_scores = match_scores or {}
+
+    # normalize keys to strings
+    def _k(x):
+        return str(x) if x is not None else None
+
+    # normalize maps (roster_id -> name/avatar)
+    roster_name = {_k(k): v for k, v in (roster_name_map or {}).items()}
+
+    # --- 1) Find bye teams (in bracket but not in Round 1) ---
+    all_playoff_rids = set()
+    round1_rids = set()
+    for m in winners_bracket:
+        r = m.get("r")
+        for key in ("t1", "t2"):
+            rid = m.get(key)
+            if rid is not None:
+                rid_int = int(rid)
+                all_playoff_rids.add(rid_int)
+                if r == 1:
+                    round1_rids.add(rid_int)
+
+    bye_rids = sorted(all_playoff_rids - round1_rids)
+
+    # --- 2) Add synthetic Round 1 BYE matches, top + bottom ---
+    extended_bracket = list(winners_bracket)
+    round1_override = None  # will hold explicit order if we build byes
+
+    if bye_rids:
+        existing_ids = [m.get("m") for m in winners_bracket if isinstance(m.get("m"), int)]
+        next_m = max(existing_ids) + 1 if existing_ids else 1
+
+        # create bye matches in sorted order (seeded: smallest -> best)
+        bye_matches = []
+        for rid in bye_rids:
+            bye_matches.append({
+                "m": next_m,
+                "r": 1,
+                "w": None,
+                "l": None,
+                "t1": rid,  # real team
+                "t2": None,  # bye side
+                "t1_from": None,
+                "t2_from": None,
+                "is_bye": True,
+            })
+            next_m += 1
+
+        # existing non-bye Round 1 matches
+        r1_existing = [m for m in extended_bracket if m.get("r") == 1 and not m.get("is_bye")]
+        non_r1 = [m for m in extended_bracket if m.get("r") != 1]
+
+        if len(bye_matches) == 1:
+            # single bye at the top
+            new_r1 = bye_matches[:1] + r1_existing
+        elif len(bye_matches) >= 2:
+            # first bye at top, last bye at bottom, any others in the middle (rare)
+            middle_byes = bye_matches[1:-1]
+            new_r1 = [bye_matches[0]] + r1_existing + middle_byes + [bye_matches[-1]]
+        else:
+            new_r1 = r1_existing
+
+        extended_bracket = non_r1 + new_r1
+        round1_override = new_r1  # remember explicit order for round 1
+
+    winners_bracket = extended_bracket
+
+    # index by match id
+    match_by_id = {m["m"]: m for m in winners_bracket if "m" in m}
+
+    # group by round
+    rounds = defaultdict(list)
+    for m in winners_bracket:
+        r = m.get("r")
+        if r is None:
+            continue
+        rounds[r].append(m)
+
+    if not rounds:
+        return "<div class='po-empty'>No playoff bracket available.</div>"
+
+    # override round 1 order if we built a custom one
+    if round1_override:
+        rounds[1] = round1_override
+
+    round_nums = sorted(rounds.keys())
+    for r in round_nums:
+        # keep explicit R1 ordering if override exists
+        if r == 1 and round1_override:
+            continue
+        rounds[r].sort(key=lambda x: x.get("m", 0))
+
+    def resolve_slot(match, side_key):
+        """
+        side_key: "t1" or "t2"
+        Returns dict: {label, avatar, kind}
+          kind in {"team","from","bye","empty"}
+        Returns None to signal "skip this match" for loser-path slots.
+        """
+        rid = match.get(side_key)
+        from_spec = match.get(f"{side_key}_from")
+
+        # direct team
+        if rid is not None:
+            key = _k(rid)
+            return {
+                "label": roster_name.get(key, f"Roster {key}"),
+                "avatar": roster_avatar_map.get(roster_name.get(key, "")),
+                "kind": "team",
+            }
+
+        # derived from previous match
+        if isinstance(from_spec, dict) and from_spec:
+            src_type, src_mid = next(iter(from_spec.items()))  # ("w",1) or ("l",2)
+
+            # hide loser-path (consolation) branches in winners bracket
+            if src_type == "l":
+                return None
+
+            if src_type == "w":
+                src = match_by_id.get(src_mid, {})
+                t1_rid = src.get("t1")
+                t2_rid = src.get("t2")
+                team1 = roster_name.get(_k(t1_rid)) if t1_rid is not None else None
+                team2 = roster_name.get(_k(t2_rid)) if t2_rid is not None else None
+
+                if not team1 or not team2:
+                    return {
+                        "label": "TBD",
+                        "avatar": "",
+                        "kind": "empty",
+                    }
+
+                return {
+                    "label": f"{team1}/{team2}",
+                    "avatar": "",
+                    "kind": "from",
+                }
+
+        # bye vs actual team on other side
+        other = "t2" if side_key == "t1" else "t1"
+        if match.get(other) is not None or match.get(f"{other}_from"):
+            return {
+                "label": "BYE",
+                "avatar": "",
+                "kind": "bye",
+            }
+
+        return {
+            "label": "TBD",
+            "avatar": "",
+            "kind": "empty",
+        }
+
+    def render_team_row(slot, score_text, top=False):
+        cls = "team-row"
+        if slot["kind"] == "bye":
+            cls += " bye"
+        if top:
+            cls += " top"
+
+        img = (
+            f"<div class='team-avatar'><img src='{slot['avatar']}' "
+            "onerror=\"this.style.display='none'\"></div>"
+            if slot.get("avatar")
+            else "<div class='team-avatar'></div>"
+        )
+
+        return (
+            f"<div class='{cls}'>"
+            f"  <div class='team-main'>"
+            f"    {img}"
+            f"    <div class='team-text'><div class='team-name'>{slot['label']}</div></div>"
+            f"  </div>"
+            f"  <div class='team-score'>{score_text}</div>"
+            f"</div>"
+        )
+
+    html_rounds = []
+    for r in round_nums:
+        round_label = {1: "Round 1", 2: "Semifinals", 3: "Finals 🏆"}.get(r, f"Round {r}")
+        matches = rounds[r]
+        match_html = []
+        for m in matches:
+            mid = m.get("m")
+            scores = match_scores.get(mid, {}) if mid is not None else {}
+
+            slot1 = resolve_slot(m, "t1")
+            slot2 = resolve_slot(m, "t2")
+
+            # skip matches that involve loser-path (slot is None)
+            if slot1 is None or slot2 is None:
+                continue
+
+            s1 = scores.get("t1_score")
+            s2 = scores.get("t2_score")
+            s1_txt = f"{s1:.2f}" if isinstance(s1, (int, float)) else "–"
+            s2_txt = f"{s2:.2f}" if isinstance(s2, (int, float)) else "–"
+
+            # if BYE, show BYE instead of a score
+            if slot1["kind"] == "bye":
+                s1_txt = "-"
+            if slot2["kind"] == "bye":
+                s2_txt = "-"
+
+            match_html.append(
+                "<div class='bracket-match'>"
+                f"  {render_team_row(slot1, s1_txt, top=True)}"
+                f"  {render_team_row(slot2, s2_txt, top=False)}"
+                "</div>"
+            )
+
+        if match_html:
+            html_rounds.append(
+                f"<div class='bracket-round round-{r}'>"
+                f"  <div class='round-title'>{round_label}</div>"
+                f"  <div class='round-body'>{''.join(match_html)}</div>"
+                "</div>"
+            )
+
+    if not html_rounds:
+        return "<div class='po-empty'>No playoff bracket available.</div>"
+
+    return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+
+def render_standings_table(team_stats):
+    rows = []
+
+    # Sort by record → win percentage → PF
+    df = team_stats.copy()
+    df["WinPct"] = df["Win%"].astype(float)
+    df = df.sort_values(["WinPct", "PF"], ascending=[False, False])
+
+    for _, row in df.iterrows():
+        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
+        if int(row.get("Ties", 0)):
+            record += f"-{int(row['Ties'])}"
+
+        streak = row.get("Streak", "")
+        avatar = row.get("avatar", "")
+
+        img = (
+            f"<img class='avatar sm' src='{avatar}' "
+            "onerror=\"this.style.display='none'\">"
+            if avatar else ""
+        )
+
+        rows.append(f"""
+            <tr>
+              <td class="team">{img} {row['owner']}</td>
+              <td>{record}</td>
+              <td>{row['PF']:.1f}</td>
+              <td>{row['PA']:.1f}</td>
+              <td>{streak}</td>
+              <td>{row['past_sos']:.1f}</td>
+              <td>{row['ros_sos']:.1f}</td>
+            </tr>
+        """)
+
+    return f"""
+        <table class="standings-table">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Record</th>
+              <th>PF</th>
+              <th>PA</th>
+              <th>Streak</th>
+              <th>SOS Past</th>
+              <th>SOS Future</th>
+            </tr>
+          </thead>
+          <tbody>
+            {''.join(rows)}
+          </tbody>
+        </table>
+    """

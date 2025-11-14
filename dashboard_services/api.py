@@ -77,3 +77,6 @@ def _headers(rapidapi_key: str) -> Dict[str, str]:
         "x-rapidapi-host": TANK01_HOST,
         "x-rapidapi-key": str(rapidapi_key),
     }
+
+def get_bracket(league_id: str, bracket: str) -> List[dict]:
+    return fetch_json(f"/league/{league_id}/{bracket}_bracket")

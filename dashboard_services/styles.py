@@ -366,7 +366,7 @@ logoCss = """
           font-weight: 900;
           margin: 20px 0 30px 0;
           letter-spacing: -0.5px;
-          color: #111827;
+          color: #122d4b;
           line-height: 1.2;
         }
         h1::after {
@@ -383,7 +383,7 @@ logoCss = """
         .grid {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 18px;
+          gap: 10px;
         }
         
         .grid > .central {
@@ -921,6 +921,59 @@ logoCss = """
           font-weight:700;
           color:#fff;
         }
+        
+        /* --- card-level tabs --- */
+        .card.power .card-tabs {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        /* the tab bar */
+        .card.power .tab-strip {
+          align-items: stretch;
+          border-radius: 9999px;
+          padding: 2px;
+          margin-bottom: 12px;
+        }
+        
+        /* individual tabs */
+        .card.power .tab-btn {
+          position: relative;
+          border: none;
+          background: transparent;
+          color: #122d4b;
+          padding: 6px 14px;
+          font-size: 15px;
+          font-weight: 600;
+          border-radius: 9999px;
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        
+        .card.power .tab-btn:hover {
+          background: #122d4b;
+          color: #e5e7eb;
+        }
+        
+        /* active tab looks like a selected browser tab */
+        .card.power .tab-btn.active {
+          background: #e5e7eb;
+          color: #122d4b;
+        }
+        
+        /* tab panels */
+        .card.power .tab-panels {
+          margin-top: 4px;
+        }
+        
+        .card.power .tab-panel {
+          display: none;
+        }
+        
+        .card.power .tab-panel.active {
+          display: block;
+        }
+
     </style>
 """
 
@@ -993,7 +1046,7 @@ activity_css = """
       .tx{border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;padding:10px}
       .tx .meta{color:#64748b;font-size:12px;margin-bottom:8px}
       .trade-card .teams{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-      .team-col{background:#1118270a;border:1px solid #e5e7eb;border-radius:10px;padding:10px; color: #122d4b}
+      .team-col{background:#122d4b0a;border:1px solid #e5e7eb;border-radius:10px;padding:10px; color: #122d4b}
       .team-col header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
       .avatar{width:50px;height:50px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px #fff,0 1px 6px rgba(0,0,0,.15)}
       .team-name{font-weight:800}
@@ -1224,6 +1277,220 @@ activity_css = """
           color: #475569;
         }
         .inj-row .muted { color: #94a3b8; font-size: 12px; }
+        
+        .bracket-match .match-id {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #122d4b;
+          margin-bottom: 4px;
+        }
+        
+        .team-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 4px 0;
+        }
+        
+        .team-row.top {
+          border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+          margin-bottom: 2px;
+        }
+        
+        .team-row.bye .team-name {
+          text-transform: uppercase;
+        }
+        
+        .team-main {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .team-avatar {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: #122d4b;
+          flex-shrink: 0;
+        }
+        
+        .team-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        
+        .team-text {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .team-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: #122d4b;
+        }
+        
+        .team-score {
+          font-size: 13px;
+          font-variant-numeric: tabular-nums;
+          color: #e5e7eb;
+          margin-left: 8px;
+        }
+        
+        /* outer container */
+        .bracket {
+          display: flex;
+          gap: 0px;
+          align-items: center;
+          max-width: 100%;
+          overflow-x: auto;
+          color: #122d4b;
+          background-color: white;
+          margin-bottom: 10px;
+          border-radius: 14px;
+          padding: 10px 12px;
+        }
+        
+        /* each column (round) */
+        .bracket-round {
+          min-width: 260px;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        
+        /* round titles */
+        .bracket-round .round-title {
+          padding-right: 30px;
+          text-align: center;
+          font-size: 20px;
+          font-weight: 600;
+          color: #9ca3af;
+        }
+        
+        /* match cards */
+        .bracket-match {
+          position: relative;
+          width: 234px;
+          border-radius: 16px;
+          border: 2px solid #122d4b;
+          background: #fff;
+          padding: 14px 16px;
+          box-sizing: border-box;
+          margin: 18px 0;
+        }
+        
+        /* space matches so the middle column sits between them */
+        .round-1 .bracket-body,
+        .round-2 .bracket-body {
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          height: 420px; /* adjust for your card height */
+        }
+        .round-3 .bracket-body {
+          display: flex;
+          justify-content: center;
+        }
+        
+        /* little horizontal line out of every Round 1 card */
+        .round-1 .bracket-match::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          right: -30px;
+          width: 30px;
+          height: 3px;
+          background: #122d4b;
+        }
+        
+        /* connect top two Round 1 matches into top semi */
+        .round-2 .bracket-match:nth-child(1)::before {
+            content: "";
+            position: absolute;
+            left: 0px;
+            width: 30px;
+            height: calc(50% + -3px);
+            top: -52.5px;
+            border-right: 3px solid #122d4b;
+            border-top: 3px solid #122d4b;
+            border-radius: 0 14px 0 0;
+        }
+        
+        /* connect bottom two Round 1 matches into bottom semi */
+        .round-2 .bracket-match:nth-child(2)::before {
+            content: "";
+            position: absolute;
+            left: 0px;
+            width: 30px;
+            height: calc(50% + 0px);
+            bottom: -55.5px;
+            border-right: 3px solid #122d4b;
+            border-bottom: 3px solid #122d4b;
+            border-radius: 0 0 14px 0;
+        }
+        
+        .round-2 .bracket-match:nth-child(1)::after {
+            content: "";
+            position: absolute;
+            top: 47%;
+            right: -88px;
+            width: 84px;
+            height: 35px;
+            border-top: 3px solid #122d4b;
+            border-right: 3px solid #122d4b;
+            border-radius: 0 14px 0 0;
+        }
+        
+        .round-2 .bracket-match:nth-child(2)::after {
+            content: "";
+            position: absolute;
+            top: 13%;
+            right: -88px;
+            width: 84px;
+            height: 35px;
+            border-bottom: 3px solid #122d4b;
+            border-right: 3px solid #122d4b;
+            border-radius: 0 0 14px 0;
+        }
+
+        .round-2 .round-body {
+            display: flex;
+            flex-direction: column;
+            row-gap: 24px;
+        }
+        .standings-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
+        
+        .standings-table th {
+          text-align: left;
+          padding: 6px 4px;
+          color: #94a3b8;
+          font-weight: 600;
+        }
+        
+        .standings-table td {
+          padding: 6px 4px;
+          border-top: 1px solid #e2e8f0;
+        }
+        
+        .standings-table td.team img {
+          width: 20px;
+          height: 20px;
+          border-radius: 9999px;
+          vertical-align: middle;
+          margin-right: 6px;
+        }
+
+
     </style>
 """
 

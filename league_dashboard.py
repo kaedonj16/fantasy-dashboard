@@ -35,23 +35,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
-from requests.adapters import HTTPAdapter
-from textwrap import shorten
-from textwrap import shorten as _shorten
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from urllib3.util.retry import Retry
 from zoneinfo import ZoneInfo
 
-from dashboard_services.api import get_league_name, get_nfl_state
+from dashboard_services.api import get_league_name, get_nfl_state, get_users, get_bracket
 from dashboard_services.awards import compute_weekly_highlights, compute_awards_season, render_awards_section
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
 from dashboard_services.matchups import _render_matchup_slide, render_matchup_carousel_weeks
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, render_weekly_highlight_ticker, render_week_recap_tab, \
-    build_matchups_by_week, build_week_activity
+    build_matchups_by_week, build_week_activity, playoff_bracket, render_standings_table
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
     activity_filter_js, NAV_JS, NAV_CSS
 from dashboard_services.utils import z_better_outward, _streak_class
@@ -76,6 +70,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
                            recap_html: Optional[pd.DataFrame] = None,
                            awards_html: Optional[pd.DataFrame] = None,
                            league_id: Optional[str] = None,
+                           roster_map: Optional[Dict[str, str]] = None,
                            ):
     """
     Creates /site/index.html with:
@@ -88,7 +83,6 @@ def build_interactive_site(df_weekly: pd.DataFrame,
       - This Week: Trades & Waiver Adds (using Sleeper team names, player names with NFL teams)
     """
     os.makedirs(out_dir, exist_ok=True)
-
     owners = team_stats["owner"].tolist()
 
     def _z(series):
@@ -241,6 +235,8 @@ def build_interactive_site(df_weekly: pd.DataFrame,
             f"<td class='num'>{float(r['Worst Week']):.2f}</td>",
         ]) + "</tr>")
 
+    standings_html = render_standings_table(team_stats)
+
     table_html = f"""
       <div class="table-wrap">
         <table id="stats" class="table-stats">
@@ -252,9 +248,24 @@ def build_interactive_site(df_weekly: pd.DataFrame,
 
     div_stats = f"""
       <div class="card stats" data-section="overview">
-        <h2>Team Stats</h2>
-        {table_html}
-        <div class="footer">Default sort: Win% ↓ then PF ↓. Click a header to sort; Shift+Click to add secondary sorts.</div>
+        <div class="card-tabs" data-card="stats-tabs">
+          <div class="tab-strip">
+            <button class="tab-btn active" data-tab="standings">Standings</button>
+            <button class="tab-btn" data-tab="details">Detailed Stats</button>
+          </div>
+    
+          <div class="tab-panels">
+            <div class="tab-panel active" data-tab="standings">
+              {standings_html}
+            </div>
+            <div class="tab-panel" data-tab="details">
+              {table_html}   <!-- your FULL sortable stats table -->
+              <div class="footer">
+                Default sort: Win% ↓ then PF ↓. Click headers to sort.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     """
 
@@ -352,7 +363,47 @@ def build_interactive_site(df_weekly: pd.DataFrame,
       </div>
     """
 
-    podium_card = f"<div class='card power' data-section='overview'><h2>Power Rankings</h2>{podium_html}{rankings_html}</div>"
+    try:
+        # if you wire winners_bracket into build_interactive_site(...)
+        wb = get_bracket(league_id, 'winners')  # or use a real parameter
+        if wb:
+            # build a simple id -> avatar map from team_stats if you don't already have one
+            roster_avatar_map = {
+                str(owner): av
+                for owner, av in zip(team_stats["owner"], team_stats["avatar"])
+                if pd.notna(owner)
+            }
+            # roster_map in main() is exactly the roster_id -> owner map
+            # so you can pass that into build_interactive_site as roster_name_map
+            bracket_html = playoff_bracket(
+                wb,
+                roster_name_map=roster_map,  # pass from caller
+                roster_avatar_map=roster_avatar_map,
+            )
+        else:
+            bracket_html = "<div class='card po-empty'>No playoff bracket available.</div>"
+    except Exception:
+        bracket_html = "<div class='card po-empty'>No playoff bracket available.</div>"
+
+    podium_card = f"""
+          <div class="card power" data-section="overview">
+            <div class="card-tabs" data-card="power">
+              <div class="tab-strip">
+                <button class="tab-btn active" data-tab="power">Power Rankings</button>
+                <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+              </div>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="power">
+                  {podium_html}
+                  {rankings_html}
+                </div>
+                <div class="tab-panel" data-tab="playoff">
+                  {bracket_html}
+                </div>
+              </div>
+            </div>
+          </div>
+        """
 
     def _opts(selected):
         return "".join([f"<option value='{o}'{' selected' if o == selected else ''}>{o}</option>" for o in owners])
@@ -374,28 +425,94 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         return f"<span class='badge'>{s}</span>"
 
     def html_trade(txrow):
-        teams = txrow["data"]["teams"]
+        data = txrow["data"]
+        teams = data["teams"]
+        users = get_users(league_id)
+
+        # Build a lookup: roster_id -> team name (for "(from Team X)" on picks)
+        rid_to_name = {}
+        for tm in teams:
+            rid = tm.get("roster_id")
+            if rid is not None:
+                rid_to_name[rid] = tm.get("name") or f"Team {rid}"
+
+        # Helper to render a single draft pick row in the same visual style as players
+        def render_pick_row(pick, io_class):
+            # Example label: "2027 1st" / "2027 2nd"
+            rnd_suffix = {1: "st", 2: "nd", 3: "rd"}.get(pick.get("round"), "th")
+            round_label = f"{pick.get('round')}" + rnd_suffix
+            season = str(pick.get("season") or "")
+            # original owner (roster that the pick originates from)
+            orig_rid = pick.get("roster_id")
+            orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
+            orig_name = next(
+                (
+                    u.get("display_name")
+                    for u in users
+                    if u.get("metadata", {}).get("team_name") == orig_team
+                ),
+                None
+            )
+            # e.g., subline: "Pick • from Caleb"
+            subline = f"{orig_name}'s Pick"
+            # mimic the player block structure
+            return (
+                f"<div class='player'><span class='io {io_class}'>"
+                f"{'+' if io_class == 'add' else '−'}</span>"
+                f"<div><div style='font-weight:600'>{season} {round_label}</div>"
+                f"<div style='color:#64748b;font-size:12px'>{subline}</div></div></div>"
+            )
+
+        # Index draft picks by receiver and sender for quick lookup
+        draft_picks = data.get("draft_picks", []) or []
+        picks_by_receiver = {}
+        picks_by_sender = {}
+        for dp in draft_picks:
+            recv = dp.get("owner_id")  # who ends up with the pick
+            send = dp.get("previous_owner_id")  # who gave the pick away
+            if recv is not None:
+                picks_by_receiver.setdefault(recv, []).append(dp)
+            if send is not None:
+                picks_by_sender.setdefault(send, []).append(dp)
+
         cols = []
         for tm in teams:
-            gets = "".join([
+            roster_id = tm.get("roster_id")
+            # Players received
+            gets_players = "".join([
                 f"<div class='player'><span class='io add'>+</span>"
                 f"<div><div style='font-weight:600'>{p['name']}</div>"
                 f"<div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div></div></div>"
-                for p in tm.get("gets", [])
-            ]) or "<div style='color:#64748b;font-size:13px'>No players</div>"
+                for p in tm.get("gets", []) or []
+            ])
+            # Picks received
+            gets_picks = "".join([
+                render_pick_row(pick, "add")
+                for pick in (picks_by_receiver.get(roster_id, []) if roster_id is not None else [])
+            ])
+            gets = gets_players + gets_picks
+            if not gets:
+                gets = "<div style='color:#64748b;font-size:13px'>No players</div>"
 
-            sends = "".join([
+            # Players sent
+            sends_players = "".join([
                 f"<div class='player'><span class='io drop'>−</span>"
                 f"<div><div style='font-weight:600'>{p['name']}</div>"
                 f"<div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div></div></div>"
-                for p in tm.get("sends", [])
+                for p in tm.get("sends", []) or []
             ])
+            # Picks sent
+            sends_picks = "".join([
+                render_pick_row(pick, "drop")
+                for pick in (picks_by_sender.get(roster_id, []) if roster_id is not None else [])
+            ])
+            sends = sends_players + sends_picks
 
             avatar = tm.get("avatar") or ""
             img = f"<img class='avatar' src='{avatar}' onerror=\"this.style.display='none'\">" if avatar else ""
             cols.append(
                 f"<div class='team-col'>"
-                f"  <header>{img}<div class='team-name'>{tm['name']}</div></header>"
+                f"  <header>{img}<div class='team-name'>{tm.get('name', '')}</div></header>"
                 f"  <div class='plist'>{gets}{sends}</div>"
                 f"</div>"
             )
@@ -446,7 +563,6 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         </div>
         """
         for _, row in activity_df.iterrows():
-            print(row)
             cards.append(html_trade(row) if row["kind"] == "trade" else html_waiver(row))
 
         activity_html = (
@@ -515,6 +631,31 @@ def build_interactive_site(df_weekly: pd.DataFrame,
     <div class="nav-spacer"></div>
     """
 
+    tabs_js = """
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.card-tabs').forEach(card => {
+        const tabs = card.querySelectorAll('.tab-btn');
+        const panels = card.querySelectorAll('.tab-panel');
+    
+        tabs.forEach(tab => {
+          tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+    
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+    
+            panels.forEach(p => {
+              p.classList.toggle('active', p.dataset.tab === target);
+            });
+          });
+        });
+      });
+    });
+    </script>
+
+    """
+
     # --- Injury relevance section ---
     accordion_html = ""
     if injury_df is not None and not injury_df.empty:
@@ -555,6 +696,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         {activity_filter_js}
         {injury_script}
         {NAV_JS}
+        {tabs_js}
         </body></html>"""
 
     out_file = os.path.join(out_dir, "index.html")
@@ -572,16 +714,14 @@ def main():
     # rapidApiKey = "a31667ff00msh6d542faa96aa36bp1513aajsn612c819feca4"
     season = get_nfl_state().get("season")
 
-    weeks = list(range(1, 15))
+    weeks = list(range(1, 18))
     players_map = get_players_map()
     df_weekly, team_stats, roster_map = build_tables(args.league, args.weeks)
     matchups_by_week = build_matchups_by_week(
         args.league, weeks, roster_map, players_map
     )
     roster_map = {str(rid): owner for rid, owner in zip(df_weekly["roster_id"].unique(), df_weekly["owner"].unique())}
-
     activity_df = build_week_activity(args.league, df_weekly.get("week").max(),
-
                                       players_map)
     injury_df = build_injury_report(args.league, local_tz="America/New_York", include_free_agents=False)
 
@@ -602,7 +742,6 @@ def main():
 
     awards = compute_awards_season(df_weekly[df_weekly["finalized"] == True].copy(), players_map, args.league)
     awards_html = render_awards_section(awards)
-
     site_path = build_interactive_site(
         df_weekly[df_weekly["finalized"] == True].copy(),
         team_stats,
@@ -612,7 +751,8 @@ def main():
         matchup_html=matchup_html,
         recap_html=recap_html,
         awards_html=awards_html,
-        league_id=args.league
+        league_id=args.league,
+        roster_map=roster_map
     )
     print(f"Interactive site saved to: {site_path}")
 
