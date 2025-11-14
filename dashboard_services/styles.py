@@ -441,7 +441,7 @@ logoCss = """
         }
         thead th {
           position: sticky; top: 0; z-index: 2; color: #122d4b;
-          background: #fff; font-weight: 700; text-align: center;
+          background: #fff; font-weight: 600; text-align: center;
           padding: 10px 12px; border-bottom: 1px solid #e5e7eb;
           cursor: pointer; user-select: none;
         }

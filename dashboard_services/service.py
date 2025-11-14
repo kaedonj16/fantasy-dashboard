@@ -1052,10 +1052,19 @@ def playoff_bracket(
 def render_standings_table(team_stats):
     rows = []
 
-    # Sort by record → win percentage → PF
+    # Sort by Wins, Win%, PF, PA
     df = team_stats.copy()
     df["WinPct"] = df["Win%"].astype(float)
-    df = df.sort_values(["WinPct", "PF"], ascending=[False, False])
+    df = (
+        df.sort_values(
+            by=["Wins", "PF", "PA"],
+            ascending=[False, False, True],  # PA lower is better
+        )
+        .reset_index(drop=True)
+    )
+
+    # Add Rank column (1..N)
+    df["Rank"] = df.index + 1
 
     for _, row in df.iterrows():
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
@@ -1073,6 +1082,7 @@ def render_standings_table(team_stats):
 
         rows.append(f"""
             <tr>
+              <td class="num">{int(row['Rank'])}</td>
               <td class="team">{img} {row['owner']}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
@@ -1087,6 +1097,7 @@ def render_standings_table(team_stats):
         <table class="standings-table">
           <thead>
             <tr>
+              <th>Rank</th>
               <th>Team</th>
               <th>Record</th>
               <th>PF</th>
