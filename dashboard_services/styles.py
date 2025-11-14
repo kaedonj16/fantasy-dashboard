@@ -923,13 +923,13 @@ logoCss = """
         }
         
         /* --- card-level tabs --- */
-        .card.power .card-tabs {
+        .card .card-tabs {
           display: flex;
           flex-direction: column;
         }
         
         /* the tab bar */
-        .card.power .tab-strip {
+        .card .tab-strip {
           align-items: stretch;
           border-radius: 9999px;
           padding: 2px;
@@ -937,7 +937,7 @@ logoCss = """
         }
         
         /* individual tabs */
-        .card.power .tab-btn {
+        .card .tab-btn {
           position: relative;
           border: none;
           background: transparent;
@@ -950,27 +950,27 @@ logoCss = """
           transition: background 0.15s ease, color 0.15s ease;
         }
         
-        .card.power .tab-btn:hover {
+        .card .tab-btn:hover {
           background: #122d4b;
           color: #e5e7eb;
         }
         
         /* active tab looks like a selected browser tab */
-        .card.power .tab-btn.active {
+        .card .tab-btn.active {
           background: #e5e7eb;
           color: #122d4b;
         }
         
         /* tab panels */
-        .card.power .tab-panels {
+        .card .tab-panels {
           margin-top: 4px;
         }
         
-        .card.power .tab-panel {
+        .card .tab-panel {
           display: none;
         }
         
-        .card.power .tab-panel.active {
+        .card .tab-panel.active {
           display: block;
         }
 
@@ -1350,9 +1350,8 @@ activity_css = """
           overflow-x: auto;
           color: #122d4b;
           background-color: white;
-          margin-bottom: 10px;
           border-radius: 14px;
-          padding: 10px 12px;
+          padding: 10px 12px 0px 12px;
         }
         
         /* each column (round) */
@@ -1471,15 +1470,27 @@ activity_css = """
         }
         
         .standings-table th {
-          text-align: left;
+          text-align: center;
           padding: 6px 4px;
           color: #94a3b8;
           font-weight: 600;
         }
         
         .standings-table td {
+          color: #122d4b;
+          font-weight: 500;
+          font-size: 16px;
+          text-align: center;
           padding: 6px 4px;
           border-top: 1px solid #e2e8f0;
+        }
+        
+        .standings-table td.team {
+          text-align: left;
+        }
+        
+        .standings-table tr {
+          height: 40px;
         }
         
         .standings-table td.team img {

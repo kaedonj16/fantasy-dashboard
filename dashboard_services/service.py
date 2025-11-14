@@ -633,16 +633,6 @@ def build_week_activity(
     return df
 
 
-def build_team_strength(team_stats: Dict[int, dict]) -> Dict[int, float]:
-    # e.g., weighted PF: 70% season PF/gm + 30% last-3 PF/gm
-    s = {}
-    for rid, t in team_stats.iterrows():
-        pf_gm = t["PF"] / max(1, t["G"])
-        last3 = t["Last3"]
-        s[t["owner"]] = round(0.7 * pf_gm + 0.3 * last3, 2)
-    return s
-
-
 def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tuple[Any, Any]]:
     """
     Returns list of opponent pairs for the week.
@@ -686,47 +676,138 @@ def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tupl
     return pairs
 
 
+def to_index(series):
+    mu = series.mean()
+    sigma = series.std(ddof=0)
+    if sigma == 0 or pd.isna(sigma):
+        return pd.Series(100.0, index=series.index)
+    return 100 + 10 * (series - mu) / sigma
+
+
+def build_team_strength(team_stats: Dict[int, dict]) -> Dict[int, float]:
+    # e.g., weighted PF: 70% season PF/gm + 30% last-3 PF/gm
+    s = {}
+    for rid, t in team_stats.iterrows():
+        pf_gm = t["PF"] / max(1, t["G"])
+        last3 = t["Last3"]
+        s[t["owner"]] = round(0.7 * pf_gm + 0.3 * last3, 2)
+    return s
+
+
 def compute_sos_by_team(
         all_matchups: Dict[int, List[dict]],  # week -> list of rows
         team_strength: Dict[int, float],
         weeks_past: int,
         users: Dict[int, str],
 ) -> Dict[int, dict]:
-    out = {owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0} for owner in team_strength}
-    # Past
+    """
+    Compute strength of schedule for each team.
+
+    Uses team_strength as the underlying rating (e.g. PowerScore) and returns
+    a normalized index:
+
+        past_sos, ros_sos ~= 100 => league-average difficulty
+        > 100 => harder schedule
+        < 100 => easier schedule
+    """
+    # initialize
+    out = {
+        owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
+        for owner in team_strength
+    }
+
+    # helper to resolve display_name -> team_name (username)
+    def _resolve_name(name: str) -> str:
+        # try to map Sleeper display_name to metadata.team_name
+        match = next(
+            (
+                u.get("metadata", {}).get("team_name") or name
+                for u in users
+                if u.get("display_name") == name
+            ),
+            name,
+        )
+        return match
+
+    # --- Past SOS: weeks 1 .. weeks_past-1 ---
     for w in range(1, weeks_past):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
-            username = next(
-                (u.get("metadata", {}).get("team_name") or a for u in users if u.get("display_name") == a),
-                b
-            )
-            username2 = next(
-                (u.get("metadata", {}).get("team_name") or b for u in users if u.get("display_name") == b),
-                b
-            )
-            out[username]["past_sos"] += team_strength[username2];
+            username = _resolve_name(a)
+            username2 = _resolve_name(b)
+
+            # skip if not in team_strength (safety)
+            if username not in out or username2 not in out:
+                continue
+
+            out[username]["past_sos"] += team_strength[username2]
             out[username]["past_cnt"] += 1
-            out[username2]["past_sos"] += team_strength[username];
+
+            out[username2]["past_sos"] += team_strength[username]
             out[username2]["past_cnt"] += 1
-    # Future (ROS)
+
+    # --- Future (ROS) SOS: weeks weeks_past .. 14 (or 15 exclusive) ---
     for w in range(weeks_past, 15):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
-            username = next(
-                (u.get("metadata", {}).get("team_name") or a for u in users if u.get("display_name") == a),
-                b
-            )
-            username2 = next(
-                (u.get("metadata", {}).get("team_name") or b for u in users if u.get("display_name") == b),
-                b
-            )
-            out[username]["ros_sos"] += team_strength[username2];
+            username = _resolve_name(a)
+            username2 = _resolve_name(b)
+
+            if username not in out or username2 not in out:
+                continue
+
+            out[username]["ros_sos"] += team_strength[username2]
             out[username]["ros_cnt"] += 1
-            out[username2]["ros_sos"] += team_strength[username];
+
+            out[username2]["ros_sos"] += team_strength[username]
             out[username2]["ros_cnt"] += 1
-    # Averages
-    for rid, v in out.items():
-        v["past_sos"] = v["past_sos"] / v["past_cnt"] if v["past_cnt"] else 0.0
-        v["ros_sos"] = v["ros_sos"] / v["ros_cnt"] if v["ros_cnt"] else 0.0
+
+    # --- Step 1: convert sums to averages (raw SOS) ---
+    past_vals = []
+    ros_vals = []
+    for team, v in out.items():
+        if v["past_cnt"]:
+            v["past_sos"] = v["past_sos"] / v["past_cnt"]
+            past_vals.append(v["past_sos"])
+        else:
+            v["past_sos"] = 0.0
+
+        if v["ros_cnt"]:
+            v["ros_sos"] = v["ros_sos"] / v["ros_cnt"]
+            ros_vals.append(v["ros_sos"])
+        else:
+            v["ros_sos"] = 0.0
+
+    # --- Step 2: normalize to index (100 = avg, 10 points = 1 std dev) ---
+
+    def _indexify(values: List[float]) -> Tuple[float, float]:
+        if not values:
+            return 0.0, 0.0
+        mu = sum(values) / len(values)
+        var = sum((v - mu) ** 2 for v in values) / len(values)
+        sigma = var ** 0.5
+        return mu, sigma
+
+    mu_p, sigma_p = _indexify(past_vals)
+    mu_r, sigma_r = _indexify(ros_vals)
+
+    for team, v in out.items():
+        # past SOS index
+        if v["past_cnt"] and sigma_p > 0:
+            v["past_sos"] = 100.0 + 10.0 * (v["past_sos"] - mu_p) / sigma_p
+        elif v["past_cnt"]:
+            # everyone had identical past SOS -> flat 100
+            v["past_sos"] = 100.0
+        else:
+            # no past games: keep 0.0 as "N/A"
+            v["past_sos"] = 0.0
+
+        # future SOS index
+        if v["ros_cnt"] and sigma_r > 0:
+            v["ros_sos"] = 100.0 + 10.0 * (v["ros_sos"] - mu_r) / sigma_r
+        elif v["ros_cnt"]:
+            v["ros_sos"] = 100.0
+        else:
+            v["ros_sos"] = 0.0
+
     return out
 
 
@@ -966,6 +1047,7 @@ def playoff_bracket(
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+
 
 def render_standings_table(team_stats):
     rows = []
