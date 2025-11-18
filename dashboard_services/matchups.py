@@ -82,51 +82,110 @@ def render_matchup_carousel_weeks(slides_by_week: dict[int, str]) -> str:
         for w in sorted(slides_by_week.keys())
     )
     json_slides = json.dumps({str(k): v for k, v in slides_by_week.items()})
+    # carousel_script = f"""
+    # (function(){{
+    #   const slidesByWeek = {json_slides};
+    #   const weekSel = document.getElementById('mWeek');
+    #   const track   = document.getElementById('mTrack');
+    #   const prevBtn = document.getElementById('mPrev');
+    #   const nextBtn = document.getElementById('mNext');
+    #   function setWeek(w){{
+    #     const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
+    #     track.innerHTML = html;
+    #     idx = 0; cacheSlides(); update();
+    #   }}
+    #   let idx = 0; let slides = [];
+    #   function cacheSlides() {{ slides = track.querySelectorAll('.m-slide'); }}
+    #   function update() {{
+    #     const w = track.clientWidth;
+    #     track.scrollTo({{left: idx * w, behavior: 'smooth'}});
+    #     if (prevBtn) prevBtn.disabled = (idx === 0);
+    #     if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
+    #   }}
+    #   prevBtn && prevBtn.addEventListener('click', ()=>{{ idx = Math.max(0, idx - 1); update(); }});
+    #   nextBtn && nextBtn.addEventListener('click', ()=>{{ idx = Math.min(Math.max(0, slides.length - 1), idx + 1); update(); }});
+    #   window.addEventListener('resize', update);
+    #   weekSel && weekSel.addEventListener('change', (e)=> setWeek(e.target.value));
+    #   cacheSlides(); update();
+    # }})();
+    # """
     carousel_script = f"""
-    (function(){{
-      const slidesByWeek = {json_slides};
-      const weekSel = document.getElementById('mWeek');
-      const track   = document.getElementById('mTrack');
-      const prevBtn = document.getElementById('mPrev');
-      const nextBtn = document.getElementById('mNext');
-      function setWeek(w){{
-        const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
-        track.innerHTML = html;
-        idx = 0; cacheSlides(); update();
-      }}
-      let idx = 0; let slides = [];
-      function cacheSlides() {{ slides = track.querySelectorAll('.m-slide'); }}
-      function update() {{
-        const w = track.clientWidth;
-        track.scrollTo({{left: idx * w, behavior: 'smooth'}});
-        if (prevBtn) prevBtn.disabled = (idx === 0);
-        if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
-      }}
-      prevBtn && prevBtn.addEventListener('click', ()=>{{ idx = Math.max(0, idx - 1); update(); }});
-      nextBtn && nextBtn.addEventListener('click', ()=>{{ idx = Math.min(Math.max(0, slides.length - 1), idx + 1); update(); }});
-      window.addEventListener('resize', update);
-      weekSel && weekSel.addEventListener('change', (e)=> setWeek(e.target.value));
-      cacheSlides(); update();
-    }})();
+        (function(){{
+          const slidesByWeek = {json_slides};
+          // Use global hubWeek if present; fall back to mWeek for other pages
+          const weekSel = document.getElementById('hubWeek') || document.getElementById('mWeek');
+          const track   = document.getElementById('mTrack');
+          const prevBtn = document.getElementById('mPrev');
+          const nextBtn = document.getElementById('mNext');
+
+          let idx = 0;
+          let slides = [];
+
+          function cacheSlides() {{
+            slides = track.querySelectorAll('.m-slide');
+          }}
+
+          function update() {{
+            const w = track.clientWidth;
+            track.scrollTo({{ left: idx * w, behavior: 'smooth' }});
+            if (prevBtn) prevBtn.disabled = (idx === 0);
+            if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
+          }}
+
+          function setWeek(w) {{
+            const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
+            track.innerHTML = html;
+            idx = 0;
+            cacheSlides();
+            update();
+          }}
+
+          // Optional: expose globally if something else wants to change the week
+          window.setMatchupWeek = setWeek;
+
+          prevBtn && prevBtn.addEventListener('click', () => {{
+            idx = Math.max(0, idx - 1);
+            update();
+          }});
+
+          nextBtn && nextBtn.addEventListener('click', () => {{
+            idx = Math.min(Math.max(0, slides.length - 1), idx + 1);
+            update();
+          }});
+
+          window.addEventListener('resize', update);
+
+          if (weekSel) {{
+            // Initialize based on the current global selector
+            setWeek(weekSel.value);
+            weekSel.addEventListener('change', (e) => setWeek(e.target.value));
+          }} else {{
+            // Fallback: first available week
+            const keys = Object.keys(slidesByWeek);
+            if (keys.length) {{
+              setWeek(keys[0]);
+            }}
+          }}
+        }})();
     """
+
     return f"""
-    <div class="card central" data-section='matchups' style='margin-bottom:30px;'>
-      <div class="m-nav">
-        <h2>Matchup Preview</h2>
-        <div class="m-controls">
-          <select id="mWeek" class="search">{opts}</select>
-          <button class="m-btn" id="mPrev">‹ Prev</button>
-          <button class="m-btn" id="mNext">Next ›</button>
+        <div class="card central" data-section='matchups' style='margin-bottom:30px;'>
+          <div class="m-nav">
+            <h2>Matchup Preview</h2>
+            <div class="m-controls">
+              <button class="m-btn" id="mPrev">‹ Prev</button>
+              <button class="m-btn" id="mNext">Next ›</button>
+            </div>
+          </div>
+          <div class="m-carousel">
+            <div class="m-track" id="mTrack">
+              {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")}
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="m-carousel">
-        <div class="m-track" id="mTrack">
-          {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")}
-        </div>
-      </div>
-    </div>
-    <script>{carousel_script}</script>
-    """
+        <script>{carousel_script}</script>
+        """
 
 
 def add_bye_weeks_to_players():
@@ -144,7 +203,7 @@ def add_bye_weeks_to_players():
     write_json(player_path, players)
 
 
-def _render_matchup_slide(
+def render_matchup_slide(
         m: dict,
         w: int,
         proj_week: int,

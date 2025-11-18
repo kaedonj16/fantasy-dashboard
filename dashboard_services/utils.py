@@ -318,7 +318,7 @@ def get_league_rostered_player_ids(league_id: str) -> Dict[str, List[str]]:
     return by_roster
 
 
-def _streak_class(row) -> str:
+def streak_class(row) -> str:
     typ = (row.get("StreakType") or "").upper()
     ln = int(row.get("StreakLen") or 0)
     if typ == "W" and ln >= 2:

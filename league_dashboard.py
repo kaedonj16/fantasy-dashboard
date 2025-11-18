@@ -39,23 +39,19 @@ from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from urllib3.util.retry import Retry
 from zoneinfo import ZoneInfo
 
-from dashboard_services.api import get_league, get_users, get_bracket
+from app import build_status_for_week
+from dashboard_services.api import get_rosters, get_users, get_league, get_nfl_players, \
+    get_nfl_state, get_bracket
 from dashboard_services.awards import compute_weekly_highlights, compute_awards_season, render_awards_section
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
-from dashboard_services.matchups import _render_matchup_slide, render_matchup_carousel_weeks
+from dashboard_services.matchups import render_matchup_carousel_weeks, render_matchup_slide
+from dashboard_services.players import get_players_map
+from dashboard_services.service import build_tables, playoff_bracket, load_week_projection_bundle
 from dashboard_services.service import render_weekly_highlight_ticker, render_week_recap_tab, \
-    build_matchups_by_week, build_week_activity, playoff_bracket, render_standings_table, build_picks_by_roster, \
-    render_teams_sidebar
+    build_week_activity, render_standings_table, build_matchups_by_week
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
     activity_filter_js, NAV_JS, NAV_CSS
-from dashboard_services.utils import z_better_outward, _streak_class, build_teams_overview
-
-try:
-    from rapidfuzz import fuzz, process
-
-    HAVE_RF = True
-except Exception:
-    HAVE_RF = False
+from dashboard_services.utils import streak_class, z_better_outward, load_teams_index, load_players_index
 
 
 # === WEEK RECAP + TOP-3 SIDEBAR ==============================================
@@ -242,7 +238,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
             f"<td class='num'>{float(r['Worst Week']):.2f}</td>",
         ]) + "</tr>")
 
-    standings_html = render_standings_table(team_stats)
+    standings_html = render_standings_table(team_stats, 10)
     cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
 
     table_html = f"""
@@ -307,7 +303,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         chips_html += f"<span class='chip {diff_class}'>{diff_val:+.1f}</span>"
         avatar_url = row.get("avatar")
         img = f"<img class='avatar sm' src='{avatar_url}' onerror=\"this.style.display='none'\">" if avatar_url else ""
-        css_cls = _streak_class(row)
+        css_cls = streak_class(row)
         rank_cards.append(
             f"<div class='rank-item {css_cls} '>"
             f"<span class='pos'>#{pos}</span>"
@@ -329,7 +325,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
 
         # NEW: streak bits
         streak_chip = row.get("Streak", "")  # e.g., "W3", "L2" (computed earlier)
-        streak_frame_cls = _streak_class(row)  # "streak-hot"/"streak-cold"/""
+        streak_frame_cls = streak_class(row)  # "streak-hot"/"streak-cold"/""
 
         avatar_url = row.get("avatar")
         avatar_html = f"<img class='avatar' src='{avatar_url}' onerror=\"this.style.display='none'\">" if avatar_url else ""
@@ -630,7 +626,6 @@ def build_interactive_site(df_weekly: pd.DataFrame,
       <div class="nav-links">
         <button class="nav-btn active" data-target="overview">Overview</button>
         <button class="nav-btn" data-target="recap">Recap</button>
-        <button class="nav-btn" data-target="teams">Teams</button>
         <button class="nav-btn" data-target="activity">Activity</button>
         <button class="nav-btn" data-target="matchups">Matchups</button>
         <button class="nav-btn" data-target="graphs">Graphs</button>
@@ -691,7 +686,6 @@ def build_interactive_site(df_weekly: pd.DataFrame,
 
     teams_rankings_html = f"""
     <div class="card" data-section="overview">
-        {teams_html}
         {div_stats}
     </div>
     """
@@ -754,17 +748,17 @@ def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], t
     matchups_by_week = build_matchups_by_week(
         league_id, weeks, roster_map, players_map
     )
-    picks_by_roster = build_picks_by_roster(league=league, rosters=rosters,
-                                            traded=traded)  # { roster_id_str: [pick_dict, ...] }
-    teams_ctx = build_teams_overview(
-        rosters=rosters,
-        users_list=users,
-        picks_by_roster=picks_by_roster,
-        players=players,
-        players_index=players_index,
-        teams_index=teams_index,
-    )
-    teams_sidebar_html = render_teams_sidebar(teams_ctx)
+    # picks_by_roster = build_picks_by_roster(league=league, rosters=rosters,
+    #                                         traded=traded)  # { roster_id_str: [pick_dict, ...] }
+    # teams_ctx = build_teams_overview(
+    #     rosters=rosters,
+    #     users_list=users,
+    #     picks_by_roster=picks_by_roster,
+    #     players=players,
+    #     players_index=players_index,
+    #     teams_index=teams_index,
+    # )
+    # teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
     activity_df = build_week_activity(league_id, df_weekly.get("week").max(),
                                       players_map)
@@ -772,6 +766,7 @@ def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], t
                                     players=players_map, roster_map=roster_map)
 
     # after df_weekly/team_stats are computed:
+    projections, players, teams = load_week_projection_bundle(current_season, current_week)
     recap_html = render_week_recap_tab(
         league_id, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
     )
@@ -779,8 +774,8 @@ def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], t
     # Pre-render HTML slides per week using your existing _render_matchup_slide
     slides_by_week: dict[int, str] = {
         w: "".join(
-            _render_matchup_slide(m, w, df_weekly[df_weekly["finalized"] == True].copy().get("week").max(),
-                                  current_season) for
+            render_matchup_slide(m, w, df_weekly[df_weekly["finalized"] == True].copy().get("week").max(),
+                                 current_season, projections, players, teams) for
             m in
             matchups_by_week.get(w, []))
         for w in weeks
@@ -814,8 +809,77 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--league", required=True, help="Sleeper league ID")
     args = parser.parse_args()
+    rosters = get_rosters(args.league)
+    users = get_users(args.league)
+    current = get_nfl_state()
+    players = get_nfl_players()
+    players_map = get_players_map(players)
+    players_index = load_players_index()
+    teams_index = load_teams_index()
 
-    site_path = generate_dashboard(args.league)
+    current_season = current.get("season")
+    current_week = current.get("week")
+
+    df_weekly, team_stats, roster_map = build_tables(
+        args.league, current_week, players, users, rosters
+    )
+    activity_df = build_week_activity(args.league, df_weekly.get("week").max(),
+                                      players_map)
+    injury_df = build_injury_report(args.league, local_tz="America/New_York", include_free_agents=False,
+                                    players=players_map, roster_map=roster_map)
+    projections, players, teams = load_week_projection_bundle(current_season, current_week)
+    recap_html = render_week_recap_tab(
+        args.league, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
+    )
+    weeks = list(range(1, 18))
+    matchups_by_week = build_matchups_by_week(
+        args.league, weeks, roster_map, players_map
+    )
+    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if not finalized_df.empty:
+        last_final_week = int(finalized_df["week"].max())
+    else:
+        # fall back to current week if nothing is finalized yet
+        last_final_week = current_week
+
+    status_by_pid = build_status_for_week(
+        current_season,
+        current_week,
+        players_index,
+        teams_index,
+    )
+
+    # Pre-render HTML slides per week using your existing _render_matchup_slide
+    slides_by_week: dict[int, str] = {
+        w: "".join(
+            render_matchup_slide(
+                m,
+                current_week,
+                last_final_week,
+                status_by_pid=status_by_pid,
+                projections=projections,
+                players=players,
+                teams=teams, ) for
+            m in matchups_by_week.get(w, []))
+        for w in weeks
+    }
+    matchup_html = render_matchup_carousel_weeks(slides_by_week)
+
+    awards = compute_awards_season(df_weekly[df_weekly["finalized"] == True].copy(), players_map, args.league)
+    awards_html = render_awards_section(awards)
+
+    site_path = build_interactive_site(
+        df_weekly[df_weekly["finalized"] == True].copy(),
+        team_stats,
+        out_dir="site",
+        activity_df=activity_df,
+        injury_df=injury_df,
+        matchup_html=matchup_html,
+        recap_html=recap_html,
+        awards_html=awards_html,
+        league_id=args.league,
+        roster_map=roster_map,
+    )
     print(f"Interactive site saved to: {site_path}")
 
 

@@ -7,12 +7,13 @@ from pathlib import Path
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
+from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks
 from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, playoff_bracket
+from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
+    load_week_projection_bundle, build_matchups_by_week, build_picks_by_roster, render_teams_sidebar
 from dashboard_services.utils import load_players_index, load_teams_index, get_nfl_games_for_week, build_games_by_team, \
-    build_status_by_pid, path_week_proj, _streak_class
-from league_dashboard import build_matchups_by_week, _render_matchup_slide, render_matchup_carousel_weeks, \
-    compute_awards_season, render_awards_section, build_picks_by_roster, build_teams_overview, render_teams_sidebar
+    build_status_by_pid, streak_class, build_teams_overview
 
 DASHBOARD_CACHE = {}  # (league_id)
 CACHE_TTL = 60 * 60  # seconds (10 minutes)
@@ -92,7 +93,7 @@ FORM_HTML = """
     </style>
   </head>
   <body>
-    <div><img src="/static/BR_Logo.png" alt="League Logo" class="site-logo"/></div>
+    <div><img src="/static/BR_Logo.png" alt="League Logo" class="site-logo" style="height:125px"/></div>
     <div class="shell">
       <form method="post">
         <div class="row">
@@ -175,6 +176,30 @@ def build_league_context(league_id: str) -> dict:
     df_weekly, team_stats, roster_map = build_tables(
         league_id, current_week, players, users, rosters
     )
+    status_by_pid = build_status_for_week(
+        current_season,
+        current_week,
+        players_index,
+        teams_index,
+    )
+
+    projections, proj_players, proj_teams = load_week_projection_bundle(
+        current_season,
+        current_week,
+    )
+
+    weeks_in_df = sorted(df_weekly["week"].unique())
+    if weeks_in_df:
+        max_week = max(weeks_in_df)
+    else:
+        max_week = current_week or 18
+
+    matchups_by_week = build_matchups_by_week(
+        league_id,
+        list(range(1, max_week + 1)),
+        roster_map,
+        players_map,
+    )
 
     return {
         "league_id": league_id,
@@ -192,6 +217,11 @@ def build_league_context(league_id: str) -> dict:
         "df_weekly": df_weekly,
         "team_stats": team_stats,
         "roster_map": roster_map,
+        "status_by_pid": status_by_pid,
+        "projections": projections,
+        "proj_players": proj_players,
+        "proj_teams": proj_teams,
+        "matchups_by_week": matchups_by_week,
     }
 
 
@@ -281,27 +311,7 @@ def render_standings_snapshot(team_stats) -> str:
     """
 
 
-def _load_week_projection_bundle(season: int, w: int):
-    # projections
-    proj_path = Path(path_week_proj(season, w))
-    if not proj_path.exists():
-        get_week_projections_cached(season, w, fetch_week_from_tank01)
-
-    with open(proj_path, "r", encoding="utf-8") as f:
-        projections = json.load(f)
-
-    # players / teams index
-    player_path = Path("cache/players_index.json")
-    team_path = Path("cache/teams_index.json")
-    with open(player_path, "r", encoding="utf-8") as f:
-        players = json.load(f)
-    with open(team_path, "r", encoding="utf-8") as f:
-        teams = json.load(f)
-
-    return projections, players, teams
-
-
-def _build_status_for_week(season, week, players_index, teams_index):
+def build_status_for_week(season, week, players_index, teams_index):
     games = get_nfl_games_for_week(week=week, season=season)
     games_by_team = build_games_by_team(games)
     return build_status_by_pid(players_index, games_by_team, teams_index, week)
@@ -313,14 +323,17 @@ def build_dashboard_body(ctx: dict) -> str:
     rosters = ctx["rosters"]
     users = ctx["users"]
     traded = ctx["traded"]
-    current_season = ctx["current_season"]
     current_week = ctx["current_week"]
     players_map = ctx["players_map"]
     df_weekly = ctx["df_weekly"]
     team_stats = ctx["team_stats"]
-    roster_map = ctx["roster_map"]
     players_index = ctx["players_index"]
     teams_index = ctx["teams_index"]
+    status_by_pid = ctx["status_by_pid"]
+    projections = ctx["projections"]
+    players = ctx["proj_players"]
+    teams = ctx["proj_teams"]
+    matchups_by_week = ctx["matchups_by_week"]
 
     # --- Standings snapshot (top card in main column) ---
     standings_html = render_standings_snapshot(team_stats)
@@ -333,29 +346,10 @@ def build_dashboard_body(ctx: dict) -> str:
         # fall back to current week if nothing is finalized yet
         last_final_week = current_week
 
-    # --- Matchup carousel (ONLY current week for dashboard) ---
-    weeks = [current_week]
-    matchups_by_week = build_matchups_by_week(
-        league_id, weeks, roster_map, players_map
-    )
-
-    # 1. Status per player for this week (do this ONCE)
-    # if your helper only takes (season, week), drop players_index/teams_index
-    status_by_pid = _build_status_for_week(
-        current_season,
-        current_week,
-        players_index,
-        teams_index,
-    )
-
-    # 2. Load projections / players / teams for this week (ONCE)
-    projections, players, teams = _load_week_projection_bundle(current_season, current_week)
-
-    # 3. Build slides for ONLY current week
     slides = []
     for m in matchups_by_week.get(current_week, []):
         slides.append(
-            _render_matchup_slide(
+            render_matchup_slide(
                 m,
                 current_week,
                 last_final_week,
@@ -564,7 +558,7 @@ def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id:
 
         # streak bits
         streak_chip = row.get("Streak", "")  # e.g., "W3", "L2"
-        streak_frame_cls = _streak_class(row)  # assumes you already have this helper
+        streak_frame_cls = streak_class(row)  # assumes you already have this helper
         avatar_url = row.get("avatar")
         avatar_html = (
             f"<img class='avatar' src='{avatar_url}' "
@@ -649,7 +643,7 @@ def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id:
             f"<span class='chip'>PF/G {pfpg_v:.1f}</span>"
             f"<span class='chip'>PA/G {papg_v:.1f}</span>"
         )
-        css_cls = _streak_class(row)
+        css_cls = streak_class(row)
         print(css_cls)
         if streak_chip and css_cls == "streak-hot":
             chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
@@ -848,6 +842,277 @@ def build_standings_body(ctx: dict) -> str:
     return body
 
 
+def _render_weekly_top_scorers_for_week(
+        league_id: str,
+        df_weekly: pd.DataFrame,
+        roster_map: dict,
+        players_map: dict,
+        week: int,
+) -> str:
+    """
+    Reuse the existing POTW logic, but scoped to a specific week.
+
+    We pass a df filtered to that week into _matchup_cards_last_week, so
+    whatever it thinks is "last week" becomes this week.
+    """
+    week_df = df_weekly[df_weekly["week"] == week].copy()
+    if week_df.empty:
+        # nothing played that week
+        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+        return render_top_three(empty_by_pos)
+
+    _week_num, _matchup_html, top_by_pos = matchup_cards_last_week(
+        league_id,
+        week_df,
+        roster_map,
+        players_map,
+    )
+    # ignore matchup_html here – Weekly Hub already has its own matchup view
+    return render_top_three(top_by_pos)
+
+
+def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
+    wdf = df_weekly[df_weekly["week"] == week].copy()
+    if wdf.empty:
+        return ""
+
+    rows = []
+    for (wk, mid), grp in wdf.groupby(["week", "matchup_id"]):
+        if len(grp) != 2:
+            continue
+        g = grp.sort_values("points", ascending=False)
+        win = g.iloc[0]
+        lose = g.iloc[1]
+        margin = float(win["points"] - lose["points"])
+
+        rows.append(
+            f"<div class='matchup-row'>"
+            f"  <div class='m-team-col'>"
+            f"    <div class='m-team-name winner'>{win['owner']}</div>"
+            f"    <div class='m-score'>{float(win['points']):.1f}</div>"
+            f"  </div>"
+            f"  <div class='m-vs-col'>def</div>"
+            f"  <div class='m-team-col'>"
+            f"    <div class='m-team-name loser'>{lose['owner']}</div>"
+            f"    <div class='m-score'>{float(lose['points']):.1f}</div>"
+            f"  </div>"
+            f"  <div class='m-margin'>+{margin:.1f}</div>"
+            f"</div>"
+        )
+
+    return f"""
+    <div class="card">
+      <div class="card-header">
+        <h2>Week {week} Matchups</h2>
+      </div>
+      <div class="card-body matchup-list">
+        {''.join(rows)}
+      </div>
+    </div>
+    """
+
+
+def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
+    wdf = df_weekly[df_weekly["week"] == week].copy()
+    if wdf.empty:
+        return f"""
+        <div class="card small">
+          <div class="card-header"><h3>Week {week} Highlights</h3></div>
+          <div class="card-body">
+            <p>No highlights for this week yet.</p>
+          </div>
+        </div>
+        """
+
+    top = wdf.sort_values("points", ascending=False).iloc[0]
+    low = wdf.sort_values("points", ascending=True).iloc[0]
+
+    # closest / blowout same as above
+    matchups = []
+    for (wk, mid), grp in wdf.groupby(["week", "matchup_id"]):
+        if len(grp) != 2:
+            continue
+        g = grp.sort_values("points", ascending=False)
+        win = g.iloc[0]
+        lose = g.iloc[1]
+        margin = float(win["points"] - lose["points"])
+        matchups.append({
+            "winner": win["owner"],
+            "loser": lose["owner"],
+            "w_pts": float(win["points"]),
+            "l_pts": float(lose["points"]),
+            "margin": margin,
+        })
+
+    closest_txt = ""
+    blowout_txt = ""
+    if matchups:
+        closest = min(matchups, key=lambda m: abs(m["margin"]))
+        blowout = max(matchups, key=lambda m: abs(m["margin"]))
+        closest_txt = (
+            f"Closest Game: {closest['winner']} def {closest['loser']} "
+            f"by {closest['margin']:.1f}"
+        )
+        blowout_txt = (
+            f"Blowout: {blowout['winner']} def {blowout['loser']} "
+            f"by {blowout['margin']:.1f}"
+        )
+
+    return f"""
+    <div class="card small">
+      <div class="card-header">
+        <h3>Week {week} Highlights</h3>
+      </div>
+      <div class="card-body ticker-list">
+        <ul>
+          <li>Highest score: {top['owner']} ({float(top['points']):.1f})</li>
+          <li>Lowest score: {low['owner']} ({float(low['points']):.1f})</li>
+          {f"<li>{closest_txt}</li>" if closest_txt else ""}
+          {f"<li>{blowout_txt}</li>" if blowout_txt else ""}
+        </ul>
+      </div>
+    </div>
+    """
+
+
+def build_weekly_hub_body(ctx: dict) -> str:
+    league_id = ctx["league_id"]
+    df_weekly = ctx["df_weekly"]
+    roster_map = ctx["roster_map"]
+    players_map = ctx["players_map"]
+    current_week = ctx["current_week"]
+    status_by_pid = ctx["status_by_pid"]
+    projections = ctx["projections"]
+    players = ctx["proj_players"]
+    teams = ctx["proj_teams"]
+    matchups_by_week = ctx["matchups_by_week"]
+
+    weeks = sorted(df_weekly["week"].unique())
+    if not weeks:
+        return "<p>No weekly data yet.</p>"
+
+    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if not finalized_df.empty:
+        last_final_week = int(finalized_df["week"].max())
+    else:
+        last_final_week = current_week
+
+    default_week = current_week if current_week in weeks else weeks[-1]
+
+    # --- ALL matchup previews per week (so carousel can scroll) ---
+    slides_by_week: dict[int, str] = {
+        w: "".join(
+            render_matchup_slide(
+                m,
+                w,
+                last_final_week,
+                status_by_pid=status_by_pid,
+                projections=projections,
+                players=players,
+                teams=teams,
+            )
+            for m in matchups_by_week.get(w, [])
+        )
+        for w in weeks
+    }
+
+    # Single carousel for the page
+    matchup_html = render_matchup_carousel_weeks(slides_by_week)
+
+    # Week dropdown for the whole Weekly Hub
+    options = []
+    for w in weeks:
+        sel = " selected" if w == default_week else ""
+        options.append(f"<option value='{w}'{sel}>Week {w}</option>")
+    week_select_html = "".join(options)
+
+    main_panels = []
+    side_panels = []
+
+    for w in weeks:
+        active_cls = " active" if w == default_week else ""
+
+        top_scorers_html = _render_weekly_top_scorers_for_week(
+            league_id,
+            df_weekly,
+            roster_map,
+            players_map,
+            w,
+        )
+        highlights_html = _render_weekly_highlights(df_weekly, w)
+
+        # NOTE: no matchup_html here anymore
+        main_panels.append(f"""
+              <div class="week-main-panel{active_cls}" data-week="{w}">
+                <div class="main-two-col">
+                  {top_scorers_html}
+                  {matchup_html}
+                </div>
+              </div>
+            """)
+
+        side_panels.append(f"""
+              <div class="week-side-panel{active_cls}" data-week="{w}">
+                {highlights_html}
+              </div>
+            """)
+
+    return f"""
+    <div class="page-layout weekly-hub">
+      <main class="page-main">
+        <div class="card">
+          <div class="card-header-row">
+            <h2>Weekly Hub</h2>
+            <div class="week-selector">
+              <select id="hubWeek" class="search">
+                {week_select_html}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="week-main-panels">
+          {''.join(main_panels)}
+        </div>
+      </main>
+
+      <aside class="page-sidebar">
+        <div class="week-side-panels">
+          {''.join(side_panels)}
+        </div>
+      </aside>
+    </div>
+
+    <script>
+    (function() {{
+      var sel = document.getElementById('hubWeek');
+      if (!sel) return;
+
+      sel.addEventListener('change', function() {{
+        var w = this.value;
+
+        // toggle main & side weekly panels
+        document.querySelectorAll('.week-main-panel').forEach(function(el) {{
+          el.classList.toggle('active', el.getAttribute('data-week') === w);
+        }});
+        document.querySelectorAll('.week-side-panel').forEach(function(el) {{
+          el.classList.toggle('active', el.getAttribute('data-week') === w);
+        }});
+
+        // also sync the matchup carousel week selector, if it exists
+        var mSel = document.getElementById('mWeek');
+        if (mSel) {{
+          mSel.value = w;
+          // trigger its existing change handler so slides update
+          var evt = new Event('change', {{ bubbles: true }});
+          mSel.dispatchEvent(evt);
+        }}
+      }});
+    }})();
+    </script>
+    """
+
+
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
     # grab context (this will use cache or rebuild if expired)
@@ -866,12 +1131,7 @@ def page_standings(league_id):
 @app.route("/league/<league_id>/weekly")
 def page_weekly(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = """
-    <div class="overview-main">
-      <div class="card"><h2>Weekly Hub</h2></div>
-    </div>
-    <aside class="overview-sidebar"></aside>
-    """
+    body = build_weekly_hub_body(ctx)
     return render_page("Weekly Hub", league_id, "weekly", body)
 
 
@@ -938,6 +1198,8 @@ def index():
 
 @app.route("/league/<league_id>")
 def view_league(league_id):
+    # warm or reuse league context cache
+    _ = get_league_ctx_from_cache(league_id)
     return redirect(url_for("page_dashboard", league_id=league_id))
 
 

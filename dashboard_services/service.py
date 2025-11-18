@@ -1,16 +1,18 @@
+import json
 import numpy as np
 import pandas as pd
 import requests
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 
 from .api import get_matchups, get_users, get_rosters, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json
 from .matchups import build_matchup_preview
 from .players import build_roster_display_maps
 from .styles import recap_css, tickerCss
-from .utils import safe_owner_name
+from .utils import safe_owner_name, path_week_proj, get_week_projections_cached, fetch_week_from_tank01
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -59,10 +61,10 @@ def render_weekly_highlight_ticker(high: dict, week: int) -> str:
     """
 
 
-def _matchup_cards_last_week(league_id: str,
-                             df_weekly: pd.DataFrame,
-                             roster_map: dict,
-                             players_map: dict) -> tuple[int, str, dict]:
+def matchup_cards_last_week(league_id: str,
+                            df_weekly: pd.DataFrame,
+                            roster_map: dict,
+                            players_map: dict) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
       top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to 3 ], ...}
@@ -191,8 +193,6 @@ def _matchup_cards_last_week(league_id: str,
           </div>
         </div>
         """)
-
-    # Top-3 by position (normalize/limit to common positions)
     want_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
     top_by_pos = {}
     for pos in want_positions:
@@ -202,7 +202,7 @@ def _matchup_cards_last_week(league_id: str,
     return last_week, "".join(cards), top_by_pos
 
 
-def _render_top_three_sidebar(top_by_pos: dict) -> str:
+def render_top_three(top_by_pos: dict) -> str:
     def card(pos, rows):
         if not rows:
             return f"<div class='side-card'><h3>{pos}</h3><div class='muted'>No data</div></div>"
@@ -234,11 +234,11 @@ def render_week_recap_tab(league_id: str,
     Returns a single <div class='card' data-section='recap'> ... </div> block
     that you can insert into your main page (no new page).
     """
-    week, matchup_html, top_by_pos = _matchup_cards_last_week(
+    week, matchup_html, top_by_pos = matchup_cards_last_week(
         league_id, df_weekly, roster_map, players_map
     )
 
-    sidebar_html = _render_top_three_sidebar(top_by_pos)
+    sidebar_html = render_top_three(top_by_pos)
 
     # Match the same “card + inner markup + (optional) script” structure as the carousel function
     return f"""
@@ -1153,7 +1153,7 @@ def playoff_bracket(
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
 
 
-def render_standings_table(team_stats):
+def render_standings_table(team_stats, length):
     rows = []
 
     # Sort by Wins, Win%, PF, PA
@@ -1196,7 +1196,10 @@ def render_standings_table(team_stats):
               <td>{row['ros_sos']:.1f}</td>
             </tr>
         """)
-
+    if len(rows) != length:
+        total_rows = rows[:length]
+    else:
+        total_rows = rows
     return f"""
         <table class="standings-table">
           <h2>Standings</h2>
@@ -1213,7 +1216,7 @@ def render_standings_table(team_stats):
             </tr>
           </thead>
           <tbody>
-            {''.join(rows[:5])}
+            {''.join(total_rows)}
           </tbody>
         </table>
     """
@@ -1390,3 +1393,23 @@ def build_picks_by_roster(
         picks_by_roster[rid].sort(key=lambda x: (x["season"], x["round"]))
 
     return picks_by_roster
+
+
+def load_week_projection_bundle(season: int, w: int):
+    # projections
+    proj_path = Path(path_week_proj(season, w))
+    if not proj_path.exists():
+        get_week_projections_cached(season, w, fetch_week_from_tank01)
+
+    with open(proj_path, "r", encoding="utf-8") as f:
+        projections = json.load(f)
+
+    # players / teams index
+    player_path = Path("cache/players_index.json")
+    team_path = Path("cache/teams_index.json")
+    with open(player_path, "r", encoding="utf-8") as f:
+        players = json.load(f)
+    with open(team_path, "r", encoding="utf-8") as f:
+        teams = json.load(f)
+
+    return projections, players, teams
