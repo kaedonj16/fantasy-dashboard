@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .api import fetch_json
+from .api import get_matchups
 from .players import build_roster_map
 from .styles import awardsCss
 
@@ -68,7 +68,7 @@ def highest_single_game_points(league_id: str,
 
     for w in weeks:
         # Sleeper endpoint: /league/{league_id}/matchups/{week}
-        matchups = fetch_json(f"/league/{league_id}/matchups/{w}") or []
+        matchups = get_matchups(league_id, w) or []
         for row in matchups:
             rid = row.get("roster_id")
             owner = roster_map.get(str(rid), f"Roster {rid}")

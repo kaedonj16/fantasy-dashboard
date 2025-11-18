@@ -39,16 +39,16 @@ from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from urllib3.util.retry import Retry
 from zoneinfo import ZoneInfo
 
-from dashboard_services.api import get_league_name, get_nfl_state, get_users, get_bracket
+from dashboard_services.api import get_league, get_users, get_bracket
 from dashboard_services.awards import compute_weekly_highlights, compute_awards_season, render_awards_section
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
 from dashboard_services.matchups import _render_matchup_slide, render_matchup_carousel_weeks
-from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, render_weekly_highlight_ticker, render_week_recap_tab, \
-    build_matchups_by_week, build_week_activity, playoff_bracket, render_standings_table
+from dashboard_services.service import render_weekly_highlight_ticker, render_week_recap_tab, \
+    build_matchups_by_week, build_week_activity, playoff_bracket, render_standings_table, build_picks_by_roster, \
+    render_teams_sidebar
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
     activity_filter_js, NAV_JS, NAV_CSS
-from dashboard_services.utils import z_better_outward, _streak_class
+from dashboard_services.utils import z_better_outward, _streak_class, build_teams_overview
 
 try:
     from rapidfuzz import fuzz, process
@@ -71,6 +71,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
                            awards_html: Optional[pd.DataFrame] = None,
                            league_id: Optional[str] = None,
                            roster_map: Optional[Dict[str, str]] = None,
+                           teams_html: Optional[pd.DataFrame] = None
                            ):
     """
     Creates /site/index.html with:
@@ -217,15 +218,21 @@ def build_interactive_site(df_weekly: pd.DataFrame,
                  .merge(best, left_on="Team", right_index=True, how="left")
                  .merge(worst, left_on="Team", right_index=True, how="left"))
 
-    cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
+    cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week", "avatar"]
     stats_tbl = stats_tbl[cols].copy()
     for c in ["Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]:
         stats_tbl[c] = stats_tbl[c].astype(float).round(3 if c == "Win %" else 2)
 
     body_rows = []
     for _, r in stats_tbl[cols].iterrows():
+        avatar = r.get("avatar", "")
+        img = (
+            f"<img class='avatar sm' src='{avatar}' "
+            "onerror=\"this.style.display='none'\">"
+            if avatar else ""
+        )
         body_rows.append("<tr>" + "".join([
-            f"<td>{r['Team']}</td>",
+            f"<td class='team'>{img} {r['Team']}</td>",
             f"<td class='num'>{r['Win %']:.3f}</td>",
             f"<td class='num'>{float(r['PF']):.2f}</td>",
             f"<td class='num'>{float(r['PA']):.2f}</td>",
@@ -236,10 +243,11 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         ]) + "</tr>")
 
     standings_html = render_standings_table(team_stats)
+    cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
 
     table_html = f"""
       <div class="table-wrap">
-        <table id="stats" class="table-stats">
+        <table id="stats" class="standings-table">
           <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
           <tbody>{''.join(body_rows)}</tbody>
         </table>
@@ -618,13 +626,14 @@ def build_interactive_site(df_weekly: pd.DataFrame,
 
     NAV_HTML = f"""
     <div class="topnav">
-      <div class="brand">{get_league_name(league_id).get('name')} League Dashboard</div>
+      <div class="brand">{get_league(league_id).get('name')} League Dashboard</div>
       <div class="nav-links">
         <button class="nav-btn active" data-target="overview">Overview</button>
         <button class="nav-btn" data-target="recap">Recap</button>
+        <button class="nav-btn" data-target="teams">Teams</button>
         <button class="nav-btn" data-target="activity">Activity</button>
-        <button class="nav-btn" data-target="graphs">Graphs</button>
         <button class="nav-btn" data-target="matchups">Matchups</button>
+        <button class="nav-btn" data-target="graphs">Graphs</button>
         <button class="nav-btn" data-target="awards">Awards</button>
       </div>
     </div>
@@ -652,8 +661,39 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         });
       });
     });
+    
+    document.addEventListener("DOMContentLoaded", function () {
+      const tabs = document.querySelectorAll(".team-tab");
+      const panels = document.querySelectorAll(".team-panel");
+    
+      if (!tabs.length) return;
+    
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          const id = tab.getAttribute("data-team-id");
+    
+          tabs.forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+    
+          panels.forEach(p => {
+            if (p.getAttribute("data-team-id") === id) {
+              p.classList.add("active");
+            } else {
+              p.classList.remove("active");
+            }
+          });
+        });
+      });
+    });
     </script>
 
+    """
+
+    teams_rankings_html = f"""
+    <div class="card" data-section="overview">
+        {teams_html}
+        {div_stats}
+    </div>
     """
 
     # --- Injury relevance section ---
@@ -669,7 +709,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         <html lang="en"><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
         <div class="header">
-            <img src="BR_Logo.png" alt="League Logo" class="site-logo" />
+            <img src="/static/BR_Logo.png" alt="League Logo" class="site-logo" />
         </div>
         {logoCss}
         {NAV_CSS}
@@ -678,7 +718,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         <body>
         {NAV_HTML}
           <div class="grid">
-            {div_stats}
+            {teams_rankings_html}
             {podium_card}
             {activity_html}
             {accordion_html}
@@ -705,43 +745,53 @@ def build_interactive_site(df_weekly: pd.DataFrame,
     return out_file
 
 
-# --------------------------- Main ---------------------------
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--league", required=True, help="Sleeper league ID")
-    parser.add_argument("--weeks", type=int, default=get_nfl_state().get("week"), help="Number of weeks to pull (1..N)")
-    args = parser.parse_args()
-    # rapidApiKey = "a31667ff00msh6d542faa96aa36bp1513aajsn612c819feca4"
-    season = get_nfl_state().get("season")
-
+def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], traded: list[dict],
+                       players: list[dict], players_map: dict, current_season: int, df_weekly: pd.DataFrame,
+                       team_stats: pd.DataFrame, roster_map: dict, league: dict, players_index: dict, teams_index: dict
+                       ) -> str:
     weeks = list(range(1, 18))
-    players_map = get_players_map()
-    df_weekly, team_stats, roster_map = build_tables(args.league, args.weeks)
+
     matchups_by_week = build_matchups_by_week(
-        args.league, weeks, roster_map, players_map
+        league_id, weeks, roster_map, players_map
     )
-    roster_map = {str(rid): owner for rid, owner in zip(df_weekly["roster_id"].unique(), df_weekly["owner"].unique())}
-    activity_df = build_week_activity(args.league, df_weekly.get("week").max(),
+    picks_by_roster = build_picks_by_roster(league=league, rosters=rosters,
+                                            traded=traded)  # { roster_id_str: [pick_dict, ...] }
+    teams_ctx = build_teams_overview(
+        rosters=rosters,
+        users_list=users,
+        picks_by_roster=picks_by_roster,
+        players=players,
+        players_index=players_index,
+        teams_index=teams_index,
+    )
+    teams_sidebar_html = render_teams_sidebar(teams_ctx)
+
+    activity_df = build_week_activity(league_id, df_weekly.get("week").max(),
                                       players_map)
-    injury_df = build_injury_report(args.league, local_tz="America/New_York", include_free_agents=False)
+    injury_df = build_injury_report(league_id, local_tz="America/New_York", include_free_agents=False,
+                                    players=players_map, roster_map=roster_map)
 
     # after df_weekly/team_stats are computed:
     recap_html = render_week_recap_tab(
-        args.league, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
+        league_id, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
     )
 
     # Pre-render HTML slides per week using your existing _render_matchup_slide
     slides_by_week: dict[int, str] = {
         w: "".join(
-            _render_matchup_slide(m, w, df_weekly[df_weekly["finalized"] == True].copy().get("week").max(), season) for
+            _render_matchup_slide(m, w, df_weekly[df_weekly["finalized"] == True].copy().get("week").max(),
+                                  current_season) for
             m in
             matchups_by_week.get(w, []))
         for w in weeks
     }
     matchup_html = render_matchup_carousel_weeks(slides_by_week)
 
-    awards = compute_awards_season(df_weekly[df_weekly["finalized"] == True].copy(), players_map, args.league)
+    awards = compute_awards_season(df_weekly[df_weekly["finalized"] == True].copy(), players_map, league_id)
     awards_html = render_awards_section(awards)
+
+    # you already have draft pick logic; plug that in here
+
     site_path = build_interactive_site(
         df_weekly[df_weekly["finalized"] == True].copy(),
         team_stats,
@@ -751,9 +801,21 @@ def main():
         matchup_html=matchup_html,
         recap_html=recap_html,
         awards_html=awards_html,
-        league_id=args.league,
-        roster_map=roster_map
+        league_id=league_id,
+        roster_map=roster_map,
+        teams_html=teams_sidebar_html
     )
+
+    return site_path
+
+
+# --------------------------- Main ---------------------------
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--league", required=True, help="Sleeper league ID")
+    args = parser.parse_args()
+
+    site_path = generate_dashboard(args.league)
     print(f"Interactive site saved to: {site_path}")
 
 

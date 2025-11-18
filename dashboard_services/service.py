@@ -8,7 +8,7 @@ from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 
 from .api import get_matchups, get_users, get_rosters, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json
 from .matchups import build_matchup_preview
-from .players import build_roster_display_maps, get_players_map
+from .players import build_roster_display_maps
 from .styles import recap_css, tickerCss
 from .utils import safe_owner_name
 
@@ -255,12 +255,14 @@ def render_week_recap_tab(league_id: str,
     """
 
 
-def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_tables(
+        league_id: str,
+        max_week: int,
+        players: dict,
+        users: list[dict],
+        rosters: list[dict],
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     """Fetch and process league data into DataFrames."""
-    # Fetch base data
-    users = get_users(league_id)
-    rosters = get_rosters(league_id)
-    players = get_players_map()
 
     # Build user lookup (metadata avatar → team logo)
     user_by_id = {u["user_id"]: u for u in users}
@@ -284,10 +286,12 @@ def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFr
         display = user_fallback.get(owner_id, f"Roster {rid}")
         roster_map[rid] = display
 
+    # Pre-build matchups_by_week for SOS later
     matchups_by_week = build_matchups_by_week(
-        league_id, list(range(1, 15)), roster_map, players
+        league_id, list(range(1, 18)), roster_map, players
     )
 
+    # ---- Owner → Avatar URL ----
     owner_avatar: dict[str, Union[str, None]] = {}
     for r in rosters:
         rid = str(r["roster_id"])
@@ -298,11 +302,14 @@ def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFr
         if owner_id in user_by_id:
             user_data = user_by_id[owner_id]
             user_meta = user_data.get("metadata") or {}
-            u_id = next((u.get("avatar") for u in users if u["user_id"] == r.get("owner_id")), None)
+            # try to get Sleeper avatar id from users list
+            u_id = next(
+                (u.get("avatar") for u in users if u["user_id"] == owner_id),
+                None,
+            )
             avatar_id = (
                     user_meta.get("avatar")  # team logo if set
-                    or f"https://sleepercdn.com/avatars/{u_id}"  # profile pic fallback
-                    or None
+                    or (f"https://sleepercdn.com/avatars/{u_id}" if u_id else None)
             )
 
         owner_avatar[display] = _avatar_url(avatar_id)
@@ -319,13 +326,15 @@ def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFr
 
         for m in week_data:
             rid = str(m.get("roster_id"))
-            weekly_rows.append({
-                "week": week,
-                "matchup_id": m.get("matchup_id"),
-                "roster_id": rid,
-                "owner": roster_map.get(rid, f"Roster {rid}"),
-                "points": float(m.get("points", 0.0)),
-            })
+            weekly_rows.append(
+                {
+                    "week": week,
+                    "matchup_id": m.get("matchup_id"),
+                    "roster_id": rid,
+                    "owner": roster_map.get(rid, f"Roster {rid}"),
+                    "points": float(m.get("points", 0.0)),
+                }
+            )
         time.sleep(0.12)
 
     df_weekly = pd.DataFrame(weekly_rows)
@@ -344,21 +353,29 @@ def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFr
     # Attach team avatars (logos) to weekly rows
     df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
 
+    # ---- Finalized flag ----
     _state = get_nfl_state()
     current_leg = int(_state.get("leg") or _state.get("week") or 0)
-
-    # A week is finalized if the current leg/week is strictly greater
     df_weekly["finalized"] = df_weekly["week"] < current_leg
 
+    finalized_mask = df_weekly["finalized"] == True
+    df_finalized = df_weekly[finalized_mask].copy()
+
     # ---- Aggregate stats ----
-    records = _compute_team_records(df_weekly[df_weekly["finalized"] == True].copy())
-    team_stats = _aggregate_team_stats(df_weekly[df_weekly["finalized"] == True].copy(), records)
+    records = _compute_team_records(df_finalized.copy())
+    team_stats = _aggregate_team_stats(df_finalized.copy(), records)
+
+    # merge avatar into team_stats (by owner name)
     team_stats = team_stats.merge(
         pd.Series(owner_avatar, name="avatar"),
-        left_on="owner", right_index=True, how="left",
+        left_on="owner",
+        right_index=True,
+        how="left",
     )
+
+    # Last 3 games avg
     last3 = (
-        df_weekly[df_weekly["finalized"] == True].copy().sort_values(["owner", "week"])
+        df_finalized.sort_values(["owner", "week"])
         .groupby("owner")["points"]
         .apply(lambda s: s.tail(3).mean() if len(s) else 0.0)
         .rename("Last3")
@@ -366,12 +383,70 @@ def build_tables(league_id: str, max_week: int) -> tuple[pd.DataFrame, pd.DataFr
     )
     team_stats = team_stats.merge(last3, on="owner", how="left")
     team_stats["Last3"] = team_stats["Last3"].fillna(0.0)
+
+    # ---- Z-score helper ----
+    def _z(series):
+        s = pd.Series(series, dtype="float64")
+        sd = float(s.std(ddof=0))
+        if sd == 0 or np.isnan(sd):
+            return pd.Series(0.0, index=s.index)
+        return (s - s.mean()) / sd
+
+    # Win% (handle both explicit Win% or Wins/Losses/Ties)
+    if "Win%" in team_stats.columns:
+        win_pct = team_stats["Win%"].fillna(0.0)
+    else:
+        if "Ties" in team_stats.columns:
+            ties = team_stats["Ties"].fillna(0.0)
+        else:
+            ties = 0.0
+        win_pct = (
+                (team_stats["Wins"] + 0.5 * ties)
+                / team_stats["G"].replace(0, np.nan)
+        ).fillna(0.0)
+
+    # Input series for power score components
+    avg_pts = team_stats.get("AVG", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
+    cons_inv = -team_stats.get("STD", pd.Series(team_stats["STD"].mean(), index=team_stats.index)).fillna(
+        team_stats["STD"].mean()
+    )
+    ceiling = team_stats.get("MAX", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
+    last3_series = team_stats["Last3"].fillna(0.0)
+
+    # Z-scores
+    team_stats["Z_WinPercentage"] = _z(win_pct)
+    team_stats["Z_Avg"] = _z(avg_pts)
+    team_stats["Z_Last3"] = _z(last3_series)
+    team_stats["Z_Consistency"] = _z(cons_inv)
+    team_stats["Z_Ceiling"] = _z(ceiling)
+
+    # Power score
+    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.2, 0.3, 0.15, 0.20, 0.15
+    team_stats["WinPct"] = win_pct
+    team_stats["PowerScore"] = (
+            W_WIN * team_stats["Z_WinPercentage"]
+            + W_AVG * team_stats["Z_Avg"]
+            + W_LAST3 * team_stats["Z_Last3"]
+            + W_CONS * team_stats["Z_Consistency"]
+            + W_CEIL * team_stats["Z_Ceiling"]
+    )
+
+    # ---- Strength of Schedule (SOS) ----
     sos = build_team_strength(team_stats)
-    sos = compute_sos_by_team(matchups_by_week, sos, df_weekly.get("week").max(), users)
-    sos_df = pd.DataFrame.from_dict(sos, orient='index').reset_index().rename(columns={'index': 'owner'})
-    team_stats = team_stats.merge(sos_df, on='owner', how='left')
-    streaks_df = compute_streaks(df_weekly[df_weekly["finalized"] == True].copy())
-    team_stats = team_stats.merge(streaks_df[df_weekly["finalized"] == True].copy(), on="owner", how="left")
+    last_week = int(df_weekly["week"].max())
+    sos_dict = compute_sos_by_team(matchups_by_week, sos, last_week, users)
+    sos_df = (
+        pd.DataFrame.from_dict(sos_dict, orient="index")
+        .reset_index()
+        .rename(columns={"index": "owner"})
+    )
+    team_stats = team_stats.merge(sos_df, on="owner", how="left")
+
+    # ---- Streaks ----
+    streaks_df = compute_streaks(df_finalized.copy())
+    # just merge streaks_df directly; don't try to index with df_weekly mask
+    team_stats = team_stats.merge(streaks_df, on="owner", how="left")
+
     # Fill empties
     team_stats["StreakType"] = team_stats["StreakType"].fillna("")
     team_stats["StreakLen"] = team_stats["StreakLen"].fillna(0).astype(int)
@@ -539,8 +614,6 @@ def build_week_activity(
         - waiver: {'rid','name','avatar','adds':[players]}
       (player) -> {'name','pos','team'}
     """
-    if players_map is None:
-        players_map = get_players_map()
 
     roster_name, roster_avatar = build_roster_display_maps(league_id)
     txs = fetch_json(f"/league/{league_id}/transactions/{week}") or []
@@ -684,14 +757,45 @@ def to_index(series):
     return 100 + 10 * (series - mu) / sigma
 
 
-def build_team_strength(team_stats: Dict[int, dict]) -> Dict[int, float]:
-    # e.g., weighted PF: 70% season PF/gm + 30% last-3 PF/gm
-    s = {}
-    for rid, t in team_stats.iterrows():
-        pf_gm = t["PF"] / max(1, t["G"])
-        last3 = t["Last3"]
-        s[t["owner"]] = round(0.7 * pf_gm + 0.3 * last3, 2)
-    return s
+def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
+    """
+    Build a simple "team strength" metric per owner for SOS calculations.
+
+    Uses:
+      - PowerScore if available
+      - else WinPct if available
+      - else AVG (points per game)
+    Normalizes everything to 0–1.
+    Returns: { owner_name: strength_float }
+    """
+
+    if "PowerScore" in team_stats.columns:
+        base = team_stats["PowerScore"].astype(float)
+    elif "WinPct" in team_stats.columns:
+        base = team_stats["WinPct"].astype(float)
+    elif "AVG" in team_stats.columns:
+        base = team_stats["AVG"].astype(float)
+    else:
+        # fallback: everyone equal strength
+        base = pd.Series(1.0, index=team_stats.index)
+
+    # normalize to 0..1
+    min_v = float(base.min())
+    max_v = float(base.max())
+    if max_v == min_v:
+        norm = pd.Series(0.5, index=base.index)
+    else:
+        norm = (base - min_v) / (max_v - min_v)
+
+    # map to owner names
+    strength_by_owner: dict[str, float] = {}
+    for idx, row in team_stats.reset_index(drop=True).iterrows():
+        owner = row.get("owner")
+        if owner is None:
+            continue
+        strength_by_owner[owner] = float(norm.iloc[idx])
+
+    return strength_by_owner
 
 
 def compute_sos_by_team(
@@ -1095,6 +1199,7 @@ def render_standings_table(team_stats):
 
     return f"""
         <table class="standings-table">
+          <h2>Standings</h2>
           <thead>
             <tr>
               <th>Rank</th>
@@ -1108,7 +1213,180 @@ def render_standings_table(team_stats):
             </tr>
           </thead>
           <tbody>
-            {''.join(rows)}
+            {''.join(rows[:5])}
           </tbody>
         </table>
     """
+
+
+def render_teams_sidebar(teams: List[dict]) -> str:
+    if not teams:
+        return ""
+
+    # Tabs row
+    pill_buttons = []
+    for idx, t in enumerate(teams):
+        active_class = " active" if idx == 0 else ""
+        label = t.get("username") or t["name"]
+        pill_buttons.append(
+            f"<button class='manager-pill{active_class}' "
+            f"data-team-id='{t['roster_id']}'>{label}</button>"
+        )
+    header_html = "<div class='manager-pills-carousel'><button class='pill-arrow pill-arrow-left' type='button'>&lsaquo;</button> <div class='manager-pills-row'>" + "".join(
+        pill_buttons) + "</div><button class='pill-arrow pill-arrow-right' type='button'>&rsaquo;</button></div>"
+
+    # panels: one per team, only first visible
+    panel_html_parts = []
+    for idx, t in enumerate(teams):
+        active_class = " active" if idx == 0 else ""
+
+        def render_player_list(title: str, players: List[dict], extra_class: str = "") -> str:
+            out = []
+            out.append("<div class='team-section'>")
+            out.append(f"<div class='team-section-title'>{title}</div>")
+            out.append("<div class='player-list'>")
+            if players:
+                for p in players:
+                    row_cls = "player-row"
+                    if extra_class:
+                        row_cls += f" {extra_class}"
+                    pos_badge = ""
+                    if p.get("pos"):
+                        pos_badge = f"<span class='pos-badge {p['pos']}'>{p['pos']}</span>"
+                    nfl = p.get("nfl")
+                    nfl_html = f"<span class='meta'>{nfl}</span>" if nfl else ""
+                    out.append(
+                        f"<div class='{row_cls}'>"
+                        f"{pos_badge}"
+                        f"<span class='pname'>{p['name']}</span>"
+                        f"{nfl_html}"
+                        "</div>"
+                    )
+            else:
+                out.append("<div class='player-row empty'>None</div>")
+            out.append("</div></div>")
+            return "".join(out)
+
+        sections = []
+        sections.append(render_player_list("Starters", t["starters"]))
+        sections.append(render_player_list("Bench", t["bench"]))
+        sections.append(render_player_list("Taxi", t["taxi"], extra_class="taxi"))
+
+        # picks at the bottom
+        picks = t.get("picks") or []
+        picks_out = []
+        picks_out.append("<div class='team-section'>")
+        picks_out.append("<div class='team-section-title'>Picks</div>")
+        picks_out.append("<div class='player-list picks-list'>")
+        if picks:
+            for pk in picks:
+                season = pk.get("season", "")
+                rnd = pk.get("round", "")
+                via = pk.get("original_owner")
+                via_txt = f" (via {via})" if via else ""
+                picks_out.append(
+                    f"<div class='pick-row'>{season} • Round {rnd}{via_txt}</div>"
+                )
+        else:
+            picks_out.append("<div class='player-row empty'>No picks</div>")
+        picks_out.append("</div></div>")
+
+        body_html = (
+                "<div class='team-body'>"
+                + "".join(sections)
+                + "".join(picks_out)
+                + "</div>"
+        )
+
+        panel_html_parts.append(
+            f"<div class='team-panel{active_class}' data-team-id='{t['roster_id']}'>"
+            f"{body_html}"
+            "</div>"
+        )
+
+    panels_html = "<div class='team-panels'>" + "".join(panel_html_parts) + "</div>"
+
+    # whole sidebar card
+    card_html = (
+        "<div class='card teams-card' data-section='overview'>"
+        f"{header_html}"
+        f"{panels_html}"
+        "</div>"
+    )
+    return card_html
+
+
+def build_picks_by_roster(
+        num_future_seasons: int = 3,
+        league: dict = None,
+        rosters: List[dict] = None,
+        traded: List[dict] = None,
+) -> Dict[str, List[dict]]:
+    """
+    Returns:
+      {
+        '1': [ {season, round, original_owner}, ... ],
+        '2': [ ... ],
+        ...
+      }
+
+    - Keys are *current owner* roster_ids (as strings)
+    - `original_owner` is the roster_id that started with the pick
+    """  # can be empty list
+
+    current_season = int(league["season"])
+    num_rounds = int(league["settings"].get("draft_rounds", 4))
+
+    # Base pick pool: everyone owns their own picks for each season/round
+    # We store picks as dicts we can mutate when applying trades.
+    all_picks: List[dict] = []
+
+    roster_ids = [int(r["roster_id"]) for r in rosters]
+
+    for offset in range(num_future_seasons):
+        season = current_season + offset
+        for rid in roster_ids:
+            for rnd in range(1, num_rounds + 1):
+                all_picks.append({
+                    "season": season,
+                    "round": rnd,
+                    "original_roster_id": rid,
+                    "owner_roster_id": rid,  # will change when trades applied
+                })
+
+    # Apply traded picks
+    # Sleeper's traded_picks are for "future" picks, not past drafts
+    for tp in traded:
+        try:
+            season = int(tp["season"])
+            rnd = int(tp["round"])
+            original = int(tp["roster_id"])  # original owner roster_id
+            new_owner = int(tp["owner_id"])  # CURRENT owner roster_id
+        except (KeyError, ValueError, TypeError):
+            continue
+
+        # Find the matching pick in all_picks and update its owner
+        for p in all_picks:
+            if (
+                    p["season"] == season and
+                    p["round"] == rnd and
+                    p["original_roster_id"] == original
+            ):
+                p["owner_roster_id"] = new_owner
+
+    # Group by current owner roster_id
+    picks_by_roster: Dict[str, List[dict]] = {}
+
+    for p in all_picks:
+        owner_key = str(p["owner_roster_id"])
+        picks_by_roster.setdefault(owner_key, []).append({
+            "season": p["season"],
+            "round": p["round"],
+            "original_owner": str(p["original_roster_id"]),
+        })
+
+    # Optional: sort picks by season, round
+    for rid in picks_by_roster:
+        picks_by_roster[rid].sort(key=lambda x: (x["season"], x["round"]))
+
+    return picks_by_roster

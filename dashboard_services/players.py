@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .api import fetch_json, get_rosters, get_users, _avatar_from_users
+from .api import get_rosters, get_users, _avatar_from_users
 
 
 def _first(seq, default=None):
     return seq[0] if isinstance(seq, (list, tuple)) and len(seq) else default
 
 
-def get_players_map() -> dict[str, dict[str, str]]:
-    data = fetch_json("/players/nfl") or {}
+def get_players_map(data: dict = None) -> dict[str, dict[str, str]]:
     mp: dict[str, dict[str, str]] = {}
     for pid, p in data.items():
         name = (

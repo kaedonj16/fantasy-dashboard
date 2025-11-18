@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from .api import get_matchups, get_users, get_rosters, _avatar_from_users, get_nfl_state
-from .utils import fetch_week_from_tank01, get_week_projections_cached, write_json
+from .utils import write_json
+
+STATUS_NOT_STARTED = "not_started"
+STATUS_IN_PROGRESS = "in_progress"
+STATUS_FINAL = "final"
 
 
 def get_owner_id(rosters: Optional[list[dict]] = None, roster_id: Optional[str] = None) -> Optional[str]:
@@ -106,7 +110,7 @@ def render_matchup_carousel_weeks(slides_by_week: dict[int, str]) -> str:
     }})();
     """
     return f"""
-    <div class="card central" data-section='matchups'>
+    <div class="card central" data-section='matchups' style='margin-bottom:30px;'>
       <div class="m-nav">
         <h2>Matchup Preview</h2>
         <div class="m-controls">
@@ -140,190 +144,260 @@ def add_bye_weeks_to_players():
     write_json(player_path, players)
 
 
-def _render_matchup_slide(m: dict, w: int, proj_week: int, season: int) -> str:
+def _render_matchup_slide(
+        m: dict,
+        w: int,
+        proj_week: int,
+        status_by_pid: dict[str, str],
+        projections: dict[str, float],
+        players: dict,
+        teams: dict,
+) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
     """
-    projections = {}
-    players = {}
-    teams = {}
+    # proj flag: you can still use this to change team headers if you want
     proj = w > proj_week
 
-    if proj:
-        projection_path = Path(f"cache/projections_s{season}_w{w}.json")
-        player_path = Path("cache/players_index.json")
-        team_path = Path("cache/teams_index.json")
-        if projection_path.exists():
-            with open(projection_path, 'r') as file:
-                projections = json.load(file)
-        else:
-            get_week_projections_cached(season, w, fetch_week_from_tank01)
-        with open(player_path, 'r') as file:
-            players = json.load(file)
-        with open(team_path, 'r') as file:
-            teams = json.load(file)
+    # ---- helper: per-team live totals ----
+    def _team_live_totals(t: dict) -> tuple[float, float]:
+        """
+        actual_total:
+            sum of all actual points for starters (p['pts'])
+        live_proj_total:
+            - players not started  -> use projection
+            - players started/finished -> use actual
+        """
+        actual_total = 0.0
+        live_proj_total = 0.0
 
-    def team_head(t, proj):
-        points = (f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—")
-        if proj:
-            val = 0.0
-            starters = t['starters']
-            for p in starters:
-                pid = p.get("pid")
-                player = players.get(pid)
-                if player is None:
-                    player = teams.get(pid)
-                if player:
-                    val += projections.get(pid, 0.0)
-                points = f"{val:.2f}"
+        for p in t.get("starters", []):
+            pid = p.get("pid")
+
+            actual = p.get("pts") or 0.0
+            actual_total += actual
+
+            status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+            proj_val = projections.get(pid, 0.0)
+
+            if status == STATUS_NOT_STARTED:
+                live_proj_total += proj_val
+            else:
+                live_proj_total += actual
+
+        return actual_total, live_proj_total
+
+    # ---- 1) Team headers ----
+    def team_head(t, proj_mode: bool):
+        """
+        Left team header.
+
+        proj_mode == False:
+            - behaves like your original: uses t['pts_total']
+        proj_mode == True:
+            - top: actual total (from starters' pts)
+            - bottom: live projection (actual for started/finished, proj for not started)
+        """
         ava = t.get("avatar") or ""
         img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
-        if proj:
+
+        if not proj_mode:
+            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
             return f"""
         <div class="m-team">
           {img}
           <div>
-          <div class="name left">{t['name']}</div>
-          <div>
-          <div>{t['record']} • @{t['username']}</div>
-          </div>
-          </div>
-          <div style="display: grid;grid-template-columns: 1;">
-            <span class="num">0.0</span>
-            <span class="proj" style='opacity: 0.4; text-align:center;'">{points}</span>
-          </div>
-        </div>
-        """
-        else:
-            return f"""
-        <div class="m-team">
-          {img}
-          <div>
-          <div class="name left">{t['name']}</div>
-          <div>
-          <div>{t['record']} • @{t['username']}</div>
-          </div>
+            <div class="name left">{t['name']}</div>
+            <div>{t['record']} • @{t['username']}</div>
           </div>
           <span class="num">{points}</span>
         </div>
         """
 
-    def team_head_2nd(t, proj):
-        points = (f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—")
-        if proj:
-            val = 0.0
-            starters = t['starters']
-            for p in starters:
-                pid = p.get("pid")
-                player = players.get(pid)
-                if player is None:
-                    player = teams.get(pid)
-                if player:
-                    val += projections.get(pid, 0.0)
-                points = f"{val:.2f}"
+        actual_total, live_proj_total = _team_live_totals(t)
+        return f"""
+        <div class="m-team">
+          {img}
+          <div>
+            <div class="name left">{t['name']}</div>
+            <div>{t['record']} • @{t['username']}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1;">
+            <span class="num">{actual_total:.1f}</span>
+            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
+          </div>
+        </div>
+        """
+
+    def team_head_2nd(t, proj_mode: bool):
+        """
+        Right team header – mirrored layout.
+        """
         ava = t.get("avatar") or ""
         img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
 
-        if proj:
+        if not proj_mode:
+            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
             return f"""
         <div class="m-team">
-          <div style="display: grid;grid-template-columns: 1;">
-            <span class="num">0.0</span>
-            <span class="proj" style='opacity: 0.4; text-align:center;'">{points}</span>
-          </div>
-          <div class = "right">
-          <div class="name">{t['name']}</div>
-          <div>@{t['username']} • {t['record']}</div>
+          <span class="num">{points}</span>
+          <div class="right">
+            <div class="name">{t['name']}</div>
+            <div>@{t['username']} • {t['record']}</div>
           </div>
           {img}
         </div>
         """
+
+        actual_total, live_proj_total = _team_live_totals(t)
+        return f"""
+        <div class="m-team">
+          <div style="display:grid;grid-template-columns:1;">
+            <span class="num">{actual_total:.1f}</span>
+            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
+          </div>
+          <div class="right">
+            <div class="name">{t['name']}</div>
+            <div>@{t['username']} • {t['record']}</div>
+          </div>
+          {img}
+        </div>
+        """
+
+    # ---- 2) Per-player bits with status + proj/actual rules ----
+    def player_bits(p, side: str, left_side: bool):
+        if not p:
+            return "", 0.0, None, False  # cell_html, actual_val, proj_val, is_bye
+
+        pid = p.get("pid")
+        name = p.get("name", "")
+        nfl = p.get("nfl", "")
+        pos = p.get("pos")
+
+        # Actual fantasy points (from Sleeper)
+        actual = p.get("pts") or 0.0
+
+        # Projection from Tank01 for this player/team
+        proj_val = None
+        is_bye = False
+
+        player_index = players.get(pid) or teams.get(pid)
+        if player_index:
+            proj_val = projections.get(pid, 0.0)
+            if proj_val == 0.0 and player_index.get("byeWeek") == w:
+                is_bye = True
+
+        # Status
+        status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+        if status == "BYE":
+            is_bye = True
+
+        # Rule 1: not started -> 0.0 actual, muted projection
+        if status == STATUS_NOT_STARTED and not is_bye:
+            display_actual = 0.0
+            display_proj = proj_val if proj_val is not None else 0.0
+
+        # Rule 2: in progress -> only actual
+        elif status == STATUS_IN_PROGRESS and not is_bye:
+            display_actual = actual
+            display_proj = None
+
+        # Rule 3: final (even 0) -> only actual
+        elif status == STATUS_FINAL and not is_bye:
+            display_actual = actual
+            display_proj = None
+
+        # BYE
+        elif is_bye:
+            display_actual = 0.0
+            display_proj = None
+
         else:
-            return f"""
-        <div class="m-team">
-         <span class="num">{points}</span>
-          <div class = "right">
-          <div class="name">{t['name']}</div>
-          <div>@{t['username']} • {t['record']}</div>
-          </div>
-          {img}
-        </div>
-        """
+            # Fallback – treat as not started
+            display_actual = 0.0 if actual is None else actual
+            display_proj = proj_val if proj_val is not None else 0.0
 
-    # Build 10 rows, pairing i-th starter from each side
+        # Player cell HTML
+        if left_side:
+            if is_bye:
+                cell = (
+                    f"<div class='p {side}' style='opacity:0.4;'>"
+                    f"<span class='pos-badge {pos}'>{pos}</span>"
+                    f"<span class='pname'>{name}</span>"
+                    f"<span class='meta'>&nbsp;{nfl}</span>"
+                    f"</div>"
+                )
+            else:
+                cell = (
+                    f"<div class='p {side}'>"
+                    f"<span class='pos-badge {pos}'>{pos}</span>"
+                    f"<span class='pname'>{name}</span>"
+                    f"<span class='meta'>&nbsp;{nfl}</span>"
+                    f"</div>"
+                )
+        else:
+            if is_bye:
+                cell = (
+                    f"<div class='p {side}' style='justify-content:flex-end; opacity:0.4;'>"
+                    f"<span class='meta'>&nbsp;{nfl}</span>"
+                    f"<span class='pname'>{name}</span>"
+                    f" <span class='pos-badge {pos}'>{pos}</span>"
+                    f"</div>"
+                )
+            else:
+                cell = (
+                    f"<div class='p {side}' style='justify-content:flex-end;'>"
+                    f"<span class='meta'>&nbsp;{nfl}</span>"
+                    f"<span class='pname'>{name}</span>"
+                    f" <span class='pos-badge {pos}'>{pos}</span>"
+                    f"</div>"
+                )
 
+        return cell, float(display_actual), display_proj, is_bye
+
+    # ---- 3) Build rows ----
     rows_html = []
-    for L, R in zip_longest(m["left"].get("starters", []),
-                            m["right"].get("starters", []), fillvalue=None):
-        # Helper to format one player cell and score
-        def player_bits(p, side: str, left: bool):
-            if not p:
-                return "", ""
-            name = p.get("name", "")
-            nfl = p.get("nfl", "")
-            pos = p.get("pos")
-            val = p.get("pts")
-            player = None
-            # show **actual points** if present, else projection if present
-            if players != {} and projections != {}:
-                pid = p.get("pid")
-                player = players.get(pid)
-                if player is None:
-                    player = teams.get(pid)
-                if player:
-                    val = projections.get(pid)
-                    if val == 0.0 and player.get("byeWeek") == w:
-                        val = "BYE"
-            # Compute score clearly without nested conditional expressions
-            if isinstance(val, (int, float)):
-                score = f"{val:.1f}"
-            elif player and player.get("byeWeek") == w:
-                score = "BYE"
-            else:
-                score = 0.0
-            # name on the outside, small NFL tag
-            if (left):
-                if proj:
-                    if score == "BYE":
-                        cell = (
-                            f"<div class='p {side}' style='opacity:0.4;><span class='pos-badge {pos}'>{pos}</span><span class='pname'>{name}</span>"
-                            f"<span class='meta'>&nbsp;{nfl}</span></div>")
-                    else:
-                        cell = (
-                            f"<div class='p {side}'><span class='pos-badge {pos}'>{pos}</span><span class='pname'>{name}</span>"
-                            f"<span class='meta'>&nbsp;{nfl}</span></div>")
-                else:
-                    cell = (
-                        f"<div class='p {side}'><span class='pos-badge {pos}'>{pos}</span><span class='pname'>{name}</span>"
-                        f"<span class='meta'>&nbsp;{nfl}</span></div>")
-            else:
-                if score == "BYE":
-                    cell = (
-                        f"<div class='p {side}' style='justify-content: flex-end; opacity:0.4;'><span class='meta'>&nbsp;{nfl}</span>"
-                        f"<span class='pname'>{name}</span> <span class='pos-badge {pos}'>{pos}</span></div>")
-                else:
-                    cell = (
-                        f"<div class='p {side}' style='justify-content: flex-end;'><span class='meta'>&nbsp;{nfl}</span>"
-                        f"<span class='pname'>{name}</span> <span class='pos-badge {pos}'>{pos}</span></div>")
-            return cell, score
 
-        left_cell, left_score = player_bits(L, "left", True)
-        right_cell, right_score = player_bits(R, "right", False)
-        if left_score == "BYE":
-            points = (f"<span class='num mid l' style='opacity: 0.4;'>{left_score}</span>"
-                      f"<span class='num mid r'>{right_score}</span>")
-        elif right_score == "BYE":
-            points = (f"<span class='num mid l'>{left_score}</span>"
-                      f"<span class='num mid r' style='opacity: 0.4;'>{right_score}</span>")
-        elif float(left_score) > float(right_score):
-            points = (f"<span class='num mid l more'>{left_score}</span>"
-                      f"<span class='num mid r'>{right_score}</span>")
-        elif float(left_score) < float(right_score):
-            points = (f"<span class='num mid l'>{left_score}</span>"
-                      f"<span class='num mid r more'>{right_score}</span>")
-        else:
-            points = (f"<span class='num mid l'>{left_score}</span>"
-                      f"<span class='num mid r'>{right_score}</span>")
+    for L, R in zip_longest(m["left"].get("starters", []),
+                            m["right"].get("starters", []),
+                            fillvalue=None):
+        left_cell, left_actual, left_proj, left_is_bye = player_bits(L, "left", True)
+        right_cell, right_actual, right_proj, right_is_bye = player_bits(R, "right", False)
+
+        # Compare actual for highlighting
+        la = 0.0 if left_is_bye else left_actual
+        ra = 0.0 if right_is_bye else right_actual
+
+        left_more = la > ra
+        right_more = ra > la
+
+        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool) -> str:
+            if is_bye:
+                return (
+                    "<div class='num-stack'>"
+                    f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
+                    "</div>"
+                )
+            if proj_val is None:
+                cls = f"num mid {side}" + (" more" if more else "")
+                return (
+                    "<div class='num-stack'>"
+                    f"<span class='{cls}'>{actual_val:.1f}</span>"
+                    "</div>"
+                )
+
+            cls_actual = f"num mid {side}" + (" more" if more else "")
+            return (
+                "<div class='num-stack'>"
+                f"<span class='{cls_actual}'>{actual_val:.1f}</span>"
+                f"<span class='num mid {side} proj' style='opacity:0.4;'>{proj_val:.1f}</span>"
+                "</div>"
+            )
+
+        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more)
+        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more)
+
+        points = f"{left_points_html}{right_points_html}"
 
         rows_html.append(
             f"""<div class="m-row">
@@ -333,6 +407,7 @@ def _render_matchup_slide(m: dict, w: int, proj_week: int, season: int) -> str:
                 </div>"""
         )
 
+    # ---- 4) Final slide HTML ----
     return f"""
     <div class="m-slide">
       <div class="m-head">

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, List
 from zoneinfo import ZoneInfo
 
-from .api import fetch_json
+from .api import get_nfl_players
 from .players import build_roster_map, get_league_rostered_player_ids
 
 INJURY_STATUSES = {"IR", "OUT", "DOUBTFUL", "QUESTIONABLE", "PUP", "NFI", "SUSP"}
@@ -13,12 +13,14 @@ INJURY_STATUSES = {"IR", "OUT", "DOUBTFUL", "QUESTIONABLE", "PUP", "NFI", "SUSP"
 
 def build_injury_report(league_id: str,
                         local_tz: str = "America/New_York",
-                        include_free_agents: bool = False) -> pd.DataFrame:
+                        include_free_agents: bool = False,
+                        players: dict = None,
+                        roster_map: dict = None) -> pd.DataFrame:
     """
     Build an injury table for the league:
       columns: Team, Player, Pos, NFL, Status, Injury, Body, Last Updated
     """
-    players = fetch_json("/players/nfl") or {}
+    players = get_nfl_players()
     roster_map = build_roster_map(league_id)  # roster_id -> Team Name
     rostered = get_league_rostered_player_ids(league_id)
 

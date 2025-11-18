@@ -72,6 +72,30 @@ js = """
       sortSpec = [{col: 2, dir: -1}, {col: 3, dir: -1}];
       applySort();
     })();
+    document.addEventListener("DOMContentLoaded", function () {
+      const tabs = document.querySelectorAll(".team-tab");
+      const panels = document.querySelectorAll(".team-panel");
+    
+      if (!tabs.length) return;
+    
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          const id = tab.getAttribute("data-team-id");
+    
+          tabs.forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+    
+          panels.forEach(p => {
+            if (p.getAttribute("data-team-id") === id) {
+              p.classList.add("active");
+            } else {
+              p.classList.remove("active");
+            }
+          });
+        });
+      });
+    });
+
     </script>
 """
 
@@ -439,12 +463,6 @@ logoCss = """
           width: 100%;
           min-width: 820px;
         }
-        thead th {
-          position: sticky; top: 0; z-index: 2; color: #122d4b;
-          background: #fff; font-weight: 600; text-align: center;
-          padding: 10px 12px; border-bottom: 1px solid #e5e7eb;
-          cursor: pointer; user-select: none;
-        }
         tbody td {
           padding: 10px 12px;
           border-bottom: 1px solid #e5e7eb;
@@ -573,7 +591,7 @@ logoCss = """
         .rank-item .rec   { color: #6b7280; font-variant-numeric: tabular-nums; }
         .rank-item .avatar.sm { vertical-align: middle; }
         .rank-item .power-row {
-          grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 1fr; align-items: center; justify-content: space-between; margin-top: 3px;
+          grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 1fr; align-items: center; justify-content: space-between;
         }
         .rank-item .bar {
           flex: 1; height: 5px; min-width: 140px; margin-top: 8px;
@@ -698,7 +716,7 @@ logoCss = """
           /* each row becomes its own grid */
           grid-auto-rows: minmax(30px, auto);
           row-gap: 6px;
-          height: 375px;
+          height: 450px;
         }
         
         /* A single row: [Left Name] [L Score] [R Score] [Right Name]  */
@@ -973,6 +991,131 @@ logoCss = """
         .card .tab-panel.active {
           display: block;
         }
+        .overview-layout {
+          display: flex;
+          gap: 16px;
+        }
+        
+        .overview-main {
+          flex: 1 1 auto;
+        }
+        
+        .overview-sidebar {
+          flex: 0 0 280px;   /* tweak to match your screenshot */
+        }
+        
+        /* stack on small screens */
+        @media (max-width: 1100px) {
+          .overview-layout {
+            flex-direction: column;
+          }
+          .overview-sidebar {
+            flex: 1 1 auto;
+          }
+        }
+        
+        /* Teams sidebar card styles */
+        .teams-card {
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .manager-pills-row {
+          display: flex;
+          gap: 4px;
+          padding: 4px 6px 6px;
+          overflow-x: auto;
+          white-space: nowrap;
+        }
+        
+        /* little username chips at the top */
+        .manager-pill {
+          border: none;
+          border-radius: 999px;
+          padding: 3px 8px;
+          font-size: 0.7rem;
+          background: rgba(255,255,255,0.06);
+          color: inherit;
+          cursor: pointer;
+        }
+        
+        .manager-pill.active {
+          background: rgba(255,255,255,0.18);
+          font-weight: 600;
+        }
+        
+        .team-panels {
+          position: relative;
+          flex: 1 1 auto;
+        }
+        
+        .team-panel {
+          display: none;
+        }
+        
+        .team-panel.active {
+          display: block;
+        }
+        
+        [data-section="teams-sidebar"] .team-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 4px 10px;
+        }
+        
+        [data-section="teams-sidebar"] .avatar {
+          width: 30px;
+          height: 30px;
+          border-radius: 999px;
+        }
+        
+        .team-name {
+          font-weight: 600;
+          font-size: 0.88rem;
+        }
+        
+        .team-meta {
+          font-size: 0.72rem;
+          opacity: 0.7;
+        }
+        
+        .team-section-title {
+          font-size: 0.7rem;
+          opacity: 0.7;
+          margin-bottom: 2px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        
+        .player-list {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        
+        .player-row {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.78rem;
+        }
+        
+        .player-row.empty {
+          opacity: 0.5;
+          font-style: italic;
+        }
+        
+        .picks-list .pick-row {
+          font-size: 0.75rem;
+        }
+        
+        /* reuse your existing pos-badge styles, but make them small here */
+        [data-section="teams-sidebar"] .pos-badge {
+          font-size: 0.65rem;
+          padding: 1px 5px;
+        }
 
     </style>
 """
@@ -1000,6 +1143,29 @@ js_sort_filter = """
       tbl.tHead.addEventListener('click',(e)=>{if(e.target.tagName!=='TH')return; const col=parseInt(e.target.getAttribute('data-col')); toggle(col,e.shiftKey);});
       apply();
     })();
+    
+    document.addEventListener("DOMContentLoaded", function () {
+      const pills = document.querySelectorAll(".manager-pill");
+      const panels = document.querySelectorAll(".team-panel");
+      if (!pills.length) return;
+    
+      pills.forEach(pill => {
+        pill.addEventListener("click", () => {
+          const id = pill.getAttribute("data-team-id");
+    
+          pills.forEach(p => p.classList.remove("active"));
+          pill.classList.add("active");
+    
+          panels.forEach(panel => {
+            panel.classList.toggle(
+              "active",
+              panel.getAttribute("data-team-id") === id
+            );
+          });
+        });
+      });
+    });
+
     </script>
 """
 
@@ -1472,7 +1638,7 @@ activity_css = """
         .standings-table th {
           text-align: center;
           padding: 6px 4px;
-          color: #94a3b8;
+          color: #122d4b;
           font-weight: 600;
         }
         
@@ -1499,6 +1665,111 @@ activity_css = """
           border-radius: 9999px;
           vertical-align: middle;
           margin-right: 6px;
+        }
+        .num-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .num.proj {
+            font-size: 0.8em;
+            opacity: 0.4;
+        }
+        .team-tabs {
+          display: flex;
+          flex-wrap: nowrap;
+          gap: 6px;
+          margin-bottom: 10px;
+          overflow-x: auto;
+        }
+        
+        .team-tab {
+          padding: 6px 10px;
+          border-radius: 6px;
+          border: none;
+          font-size: 0.85rem;
+          background: rgba(255, 255, 255, 0.05);
+          color: inherit;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        
+        .team-tab.active {
+          background: rgba(255, 255, 255, 0.18);
+          font-weight: 600;
+        }
+        
+        .team-panels {
+          position: relative;
+        }
+        
+        .team-panel {
+          display: none;
+        }
+        
+        .team-panel.active {
+          display: block;
+        }
+        
+        .team-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 6px;
+        }
+        
+        .team-header .avatar {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+        }
+        
+        .team-name {
+          font-weight: 600;
+        }
+        
+        .team-meta {
+          font-size: 0.8rem;
+          opacity: 0.7;
+        }
+        
+        .team-body {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          max-height: 412px;
+          overflow-y: auto;
+        }
+        
+        .team-section-title {
+          font-size: 0.75rem;
+          opacity: 0.7;
+          margin-bottom: 2px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        
+        .player-list {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        
+        .player-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.8rem;
+        }
+        
+        .player-row.empty {
+          opacity: 0.5;
+          font-style: italic;
+        }
+        
+        .picks-list .pick-row {
+          font-size: 0.75rem;
         }
 
 
