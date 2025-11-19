@@ -193,6 +193,7 @@ def matchup_cards_last_week(league_id: str,
           </div>
         </div>
         """)
+
     want_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
     top_by_pos = {}
     for pos in want_positions:
@@ -201,22 +202,39 @@ def matchup_cards_last_week(league_id: str,
 
     return last_week, "".join(cards), top_by_pos
 
+def fantasy_team_for_player(pid: str, rosters: list, roster_map: dict) -> str:
+    """
+    pid: Sleeper player ID as string
+    rosters: list returned by get_rosters()
+    roster_map: maps roster_id -> fantasy team name
+    """
+    for r in rosters:
+        if pid in r.get("players", []):
+            rid = str(r["roster_id"])
+            return roster_map.get(rid, f"Roster {rid}")
 
-def render_top_three(top_by_pos: dict) -> str:
+    return "Free Agent"
+
+
+def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
     def card(pos, rows):
         if not rows:
             return f"<div class='side-card'><h3>{pos}</h3><div class='muted'>No data</div></div>"
         lis = []
         for i, r in enumerate(rows, start=1):
+            team = r.get("nfl") or r.get("team", "")
+            pts = r.get("pts") or r.get("points")
+            if not r.get("owner_id"):
+                owner = fantasy_team_for_player(r['pid'], rosters, roster_map)
             place = "first" if i == 1 else "second" if i == 2 else "third"
             lis.append(
                 f"<div class='side-row'>"
                 f"  <span class='rank rank-{place}'>{i}</span>"
                 f"  <div class='who'>"
                 f"    <div class='name'>{r['name']}</div>"
-                f"    <div class='sub'>{r['nfl']} • {r['owner']}</div>"
+                f"    <div class='sub'>{team} • {owner}</div>"
                 f"  </div>"
-                f"  <div class='pts'>{r['pts']:.1f}</div>"
+                f"  <div class='pts'>{pts:.1f}</div>"
                 f"</div>"
             )
         return f"<div class='side-card'><h3>{pos}</h3>{''.join(lis)}</div>"

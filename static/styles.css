@@ -666,7 +666,6 @@ select {
 table {
   border-collapse: collapse;
   width: 100%;
-  min-width: 820px;
 }
 tbody td {
   padding: 10px 12px;

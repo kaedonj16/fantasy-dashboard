@@ -461,7 +461,6 @@ logoCss = """
         table {
           border-collapse: collapse;
           width: 100%;
-          min-width: 820px;
         }
         tbody td {
           padding: 10px 12px;
@@ -740,7 +739,7 @@ logoCss = """
         .p .pname{ font-weight:600; color: #122d4b; }
         .p .meta{ color:#64748b; font-size:12px; }
         
-        .num{ text-align:center; font-variant-numeric: tabular-nums; min-width: 68px; white-space:nowrap; }
+        .num{ text-align:center; font-variant-numeric: tabular-nums; white-space:nowrap; }
         .num.mid{   
           font-weight: 600;
           font-variant-numeric: tabular-nums;
@@ -1667,7 +1666,7 @@ activity_css = """
           margin-right: 6px;
         }
         .num-stack {
-            display: flex;
+            display: grid;
             flex-direction: column;
             align-items: center;
         }

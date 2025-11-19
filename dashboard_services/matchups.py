@@ -82,33 +82,6 @@ def render_matchup_carousel_weeks(slides_by_week: dict[int, str]) -> str:
         for w in sorted(slides_by_week.keys())
     )
     json_slides = json.dumps({str(k): v for k, v in slides_by_week.items()})
-    # carousel_script = f"""
-    # (function(){{
-    #   const slidesByWeek = {json_slides};
-    #   const weekSel = document.getElementById('mWeek');
-    #   const track   = document.getElementById('mTrack');
-    #   const prevBtn = document.getElementById('mPrev');
-    #   const nextBtn = document.getElementById('mNext');
-    #   function setWeek(w){{
-    #     const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
-    #     track.innerHTML = html;
-    #     idx = 0; cacheSlides(); update();
-    #   }}
-    #   let idx = 0; let slides = [];
-    #   function cacheSlides() {{ slides = track.querySelectorAll('.m-slide'); }}
-    #   function update() {{
-    #     const w = track.clientWidth;
-    #     track.scrollTo({{left: idx * w, behavior: 'smooth'}});
-    #     if (prevBtn) prevBtn.disabled = (idx === 0);
-    #     if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
-    #   }}
-    #   prevBtn && prevBtn.addEventListener('click', ()=>{{ idx = Math.max(0, idx - 1); update(); }});
-    #   nextBtn && nextBtn.addEventListener('click', ()=>{{ idx = Math.min(Math.max(0, slides.length - 1), idx + 1); update(); }});
-    #   window.addEventListener('resize', update);
-    #   weekSel && weekSel.addEventListener('change', (e)=> setWeek(e.target.value));
-    #   cacheSlides(); update();
-    # }})();
-    # """
     carousel_script = f"""
         (function(){{
           const slidesByWeek = {json_slides};
@@ -186,6 +159,8 @@ def render_matchup_carousel_weeks(slides_by_week: dict[int, str]) -> str:
         </div>
         <script>{carousel_script}</script>
         """
+
+    # return f""" <div class="card central" data-section='matchups' style='margin-bottom:30px;'> <div class="m-nav"> <h2>Matchup Preview</h2> <div class="m-controls"> <select id="mWeek" class="search">{opts}</select> <button class="m-btn" id="mPrev">‹ Prev</button> <button class="m-btn" id="mNext">Next ›</button> </div> </div> <div class="m-carousel"> <div class="m-track" id="mTrack"> {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")} </div> </div> </div> <script>{carousel_script}</script> """
 
 
 def add_bye_weeks_to_players():
@@ -433,21 +408,21 @@ def render_matchup_slide(
         def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool) -> str:
             if is_bye:
                 return (
-                    "<div class='num-stack'>"
+                    "<div class='num-stack' style='display:grid'>"
                     f"<span class='num mid {side}' style='opacity:0.4;'>BYE</span>"
                     "</div>"
                 )
             if proj_val is None:
                 cls = f"num mid {side}" + (" more" if more else "")
                 return (
-                    "<div class='num-stack'>"
+                    "<div class='num-stack' style='display:grid'>"
                     f"<span class='{cls}'>{actual_val:.1f}</span>"
                     "</div>"
                 )
 
             cls_actual = f"num mid {side}" + (" more" if more else "")
             return (
-                "<div class='num-stack'>"
+                "<div class='num-stack' style='display:grid'>"
                 f"<span class='{cls_actual}'>{actual_val:.1f}</span>"
                 f"<span class='num mid {side} proj' style='opacity:0.4;'>{proj_val:.1f}</span>"
                 "</div>"

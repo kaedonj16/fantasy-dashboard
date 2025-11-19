@@ -143,7 +143,7 @@ def build_nav(league_id: str, active: str) -> str:
         pill("Dashboard", "page_dashboard", "dashboard"),
         pill("Standings", "page_standings", "standings"),
         pill("Weekly Hub", "page_weekly", "weekly"),
-        pill("Teams", "page_teams", "teams"),
+        pill("Trade Calc", "page_trade", "teams"),
         pill("Activity", "page_activity", "activity"),
         pill("Injuries", "page_injuries", "injuries"),
     ]
@@ -236,7 +236,7 @@ def get_league_ctx_from_cache(league_id: str) -> dict:
     return ctx
 
 
-def render_standings_snapshot(team_stats) -> str:
+def render_standings(team_stats, length) -> str:
     """
     Simple standings snapshot card: top N teams by record / PF.
     Adjust column names if your team_stats schema is different.
@@ -286,9 +286,13 @@ def render_standings_snapshot(team_stats) -> str:
               <td>{row['ros_sos']:.1f}</td>
             </tr>
         """)
-
+    if len(rows) != length:
+        total_rows = rows[:length]
+    else:
+        total_rows = rows
+    central = "central" if length < len(rows) else ""
     return f"""
-    <div class="card central">
+    <div class="card {central}">
         <h2>Standings</h2>
         <table class="standings-table">
           <thead>
@@ -304,7 +308,7 @@ def render_standings_snapshot(team_stats) -> str:
             </tr>
           </thead>
           <tbody>
-            {''.join(rows[:5])}
+            {''.join(total_rows)}
           </tbody>
         </table>
     </div>
@@ -336,7 +340,7 @@ def build_dashboard_body(ctx: dict) -> str:
     matchups_by_week = ctx["matchups_by_week"]
 
     # --- Standings snapshot (top card in main column) ---
-    standings_html = render_standings_snapshot(team_stats)
+    standings_html = render_standings(team_stats, 5)
 
     # --- Finalized games + last_final_week (for proj cutoff) ---
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
@@ -397,87 +401,6 @@ def build_dashboard_body(ctx: dict) -> str:
     """
 
     return body
-
-
-def render_full_standings(team_stats) -> str:
-    """
-    Render a full standings table.
-
-    Tries to be robust to different column names in team_stats.
-    Expected-ish columns:
-      - 'owner' or 'team_name' or 'display_name'
-      - 'record' OR wins/losses/ties
-      - 'pf' or 'points_for'
-      - 'pa' or 'points_against'
-      - 'avg' or 'points_avg'
-      - 'stdev' or 'std'
-    """
-
-    rows = []
-
-    # Sort by Wins, Win%, PF, PA
-    df = team_stats.copy()
-    df["WinPct"] = df["Win%"].astype(float)
-    df = (
-        df.sort_values(
-            by=["Wins", "PF", "PA"],
-            ascending=[False, False, True],  # PA lower is better
-        )
-        .reset_index(drop=True)
-    )
-
-    # Add Rank column (1..N)
-    df["Rank"] = df.index + 1
-
-    for _, row in df.iterrows():
-        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
-        if int(row.get("Ties", 0)):
-            record += f"-{int(row['Ties'])}"
-
-        streak = row.get("Streak", "")
-        avatar = row.get("avatar", "")
-
-        img = (
-            f"<img class='avatar sm' src='{avatar}' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar else ""
-        )
-
-        rows.append(f"""
-                <tr>
-                  <td class="num">{int(row['Rank'])}</td>
-                  <td class="team">{img} {row['owner']}</td>
-                  <td>{record}</td>
-                  <td>{row['PF']:.1f}</td>
-                  <td>{row['PA']:.1f}</td>
-                  <td>{streak}</td>
-                  <td>{row['past_sos']:.1f}</td>
-                  <td>{row['ros_sos']:.1f}</td>
-                </tr>
-            """)
-
-    return f"""
-        <div class="card">
-            <h2>Standings</h2>
-            <table class="standings-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Team</th>
-                  <th>Record</th>
-                  <th>PF</th>
-                  <th>PA</th>
-                  <th>Streak</th>
-                  <th>SOS Past</th>
-                  <th>SOS Future</th>
-                </tr>
-              </thead>
-              <tbody>
-                {''.join(rows)}
-              </tbody>
-            </table>
-        </div>
-        """
 
 
 def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id: str) -> str:
@@ -644,7 +567,6 @@ def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id:
             f"<span class='chip'>PA/G {papg_v:.1f}</span>"
         )
         css_cls = streak_class(row)
-        print(css_cls)
         if streak_chip and css_cls == "streak-hot":
             chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
         elif streak_chip and css_cls == "streak-cold":
@@ -821,7 +743,7 @@ def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
 
-    standings_html = render_full_standings(team_stats)
+    standings_html = render_standings(team_stats, 10)
     power_playoffs_html = render_power_and_playoffs(team_stats, roster_map, ctx["league_id"])
     sidebar_html = render_standings_sidebar(team_stats)
 
@@ -846,8 +768,9 @@ def _render_weekly_top_scorers_for_week(
         league_id: str,
         df_weekly: pd.DataFrame,
         roster_map: dict,
+        rosters: dict,
         players_map: dict,
-        week: int,
+        projections: dict,
 ) -> str:
     """
     Reuse the existing POTW logic, but scoped to a specific week.
@@ -855,20 +778,57 @@ def _render_weekly_top_scorers_for_week(
     We pass a df filtered to that week into _matchup_cards_last_week, so
     whatever it thinks is "last week" becomes this week.
     """
-    week_df = df_weekly[df_weekly["week"] == week].copy()
-    if week_df.empty:
-        # nothing played that week
-        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
-        return render_top_three(empty_by_pos)
+    if not df_weekly.empty and df_weekly["finalized"].all():
+        _week_num, _matchup_html, top_by_pos = matchup_cards_last_week(
+                league_id,
+                df_weekly,
+                roster_map,
+                players_map,
+            )
+        return render_top_three(top_by_pos, rosters, roster_map)
 
-    _week_num, _matchup_html, top_by_pos = matchup_cards_last_week(
-        league_id,
-        week_df,
-        roster_map,
-        players_map,
-    )
-    # ignore matchup_html here – Weekly Hub already has its own matchup view
-    return render_top_three(top_by_pos)
+    # --------------------------------------------
+    # CASE 2: Week not finalized → build projected POTW
+    # --------------------------------------------
+    if projections is None:
+        # nothing we can do → empty shells
+        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+        return render_top_three(empty_by_pos, rosters, roster_map)
+
+    # Build projection-based player list
+    # projections is assumed:  { pid(str): float_points, ... }
+    proj_rows = []
+    for pid, val in projections.items():
+
+        p = players_map.get(str(pid))
+        if not p:
+            continue
+
+        pos = p.get("position") or p.get("pos")
+        if pos not in ["QB","RB","WR","TE","K","DEF"]:
+            continue
+
+        proj_rows.append({
+            "pid": pid,
+            "name": p.get("name","Unknown"),
+            "pos": pos,
+            "team": p.get("team",""),
+            "points": float(val),
+        })
+
+    if not proj_rows:
+        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+        return render_top_three(empty_by_pos, rosters, roster_map)
+
+    # Group into top-3 per position
+    top_by_pos = {pos: [] for pos in ["QB","RB","WR","TE","K","DEF"]}
+
+    for pos in top_by_pos.keys():
+        filtered = [r for r in proj_rows if r["pos"] == pos]
+        filtered = sorted(filtered, key=lambda r: r["points"], reverse=True)
+        top_by_pos[pos] = filtered[:3]
+
+    return render_top_three(top_by_pos, rosters, roster_map)
 
 
 def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
@@ -981,11 +941,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     roster_map = ctx["roster_map"]
     players_map = ctx["players_map"]
     current_week = ctx["current_week"]
-    status_by_pid = ctx["status_by_pid"]
-    projections = ctx["projections"]
-    players = ctx["proj_players"]
-    teams = ctx["proj_teams"]
-    matchups_by_week = ctx["matchups_by_week"]
+    current_season = ctx["current_season"]
+    players_index = ctx["players_index"]
+    teams_index = ctx["teams_index"]
+    rosters = ctx["rosters"]
 
     weeks = sorted(df_weekly["week"].unique())
     if not weeks:
@@ -997,9 +956,21 @@ def build_weekly_hub_body(ctx: dict) -> str:
     else:
         last_final_week = current_week
 
+    status_by_pid = build_status_for_week(
+        current_season,
+        current_week,
+        players_index,
+        teams_index,
+    )
+
     default_week = current_week if current_week in weeks else weeks[-1]
 
-    # --- ALL matchup previews per week (so carousel can scroll) ---
+    projections, players, teams = load_week_projection_bundle(current_season, current_week)
+
+    matchups_by_week = build_matchups_by_week(
+        league_id, list(range(1, 18)), roster_map, players_map
+    )
+
     slides_by_week: dict[int, str] = {
         w: "".join(
             render_matchup_slide(
@@ -1036,8 +1007,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
             league_id,
             df_weekly,
             roster_map,
+            rosters,
             players_map,
-            w,
+            projections
         )
         highlights_html = _render_weekly_highlights(df_weekly, w)
 
@@ -1070,7 +1042,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
             </div>
           </div>
         </div>
-
         <div class="week-main-panels">
           {''.join(main_panels)}
         </div>
@@ -1112,7 +1083,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
     </script>
     """
 
-
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
     # grab context (this will use cache or rebuild if expired)
@@ -1135,8 +1105,8 @@ def page_weekly(league_id):
     return render_page("Weekly Hub", league_id, "weekly", body)
 
 
-@app.route("/league/<league_id>/teams")
-def page_teams(league_id):
+@app.route("/league/<league_id>/trade")
+def page_trade(league_id):
     ctx = get_league_ctx_from_cache(league_id)
     body = """
     <div class="overview-main">

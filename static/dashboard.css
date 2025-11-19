@@ -1,3 +1,19 @@
+@media (max-width: 1600px) {
+    html, body { zoom: 0.9; }
+}
+
+@media (max-width: 1400px) {
+    html, body { zoom: 0.8; }
+}
+
+@media (max-width: 1200px) {
+    html, body { zoom: 0.7; }
+}
+
+@media (max-width: 1000px) {
+    html, body { zoom: 0.6; }
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
@@ -955,7 +971,7 @@ tbody tr:nth-child(even) { background: #f8fafc; }
   /* each row becomes its own grid */
   grid-auto-rows: minmax(30px, auto);
   row-gap: 6px;
-  height: 450px;
+  height: 570px;
 }
 
 /* A single row: [Left Name] [L Score] [R Score] [Right Name]  */
@@ -1301,9 +1317,9 @@ text-transform: uppercase;
 
 .recap-grid{display:grid;gap:16px}
 .sidebar{display:grid;gap:12px;align-content:start}
-.side-card{background:white;border:1px solid var(--grid);border-radius:16px;padding:12px}
-.side-card h3{margin:0 0 6px;font-size:16px;font-weight:800}
-.side-row{display:grid;grid-template-columns:28px 1fr 60px;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #243043}
+.side-card{background:white;border:1px solid var(--grid);border-radius:16px;padding:12px;display:grid;}
+.side-card h3{margin:0 0 6px;font-size:16px;font-weight:800;}
+.side-row{display:grid;grid-template-columns:28px 1fr 40px;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #243043}
 .side-row:first-of-type{border-top:none}
 .sidebar-grid {
   display: grid;
@@ -1969,7 +1985,7 @@ tbody tr:nth-child(even){ background:var(--row); }
   flex-direction: column;
   gap: 20px;
   position: sticky;
-  top: 80px;
+  top: 10px;
   height: fit-content;
 }
 
