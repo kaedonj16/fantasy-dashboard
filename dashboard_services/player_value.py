@@ -179,7 +179,7 @@ def build_tank01_usage_map_from_players_index(
 
     result: Dict[str, Dict[str, Any]] = {}
 
-    for sleeper_id, meta in players_index.items():
+    for sleeper_id, meta in list(players_index.items())[:800]:
         tank_id = meta.get("tankId")
         name = meta.get("name") or f"Player {sleeper_id}"
 
@@ -208,6 +208,9 @@ def build_tank01_usage_map_from_players_index(
                 "std_ppg": 0.0,
             }
 
+        trade_value = compute_trade_value_for_player(name, metrics)
+        metrics["trade_value"] = trade_value
+
         if per_name:
             key = name
             result[key] = metrics
@@ -219,12 +222,129 @@ def build_tank01_usage_map_from_players_index(
                 "team": meta.get("team"),
                 "metrics": metrics,
             }
-
     return result
 
 def get_player_usage(tank_player_id: str, season: Optional[int] = None):
     gamelogs = get_tank01_player_gamelogs(tank_player_id, season)
     return compute_usage_from_tank_body(gamelogs)
+
+
+from typing import Dict, Any, Optional
+
+
+def compute_trade_value_for_player(
+    name: str,
+    metrics: Dict[str, Any],
+    *,
+    weights: Optional[Dict[str, float]] = None,
+) -> float:
+    """
+    Compute a cross-positional trade value for a player using Tank01 usage metrics.
+
+    Assumes `metrics` looks like what `_aggregate_player_games` produces, e.g.:
+
+        {
+          "games": 11,
+          "avg_off_snap_pct": 0.78,
+          "avg_off_snaps": 52.3,
+          "avg_targets": 4.2,
+          "avg_receptions": 3.5,
+          "avg_rec_yards": 47.1,
+          "avg_rec_tds": 0.4,
+          "avg_carries": 16.1,
+          "avg_rush_yards": 72.3,
+          "avg_rush_tds": 0.6,
+          "ppr_ppg": 19.3,
+          "half_ppr_ppg": 17.0,
+          "std_ppg": 6.4,
+        }
+
+    The returned value is a single float (roughly 0–100) that you can use in your
+    trade calculator. Higher = more valuable.
+    """
+
+    # Default weights tuned for a 0.5–1.0 PPR style league
+    default_weights = {
+        "ppr_weight": 10.0,        # how strongly to weight PPR PPG
+        "snap_pct_weight": 50.0,   # weight for % of offensive snaps
+        "volume_weight": 1.5,      # weight for total touches (carries + targets)
+        "scale": 0.25,             # final scaling factor to bring into ~0–100
+    }
+
+    if weights is None:
+        weights = default_weights
+    else:
+        # Merge user-provided weights over defaults
+        merged = default_weights.copy()
+        merged.update(weights)
+        weights = merged
+
+    games = float(metrics.get("games", 0) or 0)
+    ppr_ppg = float(
+        metrics.get("ppr_ppg")
+        or metrics.get("half_ppr_ppg")
+        or 0.0
+    )
+
+    avg_off_snap_pct = float(metrics.get("avg_off_snap_pct", 0.0) or 0.0)
+    avg_off_snaps = float(metrics.get("avg_off_snaps", 0.0) or 0.0)
+    avg_targets = float(metrics.get("avg_targets", 0.0) or 0.0)
+    avg_carries = float(metrics.get("avg_carries", 0.0) or 0.0)
+    std_ppg = float(metrics.get("std_ppg", 0.0) or 0.0)
+
+    # ---------- 1) Basic production backbone (PPR points per game) ----------
+    base_score = ppr_ppg * weights["ppr_weight"]
+
+    # ---------- 2) Usage & opportunity ----------
+    # Total opportunities per game (targets + carries)
+    total_volume = avg_targets + avg_carries
+
+    # Snap pct tells you role security; volume tells you weekly opportunity.
+    usage_score = (
+        avg_off_snap_pct * weights["snap_pct_weight"]
+        + total_volume * weights["volume_weight"]
+    )
+
+    # ---------- 3) Consistency / volatility penalty ----------
+    # If std is very high relative to PPR, the player is boom/bust.
+    # If std is low, the player is stable.
+    if ppr_ppg > 0:
+        volatility_ratio = std_ppg / ppr_ppg
+    else:
+        # If they don't score, don't let std blow things up
+        volatility_ratio = 1.0
+
+    # Clamp the ratio to something sane
+    # ~0.3–0.6 => solid consistency; >1.0 => very volatile
+    volatility_ratio = max(0.3, min(volatility_ratio, 1.8))
+
+    # Turn that into a multiplier in roughly [0.6, 1.2]
+    # Lower volatility_ratio -> higher multiplier
+    consistency_multiplier = 1.5 - (volatility_ratio * 0.5)
+    # Safety clamp
+    consistency_multiplier = max(0.6, min(consistency_multiplier, 1.2))
+
+    # ---------- 4) Sample size penalty (small number of games) ----------
+    # Under 4 games: scale down linearly. 4+ games = full strength.
+    if games <= 0:
+        sample_multiplier = 0.0
+    else:
+        sample_multiplier = min(1.0, games / 4.0)
+
+    # ---------- 5) Combine everything ----------
+    raw_value = (base_score + usage_score) * consistency_multiplier * sample_multiplier
+
+    # ---------- 6) Scale into a nice 0–100 range ----------
+    scaled_value = raw_value * weights["scale"]
+
+    # Hard clamp to keep things tidy
+    if scaled_value < 0:
+        scaled_value = 0.0
+    elif scaled_value > 100:
+        scaled_value = 100.0
+
+    # Round for display
+    return round(scaled_value, 2)
 
 
 def compute_usage_from_tank_body(body):

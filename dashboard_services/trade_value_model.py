@@ -20,6 +20,7 @@ class PlayerFeatures:
 
     team: Optional[str]  # "KC", "DAL", etc.
     projected_points: float  # season-long or ROS projection in your scoring
+    trade_value: float
 
     # Usage / utilization metrics (all as 0.0–1.0 fractions when possible)
     snap_share: Optional[float] = None         # % of team offensive snaps
@@ -211,52 +212,123 @@ def _risk_score(features: PlayerFeatures) -> float:
 
 # ---------- 4. Public API ----------
 
+def _z_score(x: Optional[float], mean: float, std: float) -> float:
+    if x is None or std <= 0:
+        return 0.0
+    return (x - mean) / std
+
+
+def _logistic(x: float) -> float:
+    # squashes roughly -2..+2 into ~0.12..0.88
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def _age_score(features: "PlayerFeatures") -> float:
+    """
+    Light positional age curve. Not a giant buff, just realistic
+    lifespan differences (WR > RB shelf life).
+    """
+    age = features.age
+    pos = features.position
+
+    if age is None:
+        return 1.0
+
+    # You can tweak these, but they're intentionally not huge
+    if pos in ("WR", "TE"):
+        if age <= 24:
+            return 1.00
+        elif age <= 27:
+            return 0.95
+        elif age <= 30:
+            return 0.85
+        else:
+            return 0.75
+
+    if pos == "RB":
+        if age <= 23:
+            return 1.00
+        elif age <= 26:
+            return 0.85
+        else:
+            return 0.70
+
+    # QB / others
+    if age <= 25:
+        return 0.90
+    elif age <= 30:
+        return 1.00
+    elif age <= 34:
+        return 0.90
+    else:
+        return 0.75
+
+
 def compute_player_value(
-    features: PlayerFeatures,
-    prod_range_by_pos: Dict[str, Tuple[float, float]],
+    features: "PlayerFeatures",
+    pos_dists: Dict[str, PosDistribution],
     *,
-    custom_position_weights: Optional[Dict[str, Dict[str, float]]] = None,
+    global_scale: float = 100.0,
 ) -> float:
     """
-    Compute a dynasty-style trade value for a single player.
+    Compute a dynasty trade value for a player based on:
+    - Stats normalized vs *same-position* peers (proj, ppr_ppg, snap share)
+    - Light age curve by position
+    - No big manual positional buff
 
-    - features: PlayerFeatures for that player
-    - prod_range_by_pos: precomputed production min/max for normalization
-    - custom_position_weights: optional override of POSITION_WEIGHTS
-
-    Returns a numeric value (e.g., 0–150) suitable for trade comparisons.
+    Returns a 0–global_scale number.
     """
     pos = features.position
-    pos_weights = (custom_position_weights or POSITION_WEIGHTS).get(pos, POSITION_WEIGHTS["WR"])
-    scale = BASE_SCALE_BY_POSITION.get(pos, 110.0)
+    dist = pos_dists.get(pos)
+    if not dist:
+        return 0.0
 
-    prod_component = _production_score(features, prod_range_by_pos)   # 0–1
-    usage_component = _usage_score(features)                          # 0–1
-    age_component = _age_score(features)                              # ~0.7–1.0
-    situation_component = _situation_score(features)                  # 0–1
-    risk_component = _risk_score(features)                            # 0.7–1.0
+    proj = float(features.projected_points or 0.0)
+    ppr_ppg = float(getattr(features, "ppr_ppg", 0.0) or 0.0)
+    snap_share = float(features.snap_share or 0.0)
 
-    # Weighted linear combo
+    # --- Z-scores within position ---
+    proj_z = _z_score(proj, dist.proj_mean, dist.proj_std)
+    ppr_z = _z_score(ppr_ppg, dist.ppr_mean, dist.ppr_std)
+    snap_z = _z_score(snap_share, dist.snap_mean, dist.snap_std)
+
+    # --- Combine into production/usage components ---
+    # Production “AI-ish” combo: projected points + historical ppr
+    prod_z = 0.6 * proj_z + 0.4 * ppr_z
+    usage_z = snap_z
+
+    prod_score = _logistic(prod_z)   # 0–1
+    usage_score = _logistic(usage_z) # 0–1
+    age_score = _age_score(features) # ~0.7–1.0
+
+    # You can tune these weights:
+    # - prod_score: how good they are when on the field
+    # - usage_score: how locked-in their role is
+    # - age_score: how safe their value is long-term
     score_0_1 = (
-        pos_weights["prod"] * prod_component +
-        pos_weights["usage"] * usage_component +
-        pos_weights["age"] * age_component +
-        pos_weights["situation"] * situation_component +
-        pos_weights["risk"] * risk_component
+        0.55 * prod_score +
+        0.30 * usage_score +
+        0.15 * age_score
     )
 
-    # Clamp just in case and scale to "trade value" range
     score_0_1 = max(0.0, min(1.0, score_0_1))
-    return score_0_1 * scale
+    return round(score_0_1 * global_scale, 2)
 
 
-def build_value_table(players: List[PlayerFeatures]) -> Dict[str, float]:
+
+def build_value_table(
+    players: List[PlayerFeatures],
+    pos_dists: Dict[str, PosDistribution]
+) -> Dict[str, float]:
     """
-    Given a list of PlayerFeatures (for your whole player pool or league),
-    return a {player_id: value} mapping.
+    Given a list of PlayerFeatures and the computed position distributions,
+    return a {player_id: trade_value} mapping.
     """
-    prod_range_by_pos = _production_scores_by_position(players)
     table: Dict[str, float] = {}
+
     for p in players:
-        table[p.player_id] = compute_player_value(p, prod_range_by_pos)
+        value = compute_player_value(p, pos_dists)
+        table[p.player_id] = value
+
     return table
+

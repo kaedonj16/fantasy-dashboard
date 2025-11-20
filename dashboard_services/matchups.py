@@ -120,7 +120,7 @@ def render_matchup_carousel_weeks(slides_by_week: dict[int, str], dashboard: boo
       }}
 
       prevBtn && prevBtn.addEventListener('click', () => {{
-        idx = Math.max(0, idx - 1);
+        idx = Math.max(0, idx - 1); 
         update();
       }});
 

@@ -38,22 +38,41 @@ def _load_usage_from_disk(season: int) -> Optional[Dict[str, Any]]:
         data = payload.get("data")
         if ts is None or data is None:
             return None
-        # If it’s older than TTL, treat as expired
+
+        # TEMP: log what we actually read
+        print(f"[usage_cache] Loaded disk cache from {os.path.abspath(path)} with {len(data)} players")
+
+        # If you want to force rebuild while debugging, just comment this TTL block:
         if time.time() - ts > USAGE_CACHE_TTL:
+            print("[usage_cache] Disk cache expired, will rebuild")
             return None
+
         return payload
-    except Exception:
+    except Exception as e:
+        print(f"[usage_cache] Failed to load disk cache: {e!r}")
         return None
+
 
 
 def _save_usage_to_disk(season: int, ts: float, data: Dict[str, Any]) -> None:
     path = _usage_cache_path(season)
+    abs_path = os.path.abspath(path)
+    print(f"[usage_cache] Writing usage cache to {abs_path} with {len(data)} players")
+
     payload = {"ts": ts, "data": data}
+
+    # Optional: sanity check a couple of keys so you don't spam the logs
+    sample_keys = list(data.keys())[:5]
+    print(f"[usage_cache] Sample players in payload: {sample_keys}")
+
     try:
         with open(path, "w") as f:
-            json.dump(payload, f)
+            json.dump(payload, f, indent=2)
+            f.flush()
+        print(f"[usage_cache] Successfully wrote cache file to {abs_path}")
     except Exception as e:
-        print(f"[usage_cache] Failed to write disk cache: {e}")
+        print(f"[usage_cache] Failed to write disk cache to {abs_path}: {e!r}")
+
 
 
 def get_usage_map_for_season(season: int) -> Dict[str, Dict[str, Any]]:

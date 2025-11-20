@@ -206,18 +206,26 @@ class Tank01Error(Exception):
     pass
 
 
-def get_tank01_player_gamelogs(tank_player_id: str, season: Optional[int] = None) -> List[Dict[str, Any]]:
+def get_tank01_player_gamelogs(
+    tank_player_id: str,
+    season: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
-    Returns a list of Tank01 game log objects for a given player.
-    Safely handles cases where Tank01 returns a string instead of a list.
+    Call Tank01 and return a list of game dicts for a given player.
+
+    Normalizes Tank01's body which may be:
+      - a list of games, or
+      - a dict keyed by gameId -> gameDict
     """
 
     if not TANK01_API_KEY:
         raise Tank01Error("TANK01_API_KEY environment variable is not set.")
 
-    url = f"{BASE}/getNFLGamesForPlayer"  # <-- adjust if needed
+    url = f"{BASE}/getNFLGamesForPlayer"  # or whatever your real endpoint is
 
-    querystring = {"playerID": str(tank_player_id)}
+    querystring: Dict[str, Any] = {
+        "playerID": str(tank_player_id),
+    }
     if season is not None:
         querystring["season"] = str(season)
 
@@ -227,24 +235,31 @@ def get_tank01_player_gamelogs(tank_player_id: str, season: Optional[int] = None
     }
 
     resp = requests.get(url, headers=headers, params=querystring, timeout=20)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        raise Tank01Error(f"Tank01 API error {resp.status_code}: {resp.text[:200]}")
 
     data = resp.json()
+    status_code = data.get("statusCode")
+    if status_code != 200:
+        raise Tank01Error(f"Tank01 returned statusCode={status_code}: {data}")
 
-    if data.get("statusCode") != 200:
-        # Log but do NOT hard-crash the pipeline
-        print(f"[Tank01] Non-200 status for player {tank_player_id}: {data}")
-        return []
+    raw_body = data.get("body") or {}
 
-    body = data.get("body", [])
+    games: List[Dict[str, Any]] = []
 
-    # ---- SAFETY CHECK (fixes your JSN error) ----
-    if not isinstance(body, list):
-        print(f"[Tank01] Unexpected body type for {tank_player_id}: {type(body)} -> {body}")
-        return []
-    # --------------------------------------------
+    if isinstance(raw_body, list):
+        # Already list of game dicts
+        games = [g for g in raw_body if isinstance(g, dict)]
+    elif isinstance(raw_body, dict):
+        # Dict keyed by gameId -> gameDict
+        games = [g for g in raw_body.values() if isinstance(g, dict)]
+    else:
+        # Truly weird shape
+        print(
+            f"[Tank01] Unexpected body type for {tank_player_id}: "
+            f"{type(raw_body)} -> {raw_body}"
+        )
+        games = []
 
-    # Make sure each entry is a dict
-    cleaned = [g for g in body if isinstance(g, dict)]
+    return games
 
-    return cleaned
