@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 
-from .api import get_matchups, get_users, get_rosters, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json
+from .api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json
 from .matchups import build_matchup_preview
 from .players import build_roster_display_maps
 from .styles import recap_css, tickerCss
-from .utils import safe_owner_name, path_week_proj, get_week_projections_cached, fetch_week_from_tank01
+from .utils import safe_owner_name, path_week_proj, get_week_projections_cached, fetch_week_from_tank01, \
+    path_week_schedule, get_week_schedule_cached, get_nfl_games_for_week
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -64,15 +65,15 @@ def render_weekly_highlight_ticker(high: dict, week: int) -> str:
 def matchup_cards_last_week(league_id: str,
                             df_weekly: pd.DataFrame,
                             roster_map: dict,
-                            players_map: dict) -> tuple[int, str, dict]:
+                            players_map: dict,
+                            rosters: list,
+                            users: list) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
       top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to 3 ], ...}
     """
     last_week = int(df_weekly["week"].max())
     raw = get_matchups(league_id, last_week) or []
-    users = get_users(league_id)
-    rosters = get_rosters(league_id)
 
     # group rows per matchup_id
     by_mid = defaultdict(list)
@@ -202,6 +203,7 @@ def matchup_cards_last_week(league_id: str,
 
     return last_week, "".join(cards), top_by_pos
 
+
 def fantasy_team_for_player(pid: str, rosters: list, roster_map: dict) -> str:
     """
     pid: Sleeper player ID as string
@@ -247,13 +249,16 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
 def render_week_recap_tab(league_id: str,
                           df_weekly: pd.DataFrame,
                           roster_map: dict,
-                          players_map: dict) -> str:
+                          players_map: dict,
+                          rosters: list,
+                          users: list,
+                          ) -> str:
     """
     Returns a single <div class='card' data-section='recap'> ... </div> block
     that you can insert into your main page (no new page).
     """
     week, matchup_html, top_by_pos = matchup_cards_last_week(
-        league_id, df_weekly, roster_map, players_map
+        league_id, df_weekly, roster_map, players_map, rosters, users
     )
 
     sidebar_html = render_top_three(top_by_pos)
@@ -306,7 +311,7 @@ def build_tables(
 
     # Pre-build matchups_by_week for SOS later
     matchups_by_week = build_matchups_by_week(
-        league_id, list(range(1, 18)), roster_map, players
+        league_id, range(1, 18), roster_map, players
     )
 
     # ---- Owner → Avatar URL ----
@@ -1413,7 +1418,7 @@ def build_picks_by_roster(
     return picks_by_roster
 
 
-def load_week_projection_bundle(season: int, w: int):
+def load_week_projection(season: int, w: int):
     # projections
     proj_path = Path(path_week_proj(season, w))
     if not proj_path.exists():
@@ -1422,12 +1427,15 @@ def load_week_projection_bundle(season: int, w: int):
     with open(proj_path, "r", encoding="utf-8") as f:
         projections = json.load(f)
 
-    # players / teams index
-    player_path = Path("cache/players_index.json")
-    team_path = Path("cache/teams_index.json")
-    with open(player_path, "r", encoding="utf-8") as f:
-        players = json.load(f)
-    with open(team_path, "r", encoding="utf-8") as f:
-        teams = json.load(f)
+    return projections
 
-    return projections, players, teams
+def load_week_schedule(season: int, w: int):
+    # projections
+    proj_path = Path(path_week_schedule(season, w))
+    if not proj_path.exists():
+        get_week_schedule_cached(season, w, get_nfl_games_for_week)
+
+    with open(proj_path, "r", encoding="utf-8") as f:
+        projections = json.load(f)
+
+    return projections

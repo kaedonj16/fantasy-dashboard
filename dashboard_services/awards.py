@@ -66,7 +66,7 @@ def highest_single_game_points(league_id: str,
     roster_map = build_roster_map(league_id)
     best = ["", 0.0, "", "", "", ""]
 
-    for w in weeks:
+    for w in range(1, weeks):
         # Sleeper endpoint: /league/{league_id}/matchups/{week}
         matchups = get_matchups(league_id, w) or []
         for row in matchups:
@@ -162,7 +162,7 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
             cons.append((t, float(pts.std(ddof=0)), int(len(pts))))
     d["most_consistent"] = min(cons, key=lambda x: x[1]) if cons else None
 
-    best_started = highest_single_game_points(league_id, players_map, weeks=range(1, 15))
+    best_started = highest_single_game_points(league_id, players_map, weeks=18)
     d["highest_player"] = best_started
 
     return d

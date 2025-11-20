@@ -151,9 +151,8 @@ def get_traded_picks(league_id: str) -> List[dict]:
 
 @ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
-    url = f"https://{TANK01_HOST}/getNFLGamesForWeek"
+    url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}
-
     resp = requests.get(url, headers=_headers(TANK01_API_KEY), params=params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
@@ -201,3 +200,51 @@ def ttl_cache(ttl: int = 300):
         return wrapper
 
     return decorator
+
+
+class Tank01Error(Exception):
+    pass
+
+
+def get_tank01_player_gamelogs(tank_player_id: str, season: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Returns a list of Tank01 game log objects for a given player.
+    Safely handles cases where Tank01 returns a string instead of a list.
+    """
+
+    if not TANK01_API_KEY:
+        raise Tank01Error("TANK01_API_KEY environment variable is not set.")
+
+    url = f"{BASE}/getNFLGamesForPlayer"  # <-- adjust if needed
+
+    querystring = {"playerID": str(tank_player_id)}
+    if season is not None:
+        querystring["season"] = str(season)
+
+    headers = {
+        "x-rapidapi-key": TANK01_API_KEY,
+        "x-rapidapi-host": TANK01_HOST,
+    }
+
+    resp = requests.get(url, headers=headers, params=querystring, timeout=20)
+    resp.raise_for_status()
+
+    data = resp.json()
+
+    if data.get("statusCode") != 200:
+        # Log but do NOT hard-crash the pipeline
+        print(f"[Tank01] Non-200 status for player {tank_player_id}: {data}")
+        return []
+
+    body = data.get("body", [])
+
+    # ---- SAFETY CHECK (fixes your JSN error) ----
+    if not isinstance(body, list):
+        print(f"[Tank01] Unexpected body type for {tank_player_id}: {type(body)} -> {body}")
+        return []
+    # --------------------------------------------
+
+    # Make sure each entry is a dict
+    cleaned = [g for g in body if isinstance(g, dict)]
+
+    return cleaned

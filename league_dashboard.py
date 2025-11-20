@@ -46,7 +46,7 @@ from dashboard_services.awards import compute_weekly_highlights, compute_awards_
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
 from dashboard_services.matchups import render_matchup_carousel_weeks, render_matchup_slide
 from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, playoff_bracket, load_week_projection_bundle
+from dashboard_services.service import build_tables, playoff_bracket, load_week_schedule
 from dashboard_services.service import render_weekly_highlight_ticker, render_week_recap_tab, \
     build_week_activity, render_standings_table, build_matchups_by_week
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
@@ -298,9 +298,10 @@ def build_interactive_site(df_weekly: pd.DataFrame,
             f"<span class='chip'>PF/G {pfpg.iloc[i + 3]:.1f}</span>"
             f"<span class='chip'>PA/G {papg.iloc[i + 3]:.1f}</span>"
         )
-        if streak_chip:
-            chips_html += f"<span class='chip chip-streak'>{streak_chip}</span>"
+        chips_html += f"<span class='chip chip-streak'>{streak_chip}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_val:+.1f}</span>"
+        if streak_chip:
+            pass
         avatar_url = row.get("avatar")
         img = f"<img class='avatar sm' src='{avatar_url}' onerror=\"this.style.display='none'\">" if avatar_url else ""
         css_cls = streak_class(row)
@@ -766,7 +767,7 @@ def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], t
                                     players=players_map, roster_map=roster_map)
 
     # after df_weekly/team_stats are computed:
-    projections, players, teams = load_week_projection_bundle(current_season, current_week)
+    projections, players, teams = load_week_schedule(current_season, current_week)
     recap_html = render_week_recap_tab(
         league_id, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
     )
@@ -778,7 +779,7 @@ def generate_dashboard(league_id: str, rosters: list[dict], users: list[dict], t
                                  current_season, projections, players, teams) for
             m in
             matchups_by_week.get(w, []))
-        for w in weeks
+        for w in range(1, weeks)
     }
     matchup_html = render_matchup_carousel_weeks(slides_by_week)
 
@@ -827,7 +828,7 @@ def main():
                                       players_map)
     injury_df = build_injury_report(args.league, local_tz="America/New_York", include_free_agents=False,
                                     players=players_map, roster_map=roster_map)
-    projections, players, teams = load_week_projection_bundle(current_season, current_week)
+    projections, players, teams = load_week_schedule(current_season, current_week)
     recap_html = render_week_recap_tab(
         args.league, df_weekly[df_weekly["finalized"] == True].copy(), roster_map, players_map
     )

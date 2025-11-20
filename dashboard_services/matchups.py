@@ -76,89 +76,82 @@ def build_matchup_preview(league_id: str, week: int, roster_map: Dict[str, str],
     return out[:5]
 
 
-def render_matchup_carousel_weeks(slides_by_week: dict[int, str]) -> str:
-    opts = "".join(
-        f"<option value='{w}'{' selected' if w == get_nfl_state().get('week') else ''}>Week {w}</option>"
-        for w in sorted(slides_by_week.keys())
-    )
+def render_matchup_carousel_weeks(slides_by_week: dict[int, str], dashboard: bool) -> str:
     json_slides = json.dumps({str(k): v for k, v in slides_by_week.items()})
     carousel_script = f"""
-        (function(){{
-          const slidesByWeek = {json_slides};
-          // Use global hubWeek if present; fall back to mWeek for other pages
-          const weekSel = document.getElementById('hubWeek') || document.getElementById('mWeek');
-          const track   = document.getElementById('mTrack');
-          const prevBtn = document.getElementById('mPrev');
-          const nextBtn = document.getElementById('mNext');
+    (function(){{
+      const slidesByWeek = {json_slides};
+      const weekSel = document.getElementById('hubWeek') || document.getElementById('mWeek');
+      const track   = document.getElementById('mTrack');
+      const prevBtn = document.getElementById('mPrev');
+      const nextBtn = document.getElementById('mNext');
 
-          let idx = 0;
-          let slides = [];
+      let idx = 0;
+      let slides = [];
 
-          function cacheSlides() {{
-            slides = track.querySelectorAll('.m-slide');
-          }}
+      function cacheSlides() {{
+        slides = track.querySelectorAll('.m-slide');
+      }}
 
-          function update() {{
-            const w = track.clientWidth;
-            track.scrollTo({{ left: idx * w, behavior: 'smooth' }});
-            if (prevBtn) prevBtn.disabled = (idx === 0);
-            if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
-          }}
+      function update() {{
+        const w = track.clientWidth;
+        track.scrollTo({{ left: idx * w, behavior: 'smooth' }});
+        if (prevBtn) prevBtn.disabled = (idx === 0);
+        if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
+      }}
 
-          function setWeek(w) {{
-            const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
-            track.innerHTML = html;
-            idx = 0;
-            cacheSlides();
-            update();
-          }}
+      function setWeek(w) {{
+        const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
+        track.innerHTML = html;
+        idx = 0;
+        cacheSlides();
+        update();
+      }}
 
-          // Optional: expose globally if something else wants to change the week
-          window.setMatchupWeek = setWeek;
+      // Hook into hubWeek if it exists
+      if (weekSel) {{
+        setWeek(weekSel.value);
+        weekSel.addEventListener('change', (e) => setWeek(e.target.value));
+      }} else {{
+        const keys = Object.keys(slidesByWeek);
+        if (keys.length) {{
+          setWeek(keys[0]);
+        }}
+      }}
 
-          prevBtn && prevBtn.addEventListener('click', () => {{
-            idx = Math.max(0, idx - 1);
-            update();
-          }});
+      prevBtn && prevBtn.addEventListener('click', () => {{
+        idx = Math.max(0, idx - 1);
+        update();
+      }});
 
-          nextBtn && nextBtn.addEventListener('click', () => {{
-            idx = Math.min(Math.max(0, slides.length - 1), idx + 1);
-            update();
-          }});
+      nextBtn && nextBtn.addEventListener('click', () => {{
+        idx = Math.min(Math.max(0, slides.length - 1), idx + 1);
+        update();
+      }});
 
-          window.addEventListener('resize', update);
-
-          if (weekSel) {{
-            // Initialize based on the current global selector
-            setWeek(weekSel.value);
-            weekSel.addEventListener('change', (e) => setWeek(e.target.value));
-          }} else {{
-            // Fallback: first available week
-            const keys = Object.keys(slidesByWeek);
-            if (keys.length) {{
-              setWeek(keys[0]);
-            }}
-          }}
-        }})();
+      window.addEventListener('resize', update);
+    }})();
     """
 
+    central = "central" if dashboard else ""
+    style = "max-width:800px;" if not dashboard else ""
     return f"""
-        <div class="card central" data-section='matchups' style='margin-bottom:30px;'>
-          <div class="m-nav">
-            <h2>Matchup Preview</h2>
-            <div class="m-controls">
-              <button class="m-btn" id="mPrev">‹ Prev</button>
-              <button class="m-btn" id="mNext">Next ›</button>
-            </div>
-          </div>
-          <div class="m-carousel">
-            <div class="m-track" id="mTrack">
-              {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")}
-            </div>
+        <div class="card {central}" data-section='matchups' style='{style} margin-bottom:30px;'>
+        <div class="m-nav">
+          <h2>Matchup Preview</h2>
+          <div class="m-controls">
+            <button class="m-btn" id="mPrev">‹ Prev</button>
+            <button class="m-btn" id="mNext">Next ›</button>
           </div>
         </div>
-        <script>{carousel_script}</script>
-        """
+        <div class="m-carousel">
+          <div class="m-track" id="mTrack">
+            {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")}
+          </div>
+        </div>
+      </div>
+      <script>{carousel_script}</script>
+    """
 
     # return f""" <div class="card central" data-section='matchups' style='margin-bottom:30px;'> <div class="m-nav"> <h2>Matchup Preview</h2> <div class="m-controls"> <select id="mWeek" class="search">{opts}</select> <button class="m-btn" id="mPrev">‹ Prev</button> <button class="m-btn" id="mNext">Next ›</button> </div> </div> <div class="m-carousel"> <div class="m-track" id="mTrack"> {slides_by_week.get(get_nfl_state().get('week'), "<div class='m-empty'>No matchups</div>")} </div> </div> </div> <script>{carousel_script}</script> """
 
@@ -178,6 +171,72 @@ def add_bye_weeks_to_players():
     write_json(player_path, players)
 
 
+def team_live_totals(team: dict,
+                     status_by_pid: dict[str, str],
+                     projections: dict,
+                     ) -> tuple[float, float]:
+    """
+    actual_total:
+        sum of all actual points for starters (p['pts'])
+    live_proj_total:
+        - players not started  -> use projection
+        - players started/finished -> use actual
+    """
+    actual_total = 0.0
+    live_proj_total = 0.0
+
+    for p in team.get("starters", []):
+        pid = p.get("pid")
+
+        actual = p.get("pts") or 0.0
+        actual_total += actual
+
+        status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+        proj_val = projections.get(pid, 0.0)
+
+        if status is STATUS_NOT_STARTED:
+            live_proj_total += proj_val
+        else:
+            live_proj_total += actual
+
+    return actual_total, live_proj_total
+
+
+def compute_team_projections_for_weeks(
+        matchups_by_week: dict[int, list[dict]],
+        status_by_pid: dict[str, str],
+        projections: dict,
+        roster_map: dict[str, str]  # roster_id -> owner
+) -> dict[tuple[int, str], float]:
+    """
+    Returns {(week, roster_id): live_proj_total}
+    """
+    proj_by_roster: dict[tuple[int, str], float] = {}
+
+    # build reverse map owner -> roster_id if needed
+    owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
+
+    for week, matchups in matchups_by_week.items():
+        for m in matchups:
+            for side in ("left", "right"):
+                team = m[side]
+
+                # however you can get roster_id – adjust as needed:
+                rid = team.get("roster_id")
+                if rid is None:
+                    rid = owner_to_rid.get(team["name"])
+
+                if rid is None:
+                    continue
+
+                _, live_proj_total = team_live_totals(
+                    team, status_by_pid.get(week).get("statuses"), projections.get(week).get("projections")
+                )
+                proj_by_roster[(week, str(rid))] = live_proj_total
+
+    return proj_by_roster
+
+
 def render_matchup_slide(
         m: dict,
         w: int,
@@ -192,34 +251,6 @@ def render_matchup_slide(
     """
     # proj flag: you can still use this to change team headers if you want
     proj = w > proj_week
-
-    # ---- helper: per-team live totals ----
-    def _team_live_totals(t: dict) -> tuple[float, float]:
-        """
-        actual_total:
-            sum of all actual points for starters (p['pts'])
-        live_proj_total:
-            - players not started  -> use projection
-            - players started/finished -> use actual
-        """
-        actual_total = 0.0
-        live_proj_total = 0.0
-
-        for p in t.get("starters", []):
-            pid = p.get("pid")
-
-            actual = p.get("pts") or 0.0
-            actual_total += actual
-
-            status = status_by_pid.get(pid, STATUS_NOT_STARTED)
-            proj_val = projections.get(pid, 0.0)
-
-            if status == STATUS_NOT_STARTED:
-                live_proj_total += proj_val
-            else:
-                live_proj_total += actual
-
-        return actual_total, live_proj_total
 
     # ---- 1) Team headers ----
     def team_head(t, proj_mode: bool):
@@ -248,7 +279,8 @@ def render_matchup_slide(
         </div>
         """
 
-        actual_total, live_proj_total = _team_live_totals(t)
+        actual_total, live_proj_total = team_live_totals(t, status_by_pid, projections.get(w).get("projections"))
+
         return f"""
         <div class="m-team">
           {img}
@@ -283,7 +315,7 @@ def render_matchup_slide(
         </div>
         """
 
-        actual_total, live_proj_total = _team_live_totals(t)
+        actual_total, live_proj_total = team_live_totals(t, status_by_pid, projections.get(w).get("projections"))
         return f"""
         <div class="m-team">
           <div style="display:grid;grid-template-columns:1;">
@@ -317,7 +349,7 @@ def render_matchup_slide(
 
         player_index = players.get(pid) or teams.get(pid)
         if player_index:
-            proj_val = projections.get(pid, 0.0)
+            proj_val = projections.get(w, {}).get("projections", {}).get(pid, 0.0)
             if proj_val == 0.0 and player_index.get("byeWeek") == w:
                 is_bye = True
 

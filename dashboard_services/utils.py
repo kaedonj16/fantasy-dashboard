@@ -70,7 +70,7 @@ def safe_owner_name(roster_map: dict, rid) -> str:
 
 def path_week_schedule(season: int, week: int) -> str:
     # one file per season/week – schedule itself doesn’t need the date in the name
-    return os.path.join(CACHE_DIR, f"schedule_s{season}_w{week}_{date.today()}.json")
+    return os.path.join(CACHE_DIR, f"schedule/schedule_s{season}_w{week}_d{date.today()}.json")
 
 
 def path_players_index() -> str:
@@ -82,7 +82,7 @@ def path_teams_index() -> str:
 
 
 def path_week_proj(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"projections_s{season}_w{week}_d{date.today()}.json")
+    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}_d{date.today()}.json")
 
 
 def read_json(path: str) -> Optional[dict]:
@@ -200,7 +200,7 @@ def get_week_projections_cached(
 
 def get_or_refresh_projection_path(season: int, week: int) -> str:
     today = date.today()
-    pattern = os.path.join(CACHE_DIR, f"projections_s{season}_w{week}_d*.json")
+    pattern = os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}_d*.json")
     matches = glob.glob(pattern)
 
     # If a prior file exists, check its date
@@ -225,6 +225,56 @@ def get_or_refresh_projection_path(season: int, week: int) -> str:
 
     # If nothing exists or old file was removed, return today's fresh filename
     return path_week_proj(season, week)
+
+
+def get_or_refresh_schedule_path(season: int, week: int) -> str:
+    today = date.today()
+    pattern = os.path.join(CACHE_DIR, f"schedule/schedule_s{season}_w{week}_d*.json")
+    matches = glob.glob(pattern)
+
+    if matches:
+        for file in matches:
+            try:
+                basename = os.path.basename(file)
+                # schedule_s2024_w3_d2025-11-19.json
+                date_part = basename.split("_d", 1)[1].replace(".json", "")
+                file_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+
+                if file_date == today:
+                    # keep today's file
+                    return file
+
+                # delete files from previous days
+                os.remove(file)
+
+            except Exception:
+                # if parsing fails, delete it
+                os.remove(file)
+
+    # no valid file for today → return today's file path
+    return path_week_schedule(season, week)  # MUST create _dYYYY-MM-DD.json
+
+
+def get_week_schedule_cached(
+        week: int,
+        season: int,
+        fetch_fn: Callable[[int, int, str], List[Dict]],
+        season_type: str = "reg",
+) -> List[Dict]:
+    """
+    fetch_fn should call Tank01 /getNFLSchedule (or your schedule endpoint)
+    and return a list[dict] of games.
+    """
+    cache_path = get_or_refresh_schedule_path(season, week)
+
+    if os.path.exists(cache_path):
+        # your own loader – or json.load(open(cache_path))
+        return load_week_schedule(season, week)
+
+    # no cache for today → fetch and save
+    data = fetch_fn(week, season, season_type)
+    save_week_schedule(season, week, data)  # make this write to cache_path internally
+    return data
 
 
 def get_players_index_cached(rapidapi_key: str) -> Dict[str, Dict[str, Any]]:
@@ -554,7 +604,6 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
     games -> { team_abbr: { 'status': 'pre' | 'in' | 'post', 'game': game_obj } }
     """
     games_by_team: dict[str, dict] = {}
-
     for g in games:
         home = g.get("home")  # e.g. "NE"
         away = g.get("away")  # e.g. "NYJ"
@@ -709,39 +758,12 @@ def get_nfl_games_for_week(
         season: int,
         season_type: str = "reg",
 ) -> list[dict]:
-    """
-    Returns Tank01 games for a week, using:
-      - in-memory cache with TTL
-      - disk cache in cache/schedule_s{season}_w{week}.json
-    """
-    key = (season, week)
-    now = time.time()
-    path = path_week_schedule(season, week)
-
-    # 1) In-memory cache
-    entry = SCHEDULE_CACHE.get(key)
-    if entry and (now - entry["ts"] < SCHEDULE_TTL):
-        return entry["data"]
-
-    # 2) Disk cache
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # refresh in-memory cache
-            SCHEDULE_CACHE[key] = {"data": data, "ts": now}
-            return data
-        except Exception as e:
-            print(f"[SCHEDULE CACHE] Failed to read {path}: {e} – refetching.")
-
-    # 3) Fetch from API and persist
-    data = get_nfl_games_for_week_raw(week=week, season=season, season_type=season_type)
-
-    save_week_schedule(season, week, data)
-    print("📡 Fetching Week Schedule for Week: " + str(week))
-
-    SCHEDULE_CACHE[key] = {"data": data, "ts": now}
-    return data
+    return get_week_schedule_cached(
+        season=season,
+        week=week,
+        fetch_fn=get_nfl_games_for_week_raw,
+        season_type=season_type,
+    )
 
 
 def pinfo_for_pid(

@@ -1848,3 +1848,589 @@ injury_script = """
         }})();
       </script>
       """
+
+TRADE_HTML = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Trade Calculator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #070b13;
+        color: #f9fafb;
+        margin: 0;
+        padding: 0;
+      }
+
+      .page-wrapper {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .subtitle {
+        font-size: 0.9rem;
+        color: #9ca3af;
+        margin-bottom: 1.5rem;
+      }
+
+      .card {
+        background: #0b1220;
+        border-radius: 12px;
+        border: 1px solid #1f2937;
+        padding: 16px 16px 18px;
+        margin-bottom: 16px;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .col {
+        flex: 1 1 0;
+        min-width: 250px;
+      }
+
+      label {
+        display: block;
+        font-size: 0.85rem;
+        margin-bottom: 4px;
+        color: #d1d5db;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        background: #020617;
+        border-radius: 8px;
+        border: 1px solid #1f2937;
+        color: #f9fafb;
+        padding: 8px 10px;
+        font-size: 0.9rem;
+        outline: none;
+      }
+
+      input[type="text"]:focus {
+        border-color: #3b82f6;
+      }
+
+      textarea {
+        width: 100%;
+        background: #020617;
+        border-radius: 8px;
+        border: 1px solid #1f2937;
+        color: #f9fafb;
+        padding: 8px 10px;
+        font-size: 0.9rem;
+        outline: none;
+        resize: vertical;
+        min-height: 50px;
+      }
+
+      .hint {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-top: 3px;
+      }
+
+      .side-header {
+        background: #4b5563;
+        border-radius: 10px 10px 0 0;
+        padding: 8px 12px;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .side-card {
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #4b5563;
+        background: #0b1220;
+      }
+
+      .side-body {
+        padding: 10px 12px 12px;
+      }
+
+      .search-wrapper {
+        position: relative;
+        margin-top: 6px;
+      }
+
+      .search-input {
+        padding-right: 32px;
+      }
+
+      .search-icon {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.85rem;
+        color: #6b7280;
+        pointer-events: none;
+      }
+
+      .dropdown {
+        position: absolute;
+        left: 0;
+        right: 0;
+        margin-top: 2px;
+        background: #f9fafb;
+        color: #111827;
+        border-radius: 0 0 8px 8px;
+        border: 1px solid #d1d5db;
+        max-height: 220px;
+        overflow-y: auto;
+        z-index: 20;
+        box-shadow: 0 10px 15px rgba(0,0,0,0.35);
+      }
+
+      .dropdown-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+
+      .dropdown-item:hover {
+        background: #e5e7eb;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #111827;
+        border: 1px solid #374151;
+        font-size: 0.8rem;
+      }
+
+      .chip span {
+        opacity: 0.85;
+      }
+
+      .chip button {
+        border: none;
+        background: none;
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 0.85rem;
+        padding: 0;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 18px;
+        border-radius: 999px;
+        border: none;
+        background: #3b82f6;
+        color: #f9fafb;
+        font-weight: 500;
+        font-size: 0.95rem;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      .badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #1f2937;
+        color: #9ca3af;
+        margin-left: 8px;
+      }
+
+      .error {
+        margin-top: 8px;
+        color: #f97373;
+        font-size: 0.85rem;
+      }
+
+      .result-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .result-panel {
+        border-radius: 12px;
+        border: 1px solid #1f2937;
+        background: #020617;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+      }
+
+      .result-panel h3 {
+        margin: 0 0 6px;
+        font-size: 0.95rem;
+      }
+
+      .result-value {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .asset-list {
+        list-style: none;
+        padding-left: 0;
+        margin: 4px 0 0;
+        font-size: 0.8rem;
+      }
+
+      .asset-list li {
+        margin-top: 2px;
+      }
+
+      .verdict-box {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #64748b;
+        background: #020617;
+        font-size: 0.9rem;
+      }
+
+      .verdict-lean-a {
+        border-color: #22c55e;
+      }
+
+      .verdict-lean-b {
+        border-color: #f97316;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="page-wrapper">
+      <h1>Trade Calculator</h1>
+      <div class="subtitle">
+        Search by player name, build both sides, and let the model evaluate the trade.
+      </div>
+
+      <!-- League / season -->
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label for="leagueIdInput">League ID</label>
+            <input id="leagueIdInput" type="text" value="{{ league_id or '' }}" />
+          </div>
+          <div class="col">
+            <label for="seasonInput">Season</label>
+            <input id="seasonInput" type="text" placeholder="e.g. 2025" value="{{ season or '' }}" />
+            <div class="hint">Optional; uses server default if left blank.</div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px;">
+          Player search will use your players_index; later you can make this league-specific.
+        </div>
+      </div>
+
+      <!-- Sides -->
+      <div class="row">
+        <!-- Side A -->
+        <div class="col">
+          <div class="side-card">
+            <div class="side-header">Team 1 gets...</div>
+            <div class="side-body">
+              <label for="sideASearch">Add player</label>
+              <div class="search-wrapper">
+                <input id="sideASearch" class="search-input" type="text" autocomplete="off"
+                       placeholder="Start typing a name..." />
+                <span class="search-icon">🔍</span>
+                <div id="sideADropdown" class="dropdown" style="display:none;"></div>
+              </div>
+              <div class="chips" id="sideAChips"></div>
+
+              <label style="margin-top:10px;" for="sideAPicks">Picks (optional)</label>
+              <textarea id="sideAPicks" placeholder="2026_1_01, 2026_2_05"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Side B -->
+        <div class="col">
+          <div class="side-card">
+            <div class="side-header">Team 2 gets...</div>
+            <div class="side-body">
+              <label for="sideBSearch">Add player</label>
+              <div class="search-wrapper">
+                <input id="sideBSearch" class="search-input" type="text" autocomplete="off"
+                       placeholder="Start typing a name..." />
+                <span class="search-icon">🔍</span>
+                <div id="sideBDropdown" class="dropdown" style="display:none;"></div>
+              </div>
+              <div class="chips" id="sideBChips"></div>
+
+              <label style="margin-top:10px;" for="sideBPicks">Picks (optional)</label>
+              <textarea id="sideBPicks" placeholder="2026_1_04"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="evaluateBtn" class="btn">Evaluate Trade</button>
+      <span id="loadingBadge" class="badge" style="display:none;">Evaluating...</span>
+      <div id="errorBox" class="error" style="display:none;"></div>
+
+      <!-- Results -->
+      <div id="resultsContainer" style="display:none;">
+        <div class="result-grid">
+          <div class="result-panel">
+            <h3>Side 1</h3>
+            <div id="sideATotal" class="result-value">Total: –</div>
+            <ul id="sideAAssets" class="asset-list"></ul>
+          </div>
+          <div class="result-panel">
+            <h3>Side 2</h3>
+            <div id="sideBTotal" class="result-value">Total: –</div>
+            <ul id="sideBAssets" class="asset-list"></ul>
+          </div>
+        </div>
+        <div id="verdictBox" class="verdict-box">
+          Verdict will appear here.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let allPlayers = [];
+      let sideASelected = [];
+      let sideBSelected = [];
+
+      function parseCommaList(value) {
+        if (!value) return [];
+        return value.split(",").map(s => s.trim()).filter(Boolean);
+      }
+
+      async function ensurePlayersLoaded() {
+        if (allPlayers.length > 0) return;
+        const leagueId = document.getElementById("leagueIdInput").value.trim();
+        if (!leagueId) {
+          throw new Error("Enter a league ID before searching players.");
+        }
+        const res = await fetch("/api/league-players?league_id=" + encodeURIComponent(leagueId));
+        if (!res.ok) {
+          throw new Error("Failed to load players (" + res.status + ").");
+        }
+        allPlayers = await res.json();
+      }
+
+      function renderChips(side) {
+        const container = document.getElementById(side === "A" ? "sideAChips" : "sideBChips");
+        const selected = side === "A" ? sideASelected : sideBSelected;
+        container.innerHTML = "";
+        selected.forEach((p, idx) => {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          const label = document.createElement("span");
+          label.textContent = p.name + (p.position ? " (" + p.position + (p.team ? " - " + p.team : "") + ")" : "");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = "×";
+          btn.onclick = () => {
+            selected.splice(idx, 1);
+            renderChips(side);
+          };
+          chip.appendChild(label);
+          chip.appendChild(btn);
+          container.appendChild(chip);
+        });
+      }
+
+      function setupSearch(side) {
+        const input = document.getElementById(side === "A" ? "sideASearch" : "sideBSearch");
+        const dropdown = document.getElementById(side === "A" ? "sideADropdown" : "sideBDropdown");
+
+        input.addEventListener("input", async function () {
+          const query = input.value.trim().toLowerCase();
+          dropdown.innerHTML = "";
+          dropdown.style.display = "none";
+
+          if (!query) return;
+
+          try {
+            await ensurePlayersLoaded();
+          } catch (err) {
+            console.error(err);
+            const errorBox = document.getElementById("errorBox");
+            errorBox.style.display = "block";
+            errorBox.textContent = err.message;
+            return;
+          }
+
+          const matches = allPlayers
+            .filter(p => p.name && p.name.toLowerCase().includes(query))
+            .slice(0, 20);
+
+          if (!matches.length) return;
+
+          matches.forEach(p => {
+            const item = document.createElement("div");
+            item.className = "dropdown-item";
+            const meta = [];
+            if (p.position) meta.push(p.position);
+            if (p.team) meta.push(p.team);
+            item.textContent = p.name + (meta.length ? " — " + meta.join(" · ") : "");
+            item.onclick = () => {
+              const selected = side === "A" ? sideASelected : sideBSelected;
+              if (!selected.find(x => x.id === p.id)) {
+                selected.push(p);
+                renderChips(side);
+              }
+              input.value = "";
+              dropdown.style.display = "none";
+            };
+            dropdown.appendChild(item);
+          });
+
+          dropdown.style.display = "block";
+        });
+
+        // close dropdown when input loses focus (slight delay to allow click)
+        input.addEventListener("blur", function () {
+          setTimeout(() => {
+            dropdown.style.display = "none";
+          }, 150);
+        });
+      }
+
+      setupSearch("A");
+      setupSearch("B");
+
+      async function evaluateTrade() {
+        const leagueId = document.getElementById("leagueIdInput").value.trim();
+        const season = document.getElementById("seasonInput").value.trim();
+        const errorBox = document.getElementById("errorBox");
+        const loadingBadge = document.getElementById("loadingBadge");
+
+        errorBox.style.display = "none";
+        errorBox.textContent = "";
+        loadingBadge.style.display = "inline-block";
+
+        if (!leagueId) {
+          loadingBadge.style.display = "none";
+          errorBox.style.display = "block";
+          errorBox.textContent = "Please enter a league ID.";
+          return;
+        }
+
+        const sideAPlayers = sideASelected.map(p => p.id);
+        const sideBPlayers = sideBSelected.map(p => p.id);
+        const sideAPicks = parseCommaList(document.getElementById("sideAPicks").value);
+        const sideBPicks = parseCommaList(document.getElementById("sideBPicks").value);
+
+        try {
+          const payload = {
+            league_id: leagueId,
+            side_a_players: sideAPlayers,
+            side_b_players: sideBPlayers,
+            side_a_picks: sideAPicks,
+            side_b_picks: sideBPicks,
+          };
+          if (season) payload.season = parseInt(season, 10);
+
+          const res = await fetch("/api/trade-eval", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error("Server error " + res.status + ": " + txt.slice(0, 200));
+          }
+
+          const data = await res.json();
+          renderResults(data);
+        } catch (err) {
+          console.error(err);
+          errorBox.style.display = "block";
+          errorBox.textContent = err.message || "Failed to evaluate trade.";
+        } finally {
+          loadingBadge.style.display = "none";
+        }
+      }
+
+      function renderResults(data) {
+        const resultsContainer = document.getElementById("resultsContainer");
+        const verdictBox = document.getElementById("verdictBox");
+        const sideATotalEl = document.getElementById("sideATotal");
+        const sideBTotalEl = document.getElementById("sideBTotal");
+        const sideAAssetsEl = document.getElementById("sideAAssets");
+        const sideBAssetsEl = document.getElementById("sideBAssets");
+
+        const sideA = data.side_a || {};
+        const sideB = data.side_b || {};
+        const verdict = data.verdict || "";
+
+        const fmt = (v) => typeof v === "number" ? v.toFixed(1) : parseFloat(v || 0).toFixed(1);
+
+        sideATotalEl.textContent = "Total: " + fmt(sideA.total || 0);
+        sideBTotalEl.textContent = "Total: " + fmt(sideB.total || 0);
+
+        sideAAssetsEl.innerHTML = "";
+        (sideA.breakdown || []).forEach(item => {
+          const li = document.createElement("li");
+          const label = item.type === "pick" ? "Pick " + item.id : "Player " + item.id;
+          li.textContent = label + " — " + fmt(item.value);
+          sideAAssetsEl.appendChild(li);
+        });
+
+        sideBAssetsEl.innerHTML = "";
+        (sideB.breakdown || []).forEach(item => {
+          const li = document.createElement("li");
+          const label = item.type === "pick" ? "Pick " + item.id : "Player " + item.id;
+          li.textContent = label + " — " + fmt(item.value);
+          sideBAssetsEl.appendChild(li);
+        });
+
+        verdictBox.textContent = verdict || "No verdict available.";
+        verdictBox.classList.remove("verdict-lean-a", "verdict-lean-b");
+        if (/Side A is favored/i.test(verdict)) {
+          verdictBox.classList.add("verdict-lean-a");
+        } else if (/Side B is favored/i.test(verdict)) {
+          verdictBox.classList.add("verdict-lean-b");
+        }
+
+        resultsContainer.style.display = "block";
+      }
+
+      document.getElementById("evaluateBtn").addEventListener("click", function (e) {
+        e.preventDefault();
+        evaluateTrade();
+      });
+    </script>
+  </body>
+</html>
+"""

@@ -1318,7 +1318,7 @@ text-transform: uppercase;
 .recap-grid{display:grid;gap:16px}
 .sidebar{display:grid;gap:12px;align-content:start}
 .side-card{background:white;border:1px solid var(--grid);border-radius:16px;padding:12px;display:grid;}
-.side-card h3{margin:0 0 6px;font-size:16px;font-weight:800;}
+.side-card h3{margin:0 0 6px;font-size:16px;font-weight:800;text-align:center;}
 .side-row{display:grid;grid-template-columns:28px 1fr 40px;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #243043}
 .side-row:first-of-type{border-top:none}
 .sidebar-grid {
@@ -2081,4 +2081,60 @@ tbody tr:nth-child(even){ background:var(--row); }
   font-size: 13px;
   padding: 6px 0;
   border-bottom: 1px dashed #e5e7eb;
+}
+
+/* Normal pills already styled — now add red version */
+.nav-pill.logout-pill {
+    background: #dc2626;
+    color: white !important;
+}
+
+.nav-pill.logout-pill:hover {
+    background: #b91c1c;
+}
+
+.highlight-game-card {
+  background: white;
+  color: #111;
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.highlight-game-card .hg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hg-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hg-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.hg-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.hg-score {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    padding-right: inherit;
 }

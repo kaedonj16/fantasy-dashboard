@@ -1,5 +1,6 @@
 import json
 import numpy as np
+import os
 import pandas as pd
 import time
 from flask import Flask, request, render_template_string, redirect, url_for
@@ -8,10 +9,12 @@ from pathlib import Path
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
 from dashboard_services.awards import compute_awards_season, render_awards_section
-from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks
+from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
+    compute_team_projections_for_weeks
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
-    load_week_projection_bundle, build_matchups_by_week, build_picks_by_roster, render_teams_sidebar
+    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, load_week_projection
+from dashboard_services.styles import TRADE_HTML
 from dashboard_services.utils import load_players_index, load_teams_index, get_nfl_games_for_week, build_games_by_team, \
     build_status_by_pid, streak_class, build_teams_overview
 
@@ -22,6 +25,8 @@ app = Flask(
     static_folder="static",  # points to site/static
     static_url_path="/static"  # URL base for static files
 )
+
+app.secret_key = os.urandom(32)
 
 FORM_HTML = """
 <!doctype html>
@@ -146,6 +151,7 @@ def build_nav(league_id: str, active: str) -> str:
         pill("Trade Calc", "page_trade", "teams"),
         pill("Activity", "page_activity", "activity"),
         pill("Injuries", "page_injuries", "injuries"),
+        "<a class='nav-pill logout-pill' href='/logout'>Logout</a>"
     ]
     return "<nav class='top-nav'><div><img src='/static/BR_Logo.png' alt='League Logo' class='site-logo' style='height:50px;'/></div><div>" + "".join(
         pills) + "</div></nav>"
@@ -172,33 +178,41 @@ def build_league_context(league_id: str) -> dict:
 
     current_season = current.get("season")
     current_week = current.get("week")
+    weeks = 18
 
     df_weekly, team_stats, roster_map = build_tables(
         league_id, current_week, players, users, rosters
     )
-    status_by_pid = build_status_for_week(
+    statuses = build_status_by_week(
         current_season,
-        current_week,
+        weeks,
         players_index,
         teams_index,
     )
 
-    projections, proj_players, proj_teams = load_week_projection_bundle(
-        current_season,
-        current_week,
-    )
-
-    weeks_in_df = sorted(df_weekly["week"].unique())
-    if weeks_in_df:
-        max_week = max(weeks_in_df)
-    else:
-        max_week = current_week or 18
+    proj_by_week = build_projections_by_week(current_season, weeks)
 
     matchups_by_week = build_matchups_by_week(
         league_id,
-        list(range(1, max_week + 1)),
+        range(1, weeks),
         roster_map,
         players_map,
+    )
+
+    proj_by_roster = compute_team_projections_for_weeks(
+        matchups_by_week,
+        statuses,
+        proj_by_week,
+        roster_map,
+    )
+
+    # add 'proj' column – looks up by (week, roster_id)
+    df_weekly["proj"] = df_weekly.apply(
+        lambda row: proj_by_roster.get(
+            (int(row["week"]), str(row["roster_id"])),
+            float("nan")
+        ),
+        axis=1,
     )
 
     return {
@@ -217,11 +231,10 @@ def build_league_context(league_id: str) -> dict:
         "df_weekly": df_weekly,
         "team_stats": team_stats,
         "roster_map": roster_map,
-        "status_by_pid": status_by_pid,
-        "projections": projections,
-        "proj_players": proj_players,
-        "proj_teams": proj_teams,
+        "statuses": statuses,
         "matchups_by_week": matchups_by_week,
+        "proj_by_week": proj_by_week,
+        "weeks": weeks
     }
 
 
@@ -316,7 +329,7 @@ def render_standings(team_stats, length) -> str:
 
 
 def build_status_for_week(season, week, players_index, teams_index):
-    games = get_nfl_games_for_week(week=week, season=season)
+    games = get_nfl_games_for_week(week, season)
     games_by_team = build_games_by_team(games)
     return build_status_by_pid(players_index, games_by_team, teams_index, week)
 
@@ -333,10 +346,8 @@ def build_dashboard_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     players_index = ctx["players_index"]
     teams_index = ctx["teams_index"]
-    status_by_pid = ctx["status_by_pid"]
-    projections = ctx["projections"]
-    players = ctx["proj_players"]
-    teams = ctx["proj_teams"]
+    statuses = ctx["statuses"]
+    proj_by_week = ctx["proj_by_week"]
     matchups_by_week = ctx["matchups_by_week"]
 
     # --- Standings snapshot (top card in main column) ---
@@ -357,15 +368,15 @@ def build_dashboard_body(ctx: dict) -> str:
                 m,
                 current_week,
                 last_final_week,
-                status_by_pid=status_by_pid,
-                projections=projections,
-                players=players,
-                teams=teams,
+                status_by_pid=statuses[current_week].get("statuses", {}),
+                projections=proj_by_week,
+                players=players_index,
+                teams=teams_index,
             )
         )
 
     slides_by_week = {current_week: "".join(slides)}
-    matchup_html = render_matchup_carousel_weeks(slides_by_week)
+    matchup_html = render_matchup_carousel_weeks(slides_by_week, True)
 
     # --- Awards / recap style info (season-level or last week) ---
     awards = compute_awards_season(finalized_df, players_map, league_id)
@@ -378,6 +389,7 @@ def build_dashboard_body(ctx: dict) -> str:
         rosters=rosters,
         traded=traded,
     )
+
     teams_ctx = build_teams_overview(
         rosters=rosters,
         users_list=users,
@@ -386,6 +398,7 @@ def build_dashboard_body(ctx: dict) -> str:
         players_index=players_index,
         teams_index=teams_index,
     )
+
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
     # --- compose into main + sidebar ---
@@ -637,106 +650,117 @@ def render_standings_sidebar(team_stats) -> str:
 
     ts = team_stats.copy()
 
-    # Best offense (highest PF)
-    best_off = None
-    if "PF" in ts.columns:
-        best_off = ts.loc[ts["PF"].idxmax()]
+    # --------------------
+    # Best Offense / Defense
+    # --------------------
+    best_off = ts.loc[ts["PF"].idxmax()] if "PF" in ts.columns else None
+    best_def = ts.loc[ts["PA"].idxmin()] if "PA" in ts.columns else None
 
-    # Best defense (lowest PA)
-    best_def = None
-    if "PA" in ts.columns:
-        best_def = ts.loc[ts["PA"].idxmin()]
-
-    # Longest active streak (by StreakLen, if you have it)
+    # --------------------
+    # Hottest / Coldest Streaks
+    # --------------------
     hottest = None
     coldest = None
     if "StreakLen" in ts.columns and "StreakType" in ts.columns:
-        # positive streaks
         hot_df = ts[ts["StreakType"] == "W"]
+        cold_df = ts[ts["StreakType"] == "L"]
+
         if not hot_df.empty:
             hottest = hot_df.loc[hot_df["StreakLen"].idxmax()]
-
-        # negative streaks
-        cold_df = ts[ts["StreakType"] == "L"]
         if not cold_df.empty:
             coldest = cold_df.loc[cold_df["StreakLen"].idxmax()]
 
-    sections = []
+    cards = []
 
-    # League Snapshot card
-    snapshot_rows = []
+    # --------------------
+    # Best Offense Card
+    # --------------------
     if best_off is not None:
-        snapshot_rows.append(
-            f"""
-            <div class='mini-row'>
-              <div class='mini-label'>Best Offense</div>
-              <div class='mini-value'>
-                <span class='mini-team'>{best_off['owner']}</span>
-                <span class='mini-stat'>{best_off['PF']:.1f} PF</span>
+        cards.append(f"""
+        <div class="card small">
+          <div class="card-header">
+            <h3>Best Offense</h3>
+            <h3>{best_off['PF']:.1f} PF</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card">
+              <div class="hg-row">
+                <div class="hg-team">
+                  <span class="hg-name">{best_off['owner']}</span>
+                </div>
               </div>
             </div>
-            """
-        )
+          </div>
+        </div>
+        """)
+
+    # --------------------
+    # Best Defense Card
+    # --------------------
     if best_def is not None:
-        snapshot_rows.append(
-            f"""
-            <div class='mini-row'>
-              <div class='mini-label'>Best Defense</div>
-              <div class='mini-value'>
-                <span class='mini-team'>{best_def['owner']}</span>
-                <span class='mini-stat'>{best_def['PA']:.1f} PA</span>
+        cards.append(f"""
+        <div class="card small">
+          <div class="card-header">
+            <h3>Best Defense</h3>
+            <h3>{best_def['PA']:.1f} PA</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card">
+              <div class="hg-row">
+                <div class="hg-team">
+                  <span class="hg-name">{best_def['owner']}</span>
+                </div>
               </div>
             </div>
-            """
-        )
+          </div>
+        </div>
+        """)
 
-    # Streaks card
-    streak_rows = []
+    # --------------------
+    # Hottest Team Card
+    # --------------------
     if hottest is not None:
-        streak_rows.append(
-            f"""
-            <div class='mini-row hot gradient-hot'>
-              <div class='mini-label'>Hottest Team</div>
-              <div class='mini-value'>
-                <span class='mini-team'>{hottest['owner']}</span>
-                <span class='streak-pill w'>{hottest['Streak']}</span>
+        cards.append(f"""
+        <div class="card small" style="background: linear-gradient(180deg, #fff8e7, #ffe5b4);border:1px solid #f97316;">
+          <div class="card-header">
+            <h3 style="color:#dc2626;">Hottest Team</h3>
+            <h3 style="color:#dc2626;">🔥 {hottest['Streak']}</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card">
+              <div class="hg-row">
+                <div class="hg-team">
+                  <span class="hg-name">{hottest['owner']}</span>
+                </div>
               </div>
             </div>
-            """
-        )
+          </div>
+        </div>
+        """)
 
+    # --------------------
+    # Coldest Team Card
+    # --------------------
     if coldest is not None:
-        streak_rows.append(
-            f"""
-            <div class='mini-row cold gradient-cold'>
-              <div class='mini-label'>Coldest Team</div>
-              <div class='mini-value'>
-                <span class='mini-team'>{coldest['owner']}</span>
-                <span class='streak-pill l'>{coldest['Streak']}</span>
+        cards.append(f"""
+        <div class="card small" style="border: 1px solid #163b82f6;background: rgb(44 166 173 / 12%);color: #163b82f6;">
+          <div class="card-header">
+            <h3>Coldest Team</h3>
+            <h3>❄️ {coldest['Streak']}</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card">
+              <div class="hg-row">
+                <div class="hg-team">
+                  <span class="hg-name">{coldest['owner']}</span>
+                </div>
               </div>
             </div>
-            """
-        )
+          </div>
+        </div>
+        """)
 
-    if snapshot_rows:
-        sections.append(
-            "<div class='card mini-card'>"
-            "<div class='card-header'><h3>League Snapshot</h3></div>"
-            "<div class='mini-body'>"
-            + "".join(snapshot_rows) +
-            "</div></div>"
-        )
-
-    if streak_rows:
-        sections.append(
-            "<div class='card mini-card'>"
-            "<div class='card-header'><h3>Streaks</h3></div>"
-            "<div class='mini-body'>"
-            + "".join(streak_rows) +
-            "</div></div>"
-        )
-
-    return "".join(sections)
+    return "".join(cards)
 
 
 def build_standings_body(ctx: dict) -> str:
@@ -768,65 +792,62 @@ def _render_weekly_top_scorers_for_week(
         league_id: str,
         df_weekly: pd.DataFrame,
         roster_map: dict,
-        rosters: dict,
         players_map: dict,
-        projections: dict,
+        projections: dict,  # <–– pass ALL projections in once
+        rosters: dict,
+        w: int,
+        users: list,
 ) -> str:
-    """
-    Reuse the existing POTW logic, but scoped to a specific week.
+    # 1. Filter to ONLY this week
+    week_df = df_weekly[df_weekly["week"] == w].copy()
 
-    We pass a df filtered to that week into _matchup_cards_last_week, so
-    whatever it thinks is "last week" becomes this week.
-    """
-    if not df_weekly.empty and df_weekly["finalized"].all():
-        _week_num, _matchup_html, top_by_pos = matchup_cards_last_week(
-                league_id,
-                df_weekly,
-                roster_map,
-                players_map,
-            )
+    # --------------------------------------------
+    # CASE 1: Week finalized → use real scores
+    # --------------------------------------------
+    if not week_df.empty and week_df["finalized"].all():
+        _, _, top_by_pos = matchup_cards_last_week(
+            league_id,
+            week_df,
+            roster_map,
+            players_map,
+            rosters,
+            users,
+        )
         return render_top_three(top_by_pos, rosters, roster_map)
 
     # --------------------------------------------
-    # CASE 2: Week not finalized → build projected POTW
+    # CASE 2: Week not finalized → use projections for this week
     # --------------------------------------------
     if projections is None:
-        # nothing we can do → empty shells
-        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
-        return render_top_three(empty_by_pos, rosters, roster_map)
+        empty = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+        return render_top_three(empty, rosters, roster_map)
 
-    # Build projection-based player list
-    # projections is assumed:  { pid(str): float_points, ... }
+    # Build projected rows
     proj_rows = []
-    for pid, val in projections.items():
+    for _, proj in projections[w].items():
+        for pid, val in proj.items():
+            p = players_map.get(str(pid))
+            if not p:
+                continue
 
-        p = players_map.get(str(pid))
-        if not p:
-            continue
+            pos = p.get("position") or p.get("pos")
+            if pos not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
+                continue
 
-        pos = p.get("position") or p.get("pos")
-        if pos not in ["QB","RB","WR","TE","K","DEF"]:
-            continue
+            proj_rows.append({
+                "pid": pid,
+                "name": p.get("name", "Unknown"),
+                "pos": pos,
+                "team": p.get("team", ""),
+                "points": float(val),
+            })
 
-        proj_rows.append({
-            "pid": pid,
-            "name": p.get("name","Unknown"),
-            "pos": pos,
-            "team": p.get("team",""),
-            "points": float(val),
-        })
+    top_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
 
-    if not proj_rows:
-        empty_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
-        return render_top_three(empty_by_pos, rosters, roster_map)
-
-    # Group into top-3 per position
-    top_by_pos = {pos: [] for pos in ["QB","RB","WR","TE","K","DEF"]}
-
-    for pos in top_by_pos.keys():
-        filtered = [r for r in proj_rows if r["pos"] == pos]
-        filtered = sorted(filtered, key=lambda r: r["points"], reverse=True)
-        top_by_pos[pos] = filtered[:3]
+    for pos in top_by_pos:
+        f = [r for r in proj_rows if r["pos"] == pos]
+        f.sort(key=lambda r: r["points"], reverse=True)
+        top_by_pos[pos] = f[:3]
 
     return render_top_three(top_by_pos, rosters, roster_map)
 
@@ -876,63 +897,128 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
     wdf = df_weekly[df_weekly["week"] == week].copy()
     if wdf.empty:
         return f"""
-        <div class="card small">
-          <div class="card-header"><h3>Week {week} Highlights</h3></div>
-          <div class="card-body">
+        <div class='card small'>
+          <div class='card-header'><h3>Week {week} Highlights</h3></div>
+          <div class='card-body'>
             <p>No highlights for this week yet.</p>
           </div>
         </div>
         """
 
-    top = wdf.sort_values("points", ascending=False).iloc[0]
-    low = wdf.sort_values("points", ascending=True).iloc[0]
+    # ------------------------------------------------------------
+    # Use projections for weeks that are NOT finalized
+    # ------------------------------------------------------------
+    if not wdf["finalized"].any():
+        wdf["use_score"] = wdf["proj"]
+    else:
+        wdf["use_score"] = wdf["points"]
 
-    # closest / blowout same as above
-    matchups = []
-    for (wk, mid), grp in wdf.groupby(["week", "matchup_id"]):
-        if len(grp) != 2:
-            continue
-        g = grp.sort_values("points", ascending=False)
-        win = g.iloc[0]
-        lose = g.iloc[1]
-        margin = float(win["points"] - lose["points"])
-        matchups.append({
-            "winner": win["owner"],
-            "loser": lose["owner"],
-            "w_pts": float(win["points"]),
-            "l_pts": float(lose["points"]),
-            "margin": margin,
-        })
+    # ------------------------------------------------------------
+    # Highest / Lowest Score Cards
+    # ------------------------------------------------------------
+    top = wdf.sort_values("use_score", ascending=False).iloc[0]
+    low = wdf.sort_values("use_score", ascending=True).iloc[0]
 
-    closest_txt = ""
-    blowout_txt = ""
-    if matchups:
-        closest = min(matchups, key=lambda m: abs(m["margin"]))
-        blowout = max(matchups, key=lambda m: abs(m["margin"]))
-        closest_txt = (
-            f"Closest Game: {closest['winner']} def {closest['loser']} "
-            f"by {closest['margin']:.1f}"
-        )
-        blowout_txt = (
-            f"Blowout: {blowout['winner']} def {blowout['loser']} "
-            f"by {blowout['margin']:.1f}"
-        )
-
-    return f"""
+    highest_card = f"""
     <div class="card small">
-      <div class="card-header">
-        <h3>Week {week} Highlights</h3>
-      </div>
-      <div class="card-body ticker-list">
-        <ul>
-          <li>Highest score: {top['owner']} ({float(top['points']):.1f})</li>
-          <li>Lowest score: {low['owner']} ({float(low['points']):.1f})</li>
-          {f"<li>{closest_txt}</li>" if closest_txt else ""}
-          {f"<li>{blowout_txt}</li>" if blowout_txt else ""}
-        </ul>
+      <div class="card-header"><h3>Highest Score</h3></div>
+      <div class="card-body">
+        <div class="highlight-game-card white">
+          <div class="hg-row">
+            <div class="hg-team">
+              <span class="hg-name">{top['owner']}</span>
+            </div>
+            <div class="hg-score">{top['use_score']:.1f}</div>
+          </div>
+        </div>
       </div>
     </div>
     """
+
+    lowest_card = f"""
+    <div class="card small">
+      <div class="card-header"><h3>Lowest Score</h3></div>
+      <div class="card-body">
+        <div class="highlight-game-card white">
+          <div class="hg-row">
+            <div class="hg-team">
+              <span class="hg-name">{low['owner']}</span>
+            </div>
+            <div class="hg-score">{low['use_score']:.1f}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+
+    # ------------------------------------------------------------
+    # Closest Game / Blowout Game
+    # ------------------------------------------------------------
+    matchups = []
+    for (_, _), grp in wdf.groupby(["week", "matchup_id"]):
+        if len(grp) != 2:
+            continue
+        g = grp.sort_values("use_score", ascending=False)
+        win = g.iloc[0]
+        lose = g.iloc[1]
+        margin = float(win["use_score"] - lose["use_score"])
+
+        matchups.append({
+            "winner": win["owner"],
+            "winnerPts": float(win["use_score"]),
+            "loser": lose["owner"],
+            "loserPts": float(lose["use_score"]),
+            "margin": margin,
+        })
+
+    closest_card = ""
+    blowout_card = ""
+
+    if matchups:
+        closest = min(matchups, key=lambda m: abs(m["margin"]))
+        blowout = max(matchups, key=lambda m: abs(m["margin"]))
+
+        closest_card = f"""
+        <div class="card small">
+          <div class="card-header">
+            <h3>Closest Game</h3><h3>{closest['margin']:.1f} Points</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card white">
+              <div class="hg-row">
+                <span class="hg-name">{closest['winner']}</span>
+                <span class="hg-score">{closest['winnerPts']:.1f}</span>
+              </div>
+              <div class="hg-row">
+                <span class="hg-name">{closest['loser']}</span>
+                <span class="hg-score">{closest['loserPts']:.1f}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        """
+
+        blowout_card = f"""
+        <div class="card small">
+          <div class="card-header">
+            <h3>Biggest Blowout</h3><h3>{blowout['margin']:.1f} Points</h3>
+          </div>
+          <div class="card-body">
+            <div class="highlight-game-card white">
+              <div class="hg-row">
+                <span class="hg-name">{blowout['winner']}</span>
+                <span class="hg-score">{blowout['winnerPts']:.1f}</span>
+              </div>
+              <div class="hg-row">
+                <span class="hg-name">{blowout['loser']}</span>
+                <span class="hg-score">{blowout['loserPts']:.1f}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        """
+
+    return highest_card + lowest_card + closest_card + blowout_card
 
 
 def build_weekly_hub_body(ctx: dict) -> str:
@@ -941,14 +1027,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     roster_map = ctx["roster_map"]
     players_map = ctx["players_map"]
     current_week = ctx["current_week"]
-    current_season = ctx["current_season"]
     players_index = ctx["players_index"]
     teams_index = ctx["teams_index"]
     rosters = ctx["rosters"]
-
-    weeks = sorted(df_weekly["week"].unique())
-    if not weeks:
-        return "<p>No weekly data yet.</p>"
+    users = ctx["users"]
+    proj_by_week = ctx["proj_by_week"]
+    weeks = ctx["weeks"]
+    statuses = ctx["statuses"]
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -956,43 +1041,33 @@ def build_weekly_hub_body(ctx: dict) -> str:
     else:
         last_final_week = current_week
 
-    status_by_pid = build_status_for_week(
-        current_season,
-        current_week,
-        players_index,
-        teams_index,
-    )
-
-    default_week = current_week if current_week in weeks else weeks[-1]
-
-    projections, players, teams = load_week_projection_bundle(current_season, current_week)
-
+    default_week = current_week if current_week in range(1, weeks) else weeks[-1]
+    # Build all matchup slides once
     matchups_by_week = build_matchups_by_week(
-        league_id, list(range(1, 18)), roster_map, players_map
+        league_id, range(1, weeks), roster_map, players_map
     )
-
     slides_by_week: dict[int, str] = {
         w: "".join(
             render_matchup_slide(
                 m,
                 w,
                 last_final_week,
-                status_by_pid=status_by_pid,
-                projections=projections,
-                players=players,
-                teams=teams,
+                status_by_pid=statuses[w].get("statuses", {}),
+                projections=proj_by_week,
+                players=players_index,
+                teams=teams_index,
             )
             for m in matchups_by_week.get(w, [])
         )
-        for w in weeks
+        for w in range(1, weeks)
     }
 
-    # Single carousel for the page
-    matchup_html = render_matchup_carousel_weeks(slides_by_week)
+    # One global carousel (will listen to #hubWeek)
+    matchup_html = render_matchup_carousel_weeks(slides_by_week, False)
 
-    # Week dropdown for the whole Weekly Hub
+    # Week dropdown HTML
     options = []
-    for w in weeks:
+    for w in range(1, weeks):
         sel = " selected" if w == default_week else ""
         options.append(f"<option value='{w}'{sel}>Week {w}</option>")
     week_select_html = "".join(options)
@@ -1000,34 +1075,35 @@ def build_weekly_hub_body(ctx: dict) -> str:
     main_panels = []
     side_panels = []
 
-    for w in weeks:
+    for w in range(1, weeks):
         active_cls = " active" if w == default_week else ""
 
+        # Top scorers are truly per-week
         top_scorers_html = _render_weekly_top_scorers_for_week(
             league_id,
             df_weekly,
             roster_map,
-            rosters,
             players_map,
-            projections
+            proj_by_week,
+            rosters,
+            w,
+            users
         )
         highlights_html = _render_weekly_highlights(df_weekly, w)
 
-        # NOTE: no matchup_html here anymore
+        # Left-side weekly pane (this will swap)
         main_panels.append(f"""
               <div class="week-main-panel{active_cls}" data-week="{w}">
-                <div class="main-two-col">
-                  {top_scorers_html}
-                  {matchup_html}
-                </div>
+                {top_scorers_html}
               </div>
-            """)
+        """)
 
+        # Sidebar weekly pane (already working)
         side_panels.append(f"""
               <div class="week-side-panel{active_cls}" data-week="{w}">
                 {highlights_html}
               </div>
-            """)
+        """)
 
     return f"""
     <div class="page-layout weekly-hub">
@@ -1042,8 +1118,17 @@ def build_weekly_hub_body(ctx: dict) -> str:
             </div>
           </div>
         </div>
-        <div class="week-main-panels">
-          {''.join(main_panels)}
+
+        <!-- two-column main area like your standings hub -->
+        <div class="standings-main two-col-standings">
+          <div class="standings-col">
+            <div class="week-main-panels">
+              {''.join(main_panels)}
+            </div>
+          </div>
+          <div class="standings-col">
+            {matchup_html}
+          </div>
         </div>
       </main>
 
@@ -1069,19 +1154,39 @@ def build_weekly_hub_body(ctx: dict) -> str:
         document.querySelectorAll('.week-side-panel').forEach(function(el) {{
           el.classList.toggle('active', el.getAttribute('data-week') === w);
         }});
-
-        // also sync the matchup carousel week selector, if it exists
-        var mSel = document.getElementById('mWeek');
-        if (mSel) {{
-          mSel.value = w;
-          // trigger its existing change handler so slides update
-          var evt = new Event('change', {{ bubbles: true }});
-          mSel.dispatchEvent(evt);
-        }}
       }});
     }})();
     </script>
     """
+
+
+def build_projections_by_week(season: int, weeks: int):
+    bundles = {}
+    for w in range(1, weeks):
+        try:
+            projections = load_week_projection(season, w)
+            bundles[w] = {
+                "projections": projections,
+            }
+        except Exception as e:
+            print(f"Error loading week {w}: {e}")
+            bundles[w] = {"projections": {}}
+    return bundles
+
+
+def build_status_by_week(season: int, weeks: int, players_index, teams_index):
+    bundles = {}
+    for w in range(1, weeks):
+        try:
+            statuses = build_status_for_week(season, w, players_index, teams_index)
+            bundles[w] = {
+                "statuses": statuses,
+            }
+        except Exception as e:
+            print(f"Error loading week {w}: {e}")
+            bundles[w] = {"statuses": {}}
+    return bundles
+
 
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
@@ -1114,7 +1219,7 @@ def page_trade(league_id):
     </div>
     <aside class="overview-sidebar"></aside>
     """
-    return render_page("Teams", league_id, "teams", body)
+    return render_template_string(TRADE_HTML, league_id=ctx["league_id"], season=ctx["current_season"])
 
 
 @app.route("/league/<league_id>/activity")
@@ -1171,6 +1276,117 @@ def view_league(league_id):
     # warm or reuse league context cache
     _ = get_league_ctx_from_cache(league_id)
     return redirect(url_for("page_dashboard", league_id=league_id))
+
+
+@app.route("/logout")
+def logout():
+    # Clear the session + cached league context
+    from flask import session
+    session.clear()
+    return redirect(url_for("index"))
+
+
+# in your Flask app
+
+from flask import request, jsonify
+from dashboard_services.value_cache import get_value_table_for_league
+
+CURRENT_SEASON = 2025  # or derive dynamically
+
+
+@app.route("/api/trade-eval", methods=["POST"])
+def api_trade_eval():
+    """
+    Body:
+    {
+      "league_id": "YOUR_LEAGUE_ID",
+      "season": 2025,     # optional; default CURRENT_SEASON
+      "side_a_players": ["8150", "1234"],
+      "side_b_players": ["5678"],
+      "side_a_picks": [],
+      "side_b_picks": []
+    }
+    """
+
+    data = request.get_json(force=True)
+    league_id = str(data["league_id"])
+    season = int(data.get("season", CURRENT_SEASON))
+
+    side_a_players = [str(pid) for pid in data.get("side_a_players", [])]
+    side_b_players = [str(pid) for pid in data.get("side_b_players", [])]
+    side_a_picks = data.get("side_a_picks", [])
+    side_b_picks = data.get("side_b_picks", [])
+
+    value_table = get_value_table_for_league(league_id, season)
+
+    PICK_VALUES = {}  # placeholder, fill out like before
+
+    def total_value(players, picks):
+        total = 0.0
+        breakdown = []
+
+        for pid in players:
+            val = float(value_table.get(pid, 0.0))
+            breakdown.append({"type": "player", "id": pid, "value": val})
+            total += val
+
+        for pick in picks:
+            val = float(PICK_VALUES.get(pick, 0.0))
+            breakdown.append({"type": "pick", "id": pick, "value": val})
+            total += val
+
+        return total, breakdown
+
+    total_a, breakdown_a = total_value(side_a_players, side_a_picks)
+    total_b, breakdown_b = total_value(side_b_players, side_b_picks)
+
+    diff = total_a - total_b
+    if diff > 0:
+        verdict = f"Side A is favored by {diff:.1f} value points."
+    elif diff < 0:
+        verdict = f"Side B is favored by {abs(diff):.1f} value points."
+    else:
+        verdict = "This trade is perfectly balanced by the model."
+
+    return jsonify({
+        "side_a": {"total": total_a, "breakdown": breakdown_a},
+        "side_b": {"total": total_b, "breakdown": breakdown_b},
+        "verdict": verdict,
+    })
+
+from flask import jsonify
+from dashboard_services.utils import load_players_index
+
+@app.route("/api/league-players")
+def api_league_players():
+    """
+    Returns a flat list of players for use in the trade UI search.
+
+    Right now this just uses players_index. If you want it league-specific
+    later, you can filter by your Sleeper rosters.
+    """
+    league_id = request.args.get("league_id")  # not used yet, but wired for future
+
+    players_index = load_players_index()
+    players = []
+
+    for pid, meta in players_index.items():
+        name = meta.get("name")
+        team = meta.get("team")
+        pos = meta.get("position")
+        if not name:
+            continue
+        players.append({
+            "id": str(pid),
+            "name": name,
+            "team": team,
+            "position": pos,
+        })
+
+    # Sort alphabetically by name for nicer UX
+    players.sort(key=lambda p: p["name"])
+    return jsonify(players)
+
 
 
 if __name__ == "__main__":
