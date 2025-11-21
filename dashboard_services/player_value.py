@@ -480,34 +480,110 @@ def horizon_age_factor(pos: str, age):
     return num / den if den > 0 else _age_factor(pos, age)
 
 
+def _production_component_fixed(u: dict, pos: str) -> float:
+    """
+    Unified production model with:
+      - QB passing integration
+      - TE softened
+    """
+
+    # default fallback = fantasy points
+    ppg = float(u.get("half_ppr_ppg") or 0.0)
+
+    # --- QUARTERBACKS --------------------------
+    if pos == "QB":
+        att = u.get("avg_pass_att", 0)
+        yds = u.get("avg_pass_yds", 0)
+        tds = u.get("avg_pass_tds", 0)
+        ints = u.get("avg_pass_int", 0)
+
+        # scaled formula (empirically tuned)
+        score = (
+                (yds / 300.0) * 0.50 +
+                (tds / 3.5) * 0.60 +
+                (att / 40.0) * 0.20 -
+                (ints / 2.5) * 0.20 +
+                (ppg / 30.0) * 0.50
+        )
+
+        return max(0.0, min(1.0, score))
+
+    # --- RUNNING BACKS -------------------------
+    if pos == "RB":
+        carries = u.get("avg_carries", 0)
+        yds = u.get("avg_rush_yards", 0)
+        recs = u.get("avg_receptions", 0)
+
+        score = (
+                (carries / 18.0) * 0.40 +
+                (yds / 90.0) * 0.40 +
+                (recs / 4.0) * 0.20 +
+                (ppg / 25.0) * 0.50
+        )
+        return min(1.0, score)
+
+    # --- WIDE RECEIVERS ------------------------
+    if pos == "WR":
+        tgt = u.get("avg_targets", 0)
+        rec = u.get("avg_receptions", 0)
+        yds = u.get("avg_rec_yards", 0)
+
+        score = (
+                (tgt / 11.0) * 0.45 +
+                (rec / 7.0) * 0.30 +
+                (yds / 90.0) * 0.40 +
+                (ppg / 22.0) * 0.50
+        )
+        return min(1.0, score)
+
+    # --- TIGHT ENDS (tuned down) --------------
+    if pos == "TE":
+        tgt = u.get("avg_targets", 0)
+        yds = u.get("avg_rec_yards", 0)
+
+        score = (
+                (tgt / 9.0) * 0.30 +
+                (yds / 75.0) * 0.25 +
+                (ppg / 18.0) * 0.35  # TE scoring deflated
+        )
+        return min(1.0, score)
+
+    return 0.0
+
+
 def build_value_table_for_usage(
         season: int,
         weeks: Iterable[int],
 ) -> Dict[str, float]:
     """
     Build a dynasty-style value table on a 0–999.9 scale using:
-      - multi-year production model
-      - 3-year weighted age curve (age, age+1, age+2)
-      - reliability weighting
-      - positional scarcity (value over replacement)
+      - multi-year weighted production
+      - QB passing integration
+      - TE weighting tuned down
+      - 3-year age curve
+      - positional scarcity (VORP)
     """
     players_index = load_players_index()
     multi_usage = _build_multi_year_usage(season, weeks)
 
     # ----------------------------------------
-    # 1) Gather production and metadata
+    # 1) Collect production and metadata
     # ----------------------------------------
     per_pid: Dict[str, Dict[str, object]] = {}
+
     for pid, u in multi_usage.items():
         meta = players_index.get(pid, {})
         pos = meta.get("pos") or meta.get("position")
+
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
 
         bday = meta.get("bDay") or meta.get("dob")
         age = _age_from_bday(bday, season)
 
-        prod_raw = _production_component(u, pos, age)  # 0–1 scale
+        # === NEW === QB now uses full passing integration
+        prod_raw = _production_component_fixed(u, pos)
+
         ppg = float(u.get("half_ppr_ppg") or 0.0)
 
         per_pid[pid] = {
@@ -522,128 +598,157 @@ def build_value_table_for_usage(
         return {}
 
     # ----------------------------------------
-    # 2) Position-normalization (prod_raw within position)
+    # 2) Normalize production WITHIN positions
     # ----------------------------------------
     pos_groups: Dict[str, list[float]] = {}
     for info in per_pid.values():
         pos = info["pos"]
         pos_groups.setdefault(pos, []).append(info["prod_raw"])
 
-    pos_minmax: Dict[str, tuple[float, float]] = {}
-    for pos, vals in pos_groups.items():
-        vmin = min(vals)
-        vmax = max(vals)
-        if vmax <= vmin:
-            pos_minmax[pos] = (0.0, 1.0)
-        else:
-            pos_minmax[pos] = (vmin, vmax)
-
-    # ----------------------------------------
-    # 3) Build position-relative scores with 3-year age horizon
-    # ----------------------------------------
-    POS_WEIGHTS = {
-        "QB": (0.80, 0.20),
-        "RB": (0.60, 0.40),
-        "WR": (0.65, 0.35),
-        "TE": (0.60, 0.40),
+    pos_minmax = {
+        pos: (
+            min(vals),
+            max(vals)
+        ) if max(vals) > min(vals) else (0.0, 1.0)
+        for pos, vals in pos_groups.items()
     }
 
-    pos_scores: Dict[str, float] = {}
+    # ----------------------------------------
+    # 3) Position scores + 3-year age horizon
+    # ----------------------------------------
+
+    # UPDATED — lower TE & QB weight
+    POS_WEIGHTS = {
+        "QB": (0.70, 0.10),  # was (0.80,0.20)
+        "RB": (0.65, 0.35),
+        "WR": (0.70, 0.30),
+        "TE": (0.55, 0.20),  # TE production reduced
+    }
+
+    pos_scores = {}
 
     for pid, info in per_pid.items():
         pos = info["pos"]
-        age = info["age"]
         prod_raw = info["prod_raw"]
+        age = info["age"]
         games_eq = info["games_equiv"]
 
         vmin, vmax = pos_minmax[pos]
-        if vmax > vmin:
-            prod_norm = (prod_raw - vmin) / (vmax - vmin)
-        else:
-            prod_norm = prod_raw
+        prod_norm = (prod_raw - vmin) / (vmax - vmin) if vmax > vmin else prod_raw
 
-        # 3-year outlook age factor, not just current age
-        age_s = horizon_age_factor(pos, age)
-        w_prod, w_age = POS_WEIGHTS.get(pos, (0.7, 0.3))
+        age_curve = horizon_age_factor(pos, age)
+        w_prod, w_age = POS_WEIGHTS[pos]
 
-        base_score = w_prod * prod_norm + w_age * age_s
+        base = w_prod * prod_norm + w_age * age_curve
 
-        # reliability downweight for tiny roles
-        reliability = min(1.0, games_eq / 8.0)
-        score = base_score * reliability
+        reliability = min(1.0, games_eq / 10.0)
 
-        pos_scores[pid] = max(0.0, min(1.0, score))
+        pos_scores[pid] = base * reliability
 
+    # ----------------------------------------
+    # 4) Scarcity (VORP)
+    # ----------------------------------------
     # -----------------------------------------------------
     # 4) VORP (Value Over Replacement) with 3-year horizon
     # -----------------------------------------------------
-    # Starter assumptions (1QB, 10 teams; tweak as needed)
+    # starter assumptions (1QB league)
     STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
     NUM_TEAMS = 10
 
-    # Positional multipliers (QBs heavily discounted in 1QB)
-    POS_MULT = {
-        "QB": 0.40,
+    # how “important” each position’s scarcity is in a 1QB league
+    POS_SCARCITY_WEIGHT = {
+        "QB": 0.25,  # QBs matter least in 1QB
         "RB": 1.00,
         "WR": 1.00,
-        "TE": 0.85,
+        "TE": 0.60,  # TE scarcity helps, but not insane
     }
 
-    # Build dynasty PPG: scale current PPG by ratio of 3-year age outlook vs now
+    # 4a. Compute dynasty-adjusted PPG per player (3-year horizon)
     ppg_by_pos: Dict[str, list[tuple[str, float]]] = {}
     for pid, info in per_pid.items():
         pos = info["pos"]
         age = info["age"]
         ppg = info["ppg"]
 
-        current_age_factor = _age_factor(pos, age)
-        horizon_af = horizon_age_factor(pos, age)
-        if current_age_factor > 0:
-            horizon_scale = horizon_af / current_age_factor
+        current_af = _age_factor(pos, age)
+        future_af = horizon_age_factor(pos, age)
+
+        if current_af > 0:
+            horizon_scale = future_af / current_af
         else:
-            horizon_scale = horizon_af
+            horizon_scale = future_af
 
         dynasty_ppg = ppg * horizon_scale
 
+        # store for reuse
         info["dynasty_ppg"] = dynasty_ppg
         ppg_by_pos.setdefault(pos, []).append((pid, dynasty_ppg))
 
-    # Replacement dynasty PPG per position
+    # 4b. Determine replacement PPG per position
     replacement_ppg: Dict[str, float] = {}
     for pos, lst in ppg_by_pos.items():
         if not lst:
             replacement_ppg[pos] = 0.0
             continue
 
+        # sort descending by dynasty_ppg
         lst_sorted = sorted(lst, key=lambda x: x[1], reverse=True)
-        needed = int(STARTERS[pos] * NUM_TEAMS * 1.3)
-        needed = max(1, min(needed, len(lst_sorted)))
 
-        window = lst_sorted[max(0, needed - 2):min(len(lst_sorted), needed + 2)]
-        replacement_ppg[pos] = sum(v for _, v in window) / len(window)
+        # number of starting spots for this position in the league
+        starter_slots = STARTERS.get(pos, 1) * NUM_TEAMS
 
-    # Apply scarcity adjustment on top of pos_scores
-    scarcity_adjusted: Dict[str, float] = {}
-    for pid, score in pos_scores.items():
+        # index for replacement: just outside typical starters
+        # e.g. for WR: 2*10 starters = 20 -> use ~ WR24-ish
+        rep_index = int(starter_slots * 1.2)
+        rep_index = max(0, min(rep_index, len(lst_sorted) - 1))
+
+        replacement_ppg[pos] = lst_sorted[rep_index][1]
+
+    # 4c. Compute VOR (dynasty_ppg - replacement_ppg)
+    vor_map: Dict[str, float] = {}
+    for pid, info in per_pid.items():
+        pos = info["pos"]
+        dyn_ppg = info["dynasty_ppg"]
+        rep_line = replacement_ppg.get(pos, 0.0)
+        vor = max(dyn_ppg - rep_line, 0.0)
+        vor_map[pid] = vor
+
+    # 4d. Normalize VOR across all players and blend with pos_scores
+    if vor_map:
+        max_vor = max(vor_map.values())
+    else:
+        max_vor = 0.0
+
+    # how much weight to give scarcity vs. the base production/age score
+    SCARCITY_ALPHA = 0.6  # 0 = ignore VOR, 1 = only VOR
+
+    final_scores: Dict[str, float] = {}
+    for pid, base_score in pos_scores.items():
         pos = per_pid[pid]["pos"]
-        dyn_ppg = per_pid[pid]["dynasty_ppg"]
-        rep = replacement_ppg[pos]
-        mult = POS_MULT[pos]
+        vor = vor_map.get(pid, 0.0)
 
-        vor = max(dyn_ppg - rep, 0.0)
-        scarcity_adj = vor * mult
+        # normalize global VOR to [0,1]
+        vor_norm = (vor / max_vor) if max_vor > 0 else 0.0
 
-        scarcity_adjusted[pid] = score + scarcity_adj
+        pos_weight = POS_SCARCITY_WEIGHT.get(pos, 1.0)
+
+        scarcity_component = vor_norm * pos_weight
+
+        # blend: mostly scarcity, but base production/age still matters
+        blended = (1.0 - SCARCITY_ALPHA) * base_score + SCARCITY_ALPHA * scarcity_component
+
+        # clamp to [0,1] for safety
+        final_scores[pid] = max(0.0, min(1.0, blended))
 
     # -----------------------------------------------------
     # 5) Global normalization to 0–999.9
     # -----------------------------------------------------
-    all_vals = list(scarcity_adjusted.values())
+    all_vals = list(final_scores.values())
     gmin = min(all_vals)
     gmax = max(all_vals)
 
     value_table: Dict[str, float] = {}
-    for pid, v in scarcity_adjusted.items():
+    for pid, v in final_scores.items():
         if gmax <= gmin:
             s01 = 0.0
         else:
