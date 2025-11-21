@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import os
+import requests
+from typing import Dict, Any
 from typing import Dict, Any
 
 from utils import load_players_index
-
-import os
-from typing import Dict, Any
-
-import requests
 
 TANK01_API_KEY = os.environ.get("TANK01_API_KEY")
 TANK01_HOST = os.environ.get("TANK01_HOST", "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com")
@@ -80,10 +78,12 @@ def fetch_tank01_players(season: int | None = None) -> Dict[str, Dict[str, Any]]
 
         pos = p.get("position") or p.get("pos")
         team = p.get("team") or p.get("teamAbv")
+        bDay = p.get("bDay")
 
         players_map[pid] = {
             "pos": pos,
             "team": team,
+            "bDay": bDay,
             # keep the raw object if you want:
             # "_raw": p,
         }
@@ -96,7 +96,7 @@ ALLOWED_POS = {"QB", "RB", "WR", "TE", "FB"}
 
 # adjust to wherever your players_index.json actually lives
 DEFAULT_PLAYERS_INDEX_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "data", "players_index.json"
+    os.path.dirname(__file__), "..", "cache", "players_index.json"
 )
 
 
@@ -109,8 +109,8 @@ def save_players_index(players_index: Dict[str, Dict[str, Any]],
 
 
 def enrich_and_filter_players_index(
-    season: int | None = None,
-    players_index_path: str = DEFAULT_PLAYERS_INDEX_PATH,
+        season: int | None = None,
+        players_index_path: str = DEFAULT_PLAYERS_INDEX_PATH,
 ) -> None:
     """
     - Load your existing players_index
@@ -125,7 +125,6 @@ def enrich_and_filter_players_index(
     tank_players = fetch_tank01_players(season=season)
 
     new_index: Dict[str, Dict[str, Any]] = {}
-    removed = 0
     missing_pos = 0
     missing_tank = 0
 
@@ -142,18 +141,14 @@ def enrich_and_filter_players_index(
             missing_pos += 1
             continue
 
-        pos = (tinfo.get("pos") or "").upper()
-        if pos not in ALLOWED_POS:
-            removed += 1
-            continue
+        bday = (tinfo.get("bDay") or "").upper()
 
         updated = dict(meta)
-        updated["pos"] = pos  # add the position into your index
+        updated["bDay"] = bday  # add the position into your index
         new_index[sleeper_id] = updated
 
     print(f"[players_cleanup] Kept {len(new_index)} players")
-    print(f"[players_cleanup] Removed {removed} non-fantasy positions")
-    print(f"[players_cleanup] Skipped {missing_pos} with no Tank01 pos, {missing_tank} with no tankId")
+    print(f"[players_cleanup] Skipped {missing_pos} with no Tank01 bday, {missing_tank} with no tankId")
 
     save_players_index(new_index, path=players_index_path)
 

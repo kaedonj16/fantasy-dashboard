@@ -1,25 +1,31 @@
+import hashlib
 import json
 import numpy as np
 import os
 import pandas as pd
 import time
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
+from typing import List, Dict, Any
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
+from dashboard_services.player_value import build_value_table_for_usage
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, load_week_projection
-from dashboard_services.styles import TRADE_HTML
-from dashboard_services.utils import load_players_index, load_teams_index, get_nfl_games_for_week, build_games_by_team, \
-    build_status_by_pid, streak_class, build_teams_overview
+from dashboard_services.sleeper_usage import build_usage_map_for_season
+from dashboard_services.trade_calculator_page import build_trade_calculator_body
+from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
+    build_status_by_pid, streak_class, build_teams_overview, load_players_index
 
 DASHBOARD_CACHE = {}  # (league_id)
-CACHE_TTL = 60 * 60  # seconds (10 minutes)
+CACHE_TTL = 60 * 60
+VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
+
 app = Flask(
     __name__,
     static_folder="static",  # points to site/static
@@ -134,6 +140,35 @@ BASE_HTML = """
 """
 
 
+def _weeks_hash(weeks):
+    raw = ",".join(str(w) for w in weeks)
+    return hashlib.sha1(raw.encode()).hexdigest()[:10]
+
+
+def get_cached_value_table(league_id: str, season: int, weeks: List[int]):
+    key = f"values_{season}_{_weeks_hash(weeks)}"
+
+    entry = DASHBOARD_CACHE.get(league_id, {})
+    bundle = entry.get("value_tables", {})
+
+    record = bundle.get(key)
+    if record:
+        ts, value_table = record
+        if time.time() - ts < VALUE_CACHE_TTL:
+            return value_table
+
+    return None
+
+
+def store_value_table(league_id: str, season: int, weeks: List[int], value_table: Dict[str, float]):
+    key = f"values_{season}_{_weeks_hash(weeks)}"
+
+    entry = DASHBOARD_CACHE.setdefault(league_id, {})
+    bundle = entry.setdefault("value_tables", {})
+
+    bundle[key] = (time.time(), value_table)
+
+
 def build_nav(league_id: str, active: str) -> str:
     """
     active: one of 'dashboard','standings','power','weekly','teams','activity','injuries'
@@ -148,7 +183,7 @@ def build_nav(league_id: str, active: str) -> str:
         pill("Dashboard", "page_dashboard", "dashboard"),
         pill("Standings", "page_standings", "standings"),
         pill("Weekly Hub", "page_weekly", "weekly"),
-        pill("Trade Calc", "page_trade", "teams"),
+        pill("Trade Calc", "page_trade", "trade"),
         pill("Activity", "page_activity", "activity"),
         pill("Injuries", "page_injuries", "injuries"),
         "<a class='nav-pill logout-pill' href='/logout'>Logout</a>"
@@ -1169,7 +1204,7 @@ def build_projections_by_week(season: int, weeks: int):
                 "projections": projections,
             }
         except Exception as e:
-            print(f"Error loading week {w}: {e}")
+            print(f"Error loading week {w} projections: {e}")
             bundles[w] = {"projections": {}}
     return bundles
 
@@ -1183,7 +1218,7 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index):
                 "statuses": statuses,
             }
         except Exception as e:
-            print(f"Error loading week {w}: {e}")
+            print(f"Error loading week {w} schedule: {e}")
             bundles[w] = {"statuses": {}}
     return bundles
 
@@ -1213,13 +1248,8 @@ def page_weekly(league_id):
 @app.route("/league/<league_id>/trade")
 def page_trade(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = """
-    <div class="overview-main">
-      <div class="card"><h2>Teams & Rosters</h2></div>
-    </div>
-    <aside class="overview-sidebar"></aside>
-    """
-    return render_template_string(TRADE_HTML, league_id=ctx["league_id"], season=ctx["current_season"])
+    body = build_trade_calculator_body(ctx["league_id"], ctx["current_season"])
+    return render_page("Trade Calculator", league_id, "trade", body)
 
 
 @app.route("/league/<league_id>/activity")
@@ -1288,105 +1318,132 @@ def logout():
 
 # in your Flask app
 
-from flask import request, jsonify
-from dashboard_services.value_cache import get_value_table_for_league
-
 CURRENT_SEASON = 2025  # or derive dynamically
 
 
 @app.route("/api/trade-eval", methods=["POST"])
 def api_trade_eval():
-    """
-    Body:
-    {
-      "league_id": "YOUR_LEAGUE_ID",
-      "season": 2025,     # optional; default CURRENT_SEASON
-      "side_a_players": ["8150", "1234"],
-      "side_b_players": ["5678"],
-      "side_a_picks": [],
-      "side_b_picks": []
-    }
-    """
+    payload = request.get_json(force=True)
 
-    data = request.get_json(force=True)
-    league_id = str(data["league_id"])
-    season = int(data.get("season", CURRENT_SEASON))
+    league_id = str(payload.get("league_id") or "global")
+    season = int(payload.get("season") or CURRENT_SEASON)
 
-    side_a_players = [str(pid) for pid in data.get("side_a_players", [])]
-    side_b_players = [str(pid) for pid in data.get("side_b_players", [])]
-    side_a_picks = data.get("side_a_picks", [])
-    side_b_picks = data.get("side_b_picks", [])
+    side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
+    side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
+    side_a_picks = payload.get("side_a_picks", [])
+    side_b_picks = payload.get("side_b_picks", [])
 
-    value_table = get_value_table_for_league(league_id, season)
+    players_index = load_players_index()
+    weeks = list(range(1, 19))
 
-    PICK_VALUES = {}  # placeholder, fill out like before
+    # Cached table load
+    value_table = get_cached_value_table(league_id, season, weeks)
+    if value_table is None:
+        value_table = build_value_table_for_usage(season, weeks)
+        store_value_table(league_id, season, weeks, value_table)
+
+    # Simple pick curve
+    def value_pick(pk: str) -> float:
+        try:
+            yr, rnd, slot = pk.split("_")
+            rnd = int(rnd)
+            slot = int(slot)
+        except Exception:
+            return 0.0
+
+        base = 40 if rnd == 1 else 20 if rnd == 2 else 10
+        decay = max(0.1, 1 - (slot - 1) * 0.04)
+        return round(base * decay, 1)
 
     def total_value(players, picks):
         total = 0.0
         breakdown = []
 
+        # Players
         for pid in players:
             val = float(value_table.get(pid, 0.0))
-            breakdown.append({"type": "player", "id": pid, "value": val})
+            name = players_index.get(pid, {}).get("name", f"Player {pid}")
+            breakdown.append({"type": "player", "id": pid, "name": name, "value": val})
             total += val
 
-        for pick in picks:
-            val = float(PICK_VALUES.get(pick, 0.0))
-            breakdown.append({"type": "pick", "id": pick, "value": val})
+        # Picks
+        for pk in picks:
+            val = value_pick(pk)
+            breakdown.append({"type": "pick", "id": pk, "value": val})
             total += val
 
         return total, breakdown
 
-    total_a, breakdown_a = total_value(side_a_players, side_a_picks)
-    total_b, breakdown_b = total_value(side_b_players, side_b_picks)
+    a_total, a_break = total_value(side_a_players, side_a_picks)
+    b_total, b_break = total_value(side_b_players, side_b_picks)
 
-    diff = total_a - total_b
-    if diff > 0:
-        verdict = f"Side A is favored by {diff:.1f} value points."
-    elif diff < 0:
-        verdict = f"Side B is favored by {abs(diff):.1f} value points."
+    diff = a_total - b_total
+
+    if abs(diff) < 5:
+        verdict = "This trade looks evenly balanced."
+    elif diff > 0:
+        verdict = f"Side A is favored by about {abs(diff):.1f} value."
     else:
-        verdict = "This trade is perfectly balanced by the model."
+        verdict = f"Side B is favored by about {abs(diff):.1f} value."
 
     return jsonify({
-        "side_a": {"total": total_a, "breakdown": breakdown_a},
-        "side_b": {"total": total_b, "breakdown": breakdown_b},
-        "verdict": verdict,
+        "side_a": {"total": a_total, "breakdown": a_break},
+        "side_b": {"total": b_total, "breakdown": b_break},
+        "verdict": verdict
     })
 
-from flask import jsonify
-from dashboard_services.utils import load_players_index
 
 @app.route("/api/league-players")
 def api_league_players():
-    """
-    Returns a flat list of players for use in the trade UI search.
+    # Use the same league_id/season scheme as trade-eval
+    league_id = (request.args.get("league_id") or "global").strip()
+    season = int(request.args.get("season") or CURRENT_SEASON)
 
-    Right now this just uses players_index. If you want it league-specific
-    later, you can filter by your Sleeper rosters.
-    """
-    league_id = request.args.get("league_id")  # not used yet, but wired for future
-
+    # 1) Base metadata
     players_index = load_players_index()
-    players = []
+
+    # 2) Weeks + cached value table
+    weeks = list(range(1, 19))
+
+    value_table = get_cached_value_table(league_id, season, weeks)
+    if value_table is None:
+        print(f"[league_players] cache miss for league={league_id}, season={season} – building table…")
+        value_table = build_value_table_for_usage(season, weeks)
+        store_value_table(league_id, season, weeks, value_table)
+    else:
+        print(f"[league_players] cache hit for league={league_id}, season={season}")
+
+    # 3) Usage (if you have a cached version, swap it in here)
+    usage_by_pid = build_usage_map_for_season(season, weeks)
+
+    players: list[dict] = []
 
     for pid, meta in players_index.items():
         name = meta.get("name")
+        pos = meta.get("pos") or meta.get("position")
         team = meta.get("team")
-        pos = meta.get("position")
-        if not name:
+
+        # Only skill positions
+        if not name or pos not in {"QB", "RB", "WR", "TE"}:
             continue
+
+        # Optional age field if you have it in the index
+        age = meta.get("age") or meta.get("age_decimal")
+
         players.append({
             "id": str(pid),
             "name": name,
             "team": team,
             "position": pos,
+            "age": age,
+            "value": float(value_table.get(str(pid), 0.0)),
+            "usage": usage_by_pid.get(str(pid), {}),
         })
 
-    # Sort alphabetically by name for nicer UX
-    players.sort(key=lambda p: p["name"])
-    return jsonify(players)
+    players.sort(key=lambda x: (-x["value"], x["name"]))
 
+    print(f"[league_players] returning {len(players)} players for league={league_id}, season={season}")
+    return jsonify(players)
 
 
 if __name__ == "__main__":

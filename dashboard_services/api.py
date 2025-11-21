@@ -207,8 +207,8 @@ class Tank01Error(Exception):
 
 
 def get_tank01_player_gamelogs(
-    tank_player_id: str,
-    season: Optional[int] = None,
+        tank_player_id: str,
+        season: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Call Tank01 and return a list of game dicts for a given player.
@@ -262,4 +262,3 @@ def get_tank01_player_gamelogs(
         games = []
 
     return games
-

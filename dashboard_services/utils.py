@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, Optional
 
-from dashboard_services.api import _headers, get_nfl_games_for_week_raw
+from dashboard_services.api import get_nfl_games_for_week_raw
 
 CACHE_DIR = Path("cache")
 BETTER_OUTWARD_METRICS = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]

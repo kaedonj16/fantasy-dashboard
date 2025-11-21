@@ -5,8 +5,8 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from .api import get_matchups, get_users, get_rosters, _avatar_from_users, get_nfl_state
-from .utils import write_json
+from dashboard_services.api import get_matchups, get_users, get_rosters, _avatar_from_users, get_nfl_state
+from dashboard_services.utils import write_json
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
