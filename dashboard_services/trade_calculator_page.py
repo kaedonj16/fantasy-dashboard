@@ -1,4 +1,3 @@
-# app.py (or trade_calculator_page.py)
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
@@ -54,44 +53,46 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
               </div>
             </div>
           </div>
+
           <div class="card trade-summary-card">
-          <div class="card-header-row">
-            <h2>Trade Summary</h2>
-          </div>
-          <div class="card-body">
-            <div class="trade-totals-row">
-              <div class="trade-total">
-                <span class="label">Team 1 total</span>
-                <span class="value" id="sideATotal">0.0</span>
-              </div>
-              <div class="trade-total">
-                <span class="label">Difference</span>
-                <span class="value" id="tradeDiff">0.0</span>
-              </div>
-              <div class="trade-total">
-                <span class="label">Team 2 total</span>
-                <span class="value" id="sideBTotal">0.0</span>
-              </div>
+            <div class="card-header-row">
+              <h2>Trade Summary</h2>
             </div>
+            <div class="card-body">
+              <div class="trade-totals-row">
+                <div class="trade-total">
+                  <span class="label">Team 1 total</span>
+                  <span class="value" id="sideATotal">0.0</span>
+                </div>
+                <div class="trade-total">
+                  <span class="label">Difference</span>
+                  <span class="value" id="tradeDiff">0.0</span>
+                </div>
+                <div class="trade-total">
+                  <span class="label">Team 2 total</span>
+                  <span class="value" id="sideBTotal">0.0</span>
+                </div>
+              </div>
 
-            <div class="trade-bar">
-              <div class="trade-bar-track">
-                <div class="trade-bar-fair-zone"></div>
-                <div class="trade-bar-indicator" id="tradeBarIndicator"></div>
+              <div class="trade-bar">
+                <div class="trade-bar-track">
+                  <div class="trade-bar-fair-zone"></div>
+                  <div class="trade-bar-indicator" id="tradeBarIndicator"></div>
+                </div>
+                <div class="trade-bar-scale">
+                  <span>Team 1 favored</span>
+                  <span>Fair range</span>
+                  <span>Team 2 favored</span>
+                </div>
               </div>
-              <div class="trade-bar-scale">
-                <span>Team 1 favored</span>
-                <span>Fair range</span>
-                <span>Team 2 favored</span>
+
+              <div id="tradeVerdict" class="trade-verdict">
+                Add players to both sides to see the trade balance.
               </div>
+              <div id="errorBox" class="error" style="display:none;"></div>
             </div>
-
-            <div id="tradeVerdict" class="trade-verdict">Add players to both sides to see the trade balance.</div>
-            <div id="errorBox" class="error" style="display:none;"></div>
           </div>
         </div>
-        </div>
-
 
       </main>
 
@@ -108,6 +109,18 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             </p>
           </div>
         </div>
+
+        <!-- All players + values side card -->
+        <div class="card small">
+          <div class="card-header">
+            <h3>All Player Values</h3>
+          </div>
+          <div class="card-body">
+            <div id="allPlayersList" class="all-players-list">
+              <!-- Filled by JS -->
+            </div>
+          </div>
+        </div>
       </aside>
     </div>
 
@@ -117,6 +130,59 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
       let allPlayers = [];
       let sideASelected = [];
       let sideBSelected = [];
+
+      function formatValue(v) {{
+        const num = Number(v) || 0;
+        return num.toFixed(1);
+      }}
+
+      // Render the global "all players + values" list
+      function renderAllPlayersList() {{
+        const container = document.getElementById("allPlayersList");
+        if (!container) return;
+        container.innerHTML = "";
+
+        if (!allPlayers || allPlayers.length === 0) {{
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "Players will appear here once loaded.";
+          container.appendChild(empty);
+          return;
+        }}
+
+        // sort by value desc; fall back to 0 if no value
+        const sorted = [...allPlayers].sort(
+          (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0)
+        );
+
+        sorted.forEach(p => {{
+          const row = document.createElement("div");
+          row.className = "all-players-row";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "all-players-name";
+          nameSpan.textContent = p.name || "Unknown";
+
+          const metaBits = [];
+          if (p.position) metaBits.push(p.position);
+          if (p.team) metaBits.push(p.team);
+          if (p.age != null) metaBits.push(p.age + " yrs");
+
+          const metaSpan = document.createElement("span");
+          metaSpan.className = "all-players-meta";
+          metaSpan.textContent = metaBits.join(" · ");
+
+          const valueSpan = document.createElement("span");
+          valueSpan.className = "all-players-value";
+          valueSpan.textContent = formatValue(p.value);
+
+          row.appendChild(nameSpan);
+          row.appendChild(metaSpan);
+          row.appendChild(valueSpan);
+
+          container.appendChild(row);
+        }});
+      }}
 
       async function ensurePlayersLoaded() {{
         if (allPlayers.length > 0) return;
@@ -143,65 +209,109 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
         if (!res.ok) {{
           throw new Error("Failed to load players (" + res.status + ").");
         }}
-        allPlayers = await res.json();
-        console.log("[trade] loaded players:", allPlayers.length);
+
+        const data = await res.json();      // list of dicts
+        console.log("[trade] loaded players payload sample:", data.slice(0, 5));
+        allPlayers = Array.isArray(data) ? data : [];
 
         if (errorBox) {{
           errorBox.style.display = "none";
           errorBox.textContent = "";
         }}
+
+        // Populate the side card
+        renderAllPlayersList();
       }}
 
-      function formatValue(v) {{
-        const num = Number(v) || 0;
-        return num.toFixed(1);
-      }}
-
-      function recomputeTrade() {{
+      // Use backend /api/trade-eval for totals + verdict
+      async function recomputeTrade() {{
         const sideATotalEl = document.getElementById("sideATotal");
         const sideBTotalEl = document.getElementById("sideBTotal");
         const tradeDiffEl  = document.getElementById("tradeDiff");
         const verdictEl    = document.getElementById("tradeVerdict");
         const barIndicator = document.getElementById("tradeBarIndicator");
+        const errorBox     = document.getElementById("errorBox");
+        const leagueInput  = document.getElementById("leagueIdInput");
+        const seasonInput  = document.getElementById("seasonInput");
 
-        const sumA = sideASelected.reduce((acc, p) => acc + (Number(p.value) || 0), 0);
-        const sumB = sideBSelected.reduce((acc, p) => acc + (Number(p.value) || 0), 0);
-        const diff = sumA - sumB;
+        const leagueId = leagueInput ? (leagueInput.value || "").trim() : "";
+        const season   = seasonInput ? (seasonInput.value || "").trim() : "";
 
-        if (sideATotalEl) sideATotalEl.textContent = formatValue(sumA);
-        if (sideBTotalEl) sideBTotalEl.textContent = formatValue(sumB);
-        if (tradeDiffEl)  tradeDiffEl.textContent  = formatValue(diff);
+        const sideAIds = sideASelected.map(p => p.id);
+        const sideBIds = sideBSelected.map(p => p.id);
 
-        // Bar position: -range (team 2) to +range (team 1)
-        const magnitude = Math.max(Math.abs(diff), 10);
-        const range = magnitude * 1.5;  // widen a bit so small diffs look subtle
-        let pct = (diff / range + 1) / 2; // map [-range, +range] -> [0,1]
-        pct = Math.min(1, Math.max(0, pct));
-        const leftPct = pct * 100;
-
-        if (barIndicator) {{
-          barIndicator.style.left = leftPct + "%";
-        }}
-
-        // Verdict text
-        if (!verdictEl) return;
-
-        const absDiff = Math.abs(diff);
-        if (sumA === 0 && sumB === 0) {{
-          verdictEl.textContent = "Add players to both sides to see the trade balance.";
-          verdictEl.className = "trade-verdict";
+        // If both sides empty, just reset UI and bail
+        if (sideAIds.length === 0 && sideBIds.length === 0) {{
+          if (sideATotalEl) sideATotalEl.textContent = "0.0";
+          if (sideBTotalEl) sideBTotalEl.textContent = "0.0";
+          if (tradeDiffEl)  tradeDiffEl.textContent  = "0.0";
+          if (barIndicator) barIndicator.style.left = "50%";
+          if (verdictEl) {{
+            verdictEl.textContent = "Add players to both sides to see the trade balance.";
+            verdictEl.className = "trade-verdict";
+          }}
+          if (errorBox) {{
+            errorBox.style.display = "none";
+            errorBox.textContent = "";
+          }}
           return;
         }}
 
-        if (absDiff < 5) {{
-          verdictEl.textContent = "This trade looks very fair.";
-          verdictEl.className = "trade-verdict verdict-fair";
-        }} else if (diff > 0) {{
-          verdictEl.textContent = "Team 1 is favored by about " + formatValue(absDiff) + " value.";
-          verdictEl.className = "trade-verdict verdict-side-a";
-        }} else {{
-          verdictEl.textContent = "Team 2 is favored by about " + formatValue(absDiff) + " value.";
-          verdictEl.className = "trade-verdict verdict-side-b";
+        const payload = {{
+          league_id: leagueId || "global",
+          season: season ? Number(season) : undefined,
+          side_a_players: sideAIds,
+          side_b_players: sideBIds,
+          side_a_picks: [],
+          side_b_picks: []
+        }};
+
+        try {{
+          const res = await fetch("/api/trade-eval", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify(payload)
+          }});
+
+          if (!res.ok) {{
+            throw new Error("Trade eval failed (" + res.status + ").");
+          }}
+
+          const data = await res.json();
+          const diff    = Number(data.diff) || 0;
+          const aEff    = data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
+          const bEff    = data.side_b ? Number(data.side_b.effective_total) || 0 : 0;
+
+          if (sideATotalEl) sideATotalEl.textContent = formatValue(aEff);
+          if (sideBTotalEl) sideBTotalEl.textContent = formatValue(bEff);
+          if (tradeDiffEl)  tradeDiffEl.textContent  = formatValue(diff);
+
+          // Bar movement: normalize diff to -1..+1 range
+          const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
+          let normalizedDiff = diff / maxSideTotal; // -1..+1-ish
+          normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
+          let pct = (normalizedDiff + 1) / 2; // 0..1
+          const leftPct = pct * 100;
+
+          if (barIndicator) {{
+            barIndicator.style.left = leftPct + "%";
+          }}
+
+          if (verdictEl) {{
+            verdictEl.textContent = data.verdict || "";
+            verdictEl.className = "trade-verdict";
+          }}
+
+          if (errorBox) {{
+            errorBox.style.display = "none";
+            errorBox.textContent = "";
+          }}
+        }} catch (err) {{
+          console.error("[trade] error in recomputeTrade:", err);
+          if (errorBox) {{
+            errorBox.style.display = "block";
+            errorBox.textContent = err.message || "Failed to evaluate trade.";
+          }}
         }}
       }}
 
@@ -214,18 +324,22 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
 
         selected.forEach((p, idx) => {{
           const chip = document.createElement("div");
-          chip.className = "chip";
+          chip.className = "trade-player-chip";
 
-          const label = document.createElement("span");
+          const labelName = document.createElement("span");
           const metaBits = [];
           if (p.team) metaBits.push(p.team);
           if (p.position) metaBits.push(p.position);
           if (p.age != null) metaBits.push(p.age + " yrs");
-          label.textContent = p.name + (metaBits.length ? " — " + metaBits.join(" · ") : "");
+          labelName.textContent = p.name;
 
+          const detailSpan = document.createElement("span");
+          detailSpan.textContent = metaBits.join(" · ");
+
+          const valueDiv = document.createElement("div");
           const valueSpan = document.createElement("span");
           valueSpan.className = "chip-value";
-          valueSpan.textContent = " · " + formatValue(p.value);
+          valueSpan.textContent = formatValue(p.value);
 
           const btn = document.createElement("button");
           btn.type = "button";
@@ -236,13 +350,17 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             renderChips(side);
           }};
 
-          chip.appendChild(label);
-          chip.appendChild(valueSpan);
-          chip.appendChild(btn);
+          valueDiv.appendChild(valueSpan);
+          valueDiv.appendChild(btn);
+          valueDiv.style.display = "inline-flex";
+          valueDiv.style.gap = "0.25rem";
+
+          chip.appendChild(labelName);
+          chip.appendChild(detailSpan);
+          chip.appendChild(valueDiv);
           container.appendChild(chip);
         }});
 
-        // Recompute totals & bar every time chips change
         recomputeTrade();
       }}
 
@@ -309,7 +427,8 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
         }});
       }}
 
-      function initTradeCalculator() {{
+      async function initTradeCalculator() {{
+        await ensurePlayersLoaded();
         setupSearch("A");
         setupSearch("B");
         recomputeTrade();

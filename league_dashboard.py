@@ -46,12 +46,13 @@ from dashboard_services.awards import compute_weekly_highlights, compute_awards_
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
 from dashboard_services.matchups import render_matchup_carousel_weeks, render_matchup_slide
 from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, playoff_bracket, load_week_schedule
+from dashboard_services.service import build_tables, playoff_bracket
 from dashboard_services.service import render_weekly_highlight_ticker, render_week_recap_tab, \
     build_week_activity, render_standings_table, build_matchups_by_week
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
     activity_filter_js, NAV_JS, NAV_CSS
-from dashboard_services.utils import streak_class, z_better_outward, load_teams_index, load_players_index
+from dashboard_services.utils import streak_class, z_better_outward, load_teams_index, load_model_value_table, \
+    load_week_schedule
 
 
 # === WEEK RECAP + TOP-3 SIDEBAR ==============================================
@@ -815,7 +816,7 @@ def main():
     current = get_nfl_state()
     players = get_nfl_players()
     players_map = get_players_map(players)
-    players_index = load_players_index()
+    players_index = load_model_value_table()
     teams_index = load_teams_index()
 
     current_season = current.get("season")

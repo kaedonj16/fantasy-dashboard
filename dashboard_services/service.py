@@ -1,19 +1,20 @@
+from __future__ import annotations
+
 import json
 import numpy as np
 import pandas as pd
 import requests
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 
-from .api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json
+from .api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json, get_transactions
 from .matchups import build_matchup_preview
 from .players import build_roster_display_maps
 from .styles import recap_css, tickerCss
-from .utils import safe_owner_name, path_week_proj, get_week_projections_cached, fetch_week_from_tank01, \
-    path_week_schedule, get_week_schedule_cached, get_nfl_games_for_week
+from .utils import safe_owner_name
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -624,6 +625,34 @@ def compute_streaks(df_weekly: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[int, list[dict]]:
+    """
+    Fetches transactions week-by-week from Sleeper:
+        /league/{league_id}/transactions/{week}
+
+    Returns:
+        {
+            1: [ {...}, {...} ],
+            2: [ ... ],
+            ...
+        }
+    """
+    results: dict[int, list[dict]] = {}
+
+    for w in season_weeks:
+        try:
+            tx = get_transactions(league_id=league_id, week=w)
+            if isinstance(tx, list):
+                results[w] = tx
+            else:
+                results[w] = []
+        except Exception as e:
+            print(f"[transactions] Week {w} failed → {e}")
+            results[w] = []
+
+    return results
+
+
 def build_week_activity(
         league_id: str,
         week: int,
@@ -639,7 +668,7 @@ def build_week_activity(
     """
 
     roster_name, roster_avatar = build_roster_display_maps(league_id)
-    txs = fetch_json(f"/league/{league_id}/transactions/{week}") or []
+    txs = get_transactions(league_id ) or []
     rows = []
 
     def pinfo(pid: str) -> dict[str, str]:
@@ -1418,24 +1447,31 @@ def build_picks_by_roster(
     return picks_by_roster
 
 
-def load_week_projection(season: int, w: int):
-    # projections
-    proj_path = Path(path_week_proj(season, w))
-    if not proj_path.exists():
-        get_week_projections_cached(season, w, fetch_week_from_tank01)
+def age_from_bday(bday: Optional[str]) -> Optional[float]:
+    """
+    Compute decimal age in years as of Sept 1 of `season`.
 
-    with open(proj_path, "r", encoding="utf-8") as f:
-        projections = json.load(f)
+    Returns values like:
+      22.4, 26.7, 30.1, etc.
+    """
+    if not bday:
+        return None
 
-    return projections
+    try:
+        # Handle formats like "1999-05-14" or "1999-05-14T00:00:00Z"
+        parts = bday.split("T")[0].split("/")
+        month, day, year = map(int, parts[:3])
+        dob = date(year, month, day)
 
-def load_week_schedule(season: int, w: int):
-    # projections
-    proj_path = Path(path_week_schedule(season, w))
-    if not proj_path.exists():
-        get_week_schedule_cached(season, w, get_nfl_games_for_week)
+        # Dynasty age baseline: as of Sept 1 of the current season
+        as_of = date.today()
 
-    with open(proj_path, "r", encoding="utf-8") as f:
-        projections = json.load(f)
+        # Convert to decimal years
+        days = (as_of - dob).days
+        age = days / 365.25
 
-    return projections
+        # Round to one decimal place (26.7 style)
+        return round(age, 1)
+
+    except Exception:
+        return None

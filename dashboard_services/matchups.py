@@ -288,7 +288,7 @@ def render_matchup_slide(
             <div class="name left">{t['name']}</div>
             <div>{t['record']} • @{t['username']}</div>
           </div>
-          <div style="display:grid;grid-template-columns:1;">
+          <div style="display:grid;grid-template-columns:1;justify-items: center;">
             <span class="num">{actual_total:.1f}</span>
             <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
           </div>
@@ -318,7 +318,7 @@ def render_matchup_slide(
         actual_total, live_proj_total = team_live_totals(t, status_by_pid, projections.get(w).get("projections"))
         return f"""
         <div class="m-team">
-          <div style="display:grid;grid-template-columns:1;">
+          <div style="display:grid;grid-template-columns:1;justify-items: center;">
             <span class="num">{actual_total:.1f}</span>
             <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
           </div>

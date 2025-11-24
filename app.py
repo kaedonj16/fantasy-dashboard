@@ -1,9 +1,11 @@
 import hashlib
 import json
+import math
 import numpy as np
 import os
 import pandas as pd
 import time
+from datetime import date
 from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
 from typing import List, Dict, Any
@@ -11,20 +13,27 @@ from typing import List, Dict, Any
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.data_building.build_daily_value_table import build_daily_data
+from dashboard_services.data_building.external_values_scraper import DATA_DIR
+from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
-from dashboard_services.player_value import build_value_table_for_usage
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
-    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, load_week_projection
-from dashboard_services.sleeper_usage import build_usage_map_for_season
+    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
-    build_status_by_pid, streak_class, build_teams_overview, load_players_index
+    build_status_by_pid, streak_class, build_teams_overview, load_model_value_table, load_players_index, \
+    load_week_projection
+from dashboard_services.data_building.value_model_training import build_ml_value_table
 
 DASHBOARD_CACHE = {}  # (league_id)
 CACHE_TTL = 60 * 60
 VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
+daily_init_done = False
+# directory to hold value-table files
+VALUE_TABLE_DIR = Path(__file__).resolve().parents[0] / "data"
+VALUE_TABLE_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(
     __name__,
@@ -145,28 +154,88 @@ def _weeks_hash(weeks):
     return hashlib.sha1(raw.encode()).hexdigest()[:10]
 
 
-def get_cached_value_table(league_id: str, season: int, weeks: List[int]):
+def get_cached_model_value_table(league_id: str, season: int, weeks: List[int]):
     key = f"values_{season}_{_weeks_hash(weeks)}"
 
     entry = DASHBOARD_CACHE.get(league_id, {})
     bundle = entry.get("value_tables", {})
 
     record = bundle.get(key)
+
+    # Case 1: cache hit
     if record:
         ts, value_table = record
         if time.time() - ts < VALUE_CACHE_TTL:
             return value_table
+        # cache exists but expired → fall through to load from disk
 
+    # Case 2: no cache OR cache expired → try loading from disk
+    disk_table = load_model_value_table()
+    if disk_table:
+        return disk_table
+
+    # Case 3: nothing exists
     return None
 
 
-def store_value_table(league_id: str, season: int, weeks: List[int], value_table: Dict[str, float]):
+def store_value_table(
+        league_id: str,
+        season: int,
+        weeks: List[int],
+        value_table: Dict[str, float],
+) -> None:
+    """
+    Store value table in:
+      1) in-memory DASHBOARD_CACHE
+      2) disk as JSON (for reuse / training), named value_table_{date}.json
+    """
     key = f"values_{season}_{_weeks_hash(weeks)}"
 
+    # --- in-memory cache ---
     entry = DASHBOARD_CACHE.setdefault(league_id, {})
     bundle = entry.setdefault("value_tables", {})
-
     bundle[key] = (time.time(), value_table)
+
+    # --- disk cache with date-stamped filename ---
+    today_str = date.today().isoformat()  # e.g. "2025-11-22"
+    value_dir = Path(VALUE_TABLE_DIR)
+    value_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"value_table_{today_str}.json"
+    value_path = value_dir / filename
+
+    with value_path.open("w", encoding="utf-8") as f:
+        json.dump(value_table, f, ensure_ascii=False)
+
+
+def store_model_values(
+        league_id: str,
+        season: int,
+        weeks: List[int],
+        value_table: Dict[str, float],
+) -> None:
+    """
+    Store value table in:
+      1) in-memory DASHBOARD_CACHE
+      2) disk as JSON (for reuse / training), named value_table_{date}.json
+    """
+    key = f"model_values_{season}_{_weeks_hash(weeks)}"
+
+    # --- in-memory cache ---
+    entry = DASHBOARD_CACHE.setdefault(league_id, {})
+    bundle = entry.setdefault("value_tables", {})
+    bundle[key] = (time.time(), value_table)
+
+    # --- disk cache with date-stamped filename ---
+    today_str = date.today().isoformat()  # e.g. "2025-11-22"
+    value_dir = Path(VALUE_TABLE_DIR)
+    value_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"model_values_{today_str}.json"
+    value_path = value_dir / filename
+
+    with value_path.open("w", encoding="utf-8") as f:
+        json.dump(value_table, f, ensure_ascii=False)
 
 
 def build_nav(league_id: str, active: str) -> str:
@@ -218,6 +287,9 @@ def build_league_context(league_id: str) -> dict:
     df_weekly, team_stats, roster_map = build_tables(
         league_id, current_week, players, users, rosters
     )
+    activity_df = build_week_activity(league_id, df_weekly.get("week").max(),
+                                      players_map)
+    injury_df = build_injury_report(league_id, local_tz="America/New_York", include_free_agents=False)
     statuses = build_status_by_week(
         current_season,
         weeks,
@@ -269,7 +341,9 @@ def build_league_context(league_id: str) -> dict:
         "statuses": statuses,
         "matchups_by_week": matchups_by_week,
         "proj_by_week": proj_by_week,
-        "weeks": weeks
+        "weeks": weeks,
+        "injury_df": injury_df,
+        "activity_df": activity_df,
     }
 
 
@@ -835,11 +909,10 @@ def _render_weekly_top_scorers_for_week(
 ) -> str:
     # 1. Filter to ONLY this week
     week_df = df_weekly[df_weekly["week"] == w].copy()
-
     # --------------------------------------------
     # CASE 1: Week finalized → use real scores
     # --------------------------------------------
-    if not week_df.empty and week_df["finalized"].all():
+    if not week_df.empty and week_df["points"].any():
         _, _, top_by_pos = matchup_cards_last_week(
             league_id,
             week_df,
@@ -1222,6 +1295,262 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index):
             bundles[w] = {"statuses": {}}
     return bundles
 
+def build_activity_body(ctx: dict) -> str:
+    league_id = ctx["league_id"]
+    activity_df = ctx.get("activity_df")
+    injury_df = ctx.get("injury_df")  # from build_injury_report(...)
+
+    # ---------- EXISTING ACTIVITY CARD HTML ----------
+    activity_html = ""
+    if activity_df is not None and not activity_df.empty:
+        def html_trade(txrow):
+            data = txrow["data"]
+            teams = data["teams"]
+            users = get_users(league_id)
+
+            rid_to_name = {}
+            for tm in teams:
+                rid = tm.get("roster_id")
+                if rid is not None:
+                    rid_to_name[rid] = tm.get("name") or f"Team {rid}"
+
+            def render_pick_row(pick, io_class):
+                rnd_suffix = {1: "st", 2: "nd", 3: "rd"}.get(pick.get("round"), "th")
+                round_label = f"{pick.get('round')}" + rnd_suffix
+                season = str(pick.get("season") or "")
+                orig_rid = pick.get("roster_id")
+                orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
+                orig_name = next(
+                    (
+                        u.get("display_name")
+                        for u in users
+                        if u.get("metadata", {}).get("team_name") == orig_team
+                    ),
+                    None
+                )
+                subline = f"{orig_name}'s Pick" if orig_name else "Traded Pick"
+                return (
+                    f"<div class='player'><span class='io {io_class}'>"
+                    f"{'+' if io_class == 'add' else '−'}</span>"
+                    f"<div><div style='font-weight:600'>{season} {round_label}</div>"
+                    f"<div style='color:#64748b;font-size:12px'>{subline}</div></div></div>"
+                )
+
+            draft_picks = data.get("draft_picks", []) or []
+            picks_by_receiver = {}
+            picks_by_sender = {}
+            for dp in draft_picks:
+                recv = dp.get("owner_id")
+                send = dp.get("previous_owner_id")
+                if recv is not None:
+                    picks_by_receiver.setdefault(recv, []).append(dp)
+                if send is not None:
+                    picks_by_sender.setdefault(send, []).append(dp)
+
+            cols = []
+            for tm in teams:
+                roster_id = tm.get("roster_id")
+
+                gets_players = "".join(
+                    f"<div class='player'><span class='io add'>+</span>"
+                    f"<div><div style='font-weight:600'>{p['name']}</div>"
+                    f"<div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div></div></div>"
+                    for p in (tm.get("gets") or [])
+                )
+
+                gets_picks = "".join(
+                    render_pick_row(pick, "add")
+                    for pick in (picks_by_receiver.get(roster_id, []) if roster_id is not None else [])
+                )
+                gets = gets_players + gets_picks
+                if not gets:
+                    gets = "<div style='color:#64748b;font-size:13px'>No players</div>"
+
+                sends_players = "".join(
+                    f"<div class='player'><span class='io drop'>−</span>"
+                    f"<div><div style='font-weight:600'>{p['name']}</div>"
+                    f"<div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div></div></div>"
+                    for p in (tm.get("sends") or [])
+                )
+
+                sends_picks = "".join(
+                    render_pick_row(pick, "drop")
+                    for pick in (picks_by_sender.get(roster_id, []) if roster_id is not None else [])
+                )
+                sends = sends_players + sends_picks
+
+                avatar = tm.get("avatar") or ""
+                img = (
+                    f"<img class='avatar' src='{avatar}' "
+                    f"onerror=\"this.style.display='none'\">"
+                    if avatar else ""
+                )
+                cols.append(
+                    f"<div class='team-col'>"
+                    f"  <header>{img}<div class='team-name'>{tm.get('name', '')}</div></header>"
+                    f"  <div class='plist'>{gets}{sends}</div>"
+                    f"</div>"
+                )
+
+            when = (
+                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
+                if pd.notna(txrow["ts"])
+                else ""
+            )
+            return (
+                f"<div class='tx trade-card activity-item' data-kind='trade'>"
+                f"  <div class='meta'>{pill('Trade completed')} • {when}</div>"
+                f"  <div class='teams'>{''.join(cols)}</div>"
+                f"</div>"
+            )
+
+        def html_waiver(txrow):
+            d = txrow["data"]
+            avatar = d.get("avatar") or ""
+            img = (
+                f"<img class='avatar' src='{avatar}' "
+                f"onerror=\"this.style.display='none'\">"
+                if avatar else ""
+            )
+            adds = "".join(
+                f"<div class='player'><span class='io add'>+</span>"
+                f"<div><div style='font-weight:600'>{p['name']}</div>"
+                f"<div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div></div></div>"
+                for p in d.get("adds", [])
+            )
+            when = (
+                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
+                if pd.notna(txrow["ts"])
+                else ""
+            )
+            return (
+                f"<div class='tx activity-item' data-kind='waiver'>"
+                f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
+                f"  <div class='team-col'>"
+                f"    <header>{img}<div class='team-name'>{d['name']}</div></header>"
+                f"    <div class='plist'>{adds}</div>"
+                f"  </div>"
+                f"</div>"
+            )
+
+        cards = []
+        for _, row in activity_df.iterrows():
+            cards.append(html_trade(row) if row["kind"] == "trade" else html_waiver(row))
+
+        # optional: keep your existing pills at top of the card
+        filter_controls_html = """
+        <div class="activity-filter">
+          <span class="activity-pill filter-pill active" data-kind="waiver">Waivers</span>
+          <span class="activity-pill filter-pill active" data-kind="trade">Trades</span>
+        </div>
+        """
+
+        activity_html = (
+            "<div class='card activity-card' data-section='activity'>"
+            "  <div class='card-header-row'>"
+            "    <h2>This Week: Trades & Waiver Claims</h2>"
+            f"    {filter_controls_html}"
+            "  </div>"
+            "  <div class='scroll-box'>"
+            "    <div class='feed'>"
+            f"      {''.join(cards)}"
+            "    </div>"
+            "  </div>"
+            "</div>"
+        )
+
+    # ---------- EXISTING INJURY ACCORDION ----------
+    injury_html = ""
+    if injury_df is not None and not injury_df.empty:
+        injury_html = render_injury_accordion(injury_df)
+
+    # ---------- PAGE LAYOUT WITH TWO COLUMNS + SIDEBAR ----------
+    return f"""
+    <div class="page-layout activity-page">
+      <main class="page-main activity-main">
+        <div class="activity-col">
+          {activity_html or "<div class='card'><div class='card-body'><p>No activity yet.</p></div></div>"}
+        </div>
+        <div class="injury-col">
+          {injury_html or "<div class='card'><div class='card-body'><p>No injury data.</p></div></div>"}
+        </div>
+      </main>
+
+      <aside class="page-sidebar">
+        <div class="card small">
+          <div class="card-header">
+            <h3>Filters</h3>
+          </div>
+          <div class="card-body">
+            <label class="mini-label">Activity Types</label>
+            <div class="pill-row">
+              <button class="pill-toggle act-toggle active" data-kind="waiver">Waivers</button>
+              <button class="pill-toggle act-toggle active" data-kind="trade">Trades</button>
+            </div>
+
+            <label class="mini-label" style="margin-top:12px;">Injury Status</label>
+            <div class="pill-row">
+              <button class="pill-toggle inj-toggle active" data-status="all">All</button>
+              <button class="pill-toggle inj-toggle" data-status="IR">IR</button>
+              <button class="pill-toggle inj-toggle" data-status="OUT">Out</button>
+              <button class="pill-toggle inj-toggle" data-status="QUESTIONABLE">Q</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+    (function() {{
+      // Activity filter (sidebar pills)
+      document.querySelectorAll('.act-toggle').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          const kind = this.getAttribute('data-kind');
+          const isActive = this.classList.toggle('active');
+
+          const activeKinds = Array.from(document.querySelectorAll('.act-toggle.active'))
+            .map(b => b.getAttribute('data-kind'));
+
+          document.querySelectorAll('.activity-item').forEach(function(item) {{
+            const k = item.getAttribute('data-kind');
+            item.style.display = activeKinds.length === 0 || activeKinds.includes(k)
+              ? ''
+              : 'none';
+          }});
+        }});
+      }});
+
+      // Injury filter (sidebar pills)
+      document.querySelectorAll('.inj-toggle').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          // make this behave like radio buttons
+          document.querySelectorAll('.inj-toggle').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+
+          const status = this.getAttribute('data-status');
+          const rows = document.querySelectorAll('.inj-row');
+
+          rows.forEach(function(row) {{
+            if (status === 'all') {{
+              row.style.display = '';
+              return;
+            }}
+            const chips = row.querySelectorAll('.chip');
+            let matched = false;
+            chips.forEach(function(c) {{
+              if (c.textContent.trim().toUpperCase() === status) {{
+                matched = true;
+              }}
+            }});
+            row.style.display = matched ? '' : 'none';
+          }});
+        }});
+      }});
+    }})();
+    </script>
+    """
+
+
 
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
@@ -1255,12 +1584,7 @@ def page_trade(league_id):
 @app.route("/league/<league_id>/activity")
 def page_activity(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = """
-    <div class="overview-main">
-      <div class="card"><h2>Transactions & Activity</h2></div>
-    </div>
-    <aside class="overview-sidebar"></aside>
-    """
+    body = build_activity_body(ctx)
     return render_page("Activity", league_id, "activity", body)
 
 
@@ -1274,6 +1598,24 @@ def page_injuries(league_id):
     <aside class="overview-sidebar"></aside>
     """
     return render_page("Injuries", league_id, "injuries", body)
+
+@app.before_request
+def run_daily_data_if_needed():
+    global daily_init_done
+    if daily_init_done:
+        return  # already done for this app process
+
+    today_str = date.today().isoformat()
+    model_path = DATA_DIR / f"model_values_{today_str}.json"
+    value_path = DATA_DIR / f"value_table_{today_str}.json"
+
+    if not (model_path.exists() and value_path.exists()):
+        print(f"[startup] Missing data for {today_str} — building daily data...")
+        build_daily_data(CURRENT_SEASON)
+        print(f"[startup] Completed daily data build for {today_str}")
+
+    daily_init_done = True
+
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -1333,16 +1675,17 @@ def api_trade_eval():
     side_a_picks = payload.get("side_a_picks", [])
     side_b_picks = payload.get("side_b_picks", [])
 
-    players_index = load_players_index()
     weeks = list(range(1, 19))
 
     # Cached table load
-    value_table = get_cached_value_table(league_id, season, weeks)
-    if value_table is None:
-        value_table = build_value_table_for_usage(season, weeks)
-        store_value_table(league_id, season, weeks, value_table)
+    value_table = load_model_value_table()
+    if value_table is not None:
+        value_table = build_ml_value_table(season)
+        store_model_values(league_id, season, weeks, value_table)
 
-    # Simple pick curve
+    # ---------- Helpers ----------
+
+    # Simple rookie pick curve
     def value_pick(pk: str) -> float:
         try:
             yr, rnd, slot = pk.split("_")
@@ -1355,95 +1698,231 @@ def api_trade_eval():
         decay = max(0.1, 1 - (slot - 1) * 0.04)
         return round(base * decay, 1)
 
-    def total_value(players, picks):
-        total = 0.0
+    def build_side(players_ids, picks_ids):
+        """
+        Build the basic info for a side using value_table payload:
+
+          {
+            "id": "9509",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "age": 23.8,
+            "value": 968.0
+          }
+        """
+
+        raw_players_total = 0.0
+        raw_picks_total = 0.0
+        player_values: list[float] = []
         breakdown = []
 
         # Players
-        for pid in players:
-            val = float(value_table.get(pid, 0.0))
-            name = players_index.get(pid, {}).get("name", f"Player {pid}")
-            breakdown.append({"type": "player", "id": pid, "name": name, "value": val})
-            total += val
+        for pid in players_ids:
+            pid_str = str(pid)
+            player = players_by_id.get(pid_str)
+
+            if not player:
+                # Fallback if missing
+                breakdown.append({
+                    "type": "player",
+                    "id": pid_str,
+                    "name": f"Player {pid_str}",
+                    "value": 0.0,
+                    "position": None,
+                    "team": None,
+                })
+                continue
+
+            val = float(player.get("value", 0.0))
+            name = player.get("name")
+            pos = player.get("position")
+            team = player.get("team")
+
+            breakdown.append({
+                "type": "player",
+                "id": pid_str,
+                "name": name,
+                "value": val,
+                "position": pos,
+                "team": team,
+            })
+            raw_players_total += val
+            player_values.append(val)
 
         # Picks
-        for pk in picks:
-            val = value_pick(pk)
-            breakdown.append({"type": "pick", "id": pk, "value": val})
-            total += val
+        for pk in picks_ids:
+            val = float(value_pick(pk))
+            breakdown.append({
+                "type": "pick",
+                "id": pk,
+                "value": val,
+            })
+            raw_picks_total += val
 
-        return total, breakdown
+        raw_total = raw_players_total + raw_picks_total
 
-    a_total, a_break = total_value(side_a_players, side_a_picks)
-    b_total, b_break = total_value(side_b_players, side_b_picks)
+        return {
+            "raw_total": raw_total,
+            "raw_players_total": raw_players_total,
+            "raw_picks_total": raw_picks_total,
+            "player_values": player_values,
+            "breakdown": breakdown,
+            "effective_total": raw_total,
+            "adjustment": 0.0,
+        }
 
-    diff = a_total - b_total
+    def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
+        """
+        Apply a 'value adjustment' only to the side with FEWER players.
 
-    if abs(diff) < 5:
-        verdict = "This trade looks evenly balanced."
+        Intuition:
+          - Look at the gap in raw value between the two sides.
+          - Look at how much of a 'stud' the best player is on the fewer side.
+          - Look at how many extra pieces the other side has.
+          - Reverse-engineer an adjustment that moves the trade toward even
+            but caps it so you don't blow things up.
+        """
+        vals_a = side_a["player_values"]
+        vals_b = side_b["player_values"]
+        n_a = len(vals_a)
+        n_b = len(vals_b)
+
+        # need players on both sides and a true imbalance
+        if n_a == 0 or n_b == 0 or n_a == n_b:
+            side_a["effective_total"] = side_a["raw_total"]
+            side_b["effective_total"] = side_b["raw_total"]
+            return
+
+        # Decide which side is the "consolidation" side (fewer players)
+        if n_a < n_b:
+            fewer = side_a
+            more = side_b
+            fewer_is_a = True
+        else:
+            fewer = side_b
+            more = side_a
+            fewer_is_a = False
+
+        fewer_vals = fewer["player_values"]
+        more_vals = more["player_values"]
+        fewer_raw = fewer["raw_total"]
+        more_raw = more["raw_total"]
+
+        # safety
+        if not fewer_vals or fewer_raw <= 0:
+            side_a["effective_total"] = side_a["raw_total"]
+            side_b["effective_total"] = side_b["raw_total"]
+            return
+
+        # How many extra pieces is the other side sending?
+        extra_pieces = max(len(more_vals) - len(fewer_vals), 0)
+
+        # "Stud" score: best player on the consolidation side
+        stud_val = max(fewer_vals)
+        stud_score = min(stud_val / 1000.0, 1.0)  # 0–1
+
+        # How far apart are they in raw value?
+        gap = abs(more_raw - fewer_raw)
+
+        # Base adj comes from the gap – we don't usually bridge 100% of the gap,
+        # but we move it a good chunk of the way.
+        base_from_gap = gap * (0.45 + 0.25 * stud_score)  # ~45–70% of gap
+
+        # Extra bonus for each additional piece on the "more" side
+        piece_bonus = fewer_raw * 0.03 * extra_pieces  # 3% per extra piece
+
+        # Small extra weight for true monsters
+        stud_bonus = fewer_raw * 0.10 * stud_score  # up to +10% of side
+
+        raw_adj = base_from_gap + piece_bonus + stud_bonus
+
+        # Cap overall adjustment so it can't exceed ~25% of the consolidation side
+        cap = fewer_raw * 0.25
+        adj = min(raw_adj, cap)
+
+        if fewer_is_a:
+            side_a["adjustment"] = adj
+            side_b["adjustment"] = 0.0
+        else:
+            side_a["adjustment"] = 0.0
+            side_b["adjustment"] = adj
+
+        side_a["effective_total"] = side_a["raw_total"] + side_a["adjustment"]
+        side_b["effective_total"] = side_b["raw_total"] + side_b["adjustment"]
+
+    # ---------- Build both sides (raw) ----------
+    players_by_id = {str(p["id"]): p for p in value_table}
+
+    side_a = build_side(side_a_players, side_a_picks)
+    side_b = build_side(side_b_players, side_b_picks)
+
+    # ---------- Apply multi-for-one consolidation adjustment ----------
+    apply_multi_for_one_adjustment(side_a, side_b)
+
+    a_eff = side_a["effective_total"]
+    b_eff = side_b["effective_total"]
+
+    diff = a_eff - b_eff
+    abs_diff = abs(diff)
+
+    # ---------- Percentage-based fair threshold ----------
+    FAIR_PCT = 0.015  # 8% band; tweak as needed
+    baseline = max(a_eff, b_eff, 1.0)
+    fair_band = baseline * FAIR_PCT
+
+    if abs_diff <= fair_band:
+        pct = (abs_diff / baseline) * 100.0
+        verdict = f"This trade looks very fair (about {pct:.1f}% apart)."
     elif diff > 0:
-        verdict = f"Side A is favored by about {abs(diff):.1f} value."
+        verdict = f"Side A is favored by about {abs_diff:.1f} value."
     else:
-        verdict = f"Side B is favored by about {abs(diff):.1f} value."
+        verdict = f"Side B is favored by about {abs_diff:.1f} value."
 
     return jsonify({
-        "side_a": {"total": a_total, "breakdown": a_break},
-        "side_b": {"total": b_total, "breakdown": b_break},
-        "verdict": verdict
+        "side_a": side_a,
+        "side_b": side_b,
+        "diff": diff,
+        "abs_diff": abs_diff,
+        "fair_threshold": fair_band,
+        "fair_pct": FAIR_PCT,
+        "verdict": verdict,
     })
+
+
+def _sanitize_for_json(obj):
+    """
+    Recursively walk obj and replace NaN/inf/-inf floats with None
+    so that json.dumps / jsonify produce valid JSON that
+    fetch().json() can parse.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    return obj
 
 
 @app.route("/api/league-players")
 def api_league_players():
-    # Use the same league_id/season scheme as trade-eval
     league_id = (request.args.get("league_id") or "global").strip()
     season = int(request.args.get("season") or CURRENT_SEASON)
-
-    # 1) Base metadata
-    players_index = load_players_index()
-
-    # 2) Weeks + cached value table
     weeks = list(range(1, 19))
 
-    value_table = get_cached_value_table(league_id, season, weeks)
-    if value_table is None:
-        print(f"[league_players] cache miss for league={league_id}, season={season} – building table…")
-        value_table = build_value_table_for_usage(season, weeks)
-        store_value_table(league_id, season, weeks, value_table)
+    # Try to use the cached value table
+    model_value_table = get_cached_model_value_table(league_id, season, weeks)
+    if model_value_table is None:
+        print(f"[league_players] cache MISS for league={league_id}, season={season}")
+        model_value_table = build_ml_value_table(season, weeks)
+        store_value_table(league_id, season, weeks, model_value_table)
     else:
-        print(f"[league_players] cache hit for league={league_id}, season={season}")
+        print(f"[league_players] cache HIT for league={league_id}, season={season}")
 
-    # 3) Usage (if you have a cached version, swap it in here)
-    usage_by_pid = build_usage_map_for_season(season, weeks)
-
-    players: list[dict] = []
-
-    for pid, meta in players_index.items():
-        name = meta.get("name")
-        pos = meta.get("pos") or meta.get("position")
-        team = meta.get("team")
-
-        # Only skill positions
-        if not name or pos not in {"QB", "RB", "WR", "TE"}:
-            continue
-
-        # Optional age field if you have it in the index
-        age = meta.get("age") or meta.get("age_decimal")
-
-        players.append({
-            "id": str(pid),
-            "name": name,
-            "team": team,
-            "position": pos,
-            "age": age,
-            "value": float(value_table.get(str(pid), 0.0)),
-            "usage": usage_by_pid.get(str(pid), {}),
-        })
-
-    players.sort(key=lambda x: (-x["value"], x["name"]))
-
-    print(f"[league_players] returning {len(players)} players for league={league_id}, season={season}")
-    return jsonify(players)
+    cleaned_players = _sanitize_for_json(model_value_table)
+    return jsonify(cleaned_players)
 
 
 if __name__ == "__main__":

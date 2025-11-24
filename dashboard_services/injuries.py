@@ -14,8 +14,7 @@ INJURY_STATUSES = {"IR", "OUT", "DOUBTFUL", "QUESTIONABLE", "PUP", "NFI", "SUSP"
 def build_injury_report(league_id: str,
                         local_tz: str = "America/New_York",
                         include_free_agents: bool = False,
-                        players: dict = None,
-                        roster_map: dict = None) -> pd.DataFrame:
+                        ) -> pd.DataFrame:
     """
     Build an injury table for the league:
       columns: Team, Player, Pos, NFL, Status, Injury, Body, Last Updated

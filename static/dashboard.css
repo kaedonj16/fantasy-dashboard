@@ -907,7 +907,6 @@ tbody tr:nth-child(even) { background: #f8fafc; }
 
 
 .m-team .avatar{width:60px;height:60px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px #fff, 0 1px 6px rgba(0,0,0,.08)}
-.m-team .name{font-weight:700;white-space:nowrap;}
 .m-vs{font-weight:800;color:#64748b}
 .m-proj{text-align:right;font-variant-numeric:tabular-nums}
 .m-proj .num{font-weight:800}
@@ -935,12 +934,12 @@ tbody tr:nth-child(even) { background: #f8fafc; }
   margin-bottom: 12px;
 }
 
-.m-team{ display:flex; align-items:center; gap:10px; justify-content:space-between; }
-.m-team .name{ font-weight:800; }
+.m-team{ display:flex; align-items:center; gap:10px; justify-content:space-between;}
+.m-team .name{ font-weight:800; text-overflow: ellipsis; }
 .m-team .badge{ margin-left:8px; font-size:12px; background:#eef2ff; border:1px solid #e5e7eb; padding:2px 8px; border-radius:999px; }
 .m-team .num{
   letter-spacing: 1px;
-  font-size: 2rem;
+  font-size: 30px;
   font-weight: 800;
   color: #122d4b;
   text-shadow: 0 2px 4px rgba(0,0,0,.1);
@@ -1722,7 +1721,7 @@ tbody tr:nth-child(even){ background:var(--row); }
 
 /* Position Badges */
 .pos-badge {
-  width: 17px;
+  width: 20px;
   text-align: center;
   display:inline-block;
   padding:1px 6px;
@@ -2155,7 +2154,7 @@ tbody tr:nth-child(even){ background:var(--row); }
 }
 
 .search-input {
-    width: 603px;
+    width: 96.5%;
     border-radius: 15px;
     border: 1px solid #d1d5db;
     padding: 7px 7px 7px 16px; /* extra space on right for icon */
@@ -2209,7 +2208,7 @@ tbody tr:nth-child(even){ background:var(--row); }
   margin-left: 4px;
 
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
 
   width: 16px;
@@ -2422,8 +2421,8 @@ tbody tr:nth-child(even){ background:var(--row); }
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 35%;
-  right: 35%;
+  left: 45%;
+  right: 45%;
   background: #122d4b;
 }
 
@@ -2474,9 +2473,10 @@ tbody tr:nth-child(even){ background:var(--row); }
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 16px;
   background: #e5e7eb;
   color: #122d4b;
+  justify-content: space-between;
 }
 
 .chip-value {
@@ -2492,4 +2492,63 @@ tbody tr:nth-child(even){ background:var(--row); }
   font-size: 13px;
   padding: 0;
   line-height: 1;
+}
+
+.side-body .chips {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    flex-direction: column;
+}
+
+.all-players-list {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.all-players-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 0.1rem;
+  font-size: 16px;
+}
+
+.all-players-name {
+  font-weight: 500;
+}
+
+.all-players-meta {
+  grid-column: 1 / 2;
+  opacity: 0.75;
+}
+
+.all-players-value {
+  font-weight: 600;
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-player-chip {
+  background: #f8fafc; border: 1px solid #e5e7eb;
+  padding: 10px 12px; border-radius: 999px;
+  color: #122d4b; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 2px;
+  justify-content: space-between;
+  font-weight: 500;
+  font-size: 16px;
+}
+
+.trade-player-chip span {
+  font-weight: 600;
+  font-size: 17px;
 }

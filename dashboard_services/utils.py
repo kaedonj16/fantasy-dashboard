@@ -8,11 +8,29 @@ import pandas as pd
 import re
 import requests
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, Callable, List
 
 from dashboard_services.api import get_nfl_games_for_week_raw
+
+# ------------------------------------------------
+# Core paths / constants (SELF-CONTAINED)
+# ------------------------------------------------
+
+# Project root (adjust if your structure is different)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+# Shared data directory
+DATA_DIR = ROOT_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Cache directory
+CACHE_DIR = ROOT_DIR / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Template for your value table files
+VALUE_TABLE_TEMPLATE = "model_values_{date}.json"
 
 CACHE_DIR = Path("cache")
 BETTER_OUTWARD_METRICS = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
@@ -20,6 +38,9 @@ BETTER_OUTWARD_SIGNS = np.array([1, -1, 1, 1, 1, -1], dtype=float)
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 PUNCT_RE = re.compile(r"[^a-z0-9 ]+")
 WS_RE = re.compile(r"\s+")
+STATUS_NOT_STARTED = "not_started"
+STATUS_IN_PROGRESS = "in_progress"
+STATUS_FINAL = "final"
 
 TEAM_ALIASES = {
     "jax": "JAX", "jacksonville": "JAX", "gb": "GB", "gnb": "GB", "nwe": "NE", "ne": "NE",
@@ -49,14 +70,6 @@ def scoring_key(scoring_params: Dict) -> str:
     return hashlib.md5(payload.encode("utf-8")).hexdigest()[:10]
 
 
-def write_json(path: str, data: dict) -> None:
-    tmp = path + ".tmp"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
 def z_better_outward(team_stats: pd.DataFrame,
                      metrics=BETTER_OUTWARD_METRICS,
                      signs=BETTER_OUTWARD_SIGNS) -> pd.DataFrame:
@@ -75,6 +88,14 @@ def path_week_schedule(season: int, week: int) -> str:
 
 def path_players_index() -> str:
     return os.path.join(CACHE_DIR, "players_index.json")
+
+
+def path_usage_table() -> str:
+    return os.path.join(DATA_DIR, f"value_table_{date.today().isoformat()}.json")
+
+
+def path_model_value_table() -> str:
+    return os.path.join(DATA_DIR, f"model_values_{date.today().isoformat()}.json")
 
 
 def path_teams_index() -> str:
@@ -111,6 +132,16 @@ def load_players_index() -> Optional[Dict]:
     return read_json(path_players_index())
 
 
+def load_usage_table() -> Optional[Dict]:
+    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None."""
+    return read_json(path_usage_table())
+
+
+def load_model_value_table():
+    # Return ONLY the parsed JSON data, not the path object
+    return read_json(path_model_value_table())
+
+
 def load_teams_index() -> Optional[Dict]:
     """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None."""
     return read_json(path_teams_index())
@@ -121,12 +152,28 @@ def save_players_index(index_data: Dict) -> None:
     write_json(path_players_index(), index_data)
 
 
-def load_week_projections(season: int, week: int) -> Optional[Dict[str, float]]:
-    """
-    Returns { sleeper_id: projected_points } for that week, scoring, season — or None.
-    """
-    data = read_json(path_week_proj(season, week))
-    return data if isinstance(data, dict) else None
+def load_week_schedule(season: int, w: int):
+    # projections
+    week_path = Path(path_week_schedule(season, w))
+    if not week_path.exists():
+        get_week_schedule_cached(season, w, get_nfl_games_for_week)
+
+    with open(week_path, "r", encoding="utf-8") as f:
+        schedule = json.load(f)
+
+    return schedule
+
+
+def load_week_projection(season: int, w: int):
+    # projections
+    proj_path = Path(path_week_proj(season, w))
+    if not proj_path.exists():
+        get_week_projections_cached(season, w, fetch_week_from_tank01)
+
+    with open(proj_path, "r", encoding="utf-8") as f:
+        projections = json.load(f)
+
+    return projections
 
 
 def save_week_projections(season: int, week: int, proj_map: Dict[str, float]) -> None:
@@ -191,7 +238,7 @@ def get_week_projections_cached(
     cache_path = get_or_refresh_projection_path(season, week)
 
     if os.path.exists(cache_path):
-        return load_week_projections(season, week)
+        return load_week_projection(season, week)
     else:
         data = fetch_fn(season, week)
         save_week_projections(season, week, proj_map=data)
@@ -252,7 +299,7 @@ def get_or_refresh_schedule_path(season: int, week: int) -> str:
                 os.remove(file)
 
     # no valid file for today → return today's file path
-    return path_week_schedule(season, week)  # MUST create _dYYYY-MM-DD.json
+    return None  # MUST create _dYYYY-MM-DD.json
 
 
 def get_week_schedule_cached(
@@ -267,7 +314,7 @@ def get_week_schedule_cached(
     """
     cache_path = get_or_refresh_schedule_path(season, week)
 
-    if os.path.exists(cache_path):
+    if cache_path is not None:
         # your own loader – or json.load(open(cache_path))
         return load_week_schedule(season, week)
 
@@ -424,7 +471,6 @@ def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
     body = data.get("body") or data.get("list") or []
     if isinstance(body, dict):
         body = list(body.values())
-
     # Load cached player index for matching Sleeper IDs
     players_idx = load_players_index()
 
@@ -572,30 +618,48 @@ def cache_tank01_teams_index(
     return index
 
 
-STATUS_NOT_STARTED = "not_started"
-STATUS_IN_PROGRESS = "in_progress"
-STATUS_FINAL = "final"
-
-
 def normalize_game_status_from_tank01(game: dict) -> str:
     """
-    Convert Tank01's gameStatus/gameStatusCode into 'pre' | 'in' | 'post'.
+    Returns: "pre", "in", or "post"
+    using provider status + your own kickoff-time logic.
     """
-    raw = (game.get("gameStatus") or "").lower()
+    # 1) Parse kickoff time from Tank01
+    try:
+        kickoff_ts = float(game.get("gameTime_epoch"))
+        kickoff = datetime.fromtimestamp(kickoff_ts, tz=timezone.utc)
+    except:
+        kickoff = None
+
+    now = datetime.now(timezone.utc)
+
+    # ----------------------------------------------------
+    # 2) Time-based override (fixes stale provider statuses)
+    # ----------------------------------------------------
+    if kickoff:
+        delta = (now - kickoff).total_seconds()
+
+        # Game is about to start or is ongoing
+        if -10 * 60 <= delta <= 4 * 60 * 60:
+            return "in"  # treat as In Progress
+
+        # Game should be long finished
+        if delta > 4 * 60 * 60:
+            return "post"
+
+    # ----------------------------------------------------
+    # 3) Fall back to Tank01's explicit status
+    # ----------------------------------------------------
+    status = (game.get("gameStatus") or "").lower()
     code = str(game.get("gameStatusCode") or "").strip()
 
-    # From your sample:
-    # gameStatus: 'Scheduled' -> pre
-    # gameStatus: 'Final'     -> post
-    # (If they ever send 'In Progress' / code 1, treat as in)
-    if raw == "final" or code == "2":
+    if code == "2" or status == "final":
         return "post"
-    if raw == "scheduled" or code == "0":
-        return "pre"
-    if "progress" in raw or code == "1":
+    if code == "1":
         return "in"
+    if code == "0" or status == "scheduled":
+        return "pre"
 
-    # Fallback
+    # default safety
     return "pre"
 
 
