@@ -3,18 +3,21 @@ from __future__ import annotations
 import json
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import requests
 import time
 from collections import defaultdict
 from datetime import datetime, timezone, date
 from pathlib import Path
+from plotly.offline import plot as plotly_plot
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
+from zoneinfo import ZoneInfo
 
-from .api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, fetch_json, get_transactions
-from .matchups import build_matchup_preview
-from .players import build_roster_display_maps
-from .styles import recap_css, tickerCss
-from .utils import safe_owner_name
+from dashboard_services.api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, get_transactions
+from dashboard_services.matchups import build_matchup_preview
+from dashboard_services.players import build_roster_display_maps
+from dashboard_services.styles import recap_css, tickerCss
+from dashboard_services.utils import safe_owner_name
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -479,6 +482,68 @@ def build_tables(
     return df_weekly, team_stats, roster_map
 
 
+def build_league_summary(team_stats, df_weekly) -> dict:
+    """
+    team_stats: DataFrame with columns like ['owner', 'PF', 'PA', 'MAX', 'MIN', 'AVG', 'STD', ...]
+    df_weekly:  DataFrame with ['week', 'owner', 'points', ...]
+    """
+    summary = {}
+
+    if not team_stats.empty:
+        best_pf_row = team_stats.loc[team_stats["PF"].idxmax()]
+        worst_pf_row = team_stats.loc[team_stats["PF"].idxmin()]
+        best_avg_row = team_stats.loc[team_stats["AVG"].idxmax()]
+        most_vol_row = team_stats.loc[team_stats["STD"].idxmax()]
+
+        # Luck via PF - PA
+        ts = team_stats.copy()
+        ts["pf_minus_pa"] = ts["PF"] - ts["PA"]
+        luckiest_row = ts.loc[ts["pf_minus_pa"].idxmax()]
+        unluckiest_row = ts.loc[ts["pf_minus_pa"].idxmin()]
+
+        summary["best_pf"] = {
+            "owner": best_pf_row["owner"],
+            "pf": float(best_pf_row["PF"]),
+        }
+        summary["worst_pf"] = {
+            "owner": worst_pf_row["owner"],
+            "pf": float(worst_pf_row["PF"]),
+        }
+        summary["best_avg"] = {
+            "owner": best_avg_row["owner"],
+            "avg": float(best_avg_row["AVG"]),
+        }
+        summary["most_vol"] = {
+            "owner": most_vol_row["owner"],
+            "std": float(most_vol_row["STD"]),
+        }
+        summary["luckiest"] = {
+            "owner": luckiest_row["owner"],
+            "delta": float(luckiest_row["pf_minus_pa"]),
+        }
+        summary["unluckiest"] = {
+            "owner": unluckiest_row["owner"],
+            "delta": float(unluckiest_row["pf_minus_pa"]),
+        }
+
+    if not df_weekly.empty:
+        best_week_row = df_weekly.loc[df_weekly["points"].idxmax()]
+        worst_week_row = df_weekly.loc[df_weekly["points"].idxmin()]
+
+        summary["best_week"] = {
+            "owner": best_week_row["owner"],
+            "week": int(best_week_row["week"]),
+            "points": float(best_week_row["points"]),
+        }
+        summary["worst_week"] = {
+            "owner": worst_week_row["owner"],
+            "week": int(worst_week_row["week"]),
+            "points": float(worst_week_row["points"]),
+        }
+
+    return summary
+
+
 def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
     """Compute win/loss/tie records based on points scored."""
     wins = defaultdict(int)
@@ -655,107 +720,140 @@ def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[in
 
 def build_week_activity(
         league_id: str,
-        week: int,
-        players_map: Optional[Dict[str, Dict[str, str]]] = None) -> pd.DataFrame:
+        season: int,
+        players_map: Optional[Dict[str, Dict[str, str]]] = None,
+        season_weeks: list[int] = None
+) -> pd.DataFrame:
     """
-    Returns rows with structured payloads for HTML:
-      kind: 'trade' | 'waiver'
-      ts  : datetime (UTC)
-      data:
-        - trade: {'teams': [{'rid','name','avatar','gets':[players],'sends':[players]}]}
-        - waiver: {'rid','name','avatar','adds':[players]}
-      (player) -> {'name','pos','team'}
+    Builds a season-long activity table with:
+        kind: 'trade' | 'waiver'
+        week: int
+        ts: datetime (UTC)
+        data: structured payload for HTML
+            - trade: {'teams': [...], 'draft_picks': [...]}
+            - waiver: {'rid','name','avatar','adds':[players]}
     """
 
+    if players_map is None:
+        players_map = load_players_index()
+
+    if season_weeks is None:
+        season_weeks = list(range(1, 19))  # NFL always 1–18 since 2021
+
+    # As before
     roster_name, roster_avatar = build_roster_display_maps(league_id)
-    txs = get_transactions(league_id ) or []
+
+    # 🔥 Fetch ALL weekly transactions grouped by week
+    tx_by_week = get_transactions_by_week(league_id, season_weeks)
+
     rows = []
 
     def pinfo(pid: str) -> dict[str, str]:
         p = players_map.get(str(pid)) or {}
-        return {"name": p.get("name", str(pid)), "pos": p.get("pos", ""), "team": p.get("team", "FA")}
+        return {
+            "name": p.get("name", str(pid)),
+            "pos": p.get("pos", ""),
+            "team": p.get("team", "FA"),
+            "age": p.get("age", None),
+        }
 
-    for t in txs:
-        ttype = t.get("type")
-        ts = datetime.fromtimestamp((t.get("status_updated") or t.get("created") or 0) / 1000.0, tz=timezone.utc)
+    for week in season_weeks:
+        txs = tx_by_week.get(week, []) or []
 
-        # --- WAIVER ADDS ---
-        if ttype in ("waiver", "waiver_add") and isinstance(t.get("adds"), dict):
-            # adds: {player_id: roster_id}
-            adds = t["adds"]
-            by_rid: dict[str, list[dict]] = defaultdict(list)
-            for pid, rid in adds.items():
-                by_rid[str(rid)].append(pinfo(pid))
-            for rid, players in by_rid.items():
-                rows.append({
-                    "kind": "waiver",
-                    "ts": ts,
-                    "data": {
-                        "rid": rid,
-                        "name": roster_name.get(rid, f"Roster {rid}"),
-                        "avatar": roster_avatar.get(rid),
-                        "adds": players,
-                    }
-                })
-            continue
-
-        # --- TRADES ---
-        if ttype == "trade":
-            adds = t.get("adds") or {}  # {player_id: roster_id_received}
-            drops = t.get("drops") or {}  # {player_id: roster_id_sent}
-            draft_picks = t.get("draft_picks") or []
-
-            # Collect all roster ids that appear anywhere (explicit roster_ids, add targets, drop sources)
-            team_ids = sorted(
-                set(
-                    list(map(str, (t.get("roster_ids") or []))) +
-                    list({str(v) for v in adds.values()}) +
-                    list({str(v) for v in drops.values()})
-                )
+        for t in txs:
+            ttype = t.get("type")
+            ts = datetime.fromtimestamp(
+                (t.get("status_updated") or t.get("created") or 0) / 1000.0,
+                tz=timezone.utc
             )
 
-            team_objs = []
-            for rid in team_ids:
-                # players received by this roster
-                gets = [pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == rid]
-                # players sent by this roster
-                sends = [pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == rid]
+            # --------------------------
+            # WAIVERS
+            # --------------------------
+            if ttype in ("waiver", "waiver_add") and isinstance(t.get("adds"), dict):
+                adds = t["adds"]  # {player_id: roster_id}
+                by_rid: dict[str, list[dict]] = defaultdict(list)
 
-                # NOTE: add roster_id (int) so the HTML renderer can align picks:
-                #   - gets picks where owner_id == roster_id
-                #   - sends picks where previous_owner_id == roster_id
-                roster_id_int = None
-                try:
-                    roster_id_int = int(rid)
-                except Exception:
-                    # leave as None if not an int; renderer falls back gracefully
-                    pass
+                for pid, rid in adds.items():
+                    by_rid[str(rid)].append(pinfo(pid))
 
-                team_objs.append({
-                    "rid": rid,  # keep your original key for backward-compat
-                    "roster_id": roster_id_int,  # new: helps renderer attach draft picks
-                    "name": roster_name.get(rid, f"Roster {rid}"),
-                    "avatar": roster_avatar.get(rid),
-                    "gets": gets,
-                    "sends": sends
-                })
+                for rid, players in by_rid.items():
+                    rows.append({
+                        "kind": "waiver",
+                        "week": week,
+                        "ts": ts,
+                        "data": {
+                            "rid": rid,
+                            "name": roster_name.get(rid, f"Roster {rid}"),
+                            "avatar": roster_avatar.get(rid),
+                            "adds": players,
+                        }
+                    })
+                continue
 
-            if team_objs:
+            # --------------------------
+            # TRADES
+            # --------------------------
+            if ttype == "trade":
+                adds = t.get("adds") or {}     # player_id → new_owner_rid
+                drops = t.get("drops") or {}   # player_id → old_owner_rid
+                draft_picks = t.get("draft_picks") or []
+
+                # Collect roster IDs involved
+                team_ids = sorted(
+                    set(
+                        list(map(str, (t.get("roster_ids") or [])))
+                        + list({str(v) for v in adds.values()})
+                        + list({str(v) for v in drops.values()})
+                    )
+                )
+
+                team_objs = []
+                for rid in team_ids:
+                    # Players received by this roster
+                    gets = [pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == rid]
+
+                    # Players sent by this roster
+                    sends = [pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == rid]
+
+                    # int form for draft pick matching
+                    rid_int = None
+                    try:
+                        rid_int = int(rid)
+                    except:
+                        pass
+
+                    team_objs.append({
+                        "rid": rid,
+                        "roster_id": rid_int,
+                        "name": roster_name.get(rid, f"Roster {rid}"),
+                        "avatar": roster_avatar.get(rid),
+                        "gets": gets,
+                        "sends": sends
+                    })
+
                 rows.append({
                     "kind": "trade",
+                    "week": week,
                     "ts": ts,
                     "data": {
                         "teams": team_objs,
-                        # new: pass picks through so html renderer can display them
                         "draft_picks": draft_picks
                     }
                 })
-            continue
+                continue
 
+    # --------------------------
+    # Build DataFrame
+    # --------------------------
     df = pd.DataFrame(rows)
+
     if not df.empty:
+        df["ts"] = pd.to_datetime(df["ts"], errors="coerce")
         df = df.sort_values("ts", ascending=False).reset_index(drop=True)
+
     return df
+
 
 
 def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tuple[Any, Any]]:
@@ -1475,3 +1573,7 @@ def age_from_bday(bday: Optional[str]) -> Optional[float]:
 
     except Exception:
         return None
+
+
+def pill(s):
+    return f"<span class='badge'>{s}</span>"

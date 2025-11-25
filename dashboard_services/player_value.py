@@ -28,23 +28,20 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
         if age <= 22: return 1.0
         if age <= 24: return 0.95
         if age <= 25: return 0.90
-        if age <= 26: return 0.75
-        if age <= 27: return 0.65
-        if age <= 28: return 0.50
-        if age <= 30: return 0.40
-        return 0.35
+        if age <= 26: return 0.85
+        if age <= 27: return 0.40
+        return 0.25
 
     if pos == "WR":
         # WRs stay strong longer
         if age <= 22: return 1.0
-        if age <= 24: return 0.98
+        if age <= 24: return 1.0
         if age <= 26: return 0.95
         if age <= 27: return 0.92
         if age <= 28: return 0.85
         if age <= 29: return 0.78
         if age <= 31: return 0.65
-        if age <= 33: return 0.50
-        return 0.40
+        return 0.50
 
     if pos == "QB":
         if age <= 24: return 0.95
@@ -68,31 +65,22 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
     return 0.8
 
 
-def horizon_age_factor(pos: str, age):
-    """
-    Weighted average of age_factor(pos, age + t) for t = 0..2
-    Handles missing age gracefully.
-    """
-    # fallback when age is None
-    if age is None:
-        # default peak ages per position
-        default_age = {
-            "RB": 24,
-            "WR": 25,
-            "QB": 27,
-            "TE": 26,
-        }.get(pos, 25)
-        age = default_age
-
-    YEAR_WEIGHTS = [0.5, 0.3, 0.2]
+def horizon_age_factor(pos: str, age: float) -> float:
+    # Later years matter just as much as now → older players get hit harder
+    weights = [0.4, 0.35, 0.25]
 
     num = 0.0
     den = 0.0
-    for t, w in enumerate(YEAR_WEIGHTS):
+    for t, w in enumerate(weights):
         num += w * _age_factor(pos, age + t)
         den += w
 
-    return num / den if den > 0 else _age_factor(pos, age)
+    base = num / den if den else 0.0
+
+    # Make the curve more “spiky”: young studs stand out more,
+    # aging players drop off faster.
+    return base ** 1.2
+
 
 
 def _production_component_fixed(u: dict, pos: str) -> float:
@@ -167,19 +155,39 @@ def _production_component_fixed(u: dict, pos: str) -> float:
 
 def build_value_table_for_usage() -> Dict[str, float]:
     """
-    Build value table using PPR PPG + RZ usage + dynasty horizon + VORP.
-    """
+    Build dynasty-style value table on 0–999.9 scale using:
+      - PPR PPG (within-position)
+      - Dynasty age window (3-year horizon)
+      - VORP (value over replacement) by position
+      - Explicit positional weighting (e.g. QBs downweighted in 1QB)
 
-    # --- LOAD LIST-BASED VALUE TABLE ---
+    Expects load_usage_table() -> list of:
+      {
+        "id": str,
+        "name": str,
+        "team": str,
+        "position": "QB"/"RB"/"WR"/"TE",
+        "age": float or int,
+        "usage": {
+          "ppr_ppg": float,
+          "rec_rz_tgt_pg": float (optional),
+          "rush_rz_att_pg": float (optional),
+          ...
+        }
+      }
+    """
+    # -----------------------------
+    # 0) Load usage objects
+    # -----------------------------
     lst = load_usage_table()
     if not isinstance(lst, list):
-        raise ValueError("value_table must be a list of player objects")
+        raise ValueError("usage table must be a list of player objects")
 
-    players_index = {}
-    usage_table = {}
+    players_index: Dict[str, dict] = {}
+    usage_table: Dict[str, dict] = {}
 
     for obj in lst:
-        pid = str(obj.get("id"))
+        pid = str(obj.get("id") or "").strip()
         if not pid:
             continue
         players_index[pid] = {
@@ -190,10 +198,59 @@ def build_value_table_for_usage() -> Dict[str, float]:
         }
         usage_table[pid] = obj.get("usage") or {}
 
+    # ---------------------------------------------------
+    # 0.5) Filter to "relevant" fantasy players only
+    # ---------------------------------------------------
+    POS_WHITELIST = {"QB", "RB", "WR", "TE"}
+
+    def is_relevant(meta: dict, usage: dict) -> bool:
+        pos = meta.get("pos")
+        if pos not in POS_WHITELIST:
+            return False
+
+        if not usage:
+            return False
+
+        games = float(usage.get("games") or 0)
+        ppg = float(usage.get("ppr_ppg") or 0)
+        snaps = float(usage.get("avg_off_snaps") or 0)
+        opps = float(usage.get("avg_targets") or 0) + float(usage.get("avg_carries") or 0)
+
+        # You can tweak these thresholds, but this is a good "fantasy relevant" cut:
+        # - played at least 3 games, OR
+        # - scoring ~flex-ish points, OR
+        # - meaningful snaps/opportunities
+        if games >= 3:
+            return True
+        if ppg >= 6:          # ~flex floor
+            return True
+        if snaps >= 20:       # on the field a decent amount
+            return True
+        if opps >= 3:         # 3+ touches/targets per game
+            return True
+
+        return False
+
+    filtered_players_index: Dict[str, dict] = {}
+    filtered_usage_table: Dict[str, dict] = {}
+
+    for pid, meta in players_index.items():
+        u = usage_table.get(pid, {})
+        if is_relevant(meta, u):
+            filtered_players_index[pid] = meta
+            filtered_usage_table[pid] = u
+
+    players_index = filtered_players_index
+    usage_table = filtered_usage_table
+
+    # If we somehow filtered *everything* out, bail gracefully
+    if not players_index:
+        return {}
+
     # ----------------------------------------
     # 1) Collect metadata + base production
     # ----------------------------------------
-    per_pid = {}
+    per_pid: Dict[str, dict] = {}
 
     for pid, u in usage_table.items():
         meta = players_index.get(pid, {})
@@ -205,10 +262,10 @@ def build_value_table_for_usage() -> Dict[str, float]:
         age = float(meta.get("age") or 0.0)
         ppg = float(u.get("ppr_ppg") or 0.0)
 
-        # QB passing integration (kept from your old model)
+        # QB / non-QB production component (your custom logic)
         prod_raw = _production_component_fixed(u, pos)
 
-        # NEW — red-zone usage
+        # Red-zone usage
         rz_targets = float(u.get("rec_rz_tgt_pg") or 0.0)
         rz_carries = float(u.get("rush_rz_att_pg") or 0.0)
 
@@ -227,55 +284,50 @@ def build_value_table_for_usage() -> Dict[str, float]:
     # ----------------------------------------
     # 2) Normalize PPG and RZ usage by position
     # ----------------------------------------
-    by_pos_ppg = {}
-    by_pos_rz = {}
+    by_pos_ppg: Dict[str, list[float]] = {}
+    by_pos_rz: Dict[str, list[float]] = {}
 
     for pid, p in per_pid.items():
         pos = p["pos"]
 
         by_pos_ppg.setdefault(pos, []).append(p["ppg"])
 
-        # combine rz inputs into one metric
         rz_metric = p["rz_targets"] + p["rz_carries"]
         by_pos_rz.setdefault(pos, []).append(rz_metric)
-
         p["rz_metric"] = rz_metric
 
-    pos_ppg_minmax = {
-        pos: (min(v), max(v)) if max(v) > min(v) else (0, 1)
-        for pos, v in by_pos_ppg.items()
-    }
+    pos_ppg_minmax: Dict[str, tuple[float, float]] = {}
+    for pos, vals in by_pos_ppg.items():
+        vmin, vmax = min(vals), max(vals)
+        pos_ppg_minmax[pos] = (vmin, vmax) if vmax > vmin else (0.0, 1.0)
 
-    pos_rz_minmax = {
-        pos: (min(v), max(v)) if max(v) > min(v) else (0, 1)
-        for pos, v in by_pos_rz.items()
-    }
+    pos_rz_minmax: Dict[str, tuple[float, float]] = {}
+    for pos, vals in by_pos_rz.items():
+        vmin, vmax = min(vals), max(vals)
+        pos_rz_minmax[pos] = (vmin, vmax) if vmax > vmin else (0.0, 1.0)
 
     # ----------------------------------------
     # 3) Age + production + RZ score
     # ----------------------------------------
     POS_WEIGHTS = {
-        "QB": (0.80, 0.25, 0.00),  # production dominates, light age, tiny RZ
-        "RB": (0.45, 0.35, 0.20),  # VERY age-weighted, medium RZ, low PPG
-        "WR": (0.625, 0.35, 0.25),  # PPG-driven with meaningful age & RZ boost
-        "TE": (0.45, 0.25, 0.30),  # redzone matters most for TD volatility
+        "QB": (0.80, 0.35, 0.00),  # production heavy, small age, tiny RZ
+        "RB": (0.45, 0.25, 0.30),  # bump age+RZ more for RB fragility
+        "WR": (0.55, 0.35, 0.25),
+        "TE": (0.40, 0.30, 0.35),
     }
 
-    pos_scores = {}
+    pos_scores: Dict[str, float] = {}
 
     for pid, p in per_pid.items():
         pos = p["pos"]
 
-        # normalize ppg
-        vmin, vmax = pos_ppg_minmax[pos]
-        ppg_norm = (p["ppg"] - vmin) / (vmax - vmin) if vmax > vmin else 0
+        vmin_ppg, vmax_ppg = pos_ppg_minmax[pos]
+        ppg_norm = (p["ppg"] - vmin_ppg) / (vmax_ppg - vmin_ppg) if vmax_ppg > vmin_ppg else 0.0
 
-        # normalize RZ
-        rmin, rmax = pos_rz_minmax[pos]
-        rz_norm = (p["rz_metric"] - rmin) / (rmax - rmin) if rmax > rmin else 0
+        vmin_rz, vmax_rz = pos_rz_minmax[pos]
+        rz_norm = (p["rz_metric"] - vmin_rz) / (vmax_rz - vmin_rz) if vmax_rz > vmin_rz else 0.0
 
         age_curve = horizon_age_factor(pos, p["age"])
-
         w_ppg, w_age, w_rz = POS_WEIGHTS[pos]
 
         pos_scores[pid] = (
@@ -285,12 +337,12 @@ def build_value_table_for_usage() -> Dict[str, float]:
         )
 
     # ----------------------------------------
-    # 4) VORP (still using dynasty-PPG)
+    # 4) VORP (dynasty-PPG horizon)
     # ----------------------------------------
     STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
     NUM_TEAMS = 10
 
-    dynasty_ppg_by_pos = {}
+    dynasty_ppg_by_pos: Dict[str, list[tuple[str, float]]] = {}
 
     for pid, p in per_pid.items():
         pos = p["pos"]
@@ -305,47 +357,66 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         dynasty_ppg_by_pos.setdefault(pos, []).append((pid, dynasty_ppg))
 
-    replacement_ppg = {}
-
+    replacement_ppg: Dict[str, float] = {}
     for pos, lst in dynasty_ppg_by_pos.items():
+        if not lst:
+            replacement_ppg[pos] = 0.0
+            continue
+
         lst_sorted = sorted(lst, key=lambda x: x[1], reverse=True)
         starter_slots = STARTERS[pos] * NUM_TEAMS
         idx = int(starter_slots * 1.2)
         idx = max(0, min(idx, len(lst_sorted) - 1))
         replacement_ppg[pos] = lst_sorted[idx][1]
 
-    vor_map = {}
+    vor_map: Dict[str, float] = {}
     for pid, p in per_pid.items():
-        vor = p["dynasty_ppg"] - replacement_ppg[p["pos"]]
-        vor_map[pid] = max(vor, 0)
+        rep = replacement_ppg[p["pos"]]
+        vor = p["dynasty_ppg"] - rep
+        vor_map[pid] = max(vor, 0.0)
 
-    max_vor = max(vor_map.values()) if vor_map else 1
+    max_vor = max(vor_map.values()) if vor_map else 1.0
 
-    final_scores = {}
-    SCARCITY_ALPHA = 0.4
+    # ----------------------------------------
+    # 5) Blend base score + scarcity → global 0–999.9
+    # ----------------------------------------
+    final_scores: Dict[str, float] = {}
+    SCARCITY_ALPHA = 0.4  # how much VORP shapes the final value
 
     for pid, base_score in pos_scores.items():
-        vor_norm = vor_map[pid] / max_vor
-        scarcity_weight = 1.0  # optional mix by position
-        scarcity = vor_norm * scarcity_weight
-
-        blended = (1 - SCARCITY_ALPHA) * base_score + SCARCITY_ALPHA * scarcity
+        vor_norm = vor_map[pid] / max_vor if max_vor > 0 else 0.0
+        blended = (1 - SCARCITY_ALPHA) * base_score + SCARCITY_ALPHA * vor_norm
         final_scores[pid] = max(0.0, min(1.0, blended))
 
-    # ----------------------------------------
-    # 5) Global normalization → 0–999
-    # ----------------------------------------
     vals = list(final_scores.values())
     gmin, gmax = min(vals), max(vals)
 
-    value_table = {}
+    # hyperparams for shape
+    GAMMA = 0.6  # < 1 → lifts mid/lower values
+    FLOOR = 0.05  # 5% baseline so “real” players aren’t near 0
+
+    value_table: Dict[str, float] = {}
+
     for pid, v in final_scores.items():
         if gmax <= gmin:
-            s01 = 0
+            s01 = 0.0
         else:
+            # base linear 0–1
             s01 = (v - gmin) / (gmax - gmin)
-        value_table[pid] = round(s01 * 999.9, 1)
 
+        # concave transform: makes mid-tier relatively “fatter”
+        #  - s01=0.1 → 0.1**0.6 ≈ 0.25
+        #  - s01=0.5 → 0.5**0.6 ≈ 0.66
+        #  - s01=0.9 → 0.9**0.6 ≈ 0.94
+        s_curve = s01 ** GAMMA
+
+        # soft floor so everything with non-zero score gets some value
+        s_mix = FLOOR + (1.0 - FLOOR) * s_curve  # in [FLOOR, 1]
+
+        value_table[pid] = round(s_mix * 999.9, 1)
 
     return value_table
+
+
+
 

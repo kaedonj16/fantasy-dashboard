@@ -4,7 +4,6 @@ app = Flask(__name__)
 
 CURRENT_SEASON = 2025
 
-
 def build_trade_calculator_body(league_id: str, season: int) -> str:
     return f"""
     <div class="page-layout">

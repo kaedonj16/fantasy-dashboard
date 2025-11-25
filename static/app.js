@@ -103,3 +103,54 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 });
+
+    (function () {
+      const tbl = document.getElementById('stats');
+      const NUMERIC_COLS = new Set([2,3,4,5,6,7,8]);
+      const getVal = (cell, idx) => {
+        const t = cell.textContent.trim();
+        if (!NUMERIC_COLS.has(idx)) return t.toLowerCase();
+        const n = parseFloat(t.replace(/,/g,'')); return isNaN(n) ? -Infinity : n;
+      };
+      let sortSpec = [];
+      const applySort = () => {
+        const tbody = tbl.tBodies[0];
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          for (const {col, dir} of sortSpec) {
+            const A = getVal(a.children[col], col), B = getVal(b.children[col], col);
+            if (A < B) return -1 * dir; if (A > B) return  1 * dir;
+          } return 0;
+        });
+        tbody.innerHTML = ''; rows.forEach(r => tbody.appendChild(r));
+        tbl.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc','sorted-desc','sorted-secondary'));
+        if (sortSpec.length) {
+          const primary = sortSpec[0];
+          const th = tbl.tHead.rows[0].children[primary.col];
+          th.classList.add(primary.dir === 1 ? 'sorted-asc' : 'sorted-desc');
+          for (let i=1;i<sortSpec.length;i++){
+            tbl.tHead.rows[0].children[sortSpec[i].col].classList.add('sorted-secondary');
+          }
+        }
+      };
+      const toggleSort = (col, additive=false) => {
+        if (!additive) sortSpec = [];
+        const i = sortSpec.findIndex(s => s.col === col);
+        if (i === -1) {
+          const dir = NUMERIC_COLS.has(col) ? -1 : 1;
+          sortSpec.push({col, dir});
+        } else {
+          const cur = sortSpec[i];
+          cur.dir = cur.dir === -1 ? 1 : null;
+          if (cur.dir === null) sortSpec.splice(i, 1);
+        }
+        applySort();
+      };
+      tbl.tHead.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'TH') return;
+        const col = parseInt(e.target.getAttribute('data-col'));
+        toggleSort(col, e.shiftKey);
+      });
+      sortSpec = [{col: 2, dir: -1}, {col: 3, dir: -1}];
+      applySort();
+    })();

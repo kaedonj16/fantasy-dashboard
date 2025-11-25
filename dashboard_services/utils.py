@@ -90,6 +90,10 @@ def path_players_index() -> str:
     return os.path.join(CACHE_DIR, "players_index.json")
 
 
+def path_relevant_index() -> str:
+    return os.path.join(CACHE_DIR, "players_index_relevant.json")
+
+
 def path_usage_table() -> str:
     return os.path.join(DATA_DIR, f"value_table_{date.today().isoformat()}.json")
 
@@ -132,8 +136,11 @@ def load_players_index() -> Optional[Dict]:
     return read_json(path_players_index())
 
 
+def load_relevant_index() -> Optional[Dict]:
+    return read_json(path_relevant_index())
+
+
 def load_usage_table() -> Optional[Dict]:
-    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None."""
     return read_json(path_usage_table())
 
 

@@ -12,13 +12,13 @@ This pack includes a single Python script that:
 2) Install dependencies:
 
 ```bash
-python3 pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 3) Run the report (replace with your league ID and current week number):
 
 ```bash
-python3 league_dashboard.py --league 1236152168919072768
+python3 app.oy
 ```
 
 Outputs in the same folder:

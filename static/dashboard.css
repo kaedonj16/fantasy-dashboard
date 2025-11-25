@@ -27,7 +27,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 0 16px;
   border-bottom: 1px solid rgba(15,23,42,0.08);
   background: white;
 }
@@ -633,7 +633,7 @@ font-size: 0.75rem;
 
 /* Logo styling */
 .site-logo {
-  width: 50px;        /* tweak size */
+  width: 225px;        /* tweak size */
   height: auto;
 }
 
@@ -719,8 +719,8 @@ tbody td {
 }
 tbody tr:nth-child(even) { background: #f8fafc; }
 .num { text-align: center; font-variant-numeric: tabular-nums; }
-.sorted-asc::after  { content: " \\25B2"; color: #122d4b; }
-.sorted-desc::after { content: " \\25BC"; color: #122d4b; }
+.sorted-asc::after  { content: " ▲"; color: #122d4b; }
+.sorted-desc::after { content: " ▼"; color: #122d4b; }
 .sorted-secondary   { color: #122d4b; opacity: .6; }
 
 /* Activity list */
@@ -1573,7 +1573,7 @@ tbody td{ padding:10px 12px; border-bottom:1px solid var(--grid); text-align:cen
 tbody tr:nth-child(even){ background:var(--row); }
 .num{ text-align:center; font-variant-numeric: tabular-nums; }
 .sorted-asc::after{ content:" \\25B2"; color:var(--accent); }
-.sorted-desc::after{ content:" \\25BC"; color:var(--accent); }
+.sorted-desc::after{ content:"▼"; color:var(--accent); }
 .badge{ background:#eef2ff; color:#3730a3; font-weight:600; padding:2px 8px; border-radius:999px; }
 .footer{ margin-top:10px; color:#6b7280; font-size:12px; }
 .sorted-secondary { color: #122d4b; opacity: 0.6; }
@@ -1977,6 +1977,12 @@ tbody tr:nth-child(even){ background:var(--row); }
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.graphs-page {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: 1fr 1fr;
 }
 
 .page-sidebar {
@@ -2473,7 +2479,7 @@ tbody tr:nth-child(even){ background:var(--row); }
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 16px;
+  font-size: 14px;
   background: #e5e7eb;
   color: #122d4b;
   justify-content: space-between;
@@ -2551,4 +2557,34 @@ tbody tr:nth-child(even){ background:var(--row); }
 .trade-player-chip span {
   font-weight: 600;
   font-size: 17px;
+}
+
+.activity-page .activity-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* Sidebar pill toggles (matching your pill vibe) */
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pill-toggle {
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  background: #e5e7eb;
+  color: #122d4b;
+  cursor: pointer;
+}
+
+.pill-toggle.active {
+  background: #122d4b;
+  border-color: #122d4b;
+  color: white;
 }

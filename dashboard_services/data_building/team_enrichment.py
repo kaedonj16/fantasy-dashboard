@@ -53,7 +53,7 @@ def enrich_teams_index_with_offense(season: int):
     for each team present in team_offense.
     """
     teams_index = load_teams_index()
-    team_offense = compute_team_offense_from_value_table(season, weeks=range(1, 12))
+    team_offense = enrich_teams_index_with_team_offense(season)
 
     for team, ctx in team_offense.items():
         entry = teams_index.get(team) or {}
@@ -178,7 +178,6 @@ def enrich_all_team_info(season: int):
     Convenience: enrich both value table and teams index.
     """
     enrich_teams_index_with_team_offense(season)
-    enrich_teams_index_with_offense(season)
 
 
 RUSH_ATT_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-attempts-per-game"

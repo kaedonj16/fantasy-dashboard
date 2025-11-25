@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import date
 
 from dashboard_services.player_value import build_value_table_for_usage
-from dashboard_services.utils import load_players_index
+from dashboard_services.utils import load_players_index, load_relevant_index
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 ENGINE_VALUES_CSV = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
@@ -13,7 +13,7 @@ ENGINE_VALUES_CSV = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
 def export_engine_values(
         out_csv: Path = ENGINE_VALUES_CSV,
 ) -> None:
-    players_index = load_players_index()
+    players_index = load_relevant_index()
     value_table = build_value_table_for_usage()
 
     rows = []

@@ -4,28 +4,34 @@ import math
 import numpy as np
 import os
 import pandas as pd
+import threading
 import time
+from datetime import date
 from datetime import date
 from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
 from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
+from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
-from dashboard_services.data_building.external_values_scraper import DATA_DIR
+from dashboard_services.data_building.value_model_training import build_ml_value_table
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
-    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity
+    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
     build_status_by_pid, streak_class, build_teams_overview, load_model_value_table, load_players_index, \
     load_week_projection
-from dashboard_services.data_building.value_model_training import build_ml_value_table
+
+daily_lock = threading.Lock()
+daily_completed = None
 
 DASHBOARD_CACHE = {}  # (league_id)
 CACHE_TTL = 60 * 60
@@ -148,6 +154,16 @@ BASE_HTML = """
 </html>
 """
 
+def run_daily_data_async():
+    """Start daily data build in a background thread."""
+    thread = threading.Thread(
+        target=build_daily_data,
+        args=(CURRENT_SEASON,),
+        daemon=True
+    )
+    thread.start()
+
+
 
 def _weeks_hash(weeks):
     raw = ",".join(str(w) for w in weeks)
@@ -243,21 +259,21 @@ def build_nav(league_id: str, active: str) -> str:
     active: one of 'dashboard','standings','power','weekly','teams','activity','injuries'
     """
 
-    def pill(label: str, endpoint: str, key: str) -> str:
+    def nav_pill(label: str, endpoint: str, key: str) -> str:
         cls = "nav-pill active" if key == active else "nav-pill"
         href = url_for(endpoint, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     pills = [
-        pill("Dashboard", "page_dashboard", "dashboard"),
-        pill("Standings", "page_standings", "standings"),
-        pill("Weekly Hub", "page_weekly", "weekly"),
-        pill("Trade Calc", "page_trade", "trade"),
-        pill("Activity", "page_activity", "activity"),
-        pill("Injuries", "page_injuries", "injuries"),
+        nav_pill("Dashboard", "page_dashboard", "dashboard"),
+        nav_pill("Standings", "page_standings", "standings"),
+        nav_pill("Weekly Hub", "page_weekly", "weekly"),
+        nav_pill("Trade Calc", "page_trade", "trade"),
+        nav_pill("Activity", "page_activity", "activity"),
+        nav_pill("Graphs", "page_graphs", "graphs"),
         "<a class='nav-pill logout-pill' href='/logout'>Logout</a>"
     ]
-    return "<nav class='top-nav'><div><img src='/static/BR_Logo.png' alt='League Logo' class='site-logo' style='height:50px;'/></div><div>" + "".join(
+    return "<nav class='top-nav'><div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div><div>" + "".join(
         pills) + "</div></nav>"
 
 
@@ -412,10 +428,7 @@ def render_standings(team_stats, length) -> str:
         total_rows = rows[:length]
     else:
         total_rows = rows
-    central = "central" if length < len(rows) else ""
     return f"""
-    <div class="card {central}">
-        <h2>Standings</h2>
         <table class="standings-table">
           <thead>
             <tr>
@@ -433,7 +446,6 @@ def render_standings(team_stats, length) -> str:
             {''.join(total_rows)}
           </tbody>
         </table>
-    </div>
     """
 
 
@@ -513,7 +525,10 @@ def build_dashboard_body(ctx: dict) -> str:
     # --- compose into main + sidebar ---
     body = f"""
     <div class="overview-main">
-      {standings_html}
+      <div class="card central">
+        <h2>Standings</h2>
+        {standings_html}
+      </div>
       {matchup_html}
       {awards_html}
     </div>
@@ -871,23 +886,86 @@ def render_standings_sidebar(team_stats) -> str:
 
     return "".join(cards)
 
+def render_team_stats(team_stats, df_weekly) -> str:
+
+    best = df_weekly.groupby("owner")["points"].max().rename("Best Week")
+    worst = df_weekly.groupby("owner")["points"].min().rename("Worst Week")
+
+    stats_tbl = (team_stats.rename(columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "WinPct": "Win %"})
+                 .merge(best, left_on="Team", right_index=True, how="left")
+                 .merge(worst, left_on="Team", right_index=True, how="left"))
+
+    cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
+    stats_tbl = stats_tbl[cols].copy()
+
+    for c in ["Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]:
+        stats_tbl[c] = stats_tbl[c].astype(float).round(3 if c == "Win %" else 2)
+
+    body_rows = []
+    for _, r in stats_tbl[cols].iterrows():
+        avatar = r.get("avatar", "")
+        img = (
+            f"<img class='avatar sm' src='{avatar}' "
+            "onerror=\"this.style.display='none'\">"
+            if avatar else ""
+        )
+        body_rows.append("<tr>" + "".join([
+            f"<td class='team'>{img} {r['Team']}</td>",
+            f"<td class='num'>{r['Win %']:.3f}</td>",
+            f"<td class='num'>{float(r['PF']):.2f}</td>",
+            f"<td class='num'>{float(r['PA']):.2f}</td>",
+            f"<td class='num'>{float(r['Average']):.2f}</td>",
+            f"<td class='num'>{float(r['Std Dev']):.2f}</td>",
+            f"<td class='num'>{float(r['Best Week']):.2f}</td>",
+            f"<td class='num'>{float(r['Worst Week']):.2f}</td>",
+        ]) + "</tr>")
+
+    table_html = f"""
+        <table id="stats" class="standings-table">
+          <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
+          <tbody>{''.join(body_rows)}</tbody>
+        </table>
+    """
+    return table_html
+
 
 def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
+    df_weekly = ctx["df_weekly"]
 
     standings_html = render_standings(team_stats, 10)
+    table_html = render_team_stats(team_stats, df_weekly[df_weekly["finalized"] == True].copy())
     power_playoffs_html = render_power_and_playoffs(team_stats, roster_map, ctx["league_id"])
     sidebar_html = render_standings_sidebar(team_stats)
 
     body = f"""
     <div class="standings-main two-col-standings">
       <div class="standings-col">
-        {standings_html}
+        <div class="card">
+          <div class="card-tabs">
+            <div class="tab-strip">
+              <button class="tab-btn active" data-tab="standings">Standings</button>
+              <button class="tab-btn" data-tab="details">Detailed Stats</button>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="standings">
+                  {standings_html}
+                </div>
+                <div class="tab-panel" data-tab="details">
+                  {table_html}   <!-- your FULL sortable stats table -->
+                  <div class="footer">
+                    Default sort: Win% ↓ then PF ↓. Click headers to sort.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div
+        </div>
       </div>
-      <div class="standings-col">
-        {power_playoffs_html}
-      </div>
+    </div>
+    <div class="standings-col">
+      {power_playoffs_html}
+    </div>
     </div>
     <aside class="overview-sidebar">
       {sidebar_html}
@@ -1438,18 +1516,12 @@ def build_activity_body(ctx: dict) -> str:
             cards.append(html_trade(row) if row["kind"] == "trade" else html_waiver(row))
 
         # optional: keep your existing pills at top of the card
-        filter_controls_html = """
-        <div class="activity-filter">
-          <span class="activity-pill filter-pill active" data-kind="waiver">Waivers</span>
-          <span class="activity-pill filter-pill active" data-kind="trade">Trades</span>
-        </div>
-        """
+
 
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
             "    <h2>This Week: Trades & Waiver Claims</h2>"
-            f"    {filter_controls_html}"
             "  </div>"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
@@ -1588,33 +1660,37 @@ def page_activity(league_id):
     return render_page("Activity", league_id, "activity", body)
 
 
-@app.route("/league/<league_id>/injuries")
-def page_injuries(league_id):
+@app.route("/league/<league_id>/graphs")
+def page_graphs(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = """
-    <div class="overview-main">
-      <div class="card"><h2>Injuries & News</h2></div>
-    </div>
-    <aside class="overview-sidebar"></aside>
-    """
-    return render_page("Injuries", league_id, "injuries", body)
+    body_html = build_graphs_body(ctx)
+    return render_page("Graphs", league_id, "graphs", body_html)
+
 
 @app.before_request
-def run_daily_data_if_needed():
-    global daily_init_done
-    if daily_init_done:
-        return  # already done for this app process
+def maybe_run_daily():
+    global daily_completed
 
-    today_str = date.today().isoformat()
-    model_path = DATA_DIR / f"model_values_{today_str}.json"
-    value_path = DATA_DIR / f"value_table_{today_str}.json"
+    today = date.today().isoformat()
 
-    if not (model_path.exists() and value_path.exists()):
-        print(f"[startup] Missing data for {today_str} — building daily data...")
-        build_daily_data(CURRENT_SEASON)
-        print(f"[startup] Completed daily data build for {today_str}")
+    # if already done for today, nothing to do
+    if daily_completed == today:
+        return
 
-    daily_init_done = True
+    # ensure only one thread runs it
+    if daily_lock.acquire(blocking=False):
+        try:
+            if daily_completed != today:
+                print(f"[startup] Running daily data process for {today}...")
+
+                # run async (don’t block request)
+                run_daily_data_async()
+
+                # mark as done *immediately* so we don't spawn multiple threads
+                daily_completed = today
+
+        finally:
+            daily_lock.release()
 
 
 
@@ -1916,7 +1992,7 @@ def api_league_players():
     model_value_table = get_cached_model_value_table(league_id, season, weeks)
     if model_value_table is None:
         print(f"[league_players] cache MISS for league={league_id}, season={season}")
-        model_value_table = build_ml_value_table(season, weeks)
+        model_value_table = build_ml_value_table(season)
         store_value_table(league_id, season, weeks, model_value_table)
     else:
         print(f"[league_players] cache HIT for league={league_id}, season={season}")

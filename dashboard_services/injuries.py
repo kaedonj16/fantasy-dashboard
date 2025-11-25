@@ -10,6 +10,24 @@ from .players import build_roster_map, get_league_rostered_player_ids
 
 INJURY_STATUSES = {"IR", "OUT", "DOUBTFUL", "QUESTIONABLE", "PUP", "NFI", "SUSP"}
 
+from urllib.parse import quote_plus
+
+def build_player_news_url(name: str, nfl_team: str | None = None) -> str:
+    """
+    Build a generic 'news / injury' search URL for a player.
+    You can swap this out for a real news API later.
+    """
+    query = name
+    if nfl_team:
+        query += f" {nfl_team} injury"
+    else:
+        query += " injury"
+
+    # You can change this to ESPN, RotoWire, Sleeper, etc. if you prefer.
+    q = quote_plus(query)
+    return f"https://www.google.com/search?q={q}"
+
+
 
 def build_injury_report(league_id: str,
                         local_tz: str = "America/New_York",
@@ -44,6 +62,7 @@ def build_injury_report(league_id: str,
         status = p.get("status") or ""  # e.g., Active, IR, Out, Questionable
         inj = p.get("injury_status") or ""  # e.g., Out, Questionable
         body = p.get("injury_body_part") or ""
+        news_url = build_player_news_url(name, nfl_team)
 
         lm = p.get("last_modified")
         last_mod_local = None
@@ -66,7 +85,8 @@ def build_injury_report(league_id: str,
                 "Team": "Free Agent",
                 "Player": name, "Pos": pos, "NFL": nfl_team, "PlayerID": pid_s,
                 "Status": status, "Injury": inj, "Body": body,
-                "Last Updated": last_mod_local
+                "Last Updated": last_mod_local,
+                "NewsUrl": news_url,
             })
             continue
 
@@ -76,12 +96,13 @@ def build_injury_report(league_id: str,
                 "Team": roster_map.get(str(rid), f"Roster {rid}"),
                 "Player": name, "Pos": pos, "NFL": nfl_team,
                 "Status": status, "Injury": inj, "Body": body,
-                "Last Updated": last_mod_local
+                "Last Updated": last_mod_local,
+                "NewsUrl": news_url,
             })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df[["Team", "Player", "Pos", "NFL", "Status", "Injury", "Body", "Last Updated"]]
+        df = df[["Team", "Player", "Pos", "NFL", "Status", "Injury", "Body", "Last Updated", "NewsUrl"]]
 
         # --- De-dupe fix (2): if a player appears multiple times for same team, keep most severe, latest ---
         sev_rank = {"IR": 4, "OUT": 3, "DOUBTFUL": 2, "QUESTIONABLE": 1}
@@ -123,7 +144,7 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
             rows.append(
                 "<div class='inj-row'>"
                 f"  <div class='left'>"
-                f"    <div class='pname'>{r['Player']}</div>"
+                f"    <div class='pname'><a href='{r['NewsUrl']}' target='_blank' rel='noopener noreferrer'style='color:#122d4b'>{r['Player']}</a></div>"
                 f"    <div class='sub'>{r['NFL']} • {r['Pos']} • {r.get('Body', '')}</div>"
                 f"  </div>"
                 f"  <div class='right'>"

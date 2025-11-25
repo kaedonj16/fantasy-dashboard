@@ -46,7 +46,7 @@ from dashboard_services.awards import compute_weekly_highlights, compute_awards_
 from dashboard_services.injuries import render_injury_accordion, build_injury_report
 from dashboard_services.matchups import render_matchup_carousel_weeks, render_matchup_slide
 from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, playoff_bracket
+from dashboard_services.service import build_tables, playoff_bracket, pill
 from dashboard_services.service import render_weekly_highlight_ticker, render_week_recap_tab, \
     build_week_activity, render_standings_table, build_matchups_by_week
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
@@ -56,7 +56,6 @@ from dashboard_services.utils import streak_class, z_better_outward, load_teams_
 
 
 # === WEEK RECAP + TOP-3 SIDEBAR ==============================================
-
 
 def build_interactive_site(df_weekly: pd.DataFrame,
                            team_stats: pd.DataFrame,
@@ -427,9 +426,6 @@ def build_interactive_site(df_weekly: pd.DataFrame,
       </div>
     """
 
-    def pill(s):
-        return f"<span class='badge'>{s}</span>"
-
     def html_trade(txrow):
         data = txrow["data"]
         teams = data["teams"]
@@ -733,7 +729,9 @@ def build_interactive_site(df_weekly: pd.DataFrame,
         {injury_script}
         {NAV_JS}
         {tabs_js}
-        </body></html>"""
+        </body>
+    </html>
+"""
 
     out_file = os.path.join(out_dir, "index.html")
     with open(out_file, "w", encoding="utf-8") as f:
