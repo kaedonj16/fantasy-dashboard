@@ -6,7 +6,7 @@
     "gameDate": "20251127",
     "espnID": "401772930",
     "teamIDHome": "3",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "7",
     "home": "BAL",
@@ -16,7 +16,7 @@
     "gameTime_epoch": "1764292800.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251127_GB@DET",
@@ -25,7 +25,7 @@
     "gameDate": "20251127",
     "espnID": "401772891",
     "teamIDHome": "11",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "12",
     "home": "DET",
@@ -35,7 +35,7 @@
     "gameTime_epoch": "1764266400.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251127_KC@DAL",
@@ -44,7 +44,7 @@
     "gameDate": "20251127",
     "espnID": "401772694",
     "teamIDHome": "9",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "16",
     "home": "DAL",
@@ -54,7 +54,7 @@
     "gameTime_epoch": "1764279000.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251128_CHI@PHI",
@@ -63,7 +63,7 @@
     "gameDate": "20251128",
     "espnID": "401772621",
     "teamIDHome": "27",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "6",
     "home": "PHI",
@@ -73,7 +73,7 @@
     "gameTime_epoch": "1764360000.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_ARI@TB",
@@ -82,7 +82,7 @@
     "gameDate": "20251130",
     "espnID": "401772895",
     "teamIDHome": "30",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "1",
     "home": "TB",
@@ -92,7 +92,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_ATL@NYJ",
@@ -101,7 +101,7 @@
     "gameDate": "20251130",
     "espnID": "401772893",
     "teamIDHome": "25",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "2",
     "home": "NYJ",
@@ -111,7 +111,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_BUF@PIT",
@@ -120,7 +120,7 @@
     "gameDate": "20251130",
     "espnID": "401772789",
     "teamIDHome": "26",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "4",
     "home": "PIT",
@@ -130,7 +130,7 @@
     "gameTime_epoch": "1764537900.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_DEN@WSH",
@@ -139,7 +139,7 @@
     "gameDate": "20251130",
     "espnID": "401772931",
     "teamIDHome": "32",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final/OT",
     "gameWeek": "Week 13",
     "teamIDAway": "10",
     "home": "WSH",
@@ -149,7 +149,7 @@
     "gameTime_epoch": "1764552000.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_HOU@IND",
@@ -158,7 +158,7 @@
     "gameDate": "20251130",
     "espnID": "401772787",
     "teamIDHome": "14",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "13",
     "home": "IND",
@@ -168,7 +168,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_JAX@TEN",
@@ -177,7 +177,7 @@
     "gameDate": "20251130",
     "espnID": "401772786",
     "teamIDHome": "31",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "15",
     "home": "TEN",
@@ -187,7 +187,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_LAR@CAR",
@@ -196,7 +196,7 @@
     "gameDate": "20251130",
     "espnID": "401772894",
     "teamIDHome": "5",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "19",
     "home": "CAR",
@@ -206,7 +206,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_LV@LAC",
@@ -215,7 +215,7 @@
     "gameDate": "20251130",
     "espnID": "401772788",
     "teamIDHome": "18",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "17",
     "home": "LAC",
@@ -225,7 +225,7 @@
     "gameTime_epoch": "1764537900.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_MIN@SEA",
@@ -234,7 +234,7 @@
     "gameDate": "20251130",
     "espnID": "401772896",
     "teamIDHome": "29",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "21",
     "home": "SEA",
@@ -244,7 +244,7 @@
     "gameTime_epoch": "1764536700.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_NO@MIA",
@@ -253,7 +253,7 @@
     "gameDate": "20251130",
     "espnID": "401772892",
     "teamIDHome": "20",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "23",
     "home": "MIA",
@@ -263,7 +263,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251130_SF@CLE",
@@ -272,7 +272,7 @@
     "gameDate": "20251130",
     "espnID": "401772785",
     "teamIDHome": "8",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "28",
     "home": "CLE",
@@ -282,7 +282,7 @@
     "gameTime_epoch": "1764525600.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   },
   {
     "gameID": "20251201_NYG@NE",
@@ -291,7 +291,7 @@
     "gameDate": "20251201",
     "espnID": "401772821",
     "teamIDHome": "22",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 13",
     "teamIDAway": "24",
     "home": "NE",
@@ -301,6 +301,6 @@
     "gameTime_epoch": "1764638100.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   }
 ]

@@ -119,7 +119,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
     team_stats["Z_Ceiling"] = _z(ceiling)
 
     W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.2, 0.3, 0.15, 0.20, 0.15
-    team_stats["WinPct"] = win_pct
+    team_stats["Win%"] = win_pct
     team_stats["PowerScore"] = (
             W_WIN * team_stats["Z_WinPercentage"] +
             W_AVG * team_stats["Z_Avg"] +
@@ -149,7 +149,7 @@ def build_interactive_site(df_weekly: pd.DataFrame,
             marker=dict(size=12, line=dict(color="black", width=1)),
             name=r["owner"]
         ))
-    x = team_stats["PA"].values;
+    x = team_stats["PA"].values
     y = team_stats["PF"].values
     if len(x) >= 2 and np.isfinite(x).all() and np.isfinite(y).all():
         m = ((x - x.mean()) * (y - y.mean())).sum() / max(((x - x.mean()) ** 2).sum(), 1e-9)

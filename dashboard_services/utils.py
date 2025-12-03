@@ -937,3 +937,29 @@ def build_teams_overview(
 
     teams_ctx.sort(key=lambda t: t["name"].lower())
     return teams_ctx
+
+
+def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
+    """
+    Map a pick number within the round (1..N) into 'early'/'mid'/'late'.
+    Tuned for 10-team by default.
+    """
+    if slot <= 0:
+        return "late"  # shrug
+
+    if num_teams == 10:
+        if 1 <= slot <= 3:
+            return "early"
+        elif 4 <= slot <= 7:
+            return "mid"
+        else:
+            return "late"
+
+    # Generic fallback: split into thirds
+    third = max(1, num_teams // 3)
+    if slot <= third:
+        return "early"
+    elif slot <= 2 * third:
+        return "mid"
+    else:
+        return "late"

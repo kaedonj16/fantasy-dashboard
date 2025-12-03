@@ -10,25 +10,28 @@ from datetime import date
 from datetime import date
 from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
+from plotly.offline import plot as plotly_plot, get_plotlyjs
 from typing import List, Dict, Any
 from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
     get_nfl_state, get_bracket
-from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
 from dashboard_services.data_building.value_model_training import build_ml_value_table
+from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
+from dashboard_services.picks import load_pick_value_table
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
-    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill
+    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
+    seed_top6_from_team_stats
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
     build_status_by_pid, streak_class, build_teams_overview, load_model_value_table, load_players_index, \
-    load_week_projection
+    load_week_projection, bucket_for_slot
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -48,6 +51,8 @@ app = Flask(
 )
 
 app.secret_key = os.urandom(32)
+plotly_js = get_plotlyjs()
+
 
 FORM_HTML = """
 <!doctype html>
@@ -143,6 +148,9 @@ BASE_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- use your existing dashboard CSS here -->
     <link rel="stylesheet" href="/static/dashboard.css">
+    <script>
+      {plotly_js}
+    </script>
   </head>
   <body>
     {nav}
@@ -279,7 +287,7 @@ def build_nav(league_id: str, active: str) -> str:
 
 def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
     nav_html = build_nav(league_id, active)
-    return BASE_HTML.format(title=title, nav=nav_html, body=body_html)
+    return BASE_HTML.format(title=title, nav=nav_html, body=body_html, plotly_js=plotly_js)
 
 
 def build_league_context(league_id: str) -> dict:
@@ -739,10 +747,13 @@ def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id:
         if pd.notna(owner)
     }
 
+    seed_map = seed_top6_from_team_stats(team_stats, roster_map)
+
     bracket_html = playoff_bracket(
         wb,
         roster_name_map=roster_map,
         roster_avatar_map=roster_avatar_map,
+        seed_map=seed_map,
     )
 
     podium_card = f"""
@@ -891,7 +902,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
     best = df_weekly.groupby("owner")["points"].max().rename("Best Week")
     worst = df_weekly.groupby("owner")["points"].min().rename("Worst Week")
 
-    stats_tbl = (team_stats.rename(columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "WinPct": "Win %"})
+    stats_tbl = (team_stats.rename(columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %"})
                  .merge(best, left_on="Team", right_index=True, how="left")
                  .merge(worst, left_on="Team", right_index=True, how="left"))
 
@@ -1748,31 +1759,56 @@ def api_trade_eval():
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
-    side_a_picks = payload.get("side_a_picks", [])
-    side_b_picks = payload.get("side_b_picks", [])
+    side_a_picks = payload.get("side_a_picks", []) or []
+    side_b_picks = payload.get("side_b_picks", []) or []
 
     weeks = list(range(1, 19))
 
-    # Cached table load
+    # ---------- Load model player value table ----------
+    # This SHOULD return your list[dict] of players
     value_table = load_model_value_table()
-    if value_table is not None:
+
+    # Fix the logic: if there's no table yet, build & cache it
+    if value_table is None:
         value_table = build_ml_value_table(season)
         store_model_values(league_id, season, weeks, value_table)
 
+    if not isinstance(value_table, list):
+        raise ValueError("model_value_table must be a list of player objects")
+
+    # Index players by id for quick lookup
+    players_by_id = {str(p["id"]): p for p in value_table if isinstance(p, dict) and "id" in p}
+
     # ---------- Helpers ----------
 
-    # Simple rookie pick curve
     def value_pick(pk: str) -> float:
+        """
+        pk is like '2026_1_04' -> year, round, slot (within round).
+        We bucket slot -> early/mid/late and look up a blended
+        value from PICK_VALUES built from FantasyCalc + DynastyProcess.
+        """
         try:
-            yr, rnd, slot = pk.split("_")
-            rnd = int(rnd)
-            slot = int(slot)
+            yr_str, rnd_str, slot_str = pk.split("_")
+            year = int(yr_str)
+            rnd = int(rnd_str)
+            slot = int(slot_str)
         except Exception:
             return 0.0
 
-        base = 40 if rnd == 1 else 20 if rnd == 2 else 10
-        decay = max(0.1, 1 - (slot - 1) * 0.04)
-        return round(base * decay, 1)
+        # convert slot to early/mid/late based on league size
+        bucket = bucket_for_slot(slot, num_teams=10)  # use 10 or 12 based on your league
+        key = f"{year}_{rnd}_{bucket}"
+
+        val = PICK_VALUES.get(key)
+        if val is not None:
+            return float(val)
+
+        # Optional: generic fallback like any-year blended value if you ever add that
+        generic_key = f"any_{rnd}_{bucket}"
+        if generic_key in PICK_VALUES:
+            return float(PICK_VALUES[generic_key])
+
+        return 0.0
 
     def build_side(players_ids, picks_ids):
         """
@@ -1799,7 +1835,6 @@ def api_trade_eval():
             player = players_by_id.get(pid_str)
 
             if not player:
-                # Fallback if missing
                 breakdown.append({
                     "type": "player",
                     "id": pid_str,
@@ -1810,7 +1845,7 @@ def api_trade_eval():
                 })
                 continue
 
-            val = float(player.get("value", 0.0))
+            val = float(player.get("value", 0.0) or 0.0)
             name = player.get("name")
             pos = player.get("position")
             team = player.get("team")
@@ -1828,10 +1863,11 @@ def api_trade_eval():
 
         # Picks
         for pk in picks_ids:
-            val = float(value_pick(pk))
+            pk_str = str(pk)
+            val = float(value_pick(pk_str))
             breakdown.append({
                 "type": "pick",
-                "id": pk,
+                "id": pk_str,
                 "value": val,
             })
             raw_picks_total += val
@@ -1844,27 +1880,19 @@ def api_trade_eval():
             "raw_picks_total": raw_picks_total,
             "player_values": player_values,
             "breakdown": breakdown,
-            "effective_total": raw_total,
+            "effective_total": raw_total,  # will be adjusted later
             "adjustment": 0.0,
         }
 
     def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
         """
         Apply a 'value adjustment' only to the side with FEWER players.
-
-        Intuition:
-          - Look at the gap in raw value between the two sides.
-          - Look at how much of a 'stud' the best player is on the fewer side.
-          - Look at how many extra pieces the other side has.
-          - Reverse-engineer an adjustment that moves the trade toward even
-            but caps it so you don't blow things up.
         """
         vals_a = side_a["player_values"]
         vals_b = side_b["player_values"]
         n_a = len(vals_a)
         n_b = len(vals_b)
 
-        # need players on both sides and a true imbalance
         if n_a == 0 or n_b == 0 or n_a == n_b:
             side_a["effective_total"] = side_a["raw_total"]
             side_b["effective_total"] = side_b["raw_total"]
@@ -1885,35 +1913,24 @@ def api_trade_eval():
         fewer_raw = fewer["raw_total"]
         more_raw = more["raw_total"]
 
-        # safety
         if not fewer_vals or fewer_raw <= 0:
             side_a["effective_total"] = side_a["raw_total"]
             side_b["effective_total"] = side_b["raw_total"]
             return
 
-        # How many extra pieces is the other side sending?
         extra_pieces = max(len(more_vals) - len(fewer_vals), 0)
 
-        # "Stud" score: best player on the consolidation side
         stud_val = max(fewer_vals)
         stud_score = min(stud_val / 1000.0, 1.0)  # 0–1
 
-        # How far apart are they in raw value?
         gap = abs(more_raw - fewer_raw)
 
-        # Base adj comes from the gap – we don't usually bridge 100% of the gap,
-        # but we move it a good chunk of the way.
         base_from_gap = gap * (0.45 + 0.25 * stud_score)  # ~45–70% of gap
-
-        # Extra bonus for each additional piece on the "more" side
-        piece_bonus = fewer_raw * 0.03 * extra_pieces  # 3% per extra piece
-
-        # Small extra weight for true monsters
-        stud_bonus = fewer_raw * 0.10 * stud_score  # up to +10% of side
+        piece_bonus = fewer_raw * 0.03 * extra_pieces
+        stud_bonus = fewer_raw * 0.10 * stud_score
 
         raw_adj = base_from_gap + piece_bonus + stud_bonus
 
-        # Cap overall adjustment so it can't exceed ~25% of the consolidation side
         cap = fewer_raw * 0.25
         adj = min(raw_adj, cap)
 
@@ -1927,13 +1944,10 @@ def api_trade_eval():
         side_a["effective_total"] = side_a["raw_total"] + side_a["adjustment"]
         side_b["effective_total"] = side_b["raw_total"] + side_b["adjustment"]
 
-    # ---------- Build both sides (raw) ----------
-    players_by_id = {str(p["id"]): p for p in value_table}
-
+    # ---------- Build both sides + apply adjustment ----------
     side_a = build_side(side_a_players, side_a_picks)
     side_b = build_side(side_b_players, side_b_picks)
 
-    # ---------- Apply multi-for-one consolidation adjustment ----------
     apply_multi_for_one_adjustment(side_a, side_b)
 
     a_eff = side_a["effective_total"]
@@ -1943,7 +1957,7 @@ def api_trade_eval():
     abs_diff = abs(diff)
 
     # ---------- Percentage-based fair threshold ----------
-    FAIR_PCT = 0.015  # 8% band; tweak as needed
+    FAIR_PCT = 0.08  # 8% band; tweak as needed
     baseline = max(a_eff, b_eff, 1.0)
     fair_band = baseline * FAIR_PCT
 
@@ -1964,6 +1978,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
     })
+
 
 
 def _sanitize_for_json(obj):
@@ -1988,7 +2003,7 @@ def api_league_players():
     season = int(request.args.get("season") or CURRENT_SEASON)
     weeks = list(range(1, 19))
 
-    # Try to use the cached value table
+    # ----- 1) Get / cache your model player values -----
     model_value_table = get_cached_model_value_table(league_id, season, weeks)
     if model_value_table is None:
         print(f"[league_players] cache MISS for league={league_id}, season={season}")
@@ -1997,8 +2012,58 @@ def api_league_players():
     else:
         print(f"[league_players] cache HIT for league={league_id}, season={season}")
 
-    cleaned_players = _sanitize_for_json(model_value_table)
-    return jsonify(cleaned_players)
+    # model_value_table is expected to be a list[dict] of players
+    if not isinstance(model_value_table, list):
+        # if your existing implementation returns a dict, adapt as needed
+        raise ValueError("model_value_table must be a list of player objects")
+
+    # ----- 2) Normalize players & mark them as type='player' -----
+    players = []
+    for obj in model_value_table:
+        if not isinstance(obj, dict):
+            continue
+        p = dict(obj)  # shallow copy so we don’t mutate cache
+        p.setdefault("type", "player")
+        # make sure id is a string (helps frontend comparisons)
+        if "id" in p and p["id"] is not None:
+            p["id"] = str(p["id"])
+        players.append(p)
+
+    # ----- 3) Load draft pick values and convert to "assets" -----
+    # This helper should already merge FantasyCalc + DynastyProcess CSVs
+    # into a dict like: { "2026_1_early": 540.2, "2026_2_mid": 210.0, ... }
+    pick_values = load_pick_value_table()  # you define this elsewhere
+
+    picks = []
+    for key, val in (pick_values or {}).items():
+        # Expecting key format like "2026_1_early"
+        try:
+            year_str, rnd_str, bucket = key.split("_")
+            year = int(year_str)
+            rnd = int(rnd_str)
+        except Exception:
+            # If the key is weird, skip instead of blowing up the endpoint
+            continue
+
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+        bucket_label = bucket.capitalize()  # early/mid/late -> Early/Mid/Late
+        name = f"{year} {rnd}{suffix} ({bucket_label})"
+
+        picks.append({
+            "id": key,            # this is what you POST back in side_*_picks
+            "name": name,         # what shows in dropdown / chip
+            "team": "Pick",       # harmless label to fit existing UI
+            "position": "PICK",   # so frontend can tell it's a pick
+            "type": "pick",       # critical: distinguish from players
+            "value": float(val),  # your merged pick value
+        })
+
+    # ----- 4) Combine players + picks and sanitize for JSON -----
+    combined_assets = players + picks
+
+    cleaned = _sanitize_for_json(combined_assets)
+    return jsonify(cleaned)
+
 
 
 if __name__ == "__main__":

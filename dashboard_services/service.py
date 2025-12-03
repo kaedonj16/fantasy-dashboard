@@ -449,7 +449,7 @@ def build_tables(
 
     # Power score
     W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.2, 0.3, 0.15, 0.20, 0.15
-    team_stats["WinPct"] = win_pct
+    team_stats["Win%"] = win_pct
     team_stats["PowerScore"] = (
             W_WIN * team_stats["Z_WinPercentage"]
             + W_AVG * team_stats["Z_Avg"]
@@ -921,8 +921,8 @@ def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
 
     if "PowerScore" in team_stats.columns:
         base = team_stats["PowerScore"].astype(float)
-    elif "WinPct" in team_stats.columns:
-        base = team_stats["WinPct"].astype(float)
+    elif "Win%" in team_stats.columns:
+        base = team_stats["Win%"].astype(float)
     elif "AVG" in team_stats.columns:
         base = team_stats["AVG"].astype(float)
     else:
@@ -1070,18 +1070,39 @@ def playoff_bracket(
         roster_name_map,
         roster_avatar_map,
         match_scores=None,
+        seed_map=None,          # NEW: { roster_id(str/int) -> seed(int) }
 ):
     """
     Render an HTML playoff bracket from Sleeper's /winners_bracket endpoint.
+
+    seed_map (optional):
+        Dict mapping roster_id -> seed (1 = best, 2 = next, etc.).
+        When present, BYE teams and ordering are based on seed instead of roster id.
     """
     if not winners_bracket:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
     match_scores = match_scores or {}
+    seed_map = seed_map or {}
 
     # normalize keys to strings
     def _k(x):
         return str(x) if x is not None else None
+
+    # how to sort a roster id: by seed first, then by roster id as tiebreaker
+    def seed_key(rid):
+        if rid is None:
+            return 9999
+        # allow both str and int keys in seed_map
+        s = seed_map.get(str(rid))
+        if s is None:
+            s = seed_map.get(int(rid), None) if isinstance(rid, (int, str)) and str(rid).isdigit() else None
+        # if no seed, use a large-ish value plus roster_id for stable ordering
+        try:
+            rid_int = int(rid)
+        except Exception:
+            rid_int = 9999
+        return (s if s is not None else 9999, rid_int)
 
     # normalize maps (roster_id -> name/avatar)
     roster_name = {_k(k): v for k, v in (roster_name_map or {}).items()}
@@ -1094,31 +1115,32 @@ def playoff_bracket(
         for key in ("t1", "t2"):
             rid = m.get(key)
             if rid is not None:
-                rid_int = int(rid)
-                all_playoff_rids.add(rid_int)
+                all_playoff_rids.add(rid)
                 if r == 1:
-                    round1_rids.add(rid_int)
+                    round1_rids.add(rid)
 
-    bye_rids = sorted(all_playoff_rids - round1_rids)
+    bye_rids = all_playoff_rids - round1_rids
+    # sort by SEED, not roster id
+    bye_rids_sorted = sorted(bye_rids, key=seed_key)
 
     # --- 2) Add synthetic Round 1 BYE matches, top + bottom ---
     extended_bracket = list(winners_bracket)
     round1_override = None  # will hold explicit order if we build byes
 
-    if bye_rids:
+    if bye_rids_sorted:
         existing_ids = [m.get("m") for m in winners_bracket if isinstance(m.get("m"), int)]
         next_m = max(existing_ids) + 1 if existing_ids else 1
 
-        # create bye matches in sorted order (seeded: smallest -> best)
+        # create bye matches in sorted (by seed) order
         bye_matches = []
-        for rid in bye_rids:
+        for rid in bye_rids_sorted:
             bye_matches.append({
                 "m": next_m,
                 "r": 1,
                 "w": None,
                 "l": None,
-                "t1": rid,  # real team
-                "t2": None,  # bye side
+                "t1": rid,      # real team (seeded)
+                "t2": None,     # bye side
                 "t1_from": None,
                 "t2_from": None,
                 "is_bye": True,
@@ -1133,7 +1155,7 @@ def playoff_bracket(
             # single bye at the top
             new_r1 = bye_matches[:1] + r1_existing
         elif len(bye_matches) >= 2:
-            # first bye at top, last bye at bottom, any others in the middle (rare)
+            # first bye at top, last bye at bottom, any others in the middle
             middle_byes = bye_matches[1:-1]
             new_r1 = [bye_matches[0]] + r1_existing + middle_byes + [bye_matches[-1]]
         else:
@@ -1164,22 +1186,15 @@ def playoff_bracket(
 
     round_nums = sorted(rounds.keys())
     for r in round_nums:
-        # keep explicit R1 ordering if override exists
         if r == 1 and round1_override:
             continue
         rounds[r].sort(key=lambda x: x.get("m", 0))
 
+    # ---- rest of your existing resolve/render code unchanged ----
     def resolve_slot(match, side_key):
-        """
-        side_key: "t1" or "t2"
-        Returns dict: {label, avatar, kind}
-          kind in {"team","from","bye","empty"}
-        Returns None to signal "skip this match" for loser-path slots.
-        """
         rid = match.get(side_key)
         from_spec = match.get(f"{side_key}_from")
 
-        # direct team
         if rid is not None:
             key = _k(rid)
             return {
@@ -1188,11 +1203,9 @@ def playoff_bracket(
                 "kind": "team",
             }
 
-        # derived from previous match
         if isinstance(from_spec, dict) and from_spec:
             src_type, src_mid = next(iter(from_spec.items()))  # ("w",1) or ("l",2)
 
-            # hide loser-path (consolation) branches in winners bracket
             if src_type == "l":
                 return None
 
@@ -1204,32 +1217,15 @@ def playoff_bracket(
                 team2 = roster_name.get(_k(t2_rid)) if t2_rid is not None else None
 
                 if not team1 or not team2:
-                    return {
-                        "label": "TBD",
-                        "avatar": "",
-                        "kind": "empty",
-                    }
+                    return {"label": "TBD", "avatar": "", "kind": "empty"}
 
-                return {
-                    "label": f"{team1}/{team2}",
-                    "avatar": "",
-                    "kind": "from",
-                }
+                return {"label": f"{team1}/{team2}", "avatar": "", "kind": "from"}
 
-        # bye vs actual team on other side
         other = "t2" if side_key == "t1" else "t1"
         if match.get(other) is not None or match.get(f"{other}_from"):
-            return {
-                "label": "BYE",
-                "avatar": "",
-                "kind": "bye",
-            }
+            return {"label": "BYE", "avatar": "", "kind": "bye"}
 
-        return {
-            "label": "TBD",
-            "avatar": "",
-            "kind": "empty",
-        }
+        return {"label": "TBD", "avatar": "", "kind": "empty"}
 
     def render_team_row(slot, score_text, top=False):
         cls = "team-row"
@@ -1267,7 +1263,6 @@ def playoff_bracket(
             slot1 = resolve_slot(m, "t1")
             slot2 = resolve_slot(m, "t2")
 
-            # skip matches that involve loser-path (slot is None)
             if slot1 is None or slot2 is None:
                 continue
 
@@ -1276,7 +1271,6 @@ def playoff_bracket(
             s1_txt = f"{s1:.2f}" if isinstance(s1, (int, float)) else "–"
             s2_txt = f"{s2:.2f}" if isinstance(s2, (int, float)) else "–"
 
-            # if BYE, show BYE instead of a score
             if slot1["kind"] == "bye":
                 s1_txt = "-"
             if slot2["kind"] == "bye":
@@ -1294,13 +1288,85 @@ def playoff_bracket(
                 f"<div class='bracket-round round-{r}'>"
                 f"  <div class='round-title'>{round_label}</div>"
                 f"  <div class='round-body'>{''.join(match_html)}</div>"
-                "</div>"
+                f"</div>"
             )
 
     if not html_rounds:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+
+def seed_top6_from_team_stats(team_stats, roster_map):
+    """
+    Produce a seed map { roster_id_str: seed } for the top 6 teams.
+
+    Uses team_stats columns:
+      - 'owner' (team name, matching roster_map values)
+      - 'wins'
+      - 'PF'
+      - 'PA'
+
+    Tie-breakers:
+      1) wins (desc)
+      2) PF (desc)
+      3) PA (asc)
+      4) owner name (asc; just to keep things stable)
+    """
+
+    # ---- 0) Basic validation ----
+    required_cols = {"owner", "Wins", "PF", "PA"}
+    missing = required_cols - set(team_stats.columns)
+    if missing:
+        raise ValueError(f"team_stats missing required columns: {missing}")
+
+    if not isinstance(roster_map, dict) or not roster_map:
+        raise ValueError("roster_map must be a non-empty dict of {roster_id: team_name}")
+
+    # ---- 1) Build reverse map: team_name -> roster_id ----
+    # Normalize names a bit (strip whitespace)
+    name_to_rid = {}
+    for rid, name in roster_map.items():
+        if not isinstance(name, str):
+            continue
+        key = name.strip()
+        if key:
+            name_to_rid[key] = str(rid).strip()
+
+    # ---- 2) Sort team_stats by record + PF + PA ----
+    df = team_stats.copy()
+    df["owner_norm"] = df["owner"].astype(str).str.strip()
+
+    df_sorted = (
+        df.sort_values(
+            by=["Wins", "PF", "PA", "owner_norm"],
+            ascending=[False, False, True, True],  # wins desc, PF desc, PA asc
+        )
+        .reset_index(drop=True)
+    )
+
+    # ---- 3) Build seed map for top 6, using roster IDs from roster_map ----
+    seed_map: dict[str, int] = {}
+    seed = 1
+
+    for _, row in df_sorted.iterrows():
+        owner_name = row["owner_norm"]
+        rid = name_to_rid.get(owner_name)
+
+        # Skip if we can't map this owner to a roster_id
+        if not rid:
+            continue
+
+        if rid in seed_map:
+            # Already assigned a seed (shouldn't normally happen, but safe)
+            continue
+
+        seed_map[rid] = seed
+        seed += 1
+
+        if seed > 6:
+            break
+
+    return seed_map
 
 
 def render_standings_table(team_stats, length):

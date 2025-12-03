@@ -1,11 +1,15 @@
 # dashboard_services/value_model_training.py
 
+from __future__ import annotations
+
 import json
+import math
 import numpy as np
 import os
 import pandas as pd
 import pickle
 import requests
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -18,7 +22,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from typing import Dict, Iterable, List, Optional
 
-from dashboard_services.utils import load_teams_index
+from dashboard_services.utils import load_teams_index, bucket_for_slot
 
 # ------------------------------------------------
 # Paths / constants
@@ -224,54 +228,103 @@ def load_fantasycalc_df(path: Path = FANTASYCALC_VALUES_PATH) -> pd.DataFrame:
 # DynastyProcess CSV loader
 # ------------------------------------------------
 
-def load_dynastyprocess_df(path: Path = DYNASTYPROCESS_VALUES_PATH) -> pd.DataFrame:
+def load_dynastyprocess_df(
+        path: Path = DYNASTYPROCESS_VALUES_PATH,
+        pick_value_lookup: Dict[str, float] = None,
+        years=(2025, 2026, 2027, 2028),
+        rounds=(1, 2, 3),
+) -> pd.DataFrame:
     """
-    Load DynastyProcess dynasty values from CSV.
+    Load DynastyProcess CSV AND insert synthetic draft picks.
 
-    You need to download:
-      https://github.com/dynastyprocess/data/raw/master/files/values.csv
-    into data/dynastyprocess_values.csv
+    pick_value_lookup should be something like:
+        {
+          "2026 Early 1st": 475,
+          "2026 Mid 1st": 440,
+          "2026 Late 1st": 410,
+          ...
+        }
 
-    This function assumes a 1QB value column named 'value_1qb'.
-    Adjust 'dp_value_col' below as needed.
+    Returns DataFrame with columns:
+        dp_name, dp_position, dp_team, dp_value_raw
     """
+
     if not path.exists():
-        raise FileNotFoundError(
-            f"Expected DynastyProcess values CSV at {path}. "
-            "Download it from dynastyprocess/data."
-        )
+        raise FileNotFoundError(f"Missing DP CSV at {path}")
 
     df = pd.read_csv(path)
-    dp_value_col = "value_1qb"  # change if your CSV uses a different column
 
+    # ----- Detect value column -----
+    dp_value_col = "value_1qb"
     if dp_value_col not in df.columns:
-        print(f"[value_model] WARNING: '{dp_value_col}' not in CSV; columns are: {list(df.columns)}")
         numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-        if "value" in numeric_cols:
-            dp_value_col = "value"
-        elif numeric_cols:
-            dp_value_col = numeric_cols[0]
-        else:
-            raise ValueError("No numeric value column found for DynastyProcess CSV.")
+        dp_value_col = "value" if "value" in numeric_cols else numeric_cols[0]
 
-    name_col = "player" if "player" in df.columns else "Player" if "Player" in df.columns else None
-    pos_col = "pos" if "pos" in df.columns else "position" if "position" in df.columns else None
+    # ----- Detect name/pos/team columns -----
+    name_col = "player" if "player" in df.columns else \
+               "Player" if "Player" in df.columns else df.columns[0]
+
+    pos_col = "pos" if "pos" in df.columns else \
+              "position" if "position" in df.columns else None
+
     team_col = "team" if "team" in df.columns else None
 
-    if not name_col or not pos_col:
-        print("[value_model] WARNING: Could not confidently detect name/pos columns in DP CSV.")
+    names = df[name_col].astype(str)
+    positions = df[pos_col].astype(str) if pos_col else pd.Series([""] * len(df))
 
-    out = pd.DataFrame(
-        {
-            "dp_name": df[name_col] if name_col else df.iloc[:, 0],
-            "dp_position": df[pos_col] if pos_col else None,
-            "dp_team": df[team_col] if team_col else None,
-            "dp_value_raw": df[dp_value_col],
-        }
-    )
+    # ----- Detect pick-like rows -----
+    def looks_like_pick(name: str):
+        s = name.lower().strip()
+        return bool(re.match(r"^\d{4}\s+(early|mid|late)\s+\d+(st|nd|rd|th)$", s))
 
-    print(f"[value_model] DynastyProcess rows: {len(out)}")
+    pick_mask = names.apply(looks_like_pick)
+
+    # force pos="PICK" for all detected
+    positions = positions.where(~pick_mask, other="PICK")
+
+    # ----- Build base frame -----
+    out = pd.DataFrame({
+        "dp_name": names,
+        "dp_position": positions,
+        "dp_team": df[team_col] if team_col else None,
+        "dp_value_raw": df[dp_value_col],
+    })
+
+    # ============================================================
+    #                   ADD SYNTHETIC DRAFT PICKS
+    # ============================================================
+
+    synthetic_rows = []
+
+    if pick_value_lookup is None:
+        pick_value_lookup = {}  # empty fallback; user fills it later
+
+    for yr in years:
+        for rnd in rounds:
+            for tier in ("Early", "Mid", "Late"):
+                pick_name = f"{yr} {tier} {rnd}{_suffix(rnd)}"
+
+                synthetic_rows.append({
+                    "dp_name": pick_name,
+                    "dp_position": "PICK",
+                    "dp_team": None,
+                    "dp_value_raw": float(pick_value_lookup.get(pick_name, 0.0))
+                })
+
+    picks_df = pd.DataFrame(synthetic_rows)
+
+    # Append synthetic picks to the real DP data
+    out = pd.concat([out, picks_df], ignore_index=True)
+
     return out
+
+
+def _suffix(rnd: int) -> str:
+    """Return st/nd/rd/th for round numbers."""
+    if rnd == 1: return "st"
+    if rnd == 2: return "nd"
+    if rnd == 3: return "rd"
+    return "th"
 
 
 def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
@@ -334,7 +387,6 @@ def build_training_dataframe(
     dp_df = load_dynastyprocess_df()   # dp_name, dp_position, dp_team, dp_value_raw
     engine_df = load_engine_df()       # sleeper_id, engine_value
     internal_df = load_internal_stats_df(season)  # sleeper_id, usage + team stats + age, etc.
-
     # --- 1) Merge FC + Engine + Internal on sleeper_id ---
     df = fc_df.merge(
         engine_df,
@@ -370,6 +422,110 @@ def build_training_dataframe(
     df = df[~df["fc_value"].isna()].copy()
 
     return df
+
+# dashboard_services/draft_values.py
+
+def _load_fantasycalc(csv_path: str) -> pd.DataFrame:
+    """
+    Expected columns (tweak as needed):
+      year, round, bucket, value
+    Where bucket in {'early','mid','late'}.
+    """
+    df = pd.read_csv(csv_path)
+    # normalize
+    df["year"] = df["year"].astype(int)
+    df["round"] = df["round"].astype(int)
+    df["bucket"] = df["bucket"].str.lower().str.strip()
+    return df
+
+
+def _load_dynastyprocess(csv_path: str, num_teams: int = 10) -> pd.DataFrame:
+    """
+    Expected something like:
+      year, round, pick, value
+    where 'pick' is 1..num_teams.
+    If your DP CSV uses a single pick column like 1.01/1.02/etc,
+    you can split that into (round, pick) before this step.
+    """
+    df = pd.read_csv(csv_path)
+
+    # adjust these column names to your actual CSV
+    df["year"] = df["year"].astype(int)
+    df["round"] = df["round"].astype(int)
+    df["pick"] = df["pick"].astype(int)
+
+    # derive bucket from pick within round
+    df["bucket"] = df["pick"].apply(lambda s: bucket_for_slot(int(s), num_teams=num_teams))
+
+    # now group to early/mid/late per round/year
+    # e.g. average of all mid picks in that round for that class
+    grouped = (
+        df.groupby(["year", "round", "bucket"], as_index=False)["value"]
+        .mean()
+    )
+    return grouped
+
+
+def build_pick_value_table(
+    num_teams: int = 10,
+    fc_weight: float = 0.5,
+    dp_weight: float = 0.5,
+) -> Dict[str, float]:
+    """
+    Returns mapping:
+      '{year}_{round}_{bucket}' -> value (float)
+
+    Combines FantasyCalc + DynastyProcess by weighted average.
+    """
+    df_fc = _load_fantasycalc(FANTASYCALC_VALUES_PATH)
+    df_dp = _load_dynastyprocess(DYNASTYPROCESS_VALUES_PATH, num_teams=num_teams)
+
+    # make sure both have the same columns: year, round, bucket, value
+    df_fc = df_fc[["year", "round", "bucket", "value"]]
+    df_dp = df_dp[["year", "round", "bucket", "value"]]
+
+    # outer join so we can still have picks even if only one source has data
+    merged = df_fc.merge(
+        df_dp,
+        on=["year", "round", "bucket"],
+        how="outer",
+        suffixes=("_fc", "_dp"),
+    )
+
+    values: Dict[str, float] = {}
+
+    for _, row in merged.iterrows():
+        year = int(row["year"])
+        rnd = int(row["round"])
+        bucket = row["bucket"]
+        v_fc = row.get("value_fc")
+        v_dp = row.get("value_dp")
+
+        # pick value if present; you can change this logic (e.g., prefer DP if both)
+        vals = []
+        weights = []
+
+        if not (isinstance(v_fc, float) and math.isnan(v_fc)) and v_fc is not None:
+            vals.append(float(v_fc))
+            weights.append(fc_weight)
+        if not (isinstance(v_dp, float) and math.isnan(v_dp)) and v_dp is not None:
+            vals.append(float(v_dp))
+            weights.append(dp_weight)
+
+        if not vals:
+            continue
+
+        if len(vals) == 1:
+            combined = vals[0]
+        else:
+            # weighted average
+            w_sum = sum(weights) or 1.0
+            combined = sum(v * w for v, w in zip(vals, weights)) / w_sum
+
+        key = f"{year}_{rnd}_{bucket}"
+        values[key] = float(combined)
+
+    return values
 
 
 # ------------------------------------------------
@@ -671,6 +827,7 @@ def build_ml_value_table(
         values[pid] = v
 
     return values
+
 
 
 # ------------------------------------------------

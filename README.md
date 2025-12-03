@@ -18,7 +18,7 @@ python3 -m pip install -r requirements.txt
 3) Run the report (replace with your league ID and current week number):
 
 ```bash
-python3 app.oy
+python3 app.py
 ```
 
 Outputs in the same folder:

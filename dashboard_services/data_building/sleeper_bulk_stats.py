@@ -6,7 +6,7 @@ import requests
 import time
 from typing import Any, Dict, List
 
-from dashboard_services.utils import load_players_index
+from dashboard_services.utils import load_relevant_index
 
 SLEEPER_BASE = "https://api.sleeper.app"
 SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your system
@@ -108,9 +108,9 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
     """
 
     rz_map: Dict[str, dict] = {}
-    players_index = load_players_index()
+    players_index = load_relevant_index()
     pids = list(players_index.keys())
-
+    print("[sleeper_redzone] Fetching stats for all players in Sleeper...")
     for pid in pids:
         if players_index.get(pid, {}).get("pos") in ALLOWED_POS:
             url = (
@@ -118,7 +118,6 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
                 f"?season_type=regular&season={season}"
             )
 
-            print(f"[sleeper_redzone] Fetching {pid} -> {url}")
             resp = requests.get(url, timeout=20)
 
             if resp.status_code != 200:

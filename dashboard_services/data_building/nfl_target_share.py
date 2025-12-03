@@ -41,7 +41,6 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
     where target_share is player_total / team_total.
     """
     url = FOOTBALLGUYS_TEAM_TARGETS_URL.format(team=team, year=season)
-    print(f"[target_share] Fetching {team} targets from {url}")
 
     resp = requests.get(url, headers=HEADERS, timeout=30)
     resp.raise_for_status()
@@ -85,7 +84,6 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
         target_share = total_targets / team_total
         ts_map[name] = (total_targets, target_share)
 
-    print(f"[target_share] Team {team}: {len(ts_map)} players, team_total={team_total}")
     return ts_map
 
 
@@ -98,6 +96,7 @@ def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, fl
     """
     league_map: Dict[Tuple[str, str], Dict[str, float]] = {}
 
+    print(f"[target_share] Fetching targets for all teams")
     for team in NFL_TEAM_CODES:
         try:
             team_map = fetch_team_target_share(team, season)

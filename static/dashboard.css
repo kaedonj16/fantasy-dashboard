@@ -381,7 +381,7 @@ margin-left: 8px;
 /* outer container */
 .bracket {
 display: flex;
-gap: 0px;
+gap: 5px;
 align-items: center;
 max-width: 100%;
 overflow-x: auto;
@@ -393,7 +393,6 @@ padding: 10px 12px 0px 12px;
 
 /* each column (round) */
 .bracket-round {
-min-width: 260px;
 position: relative;
 display: flex;
 flex-direction: column;
@@ -418,7 +417,7 @@ border: 2px solid #122d4b;
 background: #fff;
 padding: 14px 16px;
 box-sizing: border-box;
-margin: 18px 0;
+margin: 5px 0;
 }
 
 /* space matches so the middle column sits between them */
@@ -434,71 +433,10 @@ display: flex;
 justify-content: center;
 }
 
-/* little horizontal line out of every Round 1 card */
-.round-1 .bracket-match::after {
-content: "";
-position: absolute;
-top: 50%;
-right: -30px;
-width: 30px;
-height: 3px;
-background: #122d4b;
-}
-
-/* connect top two Round 1 matches into top semi */
-.round-2 .bracket-match:nth-child(1)::before {
-content: "";
-position: absolute;
-left: 0px;
-width: 30px;
-height: calc(50% + -3px);
-top: -52.5px;
-border-right: 3px solid #122d4b;
-border-top: 3px solid #122d4b;
-border-radius: 0 14px 0 0;
-}
-
-/* connect bottom two Round 1 matches into bottom semi */
-.round-2 .bracket-match:nth-child(2)::before {
-content: "";
-position: absolute;
-left: 0px;
-width: 30px;
-height: calc(50% + 0px);
-bottom: -55.5px;
-border-right: 3px solid #122d4b;
-border-bottom: 3px solid #122d4b;
-border-radius: 0 0 14px 0;
-}
-
-.round-2 .bracket-match:nth-child(1)::after {
-content: "";
-position: absolute;
-top: 47%;
-right: -88px;
-width: 84px;
-height: 35px;
-border-top: 3px solid #122d4b;
-border-right: 3px solid #122d4b;
-border-radius: 0 14px 0 0;
-}
-
-.round-2 .bracket-match:nth-child(2)::after {
-content: "";
-position: absolute;
-top: 13%;
-right: -88px;
-width: 84px;
-height: 35px;
-border-bottom: 3px solid #122d4b;
-border-right: 3px solid #122d4b;
-border-radius: 0 0 14px 0;
-}
-
 .round-2 .round-body {
 display: flex;
 flex-direction: column;
-row-gap: 24px;
+row-gap: 105px;
 }
 .standings-table {
 width: 100%;
@@ -2587,4 +2525,53 @@ tbody tr:nth-child(even){ background:var(--row); }
   background: #122d4b;
   border-color: #122d4b;
   color: white;
+}
+
+.radar-selectors {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.radar-selectors label {
+  font-size: 0.8rem;
+  color: var(--text-muted, #9ca3af);
+  display: flex;
+  flex-direction: column;
+}
+
+.radar-selectors select {
+  margin-top: 2px;
+  min-width: 120px;
+}
+
+.legend-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    border: 1px solid rgba(0,0,0,0.15);
+}
+
+.legend-label {
+    font-size: 13px;
+    color: #374151;
+}
+
+.graph-body {
+  padding: 0.75rem 0.75rem 0.5rem;
+  /* let Plotly control height; don't scale */
+  overflow: visible;       /* important: no clipping */
+}
+
+/* Make sure plot can use full width */
+.graph-body .js-plotly-plot {
+  width: 100% !important;
+  max-width: 100%;
 }
