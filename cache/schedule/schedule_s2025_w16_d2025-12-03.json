@@ -31,8 +31,8 @@
     "home": "CHI",
     "espnLink": "https://www.espn.com/nfl/boxscore/_/gameId/401772613",
     "cbsLink": "https://www.cbssports.com/nfl/gametracker/boxscore/NFL_20251220_GB@CHI",
-    "gameTime": "TBD",
-    "gameTime_epoch": "",
+    "gameTime": "8:20p",
+    "gameTime_epoch": "1766280000.0",
     "season": "2025",
     "neutralSite": "False",
     "gameStatusCode": "0"
@@ -50,8 +50,8 @@
     "home": "WSH",
     "espnLink": "https://www.espn.com/nfl/boxscore/_/gameId/401772612",
     "cbsLink": "https://www.cbssports.com/nfl/gametracker/boxscore/NFL_20251220_PHI@WAS",
-    "gameTime": "TBD",
-    "gameTime_epoch": "",
+    "gameTime": "5:00p",
+    "gameTime_epoch": "1766268000.0",
     "season": "2025",
     "neutralSite": "False",
     "gameStatusCode": "0"
