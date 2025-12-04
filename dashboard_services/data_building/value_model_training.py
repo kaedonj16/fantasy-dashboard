@@ -793,7 +793,17 @@ def rewrite_value_table_with_model() -> Path:
         model_values_{today}.json
 
     Output schema per asset:
-      { id, name, team, position, age, value }
+      {
+        id,
+        name,
+        team,
+        position,
+        age,
+        value,
+        search_name,
+        pos_rank,        # int or None
+        pos_rank_label,  # e.g. "WR1" or None
+      }
 
     Includes both:
       - real players (QB/RB/WR/TE/etc.)
@@ -839,6 +849,9 @@ def rewrite_value_table_with_model() -> Path:
             "age": age,
             "value": float(ml_value),
             "search_name": normalize_name(player.get("name")),
+            # filled in later
+            "pos_rank": None,
+            "pos_rank_label": None,
         })
 
     # ---------- 2) Draft picks from pick value table ----------
@@ -858,7 +871,6 @@ def rewrite_value_table_with_model() -> Path:
             # Weird key like "foo" – skip
             continue
 
-        # Basic parsing
         try:
             year = int(year_str)
             rnd = int(rnd_str)
@@ -871,19 +883,51 @@ def rewrite_value_table_with_model() -> Path:
             bucket_label = bucket.capitalize()  # early/mid/late -> Early/Mid/Late
             name = f"{year} {rnd}{suffix} ({bucket_label})"
         else:
-            # No bucket → generic round pick
             name = f"{year} {rnd}{suffix}"
 
         cleaned_assets.append({
-            "id": key,  # trade calculator uses this as pick id
-            "name": name,  # display string
-            "team": "Pick",  # keeps schema consistent
+            "id": key,           # trade calculator uses this as pick id
+            "name": name,        # display string
+            "team": "Pick",      # keeps schema consistent
             "position": "PICK",  # lets UI / logic distinguish picks
-            "age": None,  # no age for picks
-            "value": float(val)
+            "age": None,         # no age for picks
+            "value": float(val),
+            "search_name": normalize_name(name),
+            "pos_rank": None,
+            "pos_rank_label": None,
         })
 
-    # ---------- 3) Write combined table ----------
+    # ---------- 3) Compute per-position ranks (players only) ----------
+    # Group indexes by position
+    pos_to_indices: dict[str, list[int]] = {}
+
+    for idx, asset in enumerate(cleaned_assets):
+        pos = str(asset.get("position") or "").upper()
+        if not pos or pos == "PICK":
+            continue  # don't rank picks
+        pos_to_indices.setdefault(pos, []).append(idx)
+
+    # For each position, sort by value desc, assign rank
+    for pos, indices in pos_to_indices.items():
+        # sort indices by value
+        indices.sort(key=lambda i: float(cleaned_assets[i].get("value") or 0.0), reverse=True)
+
+        rank = 1
+        last_val = None
+        for i in indices:
+            val = float(cleaned_assets[i].get("value") or 0.0)
+
+            # optional: if you want ties to share rank, uncomment this block
+            # if last_val is not None and val < last_val:
+            #     rank += 1
+            # last_val = val
+
+            # simpler: strict ordering (1,2,3,...)
+            cleaned_assets[i]["pos_rank"] = rank
+            cleaned_assets[i]["pos_rank_label"] = f"{pos}{rank}"
+            rank += 1
+
+    # ---------- 4) Write combined table ----------
     out_path = DATA_DIR / f"model_values_{date_str}.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
@@ -891,6 +935,7 @@ def rewrite_value_table_with_model() -> Path:
     print(f"[value_model] Wrote model values (players + picks) → {out_path}")
 
     return out_path
+
 
 
 # ------------------------------------------------

@@ -31,7 +31,7 @@ from dashboard_services.service import build_tables, playoff_bracket, matchup_ca
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
     build_status_by_pid, streak_class, build_teams_overview, load_model_value_table, load_players_index, \
-    load_week_projection, bucket_for_slot
+    load_week_projection, bucket_for_slot, clear_activity_cache_for_league
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -272,6 +272,7 @@ def build_nav(league_id: str, active: str) -> str:
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     pills = [
+        "<button type='button' id='activityRefreshBtn' class='nav-pill' style='display:inline-flex;align-items:center;gap:6px;'>↻ Refresh Activity</button>",
         nav_pill("Dashboard", "page_dashboard", "dashboard"),
         nav_pill("Weekly Hub", "page_weekly", "weekly"),
         nav_pill("Trade Calc", "page_trade", "trade"),
@@ -347,6 +348,13 @@ def build_league_context(league_id: str) -> dict:
     )
     standings_map = build_standings_map(team_stats, roster_map)
 
+    picks_by_roster = build_picks_by_roster(
+        num_future_seasons=3,
+        league=league,
+        rosters=rosters,
+        traded=traded,
+    )
+
     return {
         "league_id": league_id,
         "league": league,
@@ -370,6 +378,7 @@ def build_league_context(league_id: str) -> dict:
         "injury_df": injury_df,
         "activity_df": activity_df,
         "standings_map": standings_map,
+        "picks_by_roster": picks_by_roster,
     }
 
 
@@ -467,10 +476,8 @@ def build_status_for_week(season, week, players_index, teams_index):
 
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
-    league = ctx["league"]
     rosters = ctx["rosters"]
     users = ctx["users"]
-    traded = ctx["traded"]
     current_week = ctx["current_week"]
     players_map = ctx["players_map"]
     df_weekly = ctx["df_weekly"]
@@ -480,6 +487,7 @@ def build_dashboard_body(ctx: dict) -> str:
     statuses = ctx["statuses"]
     proj_by_week = ctx["proj_by_week"]
     matchups_by_week = ctx["matchups_by_week"]
+    picks_by_roster = ctx["picks_by_roster"]
 
     # --- Standings snapshot (top card in main column) ---
     standings_html = render_standings(team_stats, 5)
@@ -514,12 +522,6 @@ def build_dashboard_body(ctx: dict) -> str:
     awards_html = render_awards_section(awards)
 
     # --- Teams sidebar (right-hand side) ---
-    picks_by_roster = build_picks_by_roster(
-        num_future_seasons=3,
-        league=league,
-        rosters=rosters,
-        traded=traded,
-    )
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -990,19 +992,29 @@ def build_standings_body(ctx: dict) -> str:
 
 def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
     """
-    Apply a 'value adjustment' only to the side with FEWER players.
-    """
-    vals_a = side_a["player_values"]
-    vals_b = side_b["player_values"]
-    n_a = len(vals_a)
-    n_b = len(vals_b)
+    Multi-for-one adjustment:
 
+    - Only uses *player* values (ignores picks entirely).
+    - Gives a bonus to the side getting FEWER players, scaled by:
+        * gap in player value
+        * how much of that side is tied up in its best player ("stud")
+        * how many extra pieces the other side is sending
+    - Adjustment is added on top of raw_total (which can still include picks).
+    """
+
+    vals_a = side_a.get("player_values", []) or []
+    vals_b = side_b.get("player_values", []) or []
+    n_a, n_b = len(vals_a), len(vals_b)
+
+    # No players, or same number of players → no adjustment.
     if n_a == 0 or n_b == 0 or n_a == n_b:
         side_a["effective_total"] = side_a["raw_total"]
         side_b["effective_total"] = side_b["raw_total"]
+        side_a["adjustment"] = 0.0
+        side_b["adjustment"] = 0.0
         return
 
-    # Decide which side is the "consolidation" side (fewer players)
+    # Decide which side is consolidating (fewer players)
     if n_a < n_b:
         fewer = side_a
         more = side_b
@@ -1012,32 +1024,58 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
         more = side_a
         fewer_is_a = False
 
-    fewer_vals = fewer["player_values"]
-    more_vals = more["player_values"]
-    fewer_raw = fewer["raw_total"]
-    more_raw = more["raw_total"]
+    fewer_vals = fewer.get("player_values", []) or []
+    more_vals = more.get("player_values", []) or []
 
-    if not fewer_vals or fewer_raw <= 0:
+    # Player-only totals (picks are ignored here on purpose)
+    fewer_players_total = float(fewer.get("raw_players_total", 0.0) or 0.0)
+    more_players_total = float(more.get("raw_players_total", 0.0) or 0.0)
+
+    # Safety guard
+    if not fewer_vals or fewer_players_total <= 0:
         side_a["effective_total"] = side_a["raw_total"]
         side_b["effective_total"] = side_b["raw_total"]
+        side_a["adjustment"] = 0.0
+        side_b["adjustment"] = 0.0
         return
 
     extra_pieces = max(len(more_vals) - len(fewer_vals), 0)
+    if extra_pieces <= 0:
+        # Shouldn't happen given earlier check, but be safe
+        side_a["effective_total"] = side_a["raw_total"]
+        side_b["effective_total"] = side_b["raw_total"]
+        side_a["adjustment"] = 0.0
+        side_b["adjustment"] = 0.0
+        return
 
+    # How big is the stud relative to the consolidating side?
     stud_val = max(fewer_vals)
-    stud_score = min(stud_val / 1000.0, 1.0)  # 0–1
+    stud_share = stud_val / max(fewer_players_total, 1.0)  # 0–1
+    stud_share = max(0.0, min(stud_share, 1.0))
 
-    gap = abs(more_raw - fewer_raw)
+    # Gap in *player* value between sides
+    player_gap = abs(more_players_total - fewer_players_total)
 
-    base_from_gap = gap * (0.45 + 0.25 * stud_score)  # ~45–70% of gap
-    piece_bonus = fewer_raw * 0.03 * extra_pieces
-    stud_bonus = fewer_raw * 0.10 * stud_score
+    # --- Adjustment recipe ---
+    # 1. Base from player_gap, scaled heavier when stud dominates the side.
+    #    (about 30–70% of the player gap)
+    base_from_gap = player_gap * (0.30 + 0.40 * stud_share)
 
-    raw_adj = base_from_gap + piece_bonus + stud_bonus
+    # 2. Extra multiplier for more pieces; 1 extra piece ~0.4, 2 ~0.6, 3+ ~0.8
+    piece_factor = 0.4 + 0.2 * min(extra_pieces, 3)
 
-    cap = fewer_raw * 0.25
-    adj = min(raw_adj, cap)
+    raw_adj = base_from_gap * piece_factor
 
+    # 3. Caps so it never blows up:
+    #    - at most 60% of the stud
+    #    - at most 35% of the consolidating side's total *player* value
+    cap_stud = 0.60 * stud_val
+    cap_side = 0.35 * fewer_players_total
+    adj_cap = max(0.0, min(cap_stud, cap_side))
+
+    adj = min(raw_adj, adj_cap)
+
+    # Apply to fewer-players side only; picks stay baked into raw_total
     if fewer_is_a:
         side_a["adjustment"] = adj
         side_b["adjustment"] = 0.0
@@ -1475,16 +1513,29 @@ def build_activity_body(ctx: dict) -> str:
             player_val_by_key[(name, pos, team)] = val
             player_val_by_key_np[(name, pos)] = val
 
-    def player_value(p: dict) -> float:
+    def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip().lower()
         pos = str(p.get("pos") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
-            return 0.0
-        return float(
+            return 0.0, ""
+
+        val = float(
             player_val_by_key.get((name, pos, team))
             or player_val_by_key_np.get((name, pos), 0.0)
         )
+
+        # find matching row for rank label
+        rank_label = next(
+            (
+                obj.get("pos_rank_label")
+                for obj in players_values_raw
+                if str(obj.get("search_name") or "").strip().lower() == name
+            ),
+            pos,
+        )
+
+        return val, rank_label
 
     pick_values = load_pick_value_table() or {}
 
@@ -1549,7 +1600,7 @@ def build_activity_body(ctx: dict) -> str:
                     rid_to_name[rid] = tm.get("name") or f"Team {rid}"
 
             def render_player_row(p, io_class):
-                val = player_value(p)
+                val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
                 return (
@@ -1559,7 +1610,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div style='font-weight:600'>{p['name']}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p['team']}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -1612,9 +1663,16 @@ def build_activity_body(ctx: dict) -> str:
                 if rid is None:
                     continue
                 in_players = tm.get("gets") or []
-                in_picks = picks_by_receiver.get(rid, [])
-                in_player_vals = [player_value(p) for p in in_players]
+                in_picks = picks_by_receiver.get(rid, []) or []
+
+                # player_value returns (value, pos_rank_label)
+                in_player_pairs = [player_value(p) for p in in_players]
+
+                # just the numeric values for totals
+                in_player_vals = [v for (v, _label) in in_player_pairs]
+
                 in_pick_vals = [pick_value(pk, standings_map) for pk in in_picks]
+
                 raw_players_total = sum(in_player_vals)
                 raw_picks_total = sum(in_pick_vals)
                 raw_total = raw_players_total + raw_picks_total
@@ -1675,7 +1733,7 @@ def build_activity_body(ctx: dict) -> str:
                 # raw "out" total
                 out_total = 0.0
                 for p in (tm.get("sends") or []):
-                    out_total += player_value(p)
+                    out_total += player_value(p)[0]
                 if roster_id is not None:
                     for pick in picks_by_sender.get(roster_id, []):
                         out_total += pick_value(pick, standings_map)
@@ -1728,7 +1786,7 @@ def build_activity_body(ctx: dict) -> str:
             )
             adds_parts = []
             for p in d.get("adds", []):
-                val = player_value(p)
+                val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
                 adds_parts.append(
@@ -1737,7 +1795,7 @@ def build_activity_body(ctx: dict) -> str:
                     "<span class='io add'>+</span>"
                     "<div>"
                     f"  <div style='font-weight:600'>{p['name']}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{p['pos']} • {p['team']}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p['team']}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -1897,10 +1955,6 @@ def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     )
 
 
-from collections import defaultdict
-import math
-
-
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -1978,20 +2032,13 @@ def build_teams_body(ctx: dict) -> str:
             if not row:
                 continue
             pos = str(row.get("position") or row.get("pos") or "").upper()
-            if pos == "PICK":
-                continue
-            if pos not in CORE_POS:
-                pos_bucket = "FLEX"
-            else:
-                pos_bucket = pos
-
             try:
                 val = float(row.get("value") or 0.0)
             except Exception:
                 val = 0.0
             if val <= 0:
                 continue
-            team_pos_values[rid][pos_bucket].append(val)
+            team_pos_values[rid][pos].append(val)
 
     # ensure every team has all core pos keys for the table
     for rid in team_meta.keys():
@@ -2066,26 +2113,57 @@ def build_teams_body(ctx: dict) -> str:
         if pos_z_max[pos] == float("-inf"):
             pos_z_max[pos] = 0.0
 
+    # ----------------- Positional ranks (per position) -----------------
+    # pos_rank[pos][rid] = rank (1 = best at that position)
+    pos_rank: dict[str, dict[int, int]] = {pos: {} for pos in POS_ORDER}
+
+    for pos in POS_ORDER:
+        # rank by z-score (strongest to weakest)
+        ranked = sorted(
+            team_meta.keys(),
+            key=lambda rid: team_pos_z[rid].get(pos, 0.0),
+            reverse=True,
+        )
+        for i, rid in enumerate(ranked, start=1):
+            pos_rank[pos][rid] = i
+
     # ----------------- Helper: players under a position row -----------------
     def render_pos_players(rid: int, pos_code: str) -> str:
         plist = roster_pos_players.get(rid, {}).get(pos_code, [])
+        players = load_model_value_table()
         if not plist:
             return "<div style='color:#64748b;font-size:12px;'>No players at this position.</div>"
 
         rows_html = []
         for p in plist:
+            rank_label = next(
+                (
+                    obj["pos_rank_label"]
+                    for obj in players
+                    if str(obj["search_name"]).strip().lower() == p.get('name', '').lower()
+                ),
+                p.get('position', ''),
+            )
             try:
                 val = float(p.get("value") or 0.0)
             except Exception:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
+            age = next(
+                (
+                    obj["age"]
+                    for obj in players
+                    if str(obj["search_name"] or "").strip().lower() == p.get('name', '').lower()
+                ),
+                None,
+            )
             rows_html.append(
                 "<div class='player-activity'>"
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
-                "    <div>"
+                "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
                 f"      <div style='font-weight:600'>{p.get('name', '')}</div>"
                 f"      <div style='color:#64748b;font-size:12px'>"
-                f"        {p.get('position', '')} • {p.get('team', '')}"
+                f"        {rank_label} • {p.get('team', '')} • {age} yrs"
                 "      </div>"
                 "    </div>"
                 f"    <div class='player-trade-value'>{val_txt}</div>"
@@ -2111,7 +2189,6 @@ def build_teams_body(ctx: dict) -> str:
         weakest_pos = min(POS_ORDER, key=lambda p: z_map.get(p, 0.0))
 
         table_rows = []
-
         for pos in POS_ORDER:
             vals = team_pos_values[rid][pos]
             count = len(vals)
@@ -2119,6 +2196,7 @@ def build_teams_body(ctx: dict) -> str:
             avg = team_pos_avg[rid][pos]
             z = z_map[pos]
 
+            # bar width scaled within this position across league
             z_min = pos_z_min[pos]
             z_max = pos_z_max[pos]
             if z_max > z_min:
@@ -2132,8 +2210,11 @@ def build_teams_body(ctx: dict) -> str:
             elif pos == weakest_pos:
                 highlight_class = " pos-weakest"
 
+            rank = pos_rank[pos].get(rid, 0)
+
             # main row (clickable)
             main_row = (
+
                 "<tr class='pos-row{cls}' data-pos='{pos}'>"
                 "  <td class='pos-name'>"
                 "    <span class='pos-row-toggle'>▾</span> {pos}"
@@ -2147,8 +2228,10 @@ def build_teams_body(ctx: dict) -> str:
                 "      <div class='pos-bar-inner' style='width:{pct:.0f}%;'></div>"
                 "    </div>"
                 "  </td>"
+                "<td class='pos-rank'>#{rank}</td>"
                 "</tr>".format(
                     cls=highlight_class,
+                    rank=rank,
                     pos=pos,
                     count=count,
                     total=total,
@@ -2162,7 +2245,7 @@ def build_teams_body(ctx: dict) -> str:
             detail_html = render_pos_players(rid, pos)
             detail_row = (
                 "<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
-                "  <td colspan='6'>"
+                "  <td colspan='7'>"
                 "    <div class='pos-detail-inner'>"
                 f"      {detail_html}"
                 "    </div>"
@@ -2182,14 +2265,16 @@ def build_teams_body(ctx: dict) -> str:
             "  </div>"
             "  <div class='card-body'>"
             "    <table class='pos-strength-table'>"
+            "    <table class='pos-strength-table'>"
             "      <thead>"
             "        <tr>"
             "          <th>Pos</th>"
             "          <th>#</th>"
-            "          <th>Total Value</th>"
+            "          <th>Value</th>"
             "          <th>Avg Value</th>"
             "          <th>Z-Score</th>"
             "          <th>Strength</th>"
+            "          <th>Rank</th>"
             "        </tr>"
             "      </thead>"
             "      <tbody>"
@@ -2367,6 +2452,46 @@ def view_league(league_id):
     return redirect(url_for("page_dashboard", league_id=league_id))
 
 
+@app.route("/api/refresh-page", methods=["POST"])
+def api_refresh_page():
+    """
+    Page-specific refresh endpoint.
+
+    Expects JSON:
+      { "league_id": "...", "season": 2025, "page": "activity" }
+
+    For now we implement 'activity'; other pages can be added later.
+    """
+    payload = request.get_json(silent=True) or {}
+    league_id = (payload.get("league_id") or "").strip()
+    page = (payload.get("page") or "").strip().lower()
+
+    if not league_id or not page:
+        return jsonify({"ok": False, "error": "Missing league_id or page"}), 400
+
+    try:
+        if page == "activity":
+            # only clear the caches Activity depends on
+            clear_activity_cache_for_league(league_id)
+
+            # if you keep a higher-level per-league context cache,
+            # you may want to invalidate just the activity/injury bits there too.
+            # e.g., clear_league_context_cache(league_id, season) or a more granular variant.
+
+        else:
+            # you’ll fill in other pages later (dashboard, teams, etc.)
+            return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
+
+        refreshed_at = datetime.now().isoformat(timespec="seconds")
+        return jsonify({"ok": True, "refreshed_at": refreshed_at})
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Refresh failed: {e}",
+        }), 500
+
+
 @app.route("/logout")
 def logout():
     # Clear the session + cached league context
@@ -2525,9 +2650,9 @@ def api_trade_eval():
         pct = (abs_diff / baseline) * 100.0
         verdict = f"This trade looks very fair (about {pct:.1f}% apart)."
     elif diff > 0:
-        verdict = f"Side A is favored by about {abs_diff:.1f} value."
+        verdict = f"Team 1 is favored by about {abs_diff:.1f} value."
     else:
-        verdict = f"Side B is favored by about {abs_diff:.1f} value."
+        verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
     return jsonify({
         "side_a": side_a,

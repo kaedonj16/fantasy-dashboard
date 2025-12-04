@@ -12,7 +12,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Callable, List
 
-from dashboard_services.api import get_nfl_games_for_week_raw
+from dashboard_services.api import get_nfl_games_for_week_raw, get_transactions, get_rosters, get_users, \
+    get_traded_picks
 
 # ------------------------------------------------
 # Core paths / constants (SELF-CONTAINED)
@@ -950,7 +951,7 @@ def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
     if num_teams == 10:
         if 1 <= slot <= 3:
             return "early"
-        elif 4 <= slot <= 7:
+        elif 4 <= slot <= 6:
             return "mid"
         else:
             return "late"
@@ -963,3 +964,49 @@ def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
         return "mid"
     else:
         return "late"
+
+
+def clear_activity_cache_for_league(league_id: str) -> None:
+    """
+    Clear only the caches relevant to the Activity page for a given league:
+      - transactions
+      - traded picks
+      - (optionally) Tank01 injury/projection-related calls
+    """
+    league_id = str(league_id)
+
+    # 1) Clear transactions for all weeks
+    if hasattr(get_transactions, "_cache"):
+        keys_to_del = []
+        for key in list(get_transactions._cache.keys()):
+            func_name, args, kwargs = key
+            if func_name != "get_transactions":
+                continue
+            # args is something like (league_id, week)
+            if len(args) >= 1 and str(args[0]) == league_id:
+                keys_to_del.append(key)
+        for k in keys_to_del:
+            get_transactions._cache.pop(k, None)
+
+    # 2) Clear traded picks for this league (if Activity uses them)
+    if hasattr(get_traded_picks, "_cache"):
+        keys_to_del = []
+        for key in list(get_traded_picks._cache.keys()):
+            func_name, args, kwargs = key
+            if func_name != "get_traded_picks":
+                continue
+            if len(args) >= 1 and str(args[0]) == league_id:
+                keys_to_del.append(key)
+        for k in keys_to_del:
+            get_traded_picks._cache.pop(k, None)
+
+    if hasattr(get_users, "_cache"):
+        get_users.clear_cache()
+
+    if hasattr(get_rosters, "_cache"):
+        get_rosters.clear_cache()
+
+    # 3) Tank01 / injury-related cache (optional, adjust to what you actually use)
+    # Example: if you cache get_nfl_games_for_week_raw
+    if hasattr(get_nfl_games_for_week_raw, "_cache"):
+        get_nfl_games_for_week_raw.clear_cache()

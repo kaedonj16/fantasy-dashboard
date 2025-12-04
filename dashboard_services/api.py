@@ -55,9 +55,18 @@ def ttl_cache(ttl: int = 300):
             _cache[key] = (now, value)
             return value
 
+        # expose cache and a convenience clearer
+        wrapper._cache = _cache
+
+        def clear_cache():
+            _cache.clear()
+
+        wrapper.clear_cache = clear_cache
+
         return wrapper
 
     return decorator
+
 
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"

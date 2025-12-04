@@ -1254,7 +1254,7 @@ text-transform: uppercase;
 
 .recap-grid{display:grid;gap:16px}
 .sidebar{display:grid;gap:12px;align-content:start}
-.side-card{background:white;border:1px solid var(--grid);border-radius:16px;padding:12px;display:grid;}
+.side-card{background:white;border:1px solid var(--grid);border-radius:16px;padding:12px;}
 .side-card h3{margin:0 0 6px;font-size:16px;font-weight:800;text-align:center;}
 .side-row{display:grid;grid-template-columns:28px 1fr 40px;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #243043}
 .side-row:first-of-type{border-top:none}
@@ -2365,8 +2365,8 @@ tbody tr:nth-child(even){ background:var(--row); }
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 45%;
-  right: 45%;
+  left: 46.5%;
+  right: 46.5%;
   background: #122d4b;
 }
 
@@ -2377,7 +2377,7 @@ tbody tr:nth-child(even){ background:var(--row); }
   height: 28px;
   border-radius: 999px;
   background: #38bdf8;
-  box-shadow: 0 0 0 1px #0f172a, 0 0 10px rgba(56, 189, 248, 0.8);
+  box-shadow: 0 0 0 1px #038bdf8, 0 0 10px rgba(56, 189, 248, 0.8);
   transform: translateX(-50%);
   transition: left 0.22s ease-out;
 }
@@ -2448,6 +2448,7 @@ tbody tr:nth-child(even){ background:var(--row); }
 }
 
 .all-players-list {
+  margin-top: 6px;
   max-height: 400px;
   overflow-y: auto;
   display: flex;
@@ -2608,6 +2609,9 @@ tbody tr:nth-child(even){ background:var(--row); }
 .pos-strength-table th,
 .pos-strength-table td {
   padding: 4px 6px;
+}
+
+.pos-name {
   text-align: left;
 }
 
@@ -2641,7 +2645,7 @@ ul {
   padding-inline-start: 20px;
 }
 
-pos-detail-inner {
+.pos-detail-inner {
     display: flex;
     row-gap: 5px;
     flex-direction: column;

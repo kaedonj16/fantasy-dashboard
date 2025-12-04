@@ -20,6 +20,6 @@ def build_daily_data(season: int):
     if load_teams_index() is None:
         enrich_all_team_info(season)
         enrich_teams_index_with_rushing(Path(path_teams_index()))
-    bundle = train_trade_value_model()
     if load_model_value_table() is None:
+        bundle = train_trade_value_model()
         rewrite_value_table_with_model()

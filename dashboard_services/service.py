@@ -719,7 +719,6 @@ def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[in
 
 def build_week_activity(
         league_id: str,
-        season: int,
         players_map: Optional[Dict[str, Dict[str, str]]] = None,
         season_weeks: list[int] = None
 ) -> pd.DataFrame:

@@ -142,7 +142,7 @@
     "name": "Justin Fields",
     "team": "NYJ",
     "position": "QB",
-    "age": 26.7,
+    "age": 26.8,
     "usage": {
       "games": 9,
       "avg_off_snap_pct": 0.0,
@@ -1990,7 +1990,7 @@
     "name": "Gardner Minshew",
     "team": "KC",
     "position": "QB",
-    "age": 29.5,
+    "age": 29.6,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -2218,7 +2218,7 @@
     "name": "Dax Milne",
     "team": "CAR",
     "position": "WR",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -3062,7 +3062,7 @@
     "name": "Cade Johnson",
     "team": "SEA",
     "position": "WR",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {
@@ -3894,7 +3894,7 @@
     "name": "Devin Singletary",
     "team": "NYG",
     "position": "RB",
-    "age": 28.2,
+    "age": 28.3,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -4192,7 +4192,7 @@
     "name": "Damarea Crockett",
     "team": "NYJ",
     "position": "RB",
-    "age": 27.9,
+    "age": 28.0,
     "usage": {}
   },
   {
@@ -4840,7 +4840,7 @@
     "name": "Shawn Bowman",
     "team": "JAX",
     "position": "TE",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {}
   },
   {
@@ -5084,7 +5084,7 @@
     "name": "Jeshaun Jones",
     "team": "MIN",
     "position": "WR",
-    "age": 25.9,
+    "age": 26.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -5598,7 +5598,7 @@
     "name": "Jordan Veasy",
     "team": "LV",
     "position": "WR",
-    "age": 30.4,
+    "age": 30.5,
     "usage": {}
   },
   {
@@ -5660,7 +5660,7 @@
     "name": "Devin Carter",
     "team": "CAR",
     "position": "WR",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {}
   },
   {
@@ -5668,7 +5668,7 @@
     "name": "Ty Fryfogle",
     "team": "KC",
     "position": "WR",
-    "age": 26.8,
+    "age": 26.9,
     "usage": {}
   },
   {
@@ -5930,7 +5930,7 @@
     "name": "Geno Smith",
     "team": "LV",
     "position": "QB",
-    "age": 35.1,
+    "age": 35.2,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -6180,7 +6180,7 @@
     "name": "Joshua Cephus",
     "team": "JAX",
     "position": "WR",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -6552,7 +6552,7 @@
     "name": "KeAndre Lambert-Smith",
     "team": "LAC",
     "position": "WR",
-    "age": 23.3,
+    "age": 23.4,
     "usage": {
       "games": 6,
       "avg_off_snap_pct": 0.0,
@@ -7576,7 +7576,7 @@
     "name": "Montana Lemonious-Craig",
     "team": "PIT",
     "position": "WR",
-    "age": 23.3,
+    "age": 23.4,
     "usage": {}
   },
   {
@@ -8198,7 +8198,7 @@
     "name": "Daurice Fountain",
     "team": "DET",
     "position": "WR",
-    "age": 29.9,
+    "age": 30.0,
     "usage": {}
   },
   {
@@ -9402,7 +9402,7 @@
     "name": "Ben Sims",
     "team": "MIN",
     "position": "TE",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {
       "games": 4,
       "avg_off_snap_pct": 0.0,
@@ -9864,7 +9864,7 @@
     "name": "Michael Gallup",
     "team": "WSH",
     "position": "WR",
-    "age": 29.7,
+    "age": 29.8,
     "usage": {}
   },
   {
@@ -10134,7 +10134,7 @@
     "name": "Jordan Addison",
     "team": "MIN",
     "position": "WR",
-    "age": 23.8,
+    "age": 23.9,
     "usage": {
       "games": 9,
       "avg_off_snap_pct": 0.0,
@@ -11300,7 +11300,7 @@
     "usage": {
       "games": 5,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 10.4,
+      "avg_off_snaps": 17.2,
       "avg_targets": 2.0,
       "avg_receptions": 0.6,
       "avg_rec_yards": 9.2,
@@ -11448,7 +11448,7 @@
     "name": "Cody Chrest",
     "team": "GB",
     "position": "WR",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {
@@ -11640,10 +11640,10 @@
     "position": "WR",
     "age": 25.7,
     "usage": {
-      "games": 3,
+      "games": 2,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 12.333333333333334,
-      "avg_targets": 0.3333333333333333,
+      "avg_off_snaps": 16.0,
+      "avg_targets": 0.5,
       "avg_receptions": 0.0,
       "avg_rec_yards": 0.0,
       "avg_rec_tds": 0.0,
@@ -12534,7 +12534,7 @@
     "name": "Brashard Smith",
     "team": "KC",
     "position": "RB",
-    "age": 22.6,
+    "age": 22.7,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -12688,7 +12688,7 @@
     "name": "Malik Flowers",
     "team": "LV",
     "position": "WR",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -13228,7 +13228,7 @@
     "name": "Hakeem Butler",
     "team": "CIN",
     "position": "WR",
-    "age": 29.5,
+    "age": 29.6,
     "usage": {}
   },
   {
@@ -13608,7 +13608,7 @@
     "name": "Courtland Sutton",
     "team": "DEN",
     "position": "WR",
-    "age": 30.1,
+    "age": 30.2,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -13638,7 +13638,7 @@
     "name": "Alex Armah",
     "team": "WSH",
     "position": "RB",
-    "age": 31.5,
+    "age": 31.6,
     "usage": {}
   },
   {
@@ -13874,7 +13874,7 @@
     "name": "Feleipe Franks",
     "team": "ATL",
     "position": "TE",
-    "age": 27.9,
+    "age": 28.0,
     "usage": {
       "games": 5,
       "avg_off_snap_pct": 0.0,
@@ -14520,7 +14520,7 @@
     "name": "Seth Williams",
     "team": "LV",
     "position": "WR",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {}
   },
   {
@@ -14870,7 +14870,7 @@
     "name": "Ronnie Bell",
     "team": "NO",
     "position": "WR",
-    "age": 25.8,
+    "age": 25.9,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -15336,7 +15336,7 @@
     "name": "Chris Lacy",
     "team": "LV",
     "position": "WR",
-    "age": 29.8,
+    "age": 29.9,
     "usage": {}
   },
   {
@@ -15700,7 +15700,7 @@
     "name": "Brittain Brown",
     "team": "CHI",
     "position": "RB",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
@@ -15960,7 +15960,7 @@
     "name": "Hayden Rucci",
     "team": "MIA",
     "position": "TE",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {
       "games": 4,
       "avg_off_snap_pct": 0.0,
@@ -16400,7 +16400,7 @@
     "name": "Robert Woods",
     "team": "PIT",
     "position": "WR",
-    "age": 33.6,
+    "age": 33.7,
     "usage": {}
   },
   {
@@ -17714,7 +17714,7 @@
     "name": "Jeremiah Webb",
     "team": "NE",
     "position": "WR",
-    "age": 24.5,
+    "age": 24.6,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -18506,7 +18506,7 @@
     "name": "Matt Ryan",
     "team": "IND",
     "position": "QB",
-    "age": 40.5,
+    "age": 40.6,
     "usage": {}
   },
   {
@@ -19014,7 +19014,7 @@
     "name": "Chris Oladokun",
     "team": "KC",
     "position": "QB",
-    "age": 28.2,
+    "age": 28.3,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -19104,7 +19104,7 @@
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 3.0,
+      "avg_off_snaps": 0.0,
       "avg_targets": 0.0,
       "avg_receptions": 0.0,
       "avg_rec_yards": 0.0,
@@ -19738,7 +19738,7 @@
     "name": "Aidan Robbins",
     "team": "CLE",
     "position": "RB",
-    "age": 24.9,
+    "age": 25.0,
     "usage": {}
   },
   {
@@ -19930,7 +19930,7 @@
     "name": "Johnny Lumpkin",
     "team": "GB",
     "position": "TE",
-    "age": 28.2,
+    "age": 28.3,
     "usage": {}
   },
   {
@@ -20642,7 +20642,7 @@
     "name": "Jason Moore",
     "team": "DET",
     "position": "WR",
-    "age": 30.4,
+    "age": 30.5,
     "usage": {}
   },
   {
@@ -21508,7 +21508,7 @@
     "name": "Austin Ekeler",
     "team": "WSH",
     "position": "RB",
-    "age": 30.5,
+    "age": 30.6,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -21992,7 +21992,7 @@
     "name": "Damiere Byrd",
     "team": "BUF",
     "position": "WR",
-    "age": 32.8,
+    "age": 32.9,
     "usage": {}
   },
   {
@@ -22914,7 +22914,7 @@
     "name": "Nick Bawden",
     "team": "HOU",
     "position": "RB",
-    "age": 29.4,
+    "age": 29.5,
     "usage": {}
   },
   {
@@ -23074,7 +23074,7 @@
     "name": "Tyler Boyd",
     "team": "TEN",
     "position": "WR",
-    "age": 31.0,
+    "age": 31.1,
     "usage": {}
   },
   {
@@ -23082,7 +23082,7 @@
     "name": "Dak Prescott",
     "team": "DAL",
     "position": "QB",
-    "age": 32.3,
+    "age": 32.4,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -24676,7 +24676,7 @@
     "name": "KeeSean Johnson",
     "team": "BUF",
     "position": "WR",
-    "age": 29.1,
+    "age": 29.2,
     "usage": {}
   },
   {
@@ -24768,7 +24768,7 @@
     "name": "Jaquarii Roberson",
     "team": "LAR",
     "position": "WR",
-    "age": 27.3,
+    "age": 27.4,
     "usage": {}
   },
   {
@@ -25380,7 +25380,7 @@
     "name": "DeAndre Carter",
     "team": "CLE",
     "position": "WR",
-    "age": 32.6,
+    "age": 32.7,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -26186,7 +26186,7 @@
     "name": "Marquez Valdes-Scantling",
     "team": "PIT",
     "position": "WR",
-    "age": 31.1,
+    "age": 31.2,
     "usage": {
       "games": 5,
       "avg_off_snap_pct": 0.0,
@@ -26224,7 +26224,7 @@
     "name": "Chris Manhertz",
     "team": "NYG",
     "position": "TE",
-    "age": 33.6,
+    "age": 33.7,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -26780,7 +26780,7 @@
     "name": "Clyde Edwards-Helaire",
     "team": "KC",
     "position": "RB",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -27402,7 +27402,7 @@
     "name": "Dalen Cambre",
     "team": "NYG",
     "position": "WR",
-    "age": 24.6,
+    "age": 24.7,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -28142,7 +28142,7 @@
     "name": "Keon Coleman",
     "team": "BUF",
     "position": "WR",
-    "age": 22.5,
+    "age": 22.6,
     "usage": {
       "games": 10,
       "avg_off_snap_pct": 0.0,
@@ -30568,7 +30568,7 @@
     "name": "Sam Hartman",
     "team": "WSH",
     "position": "QB",
-    "age": 26.3,
+    "age": 26.4,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -30772,7 +30772,7 @@
     "name": "Marvin Hall",
     "team": "JAX",
     "position": "WR",
-    "age": 32.6,
+    "age": 32.7,
     "usage": {}
   },
   {
@@ -31044,7 +31044,7 @@
     "name": "Denzel Mims",
     "team": "JAX",
     "position": "WR",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {}
   },
   {

@@ -4,6 +4,7 @@ app = Flask(__name__)
 
 CURRENT_SEASON = 2025
 
+
 def build_trade_calculator_body(league_id: str, season: int) -> str:
     return f"""
     <div class="page-layout">
@@ -115,6 +116,15 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             <h3>All Player Values</h3>
           </div>
           <div class="card-body">
+            <label class="mini-label">Filter by position</label>
+            <div class="pill-row" id="posFilterRow">
+              <button class="pill-toggle pos-filter active" data-pos="ALL">All</button>
+              <button class="pill-toggle pos-filter" data-pos="QB">QB</button>
+              <button class="pill-toggle pos-filter" data-pos="RB">RB</button>
+              <button class="pill-toggle pos-filter" data-pos="WR">WR</button>
+              <button class="pill-toggle pos-filter" data-pos="TE">TE</button>
+            </div>
+
             <div id="allPlayersList" class="all-players-list">
               <!-- Filled by JS -->
             </div>
@@ -129,13 +139,14 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
       let allPlayers = [];
       let sideASelected = [];
       let sideBSelected = [];
+      let activePosFilter = "ALL";
+      let sortDir = "desc";  // value high -> low
 
       function formatValue(v) {{
         const num = Number(v) || 0;
         return num.toFixed(1);
       }}
 
-      // Render the global "all players + values" list
       function renderAllPlayersList() {{
         const container = document.getElementById("allPlayersList");
         if (!container) return;
@@ -149,38 +160,66 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           return;
         }}
 
-        // sort by value desc; fall back to 0 if no value
-        const sorted = [...allPlayers].sort(
-          (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0)
-        );
+        // Filter by position for sidebar list
+        let items = allPlayers.filter(p => {{
+          if (!p || typeof p !== "object") return false;
+          const pos = String(p.position || "").toUpperCase();
 
-        sorted.forEach(p => {{
+          // Ignore picks for this sidebar
+          if (pos === "PICK") return false;
+
+          if (activePosFilter === "ALL") return true;
+          return pos === activePosFilter;
+        }});
+
+        // Sort by value
+        items.sort((a, b) => {{
+          const va = typeof a.value === "number" ? a.value : 0;
+          const vb = typeof b.value === "number" ? b.value : 0;
+          return sortDir === "desc" ? vb - va : va - vb;
+        }});
+
+        items.forEach(p => {{
           const row = document.createElement("div");
           row.className = "all-players-row";
+
+          const leftWrap = document.createElement("div");
+          leftWrap.className = "all-players-left";
 
           const nameSpan = document.createElement("span");
           nameSpan.className = "all-players-name";
           nameSpan.textContent = p.name || "Unknown";
-
-          const metaBits = [];
-          if (p.position) metaBits.push(p.position);
-          if (p.team) metaBits.push(p.team);
-          if (p.age != null) metaBits.push(p.age + " yrs");
+          leftWrap.appendChild(nameSpan);
 
           const metaSpan = document.createElement("span");
           metaSpan.className = "all-players-meta";
+          const metaBits = [];
+          if (p.position) metaBits.push(String(p.pos_rank_label).toUpperCase());
+          if (p.team) metaBits.push(p.team);
+          if (p.age != null) metaBits.push(p.age + " yrs");
           metaSpan.textContent = metaBits.join(" · ");
 
           const valueSpan = document.createElement("span");
           valueSpan.className = "all-players-value";
           valueSpan.textContent = formatValue(p.value);
 
-          row.appendChild(nameSpan);
+          row.appendChild(leftWrap);
           row.appendChild(metaSpan);
           row.appendChild(valueSpan);
 
           container.appendChild(row);
         }});
+      }}
+
+      function setPosFilter(pos) {{
+        activePosFilter = pos;
+
+        document.querySelectorAll(".pos-filter").forEach(btn => {{
+          const p = btn.getAttribute("data-pos") || "ALL";
+          btn.classList.toggle("active", p === activePosFilter);
+        }});
+
+        renderAllPlayersList();
       }}
 
       async function ensurePlayersLoaded() {{
@@ -218,7 +257,6 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           errorBox.textContent = "";
         }}
 
-        // Populate the side card
         renderAllPlayersList();
       }}
 
@@ -327,8 +365,8 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
 
           const labelName = document.createElement("span");
           const metaBits = [];
+          if (p.pos_rank_label) metaBits.push(p.pos_rank_label);
           if (p.team) metaBits.push(p.team);
-          if (p.position) metaBits.push(p.position);
           if (p.age != null) metaBits.push(p.age + " yrs");
           labelName.textContent = p.name;
 
@@ -397,7 +435,7 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             const item = document.createElement("div");
             item.className = "dropdown-item";
             const meta = [];
-            if (p.position) meta.push(p.position);
+            if (p.pos_rank_label) meta.push(p.pos_rank_label);
             if (p.team) meta.push(p.team);
             if (p.age != null) meta.push(p.age + " yrs");
             item.textContent = p.name + (meta.length ? " — " + meta.join(" · ") : "");
@@ -430,6 +468,15 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
         await ensurePlayersLoaded();
         setupSearch("A");
         setupSearch("B");
+
+        // wire up position filter buttons
+        document.querySelectorAll(".pos-filter").forEach(btn => {{
+          btn.addEventListener("click", () => {{
+            const pos = btn.getAttribute("data-pos") || "ALL";
+            setPosFilter(pos);
+          }});
+        }});
+
         recomputeTrade();
       }}
 
