@@ -5,7 +5,7 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from dashboard_services.api import get_matchups, get_users, get_rosters, _avatar_from_users, get_nfl_state
+from dashboard_services.api import get_matchups, get_users, get_rosters, avatar_from_users, get_nfl_state
 from dashboard_services.utils import write_json
 
 STATUS_NOT_STARTED = "not_started"
@@ -59,7 +59,7 @@ def build_matchup_preview(league_id: str, week: int, roster_map: Dict[str, str],
             "name": roster_map.get(rid, f"Roster {rid}"),
             "starters": s_infos,
             "pts_total": pts_total,
-            "avatar": _avatar_from_users(users, get_owner_id(rosters, rid)),
+            "avatar": avatar_from_users(users, get_owner_id(rosters, rid)),
             "record": f"{wins}-{losses}",
             "username": username,
         }

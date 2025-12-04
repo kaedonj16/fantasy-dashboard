@@ -8,8 +8,8 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
-import requests
 import re
+import requests
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -22,6 +22,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from typing import Dict, Iterable, List, Optional
 
+from dashboard_services.picks import load_pick_value_table
 from dashboard_services.utils import load_teams_index, bucket_for_slot
 
 # ------------------------------------------------
@@ -64,7 +65,7 @@ class TrainedModelBundle:
 # Internal stats loader
 # ------------------------------------------------
 
-def load_internal_stats_df(season: int) -> pd.DataFrame:
+def load_internal_stats_df() -> pd.DataFrame:
     """
     Load your internal value table + usage + team context into a DataFrame.
 
@@ -123,7 +124,6 @@ def load_internal_stats_df(season: int) -> pd.DataFrame:
         "usage.target_share_pct": "target_share_pct",
     }
     df = df.rename(columns=rename_map)
-
     df["sleeper_id"] = df["sleeper_id"].astype(str)
 
     df["internal_value"] = df.get("internal_value_raw", np.nan)
@@ -262,10 +262,10 @@ def load_dynastyprocess_df(
 
     # ----- Detect name/pos/team columns -----
     name_col = "player" if "player" in df.columns else \
-               "Player" if "Player" in df.columns else df.columns[0]
+        "Player" if "Player" in df.columns else df.columns[0]
 
     pos_col = "pos" if "pos" in df.columns else \
-              "position" if "position" in df.columns else None
+        "position" if "position" in df.columns else None
 
     team_col = "team" if "team" in df.columns else None
 
@@ -374,7 +374,6 @@ def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
 # ------------------------------------------------
 
 def build_training_dataframe(
-    season: int,
 ) -> pd.DataFrame:
     """
     Combine:
@@ -383,10 +382,10 @@ def build_training_dataframe(
       - Engine values (by sleeper_id)
       - Internal value_table_{date} (usage + team context) as features only
     """
-    fc_df = load_fantasycalc_df()      # sleeper_id, name, position, team, fc_value, fc_rank, fc_age
-    dp_df = load_dynastyprocess_df()   # dp_name, dp_position, dp_team, dp_value_raw
-    engine_df = load_engine_df()       # sleeper_id, engine_value
-    internal_df = load_internal_stats_df(season)  # sleeper_id, usage + team stats + age, etc.
+    fc_df = load_fantasycalc_df()  # sleeper_id, name, position, team, fc_value, fc_rank, fc_age
+    dp_df = load_dynastyprocess_df()  # dp_name, dp_position, dp_team, dp_value_raw
+    engine_df = load_engine_df()  # sleeper_id, engine_value
+    internal_df = load_internal_stats_df()  # sleeper_id, usage + team stats + age, etc.
     # --- 1) Merge FC + Engine + Internal on sleeper_id ---
     df = fc_df.merge(
         engine_df,
@@ -422,6 +421,7 @@ def build_training_dataframe(
     df = df[~df["fc_value"].isna()].copy()
 
     return df
+
 
 # dashboard_services/draft_values.py
 
@@ -466,68 +466,6 @@ def _load_dynastyprocess(csv_path: str, num_teams: int = 10) -> pd.DataFrame:
     return grouped
 
 
-def build_pick_value_table(
-    num_teams: int = 10,
-    fc_weight: float = 0.5,
-    dp_weight: float = 0.5,
-) -> Dict[str, float]:
-    """
-    Returns mapping:
-      '{year}_{round}_{bucket}' -> value (float)
-
-    Combines FantasyCalc + DynastyProcess by weighted average.
-    """
-    df_fc = _load_fantasycalc(FANTASYCALC_VALUES_PATH)
-    df_dp = _load_dynastyprocess(DYNASTYPROCESS_VALUES_PATH, num_teams=num_teams)
-
-    # make sure both have the same columns: year, round, bucket, value
-    df_fc = df_fc[["year", "round", "bucket", "value"]]
-    df_dp = df_dp[["year", "round", "bucket", "value"]]
-
-    # outer join so we can still have picks even if only one source has data
-    merged = df_fc.merge(
-        df_dp,
-        on=["year", "round", "bucket"],
-        how="outer",
-        suffixes=("_fc", "_dp"),
-    )
-
-    values: Dict[str, float] = {}
-
-    for _, row in merged.iterrows():
-        year = int(row["year"])
-        rnd = int(row["round"])
-        bucket = row["bucket"]
-        v_fc = row.get("value_fc")
-        v_dp = row.get("value_dp")
-
-        # pick value if present; you can change this logic (e.g., prefer DP if both)
-        vals = []
-        weights = []
-
-        if not (isinstance(v_fc, float) and math.isnan(v_fc)) and v_fc is not None:
-            vals.append(float(v_fc))
-            weights.append(fc_weight)
-        if not (isinstance(v_dp, float) and math.isnan(v_dp)) and v_dp is not None:
-            vals.append(float(v_dp))
-            weights.append(dp_weight)
-
-        if not vals:
-            continue
-
-        if len(vals) == 1:
-            combined = vals[0]
-        else:
-            # weighted average
-            w_sum = sum(weights) or 1.0
-            combined = sum(v * w for v, w in zip(vals, weights)) / w_sum
-
-        key = f"{year}_{rnd}_{bucket}"
-        values[key] = float(combined)
-
-    return values
-
-
 # ------------------------------------------------
 # Target normalization helper
 # ------------------------------------------------
@@ -556,12 +494,11 @@ def _normalize_series_0_1(s: pd.Series) -> pd.Series:
 # ------------------------------------------------
 
 def train_trade_value_model(
-        season: int = CURRENT_SEASON,
         test_size: float = 0.2,
         random_state: int = 42,
 ) -> TrainedModelBundle:
     print("[value_model] Building training dataframe…")
-    df = build_training_dataframe(season)
+    df = build_training_dataframe()
 
     # --- Build target from 3 vendors: FC, DP, ENGINE ---
 
@@ -802,16 +739,14 @@ def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) ->
     return round(s01 * 999.9, 1)
 
 
-def build_ml_value_table(
-        season: int,
-) -> Dict[str, float]:
+def build_ml_value_table() -> Dict[str, float]:
     """
     Use the trained model to build a {sleeper_id: value} table
     for your trade calculator.
     """
     bundle = load_trained_bundle()
 
-    df = load_internal_stats_df(season)
+    df = load_internal_stats_df()
     df = df[df["position"].isin(["QB", "RB", "WR", "TE"])].copy()
 
     for col in bundle.feature_columns:
@@ -829,21 +764,40 @@ def build_ml_value_table(
     return values
 
 
+SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+
+
+def normalize_name(name: str) -> str:
+    if not name:
+        return ""
+    s = name.lower()
+
+    # collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # drop suffix tokens like jr, sr, ii, iii, etc.
+    parts = s.split(" ")
+    parts = [p for p in parts if p not in SUFFIXES]
+
+    return " ".join(parts)
+
 
 # ------------------------------------------------
 # Rewrite value_table_{date}.json with model outputs
 # ------------------------------------------------
 
-def rewrite_value_table_with_model(
-        season: int,
-) -> Path:
+def rewrite_value_table_with_model() -> Path:
     """
     Load value_table_{today}.json, recompute the model value for each player,
     and write a NEW file:
         model_values_{today}.json
 
-    Output schema per player:
+    Output schema per asset:
       { id, name, team, position, age, value }
+
+    Includes both:
+      - real players (QB/RB/WR/TE/etc.)
+      - draft picks (position='PICK', team='Pick')
     """
     date_str = date.today().isoformat()
 
@@ -855,12 +809,14 @@ def rewrite_value_table_with_model(
         players = json.load(f)  # list[dict]
 
     bundle = load_trained_bundle()
-    internal_df = load_internal_stats_df(season)
+    internal_df = load_internal_stats_df()
 
+    # Map sleeper_id -> row for quick lookup
     df_by_id = {str(row["sleeper_id"]): row for _, row in internal_df.iterrows()}
 
-    cleaned_players = []
+    cleaned_assets: list[dict] = []
 
+    # ---------- 1) Players with model values ----------
     for player in players:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
@@ -870,22 +826,70 @@ def rewrite_value_table_with_model(
         # Prefer age from JSON; fall back to internal stats / fc if missing
         age = player.get("age")
         if age is None and row is not None:
-            age = row.get("age") if "age" in row else row.get("fc_age")
+            if "age" in row:
+                age = row["age"]
+            elif "fc_age" in row:
+                age = row["fc_age"]
 
-        cleaned_players.append({
+        cleaned_assets.append({
             "id": player.get("id"),
             "name": player.get("name"),
             "team": player.get("team"),
             "position": player.get("position"),
             "age": age,
-            "value": ml_value,
+            "value": float(ml_value),
+            "search_name": normalize_name(player.get("name")),
         })
 
+    # ---------- 2) Draft picks from pick value table ----------
+    pick_values = load_pick_value_table() or {}  # { "2026_1_early": value, "2026_1": value, ... }
+
+    for key, val in pick_values.items():
+        parts = key.split("_")
+
+        # Expect either "2026_1_early" or "2026_1"
+        if len(parts) == 3:
+            year_str, rnd_str, bucket = parts
+            bucket = bucket.lower()
+        elif len(parts) == 2:
+            year_str, rnd_str = parts
+            bucket = None
+        else:
+            # Weird key like "foo" – skip
+            continue
+
+        # Basic parsing
+        try:
+            year = int(year_str)
+            rnd = int(rnd_str)
+        except ValueError:
+            continue
+
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+
+        if bucket:
+            bucket_label = bucket.capitalize()  # early/mid/late -> Early/Mid/Late
+            name = f"{year} {rnd}{suffix} ({bucket_label})"
+        else:
+            # No bucket → generic round pick
+            name = f"{year} {rnd}{suffix}"
+
+        cleaned_assets.append({
+            "id": key,  # trade calculator uses this as pick id
+            "name": name,  # display string
+            "team": "Pick",  # keeps schema consistent
+            "position": "PICK",  # lets UI / logic distinguish picks
+            "age": None,  # no age for picks
+            "value": float(val)
+        })
+
+    # ---------- 3) Write combined table ----------
     out_path = DATA_DIR / f"model_values_{date_str}.json"
     with out_path.open("w", encoding="utf-8") as f:
-        json.dump(cleaned_players, f, ensure_ascii=False, indent=2)
+        json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
 
-    print(f"[value_model] Wrote model values → {out_path}")
+    print(f"[value_model] Wrote model values (players + picks) → {out_path}")
+
     return out_path
 
 
@@ -895,9 +899,7 @@ def rewrite_value_table_with_model(
 
 if __name__ == "__main__":
     bundle = train_trade_value_model(
-        season=CURRENT_SEASON,
     )
 
     rewrite_value_table_with_model(
-        season=CURRENT_SEASON,
     )

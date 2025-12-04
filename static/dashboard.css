@@ -2575,3 +2575,74 @@ tbody tr:nth-child(even){ background:var(--row); }
   width: 100% !important;
   max-width: 100%;
 }
+
+.player-trade-value {
+  margin-right: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.player-activity {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 8px;
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:10px;
+    justify-content:space-between;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.pos-strength-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pos-strength-table th,
+.pos-strength-table td {
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.pos-bar-outer {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pos-bar-inner {
+  height: 100%;
+  border-radius: 999px;
+  background: #22c55e;
+}
+
+.pos-row.pos-strongest {
+  background: #ecfdf3;
+}
+
+.pos-row.pos-weakest {
+  background: #fef2f2;
+}
+
+.pos-row.pos-weakest .pos-bar-inner {
+  background: #f97373;
+}
+
+ul {
+  padding-inline-start: 20px;
+}
+
+pos-detail-inner {
+    display: flex;
+    row-gap: 5px;
+    flex-direction: column;
+}

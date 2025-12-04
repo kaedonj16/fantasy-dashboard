@@ -81,7 +81,7 @@ if not TANK01_API_KEY:
 
 
 @ttl_cache(ttl=300)
-def _avatar_from_users(users: list[dict], owner_id: Optional[str]) -> Optional[str]:
+def avatar_from_users(users: list[dict], owner_id: Optional[str]) -> Optional[str]:
     if not owner_id:
         return None
     u = next((u for u in users if u.get("user_id") == owner_id), None)

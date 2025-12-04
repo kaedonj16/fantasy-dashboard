@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 import time
 from datetime import date
+from io import StringIO
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -46,7 +47,7 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
     resp.raise_for_status()
 
     # Parse all tables from page; first one is the targets table
-    tables = pd.read_html(resp.text)
+    tables = pd.read_html(StringIO(resp.text))
     if not tables:
         print(f"[target_share] No tables found for team {team}")
         return {}

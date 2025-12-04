@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import requests
 import time
 from collections import defaultdict
@@ -13,7 +12,7 @@ from plotly.offline import plot as plotly_plot
 from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from zoneinfo import ZoneInfo
 
-from dashboard_services.api import get_matchups, _avatar_url, get_nfl_state, _avatar_from_users, get_transactions
+from dashboard_services.api import get_matchups, _avatar_url, get_nfl_state, avatar_from_users, get_transactions
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.players import build_roster_display_maps
 from dashboard_services.styles import recap_css, tickerCss
@@ -134,8 +133,8 @@ def matchup_cards_last_week(league_id: str,
         rn = safe_owner_name(roster_map, R.get("roster_id"))
         lp = float(L.get("points") or 0.0)
         rp = float(R.get("points") or 0.0)
-        avatar = _avatar_from_users(users, get_owner_id(rosters, ridL))
-        avatar2 = _avatar_from_users(users, get_owner_id(rosters, ridR))
+        avatar = avatar_from_users(users, get_owner_id(rosters, ridL))
+        avatar2 = avatar_from_users(users, get_owner_id(rosters, ridR))
 
         recordL = (0, 0)
         winsL, lossesL = recordL
@@ -795,8 +794,8 @@ def build_week_activity(
             # TRADES
             # --------------------------
             if ttype == "trade":
-                adds = t.get("adds") or {}     # player_id → new_owner_rid
-                drops = t.get("drops") or {}   # player_id → old_owner_rid
+                adds = t.get("adds") or {}  # player_id → new_owner_rid
+                drops = t.get("drops") or {}  # player_id → old_owner_rid
                 draft_picks = t.get("draft_picks") or []
 
                 # Collect roster IDs involved
@@ -853,7 +852,6 @@ def build_week_activity(
         df = df.sort_values("ts", ascending=False).reset_index(drop=True)
 
     return df
-
 
 
 def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tuple[Any, Any]]:
@@ -1070,7 +1068,7 @@ def playoff_bracket(
         roster_name_map,
         roster_avatar_map,
         match_scores=None,
-        seed_map=None,          # NEW: { roster_id(str/int) -> seed(int) }
+        seed_map=None,  # NEW: { roster_id(str/int) -> seed(int) }
 ):
     """
     Render an HTML playoff bracket from Sleeper's /winners_bracket endpoint.
@@ -1139,8 +1137,8 @@ def playoff_bracket(
                 "r": 1,
                 "w": None,
                 "l": None,
-                "t1": rid,      # real team (seeded)
-                "t2": None,     # bye side
+                "t1": rid,  # real team (seeded)
+                "t2": None,  # bye side
                 "t1_from": None,
                 "t2_from": None,
                 "is_bye": True,
@@ -1295,6 +1293,7 @@ def playoff_bracket(
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+
 
 def seed_top6_from_team_stats(team_stats, roster_map):
     """
@@ -1643,3 +1642,27 @@ def age_from_bday(bday: Optional[str]) -> Optional[float]:
 
 def pill(s):
     return f"<span class='badge'>{s}</span>"
+
+
+def build_standings_map(team_stats, roster_map) -> dict[int, int]:
+    """
+    Returns {roster_id: seed}, where seed 1 is best.
+    Adjust sort keys as needed (wins, PF, etc.).
+    """
+    # Example: sort by wins desc, then PF desc
+    ordered = (
+        team_stats
+        .sort_values(["Wins", "PF"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
+
+    standings = {}
+    for idx, row in ordered.iterrows():
+        # adjust column name if it's different (e.g. 'roster_id')
+        owner = row["owner"]
+        rid = owner_to_rid.get(owner)
+        seed = idx + 1  # 1-based
+        standings[rid] = seed
+
+    return standings

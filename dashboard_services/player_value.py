@@ -82,7 +82,6 @@ def horizon_age_factor(pos: str, age: float) -> float:
     return base ** 1.2
 
 
-
 def _production_component_fixed(u: dict, pos: str) -> float:
     """
     Unified production model with:
@@ -150,7 +149,6 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         return min(1.0, score)
 
     return 0.0
-
 
 
 def build_value_table_for_usage() -> Dict[str, float]:
@@ -222,11 +220,11 @@ def build_value_table_for_usage() -> Dict[str, float]:
         # - meaningful snaps/opportunities
         if games >= 3:
             return True
-        if ppg >= 6:          # ~flex floor
+        if ppg >= 6:  # ~flex floor
             return True
-        if snaps >= 20:       # on the field a decent amount
+        if snaps >= 20:  # on the field a decent amount
             return True
-        if opps >= 3:         # 3+ touches/targets per game
+        if opps >= 3:  # 3+ touches/targets per game
             return True
 
         return False
@@ -310,7 +308,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
     # 3) Age + production + RZ score
     # ----------------------------------------
     POS_WEIGHTS = {
-        "QB": (0.80, 0.35, 0.00),  # production heavy, small age, tiny RZ
+        "QB": (0.80, 0.40, 0.00),  # production heavy, small age, tiny RZ
         "RB": (0.45, 0.25, 0.30),  # bump age+RZ more for RB fragility
         "WR": (0.55, 0.35, 0.25),
         "TE": (0.40, 0.30, 0.35),
@@ -331,9 +329,9 @@ def build_value_table_for_usage() -> Dict[str, float]:
         w_ppg, w_age, w_rz = POS_WEIGHTS[pos]
 
         pos_scores[pid] = (
-            w_ppg * ppg_norm +
-            w_age * age_curve +
-            w_rz * rz_norm
+                w_ppg * ppg_norm +
+                w_age * age_curve +
+                w_rz * rz_norm
         )
 
     # ----------------------------------------
@@ -416,7 +414,3 @@ def build_value_table_for_usage() -> Dict[str, float]:
         value_table[pid] = round(s_mix * 999.9, 1)
 
     return value_table
-
-
-
-

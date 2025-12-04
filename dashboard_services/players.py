@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .api import get_rosters, get_users, _avatar_from_users
+from .api import get_rosters, get_users, avatar_from_users
 
 
 def _first(seq, default=None):
@@ -80,5 +80,5 @@ def build_roster_display_maps(league_id: str):
         owner_id = r.get("owner_id")
         name = (r.get("metadata") or {}).get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
         roster_name[rid] = name
-        roster_avatar[rid] = _avatar_from_users(users, owner_id)
+        roster_avatar[rid] = avatar_from_users(users, owner_id)
     return roster_name, roster_avatar
