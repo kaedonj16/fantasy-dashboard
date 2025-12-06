@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, Any, Iterable
 
 from dashboard_services.data_building.nfl_target_share import fetch_league_target_share
 from dashboard_services.data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from dashboard_services.service import age_from_bday
-from dashboard_services.utils import canon_team, load_players_index
+from dashboard_services.utils import canon_team, load_players_index, load_usage_table
 
 
 def build_usage_map_for_season(
@@ -261,7 +261,22 @@ def write_usage_table_snapshot(
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
 
     today_str = date.today().isoformat()
-    out_path = DATA_DIR / f"value_table_{today_str}.json"
+    out_path = DATA_DIR / f"usage_table_{today_str}.json"
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    # Example file naming:
+    # values_2025-12-04.csv
+    # override if you use static file names
+    pattern = f"usage_table_{yesterday.isoformat()}.json"
+    yesterday_file = DATA_DIR / pattern
+
+    if yesterday_file.exists():
+        print(f"[usage_table] Removing yesterday's value file: {yesterday_file.name}")
+        try:
+            yesterday_file.unlink()
+        except Exception as e:
+            print(f"[usage_table] Failed to remove yesterday's file: {e}")
 
     players_out = []
 

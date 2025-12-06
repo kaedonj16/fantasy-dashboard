@@ -15,7 +15,7 @@ from typing import List, Dict, Any
 from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
-    get_nfl_state, get_bracket, avatar_from_users
+    get_nfl_state, get_bracket, avatar_from_users, get_nfl_scores_for_date, build_team_game_lookup
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
 from dashboard_services.data_building.value_model_training import build_ml_value_table
@@ -27,11 +27,13 @@ from dashboard_services.picks import load_pick_value_table
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
-    seed_top6_from_team_stats, build_standings_map
+    seed_top6_from_team_stats, build_standings_map, build_and_save_week_stats_for_league
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
-from dashboard_services.utils import load_teams_index, get_nfl_games_for_week, build_games_by_team, \
-    build_status_by_pid, streak_class, build_teams_overview, load_model_value_table, load_players_index, \
-    load_week_projection, bucket_for_slot, clear_activity_cache_for_league
+from dashboard_services.utils import load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
+    load_players_index, \
+    load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_standings_cache_for_league, \
+    clear_weekly_cache_for_league, build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
+    fetch_week_from_tank01
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -224,7 +226,7 @@ def store_value_table(
     value_dir = Path(VALUE_TABLE_DIR)
     value_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"value_table_{today_str}.json"
+    filename = f"usage_table_{today_str}.json"
     value_path = value_dir / filename
 
     with value_path.open("w", encoding="utf-8") as f:
@@ -261,9 +263,9 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
-def build_nav(league_id: str, active: str) -> str:
+def build_nav(league_id: str, active: str,) -> str:
     """
-    active: one of 'dashboard','standings','power','weekly','teams','activity','injuries'
+    active: one of 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
     """
 
     def nav_pill(label: str, endpoint: str, key: str) -> str:
@@ -271,8 +273,36 @@ def build_nav(league_id: str, active: str) -> str:
         href = url_for(endpoint, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
+    # pages where a refresh makes sense
+    refreshable_pages = {"dashboard", "weekly", "teams", "activity", "standings"}
+
+    # label per page
+    refresh_label_map = {
+        "dashboard": "↻",
+        "weekly": "↻",
+        "teams": "↻",
+        "activity": "↻",
+        "standings": "↻",
+    }
+    refresh_label = refresh_label_map.get(active, "↻")
+
+    # default season -> empty string if None
+
+    refresh_btn = ""
+    if active in refreshable_pages:
+        refresh_btn = (
+            f"<button type='button'"
+            f"        id='refreshBtn'"
+            f"        class='refresh-icon'"
+            f"        data-page='{active}'"
+            f"        data-league='{league_id}'"
+            f"        style='display:inline-flex;gap:6px;color: #122d4b;font-size: x-large;background: white;border: white;transform: rotate(90deg);'>"
+            f"{refresh_label}"
+            f"</button>"
+        )
+
     pills = [
-        "<button type='button' id='activityRefreshBtn' class='nav-pill' style='display:inline-flex;align-items:center;gap:6px;'>↻ Refresh Activity</button>",
+        refresh_btn,  # may be empty string if not a refreshable page
         nav_pill("Dashboard", "page_dashboard", "dashboard"),
         nav_pill("Weekly Hub", "page_weekly", "weekly"),
         nav_pill("Trade Calc", "page_trade", "trade"),
@@ -280,10 +310,17 @@ def build_nav(league_id: str, active: str) -> str:
         nav_pill("Activity", "page_activity", "activity"),
         nav_pill("Standings", "page_standings", "standings"),
         nav_pill("Graphs", "page_graphs", "graphs"),
-        "<a class='nav-pill logout-pill' href='/logout'>Logout</a>"
+        "<a class='nav-pill logout-pill' href='/logout'>Logout</a>",
     ]
-    return "<nav class='top-nav'><div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div><div>" + "".join(
-        pills) + "</div></nav>"
+
+    return (
+        "<nav class='top-nav'>"
+        "  <div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div>"
+        "  <div>"
+        f"    {''.join(pills)}"
+        "  </div>"
+        "</nav>"
+    )
 
 
 def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
@@ -304,16 +341,16 @@ def build_league_context(league_id: str) -> dict:
     players_index = load_players_index()
     teams_index = load_teams_index()
     players_map = get_players_map(players)
-
     current_season = current.get("season")
     current_week = current.get("week")
     weeks = 18
+    # build_and_save_week_stats_for_league(teams_index, current_season, current_week)
 
     df_weekly, team_stats, roster_map = build_tables(
         league_id, current_week, players, users, rosters
     )
-    activity_df = build_week_activity(league_id, df_weekly.get("week").max(),
-                                      players_map)
+    activity_df = build_week_activity(league_id, players_map)
+
     injury_df = build_injury_report(league_id, local_tz="America/New_York", include_free_agents=False)
     statuses = build_status_by_week(
         current_season,
@@ -338,14 +375,11 @@ def build_league_context(league_id: str) -> dict:
         roster_map,
     )
 
-    # add 'proj' column – looks up by (week, roster_id)
-    df_weekly["proj"] = df_weekly.apply(
-        lambda row: proj_by_roster.get(
-            (int(row["week"]), str(row["roster_id"])),
-            float("nan")
-        ),
-        axis=1,
-    )
+    # vectorized lookup for projections
+    key_series = list(zip(df_weekly["week"].astype(int), df_weekly["roster_id"].astype(str)))
+    proj_map = proj_by_roster  # already a dict keyed by (week, roster_id)
+    df_weekly["proj"] = [proj_map.get(k, float("nan")) for k in key_series]
+
     standings_map = build_standings_map(team_stats, roster_map)
 
     picks_by_roster = build_picks_by_roster(
@@ -354,6 +388,8 @@ def build_league_context(league_id: str) -> dict:
         rosters=rosters,
         traded=traded,
     )
+    scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
+    team_game_lookup = build_team_game_lookup(scores_body)
 
     return {
         "league_id": league_id,
@@ -361,7 +397,6 @@ def build_league_context(league_id: str) -> dict:
         "rosters": rosters,
         "users": users,
         "traded": traded,
-        "current": current,
         "current_season": current_season,
         "current_week": current_week,
         "players": players,
@@ -379,6 +414,7 @@ def build_league_context(league_id: str) -> dict:
         "activity_df": activity_df,
         "standings_map": standings_map,
         "picks_by_roster": picks_by_roster,
+        "team_game_lookup": team_game_lookup,
     }
 
 
@@ -448,7 +484,7 @@ def render_standings(team_stats, length) -> str:
     else:
         total_rows = rows
     return f"""
-        <table class="standings-table">
+        <table class="standings-table" data-page="standings">
           <thead>
             <tr>
               <th>Rank</th>
@@ -468,14 +504,9 @@ def render_standings(team_stats, length) -> str:
     """
 
 
-def build_status_for_week(season, week, players_index, teams_index):
-    games = get_nfl_games_for_week(week, season)
-    games_by_team = build_games_by_team(games)
-    return build_status_by_pid(players_index, games_by_team, teams_index, week)
-
-
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
+    season = ctx["current_season"]
     rosters = ctx["rosters"]
     users = ctx["users"]
     current_week = ctx["current_week"]
@@ -488,6 +519,7 @@ def build_dashboard_body(ctx: dict) -> str:
     proj_by_week = ctx["proj_by_week"]
     matchups_by_week = ctx["matchups_by_week"]
     picks_by_roster = ctx["picks_by_roster"]
+    team_game_lookup = ctx["team_game_lookup"]
 
     # --- Standings snapshot (top card in main column) ---
     standings_html = render_standings(team_stats, 5)
@@ -504,6 +536,7 @@ def build_dashboard_body(ctx: dict) -> str:
     for m in matchups_by_week.get(current_week, []):
         slides.append(
             render_matchup_slide(
+                season,
                 m,
                 current_week,
                 last_final_week,
@@ -511,6 +544,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 projections=proj_by_week,
                 players=players_index,
                 teams=teams_index,
+                team_game_lookup=team_game_lookup,
             )
         )
 
@@ -536,13 +570,15 @@ def build_dashboard_body(ctx: dict) -> str:
 
     # --- compose into main + sidebar ---
     body = f"""
+    <aside class="overview-sidebar-left">
+      {awards_html}
+    </aside>
     <div class="overview-main">
       <div class="card central">
         <h2>Standings</h2>
         {standings_html}
       </div>
       {matchup_html}
-      {awards_html}
     </div>
     <aside class="overview-sidebar">
       {teams_sidebar_html}
@@ -1321,32 +1357,35 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
 
 def build_weekly_hub_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
+    season = ctx["current_season"]
+    rosters = ctx["rosters"]
+    users = ctx["users"]
     df_weekly = ctx["df_weekly"]
     roster_map = ctx["roster_map"]
     players_map = ctx["players_map"]
     current_week = ctx["current_week"]
     players_index = ctx["players_index"]
     teams_index = ctx["teams_index"]
-    rosters = ctx["rosters"]
-    users = ctx["users"]
     proj_by_week = ctx["proj_by_week"]
     weeks = ctx["weeks"]
     statuses = ctx["statuses"]
+    team_game_lookup = ctx["team_game_lookup"]
+    matchups_by_week = ctx["matchups_by_week"]
+    last_final_week = current_week
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = current_week
+        pass
 
     default_week = current_week if current_week in range(1, weeks) else weeks[-1]
     # Build all matchup slides once
-    matchups_by_week = build_matchups_by_week(
-        league_id, range(1, weeks), roster_map, players_map
-    )
+
     slides_by_week: dict[int, str] = {
         w: "".join(
             render_matchup_slide(
+                season,
                 m,
                 w,
                 last_final_week,
@@ -1354,6 +1393,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
                 projections=proj_by_week,
                 players=players_index,
                 teams=teams_index,
+                team_game_lookup=team_game_lookup,
             )
             for m in matchups_by_week.get(w, [])
         )
@@ -1441,11 +1481,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     (function() {{
       var sel = document.getElementById('hubWeek');
       if (!sel) return;
-
+      
       sel.addEventListener('change', function() {{
         var w = this.value;
 
-        # toggle main & side weekly panels
         document.querySelectorAll('.week-main-panel').forEach(function(el) {{
           el.classList.toggle('active', el.getAttribute('data-week') === w);
         }});
@@ -1497,24 +1536,33 @@ def build_activity_body(ctx: dict) -> str:
     player_val_by_key: dict[tuple[str, str, str], float] = {}
     player_val_by_key_np: dict[tuple[str, str], float] = {}
 
+    rank_label_by_name: dict[str, str] = {}
+
     if isinstance(players_values_raw, list):
         for row in players_values_raw:
             if not isinstance(row, dict):
                 continue
-            name = str(row.get("search_name") or "").strip()
+            raw_name = str(row.get("search_name") or "").strip()
+            if not raw_name:
+                continue
+            name_lower = raw_name.lower()
             pos = str(row.get("position") or row.get("pos") or "").strip().upper()
             team = str(row.get("team") or "").strip().upper()
-            if not name or not pos:
+            if not pos:
                 continue
             try:
                 val = float(row.get("value") or 0.0)
             except Exception:
                 val = 0.0
-            player_val_by_key[(name, pos, team)] = val
-            player_val_by_key_np[(name, pos)] = val
+            player_val_by_key[(raw_name, pos, team)] = val
+            player_val_by_key_np[(raw_name, pos)] = val
+
+            lbl = row.get("pos_rank_label") or pos
+            rank_label_by_name[name_lower] = str(lbl)
 
     def player_value(p: dict) -> tuple[float, str]:
-        name = str(p.get("name") or "").strip().lower()
+        name = str(p.get("name") or "").strip()
+        name_lower = name.lower()
         pos = str(p.get("pos") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
@@ -1525,15 +1573,7 @@ def build_activity_body(ctx: dict) -> str:
             or player_val_by_key_np.get((name, pos), 0.0)
         )
 
-        # find matching row for rank label
-        rank_label = next(
-            (
-                obj.get("pos_rank_label")
-                for obj in players_values_raw
-                if str(obj.get("search_name") or "").strip().lower() == name
-            ),
-            pos,
-        )
+        rank_label = rank_label_by_name.get(name_lower, pos)
 
         return val, rank_label
 
@@ -1972,6 +2012,24 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = load_model_value_table() or []
 
+    name_to_rank_label: dict[str, str] = {}
+    name_to_age: dict[str, float | None] = {}
+
+    for obj in model_vals:
+        if not isinstance(obj, dict):
+            continue
+        nm = str(obj.get("search_name") or "").strip().lower()
+        if not nm:
+            continue
+        pos_lbl = obj.get("pos_rank_label") or obj.get("position") or obj.get("pos") or ""
+        name_to_rank_label[nm] = str(pos_lbl)
+        age_val = obj.get("age")
+        if age_val is not None:
+            try:
+                name_to_age[nm] = float(age_val)
+            except Exception:
+                name_to_age[nm] = None
+
     # map sleeper_id -> row
     by_id: dict[str, dict] = {
         str(p["id"]): p
@@ -2130,38 +2188,31 @@ def build_teams_body(ctx: dict) -> str:
     # ----------------- Helper: players under a position row -----------------
     def render_pos_players(rid: int, pos_code: str) -> str:
         plist = roster_pos_players.get(rid, {}).get(pos_code, [])
-        players = load_model_value_table()
         if not plist:
             return "<div style='color:#64748b;font-size:12px;'>No players at this position.</div>"
 
         rows_html = []
         for p in plist:
-            rank_label = next(
-                (
-                    obj["pos_rank_label"]
-                    for obj in players
-                    if str(obj["search_name"]).strip().lower() == p.get('name', '').lower()
-                ),
-                p.get('position', ''),
+            name_raw = p.get('name', '')
+            name_key = str(name_raw or "").strip().lower()
+
+            rank_label = name_to_rank_label.get(
+                name_key,
+                p.get('position', '')
             )
+            age = name_to_age.get(name_key)
+
             try:
                 val = float(p.get("value") or 0.0)
             except Exception:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
-            age = next(
-                (
-                    obj["age"]
-                    for obj in players
-                    if str(obj["search_name"] or "").strip().lower() == p.get('name', '').lower()
-                ),
-                None,
-            )
+
             rows_html.append(
                 "<div class='player-activity'>"
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
                 "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
-                f"      <div style='font-weight:600'>{p.get('name', '')}</div>"
+                f"      <div style='font-weight:600'>{name_raw}</div>"
                 f"      <div style='color:#64748b;font-size:12px'>"
                 f"        {rank_label} • {p.get('team', '')} • {age} yrs"
                 "      </div>"
@@ -2426,7 +2477,6 @@ def index():
         league_id = request.form.get("league", "").strip()
         cache_key = league_id
         now = time.time()
-        print("league_id:", repr(league_id))
         print("cache keys currently:", list(DASHBOARD_CACHE.keys()))
 
         entry = DASHBOARD_CACHE.get(cache_key)
@@ -2454,42 +2504,36 @@ def view_league(league_id):
 
 @app.route("/api/refresh-page", methods=["POST"])
 def api_refresh_page():
-    """
-    Page-specific refresh endpoint.
-
-    Expects JSON:
-      { "league_id": "...", "season": 2025, "page": "activity" }
-
-    For now we implement 'activity'; other pages can be added later.
-    """
     payload = request.get_json(silent=True) or {}
-    league_id = (payload.get("league_id") or "").strip()
+    league_id = payload.get("league_id")
     page = (payload.get("page") or "").strip().lower()
+
+    ctx = get_league_ctx_from_cache(league_id)
+    season = ctx["current_season"]
+    week = ctx["current_week"]
+    players_index = ctx["players_index"]
+    teams_index = ctx["teams_index"]
+    league_id = (payload.get("league_id") or "").strip()
 
     if not league_id or not page:
         return jsonify({"ok": False, "error": "Missing league_id or page"}), 400
 
     try:
         if page == "activity":
-            # only clear the caches Activity depends on
             clear_activity_cache_for_league(league_id)
-
-            # if you keep a higher-level per-league context cache,
-            # you may want to invalidate just the activity/injury bits there too.
-            # e.g., clear_league_context_cache(league_id, season) or a more granular variant.
-
+        elif page == "standings":
+            clear_standings_cache_for_league()
+        elif page == "teams":
+            clear_teams_cache_for_league()
+        elif page == "weekly" or page == "dashboard":
+            clear_weekly_cache_for_league()
+            get_week_projections_cached(season, week, fetch_week_from_tank01, True)
+            build_status_for_week(season, week, players_index, teams_index)
         else:
-            # you’ll fill in other pages later (dashboard, teams, etc.)
             return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
-
-        refreshed_at = datetime.now().isoformat(timespec="seconds")
-        return jsonify({"ok": True, "refreshed_at": refreshed_at})
-
+        return jsonify({"ok": True, "refreshed_at": datetime.now().isoformat(timespec="seconds")})
     except Exception as e:
-        return jsonify({
-            "ok": False,
-            "error": f"Refresh failed: {e}",
-        }), 500
+        return jsonify({"ok": False, "error": f"Refresh failed: {e}"}), 500
 
 
 @app.route("/logout")

@@ -10,7 +10,9 @@
     "rush_yds_pg": 100.6,
     "pass_yds_pg": 236.7,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 0.75
+    "rush_td_pg": 0.75,
+    "opp_pass_yds_pg": 219.6,
+    "opp_rush_yds_pg": 112.6
   },
   "ATL": {
     "teamId": "2",
@@ -23,7 +25,9 @@
     "rush_yds_pg": 123.9,
     "pass_yds_pg": 210.8,
     "pass_td_pg": 1.0,
-    "rush_td_pg": 1.1666666666666667
+    "rush_td_pg": 1.1666666666666667,
+    "opp_pass_yds_pg": 187.8,
+    "opp_rush_yds_pg": 131.2
   },
   "BAL": {
     "teamId": "3",
@@ -36,7 +40,9 @@
     "rush_yds_pg": 136.8,
     "pass_yds_pg": 181.3,
     "pass_td_pg": 1.3333333333333333,
-    "rush_td_pg": 1.25
+    "rush_td_pg": 1.25,
+    "opp_pass_yds_pg": 233.5,
+    "opp_rush_yds_pg": 118.4
   },
   "BUF": {
     "teamId": "4",
@@ -49,7 +55,9 @@
     "rush_yds_pg": 155.7,
     "pass_yds_pg": 225.3,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 1.75
+    "rush_td_pg": 1.75,
+    "opp_pass_yds_pg": 163.2,
+    "opp_rush_yds_pg": 141.3
   },
   "CAR": {
     "teamId": "5",
@@ -62,7 +70,9 @@
     "rush_yds_pg": 125.5,
     "pass_yds_pg": 185.7,
     "pass_td_pg": 1.4615384615384615,
-    "rush_td_pg": 0.5384615384615384
+    "rush_td_pg": 0.5384615384615384,
+    "opp_pass_yds_pg": 212.4,
+    "opp_rush_yds_pg": 118.7
   },
   "CHI": {
     "teamId": "6",
@@ -75,7 +85,9 @@
     "rush_yds_pg": 153.8,
     "pass_yds_pg": 220.4,
     "pass_td_pg": 1.5,
-    "rush_td_pg": 1.25
+    "rush_td_pg": 1.25,
+    "opp_pass_yds_pg": 225.2,
+    "opp_rush_yds_pg": 133.8
   },
   "CIN": {
     "teamId": "7",
@@ -88,7 +100,9 @@
     "rush_yds_pg": 88.5,
     "pass_yds_pg": 224.8,
     "pass_td_pg": 1.9166666666666667,
-    "rush_td_pg": 0.4166666666666667
+    "rush_td_pg": 0.4166666666666667,
+    "opp_pass_yds_pg": 256.8,
+    "opp_rush_yds_pg": 153.3
   },
   "CLE": {
     "teamId": "8",
@@ -101,20 +115,24 @@
     "rush_yds_pg": 98.5,
     "pass_yds_pg": 159.5,
     "pass_td_pg": 0.9166666666666666,
-    "rush_td_pg": 0.6666666666666666
+    "rush_td_pg": 0.6666666666666666,
+    "opp_pass_yds_pg": 169.9,
+    "opp_rush_yds_pg": 101.3
   },
   "DAL": {
     "teamId": "9",
     "byeWeek": 10,
     "Logo": "https://a.espncdn.com/i/teamlogos/nfl/500/dal.png",
-    "pass_att_pg": 37.166666666666664,
+    "pass_att_pg": 37.92307692307692,
     "off_snaps_pg": 76.5909090909091,
     "games_tracked": 10.0,
-    "rush_att_pg": 26.3,
-    "rush_yds_pg": 121.8,
-    "pass_yds_pg": 271.3,
-    "pass_td_pg": 2.1666666666666665,
-    "rush_td_pg": 1.0
+    "rush_att_pg": 26.1,
+    "rush_yds_pg": 119.5,
+    "pass_yds_pg": 275.5,
+    "pass_td_pg": 2.076923076923077,
+    "rush_td_pg": 1.0,
+    "opp_pass_yds_pg": 255.2,
+    "opp_rush_yds_pg": 123.5
   },
   "DEN": {
     "teamId": "10",
@@ -127,20 +145,24 @@
     "rush_yds_pg": 119.3,
     "pass_yds_pg": 221.5,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 1.0833333333333333
+    "rush_td_pg": 1.0833333333333333,
+    "opp_pass_yds_pg": 193.3,
+    "opp_rush_yds_pg": 93.1
   },
   "DET": {
     "teamId": "11",
     "byeWeek": 8,
     "Logo": "https://a.espncdn.com/i/teamlogos/nfl/500/det.png",
-    "pass_att_pg": 31.833333333333332,
+    "pass_att_pg": 32.0,
     "off_snaps_pg": 67.42424242424242,
     "games_tracked": 10.0,
-    "rush_att_pg": 27.6,
-    "rush_yds_pg": 138.1,
-    "pass_yds_pg": 238.2,
-    "pass_td_pg": 2.1666666666666665,
-    "rush_td_pg": 1.3333333333333333
+    "rush_att_pg": 27.2,
+    "rush_yds_pg": 135.8,
+    "pass_yds_pg": 242.8,
+    "pass_td_pg": 2.076923076923077,
+    "rush_td_pg": 1.5384615384615385,
+    "opp_pass_yds_pg": 221.2,
+    "opp_rush_yds_pg": 102.7
   },
   "GB": {
     "teamId": "12",
@@ -153,7 +175,9 @@
     "rush_yds_pg": 117.2,
     "pass_yds_pg": 223.4,
     "pass_td_pg": 1.6666666666666667,
-    "rush_td_pg": 1.1666666666666667
+    "rush_td_pg": 1.1666666666666667,
+    "opp_pass_yds_pg": 186.5,
+    "opp_rush_yds_pg": 98.3
   },
   "HOU": {
     "teamId": "13",
@@ -166,7 +190,9 @@
     "rush_yds_pg": 107.7,
     "pass_yds_pg": 219.1,
     "pass_td_pg": 1.3333333333333333,
-    "rush_td_pg": 0.5833333333333334
+    "rush_td_pg": 0.5833333333333334,
+    "opp_pass_yds_pg": 174.0,
+    "opp_rush_yds_pg": 91.7
   },
   "IND": {
     "teamId": "14",
@@ -179,7 +205,9 @@
     "rush_yds_pg": 134.4,
     "pass_yds_pg": 241.0,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 1.8333333333333333
+    "rush_td_pg": 1.8333333333333333,
+    "opp_pass_yds_pg": 246.3,
+    "opp_rush_yds_pg": 98.3
   },
   "JAX": {
     "teamId": "15",
@@ -192,7 +220,9 @@
     "rush_yds_pg": 123.3,
     "pass_yds_pg": 202.8,
     "pass_td_pg": 1.3333333333333333,
-    "rush_td_pg": 1.25
+    "rush_td_pg": 1.25,
+    "opp_pass_yds_pg": 230.1,
+    "opp_rush_yds_pg": 82.4
   },
   "KC": {
     "teamId": "16",
@@ -205,7 +235,9 @@
     "rush_yds_pg": 118.3,
     "pass_yds_pg": 256.5,
     "pass_td_pg": 1.8333333333333333,
-    "rush_td_pg": 1.0833333333333333
+    "rush_td_pg": 1.0833333333333333,
+    "opp_pass_yds_pg": 205.8,
+    "opp_rush_yds_pg": 100.9
   },
   "LAC": {
     "teamId": "18",
@@ -218,7 +250,9 @@
     "rush_yds_pg": 122.1,
     "pass_yds_pg": 224.7,
     "pass_td_pg": 1.75,
-    "rush_td_pg": 0.5833333333333334
+    "rush_td_pg": 0.5833333333333334,
+    "opp_pass_yds_pg": 168.3,
+    "opp_rush_yds_pg": 106.9
   },
   "LAR": {
     "teamId": "19",
@@ -231,7 +265,9 @@
     "rush_yds_pg": 113.5,
     "pass_yds_pg": 246.6,
     "pass_td_pg": 2.6666666666666665,
-    "rush_td_pg": 0.8333333333333334
+    "rush_td_pg": 0.8333333333333334,
+    "opp_pass_yds_pg": 207.3,
+    "opp_rush_yds_pg": 107.8
   },
   "LV": {
     "teamId": "17",
@@ -244,7 +280,9 @@
     "rush_yds_pg": 75.4,
     "pass_yds_pg": 184.1,
     "pass_td_pg": 1.25,
-    "rush_td_pg": 0.3333333333333333
+    "rush_td_pg": 0.3333333333333333,
+    "opp_pass_yds_pg": 212.5,
+    "opp_rush_yds_pg": 110.8
   },
   "MIA": {
     "teamId": "20",
@@ -257,7 +295,9 @@
     "rush_yds_pg": 117.1,
     "pass_yds_pg": 183.1,
     "pass_td_pg": 1.4166666666666667,
-    "rush_td_pg": 0.6666666666666666
+    "rush_td_pg": 0.6666666666666666,
+    "opp_pass_yds_pg": 207.7,
+    "opp_rush_yds_pg": 137.5
   },
   "MIN": {
     "teamId": "21",
@@ -270,7 +310,9 @@
     "rush_yds_pg": 99.4,
     "pass_yds_pg": 173.2,
     "pass_td_pg": 1.0833333333333333,
-    "rush_td_pg": 0.6666666666666666
+    "rush_td_pg": 0.6666666666666666,
+    "opp_pass_yds_pg": 178.4,
+    "opp_rush_yds_pg": 128.4
   },
   "NE": {
     "teamId": "22",
@@ -283,7 +325,9 @@
     "rush_yds_pg": 112.9,
     "pass_yds_pg": 249.7,
     "pass_td_pg": 1.7692307692307692,
-    "rush_td_pg": 0.9230769230769231
+    "rush_td_pg": 0.9230769230769231,
+    "opp_pass_yds_pg": 206.9,
+    "opp_rush_yds_pg": 89.5
   },
   "NO": {
     "teamId": "23",
@@ -296,7 +340,9 @@
     "rush_yds_pg": 90.7,
     "pass_yds_pg": 205.9,
     "pass_td_pg": 1.0833333333333333,
-    "rush_td_pg": 0.25
+    "rush_td_pg": 0.25,
+    "opp_pass_yds_pg": 187.7,
+    "opp_rush_yds_pg": 126.9
   },
   "NYG": {
     "teamId": "24",
@@ -309,7 +355,9 @@
     "rush_yds_pg": 123.5,
     "pass_yds_pg": 216.6,
     "pass_td_pg": 1.3076923076923077,
-    "rush_td_pg": 1.3076923076923077
+    "rush_td_pg": 1.3076923076923077,
+    "opp_pass_yds_pg": 231.5,
+    "opp_rush_yds_pg": 154.2
   },
   "NYJ": {
     "teamId": "25",
@@ -322,7 +370,9 @@
     "rush_yds_pg": 133.7,
     "pass_yds_pg": 148.3,
     "pass_td_pg": 1.0833333333333333,
-    "rush_td_pg": 0.75
+    "rush_td_pg": 0.75,
+    "opp_pass_yds_pg": 196.9,
+    "opp_rush_yds_pg": 131.2
   },
   "PHI": {
     "teamId": "27",
@@ -335,7 +385,9 @@
     "rush_yds_pg": 108.5,
     "pass_yds_pg": 196.3,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 1.0
+    "rush_td_pg": 1.0,
+    "opp_pass_yds_pg": 218.3,
+    "opp_rush_yds_pg": 128.9
   },
   "PIT": {
     "teamId": "26",
@@ -348,7 +400,9 @@
     "rush_yds_pg": 93.8,
     "pass_yds_pg": 187.8,
     "pass_td_pg": 1.75,
-    "rush_td_pg": 0.6666666666666666
+    "rush_td_pg": 0.6666666666666666,
+    "opp_pass_yds_pg": 247.4,
+    "opp_rush_yds_pg": 117.7
   },
   "SEA": {
     "teamId": "29",
@@ -361,7 +415,9 @@
     "rush_yds_pg": 116.9,
     "pass_yds_pg": 235.6,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 1.1666666666666667
+    "rush_td_pg": 1.1666666666666667,
+    "opp_pass_yds_pg": 200.7,
+    "opp_rush_yds_pg": 88.8
   },
   "SF": {
     "teamId": "28",
@@ -374,7 +430,9 @@
     "rush_yds_pg": 98.5,
     "pass_yds_pg": 242.6,
     "pass_td_pg": 1.6923076923076923,
-    "rush_td_pg": 0.8461538461538461
+    "rush_td_pg": 0.8461538461538461,
+    "opp_pass_yds_pg": 232.0,
+    "opp_rush_yds_pg": 103.8
   },
   "TB": {
     "teamId": "30",
@@ -387,7 +445,9 @@
     "rush_yds_pg": 109.8,
     "pass_yds_pg": 206.3,
     "pass_td_pg": 1.5833333333333333,
-    "rush_td_pg": 0.8333333333333334
+    "rush_td_pg": 0.8333333333333334,
+    "opp_pass_yds_pg": 247.5,
+    "opp_rush_yds_pg": 97.4
   },
   "TEN": {
     "teamId": "31",
@@ -400,7 +460,9 @@
     "rush_yds_pg": 76.7,
     "pass_yds_pg": 165.8,
     "pass_td_pg": 0.5833333333333334,
-    "rush_td_pg": 0.3333333333333333
+    "rush_td_pg": 0.3333333333333333,
+    "opp_pass_yds_pg": 218.3,
+    "opp_rush_yds_pg": 127.6
   },
   "WSH": {
     "teamId": "32",
@@ -413,6 +475,8 @@
     "rush_yds_pg": 138.9,
     "pass_yds_pg": 198.7,
     "pass_td_pg": 1.4166666666666667,
-    "rush_td_pg": 1.0833333333333333
+    "rush_td_pg": 1.0833333333333333,
+    "opp_pass_yds_pg": 254.9,
+    "opp_rush_yds_pg": 133.3
   }
 }

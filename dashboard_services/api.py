@@ -7,13 +7,14 @@ import requests
 import time
 from datetime import date
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Dict, Optional, Union
 
 
 def _make_hashable(x: Any):
     """
     Recursively turn lists/dicts/sets into hashable structures
     so they can be used as cache keys.
+    (Currently not used in ttl_cache but kept for compatibility.)
     """
     if isinstance(x, (str, int, float, bool, type(None))):
         return x
@@ -27,35 +28,52 @@ def _make_hashable(x: Any):
     # fallback for weird/custom objects
     return repr(x)
 
+# dashboard_services/api.py
+
+_cache = {}
+
+def _freeze(obj):
+    """Recursively convert unhashable types into hashable ones for cache keys."""
+    if isinstance(obj, (list, tuple)):
+        return tuple(_freeze(x) for x in obj)
+    if isinstance(obj, dict):
+        # sort keys so order is stable
+        return tuple(sorted((k, _freeze(v)) for k, v in obj.items()))
+    if isinstance(obj, set):
+        return tuple(sorted(_freeze(x) for x in obj))
+    return obj  # assume hashable
+
+
 
 def ttl_cache(ttl: int = 300):
     """
     Simple in-memory TTL cache.
-    Keyed by (function name, normalized args, normalized kwargs).
+    Keyed by (function name, args, kwargs).
+
+    This version is lightweight and works fine for the simple
+    argument types used by the functions below.
     """
 
     def decorator(func):
-        _cache = {}  # { key: (timestamp, value) }
+        _cache: Dict[Any, tuple[float, Any]] = {}
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            key = (
-                func.__name__,
-                _make_hashable(args),
-                _make_hashable(kwargs),
-            )
-            now = time.time()
+            frozen_args = _freeze(args)
+            frozen_kwargs = _freeze(kwargs)
+            key = (func.__name__, frozen_args, frozen_kwargs)
 
             if key in _cache:
-                ts, value = _cache[key]
-                if now - ts < ttl:
-                    return value
+                return _cache[key]
 
+            result = func(*args, **kwargs)
+            _cache[key] = result
+            return result
             value = func(*args, **kwargs)
             _cache[key] = (now, value)
             return value
 
-        # expose cache and a convenience clearer
+        # expose cache and a convenience clearer if you ever want it
         wrapper._cache = _cache
 
         def clear_cache():
@@ -68,25 +86,51 @@ def ttl_cache(ttl: int = 300):
     return decorator
 
 
-
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 SCORING_DEFAULTS = {
     # Passing
-    "twoPointConversions": 2, "passYards": 0.04, "passAttempts": -0.5, "passTD": 4,
-    "passCompletions": 1, "passInterceptions": -2,
+    "twoPointConversions": 2,
+    "passYards": 0.04,
+    "passAttempts": -0.5,
+    "passTD": 4,
+    "passCompletions": 1,
+    "passInterceptions": -2,
     # Receiving
-    "pointsPerReception": 1, "receivingYards": 0.1, "receivingTD": 6, "targets": 0.1,
+    "pointsPerReception": 1,
+    "receivingYards": 0.1,
+    "receivingTD": 6,
+    "targets": 0.1,
     # Rushing
-    "carries": 0.2, "rushYards": 0.1, "rushTD": 6, "fumbles": -2,
+    "carries": 0.2,
+    "rushYards": 0.1,
+    "rushTD": 6,
+    "fumbles": -2,
     # Kicking
-    "fgMade": 3, "fgMissed": -1, "xpMade": 1, "xpMissed": -1,
+    "fgMade": 3,
+    "fgMissed": -1,
+    "xpMade": 1,
+    "xpMissed": -1,
 }
 TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 BASE = f"https://{TANK01_HOST}"
 TANK01_API_KEY = os.getenv("TANK01_API_KEY")
+FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
 
 if not TANK01_API_KEY:
     raise RuntimeError("TANK01_API_KEY is not set. Export it or hardcode it temporarily.")
+
+# Reuse a single Session and a single headers dict for all Tank01 calls
+SESSION = requests.Session()
+
+
+def _headers(rapidapi_key: str) -> Dict[str, str]:
+    return {
+        "x-rapidapi-host": TANK01_HOST,
+        "x-rapidapi-key": str(rapidapi_key),
+    }
+
+
+TANK01_HEADERS = _headers(TANK01_API_KEY)
 
 
 @ttl_cache(ttl=300)
@@ -108,7 +152,7 @@ def avatar_from_users(users: list[dict], owner_id: Optional[str]) -> Optional[st
 
 def fetch_json(path: str, timeout: int = 25) -> dict:
     url = f"{SLEEPER_BASE}{path}"
-    r = requests.get(url, timeout=timeout)
+    r = SESSION.get(url, timeout=timeout)
     r.raise_for_status()
     return r.json()
 
@@ -162,7 +206,7 @@ def get_traded_picks(league_id: str) -> List[dict]:
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
     url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}
-    resp = requests.get(url, headers=_headers(TANK01_API_KEY), params=params, timeout=10)
+    resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     return data.get("body") or data
@@ -174,50 +218,14 @@ def _avatar_url(avatar_id: str) -> Union[str, None]:
     return f"{avatar_id}"
 
 
-def _headers(rapidapi_key: str) -> Dict[str, str]:
-    return {
-        "x-rapidapi-host": TANK01_HOST,
-        "x-rapidapi-key": str(rapidapi_key),
-    }
-
-
-# cache_utils.py (or near top of your existing module)
-def ttl_cache(ttl: int = 300):
-    """
-    Simple in-memory TTL cache.
-    Keyed by (function name, args, kwargs).
-    """
-
-    def decorator(func):
-        _cache = {}  # { key: (timestamp, value) }
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Build a hashable cache key
-            key = (func.__name__, args, tuple(sorted(kwargs.items())))
-            now = time.time()
-
-            if key in _cache:
-                ts, value = _cache[key]
-                if now - ts < ttl:
-                    return value
-
-            value = func(*args, **kwargs)
-            _cache[key] = (now, value)
-            return value
-
-        return wrapper
-
-    return decorator
-
-
 class Tank01Error(Exception):
     pass
 
 
+@ttl_cache(ttl=300)
 def get_tank01_player_gamelogs(
-        tank_player_id: str,
-        season: Optional[int] = None,
+    tank_player_id: str,
+    season: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Call Tank01 and return a list of game dicts for a given player.
@@ -238,12 +246,7 @@ def get_tank01_player_gamelogs(
     if season is not None:
         querystring["season"] = str(season)
 
-    headers = {
-        "x-rapidapi-key": TANK01_API_KEY,
-        "x-rapidapi-host": TANK01_HOST,
-    }
-
-    resp = requests.get(url, headers=headers, params=querystring, timeout=20)
+    resp = SESSION.get(url, headers=TANK01_HEADERS, params=querystring, timeout=20)
     if resp.status_code != 200:
         raise Tank01Error(f"Tank01 API error {resp.status_code}: {resp.text[:200]}")
 
@@ -254,16 +257,11 @@ def get_tank01_player_gamelogs(
 
     raw_body = data.get("body") or {}
 
-    games: List[Dict[str, Any]] = []
-
     if isinstance(raw_body, list):
-        # Already list of game dicts
-        games = [g for g in raw_body if isinstance(g, dict)]
+        games: List[Dict[str, Any]] = [g for g in raw_body if isinstance(g, dict)]
     elif isinstance(raw_body, dict):
-        # Dict keyed by gameId -> gameDict
         games = [g for g in raw_body.values() if isinstance(g, dict)]
     else:
-        # Truly weird shape
         print(
             f"[Tank01] Unexpected body type for {tank_player_id}: "
             f"{type(raw_body)} -> {raw_body}"
@@ -271,3 +269,59 @@ def get_tank01_player_gamelogs(
         games = []
 
     return games
+
+
+@ttl_cache(ttl=300)
+def get_nfl_scores_for_date(game_date: str) -> dict:
+    """
+    Wraps Tank01 getNFLScoresOnly.
+
+    game_date: 'YYYYMMDD' string, e.g. '20251204'
+    Returns: body dict from Tank01 (gameID -> gameDict)
+    """
+    url = f"{BASE}/getNFLScoresOnly"
+    params = {"gameDate": game_date, "topPerformers": "true"}
+
+    resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
+    resp.raise_for_status()
+    data = resp.json() or {}
+    return data.get("body") or {}
+
+
+def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
+    """
+    Given Tank01 scores body (gameID -> game dict),
+    return a map: teamAbv -> game dict.
+
+    Example:
+      'DAL' -> { ... full game dict ... }
+      'DET' -> { ... same game dict ... }
+    """
+    team_map: dict[str, dict] = {}
+
+    for game in scores_body.values():
+        if not isinstance(game, dict):
+            continue
+        home = game.get("home")
+        away = game.get("away")
+        if home:
+            team_map[str(home)] = game
+        if away:
+            team_map[str(away)] = game
+
+    return team_map
+
+
+@ttl_cache(ttl=300)
+def fetch_team_game_logs_html(team_abv: str, season: int) -> str:
+    """
+    Fetch Footballguys team game logs page for a given NFL team and season.
+    team_abv: 'ATL', 'DAL', etc.
+    """
+    params = {
+        "team": team_abv.upper(),
+        "year": str(season),
+    }
+    resp = SESSION.get(FOOTBALLGUYS_TEAM_LOG_URL, params=params, timeout=20)
+    resp.raise_for_status()
+    return resp.text

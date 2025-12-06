@@ -20,7 +20,7 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           </div>
           <div class="card-body main-two-col">
             <!-- Side 1 -->
-            <div class="side-card card">
+            <div class="trade-calc-card card">
               <div class="side-header"><h2>Team 1 gets…</h2></div>
               <div class="side-body">
                 <h3 for="sideASearch">Add player</h3>
@@ -37,7 +37,7 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             </div>
 
             <!-- Side 2 -->
-            <div class="side-card card">
+            <div class="trade-calc-card card">
               <div class="side-header"><h2>Team 2 gets…</h2></div>
               <div class="side-body">
                 <h3 for="sideBSearch">Add player</h3>
@@ -97,23 +97,10 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
       </main>
 
       <aside class="page-sidebar">
-        <div class="card small">
-          <div class="card-header">
-            <h3>How this works</h3>
-          </div>
-          <div class="card-body">
-            <p class="hint">
-              Players are pulled from your Sleeper league and given a value score based on usage and projections.
-              Each side’s total updates automatically as you add or remove players.
-              The bar below shows which side is favored and how close the deal is to “fair”.
-            </p>
-          </div>
-        </div>
-
         <!-- All players + values side card -->
         <div class="card small">
           <div class="card-header">
-            <h3>All Player Values</h3>
+            <h3>Player Values</h3>
           </div>
           <div class="card-body">
             <label class="mini-label">Filter by position</label>
@@ -249,7 +236,6 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
         }}
 
         const data = await res.json();      // list of dicts
-        console.log("[trade] loaded players payload sample:", data.slice(0, 5));
         allPlayers = Array.isArray(data) ? data : [];
 
         if (errorBox) {{

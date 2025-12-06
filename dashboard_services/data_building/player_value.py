@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import math
-import statistics
-from collections import defaultdict
-from datetime import datetime, date
-from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Optional
 
 from dashboard_services.utils import load_usage_table
 
@@ -25,12 +19,12 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
 
     if pos == "RB":
         # RBs fall off faster
-        if age <= 22: return 1.0
-        if age <= 24: return 0.95
-        if age <= 25: return 0.90
-        if age <= 26: return 0.85
-        if age <= 27: return 0.40
-        return 0.25
+        if age <= 22: return 0.95
+        if age <= 24: return 0.90
+        if age <= 25: return 0.85
+        if age <= 26: return 0.45
+        if age <= 27: return 0.30
+        return 0.10
 
     if pos == "WR":
         # WRs stay strong longer
@@ -39,17 +33,17 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
         if age <= 26: return 0.95
         if age <= 27: return 0.92
         if age <= 28: return 0.85
-        if age <= 29: return 0.78
-        if age <= 31: return 0.65
+        if age <= 29: return 0.70
+        if age <= 31: return 0.625
         return 0.50
 
     if pos == "QB":
         if age <= 24: return 0.95
         if age <= 28: return 1.0
-        if age <= 31: return 0.95
-        if age <= 34: return 0.90
-        if age <= 37: return 0.80
-        if age <= 40: return 0.65
+        if age <= 31: return 0.80
+        if age <= 34: return 0.60
+        if age <= 37: return 0.40
+        if age <= 40: return 0.35
         return 0.50
 
     if pos == "TE":
@@ -94,59 +88,60 @@ def _production_component_fixed(u: dict, pos: str) -> float:
 
     # --- QUARTERBACKS --------------------------
     if pos == "QB":
-        yds = u.get("avg_pass_yds", 0)
-        tds = u.get("avg_pass_tds", 0)
-        ints = u.get("avg_pass_int", 0)
+        yds = float(u.get("avg_pass_yds", 0) or 0)
+        tds = float(u.get("avg_pass_tds", 0) or 0)
+        ints = float(u.get("avg_pass_int", 0) or 0)
 
         # scaled formula (empirically tuned)
+        # NOTE: INTs are a penalty (negative contribution)
         score = (
-                (yds / 300.0) * 0.50 +
-                (tds / 3.5) * 0.60 +
-                (ints / 2.5) * 0.20 +
-                (ppg / 30.0) * 0.50
+            (yds / 300.0) * 0.50 +
+            (tds / 3.5) * 0.60 -
+            (ints / 2.5) * 0.20 +
+            (ppg / 30.0) * 0.50
         )
 
         return max(0.0, min(1.0, score))
 
     # --- RUNNING BACKS -------------------------
     if pos == "RB":
-        carries = u.get("avg_carries", 0)
-        yds = u.get("avg_rush_yards", 0)
-        recs = u.get("avg_receptions", 0)
+        carries = float(u.get("avg_carries", 0) or 0)
+        yds = float(u.get("avg_rush_yards", 0) or 0)
+        recs = float(u.get("avg_receptions", 0) or 0)
 
         score = (
-                (carries / 18.0) * 0.40 +
-                (yds / 90.0) * 0.40 +
-                (recs / 4.0) * 0.20 +
-                (ppg / 25.0) * 0.50
+            (carries / 18.0) * 0.40 +
+            (yds / 90.0) * 0.40 +
+            (recs / 4.0) * 0.20 +
+            (ppg / 25.0) * 0.50
         )
-        return min(1.0, score)
+        return max(0.0, min(1.0, score))
 
     # --- WIDE RECEIVERS ------------------------
     if pos == "WR":
-        tgt = u.get("avg_targets", 0)
-        rec = u.get("avg_receptions", 0)
-        yds = u.get("avg_rec_yards", 0)
+        tgt = float(u.get("avg_targets", 0) or 0)
+        rec = float(u.get("avg_receptions", 0) or 0)
+        yds = float(u.get("avg_rec_yards", 0) or 0)
 
         score = (
-                (tgt / 11.0) * 0.45 +
-                (rec / 7.0) * 0.30 +
-                (yds / 90.0) * 0.40 +
-                (ppg / 22.0) * 0.50
+            (tgt / 11.0) * 0.45 +
+            (rec / 7.0) * 0.30 +
+            (yds / 90.0) * 0.40 +
+            (ppg / 22.0) * 0.50
         )
-        return min(1.0, score)
+        return max(0.0, min(1.0, score))
 
     # --- TIGHT ENDS (tuned down) --------------
     if pos == "TE":
-        tgt = u.get("avg_targets", 0)
-        yds = u.get("avg_rec_yards", 0)
+        tgt = float(u.get("avg_targets", 0) or 0)
+        yds = float(u.get("avg_rec_yards", 0) or 0)
 
         score = (
-                (tgt / 9.0) * 0.30 +
-                (yds / 75.0) * 0.25 +
-                (ppg / 19.5) * 0.35  # TE scoring deflated
+            (tgt / 9.0) * 0.30 +
+            (yds / 75.0) * 0.25 +
+            (ppg / 19.5) * 0.35  # TE scoring deflated
         )
-        return min(1.0, score)
+        return max(0.0, min(1.0, score))
 
     return 0.0
 
@@ -257,7 +252,17 @@ def build_value_table_for_usage() -> Dict[str, float]:
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
 
-        age = float(meta.get("age") or 0.0)
+        # Treat missing age as "unknown" so _age_factor uses neutral 0.85
+        raw_age = meta.get("age")
+        age: Optional[float]
+        if raw_age is None or raw_age == "":
+            age = None
+        else:
+            try:
+                age = float(raw_age)
+            except (TypeError, ValueError):
+                age = None
+
         ppg = float(u.get("ppr_ppg") or 0.0)
 
         # QB / non-QB production component (your custom logic)
@@ -269,7 +274,8 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         per_pid[pid] = {
             "pos": pos,
-            "age": age,
+            "age": age if age is not None else 0.0,
+            "age_opt": age,
             "ppg": ppg,
             "prod_raw": prod_raw,
             "rz_targets": rz_targets,
@@ -308,10 +314,10 @@ def build_value_table_for_usage() -> Dict[str, float]:
     # 3) Age + production + RZ score
     # ----------------------------------------
     POS_WEIGHTS = {
-        "QB": (0.80, 0.40, 0.00),  # production heavy, small age, tiny RZ
-        "RB": (0.45, 0.25, 0.30),  # bump age+RZ more for RB fragility
-        "WR": (0.55, 0.35, 0.25),
-        "TE": (0.40, 0.30, 0.35),
+        "QB": (0.625, 0.25, 0.00),
+        "RB": (0.425, 0.40, 0.30),
+        "WR": (0.625, 0.30, 0.25),
+        "TE": (0.325, 0.30, 0.35),
     }
 
     pos_scores: Dict[str, float] = {}
@@ -325,13 +331,17 @@ def build_value_table_for_usage() -> Dict[str, float]:
         vmin_rz, vmax_rz = pos_rz_minmax[pos]
         rz_norm = (p["rz_metric"] - vmin_rz) / (vmax_rz - vmin_rz) if vmax_rz > vmin_rz else 0.0
 
-        age_curve = horizon_age_factor(pos, p["age"])
+        # Use the optional age for the horizon curve; if None, horizon_age_factor
+        # will effectively treat them as neutral via _age_factor’s logic.
+        age_for_horizon = p["age_opt"] if p["age_opt"] is not None else 26.0
+        age_curve = horizon_age_factor(pos, age_for_horizon)
+
         w_ppg, w_age, w_rz = POS_WEIGHTS[pos]
 
         pos_scores[pid] = (
-                w_ppg * ppg_norm +
-                w_age * age_curve +
-                w_rz * rz_norm
+            w_ppg * ppg_norm +
+            w_age * age_curve +
+            w_rz * rz_norm
         )
 
     # ----------------------------------------
@@ -344,10 +354,10 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
     for pid, p in per_pid.items():
         pos = p["pos"]
-        age = p["age"]
+        age_for_horizon = p["age_opt"] if p["age_opt"] is not None else 26.0
 
-        current_af = _age_factor(pos, age)
-        future_af = horizon_age_factor(pos, age)
+        current_af = _age_factor(pos, age_for_horizon)
+        future_af = horizon_age_factor(pos, age_for_horizon)
         horizon_scale = (future_af / current_af) if current_af else future_af
 
         dynasty_ppg = p["ppg"] * horizon_scale
@@ -403,9 +413,6 @@ def build_value_table_for_usage() -> Dict[str, float]:
             s01 = (v - gmin) / (gmax - gmin)
 
         # concave transform: makes mid-tier relatively “fatter”
-        #  - s01=0.1 → 0.1**0.6 ≈ 0.25
-        #  - s01=0.5 → 0.5**0.6 ≈ 0.66
-        #  - s01=0.9 → 0.9**0.6 ≈ 0.94
         s_curve = s01 ** GAMMA
 
         # soft floor so everything with non-zero score gets some value

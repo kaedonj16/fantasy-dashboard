@@ -11,7 +11,7 @@ import pickle
 import re
 import requests
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor
@@ -69,7 +69,7 @@ def load_internal_stats_df() -> pd.DataFrame:
     """
     Load your internal value table + usage + team context into a DataFrame.
 
-    Expects data/value_table_{YYYY-MM-DD}.json to look like:
+    Expects data/usage_table_{YYYY-MM-DD}.json to look like:
       [
         {
           "id": "9488",
@@ -84,7 +84,7 @@ def load_internal_stats_df() -> pd.DataFrame:
       ]
     And teams_index to have pass/rush/snaps context.
     """
-    value_path = DATA_DIR / f"value_table_{date.today().isoformat()}.json"
+    value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
 
     if not value_path.exists():
         raise FileNotFoundError(f"No internal value table found at {value_path}")
@@ -510,8 +510,16 @@ def train_trade_value_model(
     dp_norm = _normalize_series_0_1(dp_val)
     engine_norm = _normalize_series_0_1(engine_val)
 
-    stacked = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
-    y_norm = np.nanmean(stacked, axis=0)  # mean across available vendors
+    weights = np.vstack([
+        np.where(~np.isnan(fc_norm.values), 0.4, 0.0),  # FC weight
+        np.where(~np.isnan(dp_norm.values), 0.4, 0.0),  # DP weight
+        np.where(~np.isnan(engine_norm.values), 0.2, 0.0),  # Engine weight
+    ])
+
+    vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
+    numerator = np.nansum(vals * weights, axis=0)
+    denominator = np.nansum(weights, axis=0)
+    y_norm = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator != 0)
 
     df["target_vendor_norm"] = y_norm
     df["target_value"] = df["target_vendor_norm"] * 1000.0
@@ -633,7 +641,6 @@ def train_trade_value_model(
         ]
     )
 
-    print(f"[value_model] Training on {len(X_train)} samples, validating on {len(X_val)}…")
     model.fit(X_train, y_train)
 
     y_val_pred = model.predict(X_val)
@@ -657,9 +664,6 @@ def train_trade_value_model(
     with MODEL_PATH.open("wb") as f:
         pickle.dump(bundle, f)
 
-    print(f"[value_model] Saved model bundle to {MODEL_PATH}")
-    print(f"[value_model] Predicted values range ~ [{scale_min:.1f}, {scale_max:.1f}]")
-
     return bundle
 
 
@@ -676,10 +680,9 @@ def load_trained_bundle(path: Path = MODEL_PATH) -> TrainedModelBundle:
     delete it and retrain.
     """
     if not path.exists():
-        raise FileNotFoundError(
-            f"No model found at {path}. "
-            "Train it first via train_trade_value_model()."
-        )
+        bundle = train_trade_value_model()
+
+        return bundle
 
     try:
         with path.open("rb") as f:
@@ -694,10 +697,8 @@ def load_trained_bundle(path: Path = MODEL_PATH) -> TrainedModelBundle:
         except OSError:
             pass
 
-        bundle = train_trade_value_model(
-            season=CURRENT_SEASON,
-            weeks=range(1, 19),
-        )
+        bundle = train_trade_value_model()
+
         return bundle
 
     if not isinstance(bundle, TrainedModelBundle):
@@ -710,10 +711,8 @@ def load_trained_bundle(path: Path = MODEL_PATH) -> TrainedModelBundle:
         except OSError:
             pass
 
-        bundle = train_trade_value_model(
-            season=CURRENT_SEASON,
-            weeks=range(1, 19),
-        )
+        bundle = train_trade_value_model()
+
         return bundle
 
     return bundle
@@ -764,10 +763,11 @@ def build_ml_value_table() -> Dict[str, float]:
     return values
 
 
-SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
 
 
 def normalize_name(name: str) -> str:
+    suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+
     if not name:
         return ""
     s = name.lower()
@@ -777,7 +777,7 @@ def normalize_name(name: str) -> str:
 
     # drop suffix tokens like jr, sr, ii, iii, etc.
     parts = s.split(" ")
-    parts = [p for p in parts if p not in SUFFIXES]
+    parts = [p for p in parts if p not in suffixes]
 
     return " ".join(parts)
 
@@ -810,10 +810,9 @@ def rewrite_value_table_with_model() -> Path:
       - draft picks (position='PICK', team='Pick')
     """
     date_str = date.today().isoformat()
-
-    source_path = DATA_DIR / f"value_table_{date_str}.json"
+    source_path = DATA_DIR / f"usage_table_{date_str}.json"
     if not source_path.exists():
-        raise FileNotFoundError(f"No value table file at {source_path}")
+        raise FileNotFoundError(f"No usage table file at {source_path}")
 
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)  # list[dict]
@@ -913,10 +912,7 @@ def rewrite_value_table_with_model() -> Path:
         indices.sort(key=lambda i: float(cleaned_assets[i].get("value") or 0.0), reverse=True)
 
         rank = 1
-        last_val = None
         for i in indices:
-            val = float(cleaned_assets[i].get("value") or 0.0)
-
             # optional: if you want ties to share rank, uncomment this block
             # if last_val is not None and val < last_val:
             #     rank += 1
@@ -926,6 +922,19 @@ def rewrite_value_table_with_model() -> Path:
             cleaned_assets[i]["pos_rank"] = rank
             cleaned_assets[i]["pos_rank_label"] = f"{pos}{rank}"
             rank += 1
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    pattern = f"model_values_{yesterday.isoformat()}.json"
+    yesterday_file = DATA_DIR / pattern
+
+    if yesterday_file.exists():
+        print(f"[model_values] Removing yesterday's value file: {yesterday_file.name}")
+        try:
+            yesterday_file.unlink()
+        except Exception as e:
+            print(f"[model_values] Failed to remove yesterday's file: {e}")
 
     # ---------- 4) Write combined table ----------
     out_path = DATA_DIR / f"model_values_{date_str}.json"

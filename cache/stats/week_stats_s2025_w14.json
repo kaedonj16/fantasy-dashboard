@@ -1,0 +1,387 @@
+{
+  "ARI": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "ATL": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "BAL": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "BUF": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "CAR": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "CHI": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "CIN": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "CLE": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "DAL": {
+    "QB": {
+      "dak prescott": {
+        "pass_yds": 376,
+        "pass_td": 1,
+        "int": 2,
+        "rush_att": 3,
+        "rush_yds": 14,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "malik davis": {
+        "rush_att": 3,
+        "rush_yds": 6,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "hunter luepke": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "javonte williams": {
+        "rush_att": 17,
+        "rush_yds": 67,
+        "rush_td": 1,
+        "rec": 2,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "ryan flournoy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 9,
+        "rec_yds": 115,
+        "rec_td": 1
+      },
+      "ceedee lamb": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 121,
+        "rec_td": 0
+      },
+      "jonathan mingo": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "george pickens": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 37,
+        "rec_td": 0
+      },
+      "kavontae turpin": {
+        "rush_att": 1,
+        "rush_yds": 4,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 26,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "jake ferguson": {
+        "rec": 5,
+        "rec_yds": 58,
+        "rec_td": 0
+      },
+      "luke schoonmaker": {
+        "rec": 1,
+        "rec_yds": 12,
+        "rec_td": 0
+      },
+      "brevyn spann-ford": {
+        "rec": 1,
+        "rec_yds": 7,
+        "rec_td": 0
+      }
+    }
+  },
+  "DEN": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "DET": {
+    "QB": {
+      "malik cunningham": {
+        "pass_yds": 0,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 1,
+        "rush_yds": 1,
+        "rush_td": 0
+      },
+      "jared goff": {
+        "pass_yds": 309,
+        "pass_td": 1,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": -2,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "jahmyr gibbs": {
+        "rush_att": 12,
+        "rush_yds": 43,
+        "rush_td": 3,
+        "rec": 7,
+        "rec_yds": 77,
+        "rec_td": 0
+      },
+      "david montgomery": {
+        "rush_att": 6,
+        "rush_yds": 60,
+        "rush_td": 1,
+        "rec": 1,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
+      "jacob saylors": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "sione vaki": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "tom kennedy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dominic lovett": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "amon-ra st. brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 92,
+        "rec_td": 0
+      },
+      "isaac teslaa": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 20,
+        "rec_td": 1
+      },
+      "jameson williams": {
+        "rush_att": 1,
+        "rush_yds": 7,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 96,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "ross dwelley": {
+        "rec": 1,
+        "rec_yds": 4,
+        "rec_td": 0
+      },
+      "anthony firkser": {
+        "rec": 1,
+        "rec_yds": 7,
+        "rec_td": 0
+      }
+    }
+  },
+  "GB": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "HOU": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "IND": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "JAX": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "KC": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "LAC": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "LAR": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "LV": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "MIA": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "MIN": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "NE": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "NO": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "NYG": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "NYJ": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "PHI": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "PIT": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "SEA": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "SF": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "TB": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "TEN": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "WSH": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  }
+}

@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import json
-from typing import Dict, Iterable
+from typing import Dict
 
 from dashboard_services.players import get_league_rostered_player_ids
 from dashboard_services.utils import load_players_index, load_usage_table
+
+
+POS_WHITELIST = {"QB", "RB", "WR", "TE"}
 
 
 def build_relevant_players_index(
@@ -18,14 +23,12 @@ def build_relevant_players_index(
         }
       }
     """
-
     players_index = load_players_index()
 
     # ----------------------------
     # Normalize usage table
     # ----------------------------
     raw_usage = load_usage_table()
-
     usage_table: dict[str, dict] = {}
 
     if isinstance(raw_usage, dict):
@@ -34,9 +37,9 @@ def build_relevant_players_index(
     elif isinstance(raw_usage, list):
         # list of objects: {id, usage, ...}
         for obj in raw_usage:
-            pid2 = str(obj.get("id"))
-            if pid2:
-                usage_table[pid2] = obj.get("usage") or {}
+            pid2 = obj.get("id")
+            if pid2 is not None:
+                usage_table[str(pid2)] = obj.get("usage") or {}
     else:
         raise TypeError("usage_table must be dict or list")
 
@@ -44,11 +47,10 @@ def build_relevant_players_index(
     # Roster map: who is actually on teams
     # ----------------------------
     rostered_by_team = get_league_rostered_player_ids(league_id)
+    # flatten set of rostered pids
     rostered_pids: set[str] = {
-        str(pid) for _, pids in rostered_by_team.items() for pid in pids
+        str(pid) for pids in rostered_by_team.values() for pid in pids
     }
-
-    POS_WHITELIST = {"QB", "RB", "WR", "TE"}
 
     def is_fantasy_relevant(pid: str, meta: dict, u: dict) -> bool:
         pos = meta.get("pos") or meta.get("position")
@@ -62,11 +64,13 @@ def build_relevant_players_index(
         if not u:
             return False
 
-        games = float(u.get("games") or 0.0)
-        ppr_ppg = float(u.get("ppr_ppg") or 0.0)
-        avg_snaps = float(u.get("avg_off_snaps") or 0.0)
-        avg_tgt = float(u.get("avg_targets") or 0.0)
-        avg_car = float(u.get("avg_carries") or 0.0)
+        # All of these are small numeric conversions; keep as-is but localize .get calls
+        get_u = u.get
+        games = float(get_u("games") or 0.0)
+        ppr_ppg = float(get_u("ppr_ppg") or 0.0)
+        avg_snaps = float(get_u("avg_off_snaps") or 0.0)
+        avg_tgt = float(get_u("avg_targets") or 0.0)
+        avg_car = float(get_u("avg_carries") or 0.0)
 
         # usage + production thresholds
         if games >= 3:
@@ -84,12 +88,13 @@ def build_relevant_players_index(
     # Filter relevant players AND attach usage
     # ----------------------------
     relevant: Dict[str, dict] = {}
+    get_usage = usage_table.get
+
     for pid, meta in players_index.items():
         pid_s = str(pid)
-        u = usage_table.get(pid_s, {})
+        u = get_usage(pid_s, {})
 
         if is_fantasy_relevant(pid_s, meta, u):
-            # merge meta + usage
             merged = dict(meta)
             merged["usage"] = u
             relevant[pid_s] = merged
@@ -105,9 +110,3 @@ def write_relevant_players_index(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(relevant_index, f, ensure_ascii=False, indent=2)
     print(f"Saved {len(relevant_index)} fantasy-relevant players to {out_path}")
-
-
-if __name__ == '__main__':
-
-    write_relevant_players_index(
-        "1236152168919072768")

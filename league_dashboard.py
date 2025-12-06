@@ -39,7 +39,6 @@ from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from urllib3.util.retry import Retry
 from zoneinfo import ZoneInfo
 
-from app import build_status_for_week
 from dashboard_services.api import get_rosters, get_users, get_league, get_nfl_players, \
     get_nfl_state, get_bracket
 from dashboard_services.awards import compute_weekly_highlights, compute_awards_season, render_awards_section
@@ -52,7 +51,7 @@ from dashboard_services.service import render_weekly_highlight_ticker, render_we
 from dashboard_services.styles import activity_css, logoCss, injury_script, js_sort_filter, \
     activity_filter_js, NAV_JS, NAV_CSS
 from dashboard_services.utils import streak_class, z_better_outward, load_teams_index, load_model_value_table, \
-    load_week_schedule
+    load_week_schedule, build_status_for_week
 
 
 # === WEEK RECAP + TOP-3 SIDEBAR ==============================================

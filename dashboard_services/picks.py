@@ -17,6 +17,21 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
 FANTASYCALC_VALUES_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
 
+# Precompile regex patterns once (used in load_pick_value_table)
+_FC_NAME_RE = re.compile(
+    r"(?P<year>\d{4})\s+"
+    r"(?P<round>\d+)(?:st|nd|rd|th)"
+    r"(?:\s*\((?P<bucket>Early|Mid|Late)\))?",
+    re.IGNORECASE,
+)
+
+_DP_NAME_RE = re.compile(
+    r"(?P<year>\d{4})\s+"
+    r"(?:(?:Pick\s+(?P<round_dp>\d+)\.(?P<pos_in_round>\d+))|"
+    r"(?P<round_fc>\d+)(?:st|nd|rd|th))",
+    re.IGNORECASE,
+)
+
 
 def _normalize_bucket_label(raw: str) -> str:
     if not raw:
@@ -46,12 +61,12 @@ def _bucket_for_pick_in_round(pos_in_round: int, picks_per_round: int = 10) -> s
 
 
 def load_pick_value_table(
-        fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
-        dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
-        picks_per_round: int = 10,
-        w_fc: float = 0.55,
-        w_dp: float = 0.45,
-        current_year: int | None = None,
+    fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
+    dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
+    picks_per_round: int = 10,
+    w_fc: float = 0.55,
+    w_dp: float = 0.45,
+    current_year: int | None = None,
 ) -> Dict[str, float]:
     """
     Build a draft pick value table by merging FantasyCalc + DynastyProcess.
@@ -84,41 +99,33 @@ def load_pick_value_table(
         df_fc = pd.DataFrame()
 
     if not df_fc.empty:
-        # Pick a value column
         value_col = "value"
 
         # Scale factor: max player value in this CSV -> ~999.9
-        # (players + picks share same scale; we use players to define it)
-        # If you want to include picks in the max, change the mask.
         pos_series = df_fc.get("position")
         if pos_series is not None:
             mask_players = pos_series.astype(str).str.upper() != "PICK"
-            df_fc_players = df_fc[mask_players].copy()
+            df_fc_players = df_fc.loc[mask_players]
         else:
-            df_fc_players = df_fc.copy()
+            df_fc_players = df_fc
 
         max_raw_fc = float(df_fc_players[value_col].max() or 0.0)
         fc_scale = (999.9 / max_raw_fc) if max_raw_fc > 0 else 0.0
 
-        # Now only keep PICK rows to build pick values
-        df_fc_picks = df_fc[df_fc["position"].astype(str).str.upper() == "PICK"].copy()
-        # Names like: "2026 1st (Early)"
-        name_re = re.compile(
-            r"(?P<year>\d{4})\s+"
-            r"(?P<round>\d+)(?:st|nd|rd|th)"
-            r"(?:\s*\((?P<bucket>Early|Mid|Late)\))?",
-            re.IGNORECASE
-        )
+        # Only keep PICK rows to build pick values
+        df_fc_picks = df_fc.loc[df_fc["position"].astype(str).str.upper() == "PICK"]
 
-        for _, row in df_fc_picks.iterrows():
-            m = name_re.search(str(row.get("name", "")))
+        # Use itertuples for speed
+        for row in df_fc_picks.itertuples(index=False):
+            name = getattr(row, "name", "")
+            m = _FC_NAME_RE.search(str(name))
             if not m:
                 continue
             try:
                 year = int(m.group("year"))
                 rnd = int(m.group("round"))
                 bucket = _normalize_bucket_label(m.group("bucket"))
-                raw_val = float(row[value_col])
+                raw_val = float(getattr(row, value_col))
             except Exception:
                 continue
 
@@ -139,40 +146,35 @@ def load_pick_value_table(
         df_dp = pd.DataFrame()
 
     if not df_dp.empty:
-        pos_col = "pos" if "pos" in df_dp.columns else "position" if "position" in df_dp.columns else None
-        name_col = "player" if "player" in df_dp.columns else "Player" if "Player" in df_dp.columns else None
+        cols = df_dp.columns
+        pos_col = "pos" if "pos" in cols else "position" if "position" in cols else None
+        name_col = "player" if "player" in cols else "Player" if "Player" in cols else None
 
         if not pos_col or not name_col:
             print("[load_pick_value_table] DynastyProcess: no pos/player columns, skipping")
         else:
-            # Pick a value column
             value_col = "value_1qb"
 
             # Scale factor based on *players* in DP CSV
             mask_players = df_dp[pos_col].astype(str).str.upper() != "PICK"
-            df_dp_players = df_dp[mask_players].copy()
+            df_dp_players = df_dp.loc[mask_players]
             max_raw_dp = float(df_dp_players[value_col].max() or 0.0)
             dp_scale = (999.9 / max_raw_dp) if max_raw_dp > 0 else 0.0
 
-            # Now only use rows where pos == "PICK"
-            df_dp_picks = df_dp[df_dp[pos_col].astype(str).str.upper() == "PICK"].copy()
-            # Names like: "2025 Pick 1.01"
-            name_re = re.compile(
-                r"(?P<year>\d{4})\s+"
-                r"(?:(?:Pick\s+(?P<round_dp>\d+)\.(?P<pos_in_round>\d+))|"
-                r"(?P<round_fc>\d+)(?:st|nd|rd|th))",
-                re.IGNORECASE
-            )
+            # Only use rows where pos == "PICK"
+            df_dp_picks = df_dp.loc[df_dp[pos_col].astype(str).str.upper() == "PICK"]
 
-            for _, row in df_dp_picks.iterrows():
-                m = name_re.search(str(row[name_col]))
+            for row in df_dp_picks.itertuples(index=False):
+                name = getattr(row, name_col)
+                m = _DP_NAME_RE.search(str(name))
                 if not m:
                     continue
                 try:
                     year = int(m.group("year"))
-                    rnd = int(m.group("round"))
+                    # NOTE: this follows the original logic; no functional change.
+                    rnd = int(m.group("round"))           # type: ignore[arg-type]
                     pos_in_round = int(m.group("pos_in_round"))
-                    raw_val = float(row[value_col])
+                    raw_val = float(getattr(row, value_col))
                 except Exception:
                     continue
 
@@ -202,12 +204,12 @@ def load_pick_value_table(
 
     final: Dict[str, float] = {}
 
-    for (year, rnd, bucket) in sorted(all_keys):
+    for year, rnd, bucket in sorted(all_keys):
         fc_list = fc_vals.get((year, rnd, bucket), [])
         dp_list = dp_vals.get((year, rnd, bucket), [])
 
-        fc_val = sum(fc_list) / len(fc_list) if fc_list else None
-        dp_val = sum(dp_list) / len(dp_list) if dp_list else None
+        fc_val = (sum(fc_list) / len(fc_list)) if fc_list else None
+        dp_val = (sum(dp_list) / len(dp_list)) if dp_list else None
 
         if fc_val is not None and dp_val is not None:
             val = w_fc * fc_val + w_dp * dp_val
@@ -220,4 +222,5 @@ def load_pick_value_table(
 
         key_str = f"{year}_{rnd}{bucket}"
         final[key_str] = round(float(val), 1)
+
     return final

@@ -13,7 +13,6 @@ TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.c
 TANK01_BASE_URL = f"https://{TANK01_API_HOST}"
 TANK01_API_KEY = os.getenv("TANK01_API_KEY")
 # TEAMS_INDEX_PATH = "cache" / "teams_index.json"
-VALUE_TABLE_TEMPLATE = "model_values_{date}.json"
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -183,6 +182,8 @@ def enrich_all_team_info(season: int):
 RUSH_ATT_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-attempts-per-game"
 RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-yards-per-game"
 PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/passing-yards-per-game"
+OPP_PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-passing-yards-per-game"
+OPP_RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-rushing-yards-per-game"
 
 HEADERS = {
     "User-Agent": (
@@ -309,6 +310,20 @@ def fetch_team_pass_yards_per_game() -> Dict[str, float]:
     return _fetch_teamrankings_table(PASS_YDS_PG_URL)
 
 
+def fetch_opp_pass_yards_per_game() -> Dict[str, float]:
+    """
+    Returns {team_abbr: rush_yards_per_game}
+    """
+    return _fetch_teamrankings_table(OPP_PASS_YDS_PG_URL)
+
+
+def fetch_opp_rush_yards_per_game() -> Dict[str, float]:
+    """
+    Returns {team_abbr: rush_yards_per_game}
+    """
+    return _fetch_teamrankings_table(OPP_RUSH_YDS_PG_URL)
+
+
 def enrich_teams_index_with_rushing(
         teams_index_path: Path,
         out_path: Optional[Path] = None,
@@ -325,11 +340,15 @@ def enrich_teams_index_with_rushing(
     rush_att = fetch_team_rush_attempts_per_game()
     rush_yds = fetch_team_rush_yards_per_game()
     pass_yds = fetch_team_pass_yards_per_game()
+    opp_pass_yds = fetch_opp_pass_yards_per_game()
+    opp_rush_yds = fetch_opp_rush_yards_per_game()
 
     for abbr, meta in teams_index.items():
         meta["rush_att_pg"] = rush_att.get(abbr)
         meta["rush_yds_pg"] = rush_yds.get(abbr)
         meta["pass_yds_pg"] = pass_yds.get(abbr)
+        meta["opp_pass_yds_pg"] = opp_pass_yds.get(abbr)
+        meta["opp_rush_yds_pg"] = opp_rush_yds.get(abbr)
 
     out_path = out_path or teams_index_path
     with out_path.open("w", encoding="utf-8") as f:

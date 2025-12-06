@@ -125,9 +125,9 @@ def enrich_value_table_with_target_share(season: int) -> None:
 
     Matching is done on (team, name) to minimize collisions.
     """
-    value_table_path = DATA_DIR / f"value_table_{date.today().isoformat()}.json"
+    value_table_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
     if not value_table_path.exists():
-        raise FileNotFoundError(f"No value table found at {value_table_path}")
+        raise FileNotFoundError(f"No usage table found at {value_table_path}")
 
     print(f"[target_share] Loading value table from {value_table_path}")
     with value_table_path.open("r", encoding="utf-8") as f:

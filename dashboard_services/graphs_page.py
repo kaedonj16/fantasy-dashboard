@@ -208,14 +208,6 @@ def build_graphs_body(ctx: dict) -> str:
     sidebar_html = f"""
         <div class="card small">
           <div class="card-header">
-            <h3>Top Power Ranked Teams</h3>
-          </div>
-          <div class="card-body mini-body">
-            {top3_html}
-          </div>
-        </div>
-        <div class="card small">
-          <div class="card-header">
             <h3>Legend</h3>
           </div>
           <div class="card-body mini-body">

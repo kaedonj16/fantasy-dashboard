@@ -1,0 +1,3119 @@
+{
+  "ARI": {
+    "QB": {
+      "jacoby brissett": {
+        "pass_yds": 279,
+        "pass_td": 2,
+        "int": 0,
+        "rush_att": 6,
+        "rush_yds": 26,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "michael carter": {
+        "rush_att": 7,
+        "rush_yds": 11,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 25,
+        "rec_td": 0
+      },
+      "d'ernest johnson": {
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "bam knight": {
+        "rush_att": 14,
+        "rush_yds": 57,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 7,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "greg dortch": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 5,
+        "rec_td": 0
+      },
+      "simi fehoko": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "marvin harrison": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 58,
+        "rec_td": 0
+      },
+      "zay jones": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 67,
+        "rec_td": 0
+      },
+      "xavier weaver": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "michael wilson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 40,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "josiah deguara": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "elijah higgins": {
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "trey mcbride": {
+        "rec": 10,
+        "rec_yds": 74,
+        "rec_td": 2
+      }
+    }
+  },
+  "ATL": {
+    "QB": {
+      "michael penix": {
+        "pass_yds": 241,
+        "pass_td": 1,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": 6,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "tyler allgeier": {
+        "rush_att": 4,
+        "rush_yds": 16,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "bijan robinson": {
+        "rush_att": 14,
+        "rush_yds": 40,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 52,
+        "rec_td": 1
+      }
+    },
+    "WR": {
+      "jamal agnew": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "khadarel hodge": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "drake london": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 42,
+        "rec_td": 0
+      },
+      "darnell mooney": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 68,
+        "rec_td": 0
+      },
+      "david sills": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "casey washington": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 17,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "feleipe franks": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kyle pitts": {
+        "rec": 7,
+        "rec_yds": 62,
+        "rec_td": 0
+      },
+      "teagan quitoriano": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "charlie woerner": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "BAL": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "BUF": {
+    "QB": {},
+    "RB": {},
+    "WR": {},
+    "TE": {}
+  },
+  "CAR": {
+    "QB": {
+      "andy dalton": {
+        "pass_yds": 60,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": -2,
+        "rush_td": 0
+      },
+      "bryce young": {
+        "pass_yds": 138,
+        "pass_td": 1,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": 10,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "rico dowdle": {
+        "rush_att": 17,
+        "rush_yds": 79,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 17,
+        "rec_td": 0
+      },
+      "trevor etienne": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "chuba hubbard": {
+        "rush_att": 14,
+        "rush_yds": 31,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 24,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "jalen coker": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jimmy horn": {
+        "rush_att": 1,
+        "rush_yds": 7,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 8,
+        "rec_td": 0
+      },
+      "xavier legette": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 9,
+        "rec_yds": 92,
+        "rec_td": 1
+      },
+      "tetairoa mcmillan": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 33,
+        "rec_td": 0
+      },
+      "brycen tremayne": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "mitchell evans": {
+        "rec": 2,
+        "rec_yds": 24,
+        "rec_td": 0
+      },
+      "ja'tavion sanders": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tommy tremble": {
+        "rec": 1,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "CHI": {
+    "QB": {
+      "caleb williams": {
+        "pass_yds": 172,
+        "pass_td": 0,
+        "int": 1,
+        "rush_att": 4,
+        "rush_yds": -2,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "travis homer": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "roschon johnson": {
+        "rush_att": 1,
+        "rush_yds": 11,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kyle monangai": {
+        "rush_att": 13,
+        "rush_yds": 81,
+        "rush_td": 1,
+        "rec": 2,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
+      "d'andre swift": {
+        "rush_att": 19,
+        "rush_yds": 124,
+        "rush_td": 1,
+        "rec": 1,
+        "rec_yds": 14,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "luther burden": {
+        "rush_att": 1,
+        "rush_yds": -1,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 22,
+        "rec_td": 0
+      },
+      "devin duvernay": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dj moore": {
+        "rush_att": 1,
+        "rush_yds": 9,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 43,
+        "rec_td": 0
+      },
+      "rome odunze": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 31,
+        "rec_td": 0
+      },
+      "olamide zaccheaus": {
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 9,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "cole kmet": {
+        "rec": 1,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "colston loveland": {
+        "rec": 3,
+        "rec_yds": 24,
+        "rec_td": 0
+      },
+      "durham smythe": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "CIN": {
+    "QB": {
+      "joe flacco": {
+        "pass_yds": 342,
+        "pass_td": 3,
+        "int": 0,
+        "rush_att": 5,
+        "rush_yds": 3,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "tahj brooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "chase brown": {
+        "rush_att": 11,
+        "rush_yds": 108,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": -8,
+        "rec_td": 0
+      },
+      "samaje perine": {
+        "rush_att": 7,
+        "rush_yds": 31,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "ja'marr chase": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 16,
+        "rec_yds": 161,
+        "rec_td": 1
+      },
+      "tee higgins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 96,
+        "rec_td": 1
+      },
+      "andrei iosivas": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 49,
+        "rec_td": 0
+      },
+      "charlie jones": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "mitchell tinsley": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "noah fant": {
+        "rec": 4,
+        "rec_yds": 44,
+        "rec_td": 1
+      },
+      "cam grandy": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "drew sample": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "CLE": {
+    "QB": {
+      "dillon gabriel": {
+        "pass_yds": 116,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 4,
+        "rush_yds": 12,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "jerome ford": {
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 10,
+        "rec_td": 0
+      },
+      "quinshon judkins": {
+        "rush_att": 25,
+        "rush_yds": 84,
+        "rush_td": 3,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dylan sampson": {
+        "rush_att": 3,
+        "rush_yds": 8,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 9,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "isaiah bond": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "malachi corley": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 17,
+        "rec_td": 0
+      },
+      "jerry jeudy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 17,
+        "rec_td": 0
+      },
+      "gage larvadain": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jamari thrash": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 23,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "harold fannin": {
+        "rec": 4,
+        "rec_yds": 36,
+        "rec_td": 0
+      },
+      "blake whiteheart": {
+        "rec": 1,
+        "rec_yds": 4,
+        "rec_td": 0
+      }
+    }
+  },
+  "DAL": {
+    "QB": {
+      "dak prescott": {
+        "pass_yds": 264,
+        "pass_td": 3,
+        "int": 0,
+        "rush_att": 5,
+        "rush_yds": 7,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "jaydon blue": {
+        "rush_att": 7,
+        "rush_yds": 29,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 5,
+        "rec_td": 0
+      },
+      "malik davis": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "hunter luepke": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "javonte williams": {
+        "rush_att": 19,
+        "rush_yds": 116,
+        "rush_td": 1,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "ryan flournoy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "ceedee lamb": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 110,
+        "rec_td": 1
+      },
+      "george pickens": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 82,
+        "rec_td": 0
+      },
+      "jalen tolbert": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "kavontae turpin": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 17,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "jake ferguson": {
+        "rec": 7,
+        "rec_yds": 29,
+        "rec_td": 2
+      },
+      "luke schoonmaker": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "brevyn spann-ford": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "DEN": {
+    "QB": {
+      "bo nix": {
+        "pass_yds": 279,
+        "pass_td": 2,
+        "int": 0,
+        "rush_att": 5,
+        "rush_yds": 48,
+        "rush_td": 2
+      }
+    },
+    "RB": {
+      "tyler badie": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 19,
+        "rec_td": 0
+      },
+      "j.k. dobbins": {
+        "rush_att": 14,
+        "rush_yds": 81,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -1,
+        "rec_td": 0
+      },
+      "rj harvey": {
+        "rush_att": 4,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 1
+      },
+      "adam prentice": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "pat bryant": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 6,
+        "rec_td": 0
+      },
+      "troy franklin": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 19,
+        "rec_td": 1
+      },
+      "marvin mims": {
+        "rush_att": 1,
+        "rush_yds": 13,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 85,
+        "rec_td": 0
+      },
+      "trent sherfield": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "courtland sutton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 87,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "nate adkins": {
+        "rec": 2,
+        "rec_yds": 20,
+        "rec_td": 0
+      },
+      "evan engram": {
+        "rec": 5,
+        "rec_yds": 42,
+        "rec_td": 0
+      },
+      "adam trautman": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "DET": {
+    "QB": {
+      "jared goff": {
+        "pass_yds": 241,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 2,
+        "rush_yds": 7,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "jahmyr gibbs": {
+        "rush_att": 17,
+        "rush_yds": 136,
+        "rush_td": 2,
+        "rec": 3,
+        "rec_yds": 82,
+        "rec_td": 0
+      },
+      "david montgomery": {
+        "rush_att": 13,
+        "rush_yds": 21,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 18,
+        "rec_td": 0
+      },
+      "craig reynolds": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jacob saylors": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "dominic lovett": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kalif raymond": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 17,
+        "rec_td": 0
+      },
+      "amon-ra st. brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 86,
+        "rec_td": 1
+      },
+      "isaac teslaa": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jameson williams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "ross dwelley": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "sam laporta": {
+        "rec": 3,
+        "rec_yds": 15,
+        "rec_td": 0
+      },
+      "brock wright": {
+        "rec": 3,
+        "rec_yds": 23,
+        "rec_td": 0
+      }
+    }
+  },
+  "GB": {
+    "QB": {
+      "jordan love": {
+        "pass_yds": 179,
+        "pass_td": 1,
+        "int": 0,
+        "rush_att": 4,
+        "rush_yds": 22,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "chris brooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "josh jacobs": {
+        "rush_att": 13,
+        "rush_yds": 55,
+        "rush_td": 2,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "emanuel wilson": {
+        "rush_att": 6,
+        "rush_yds": 17,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -2,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "romeo doubs": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 72,
+        "rec_td": 0
+      },
+      "matthew golden": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 37,
+        "rec_td": 0
+      },
+      "malik heath": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "bo melton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dontayvion wicks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 5,
+        "rec_td": 0
+      },
+      "savion williams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "john fitzpatrick": {
+        "rec": 1,
+        "rec_yds": 6,
+        "rec_td": 0
+      },
+      "tucker kraft": {
+        "rec": 5,
+        "rec_yds": 58,
+        "rec_td": 1
+      },
+      "luke musgrave": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "HOU": {
+    "QB": {
+      "c.j. stroud": {
+        "pass_yds": 229,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 2,
+        "rush_yds": 25,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "british brooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "nick chubb": {
+        "rush_att": 5,
+        "rush_yds": 16,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -5,
+        "rec_td": 0
+      },
+      "woody marks": {
+        "rush_att": 10,
+        "rush_yds": 15,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 20,
+        "rec_td": 1
+      },
+      "dare ogunbowale": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "braxton berrios": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -1,
+        "rec_td": 0
+      },
+      "nico collins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 27,
+        "rec_td": 0
+      },
+      "jayden higgins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "xavier hutchinson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
+      "jaylin noel": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 77,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "brenden bates": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "harrison bryant": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dalton schultz": {
+        "rec": 9,
+        "rec_yds": 98,
+        "rec_td": 0
+      }
+    }
+  },
+  "IND": {
+    "QB": {
+      "daniel jones": {
+        "pass_yds": 288,
+        "pass_td": 2,
+        "int": 0,
+        "rush_att": 5,
+        "rush_yds": 7,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "ameer abdullah": {
+        "rush_att": 2,
+        "rush_yds": 19,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 8,
+        "rec_td": 0
+      },
+      "dj giddens": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jonathan taylor": {
+        "rush_att": 16,
+        "rush_yds": 94,
+        "rush_td": 3,
+        "rec": 3,
+        "rec_yds": 38,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "anthony gould": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "adonai mitchell": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 8,
+        "rec_td": 0
+      },
+      "alec pierce": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 98,
+        "rec_td": 0
+      },
+      "michael pittman": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 58,
+        "rec_td": 1
+      },
+      "laquon treadwell": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "mo alie-cox": {
+        "rec": 1,
+        "rec_yds": 6,
+        "rec_td": 0
+      },
+      "drew ogletree": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tyler warren": {
+        "rec": 4,
+        "rec_yds": 69,
+        "rec_td": 1
+      }
+    }
+  },
+  "JAX": {
+    "QB": {
+      "trevor lawrence": {
+        "pass_yds": 296,
+        "pass_td": 1,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": 18,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "lequint allen": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 4,
+        "rec_td": 0
+      },
+      "travis etienne": {
+        "rush_att": 8,
+        "rush_yds": 44,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 11,
+        "rec_td": 0
+      },
+      "bhayshul tuten": {
+        "rush_att": 5,
+        "rush_yds": 22,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "dyami brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 50,
+        "rec_td": 0
+      },
+      "travis hunter": {
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 8,
+        "rec_yds": 101,
+        "rec_td": 1
+      },
+      "tim patrick": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 22,
+        "rec_td": 0
+      },
+      "brian thomas": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 31,
+        "rec_td": 0
+      },
+      "parker washington": {
+        "rush_att": 3,
+        "rush_yds": 10,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 52,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "hunter long": {
+        "rec": 2,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "johnny mundt": {
+        "rec": 1,
+        "rec_yds": 9,
+        "rec_td": 0
+      }
+    }
+  },
+  "KC": {
+    "QB": {
+      "patrick mahomes": {
+        "pass_yds": 286,
+        "pass_td": 3,
+        "int": 0,
+        "rush_att": 4,
+        "rush_yds": 28,
+        "rush_td": 0
+      },
+      "gardner minshew": {
+        "pass_yds": 0,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 3,
+        "rush_yds": -3,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "kareem hunt": {
+        "rush_att": 4,
+        "rush_yds": 18,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "isiah pacheco": {
+        "rush_att": 15,
+        "rush_yds": 57,
+        "rush_td": 1,
+        "rec": 1,
+        "rec_yds": -3,
+        "rec_td": 0
+      },
+      "brashard smith": {
+        "rush_att": 14,
+        "rush_yds": 39,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 42,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "marquise brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 14,
+        "rec_td": 1
+      },
+      "nikko remigio": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "rashee rice": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 42,
+        "rec_td": 2
+      },
+      "jalen royals": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "juju smith-schuster": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 35,
+        "rec_td": 0
+      },
+      "tyquan thornton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 39,
+        "rec_td": 0
+      },
+      "xavier worthy": {
+        "rush_att": 1,
+        "rush_yds": 13,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 35,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "noah gray": {
+        "rec": 1,
+        "rec_yds": 28,
+        "rec_td": 0
+      },
+      "travis kelce": {
+        "rec": 3,
+        "rec_yds": 54,
+        "rec_td": 0
+      },
+      "robert tonyan": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "LAC": {
+    "QB": {
+      "justin herbert": {
+        "pass_yds": 420,
+        "pass_td": 3,
+        "int": 2,
+        "rush_att": 6,
+        "rush_yds": 31,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "hassan haskins": {
+        "rush_att": 1,
+        "rush_yds": 3,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 2,
+        "rec_td": 0
+      },
+      "nyheim hines": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kimani vidal": {
+        "rush_att": 9,
+        "rush_yds": 20,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 15,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "keenan allen": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 11,
+        "rec_yds": 119,
+        "rec_td": 1
+      },
+      "derius davis": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tre' harris": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 23,
+        "rec_td": 0
+      },
+      "quentin johnston": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 30,
+        "rec_td": 1
+      },
+      "ladd mcconkey": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 9,
+        "rec_yds": 67,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "tyler conklin": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "will dissly": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tucker fisk": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "oronde gadsden": {
+        "rec": 7,
+        "rec_yds": 164,
+        "rec_td": 1
+      }
+    }
+  },
+  "LAR": {
+    "QB": {
+      "jimmy garoppolo": {
+        "pass_yds": 0,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 3,
+        "rush_yds": -3,
+        "rush_td": 0
+      },
+      "matthew stafford": {
+        "pass_yds": 182,
+        "pass_td": 5,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": 1,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "blake corum": {
+        "rush_att": 12,
+        "rush_yds": 37,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 6,
+        "rec_td": 0
+      },
+      "ronnie rivers": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kyren williams": {
+        "rush_att": 12,
+        "rush_yds": 54,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 11,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "davante adams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 35,
+        "rec_td": 3
+      },
+      "tutu atwell": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "konata mumpfield": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 5,
+        "rec_td": 1
+      },
+      "xavier smith": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 15,
+        "rec_td": 0
+      },
+      "jordan whittington": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 9,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "davis allen": {
+        "rec": 1,
+        "rec_yds": 4,
+        "rec_td": 0
+      },
+      "terrance ferguson": {
+        "rec": 1,
+        "rec_yds": 31,
+        "rec_td": 1
+      },
+      "tyler higbee": {
+        "rec": 3,
+        "rec_yds": 19,
+        "rec_td": 0
+      },
+      "colby parkinson": {
+        "rec": 3,
+        "rec_yds": 47,
+        "rec_td": 0
+      }
+    }
+  },
+  "LV": {
+    "QB": {
+      "kenny pickett": {
+        "pass_yds": 8,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0
+      },
+      "geno smith": {
+        "pass_yds": 67,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": 1,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "ashton jeanty": {
+        "rush_att": 6,
+        "rush_yds": 21,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
+      "dylan laube": {
+        "rush_att": 2,
+        "rush_yds": 3,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 1,
+        "rec_td": 0
+      },
+      "raheem mostert": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "alex bachman": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jack bech": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
+      "shedrick jackson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "justin shorter": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "dont'e thornton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tre tucker": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 33,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "michael mayer": {
+        "rec": 1,
+        "rec_yds": 10,
+        "rec_td": 0
+      },
+      "carter runyon": {
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "ian thomas": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "MIA": {
+    "QB": {
+      "quinn ewers": {
+        "pass_yds": 53,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0
+      },
+      "tua tagovailoa": {
+        "pass_yds": 100,
+        "pass_td": 0,
+        "int": 3,
+        "rush_att": 3,
+        "rush_yds": 6,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "de'von achane": {
+        "rush_att": 13,
+        "rush_yds": 82,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "ollie gordon": {
+        "rush_att": 5,
+        "rush_yds": 11,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 0
+      },
+      "alec ingold": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jaylen wright": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "dee eskridge": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 45,
+        "rec_td": 0
+      },
+      "jaylen waddle": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 15,
+        "rec_td": 0
+      },
+      "malik washington": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 30,
+        "rec_td": 0
+      },
+      "nick westbrook-ikhine": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 16,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "tanner conner": {
+        "rec": 1,
+        "rec_yds": 28,
+        "rec_td": 0
+      },
+      "julian hill": {
+        "rec": 1,
+        "rec_yds": 1,
+        "rec_td": 0
+      },
+      "darren waller": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "MIN": {
+    "QB": {
+      "carson wentz": {
+        "pass_yds": 313,
+        "pass_td": 0,
+        "int": 2,
+        "rush_att": 4,
+        "rush_yds": 28,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "c.j. ham": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 5,
+        "rec_td": 0
+      },
+      "jordan mason": {
+        "rush_att": 15,
+        "rush_yds": 57,
+        "rush_td": 1,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "zavier scott": {
+        "rush_att": 4,
+        "rush_yds": 4,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "jordan addison": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 9,
+        "rec_yds": 128,
+        "rec_td": 0
+      },
+      "tai felton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "justin jefferson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 79,
+        "rec_td": 0
+      },
+      "jalen nailor": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 37,
+        "rec_td": 0
+      },
+      "myles price": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "adam thielen": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 10,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "t.j. hockenson": {
+        "rec": 6,
+        "rec_yds": 43,
+        "rec_td": 0
+      },
+      "josh oliver": {
+        "rec": 1,
+        "rec_yds": 9,
+        "rec_td": 0
+      },
+      "ben yurosek": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "NE": {
+    "QB": {
+      "joshua dobbs": {
+        "pass_yds": 12,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 2,
+        "rush_yds": -2,
+        "rush_td": 0
+      },
+      "drake maye": {
+        "pass_yds": 222,
+        "pass_td": 2,
+        "int": 0,
+        "rush_att": 8,
+        "rush_yds": 62,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "treveyon henderson": {
+        "rush_att": 2,
+        "rush_yds": 5,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "terrell jennings": {
+        "rush_att": 5,
+        "rush_yds": 18,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "rhamondre stevenson": {
+        "rush_att": 18,
+        "rush_yds": 88,
+        "rush_td": 1,
+        "rec": 2,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "kayshon boutte": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 55,
+        "rec_td": 1
+      },
+      "efton chism": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "stefon diggs": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 69,
+        "rec_td": 0
+      },
+      "demario douglas": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 17,
+        "rec_td": 0
+      },
+      "mack hollins": {
+        "rush_att": 1,
+        "rush_yds": 4,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 49,
+        "rec_td": 0
+      },
+      "kyle williams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "hunter henry": {
+        "rec": 4,
+        "rec_yds": 33,
+        "rec_td": 0
+      },
+      "austin hooper": {
+        "rec": 2,
+        "rec_yds": 11,
+        "rec_td": 1
+      },
+      "jack westover": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "NO": {
+    "QB": {
+      "spencer rattler": {
+        "pass_yds": 233,
+        "pass_td": 2,
+        "int": 3,
+        "rush_att": 2,
+        "rush_yds": 12,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "alvin kamara": {
+        "rush_att": 11,
+        "rush_yds": 28,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 1,
+        "rec_td": 0
+      },
+      "kendre miller": {
+        "rush_att": 1,
+        "rush_yds": 7,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "devin neal": {
+        "rush_att": 1,
+        "rush_yds": 1,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "brandin cooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "chris olave": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 5,
+        "rec_yds": 98,
+        "rec_td": 2
+      },
+      "rashid shaheed": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 40,
+        "rec_td": 0
+      },
+      "mason tipton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "devaughn vele": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "taysom hill": {
+        "rec": 2,
+        "rec_yds": 12,
+        "rec_td": 0
+      },
+      "juwan johnson": {
+        "rec": 5,
+        "rec_yds": 79,
+        "rec_td": 0
+      },
+      "foster moreau": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jack stoll": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "NYG": {
+    "QB": {
+      "jaxson dart": {
+        "pass_yds": 283,
+        "pass_td": 3,
+        "int": 1,
+        "rush_att": 5,
+        "rush_yds": 11,
+        "rush_td": 1
+      }
+    },
+    "RB": {
+      "devin singletary": {
+        "rush_att": 2,
+        "rush_yds": 2,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "cam skattebo": {
+        "rush_att": 16,
+        "rush_yds": 60,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 34,
+        "rec_td": 1
+      },
+      "tyrone tracy": {
+        "rush_att": 9,
+        "rush_yds": 46,
+        "rush_td": 1,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "beaux collins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "lil'jordan humphrey": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jalin hyatt": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "gunner olszewski": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "wan'dale robinson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 95,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "daniel bellinger": {
+        "rec": 3,
+        "rec_yds": 88,
+        "rec_td": 1
+      },
+      "thomas fidone": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "theo johnson": {
+        "rec": 3,
+        "rec_yds": 66,
+        "rec_td": 1
+      },
+      "chris manhertz": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "NYJ": {
+    "QB": {
+      "justin fields": {
+        "pass_yds": 46,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 4,
+        "rush_yds": 22,
+        "rush_td": 0
+      },
+      "tyrod taylor": {
+        "pass_yds": 126,
+        "pass_td": 0,
+        "int": 2,
+        "rush_att": 3,
+        "rush_yds": 11,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "isaiah davis": {
+        "rush_att": 2,
+        "rush_yds": 10,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 22,
+        "rec_td": 0
+      },
+      "breece hall": {
+        "rush_att": 11,
+        "rush_yds": 38,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 14,
+        "rec_td": 0
+      },
+      "kene nwangwu": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "tyler johnson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 60,
+        "rec_td": 0
+      },
+      "allen lazard": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "josh reynolds": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 29,
+        "rec_td": 0
+      },
+      "arian smith": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "isaiah williams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "andrew beck": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jeremy ruckert": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "stone smartt": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "mason taylor": {
+        "rec": 3,
+        "rec_yds": 31,
+        "rec_td": 0
+      }
+    }
+  },
+  "PHI": {
+    "QB": {
+      "jalen hurts": {
+        "pass_yds": 326,
+        "pass_td": 3,
+        "int": 0,
+        "rush_att": 4,
+        "rush_yds": -10,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "saquon barkley": {
+        "rush_att": 18,
+        "rush_yds": 44,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -2,
+        "rec_td": 0
+      },
+      "tank bigsby": {
+        "rush_att": 1,
+        "rush_yds": 11,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": -1,
+        "rec_td": 0
+      },
+      "will shipley": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 7,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "a.j. brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 121,
+        "rec_td": 2
+      },
+      "jahan dotson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "xavier gipson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "devonta smith": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 9,
+        "rec_yds": 183,
+        "rec_td": 1
+      }
+    },
+    "TE": {
+      "dallas goedert": {
+        "rec": 3,
+        "rec_yds": 18,
+        "rec_td": 0
+      },
+      "kylen granson": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "e.j. jenkins": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "cameron latu": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "PIT": {
+    "QB": {
+      "aaron rodgers": {
+        "pass_yds": 249,
+        "pass_td": 4,
+        "int": 2,
+        "rush_att": 1,
+        "rush_yds": 6,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "kenneth gainwell": {
+        "rush_att": 3,
+        "rush_yds": 14,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 1,
+        "rec_td": 0
+      },
+      "jaylen warren": {
+        "rush_att": 16,
+        "rush_yds": 127,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 31,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "dk metcalf": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 50,
+        "rec_td": 0
+      },
+      "scotty miller": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 9,
+        "rec_td": 0
+      },
+      "ben skowronek": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "ke'shawn williams": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "roman wilson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 17,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "pat freiermuth": {
+        "rec": 5,
+        "rec_yds": 111,
+        "rec_td": 2
+      },
+      "connor heyward": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jonnu smith": {
+        "rec": 3,
+        "rec_yds": 28,
+        "rec_td": 1
+      },
+      "darnell washington": {
+        "rec": 3,
+        "rec_yds": 2,
+        "rec_td": 1
+      }
+    }
+  },
+  "SEA": {
+    "QB": {
+      "sam darnold": {
+        "pass_yds": 213,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 3,
+        "rush_yds": 1,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "zach charbonnet": {
+        "rush_att": 12,
+        "rush_yds": 49,
+        "rush_td": 2,
+        "rec": 2,
+        "rec_yds": 6,
+        "rec_td": 0
+      },
+      "george holani": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "ken walker": {
+        "rush_att": 17,
+        "rush_yds": 66,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "jake bobo": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "tory horton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "cooper kupp": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 32,
+        "rec_td": 0
+      },
+      "jaxon smith-njigba": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 8,
+        "rec_yds": 123,
+        "rec_td": 1
+      },
+      "dareke young": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "elijah arroyo": {
+        "rec": 4,
+        "rec_yds": 42,
+        "rec_td": 0
+      },
+      "aj barner": {
+        "rec": 1,
+        "rec_yds": 7,
+        "rec_td": 0
+      },
+      "brady russell": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "eric saubert": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "SF": {
+    "QB": {
+      "mac jones": {
+        "pass_yds": 152,
+        "pass_td": 0,
+        "int": 1,
+        "rush_att": 5,
+        "rush_yds": 11,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "isaac guerendo": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kyle juszczyk": {
+        "rush_att": 1,
+        "rush_yds": -2,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 10,
+        "rec_td": 0
+      },
+      "christian mccaffrey": {
+        "rush_att": 24,
+        "rush_yds": 129,
+        "rush_td": 2,
+        "rec": 7,
+        "rec_yds": 72,
+        "rec_td": 0
+      },
+      "brian robinson": {
+        "rush_att": 9,
+        "rush_yds": 36,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "kendrick bourne": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 14,
+        "rec_td": 0
+      },
+      "jauan jennings": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 31,
+        "rec_td": 0
+      },
+      "skyy moore": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 15,
+        "rec_td": 0
+      },
+      "demarcus robinson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "malik turner": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "luke farrell": {
+        "rec": 1,
+        "rec_yds": 11,
+        "rec_td": 0
+      },
+      "george kittle": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jake tonges": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "TB": {
+    "QB": {
+      "teddy bridgewater": {
+        "pass_yds": 0,
+        "pass_td": 0,
+        "int": 0,
+        "rush_att": 1,
+        "rush_yds": -1,
+        "rush_td": 0
+      },
+      "baker mayfield": {
+        "pass_yds": 228,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "sean tucker": {
+        "rush_att": 1,
+        "rush_yds": 4,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 2,
+        "rec_td": 0
+      },
+      "rachaad white": {
+        "rush_att": 10,
+        "rush_yds": 38,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 6,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "emeka egbuka": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 58,
+        "rec_td": 0
+      },
+      "mike evans": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "kameron johnson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tez johnson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 58,
+        "rec_td": 1
+      },
+      "ryan miller": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 14,
+        "rec_td": 0
+      },
+      "sterling shepard": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 25,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "devin culp": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "payne durham": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "cade otton": {
+        "rec": 7,
+        "rec_yds": 65,
+        "rec_td": 0
+      }
+    }
+  },
+  "TEN": {
+    "QB": {
+      "cameron ward": {
+        "pass_yds": 255,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "julius chestnut": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tony pollard": {
+        "rush_att": 6,
+        "rush_yds": 18,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 43,
+        "rec_td": 0
+      },
+      "tyjae spears": {
+        "rush_att": 5,
+        "rush_yds": 22,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 18,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "elic ayomanor": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 29,
+        "rec_td": 0
+      },
+      "chimere dike": {
+        "rush_att": 1,
+        "rush_yds": -1,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 70,
+        "rec_td": 1
+      },
+      "van jefferson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 4,
+        "rec_yds": 41,
+        "rec_td": 0
+      },
+      "mason kinsey": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "tyler lockett": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 18,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "gunnar helm": {
+        "rec": 4,
+        "rec_yds": 36,
+        "rec_td": 0
+      },
+      "david martin-robinson": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "chig okonkwo": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
+  },
+  "WSH": {
+    "QB": {
+      "jacoby brissett": {
+        "pass_yds": 279,
+        "pass_td": 2,
+        "int": 0,
+        "rush_att": 6,
+        "rush_yds": 26,
+        "rush_td": 0
+      }
+    },
+    "RB": {
+      "michael carter": {
+        "rush_att": 7,
+        "rush_yds": 11,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 25,
+        "rec_td": 0
+      },
+      "d'ernest johnson": {
+        "rush_att": 1,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "bam knight": {
+        "rush_att": 14,
+        "rush_yds": 57,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 7,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "greg dortch": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 5,
+        "rec_td": 0
+      },
+      "simi fehoko": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "marvin harrison": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 58,
+        "rec_td": 0
+      },
+      "zay jones": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 67,
+        "rec_td": 0
+      },
+      "xavier weaver": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "michael wilson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 40,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "josiah deguara": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "elijah higgins": {
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "trey mcbride": {
+        "rec": 10,
+        "rec_yds": 74,
+        "rec_td": 2
+      }
+    }
+  }
+}

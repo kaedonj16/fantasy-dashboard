@@ -43,11 +43,10 @@ def render_awards_section(awards: dict) -> str:
         rows.append(acard("Highest Points By a Player", f"{n} — Week {w}: <strong>{pts} points</strong>"))
 
     return f"""
-    <div class="card central awards-card" data-section="awards">
+    <div class="card awards-card" data-section="awards">
         <h2 class="awards-title">🏆 League Awards</h2>
       <div class="awards-grid">{''.join(rows)}</div>
     </div>
-    {awardsCss}
     """
 
 

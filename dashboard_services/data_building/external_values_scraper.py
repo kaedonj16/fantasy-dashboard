@@ -5,12 +5,11 @@ import requests
 import ssl
 import time
 from bs4 import BeautifulSoup
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from requests.adapters import HTTPAdapter
-from typing import Literal, Optional
-
+from typing import Literal, Optional, List, Dict
 
 # ---------------------------
 # TLS adapter for sites we still hit via requests (FantasyCalc)
@@ -36,7 +35,8 @@ class TLS12Adapter(HTTPAdapter):
 # Paths / constants
 # ---------------------------
 
-ROOT_DIR = Path(__file__).resolve().parents[2]  # project root
+# Align with other dashboard_services modules:
+ROOT_DIR = Path(__file__).resolve().parents[1]  # project root
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -45,8 +45,10 @@ DYNASTYPROCESS_VALUES_URL = (
     "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values.csv"
 )
 
+# Separate outputs so API vs scraped rankings don't trample each other
 DYNASTYPROCESS_CSV_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
 FANTASYCALC_API_CSV_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
+FANTASYCALC_RANKINGS_CSV_PATH = DATA_DIR / f"fantasycalc_rankings_{date.today().isoformat()}.csv"
 
 HEADERS = {
     "User-Agent": (
@@ -57,19 +59,19 @@ HEADERS = {
 }
 
 # ============================================================
-# KEEPTTRADECUT (KTC) SCRAPING VIA PLAYWRIGHT
+# KEEPTTRADECUT (KTC) SCRAPING VIA PLAYWRIGHT – placeholder
 # ============================================================
 
 KTC_URL = "https://keeptradecut.com/dynasty-rankings?page=0"
 
 
 def fetch_fantasycalc_api_values(
-        *,
-        is_dynasty: bool = True,
-        num_qbs: int = 1,
-        num_teams: int = 10,
-        ppr: float = 1.0,
-) -> list[dict]:
+    *,
+    is_dynasty: bool = True,
+    num_qbs: int = 1,
+    num_teams: int = 10,
+    ppr: float = 1.0,
+) -> List[dict]:
     """
     Call FantasyCalc values API and return the parsed JSON list.
 
@@ -84,7 +86,7 @@ def fetch_fantasycalc_api_values(
     }
 
     session = requests.Session()
-    # For FantasyCalc we don't need the TLS12Adapter hack
+    # For FantasyCalc API we don't need the TLS12Adapter hack
     resp = session.get(FANTASYCALC_API_URL, params=params, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     data = resp.json()
@@ -94,8 +96,8 @@ def fetch_fantasycalc_api_values(
 
 
 def write_fantasycalc_api_to_csv(
-        values: list[dict],
-        out_csv: Path = FANTASYCALC_API_CSV_PATH,
+    values: List[dict],
+    out_csv: Path = FANTASYCALC_API_CSV_PATH,
 ) -> None:
     """
     Flatten FantasyCalc API payload into a CSV with one row per player.
@@ -106,6 +108,20 @@ def write_fantasycalc_api_to_csv(
       redraft_value, combined_value,
       trend_30_day, tier, trade_frequency
     """
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    dirname = out_csv.parent
+    pattern = f"fantasycalc_api_values_{yesterday.isoformat()}.csv"
+    yesterday_file = dirname / pattern
+
+    if yesterday_file.exists():
+        print(f"[FantasyCalcAPI] Removing yesterday's value file: {yesterday_file.name}")
+        try:
+            yesterday_file.unlink()
+        except Exception as e:
+            print(f"[FantasyCalcAPI] Failed to remove yesterday's file: {e}")
+
     rows = []
     for entry in values:
         p = entry.get("player", {}) or {}
@@ -156,17 +172,20 @@ def write_fantasycalc_api_to_csv(
 
 
 def load_fantasycalc_api_values(
-        csv_path: Path = FANTASYCALC_API_CSV_PATH,
-) -> list[dict]:
+    csv_path: Path = FANTASYCALC_API_CSV_PATH,
+) -> Optional[List[dict]]:
+    """
+    Load the FantasyCalc API CSV if it exists; otherwise return None.
+    """
     if not csv_path.exists():
-        raise FileNotFoundError(f"FantasyCalc API CSV not found at {csv_path}")
+        return None
     with csv_path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return list(reader)
 
 
 def download_dynastyprocess_values_csv(
-        out_csv: Path = DYNASTYPROCESS_CSV_PATH,
+    out_csv: Path = DYNASTYPROCESS_CSV_PATH,
 ) -> None:
     """
     Download dynastyprocess values.csv and store it under data/.
@@ -175,6 +194,20 @@ def download_dynastyprocess_values_csv(
       https://github.com/dynastyprocess/data/blob/master/files/values.csv
     (we use the raw.githubusercontent.com version)
     """
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    dirname = out_csv.parent
+    pattern = f"dynastyprocess_values_{yesterday.isoformat()}.csv"
+    yesterday_file = dirname / pattern
+
+    if yesterday_file.exists():
+        print(f"[DynastyProcess] Removing yesterday's value file: {yesterday_file.name}")
+        try:
+            yesterday_file.unlink()
+        except Exception as e:
+            print(f"[DynastyProcess] Failed to remove yesterday's file: {e}")
+
     print(f"[DynastyProcess] Downloading values.csv to {out_csv}")
     resp = requests.get(DYNASTYPROCESS_VALUES_URL, headers=HEADERS, timeout=30)
     resp.raise_for_status()
@@ -183,34 +216,31 @@ def download_dynastyprocess_values_csv(
 
 
 def load_dynastyprocess_values(
-        csv_path: Path = DYNASTYPROCESS_CSV_PATH,
-) -> list[dict]:
+    csv_path: Path = DYNASTYPROCESS_CSV_PATH,
+) -> Optional[List[dict]]:
     """
     Load DynastyProcess values.csv as a list of dicts.
-
-    Check the actual headers in values.csv; commonly you will see columns such as:
-      player, position, team, fc_dynasty, ktc_1qb, ktc_superflex, etc.
 
     This function does not assume exact column names beyond using DictReader.
     """
     if not csv_path.exists():
-        raise FileNotFoundError(f"DynastyProcess CSV not found at {csv_path}")
+        return None
     with csv_path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return list(reader)
 
 
 # ============================================================
-# FANTASYCALC SCRAPING (still via requests)
+# FANTASYCALC SCRAPING (HTML rankings – optional / fallback)
 # ============================================================
 
 FANTASYCALC_RANKINGS_URL = "https://fantasycalc.com/dynasty-rankings"
 
 
 def scrape_fantasycalc_rankings(
-        out_csv: Path = FANTASYCALC_API_CSV_PATH,
-        *,
-        sleep_sec: float = 1.0,
+    out_csv: Path = FANTASYCALC_RANKINGS_CSV_PATH,
+    *,
+    sleep_sec: float = 1.0,
 ) -> None:
     """
     Scrape FantasyCalc dynasty rankings and write to CSV.
@@ -321,11 +351,11 @@ def scrape_fantasycalc_rankings(
 # ============================================================
 
 def scrape_all_vendor_values(
-        *,
-        is_dynasty: bool = True,
-        num_qbs: int = 1,
-        num_teams: int = 10,
-        ppr: float = 1.0,
+    *,
+    is_dynasty: bool = True,
+    num_qbs: int = 1,
+    num_teams: int = 10,
+    ppr: float = 1.0,
 ) -> None:
     """
     Refresh external vendor value CSVs:
