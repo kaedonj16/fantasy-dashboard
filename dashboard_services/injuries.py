@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import pandas as pd
 from datetime import datetime
 from typing import Dict, List
-from zoneinfo import ZoneInfo
 from urllib.parse import quote_plus
-
-import pandas as pd
+from zoneinfo import ZoneInfo
 
 from .api import get_nfl_players
 from .players import build_roster_map, get_league_rostered_player_ids

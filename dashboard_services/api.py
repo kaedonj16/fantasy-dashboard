@@ -287,6 +287,27 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     data = resp.json() or {}
     return data.get("body") or {}
 
+@ttl_cache(ttl=300)
+def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None) -> dict:
+    """
+    Fetch a single live boxscore from Tank01 for game_id like '20251207_PIT@BAL'.
+    Returns the parsed JSON body.
+    """
+    sess = session or requests.Session()
+
+    params = {"gameID": game_id}
+
+    url = f"{BASE}/getNFLBoxScore"
+    resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=5)
+    resp.raise_for_status()
+    data = resp.json()
+
+    # Tank01 usually wraps payload in 'body'
+    if isinstance(data, dict) and "body" in data:
+        return data["body"]
+    return data
+
+
 
 def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
     """

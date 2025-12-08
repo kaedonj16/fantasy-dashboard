@@ -23,7 +23,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from typing import Dict, Iterable, List, Optional
 
 from dashboard_services.picks import load_pick_value_table
-from dashboard_services.utils import load_teams_index, bucket_for_slot
+from dashboard_services.utils import load_teams_index, bucket_for_slot, normalize_name
 
 # ------------------------------------------------
 # Paths / constants
@@ -763,25 +763,6 @@ def build_ml_value_table() -> Dict[str, float]:
     return values
 
 
-
-
-def normalize_name(name: str) -> str:
-    suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
-
-    if not name:
-        return ""
-    s = name.lower()
-
-    # collapse whitespace
-    s = re.sub(r"\s+", " ", s).strip()
-
-    # drop suffix tokens like jr, sr, ii, iii, etc.
-    parts = s.split(" ")
-    parts = [p for p in parts if p not in suffixes]
-
-    return " ".join(parts)
-
-
 # ------------------------------------------------
 # Rewrite value_table_{date}.json with model outputs
 # ------------------------------------------------
@@ -945,15 +926,3 @@ def rewrite_value_table_with_model() -> Path:
 
     return out_path
 
-
-
-# ------------------------------------------------
-# CLI entrypoint
-# ------------------------------------------------
-
-if __name__ == "__main__":
-    bundle = train_trade_value_model(
-    )
-
-    rewrite_value_table_with_model(
-    )

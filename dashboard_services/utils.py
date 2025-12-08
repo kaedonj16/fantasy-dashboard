@@ -8,6 +8,8 @@ import pandas as pd
 import re
 import requests
 import time
+from bs4 import BeautifulSoup
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Callable, List
@@ -19,7 +21,7 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players,
+    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore,
 )
 
 # ------------------------------------------------
@@ -159,6 +161,14 @@ def path_week_proj(season: int, week: int) -> str:
 
 def path_week_stats(season: int, week: int) -> str:
     return os.path.join(CACHE_DIR, f"stats/week_stats_s{season}_w{week}.json")
+
+
+def path_fantasycalc_values() -> str:
+    return os.path.join(DATA_DIR, f"fantasycalc_api_values_{date.today().isoformat()}.csv")
+
+
+def path_dynastyprocess_values() -> str:
+    return os.path.join(DATA_DIR, f"dynastyprocess_values_{date.today().isoformat()}.csv")
 
 
 # ------------------------------------------------
@@ -729,44 +739,66 @@ def cache_tank01_teams_index(
 # Game / player status for a given week
 # ------------------------------------------------
 
-def normalize_game_status_from_tank01(game: dict) -> str:
+BEFORE_WINDOW = 5 * 60        # 5 minutes
+IN_WINDOW = 3 * 60 * 60
+
+def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -> str:
     """
-    Returns: "pre", "in", or "post"
-    using provider status + kickoff-time logic.
+    Returns: "pre", "in", or "post" using:
+      * kickoff time
+      * a 5-minute early window
+      * a 3-hour game window
+      * Tank01 status fallback
     """
-    # 1) Parse kickoff time from Tank01
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    # Parse kickoff time
+    kickoff = None
     try:
-        kickoff_ts = float(game.get("gameTime_epoch"))
-        kickoff = datetime.fromtimestamp(kickoff_ts, tz=timezone.utc)
+        raw = game.get("gameTime_epoch")
+        if raw not in (None, ""):
+            kickoff_ts = float(raw)
+            kickoff = datetime.fromtimestamp(kickoff_ts, tz=timezone.utc)
     except Exception:
         kickoff = None
 
-    now = datetime.now(timezone.utc)
-
-    # 2) Time-based override (fixes stale provider statuses)
-    if kickoff:
+    if kickoff is not None:
         delta = (now - kickoff).total_seconds()
 
-        # Game is about to start or is ongoing
-        if -10 * 60 <= delta <= 4 * 60 * 60:
-            return "in"  # treat as In Progress
+        # --- PRE-GAME ---
+        # More than 5 minutes before kickoff
+        if delta < -BEFORE_WINDOW:
+            return "pre"
 
-        # Game should be long finished
-        if delta > 4 * 60 * 60:
+        # --- IN-GAME ---
+        # From 5 minutes before kickoff to up to 3 hours after kickoff
+        if -BEFORE_WINDOW <= delta <= IN_WINDOW:
+            return "in"
+
+        # --- POST-GAME ---
+        if delta > IN_WINDOW:
             return "post"
 
-    # 3) Fall back to Tank01's explicit status
-    status = (game.get("gameStatus") or "").lower()
+    # --- FALLBACK: Use Tank01’s status fields ---
+
+    status = (game.get("gameStatus") or "").lower().strip()
     code = str(game.get("gameStatusCode") or "").strip()
 
-    if code == "2" or status == "final":
+    # Completed / final → post
+    if code == "2" or "final" in status or "completed" in status:
         return "post"
-    if code == "1":
+
+    # In progress / live → in
+    if code == "1" or "in progress" in status or "live" in status:
         return "in"
-    if code == "0" or status == "scheduled":
+
+    # Scheduled → pre
+    if code == "0" or "scheduled" in status:
         return "pre"
 
-    # default safety
+    # Default
     return "pre"
 
 
@@ -1133,6 +1165,10 @@ def clear_teams_cache_for_league() -> None:
 
 
 def clear_weekly_cache_for_league() -> None:
+    live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
+    if live_game_ids:
+        build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
+
     if hasattr(get_nfl_state, "_cache"):
         get_nfl_state.clear_cache()
 
@@ -1144,3 +1180,440 @@ def clear_weekly_cache_for_league() -> None:
 
     if hasattr(get_rosters, "_cache"):
         get_rosters.clear_cache()
+
+    if hasattr(get_nfl_state, "_cache"):
+        get_nfl_state.clear_cache()
+
+
+
+def _safe_int(val: Any) -> int:
+    if val is None:
+        return 0
+    if isinstance(val, (int, float)):
+        return int(val)
+    s = str(val).strip()
+    if not s:
+        return 0
+    try:
+        return int(float(s))
+    except ValueError:
+        return 0
+
+
+def build_tank_player_index(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for sleeper_id, meta in players_index.items():
+        tank_id = meta.get("tankId")
+        if not tank_id:
+            continue
+        out[str(tank_id)] = {
+            "name": meta.get("name", ""),
+            "team": meta.get("team", ""),
+            "pos": meta.get("pos", ""),
+        }
+    return out
+
+
+def _normalize_qb_stats(ps: Dict[str, Any]) -> Dict[str, int]:
+    passing = ps.get("Passing") or {}
+    rushing = ps.get("Rushing") or {}
+    return {
+        "pass_yds": _safe_int(passing.get("passYds")),
+        "pass_td": _safe_int(passing.get("passTD")),
+        "int": _safe_int(passing.get("int")),
+        "rush_att": _safe_int(rushing.get("carries")),
+        "rush_yds": _safe_int(rushing.get("rushYds")),
+        "rush_td": _safe_int(rushing.get("rushTD")),
+    }
+
+
+def _normalize_skill_stats(ps: Dict[str, Any]) -> Dict[str, int]:
+    rushing = ps.get("Rushing") or {}
+    receiving = ps.get("Receiving") or {}
+    return {
+        "rush_att": _safe_int(rushing.get("carries")),
+        "rush_yds": _safe_int(rushing.get("rushYds")),
+        "rush_td": _safe_int(rushing.get("rushTD")),
+        "rec": _safe_int(receiving.get("receptions")),
+        "rec_yds": _safe_int(receiving.get("recYds")),
+        "rec_td": _safe_int(receiving.get("recTD")),
+    }
+
+
+def _normalize_dst_stats(team_block: Dict[str, Any]) -> Dict[str, int]:
+    """
+    Normalize team DST block into DEF stats.
+    Example fields from Tank01:
+      {
+        "teamAbv": "WSH",
+        "defTD": "0",
+        "defensiveInterceptions": "0",
+        "sacks": "4",
+        "ydsAllowed": "313",
+        "fumblesRecovered": "0",
+        "ptsAllowed": "31",
+        "safeties": "0"
+      }
+    """
+    return {
+        "def_td": _safe_int(team_block.get("defTD")),
+        "def_int": _safe_int(team_block.get("defensiveInterceptions")),
+        "sacks": _safe_int(team_block.get("sacks")),
+        "yds_allowed": _safe_int(team_block.get("ydsAllowed")),
+        "fumbles_recovered": _safe_int(team_block.get("fumblesRecovered")),
+        "pts_allowed": _safe_int(team_block.get("ptsAllowed")),
+        "safeties": _safe_int(team_block.get("safeties")),
+    }
+
+
+def build_live_stats_for_game_from_tank(
+    boxscore: dict,
+    players_index: dict,
+) -> dict:
+    """
+    Returns:
+      {
+        "MIN": {
+          "QB": {...},
+          "RB": {...},
+          "WR": {...},
+          "TE": {...},
+          "DEF": { "team": {...} }
+        },
+        "WSH": { ... }
+      }
+    """
+
+    tank_idx = build_tank_player_index(players_index)
+
+    # Note DEF is included here
+    out: dict[str, dict[str, dict[str, dict]]] = defaultdict(
+        lambda: {"QB": {}, "RB": {}, "WR": {}, "TE": {}, "DEF": {}}
+    )
+
+    # --- Player-level offense stats ---
+    player_stats = boxscore.get("playerStats") or {}
+    if isinstance(player_stats, dict):
+        for tank_id, ps in player_stats.items():
+            meta = tank_idx.get(str(tank_id))
+            if not meta:
+                continue
+
+            team = meta.get("team") or ps.get("teamAbv") or ps.get("team")
+            pos = meta.get("pos")
+            name_key = (meta.get("name") or ps.get("longName") or "").lower()
+
+            if not team or not pos or not name_key:
+                continue
+
+            if pos == "QB":
+                stats = _normalize_qb_stats(ps)
+                out[team]["QB"][name_key] = stats
+            elif pos in ("RB", "WR", "TE"):
+                stats = _normalize_skill_stats(ps)
+                out[team][pos][name_key] = stats
+            else:
+                # still ignoring K/IDP; handled via team DST for DEF
+                continue
+
+    # --- Team DST → DEF (named as "DEF") ---
+    dst_block = boxscore.get("DST") or {}
+    if isinstance(dst_block, dict):
+        for side in ("home", "away"):
+            team_block = dst_block.get(side)
+            if not isinstance(team_block, dict):
+                continue
+            team_abv = team_block.get("teamAbv") or team_block.get("team")
+            if not team_abv:
+                continue
+
+            def_stats = _normalize_dst_stats(team_block)
+            # Put under DEF, with a "team" key
+            out[team_abv]["DEF"]["team"] = def_stats
+
+    return out
+
+def merge_live_stats_into_league_week_stats(
+    league_week_stats: dict,
+    live_stats: dict,
+) -> None:
+    """
+    Mutates league_week_stats in-place, overwriting or adding stats
+    for any players that appear in live_stats.
+    Shape of both dicts:
+
+      league_week_stats[team][pos][player_name] = {stat_dict}
+    """
+    for team, pos_map in live_stats.items():
+        team_bucket = league_week_stats.setdefault(team, {})
+        for pos, players in pos_map.items():
+            pos_bucket = team_bucket.setdefault(pos, {})
+            for name_key, stat_dict in players.items():
+                # Overwrite existing or add new
+                pos_bucket[name_key] = stat_dict
+
+
+def get_live_game_ids_for_today(
+    schedule: Iterable[Dict[str, Any]],
+    today: date | None = None,
+) -> List[str]:
+    """
+    Return Tank01 gameIDs for games:
+      - with gameDate = today's date
+      - AND whose epoch time indicates the game is currently within
+        the live window (kickoff to +3 hours)
+    """
+    if today is None:
+        today = date.today()
+
+    today_str = today.strftime("%Y%m%d")
+    live_ids: List[str] = []
+
+    now = time.time()
+    three_hours = 4 * 60 * 60  # 10800 seconds
+
+    for game in schedule:
+        if not isinstance(game, dict):
+            continue
+
+        # Must match today's date
+        if str(game.get("gameDate") or "") != today_str:
+            continue
+
+        # Must have an epoch value
+        raw_epoch = game.get("gameTime_epoch")
+        if raw_epoch is None:
+            continue
+
+        try:
+            game_epoch = float(raw_epoch)
+        except (ValueError, TypeError):
+            continue
+
+        if game_epoch <= now <= (game_epoch + three_hours):
+            gid = game.get("gameID")
+            if gid:
+                live_ids.append(str(gid))
+
+    return live_ids
+
+
+def build_and_save_week_stats_for_league(
+    teams_index: Dict[str, Dict[str, Any]],
+    season: int,
+    week: int,
+    live_game_ids: Optional[Iterable[str]] = None,
+) -> Path:
+    """
+    1) Build baseline week stats from your existing HTML pipeline.
+    2) Optionally overlay live Tank01 stats for any provided gameIDs.
+    """
+    league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
+
+    print(f"[week_stats] building stats for the week (season={season}, week={week})")
+    for team_abv in teams_index.keys():
+        if team_abv == "WSH":
+            team_abv = "WAS"
+        try:
+            html = fetch_team_game_logs_html(team_abv, season)
+            pos_player_stats = parse_team_week_pos_player_stats(html, week)
+            league_week_stats[team_abv] = pos_player_stats
+        except Exception as e:
+            print(f"[week_stats] Error for {team_abv} week {week}: {e}")
+            league_week_stats[team_abv] = {}
+
+    # ---------- Overlay live Tank01 stats (optional) ----------
+    if live_game_ids:
+        # Load players_index once, reuse
+        players_index = load_players_index()
+
+        # Normalize single string -> list
+        if isinstance(live_game_ids, str):
+            live_game_ids = [live_game_ids]
+
+        session = requests.Session()
+
+        for game_id in live_game_ids:
+            try:
+                print(f"[week_stats] fetching live Tank01 stats for game {game_id}")
+                boxscore = fetch_tank_boxscore(game_id, session=session)
+                live_stats = build_live_stats_for_game_from_tank(boxscore, players_index)
+                merge_live_stats_into_league_week_stats(league_week_stats, live_stats)
+            except Exception as e:
+                print(f"[week_stats] Tank01 error for {game_id}: {e}")
+
+    out_path = path_week_stats(season, week)
+    write_json(out_path, league_week_stats)
+    print(f"[week_stats] Wrote → {out_path}")
+    return out_path
+
+
+def normalize_name(name: str) -> str:
+    suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+
+    if not name:
+        return ""
+    s = name.lower()
+
+    # collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # drop suffix tokens like jr, sr, ii, iii, etc.
+    parts = s.split(" ")
+    parts = [p for p in parts if p not in suffixes]
+
+    return " ".join(parts)
+
+
+def parse_team_week_pos_player_stats(
+    html: str,
+    target_week: int,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    soup = BeautifulSoup(html, "html.parser")
+
+    heading_to_pos = {
+        "Quarterbacks": "QB",
+        "Running Backs": "RB",
+        "Wide Receivers": "WR",
+        "Tight Ends": "TE",
+    }
+
+    result: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    for h2 in soup.find_all("h2"):
+        heading = h2.get_text(strip=True)
+        pos_code = heading_to_pos.get(heading)
+        if not pos_code:
+            continue
+
+        table = h2.find_next("table")
+        if not table:
+            continue
+
+        pos_players = parse_position_table_for_week(table, pos_code, target_week)
+        result[pos_code] = pos_players
+
+    return result
+
+
+def parse_position_table_for_week(
+    table,
+    pos_code: str,
+    target_week: int,
+) -> Dict[str, Dict[str, Any]]:
+    thead = table.find("thead")
+    tbody = table.find("tbody")
+    if not thead or not tbody:
+        return {}
+
+    head_rows = thead.find_all("tr")
+    if not head_rows:
+        return {}
+
+    week_hdr_cells = head_rows[0].find_all("th")
+    week_col_idx = None
+    target_label = f"Wk {target_week}".lower()
+
+    for i, th in enumerate(week_hdr_cells):
+        txt = th.get_text(strip=True).lower()
+        if txt == target_label:
+            week_col_idx = i
+            break
+
+    if week_col_idx is None:
+        return {}
+
+    pos_players: Dict[str, Dict[str, Any]] = {}
+
+    for tr in tbody.find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) <= week_col_idx:
+            continue
+
+        name_cell = cells[0]
+        link = name_cell.find("a")
+        player_name = (
+            link.get_text(strip=True) if link is not None else name_cell.get_text(strip=True)
+        )
+        if not player_name:
+            continue
+        player_name = normalize_name(player_name)
+
+        stat_cell = cells[week_col_idx]
+        plain_text = stat_cell.get_text(strip=True)
+        if plain_text == "" or plain_text == "0":
+            continue
+
+        lines = list(stat_cell.stripped_strings)
+        stats = parse_stat_lines_for_pos(lines, pos_code)
+        if stats:
+            pos_players[player_name] = stats
+
+    return pos_players
+
+
+def parse_stat_lines_for_pos(lines, pos_code: str) -> Dict[str, Any]:
+    """
+    lines: list of text lines from the cell for that week, e.g.
+      QB: ["320-2-1", "3-19-0"]
+      RB: ["8-69-0", "1-6-0"]
+    """
+
+    def _parse_nums(line: str) -> list[int]:
+        line = line.strip()
+        if not line:
+            return []
+
+        parts = line.split("-")
+        nums: list[int] = []
+        i = 0
+        while i < len(parts):
+            part = parts[i].strip()
+            if part == "":
+                if i + 1 < len(parts) and parts[i + 1].strip():
+                    nums.append(-int(parts[i + 1].strip()))
+                    i += 2
+                else:
+                    i += 1
+            else:
+                nums.append(int(part))
+                i += 1
+            if len(nums) >= 3:
+                break
+        return nums
+
+    nums_by_line: list[list[int]] = []
+    for line in lines:
+        nums = _parse_nums(line)
+        if nums:
+            nums_by_line.append(nums)
+
+    stats: Dict[str, Any] = {}
+
+    if pos_code == "QB":
+        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
+            py, ptd, ints = nums_by_line[0][:3]
+            stats.update({"pass_yds": py, "pass_td": ptd, "int": ints})
+        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
+            ra, ry, rtd = nums_by_line[1][:3]
+            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
+
+    elif pos_code in {"RB", "WR"}:
+        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
+            ra, ry, rtd = nums_by_line[0][:3]
+            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
+        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
+            rec, r_yards, rtd2 = nums_by_line[1][:3]
+            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd2})
+
+    elif pos_code == "TE":
+        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
+            rec, r_yards, rtd = nums_by_line[0][:3]
+            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd})
+
+    else:
+        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
+            a, b, c = nums_by_line[0][:3]
+            stats.update({"stat1": a, "stat2": b, "stat3": c})
+
+    return stats

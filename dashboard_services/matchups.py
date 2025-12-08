@@ -15,8 +15,7 @@ from dashboard_services.api import (
     get_nfl_scores_for_date,
     build_team_game_lookup,
 )
-from dashboard_services.data_building.value_model_training import normalize_name
-from dashboard_services.utils import write_json, load_week_schedule, load_teams_index, load_week_stats
+from dashboard_services.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
@@ -28,12 +27,13 @@ def get_owner_id(rosters: Optional[list[dict]] = None, roster_id: Optional[str] 
 
 
 def build_matchup_preview(
-    league_id: str,
-    week: int,
-    roster_map: Dict[str, str],
-    players_map: Dict[str, Dict[str, str]],
+        league_id: str,
+        week: int,
+        roster_map: Dict[str, str],
+        players_map: Dict[str, Dict[str, str]],
 ) -> List[dict]:
     mlist = get_matchups(league_id, week) or []
+
     if not mlist:
         return []
 
@@ -121,86 +121,45 @@ def build_matchup_preview(
     return out[:5]
 
 
-def render_matchup_carousel_weeks(slides_by_week: dict[int, str], dashboard: bool) -> str:
-    json_slides = json.dumps({str(k): v for k, v in slides_by_week.items()})
-    # Call get_nfl_state once instead of inside the f-string
-    nfl_state = get_nfl_state() or {}
-    current_week = nfl_state.get("week")
-
-    carousel_script = f"""
-    (function(){{
-      const slidesByWeek = {json_slides};
-      const weekSel = document.getElementById('hubWeek') || document.getElementById('mWeek');
-      const track   = document.getElementById('mTrack');
-      const prevBtn = document.getElementById('mPrev');
-      const nextBtn = document.getElementById('mNext');
-
-      let idx = 0;
-      let slides = [];
-
-      function cacheSlides() {{
-        slides = track.querySelectorAll('.m-slide');
-      }}
-
-      function update() {{
-        const w = track.clientWidth;
-        track.scrollTo({{ left: idx * w, behavior: 'smooth' }});
-        if (prevBtn) prevBtn.disabled = (idx === 0);
-        if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
-      }}
-
-      function setWeek(w) {{
-        const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
-        track.innerHTML = html;
-        idx = 0;
-        cacheSlides();
-        update();
-      }}
-
-      // Hook into hubWeek if it exists
-      if (weekSel) {{
-        setWeek(weekSel.value);
-        weekSel.addEventListener('change', (e) => setWeek(e.target.value));
-      }} else {{
-        const keys = Object.keys(slidesByWeek);
-        if (keys.length) {{
-          setWeek(keys[0]);
-        }}
-      }}
-
-      prevBtn && prevBtn.addEventListener('click', () => {{
-        idx = Math.max(0, idx - 1); 
-        update();
-      }});
-
-      nextBtn && nextBtn.addEventListener('click', () => {{
-        idx = Math.min(Math.max(0, slides.length - 1), idx + 1);
-        update();
-      }});
-
-      window.addEventListener('resize', update);
-    }})();
+def render_matchup_carousel_weeks(
+    slides_by_week: dict[int, str],
+    dashboard: bool,
+    active_week: int | None = None,
+) -> str:
     """
+    Render a single matchup carousel card.
+
+    slides_by_week: {week: "<div class='m-slide'>...</div>..."}
+    active_week: which week's slides to show inside the track.
+    """
+    if not slides_by_week:
+        slides_html = "<div class='m-empty'>No matchups</div>"
+    else:
+        # pick active week if given, else first key
+        if active_week is None:
+            active_week = sorted(slides_by_week.keys())[0]
+        slides_html = slides_by_week.get(active_week) or "<div class='m-empty'>No matchups</div>"
 
     central = "central" if dashboard else ""
     style = "max-width:800px;" if not dashboard else ""
+
     return f"""
-        <div class="card {central}" data-section='matchups' style='{style} margin-bottom:30px;'>
+      <div class="card matchup-carousel {central}" data-section="matchups" style="{style} margin-bottom:30px;">
         <div class="m-nav">
           <h2>Matchup Preview</h2>
           <div class="m-controls">
-            <button class="m-btn" id="mPrev">‹ Prev</button>
-            <button class="m-btn" id="mNext">Next ›</button>
+            <button class="m-btn m-btn-prev" type="button">‹ Prev</button>
+            <button class="m-btn m-btn-next" type="button">Next ›</button>
           </div>
         </div>
         <div class="m-carousel">
-          <div class="m-track" id="mTrack">
-            {slides_by_week.get(current_week, "<div class='m-empty'>No matchups</div>")}
+          <div class="m-track">
+            {slides_html}
           </div>
         </div>
       </div>
-      <script>{carousel_script}</script>
     """
+
 
 
 def add_bye_weeks_to_players():
@@ -219,9 +178,9 @@ def add_bye_weeks_to_players():
 
 
 def team_live_totals(
-    team: dict,
-    status_by_pid: dict[str, str],
-    projections: dict,
+        team: dict,
+        status_by_pid: dict[str, str],
+        projections: dict[str, float],
 ) -> tuple[float, float]:
     """
     actual_total:
@@ -234,65 +193,82 @@ def team_live_totals(
     live_proj_total = 0.0
 
     starters = team.get("starters") or []
+    projections = projections or {}
+
     for p in starters:
         pid = p.get("pid")
 
-        actual = p.get("pts") or 0.0
+        actual = float(p.get("pts") or 0.0)
         actual_total += actual
 
         status = status_by_pid.get(pid, STATUS_NOT_STARTED)
-        proj_val = projections.get(pid, 0.0)
+        proj_val = float(projections.get(pid, 0.0))
 
-        if status is STATUS_NOT_STARTED:
-            live_proj_total += proj_val
-        else:
+        # Use == for strings, not `is`
+        if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
+            # started or finished → use actual
             live_proj_total += actual
+        else:
+            # not started (or unknown) → use projection
+            live_proj_total += proj_val
 
     return actual_total, live_proj_total
 
 
+
 def compute_team_projections_for_weeks(
-    matchups_by_week: dict[int, list[dict]],
-    status_by_pid: dict[str, str],
-    projections: dict,
-    roster_map: dict[str, str],  # roster_id -> owner
+        matchups_by_week: dict[int, list[dict]],
+        statuses_by_week: dict[int, dict],
+        projections_by_week: dict[int, dict],
+        roster_map: dict[str, str],  # roster_id -> owner name
 ) -> dict[tuple[int, str], float]:
     """
     Returns {(week, roster_id): live_proj_total}
+
+    Assumes:
+      - statuses_by_week: {week: {"statuses": {pid: status_str}}}
+      - projections_by_week: {week: {"projections": {pid: proj_val}}}
+      - matchups_by_week: {week: [ { "left": {...}, "right": {...} }, ... ]}
     """
     proj_by_roster: dict[tuple[int, str], float] = {}
 
-    # build reverse map owner -> roster_id if needed
+    # reverse: owner display name -> roster_id (fallback if roster_id missing)
     owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
 
     for week, matchups in matchups_by_week.items():
-        # pull week-level containers once per week
-        week_status_container = status_by_pid.get(week)
-        week_proj_container = projections.get(week)
+        # per-week statuses
+        week_status_bundle = statuses_by_week.get(week) or {}
+        week_status_by_pid = (week_status_bundle.get("statuses") or {}) if isinstance(week_status_bundle, dict) else {}
 
-        # keep semantics the same: if these are missing or shaped differently,
-        # team_live_totals will still see whatever comes through
-        week_statuses = week_status_container.get("statuses") if isinstance(week_status_container, dict) else {}
-        week_projections = week_proj_container.get("projections") if isinstance(week_proj_container, dict) else {}
+        # per-week projections
+        if isinstance(projections_by_week, dict):
+            week_proj_container = projections_by_week.get(week) or {}
+            week_proj_map = week_proj_container.get("projections") or {}
+        else:
+            # fallback – treat as already a flat {pid: proj_val}
+            week_proj_map = projections_by_week or {}
 
         for m in matchups:
             for side in ("left", "right"):
-                team = m[side]
-
+                team = m.get(side) or {}
                 rid = team.get("roster_id")
+
+                # fallback if roster_id not in the team obj
                 if rid is None:
-                    rid = owner_to_rid.get(team["name"])
+                    rid = owner_to_rid.get(team.get("name", ""))
+
                 if rid is None:
                     continue
 
                 _, live_proj_total = team_live_totals(
                     team,
-                    week_statuses,
-                    week_projections,
+                    week_status_by_pid,
+                    week_proj_map,
                 )
                 proj_by_roster[(week, str(rid))] = live_proj_total
 
     return proj_by_roster
+
 
 
 def build_team_schedule_lookup(games: List[dict]) -> Dict[str, dict]:
@@ -372,10 +348,10 @@ def build_defense_rankings(teams_index: dict) -> dict:
 
 
 def format_player_stats(
-    teams_stats: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]],
-    team: str,
-    pos: str,
-    player: str,
+        teams_stats: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]],
+        team: str,
+        pos: str,
+        player: str,
 ) -> Optional[str]:
     """
     Returns a compact stat line with no player name, e.g.:
@@ -453,23 +429,135 @@ def format_player_stats(
     return ", ".join(parts)
 
 
+def build_offense_rankings(teams_index: dict) -> dict:
+    """
+    Returns a dictionary ranking all teams by offensive metrics:
+      - rush_yds_rank  (higher rush_yds_pg = better, rank 1 is best)
+      - pass_yds_rank  (higher pass_yds_pg = better, rank 1 is best)
+      - total_off_rank (combined yards + TDs, rank 1 is best)
+
+    teams_index example:
+      {
+        "ARI": {
+          "rush_yds_pg": 100.6,
+          "pass_yds_pg": 236.7,
+          "rush_td_pg": 0.75,
+          "pass_td_pg": 1.58,
+          ...
+        },
+        ...
+      }
+
+    Output:
+      {
+        "ARI": {
+          "rush_yds_rank": 14,
+          "pass_yds_rank": 10,
+          "total_off_rank": 8,
+        },
+        "ATL": {...},
+        ...
+      }
+    """
+
+    TD_WEIGHT = 40.0  # treat 1 TD per game ~ 40 yards; tweak if desired
+
+    rush_list = []
+    pass_list = []
+    total_list = []
+
+    for abbr, info in teams_index.items():
+        rush_yds = info.get("rush_yds_pg")
+        pass_yds = info.get("pass_yds_pg")
+        rush_td = info.get("rush_td_pg")
+        pass_td = info.get("pass_td_pg")
+
+        # rushing yards list
+        if rush_yds is not None:
+            rush_list.append((abbr, float(rush_yds)))
+
+        # passing yards list
+        if pass_yds is not None:
+            pass_list.append((abbr, float(pass_yds)))
+
+        # total offense list (need at least both yardage numbers)
+        if rush_yds is not None and pass_yds is not None:
+            r_y = float(rush_yds)
+            p_y = float(pass_yds)
+            r_td = float(rush_td) if rush_td is not None else 0.0
+            p_td = float(pass_td) if pass_td is not None else 0.0
+
+            total_yards = r_y + p_y
+            tds_pg = r_td + p_td
+            total_score = total_yards + TD_WEIGHT * tds_pg
+
+            total_list.append((abbr, total_score))
+
+    # Sort: higher is better for offense
+    rush_sorted = sorted(rush_list, key=lambda x: x[1], reverse=True)
+    pass_sorted = sorted(pass_list, key=lambda x: x[1], reverse=True)
+    total_sorted = sorted(total_list, key=lambda x: x[1], reverse=True)
+
+    rankings = {abbr: {} for abbr in teams_index.keys()}
+
+    for rank, (abbr, _) in enumerate(rush_sorted, start=1):
+        rankings[abbr]["rush_yds_rank"] = rank
+
+    for rank, (abbr, _) in enumerate(pass_sorted, start=1):
+        rankings[abbr]["pass_yds_rank"] = rank
+
+    for rank, (abbr, _) in enumerate(total_sorted, start=1):
+        rankings[abbr]["total_off_rank"] = rank
+
+    return rankings
+
+
 def render_matchup_slide(
-    season: str,
-    m: dict,
-    w: int,
-    proj_week: int,
-    status_by_pid: dict[str, str],
-    projections: dict[str, float],
-    players: dict,
-    teams: dict,
-    team_game_lookup: dict,
+        season: str,
+        m: dict,
+        w: int,
+        proj_week: int,
+        status_by_pid: dict[str, str],
+        projections: dict[str, float],
+        players: dict,
+        teams: dict,
+        team_game_lookup: dict,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
     """
     proj = w > proj_week
-    defense_ranks = build_defense_rankings(load_teams_index())
+
+    # Heavy stuff: do once per call
+    teams_index = load_teams_index()
+    defense_ranks = build_defense_rankings(teams_index)
+    offense_ranks = build_offense_rankings(teams_index)
     week_stats = load_week_stats(season, w)
+    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
+
+    # Projections for this week (dict {pid: proj_val})
+    if isinstance(projections, dict):
+        week_proj_container = projections.get(w) or {}
+        week_proj_map = week_proj_container.get("projections") or {}
+    else:
+        week_proj_map = projections or {}
+
+    # Cache NFL score lookups per date
+    score_cache: dict[str, dict] = {}
+
+    def get_team_game_from_scores(game_date_str: str, team_abv: str) -> Optional[dict]:
+        """
+        Lazily fetch scores for a given date once, then reuse for all players.
+        """
+        if not game_date_str:
+            return None
+        if game_date_str not in score_cache:
+            scores_body = get_nfl_scores_for_date(game_date_str)
+            score_cache[game_date_str] = build_team_game_lookup(scores_body) if scores_body else {}
+        return score_cache[game_date_str].get(team_abv)
+
+    today_str = date.today().strftime("%Y%m%d")
+    now_dt = datetime.now()
 
     def team_head(t, proj_mode: bool):
         ava = t.get("avatar") or ""
@@ -489,7 +577,9 @@ def render_matchup_slide(
         """
 
         actual_total, live_proj_total = team_live_totals(
-            t, status_by_pid, projections.get(w).get("projections")
+            t,
+            status_by_pid,
+            week_proj_map,
         )
 
         return f"""
@@ -524,7 +614,9 @@ def render_matchup_slide(
         """
 
         actual_total, live_proj_total = team_live_totals(
-            t, status_by_pid, projections.get(w).get("projections")
+            t,
+            status_by_pid,
+            week_proj_map,
         )
         return f"""
         <div class="m-team">
@@ -540,7 +632,7 @@ def render_matchup_slide(
         </div>
         """
 
-    def format_team_game_line(team_abv: str, game: dict, pos: str) -> str:
+    def format_team_game_line(team_abv: str, game: dict, pos: str, side: str) -> str:
         if not team_abv or not game:
             return ""
 
@@ -552,17 +644,20 @@ def render_matchup_slide(
 
         is_home = (t_up == home)
         opp = away if is_home else home
-
         status_code = str(game.get("gameStatusCode") or "0")  # '0' scheduled, '1' live, '2' final
-        game_date = str(game.get("gameDate") or "")  # '20251204'
+        game_date = str(game.get("gameDate") or game.get("gameID", "")[:8])  # '20251204'
         game_time = str(game.get("gameTime") or "")  # '8:15p'
 
-        today_str = date.today().strftime("%Y%m%d")
+        # quick status correction by date
         if game_date < today_str:
             status_code = "2"
-        elif game_date == today_str:
-            if parse_game_datetime(game_time) > datetime.now():
-                status_code = "2"
+        elif game_date == today_str and game_time:
+            try:
+                if parse_game_datetime(game_time) > now_dt:
+                    # future kick within same date – treat as scheduled
+                    status_code = "0"
+            except ValueError:
+                pass
 
         if status_code == "0":
             dow = ""
@@ -580,54 +675,49 @@ def render_matchup_slide(
                 display_time = display_time[:-1] + " am"
 
             opp_ranks = defense_ranks.get(opp, {})
+            off_ranks = offense_ranks.get(opp, {})
+
+            opp_rank = None
             if pos in ["QB", "WR", "TE"]:
                 opp_rank = opp_ranks.get("opp_pass_yds_pg")
-            else:
+            elif pos == "RB":
                 opp_rank = opp_ranks.get("opp_rush_yds_pg")
+            elif pos == "DEF":
+                opp_rank = off_ranks.get("total_off_rank")
 
-            prefix = "@ " + opp + (f" (#{opp_rank})" if opp_rank is not None else "") if not is_home else \
-                     "vs " + opp + (f" (#{opp_rank})" if opp_rank is not None else "")
+            suffix = f" (#{opp_rank})" if opp_rank is not None else ""
+            prefix = ("@ " + opp + suffix) if not is_home else ("vs " + opp + suffix)
             return " ".join(x for x in [dow, display_time, prefix] if x).strip()
 
-        line_score = game.get("lineScore") or {}
-        period = line_score.get("period", "")
-        clock = game.get("gameClock", "")
-        extra = " ".join(x for x in [period, clock] if x).strip()
-
+        # For live/final, pull from scores API once per date
+        game_date_std = game_date  # already YYYYMMDD
         score_str = ""
+        score_game = get_team_game_from_scores(game_date_std, team_abv)
 
-        if status_code == "1":
-            game_date_std = datetime.strptime(game_date, "%Y%m%d").strftime("%Y%m%d")
-            scores_body = get_nfl_scores_for_date(game_date_std)
-            team_game_lookup_live = build_team_game_lookup(scores_body)
-            game_live = team_game_lookup_live.get(team_abv)
+        if score_game:
             if is_home:
-                my_pts = game_live.get("homePts")
-                opp_pts = game_live.get("awayPts")
+                my_pts = score_game.get("homePts")
+                opp_pts = score_game.get("awayPts")
             else:
-                my_pts = game_live.get("awayPts")
-                opp_pts = game_live.get("homePts")
+                my_pts = score_game.get("awayPts")
+                opp_pts = score_game.get("homePts")
 
             if my_pts is not None and opp_pts is not None:
                 score_str = f"{my_pts}-{opp_pts}"
+
+        if status_code == "1":
+            line_score = game.get("lineScore") or {}
+            period = line_score.get("period", "")
+            clock = game.get("gameClock", "")
+            prefix = "@ " + opp if not is_home else "vs " + opp
+            extra = " ".join(x for x in [period, clock, prefix] if x).strip()
+
+            if side == "right":
+                return f"{score_str} {extra} <span class='live-dot'></span>".strip()
             return f"<span class='live-dot'></span>{score_str} {extra}".strip()
 
         if status_code == "2":
-            game_date_std = datetime.strptime(game_date, "%Y%m%d").strftime("%Y%m%d")
-            scores_body = get_nfl_scores_for_date(game_date_std)
-            team_game_lookup_live = build_team_game_lookup(scores_body)
-            game_final = team_game_lookup_live.get(team_abv)
             prefix = "@ " + opp if not is_home else "vs " + opp
-            if is_home:
-                my_pts = game_final.get("homePts")
-                opp_pts = game_final.get("awayPts")
-            else:
-                my_pts = game_final.get("awayPts")
-                opp_pts = game_final.get("homePts")
-
-            if my_pts is not None and opp_pts is not None:
-                score_str = f"{my_pts}-{opp_pts}"
-
             if score_str:
                 return f"Final {prefix} {score_str}"
             return "Final"
@@ -635,10 +725,9 @@ def render_matchup_slide(
         return ""
 
     def player_bits(
-        p,
-        side: str,
-        left_side: bool,
-        team_schedule_lookup: dict[str, dict] | None = None,
+            p,
+            side: str,
+            left_side: bool,
     ):
         if not p:
             return "", 0.0, None, False, None
@@ -650,12 +739,11 @@ def render_matchup_slide(
 
         actual = p.get("pts") or 0.0
 
-        proj_val = None
+        proj_val = week_proj_map.get(pid, 0.0)
         is_bye = False
 
         player_index = players.get(pid) or teams.get(pid)
         if player_index:
-            proj_val = projections.get(w, {}).get("projections", {}).get(pid, 0.0)
             if proj_val == 0.0 and player_index.get("byeWeek") == w:
                 is_bye = True
 
@@ -663,22 +751,24 @@ def render_matchup_slide(
         if status == "BYE":
             is_bye = True
 
-        if status == STATUS_NOT_STARTED and not is_bye:
+        # decide what to show
+        if is_bye:
             display_actual = 0.0
-            display_proj = proj_val if proj_val is not None else 0.0
-        elif status == STATUS_IN_PROGRESS and not is_bye:
-            display_actual = actual
             display_proj = None
-        elif status == STATUS_FINAL and not is_bye:
-            display_actual = actual
-            display_proj = None
-        elif is_bye:
+        elif status == STATUS_NOT_STARTED:
             display_actual = 0.0
+            display_proj = proj_val
+        elif status == STATUS_IN_PROGRESS:
+            display_actual = actual
+            display_proj = proj_val
+        elif status == STATUS_FINAL:
+            display_actual = actual
             display_proj = None
         else:
             display_actual = 0.0 if actual is None else actual
-            display_proj = proj_val if proj_val is not None else 0.0
+            display_proj = proj_val
 
+        # game / stats
         game_line = ""
         stats = None
         if nfl:
@@ -687,24 +777,20 @@ def render_matchup_slide(
 
             if team_game_lookup:
                 game = team_game_lookup.get(team_code)
-                stats = format_player_stats(
-                    week_stats,
-                    team_code,
-                    pos,
-                    "ken walker" if name == "Kenneth Walker" else name,
-                )
-
             if game is None and team_schedule_lookup:
                 game = team_schedule_lookup.get(team_code)
 
+            # normalized name (special-case Ken Walker)
+            lookup_name = "ken walker" if name == "Kenneth Walker" else name
+
             if game:
-                game_line = format_team_game_line(team_code, game, pos)
-                stats = format_player_stats(
-                    week_stats,
-                    nfl,
-                    pos,
-                    "ken walker" if name == "Kenneth Walker" else name,
-                )
+                game_line = format_team_game_line(team_code, game, pos, side)
+            stats = format_player_stats(
+                week_stats,
+                team_code,
+                pos,
+                lookup_name,
+            )
 
         meta_content = f"&nbsp;{nfl}"
 
@@ -751,18 +837,16 @@ def render_matchup_slide(
 
     rows_html: List[str] = []
 
-    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
-
     for L, R in zip_longest(
-        m["left"].get("starters", []),
-        m["right"].get("starters", []),
-        fillvalue=None,
+            m["left"].get("starters", []),
+            m["right"].get("starters", []),
+            fillvalue=None,
     ):
         left_cell, left_actual, left_proj, left_is_bye, left_stats = player_bits(
-            L, "left", True, team_schedule_lookup
+            L, "left", True
         )
         right_cell, right_actual, right_proj, right_is_bye, right_stats = player_bits(
-            R, "right", False, team_schedule_lookup
+            R, "right", False
         )
 
         la = 0.0 if left_is_bye else left_actual

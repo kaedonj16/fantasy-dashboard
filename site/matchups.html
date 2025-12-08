@@ -1,113 +1,155 @@
-<!doctype html><html lang='en'><head>
-<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Matchups</title>
-<style>
-    :root{
-      --ink:#0f172a;--muted:#64748b;--grid:#e5e7eb;--bg:#fff;--accent:#2563eb;
-    }
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:24px;color:var(--ink);background:var(--bg)}
-    h1{margin:0;font-size:28px;font-weight:900;letter-spacing:-0.2px}
-    .lbp-nav{display:flex;gap:10px;margin:14px 0 18px 0}
-    .lbp-nav .nav-item{padding:8px 12px;border:1px solid var(--grid);border-radius:10px;text-decoration:none;color:var(--ink);background:#fff}
-    .lbp-nav .nav-item.active{background:var(--accent);border-color:var(--accent);color:#fff}
-    .page{display:flex;flex-direction:column;gap:16px}
-    .card{border:1px solid var(--grid);border-radius:12px;padding:14px;background:#fff}
-    .muted{color:var(--muted)}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px}
-    @media(min-width:1200px){.grid-2{grid-template-columns:1fr 1fr}}
-    .table-wrap{border:1px solid var(--grid);border-radius:12px;overflow:auto}
-    table{border-collapse:collapse;width:100%;min-width:820px}
-    thead th{position:sticky;top:0;background:#fff;z-index:2;font-weight:700;text-align:left;padding:10px 12px;border-bottom:1px solid var(--grid)}
-    tbody td{padding:10px 12px;border-bottom:1px solid var(--grid)}
-    tbody tr:nth-child(even){background:#f8fafc}
-    .avatar{width:24px;height:24px;border-radius:50%;vertical-align:middle;object-fit:cover;margin-right:6px}
-    .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--grid);background:#f8fafc;color:#475569}
-    /* activity feed */
-    .activity-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-    .filter-pill{padding:6px 10px;border-radius:999px;border:1px solid var(--grid);cursor:pointer;user-select:none}
-    .filter-pill.active{background:#111827;color:#fff;border-color:#111827}
-    .scroll-box{max-height:520px;overflow:auto}
-    .feed{display:flex;flex-direction:column;gap:10px}
-    .tx{border:1px solid var(--grid);border-radius:10px;padding:10px;background:#fff}
-    .tx .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
-    .team-col header{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px}
-    .plist .player{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #eef2f7}
-    .plist .player:last-child{border-bottom:none}
-    .io{display:inline-block;width:18px;height:18px;border-radius:4px;text-align:center;line-height:18px;font-weight:900}
-    .io.add{background:#dcfce7;color:#166534}
-    .io.drop{background:#fee2e2;color:#991b1b}
-    /* matchup carousel */
-    .m-carousel{overflow:auto}
-    .m-track{display:flex;gap:16px;scroll-snap-type:x mandatory}
-    .m-slide{min-width:780px;scroll-snap-align:start;border:1px solid var(--grid);border-radius:12px;padding:12px;background:#fff}
-    .nav-right{display:flex;align-items:center;gap:8px}
-    .footer{margin-top:10px;color:var(--muted);font-size:12px}
+<!doctype html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta content='width=device-width,initial-scale=1' name='viewport'>
+    <title>Matchups</title>
+    <style>
+        :root{
+          --ink:#0f172a;--muted:#64748b;--grid:#e5e7eb;--bg:#fff;--accent:#2563eb;
+        }
+        *{box-sizing:border-box}
+        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:24px;color:var(--ink);background:var(--bg)}
+        h1{margin:0;font-size:28px;font-weight:900;letter-spacing:-0.2px}
+        .lbp-nav{display:flex;gap:10px;margin:14px 0 18px 0}
+        .lbp-nav .nav-item{padding:8px 12px;border:1px solid var(--grid);border-radius:10px;text-decoration:none;color:var(--ink);background:#fff}
+        .lbp-nav .nav-item.active{background:var(--accent);border-color:var(--accent);color:#fff}
+        .page{display:flex;flex-direction:column;gap:16px}
+        .card{border:1px solid var(--grid);border-radius:12px;padding:14px;background:#fff}
+        .muted{color:var(--muted)}
+        .grid{display:grid;grid-template-columns:1fr;gap:16px}
+        @media(min-width:1200px){.grid-2{grid-template-columns:1fr 1fr}}
+        .table-wrap{border:1px solid var(--grid);border-radius:12px;overflow:auto}
+        table{border-collapse:collapse;width:100%;min-width:820px}
+        thead th{position:sticky;top:0;background:#fff;z-index:2;font-weight:700;text-align:left;padding:10px 12px;border-bottom:1px solid var(--grid)}
+        tbody td{padding:10px 12px;border-bottom:1px solid var(--grid)}
+        tbody tr:nth-child(even){background:#f8fafc}
+        .avatar{width:24px;height:24px;border-radius:50%;vertical-align:middle;object-fit:cover;margin-right:6px}
+        .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--grid);background:#f8fafc;color:#475569}
+        /* activity feed */
+        .activity-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+        .filter-pill{padding:6px 10px;border-radius:999px;border:1px solid var(--grid);cursor:pointer;user-select:none}
+        .filter-pill.active{background:#111827;color:#fff;border-color:#111827}
+        .scroll-box{max-height:520px;overflow:auto}
+        .feed{display:flex;flex-direction:column;gap:10px}
+        .tx{border:1px solid var(--grid);border-radius:10px;padding:10px;background:#fff}
+        .tx .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+        .team-col header{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px}
+        .plist .player{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #eef2f7}
+        .plist .player:last-child{border-bottom:none}
+        .io{display:inline-block;width:18px;height:18px;border-radius:4px;text-align:center;line-height:18px;font-weight:900}
+        .io.add{background:#dcfce7;color:#166534}
+        .io.drop{background:#fee2e2;color:#991b1b}
+        /* matchup carousel */
+        .m-carousel{overflow:auto}
+        .m-track{display:flex;gap:16px;scroll-snap-type:x mandatory}
+        .m-slide{min-width:780px;scroll-snap-align:start;border:1px solid var(--grid);border-radius:12px;padding:12px;background:#fff}
+        .nav-right{display:flex;align-items:center;gap:8px}
+        .footer{margin-top:10px;color:var(--muted);font-size:12px}
     </style>
-</head><body>
-  <div class='page'>
+</head>
+<body>
+<div class='page'>
     <header style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-      <h1>Matchups</h1>
-      <div class='muted'>Generated 2025-10-31 13:29</div>
+        <h1>Matchups</h1>
+        <div class='muted'>Generated 2025-10-31 13:29</div>
     </header>
-    <nav class='lbp-nav'><a class='nav-item ' href='index.html'>Dashboard</a><a class='nav-item active' href='matchups.html'>Matchups</a><a class='nav-item ' href='transactions.html'>Transactions</a><a class='nav-item ' href='injuries.html'>Injuries</a><a class='nav-item ' href='teams.html'>Teams</a></nav>
-    
-    <div class="card matchup-card">
-      <div class="m-nav">
-        <h2>Matchup Preview</h2>
-        <div class="m-controls">
-          <select id="mWeek" class="search"><option value='1'>Week 1</option><option value='2'>Week 2</option><option value='3'>Week 3</option><option value='4'>Week 4</option><option value='5'>Week 5</option><option value='6'>Week 6</option><option value='7'>Week 7</option><option value='8'>Week 8</option><option value='9' selected>Week 9</option></select>
-          <button class="m-btn" id="mPrev">‹ Prev</button>
-          <button class="m-btn" id="mNext">Next ›</button>
-        </div>
-      </div>
+    <nav class='lbp-nav'><a class='nav-item ' href='index.html'>Dashboard</a><a class='nav-item active'
+                                                                                href='matchups.html'>Matchups</a><a
+            class='nav-item ' href='transactions.html'>Transactions</a><a class='nav-item ' href='injuries.html'>Injuries</a><a
+            class='nav-item ' href='teams.html'>Teams</a></nav>
 
-      <div class="m-carousel">
-        <div class="m-track" id="mTrack">
-          <div class='tx'><div class='meta'>Week 9</div><div><strong>Caleb’s Casting Couch</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None – None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>WaddSquadd</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None – None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None – None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None – None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None – None</div></div>
+    <div class="card matchup-card">
+        <div class="m-nav">
+            <h2>Matchup Preview</h2>
+            <div class="m-controls">
+                <select class="search" id="mWeek">
+                    <option value='1'>Week 1</option>
+                    <option value='2'>Week 2</option>
+                    <option value='3'>Week 3</option>
+                    <option value='4'>Week 4</option>
+                    <option value='5'>Week 5</option>
+                    <option value='6'>Week 6</option>
+                    <option value='7'>Week 7</option>
+                    <option value='8'>Week 8</option>
+                    <option selected value='9'>Week 9</option>
+                </select>
+                <button class="m-btn" id="mPrev">‹ Prev</button>
+                <button class="m-btn" id="mNext">Next ›</button>
+            </div>
         </div>
-      </div>
+
+        <div class="m-carousel">
+            <div class="m-track" id="mTrack">
+                <div class='tx'>
+                    <div class='meta'>Week 9</div>
+                    <div><strong>Caleb’s Casting Couch</strong> vs <strong>Hit the (Sa)Quon</strong></div>
+                    <div class='muted'>Proj: None – None</div>
+                </div>
+                <div class='tx'>
+                    <div class='meta'>Week 9</div>
+                    <div><strong>WaddSquadd</strong> vs <strong>chefsef</strong></div>
+                    <div class='muted'>Proj: None – None</div>
+                </div>
+                <div class='tx'>
+                    <div class='meta'>Week 9</div>
+                    <div><strong>I Burrow in DD Kupps</strong> vs <strong>Team Dai-Gurren</strong></div>
+                    <div class='muted'>Proj: None – None</div>
+                </div>
+                <div class='tx'>
+                    <div class='meta'>Week 9</div>
+                    <div><strong>Make Kamaraca Great Again</strong> vs <strong>Trustfund QBs</strong></div>
+                    <div class='muted'>Proj: None – None</div>
+                </div>
+                <div class='tx'>
+                    <div class='meta'>Week 9</div>
+                    <div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Fifty Shades of Brown</strong></div>
+                    <div class='muted'>Proj: None – None</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-    (function(){
-      const slidesByWeek = {"1": "<div class='tx'><div class='meta'>Week 1</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>WaddSquadd</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "2": "<div class='tx'><div class='meta'>Week 2</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>WaddSquadd</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>Fifty Shades of Brown</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "3": "<div class='tx'><div class='meta'>Week 3</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>WaddSquadd</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>Team Dai-Gurren</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "4": "<div class='tx'><div class='meta'>Week 4</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>WaddSquadd</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Team Dai-Gurren</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Trustfund QBs</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "5": "<div class='tx'><div class='meta'>Week 5</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>WaddSquadd</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Team Dai-Gurren</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "6": "<div class='tx'><div class='meta'>Week 6</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>I Burrow in DD Kupps</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>WaddSquadd</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Team Dai-Gurren</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "7": "<div class='tx'><div class='meta'>Week 7</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>WaddSquadd</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>Team Dai-Gurren</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "8": "<div class='tx'><div class='meta'>Week 8</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>WaddSquadd</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>Fifty Shades of Brown</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "9": "<div class='tx'><div class='meta'>Week 9</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>WaddSquadd</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div>"};
+        (function(){
+          const slidesByWeek = {"1": "<div class='tx'><div class='meta'>Week 1</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>WaddSquadd</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 1</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "2": "<div class='tx'><div class='meta'>Week 2</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>WaddSquadd</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 2</div><div><strong>Fifty Shades of Brown</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "3": "<div class='tx'><div class='meta'>Week 3</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>WaddSquadd</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>Team Dai-Gurren</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 3</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "4": "<div class='tx'><div class='meta'>Week 4</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>WaddSquadd</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Team Dai-Gurren</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 4</div><div><strong>Trustfund QBs</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "5": "<div class='tx'><div class='meta'>Week 5</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>WaddSquadd</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Team Dai-Gurren</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 5</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "6": "<div class='tx'><div class='meta'>Week 6</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>I Burrow in DD Kupps</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>WaddSquadd</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Team Dai-Gurren</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 6</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "7": "<div class='tx'><div class='meta'>Week 7</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>WaddSquadd</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>Hit the (Sa)Quon</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>Team Dai-Gurren</strong> vs <strong>Never (Jamar) Chase a Ho!</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 7</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "8": "<div class='tx'><div class='meta'>Week 8</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Make Kamaraca Great Again</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>WaddSquadd</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 8</div><div><strong>Fifty Shades of Brown</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div>", "9": "<div class='tx'><div class='meta'>Week 9</div><div><strong>Caleb\u2019s Casting Couch</strong> vs <strong>Hit the (Sa)Quon</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>WaddSquadd</strong> vs <strong>chefsef</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>I Burrow in DD Kupps</strong> vs <strong>Team Dai-Gurren</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Make Kamaraca Great Again</strong> vs <strong>Trustfund QBs</strong></div><div class='muted'>Proj: None \u2013 None</div></div><div class='tx'><div class='meta'>Week 9</div><div><strong>Never (Jamar) Chase a Ho!</strong> vs <strong>Fifty Shades of Brown</strong></div><div class='muted'>Proj: None \u2013 None</div></div>"};
 
-      const weekSel = document.getElementById('mWeek');
-      const track   = document.getElementById('mTrack');
-      const prevBtn = document.getElementById('mPrev');
-      const nextBtn = document.getElementById('mNext');
+          const weekSel = document.getElementById('mWeek');
+          const track   = document.getElementById('mTrack');
+          const prevBtn = document.getElementById('mPrev');
+          const nextBtn = document.getElementById('mNext');
 
-      function setWeek(w){
-        const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
-        track.innerHTML = html;
-        idx = 0;
-        cacheSlides();
-        update();
-      }
+          function setWeek(w){
+            const html = slidesByWeek[w] || "<div class='m-empty'>No matchups</div>";
+            track.innerHTML = html;
+            idx = 0;
+            cacheSlides();
+            update();
+          }
 
-      // carousel behavior
-      let idx = 0;
-      let slides = [];
-      function cacheSlides() {
-        slides = track.querySelectorAll('.m-slide');
-      }
-      function update() {
-        const w = track.clientWidth;
-        track.scrollTo({left: idx * w, behavior: 'smooth'});
-        if (prevBtn) prevBtn.disabled = (idx === 0);
-        if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
-      }
-      prevBtn && prevBtn.addEventListener('click', ()=>{ idx = Math.max(0, idx - 1); update(); });
-      nextBtn && nextBtn.addEventListener('click', ()=>{ idx = Math.min(Math.max(0, slides.length - 1), idx + 1); update(); });
+          // carousel behavior
+          let idx = 0;
+          let slides = [];
+          function cacheSlides() {
+            slides = track.querySelectorAll('.m-slide');
+          }
+          function update() {
+            const w = track.clientWidth;
+            track.scrollTo({left: idx * w, behavior: 'smooth'});
+            if (prevBtn) prevBtn.disabled = (idx === 0);
+            if (nextBtn) nextBtn.disabled = (idx >= Math.max(0, slides.length - 1));
+          }
+          prevBtn && prevBtn.addEventListener('click', ()=>{ idx = Math.max(0, idx - 1); update(); });
+          nextBtn && nextBtn.addEventListener('click', ()=>{ idx = Math.min(Math.max(0, slides.length - 1), idx + 1); update(); });
 
-      window.addEventListener('resize', update);
-      weekSel.addEventListener('change', (e)=> setWeek(e.target.value));
+          window.addEventListener('resize', update);
+          weekSel.addEventListener('change', (e)=> setWeek(e.target.value));
 
-      cacheSlides();
-      update();
-    })();
+          cacheSlides();
+          update();
+        })();
     </script>
-    
-  </div>
-</body></html>
+
+</div>
+</body>
+</html>

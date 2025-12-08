@@ -1,4 +1,6 @@
 # dashboard_services/team_enrichment.py
+
+import concurrent.futures
 import json
 import os
 import requests
@@ -7,7 +9,10 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
+
 from dashboard_services.utils import load_teams_index, write_json, path_teams_index
+
+HTTP_SESSION = requests.Session()
 
 TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 TANK01_BASE_URL = f"https://{TANK01_API_HOST}"
@@ -16,6 +21,56 @@ TANK01_API_KEY = os.getenv("TANK01_API_KEY")
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+RUSH_ATT_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-attempts-per-game"
+RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-yards-per-game"
+PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/passing-yards-per-game"
+OPP_PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-passing-yards-per-game"
+OPP_RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-rushing-yards-per-game"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0 Safari/537.36"
+    )
+}
+
+# Map TeamRankings team text -> your abbreviations
+TEAMRANKINGS_TO_ABBR: Dict[str, str] = {
+    "Arizona": "ARI",
+    "Atlanta": "ATL",
+    "Baltimore": "BAL",
+    "Buffalo": "BUF",
+    "Carolina": "CAR",
+    "Chicago": "CHI",
+    "Cincinnati": "CIN",
+    "Cleveland": "CLE",
+    "Dallas": "DAL",
+    "Denver": "DEN",
+    "Detroit": "DET",
+    "Green Bay": "GB",
+    "Houston": "HOU",
+    "Indianapolis": "IND",
+    "Jacksonville": "JAX",
+    "Kansas City": "KC",
+    "Las Vegas": "LV",
+    "LA Chargers": "LAC",
+    "LA Rams": "LAR",
+    "Miami": "MIA",
+    "Minnesota": "MIN",
+    "New England": "NE",
+    "New Orleans": "NO",
+    "NY Giants": "NYG",
+    "NY Jets": "NYJ",
+    "Philadelphia": "PHI",
+    "Pittsburgh": "PIT",
+    "San Francisco": "SF",
+    "Seattle": "SEA",
+    "Tampa Bay": "TB",
+    "Tennessee": "TEN",
+    "Washington": "WSH",
+}
 
 
 def _save_value_table(players, path: Path):
@@ -75,23 +130,12 @@ def _to_float(value) -> float:
 
 def fetch_team_offense_per_game(
         season: int = 2024,
+        session: Optional[requests.Session] = None,
 ) -> Dict[str, Dict[str, float]]:
     """
-    Call Tank01 getNFLTeams and return per-game offensive team stats:
-
-      {
-        "NE": {
-          "pass_yds_pg": float,
-          "pass_att_pg": float,
-          "pass_td_pg": float,
-          "rush_yds_pg": float,
-          "rush_att_pg": float,
-          "rush_td_pg": float,
-          "games": float
-        },
-        ...
-      }
+    Call Tank01 getNFLTeams and return per-game offensive team stats.
     """
+    sess = session or HTTP_SESSION
 
     url = f"{TANK01_BASE_URL}/getNFLTeams"
     params = {
@@ -107,7 +151,7 @@ def fetch_team_offense_per_game(
         "x-rapidapi-key": TANK01_API_KEY,
     }
 
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    resp = sess.get(url, headers=headers, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
 
@@ -125,7 +169,6 @@ def fetch_team_offense_per_game(
         ties = _to_float(team_obj.get("tie"))
         games = wins + losses + ties
 
-        # if for some reason games isn't set, skip or default
         if games <= 0:
             continue
 
@@ -133,7 +176,6 @@ def fetch_team_offense_per_game(
         pass_stats = team_stats.get("Passing") or {}
         rush_stats = team_stats.get("Rushing") or {}
 
-        # Season totals from API
         total_pass_yds = _to_float(pass_stats.get("passYds"))
         total_pass_att = _to_float(pass_stats.get("passAttempts"))
         total_pass_td = _to_float(pass_stats.get("passTD"))
@@ -142,7 +184,6 @@ def fetch_team_offense_per_game(
         total_rush_att = _to_float(rush_stats.get("carries"))
         total_rush_td = _to_float(rush_stats.get("rushTD"))
 
-        # Per-game
         out[team_abv] = {
             "pass_yds_pg": total_pass_yds / games,
             "pass_att_pg": total_pass_att / games,
@@ -158,7 +199,7 @@ def fetch_team_offense_per_game(
 
 def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
     teams_index = load_teams_index() or {}
-    per_game = fetch_team_offense_per_game(season)
+    per_game = fetch_team_offense_per_game(season, session=HTTP_SESSION)
 
     for team_abv, stats in per_game.items():
         meta = teams_index.setdefault(team_abv, {})
@@ -179,65 +220,19 @@ def enrich_all_team_info(season: int):
     enrich_teams_index_with_team_offense(season)
 
 
-RUSH_ATT_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-attempts-per-game"
-RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-yards-per-game"
-PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/passing-yards-per-game"
-OPP_PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-passing-yards-per-game"
-OPP_RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-rushing-yards-per-game"
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0 Safari/537.36"
-    )
-}
-
-# Map TeamRankings team text -> your abbreviations
-TEAMRANKINGS_TO_ABBR: Dict[str, str] = {
-    "Arizona": "ARI",
-    "Atlanta": "ATL",
-    "Baltimore": "BAL",
-    "Buffalo": "BUF",
-    "Carolina": "CAR",
-    "Chicago": "CHI",
-    "Cincinnati": "CIN",
-    "Cleveland": "CLE",
-    "Dallas": "DAL",
-    "Denver": "DEN",
-    "Detroit": "DET",
-    "Green Bay": "GB",
-    "Houston": "HOU",
-    "Indianapolis": "IND",
-    "Jacksonville": "JAX",
-    "Kansas City": "KC",
-    "Las Vegas": "LV",
-    "LA Chargers": "LAC",
-    "LA Rams": "LAR",
-    "Miami": "MIA",
-    "Minnesota": "MIN",
-    "New England": "NE",
-    "New Orleans": "NO",
-    "NY Giants": "NYG",
-    "NY Jets": "NYJ",
-    "Philadelphia": "PHI",
-    "Pittsburgh": "PIT",
-    "San Francisco": "SF",
-    "Seattle": "SEA",
-    "Tampa Bay": "TB",
-    "Tennessee": "TEN",
-    "Washington": "WSH",
-}
-
-
-def _fetch_teamrankings_table(url: str) -> Dict[str, float]:
+def _fetch_teamrankings_table(
+        url: str,
+        session: Optional[requests.Session] = None,
+) -> Dict[str, float]:
     """
     Generic parser for TeamRankings stat pages.
 
     Returns {abbr: current_season_value} where abbr is e.g. 'ARI', 'ATL', ...
     """
+    sess = session or HTTP_SESSION
+
     print(f"[teamrankings] Fetching {url}")
-    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp = sess.get(url, headers=HEADERS, timeout=30)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -250,7 +245,6 @@ def _fetch_teamrankings_table(url: str) -> Dict[str, float]:
             continue
         header_text = " ".join(th.get_text(strip=True) for th in header_cells.find_all("th"))
         if "Rank" in header_text and "Team" in header_text:
-            # This is almost certainly the rankings table
             target_table = table
             break
 
@@ -267,8 +261,7 @@ def _fetch_teamrankings_table(url: str) -> Dict[str, float]:
         if len(tds) < 3:
             continue
 
-        # Columns are typically:
-        # 0: Rank, 1: Team, 2: Current Season, 3: Last 3, ...
+        # 0: Rank, 1: Team, 2: Current Season, ...
         team_text = tds[1].get_text(strip=True)
         value_text = tds[2].get_text(strip=True)
 
@@ -279,7 +272,6 @@ def _fetch_teamrankings_table(url: str) -> Dict[str, float]:
 
         abbr = TEAMRANKINGS_TO_ABBR.get(team_text)
         if not abbr:
-            # If a new team name format shows up, log it so you can extend the map
             print(f"[teamrankings] Unmapped team name: {team_text!r}")
             continue
 
@@ -290,38 +282,23 @@ def _fetch_teamrankings_table(url: str) -> Dict[str, float]:
 
 
 def fetch_team_rush_attempts_per_game() -> Dict[str, float]:
-    """
-    Returns {team_abbr: rush_attempts_per_game}
-    """
-    return _fetch_teamrankings_table(RUSH_ATT_PG_URL)
+    return _fetch_teamrankings_table(RUSH_ATT_PG_URL, session=HTTP_SESSION)
 
 
 def fetch_team_rush_yards_per_game() -> Dict[str, float]:
-    """
-    Returns {team_abbr: rush_yards_per_game}
-    """
-    return _fetch_teamrankings_table(RUSH_YDS_PG_URL)
+    return _fetch_teamrankings_table(RUSH_YDS_PG_URL, session=HTTP_SESSION)
 
 
 def fetch_team_pass_yards_per_game() -> Dict[str, float]:
-    """
-    Returns {team_abbr: rush_yards_per_game}
-    """
-    return _fetch_teamrankings_table(PASS_YDS_PG_URL)
+    return _fetch_teamrankings_table(PASS_YDS_PG_URL, session=HTTP_SESSION)
 
 
 def fetch_opp_pass_yards_per_game() -> Dict[str, float]:
-    """
-    Returns {team_abbr: rush_yards_per_game}
-    """
-    return _fetch_teamrankings_table(OPP_PASS_YDS_PG_URL)
+    return _fetch_teamrankings_table(OPP_PASS_YDS_PG_URL, session=HTTP_SESSION)
 
 
 def fetch_opp_rush_yards_per_game() -> Dict[str, float]:
-    """
-    Returns {team_abbr: rush_yards_per_game}
-    """
-    return _fetch_teamrankings_table(OPP_RUSH_YDS_PG_URL)
+    return _fetch_teamrankings_table(OPP_RUSH_YDS_PG_URL, session=HTTP_SESSION)
 
 
 def enrich_teams_index_with_rushing(
@@ -332,16 +309,51 @@ def enrich_teams_index_with_rushing(
     Load your teams_index.json, add:
       - rush_att_pg
       - rush_yds_pg
-    based on TeamRankings, then write back to disk (or a new file).
+      - pass_yds_pg
+      - opp_pass_yds_pg
+      - opp_rush_yds_pg
+    then write back to disk (or a new file).
     """
     with teams_index_path.open("r", encoding="utf-8") as f:
         teams_index = json.load(f)
 
-    rush_att = fetch_team_rush_attempts_per_game()
-    rush_yds = fetch_team_rush_yards_per_game()
-    pass_yds = fetch_team_pass_yards_per_game()
-    opp_pass_yds = fetch_opp_pass_yards_per_game()
-    opp_rush_yds = fetch_opp_rush_yards_per_game()
+    # Map logical keys -> URL
+    urls = {
+        "rush_att": RUSH_ATT_PG_URL,
+        "rush_yds": RUSH_YDS_PG_URL,
+        "pass_yds": PASS_YDS_PG_URL,
+        "opp_pass_yds": OPP_PASS_YDS_PG_URL,
+        "opp_rush_yds": OPP_RUSH_YDS_PG_URL,
+    }
+
+    results: Dict[str, Dict[str, float]] = {}
+    session = HTTP_SESSION
+
+    def worker(key: str, url: str):
+        try:
+            data = _fetch_teamrankings_table(url, session=session)
+            return key, data, None
+        except Exception as e:
+            return key, {}, e
+
+    # Fetch all 5 pages in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_map = {
+            executor.submit(worker, key, url): key
+            for key, url in urls.items()
+        }
+        for fut in concurrent.futures.as_completed(future_map):
+            key, data, err = fut.result()
+            if err:
+                print(f"[teamrankings] ERROR fetching {key}: {err}")
+                data = {}
+            results[key] = data
+
+    rush_att = results.get("rush_att", {})
+    rush_yds = results.get("rush_yds", {})
+    pass_yds = results.get("pass_yds", {})
+    opp_pass_yds = results.get("opp_pass_yds", {})
+    opp_rush_yds = results.get("opp_rush_yds", {})
 
     for abbr, meta in teams_index.items():
         meta["rush_att_pg"] = rush_att.get(abbr)
@@ -356,9 +368,3 @@ def enrich_teams_index_with_rushing(
 
     print(f"[teamrankings] Enriched teams_index and wrote to {out_path}")
     return teams_index
-
-
-if __name__ == "__main__":
-    SEASON = 2025
-    enrich_all_team_info(SEASON)
-    enrich_teams_index_with_rushing(Path(path_teams_index()))

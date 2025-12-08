@@ -10,7 +10,7 @@ from typing import Dict, Any, Iterable
 from dashboard_services.data_building.nfl_target_share import fetch_league_target_share
 from dashboard_services.data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from dashboard_services.service import age_from_bday
-from dashboard_services.utils import canon_team, load_players_index, load_usage_table
+from dashboard_services.utils import canon_team, load_players_index
 
 
 def build_usage_map_for_season(
@@ -56,7 +56,6 @@ def build_usage_map_for_season(
     # Core Sleeper stats + redzone
     season_stats = fetch_season_stats(season, weeks)
     rz_map = fetch_season_redzone_stats(season)
-    # NEW: Footballguys target share (team, name) -> {total_targets, target_share}
     ts_map = fetch_league_target_share(season)
 
     # NEW: players_index so we can map pid -> (team, name)
@@ -311,7 +310,6 @@ def write_usage_table_snapshot(
                 "usage": usage,
             }
         )
-
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(players_out, f, ensure_ascii=False, indent=2)

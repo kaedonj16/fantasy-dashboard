@@ -1,5 +1,6 @@
 # dashboard_services/nfl_target_share.py
 
+import concurrent.futures
 import json
 import pandas as pd
 import requests
@@ -32,7 +33,14 @@ HEADERS = {
 }
 
 
-def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, float]]:
+MAX_WORKERS_TARGETS = 6  # tune this based on how aggressive you want to be
+
+
+def fetch_team_target_share(
+    team: str,
+    season: int,
+    session: requests.Session,
+) -> Dict[str, Tuple[float, float]]:
     """
     Scrape Footballguys Team Targets page for one team and season.
 
@@ -41,9 +49,10 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
 
     where target_share is player_total / team_total.
     """
+    sess = session or requests
     url = FOOTBALLGUYS_TEAM_TARGETS_URL.format(team=team, year=season)
 
-    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp = sess.get(url, headers=HEADERS, timeout=15)
     resp.raise_for_status()
 
     # Parse all tables from page; first one is the targets table
@@ -54,9 +63,6 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
 
     df = tables[0]
 
-    # The table should look like:
-    # name | Wk 1 | Wk 2 | ... | total
-    # There will also be rows like "RB Totals", "WR Totals", etc.
     # Clean up column names
     df.columns = [str(c).strip().lower() for c in df.columns]
 
@@ -71,12 +77,13 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
     df["total"] = pd.to_numeric(df["total"], errors="coerce").fillna(0.0)
 
     # Compute team total targets
-    team_total = df["total"].sum()
+    team_total = float(df["total"].sum())
     if team_total <= 0:
         print(f"[target_share] Team {team} has zero total targets, skipping.")
         return {}
 
     ts_map: Dict[str, Tuple[float, float]] = {}
+    # iterrows is fine here; table is small
     for _, row in df.iterrows():
         name = str(row["name"]).strip()
         total_targets = float(row["total"])
@@ -90,29 +97,38 @@ def fetch_team_target_share(team: str, season: int) -> Dict[str, Tuple[float, fl
 
 def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, float]]:
     """
-    Fetch target share for all teams.
+    Fetch target share for all teams, in parallel.
 
     Returns:
         { (team, player_name): { "total_targets": x, "target_share": y } }
     """
     league_map: Dict[Tuple[str, str], Dict[str, float]] = {}
 
-    print(f"[target_share] Fetching targets for all teams")
-    for team in NFL_TEAM_CODES:
+    print(f"[target_share] Fetching targets for all teams (season {season})")
+
+    session = requests.Session()
+
+    def worker(team: str):
         try:
-            team_map = fetch_team_target_share(team, season)
+            team_map = fetch_team_target_share(team, season, session=session)
+            return team, team_map, None
         except Exception as e:
-            print(f"[target_share] ERROR fetching {team}: {e}")
-            continue
+            return team, {}, e
 
-        for name, (total, share) in team_map.items():
-            league_map[(team, name)] = {
-                "total_targets": total,
-                "target_share": share,
-            }
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS_TARGETS) as executor:
+        futures = {executor.submit(worker, team): team for team in NFL_TEAM_CODES}
 
-        # Be nice to their servers
-        time.sleep(1.0)
+        for fut in concurrent.futures.as_completed(futures):
+            team, team_map, err = fut.result()
+            if err:
+                print(f"[target_share] ERROR fetching {team}: {err}")
+                continue
+
+            for name, (total, share) in team_map.items():
+                league_map[(team, name)] = {
+                    "total_targets": float(total),
+                    "target_share": float(share),
+                }
 
     print(f"[target_share] Built target share map for {len(league_map)} (team, player) combos")
     return league_map

@@ -22,26 +22,35 @@ from dashboard_services.data_building.value_model_training import build_ml_value
 from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
-    compute_team_projections_for_weeks
+    compute_team_projections_for_weeks, format_player_stats
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
-    seed_top6_from_team_stats, build_standings_map, build_and_save_week_stats_for_league
+    seed_top6_from_team_stats, build_standings_map
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
     load_players_index, \
     load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_standings_cache_for_league, \
     clear_weekly_cache_for_league, build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
-    fetch_week_from_tank01
+    fetch_week_from_tank01, load_week_stats, build_and_save_week_stats_for_league
 
 daily_lock = threading.Lock()
 daily_completed = None
 
-DASHBOARD_CACHE = {}  # (league_id)
-CACHE_TTL = 60 * 60
+DASHBOARD_CACHE = {}  # {league_id: {"ctx": ..., "ts": ..., "page_html": {page: (ts, html)}}}
+
+# How long a league context is considered fresh
+CACHE_TTL = 60 * 60 * 6  # 6 hours
+
+# How long value-table cache entries live
 VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
+
+# How long to cache rendered page HTML (Teams, Activity, Graphs) per league
+PAGE_HTML_TTL = 60  # seconds; bump if you want
+
 daily_init_done = False
+
 # directory to hold value-table files
 VALUE_TABLE_DIR = Path(__file__).resolve().parents[0] / "data"
 VALUE_TABLE_DIR.mkdir(parents=True, exist_ok=True)
@@ -155,7 +164,7 @@ BASE_HTML = """
   </head>
   <body>
     {nav}
-    <main class="overview-layout">
+    <main id="page-root" class="overview-layout">
       {body}
     </main>
     <script src="/static/app.js"></script>
@@ -163,12 +172,72 @@ BASE_HTML = """
 </html>
 """
 
+def timed(label: str, fn, *args, **kwargs):
+    """
+    Helper to log how long a block takes.
+    Usage: result = timed("build_tables", build_tables, ...)
+    """
+    t0 = time.perf_counter()
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        dt = time.perf_counter() - t0
+        print(f"[TIMING] {label}: {dt:.2f}s")
+
+
+def get_page_html_from_cache(league_id: str, page: str) -> str:
+    entry = DASHBOARD_CACHE.get(league_id)
+    if not entry:
+        return None
+    pages = entry.get("page_html", {})
+    rec = pages.get(page)
+    if not rec:
+        return None
+    ts, html = rec
+    if time.time() - ts > PAGE_HTML_TTL:
+        return None
+    return html
+
+
+def store_page_html(league_id: str, page: str, html: str) -> None:
+    entry = DASHBOARD_CACHE.setdefault(league_id, {})
+    pages = entry.setdefault("page_html", {})
+    pages[page] = (time.time(), html)
+
+
+# -------- global NFL data caches (shared across leagues) --------
+_PLAYERS_GLOBAL = None
+_PLAYERS_INDEX_GLOBAL = None
+_TEAMS_INDEX_GLOBAL = None
+
+
+def get_players_global():
+    global _PLAYERS_GLOBAL
+    if _PLAYERS_GLOBAL is None:
+        _PLAYERS_GLOBAL = get_nfl_players()
+    return _PLAYERS_GLOBAL
+
+
+def get_players_index_global():
+    global _PLAYERS_INDEX_GLOBAL
+    if _PLAYERS_INDEX_GLOBAL is None:
+        _PLAYERS_INDEX_GLOBAL = load_players_index()
+    return _PLAYERS_INDEX_GLOBAL
+
+
+def get_teams_index_global():
+    global _TEAMS_INDEX_GLOBAL
+    if _TEAMS_INDEX_GLOBAL is None:
+        _TEAMS_INDEX_GLOBAL = load_teams_index()
+    return _TEAMS_INDEX_GLOBAL
+
+
 
 def run_daily_data_async():
     """Start daily data build in a background thread."""
     thread = threading.Thread(
         target=build_daily_data,
-        args=(CURRENT_SEASON,),
+        args=(CURRENT_SEASON,CURRENT_WEEK),
         daemon=True
     )
     thread.start()
@@ -331,54 +400,46 @@ def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
 def build_league_context(league_id: str) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
+    Heavy, but we do it rarely and cache the result.
     """
-    rosters = get_rosters(league_id)
-    users = get_users(league_id)
-    league = get_league(league_id)
-    traded = get_traded_picks(league_id)
-    current = get_nfl_state()
-    players = get_nfl_players()
-    players_index = load_players_index()
-    teams_index = load_teams_index()
+
+    # External data (with timing)
+    rosters = timed("get_rosters", get_rosters, league_id)
+    users = timed("get_users", get_users, league_id)
+    league = timed("get_league", get_league, league_id)
+    traded = timed("get_traded_picks", get_traded_picks, league_id)
+    current = timed("get_nfl_state", get_nfl_state)
+
+    # Shared global data
+    players = timed("get_nfl_players(global)", get_players_global)
+    players_index = timed("load_players_index(global)", get_players_index_global)
+    teams_index = timed("load_teams_index(global)", get_teams_index_global)
     players_map = get_players_map(players)
+
     current_season = current.get("season")
     current_week = current.get("week")
     weeks = 18
-    # build_and_save_week_stats_for_league(teams_index, current_season, current_week)
 
-    df_weekly, team_stats, roster_map = build_tables(
-        league_id, current_week, players, users, rosters
-    )
-    activity_df = build_week_activity(league_id, players_map)
-
-    injury_df = build_injury_report(league_id, local_tz="America/New_York", include_free_agents=False)
-    statuses = build_status_by_week(
-        current_season,
-        weeks,
-        players_index,
-        teams_index,
-    )
-
-    proj_by_week = build_projections_by_week(current_season, weeks)
-
-    matchups_by_week = build_matchups_by_week(
+    # Core league tables (weekly DF + team_stats + roster_map)
+    df_weekly, team_stats, roster_map = timed(
+        "build_tables",
+        build_tables,
         league_id,
-        range(1, weeks),
-        roster_map,
-        players_map,
+        current_week,
+        players,
+        users,
+        rosters,
     )
 
-    proj_by_roster = compute_team_projections_for_weeks(
-        matchups_by_week,
-        statuses,
-        proj_by_week,
-        roster_map,
+    # Activity / injury data
+    activity_df = timed("build_week_activity", build_week_activity, league_id, players_map)
+    injury_df = timed(
+        "build_injury_report",
+        build_injury_report,
+        league_id,
+        "America/New_York",
+        False,
     )
-
-    # vectorized lookup for projections
-    key_series = list(zip(df_weekly["week"].astype(int), df_weekly["roster_id"].astype(str)))
-    proj_map = proj_by_roster  # already a dict keyed by (week, roster_id)
-    df_weekly["proj"] = [proj_map.get(k, float("nan")) for k in key_series]
 
     standings_map = build_standings_map(team_stats, roster_map)
 
@@ -388,8 +449,12 @@ def build_league_context(league_id: str) -> dict:
         rosters=rosters,
         traded=traded,
     )
+
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
     team_game_lookup = build_team_game_lookup(scores_body)
+
+    # Model value table (used by multiple pages) – load once per ctx
+    model_value_table = load_model_value_table() or []
 
     return {
         "league_id": league_id,
@@ -406,16 +471,182 @@ def build_league_context(league_id: str) -> dict:
         "df_weekly": df_weekly,
         "team_stats": team_stats,
         "roster_map": roster_map,
-        "statuses": statuses,
-        "matchups_by_week": matchups_by_week,
-        "proj_by_week": proj_by_week,
         "weeks": weeks,
         "injury_df": injury_df,
         "activity_df": activity_df,
         "standings_map": standings_map,
         "picks_by_roster": picks_by_roster,
         "team_game_lookup": team_game_lookup,
+        "model_value_table": model_value_table,
+        # NOTE: we intentionally DO NOT populate:
+        #   proj_by_week, statuses, matchups_by_week, proj_by_roster, df_weekly["proj"]
+        # Those are added lazily by ensure_weekly_bits()
     }
+
+
+def ensure_weekly_bits(ctx: dict) -> None:
+    """
+    Lazily populate projections, statuses, matchups, and df_weekly['proj']
+    into the ctx. Only used by Dashboard + Weekly Hub + related APIs.
+    """
+    # If we've already populated, nothing to do
+    if all(k in ctx for k in ("proj_by_week", "statuses", "matchups_by_week", "proj_by_roster")):
+        # still ensure df_weekly has 'proj' column
+        df = ctx.get("df_weekly")
+        if df is not None and "proj" not in df.columns:
+            proj_by_roster = ctx["proj_by_roster"]
+            key_series = list(zip(df["week"].astype(int), df["roster_id"].astype(str)))
+            df["proj"] = [proj_by_roster.get(k, float("nan")) for k in key_series]
+            ctx["df_weekly"] = df
+        return
+
+    current_season = ctx["current_season"]
+    weeks = ctx["weeks"]
+    league_id = ctx["league_id"]
+    players_index = ctx["players_index"]
+    teams_index = ctx["teams_index"]
+    roster_map = ctx["roster_map"]
+    players_map = ctx["players_map"]
+
+    proj_by_week = build_projections_by_week(current_season, weeks)
+    statuses = build_status_by_week(current_season, weeks, players_index, teams_index)
+    matchups_by_week = build_matchups_by_week(
+        league_id,
+        range(1, weeks),
+        roster_map,
+        players_map,
+    )
+    proj_by_roster = compute_team_projections_for_weeks(
+        matchups_by_week,
+        statuses,
+        proj_by_week,
+        roster_map,
+    )
+
+    ctx["proj_by_week"] = proj_by_week
+    ctx["statuses"] = statuses
+    ctx["matchups_by_week"] = matchups_by_week
+    ctx["proj_by_roster"] = proj_by_roster
+
+    # add/refresh proj column on df_weekly
+    df = ctx["df_weekly"]
+    key_series = list(zip(df["week"].astype(int), df["roster_id"].astype(str)))
+    df["proj"] = [proj_by_roster.get(k, float("nan")) for k in key_series]
+    ctx["df_weekly"] = df
+
+
+
+def refresh_league_ctx_section(league_id: str, page: str) -> dict:
+    """
+    Refresh only the parts of the league context needed for a given page.
+    Mutates the cached ctx in-place and updates the timestamp.
+    """
+    entry = DASHBOARD_CACHE.get(league_id)
+    if not entry:
+        # No cache yet: build everything once
+        ctx = build_league_context(league_id)
+        DASHBOARD_CACHE[league_id] = {"ctx": ctx, "ts": time.time()}
+        return ctx
+
+    ctx = entry["ctx"]
+
+    # Common bits we’ll reuse
+    rosters = ctx["rosters"]
+    users = ctx["users"]
+    players = ctx["players"]
+    players_map = ctx["players_map"]
+    players_index = ctx["players_index"]
+    teams_index = ctx["teams_index"]
+    current_season = ctx["current_season"]
+    current_week = ctx["current_week"]
+    weeks = ctx["weeks"]  # this is your int (e.g. 18)
+
+    # ---------- Standings / core weekly data ----------
+    if page in ("standings", "dashboard", "weekly"):
+        df_weekly, team_stats, roster_map = build_tables(
+            league_id, current_week, players, users, rosters
+        )
+
+        ctx["df_weekly"] = df_weekly
+        ctx["team_stats"] = team_stats
+        ctx["roster_map"] = roster_map
+        ctx["standings_map"] = build_standings_map(team_stats, roster_map)
+
+    # ---------- Activity / injuries ----------
+    if page in ("activity", "dashboard"):
+        clear_activity_cache_for_league(league_id)
+        ctx["activity_df"] = build_week_activity(league_id, players_map)
+
+        ctx["injury_df"] = build_injury_report(
+            league_id,
+            local_tz="America/New_York",
+            include_free_agents=False,
+        )
+
+    # ---------- Weekly projections, statuses, matchups ----------
+    if page in ("weekly", "dashboard"):
+        clear_weekly_cache_for_league()
+
+        # make sure projections for current week are refreshed at the source
+        get_week_projections_cached(
+            current_season,
+            current_week,
+            fetch_week_from_tank01,
+            True,  # force_refresh
+        )
+
+        ctx["proj_by_week"] = build_projections_by_week(current_season, weeks)
+
+        ctx["statuses"] = build_status_by_week(
+            current_season,
+            weeks,
+            players_index,
+            teams_index,
+        )
+
+        ctx["matchups_by_week"] = build_matchups_by_week(
+            league_id,
+            range(1, weeks),
+            ctx["roster_map"],
+            players_map,
+        )
+
+        proj_by_roster = compute_team_projections_for_weeks(
+            ctx["matchups_by_week"],
+            ctx["statuses"],
+            ctx["proj_by_week"],
+            ctx["roster_map"],
+        )
+        ctx["proj_by_roster"] = proj_by_roster
+        proj_by_roster = compute_team_projections_for_weeks(
+            matchups_by_week,
+            statuses,
+            proj_by_week,
+            roster_map,
+        )
+
+        # vectorized lookup for projections
+        key_series = list(zip(df_weekly["week"].astype(int), df_weekly["roster_id"].astype(str)))
+        proj_map = proj_by_roster  # already a dict keyed by (week, roster_id)
+        df_weekly["proj"] = [proj_map.get(k, float("nan")) for k in key_series]
+
+        # vectorized proj column update on df_weekly
+        df = ctx["df_weekly"]
+        key_series = list(zip(df["week"].astype(int), df["roster_id"].astype(str)))
+        proj_map = proj_by_roster
+        df["proj"] = [proj_map.get(k, float("nan")) for k in key_series]
+        ctx["df_weekly"] = df
+
+    # ---------- Teams page ----------
+    if page == "teams":
+        clear_teams_cache_for_league()
+        # if rosters / users may change, re-pull them
+        ctx["rosters"] = get_rosters(league_id)
+        ctx["users"] = get_users(league_id)
+
+    # Update timestamp
+    entry["ts"] = time.time()
+    return ctx
 
 
 def get_league_ctx_from_cache(league_id: str) -> dict:
@@ -532,24 +763,26 @@ def build_dashboard_body(ctx: dict) -> str:
         # fall back to current week if nothing is finalized yet
         last_final_week = current_week
 
-    slides = []
-    for m in matchups_by_week.get(current_week, []):
-        slides.append(
-            render_matchup_slide(
-                season,
-                m,
-                current_week,
-                last_final_week,
-                status_by_pid=statuses[current_week].get("statuses", {}),
-                projections=proj_by_week,
-                players=players_index,
-                teams=teams_index,
-                team_game_lookup=team_game_lookup,
-            )
+    slides = [
+        render_matchup_slide(
+            season,
+            m,
+            current_week,
+            last_final_week,
+            status_by_pid=statuses[current_week].get("statuses", {}),
+            projections=proj_by_week,
+            players=players_index,
+            teams=teams_index,
+            team_game_lookup=team_game_lookup,
         )
-
+        for m in matchups_by_week.get(current_week, [])
+    ]
     slides_by_week = {current_week: "".join(slides)}
-    matchup_html = render_matchup_carousel_weeks(slides_by_week, True)
+    matchup_html = render_matchup_carousel_weeks(
+        slides_by_week,
+        dashboard=True,
+        active_week=current_week,
+    )
 
     # --- Awards / recap style info (season-level or last week) ---
     awards = compute_awards_season(finalized_df, players_map, league_id)
@@ -1371,77 +1604,73 @@ def build_weekly_hub_body(ctx: dict) -> str:
     statuses = ctx["statuses"]
     team_game_lookup = ctx["team_game_lookup"]
     matchups_by_week = ctx["matchups_by_week"]
-    last_final_week = current_week
 
+    # last finalized week
+    last_final_week = current_week
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
-    else:
-        pass
 
-    default_week = current_week if current_week in range(1, weeks) else weeks[-1]
-    # Build all matchup slides once
+    # Default week: current if valid, else last prior
+    default_week = current_week if current_week in range(1, weeks) else (weeks - 1)
 
-    slides_by_week: dict[int, str] = {
-        w: "".join(
-            render_matchup_slide(
-                season,
-                m,
-                w,
-                last_final_week,
-                status_by_pid=statuses[w].get("statuses", {}),
-                projections=proj_by_week,
-                players=players_index,
-                teams=teams_index,
-                team_game_lookup=team_game_lookup,
-            )
-            for m in matchups_by_week.get(w, [])
+    # --- Matchups for default week only ---
+    default_matchups = matchups_by_week.get(default_week, []) or []
+    slides = [
+        render_matchup_slide(
+            season,
+            m,
+            default_week,
+            last_final_week,
+            status_by_pid=(statuses.get(default_week) or {}).get("statuses", {}) or {},
+            projections=proj_by_week,
+            players=players_index,
+            teams=teams_index,
+            team_game_lookup=team_game_lookup,
         )
-        for w in range(1, weeks)
-    }
+        for m in default_matchups
+    ]
+    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
+    slides_by_week = {default_week: slides_html}
 
-    # One global carousel (will listen to #hubWeek)
-    matchup_html = render_matchup_carousel_weeks(slides_by_week, False)
+    matchup_html = render_matchup_carousel_weeks(
+        slides_by_week,
+        dashboard=False,
+        active_week=default_week,
+    )
 
-    # Week dropdown HTML
+    # --- Week dropdown ---
     options = []
     for w in range(1, weeks):
         sel = " selected" if w == default_week else ""
         options.append(f"<option value='{w}'{sel}>Week {w}</option>")
     week_select_html = "".join(options)
 
-    main_panels = []
-    side_panels = []
+    # --- Only prebuild DEFAULT week’s left + sidebar panels ---
+    top_scorers_html = _render_weekly_top_scorers_for_week(
+        league_id,
+        df_weekly,
+        roster_map,
+        players_map,
+        proj_by_week,
+        rosters,
+        default_week,
+        users,
+    )
+    highlights_html = _render_weekly_highlights(df_weekly, default_week)
 
-    for w in range(1, weeks):
-        active_cls = " active" if w == default_week else ""
+    main_panel_html = f"""
+          <div class="week-main-panel active" data-week="{default_week}">
+            {top_scorers_html}
+          </div>
+    """
+    side_panel_html = f"""
+          <div class="week-side-panel active" data-week="{default_week}">
+            {highlights_html}
+          </div>
+    """
 
-        # Top scorers are truly per-week
-        top_scorers_html = _render_weekly_top_scorers_for_week(
-            league_id,
-            df_weekly,
-            roster_map,
-            players_map,
-            proj_by_week,
-            rosters,
-            w,
-            users
-        )
-        highlights_html = _render_weekly_highlights(df_weekly, w)
-
-        # Left-side weekly pane (this will swap)
-        main_panels.append(f"""
-              <div class="week-main-panel{active_cls}" data-week="{w}">
-                {top_scorers_html}
-              </div>
-        """)
-
-        # Sidebar weekly pane (already working)
-        side_panels.append(f"""
-              <div class="week-side-panel{active_cls}" data-week="{w}">
-                {highlights_html}
-              </div>
-        """)
+    league_js = json.dumps(league_id)
 
     return f"""
     <div class="page-layout weekly-hub">
@@ -1457,44 +1686,108 @@ def build_weekly_hub_body(ctx: dict) -> str:
           </div>
         </div>
 
-        <!-- two-column main area like your standings hub -->
         <div class="standings-main two-col-standings">
           <div class="standings-col">
             <div class="week-main-panels">
-              {''.join(main_panels)}
+              {main_panel_html}
             </div>
           </div>
           <div class="standings-col">
-            {matchup_html}
+            <div class="matchups-shell">
+              <div id="weeklyMatchupsContainer">
+                {matchup_html}
+              </div>
+              <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
+                <div class="matchups-loading-inner">
+                  <div class="matchups-spinner"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
 
       <aside class="page-sidebar">
         <div class="week-side-panels">
-          {''.join(side_panels)}
+          {side_panel_html}
         </div>
       </aside>
     </div>
 
-    <script>
-    (function() {{
-      var sel = document.getElementById('hubWeek');
-      if (!sel) return;
-      
-      sel.addEventListener('change', function() {{
-        var w = this.value;
+<script>
+(function() {{
+  var leagueId = {league_js};
 
-        document.querySelectorAll('.week-main-panel').forEach(function(el) {{
-          el.classList.toggle('active', el.getAttribute('data-week') === w);
-        }});
-        document.querySelectorAll('.week-side-panel').forEach(function(el) {{
-          el.classList.toggle('active', el.getAttribute('data-week') === w);
-        }});
+  var sel = document.getElementById('hubWeek');
+  if (!sel) return;
+
+  var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
+  var loadingOverlay    = document.getElementById('weeklyMatchupsLoading');
+
+  function showLoading() {{
+    if (loadingOverlay) {{
+      loadingOverlay.classList.remove('hidden');
+    }}
+  }}
+
+  function hideLoading() {{
+    if (loadingOverlay) {{
+      loadingOverlay.classList.add('hidden');
+    }}
+  }}
+
+  sel.addEventListener('change', function() {{
+    var w = this.value;
+
+    showLoading();
+
+    fetch('/api/weekly-week?league_id=' + encodeURIComponent(leagueId) +
+          '&week=' + encodeURIComponent(w))
+      .then(function(res) {{ return res.json(); }})
+      .then(function(data) {{
+        if (!data.ok) {{
+          console.error('Failed to load week', w, data.error);
+          hideLoading();
+          return;
+        }}
+
+        var mainContainer = document.querySelector('.week-main-panels');
+        var sideContainer = document.querySelector('.week-side-panels');
+
+        if (mainContainer && typeof data.top_html === 'string') {{
+          mainContainer.innerHTML =
+            '<div class="week-main-panel active" data-week="' + w + '">' +
+              data.top_html +
+            '</div>';
+        }}
+
+        if (sideContainer && typeof data.highlights_html === 'string') {{
+          sideContainer.innerHTML =
+            '<div class="week-side-panel active" data-week="' + w + '">' +
+              data.highlights_html +
+            '</div>';
+        }}
+
+        if (matchupsContainer && typeof data.matchups_html === 'string') {{
+          // only replace inner carousel HTML, keep shell + overlay
+          matchupsContainer.innerHTML = data.matchups_html;
+
+          // re-align the carousel to the first slide + wire up buttons
+          if (typeof window.resetMatchupCarousels === 'function') {{
+            window.resetMatchupCarousels(matchupsContainer);
+          }}
+        }}
+
+        hideLoading();
+      }})
+      .catch(function(err) {{
+        console.error('Error fetching week', w, err);
+        hideLoading();
       }});
-    }})();
-    </script>
-    """
+  }});
+}})();
+</script>
+"""
 
 
 def build_projections_by_week(season: int, weeks: int):
@@ -1502,12 +1795,11 @@ def build_projections_by_week(season: int, weeks: int):
     for w in range(1, weeks):
         try:
             projections = load_week_projection(season, w)
-            bundles[w] = {
-                "projections": projections,
-            }
+            bundles[w] = { "projections": projections, }
         except Exception as e:
             print(f"Error loading week {w} projections: {e}")
             bundles[w] = {"projections": {}}
+
     return bundles
 
 
@@ -1532,7 +1824,7 @@ def build_activity_body(ctx: dict) -> str:
     standings_map = ctx["standings_map"]
 
     # ---------- VALUE SOURCES ----------
-    players_values_raw = load_model_value_table() or []
+    players_values_raw = ctx.get("model_value_table") or []
     player_val_by_key: dict[tuple[str, str, str], float] = {}
     player_val_by_key_np: dict[tuple[str, str], float] = {}
 
@@ -1569,8 +1861,8 @@ def build_activity_body(ctx: dict) -> str:
             return 0.0, ""
 
         val = float(
-            player_val_by_key.get((name, pos, team))
-            or player_val_by_key_np.get((name, pos), 0.0)
+            player_val_by_key.get((name_lower, pos, team))
+            or player_val_by_key_np.get((name_lower, pos), 0.0)
         )
 
         rank_label = rank_label_by_name.get(name_lower, pos)
@@ -2010,7 +2302,7 @@ def build_teams_body(ctx: dict) -> str:
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
-    model_vals = load_model_value_table() or []
+    model_vals = ctx.get("model_value_table") or []
 
     name_to_rank_label: dict[str, str] = {}
     name_to_age: dict[str, float | None] = {}
@@ -2397,23 +2689,24 @@ def build_teams_body(ctx: dict) -> str:
 
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
-    # grab context (this will use cache or rebuild if expired)
     ctx = get_league_ctx_from_cache(league_id)
-    body = build_dashboard_body(ctx)
+    ensure_weekly_bits(ctx)  # dashboard needs projections & matchups
+    body = timed("build_dashboard_body", build_dashboard_body, ctx)
     return render_page("Dashboard", league_id, "dashboard", body)
 
 
 @app.route("/league/<league_id>/standings")
 def page_standings(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = build_standings_body(ctx)
+    body = timed("build_standings_body", build_standings_body, ctx)
     return render_page("Standings", league_id, "standings", body)
 
 
 @app.route("/league/<league_id>/weekly")
 def page_weekly(league_id):
     ctx = get_league_ctx_from_cache(league_id)
-    body = build_weekly_hub_body(ctx)
+    ensure_weekly_bits(ctx)
+    body = timed("build_weekly_hub_body", build_weekly_hub_body, ctx)
     return render_page("Weekly Hub", league_id, "weekly", body)
 
 
@@ -2426,22 +2719,37 @@ def page_trade(league_id):
 
 @app.route("/league/<league_id>/activity")
 def page_activity(league_id):
+    cached = get_page_html_from_cache(league_id, "activity")
+    if cached:
+        return render_page("Activity", league_id, "activity", cached)
+
     ctx = get_league_ctx_from_cache(league_id)
-    body = build_activity_body(ctx)
+    body = timed("build_activity_body", build_activity_body, ctx)
+    store_page_html(league_id, "activity", body)
     return render_page("Activity", league_id, "activity", body)
 
 
 @app.route("/league/<league_id>/graphs")
 def page_graphs(league_id):
+    cached = get_page_html_from_cache(league_id, "graphs")
+    if cached:
+        return render_page("Graphs", league_id, "graphs", cached)
+
     ctx = get_league_ctx_from_cache(league_id)
-    body_html = build_graphs_body(ctx)
+    body_html = timed("build_graphs_body", build_graphs_body, ctx)
+    store_page_html(league_id, "graphs", body_html)
     return render_page("Graphs", league_id, "graphs", body_html)
 
 
 @app.route("/league/<league_id>/teams")
 def page_teams(league_id):
+    cached = get_page_html_from_cache(league_id, "teams")
+    if cached:
+        return render_page("Teams", league_id, "teams", cached)
+
     ctx = get_league_ctx_from_cache(league_id)
-    body_html = build_teams_body(ctx)
+    body_html = timed("build_teams_body", build_teams_body, ctx)
+    store_page_html(league_id, "teams", body_html)
     return render_page("Teams", league_id, "teams", body_html)
 
 
@@ -2502,38 +2810,159 @@ def view_league(league_id):
     return redirect(url_for("page_dashboard", league_id=league_id))
 
 
+@app.route("/api/weekly-week")
+def api_weekly_week():
+    """
+    Return HTML snippets for Weekly Hub:
+      - top scorers (left main card)
+      - highlights (sidebar)
+      - matchups carousel (right main column)
+    for a specific week.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+
+    try:
+        week = int(request.args.get("week") or 0)
+    except ValueError:
+        week = 0
+
+    if not league_id or not week:
+        return jsonify({"ok": False, "error": "Missing league_id or week"}), 400
+
+    ctx = get_league_ctx_from_cache(league_id)
+    ensure_weekly_bits(ctx)  # make sure proj_by_week / statuses / matchups_by_week exist
+
+    df_weekly = ctx["df_weekly"]
+    roster_map = ctx["roster_map"]
+    players_map = ctx["players_map"]
+    proj_by_week = ctx["proj_by_week"]
+    rosters = ctx["rosters"]
+    users = ctx["users"]
+
+    team_game_lookup = ctx["team_game_lookup"]
+    matchups_by_week = ctx["matchups_by_week"]
+    statuses = ctx["statuses"]
+    players_index = ctx["players_index"]
+    teams_index = ctx["teams_index"]
+    season = ctx["current_season"]
+    current_week = ctx["current_week"]
+    max_weeks = ctx["weeks"]
+
+    # guard against invalid weeks
+    if week < 1 or week >= max_weeks:
+        return jsonify({"ok": False, "error": f"Week {week} out of range"}), 400
+
+    # --- last finalized week for proper matchup slide behavior ---
+    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if not finalized_df.empty:
+        last_final_week = int(finalized_df["week"].max())
+    else:
+        last_final_week = current_week
+
+    # --- top scorers / highlights for this week ---
+    top_html = _render_weekly_top_scorers_for_week(
+        league_id,
+        df_weekly,
+        roster_map,
+        players_map,
+        proj_by_week,
+        rosters,
+        week,
+        users,
+    )
+    highlights_html = _render_weekly_highlights(df_weekly, week)
+
+    # --- matchups carousel HTML for this week only ---
+    matchups = matchups_by_week.get(week, []) or []
+
+    # use .get(...) to avoid KeyError if statuses[week] missing
+    status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
+
+    slides = [
+        render_matchup_slide(
+            season,
+            m,
+            week,
+            last_final_week,
+            status_by_pid=status_by_pid,
+            projections=proj_by_week,
+            players=players_index,
+            teams=teams_index,
+            team_game_lookup=team_game_lookup,
+        )
+        for m in matchups
+    ]
+
+    if slides:
+        slides_html = "".join(slides)
+    else:
+        slides_html = "<div class='m-empty'>No matchups</div>"
+
+    slides_by_week = {week: slides_html}
+
+    # this version returns pure HTML (no <script>), matching app.js’ carousel logic
+    matchups_html = render_matchup_carousel_weeks(
+        slides_by_week,
+        dashboard=False,
+        active_week=week,
+    )
+
+    return jsonify({
+        "ok": True,
+        "top_html": top_html,
+        "highlights_html": highlights_html,
+        "matchups_html": matchups_html,
+    })
+
+
 @app.route("/api/refresh-page", methods=["POST"])
 def api_refresh_page():
     payload = request.get_json(silent=True) or {}
-    league_id = payload.get("league_id")
-    page = (payload.get("page") or "").strip().lower()
-
-    ctx = get_league_ctx_from_cache(league_id)
-    season = ctx["current_season"]
-    week = ctx["current_week"]
-    players_index = ctx["players_index"]
-    teams_index = ctx["teams_index"]
     league_id = (payload.get("league_id") or "").strip()
+    page = (payload.get("page") or "").strip().lower()
 
     if not league_id or not page:
         return jsonify({"ok": False, "error": "Missing league_id or page"}), 400
 
+    valid_pages = {"activity", "standings", "teams", "weekly", "dashboard"}
+    if page not in valid_pages:
+        return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
+
     try:
-        if page == "activity":
-            clear_activity_cache_for_league(league_id)
+        # Refresh the ctx for this league + page
+        ctx = refresh_league_ctx_section(league_id, page)
+
+        # Re-render just the page body for this page
+        if page == "dashboard":
+            ensure_weekly_bits(ctx)
+            body_html = build_dashboard_body(ctx)
         elif page == "standings":
-            clear_standings_cache_for_league()
+            body_html = build_standings_body(ctx)
+        elif page == "weekly":
+            ensure_weekly_bits(ctx)
+            body_html = build_weekly_hub_body(ctx)
+        elif page == "activity":
+            body_html = build_activity_body(ctx)
+            store_page_html(league_id, "activity", body_html)
         elif page == "teams":
-            clear_teams_cache_for_league()
-        elif page == "weekly" or page == "dashboard":
-            clear_weekly_cache_for_league()
-            get_week_projections_cached(season, week, fetch_week_from_tank01, True)
-            build_status_for_week(season, week, players_index, teams_index)
+            body_html = build_teams_body(ctx)
+            store_page_html(league_id, "teams", body_html)
         else:
-            return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
-        return jsonify({"ok": True, "refreshed_at": datetime.now().isoformat(timespec="seconds")})
+            body_html = ""
+
+
+        return jsonify({
+            "ok": True,
+            "refreshed_at": datetime.now().isoformat(timespec="seconds"),
+            "current_week": ctx.get("current_week"),
+            "body_html": body_html,
+        })
     except Exception as e:
-        return jsonify({"ok": False, "error": f"Refresh failed: {e}"}), 500
+        return jsonify({
+            "ok": False,
+            "error": f"Refresh failed: {e}",
+        }), 500
+
 
 
 @app.route("/logout")
@@ -2544,9 +2973,24 @@ def logout():
     return redirect(url_for("index"))
 
 
-# in your Flask app
+CURRENT_SEASON = 2025
+CURRENT_WEEK = get_nfl_state().get("week")
 
-CURRENT_SEASON = 2025  # or derive dynamically
+# ---------- global cache for model value table used by trade eval ----------
+_MODEL_VALUE_CACHE = None
+_MODEL_VALUE_CACHE_TS = 0
+_MODEL_VALUE_TTL = 60 * 60  # 1 hour
+
+
+def get_model_value_table_cached():
+    global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
+    now = time.time()
+    if _MODEL_VALUE_CACHE is not None and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL:
+        return _MODEL_VALUE_CACHE
+    tbl = load_model_value_table() or []
+    _MODEL_VALUE_CACHE = tbl
+    _MODEL_VALUE_CACHE_TS = now
+    return tbl
 
 
 @app.route("/api/trade-eval", methods=["POST"])
@@ -2560,7 +3004,7 @@ def api_trade_eval():
 
     # ---------- Load model player value table ----------
     # This SHOULD return your list[dict] of players
-    value_table = load_model_value_table()
+    value_table = get_model_value_table_cached()
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
@@ -2762,4 +3206,4 @@ def api_league_players():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)

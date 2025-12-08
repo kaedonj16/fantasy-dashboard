@@ -28,13 +28,13 @@
       "half_ppr_ppg": 18.191666666666666,
       "std_scoring_ppg": 14.775,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.9166666666666666,
+      "rec_rz_tgt_pg": 1.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 111.0,
-      "target_share": 0.3592233009708738
+      "total_targets": 121.0,
+      "target_share": 0.35693215339233036
     }
   },
   {
@@ -50,7 +50,7 @@
     "name": "Marquise Goodwin",
     "team": "CLE",
     "position": "WR",
-    "age": 35.0,
+    "age": 35.1,
     "usage": {}
   },
   {
@@ -90,8 +90,8 @@
       "half_ppr_ppg": 10.399999999999999,
       "std_scoring_ppg": 9.566666666666668,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 2.1666666666666665,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 2.230769230769231,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
@@ -240,7 +240,7 @@
     "name": "Roschon Johnson",
     "team": "CHI",
     "position": "RB",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -362,13 +362,13 @@
       "half_ppr_ppg": 15.52,
       "std_scoring_ppg": 13.419999999999998,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6,
-      "rush_rz_att_pg": 2.0,
+      "rec_rz_tgt_pg": 0.5,
+      "rush_rz_att_pg": 1.6666666666666667,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 21.0,
-      "target_share": 0.05412371134020619
+      "total_targets": 24.0,
+      "target_share": 0.057692307692307696
     }
   },
   {
@@ -397,8 +397,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.002824858757062147
+      "total_targets": 2.0,
+      "target_share": 0.005305039787798408
     }
   },
   {
@@ -520,7 +520,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.009708737864077669
+      "target_share": 0.009111617312072893
     }
   },
   {
@@ -940,7 +940,7 @@
     "name": "Alex McGough",
     "team": "GB",
     "position": "WR",
-    "age": 30.0,
+    "age": 30.1,
     "usage": {}
   },
   {
@@ -1032,7 +1032,7 @@
     "name": "De'Von Achane",
     "team": "MIA",
     "position": "RB",
-    "age": 24.1,
+    "age": 24.2,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -1048,13 +1048,13 @@
       "half_ppr_ppg": 18.95,
       "std_scoring_ppg": 16.7,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
-      "rush_rz_att_pg": 2.25,
+      "rec_rz_tgt_pg": 0.6923076923076923,
+      "rush_rz_att_pg": 2.1538461538461537,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 72.0,
-      "target_share": 0.21114369501466276
+      "total_targets": 73.0,
+      "target_share": 0.20165745856353592
     }
   },
   {
@@ -1070,7 +1070,7 @@
     "name": "Tyler Snead",
     "team": "PIT",
     "position": "WR",
-    "age": 25.8,
+    "age": 25.9,
     "usage": {}
   },
   {
@@ -1374,7 +1374,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 59.0,
-      "target_share": 0.18495297805642633
+      "target_share": 0.16809116809116809
     }
   },
   {
@@ -1390,7 +1390,7 @@
     "name": "Tejhaun Palmer",
     "team": "ARI",
     "position": "WR",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -1542,7 +1542,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
-      "target_share": 0.012376237623762377
+      "target_share": 0.01179245283018868
     }
   },
   {
@@ -1574,13 +1574,13 @@
       "half_ppr_ppg": 11.925000000000002,
       "std_scoring_ppg": 9.925,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
-      "rush_rz_att_pg": 1.8333333333333333,
+      "rec_rz_tgt_pg": 0.5384615384615384,
+      "rush_rz_att_pg": 1.8461538461538463,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 64.0,
-      "target_share": 0.14746543778801843
+      "total_targets": 68.0,
+      "target_share": 0.14468085106382977
     }
   },
   {
@@ -1588,7 +1588,7 @@
     "name": "La'Mical Perine",
     "team": "PIT",
     "position": "RB",
-    "age": 27.8,
+    "age": 27.9,
     "usage": {}
   },
   {
@@ -1620,13 +1620,13 @@
       "half_ppr_ppg": 18.26666666666667,
       "std_scoring_ppg": 14.766666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 2.8333333333333335,
-      "rush_rz_att_pg": 0.5,
+      "rec_rz_tgt_pg": 2.4285714285714284,
+      "rush_rz_att_pg": 0.42857142857142855,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 59.0,
-      "target_share": 0.14114832535885166
+      "total_targets": 67.0,
+      "target_share": 0.15022421524663676
     }
   },
   {
@@ -1658,13 +1658,13 @@
       "half_ppr_ppg": 7.219999999999999,
       "std_scoring_ppg": 5.47,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6,
+      "rec_rz_tgt_pg": 0.5454545454545454,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 59.0,
-      "target_share": 0.14114832535885166
+      "total_targets": 63.0,
+      "target_share": 0.1412556053811659
     }
   },
   {
@@ -1688,7 +1688,7 @@
     "name": "Ronnie Rivers",
     "team": "LAR",
     "position": "RB",
-    "age": 26.8,
+    "age": 26.9,
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
@@ -1755,8 +1755,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 14.0,
-      "target_share": 0.040345821325648415
+      "total_targets": 15.0,
+      "target_share": 0.040106951871657755
     }
   },
   {
@@ -1845,8 +1845,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 6.0,
-      "target_share": 0.015463917525773196
+      "total_targets": 7.0,
+      "target_share": 0.016826923076923076
     }
   },
   {
@@ -1906,7 +1906,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.03937007874015748
+      "target_share": 0.03579952267303103
     }
   },
   {
@@ -1944,7 +1944,7 @@
     "name": "Jared Goff",
     "team": "DET",
     "position": "QB",
-    "age": 31.1,
+    "age": 31.2,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -2058,7 +2058,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
-      "target_share": 0.03431372549019608
+      "target_share": 0.03153153153153153
     }
   },
   {
@@ -2112,7 +2112,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.044642857142857144
+      "target_share": 0.042134831460674156
     }
   },
   {
@@ -2204,13 +2204,13 @@
       "half_ppr_ppg": 5.125000000000001,
       "std_scoring_ppg": 3.5416666666666674,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.46153846153846156,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 52.0,
-      "target_share": 0.13402061855670103
+      "total_targets": 53.0,
+      "target_share": 0.12740384615384615
     }
   },
   {
@@ -2326,13 +2326,13 @@
       "half_ppr_ppg": 4.140000000000001,
       "std_scoring_ppg": 3.3400000000000007,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.6363636363636364,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 33.0,
-      "target_share": 0.10784313725490197
+      "total_targets": 36.0,
+      "target_share": 0.10619469026548672
     }
   },
   {
@@ -2370,7 +2370,7 @@
     "name": "Elijah Collins",
     "team": "CIN",
     "position": "RB",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -2500,13 +2500,13 @@
       "half_ppr_ppg": 13.008333333333333,
       "std_scoring_ppg": 11.216666666666669,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
-      "rush_rz_att_pg": 1.9166666666666667,
+      "rec_rz_tgt_pg": 0.7692307692307693,
+      "rush_rz_att_pg": 1.8461538461538463,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 54.0,
-      "target_share": 0.14794520547945206
+      "total_targets": 58.0,
+      "target_share": 0.1475826972010178
     }
   },
   {
@@ -2538,13 +2538,13 @@
       "half_ppr_ppg": 16.009090909090908,
       "std_scoring_ppg": 14.69090909090909,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.18181818181818182,
-      "rush_rz_att_pg": 3.5454545454545454,
+      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rush_rz_att_pg": 3.4166666666666665,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 36.0,
-      "target_share": 0.10526315789473684
+      "total_targets": 38.0,
+      "target_share": 0.10410958904109589
     }
   },
   {
@@ -2614,13 +2614,13 @@
       "half_ppr_ppg": 1.9375,
       "std_scoring_ppg": 1.625,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.125,
-      "rush_rz_att_pg": 0.25,
+      "rec_rz_tgt_pg": 0.1111111111111111,
+      "rush_rz_att_pg": 0.3333333333333333,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 6.0,
-      "target_share": 0.016260162601626018
+      "total_targets": 8.0,
+      "target_share": 0.019753086419753086
     }
   },
   {
@@ -2649,8 +2649,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 59.0,
-      "target_share": 0.14460784313725492
+      "total_targets": 61.0,
+      "target_share": 0.1373873873873874
     }
   },
   {
@@ -2679,8 +2679,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 36.0,
-      "target_share": 0.1037463976945245
+      "total_targets": 41.0,
+      "target_share": 0.10962566844919786
     }
   },
   {
@@ -2688,7 +2688,7 @@
     "name": "Matt Corral",
     "team": "MIN",
     "position": "QB",
-    "age": 26.8,
+    "age": 26.9,
     "usage": {}
   },
   {
@@ -2741,8 +2741,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 75.0,
-      "target_share": 0.20435967302452315
+      "total_targets": 85.0,
+      "target_share": 0.21464646464646464
     }
   },
   {
@@ -2801,8 +2801,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 2.0,
-      "target_share": 0.005449591280653951
+      "total_targets": 3.0,
+      "target_share": 0.007575757575757576
     }
   },
   {
@@ -2900,7 +2900,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005952380952380952
+      "target_share": 0.0056179775280898875
     }
   },
   {
@@ -2970,7 +2970,7 @@
     "name": "Tre Tucker",
     "team": "LV",
     "position": "WR",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -2986,13 +2986,13 @@
       "half_ppr_ppg": 9.216666666666667,
       "std_scoring_ppg": 7.383333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
+      "rec_rz_tgt_pg": 0.6153846153846154,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 67.0,
-      "target_share": 0.18356164383561643
+      "total_targets": 72.0,
+      "target_share": 0.183206106870229
     }
   },
   {
@@ -3138,7 +3138,7 @@
     "name": "Kyle Allen",
     "team": "DET",
     "position": "QB",
-    "age": 29.7,
+    "age": 29.8,
     "usage": {
       "games": 3,
       "avg_off_snap_pct": 0.0,
@@ -3176,7 +3176,7 @@
     "name": "Tyler Harrell",
     "team": "NYJ",
     "position": "WR",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -3222,7 +3222,7 @@
     "name": "Luke Farrell",
     "team": "SF",
     "position": "TE",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -3276,13 +3276,13 @@
       "half_ppr_ppg": 5.3999999999999995,
       "std_scoring_ppg": 4.566666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.25,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.023809523809523808
+      "total_targets": 9.0,
+      "target_share": 0.025280898876404494
     }
   },
   {
@@ -3336,13 +3336,13 @@
       "half_ppr_ppg": 5.666666666666668,
       "std_scoring_ppg": 5.291666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.8333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.6923076923076923,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
-      "target_share": 0.03367875647668394
+      "target_share": 0.03117505995203837
     }
   },
   {
@@ -3374,13 +3374,13 @@
       "half_ppr_ppg": 0.5,
       "std_scoring_ppg": 0.3333333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.14285714285714285,
+      "rec_rz_tgt_pg": 0.125,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.008130081300813009
+      "target_share": 0.007407407407407408
     }
   },
   {
@@ -3475,12 +3475,12 @@
       "std_scoring_ppg": 1.3,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.2,
+      "rush_rz_att_pg": 0.6666666666666666,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.002932551319648094
+      "total_targets": 4.0,
+      "target_share": 0.011049723756906077
     }
   },
   {
@@ -3512,13 +3512,13 @@
       "half_ppr_ppg": 1.175,
       "std_scoring_ppg": 1.05,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 5.0,
-      "target_share": 0.01466275659824047
+      "total_targets": 6.0,
+      "target_share": 0.0160857908847185
     }
   },
   {
@@ -3618,7 +3618,7 @@
     "name": "Jacob Hollister",
     "team": "CAR",
     "position": "TE",
-    "age": 32.0,
+    "age": 32.1,
     "usage": {}
   },
   {
@@ -3650,13 +3650,13 @@
       "half_ppr_ppg": 0.8400000000000001,
       "std_scoring_ppg": 0.74,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.1,
+      "rec_rz_tgt_pg": 0.09090909090909091,
+      "rush_rz_att_pg": 0.09090909090909091,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.0032679738562091504
+      "total_targets": 4.0,
+      "target_share": 0.011799410029498525
     }
   },
   {
@@ -3680,13 +3680,13 @@
       "half_ppr_ppg": 5.3,
       "std_scoring_ppg": 3.841666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
+      "rec_rz_tgt_pg": 0.6923076923076923,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 80.0,
-      "target_share": 0.2099737532808399
+      "total_targets": 85.0,
+      "target_share": 0.20286396181384247
     }
   },
   {
@@ -3718,13 +3718,13 @@
       "half_ppr_ppg": 10.850000000000001,
       "std_scoring_ppg": 9.100000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
-      "rush_rz_att_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.2857142857142857,
+      "rush_rz_att_pg": 0.14285714285714285,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 34.0,
-      "target_share": 0.09941520467836257
+      "total_targets": 38.0,
+      "target_share": 0.10410958904109589
     }
   },
   {
@@ -3810,7 +3810,7 @@
     "name": "Jordan Franks",
     "team": "KC",
     "position": "TE",
-    "age": 29.8,
+    "age": 29.9,
     "usage": {}
   },
   {
@@ -4083,8 +4083,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 17.0,
-      "target_share": 0.04899135446685879
+      "total_targets": 18.0,
+      "target_share": 0.0481283422459893
     }
   },
   {
@@ -4114,7 +4114,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
-      "target_share": 0.06547619047619048
+      "target_share": 0.06179775280898876
     }
   },
   {
@@ -4138,7 +4138,7 @@
     "name": "Xavier Gipson",
     "team": "PHI",
     "position": "WR",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {
       "games": 3,
       "avg_off_snap_pct": 0.0,
@@ -4338,7 +4338,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
-      "target_share": 0.0684931506849315
+      "target_share": 0.06361323155216285
     }
   },
   {
@@ -4375,8 +4375,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 9.0,
-      "target_share": 0.024390243902439025
+      "total_targets": 11.0,
+      "target_share": 0.027160493827160494
     }
   },
   {
@@ -4484,13 +4484,13 @@
       "half_ppr_ppg": 0.82,
       "std_scoring_ppg": 0.5199999999999999,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 0.08333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.024752475247524754
+      "target_share": 0.02358490566037736
     }
   },
   {
@@ -4644,13 +4644,13 @@
       "half_ppr_ppg": 9.325,
       "std_scoring_ppg": 7.325,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.1666666666666667,
+      "rec_rz_tgt_pg": 1.1538461538461537,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 84.0,
-      "target_share": 0.20588235294117646
+      "total_targets": 88.0,
+      "target_share": 0.1981981981981982
     }
   },
   {
@@ -4772,7 +4772,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 39.0,
-      "target_share": 0.09653465346534654
+      "target_share": 0.09198113207547169
     }
   },
   {
@@ -4918,13 +4918,13 @@
       "half_ppr_ppg": 4.880000000000001,
       "std_scoring_ppg": 3.8299999999999996,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.5454545454545454,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 50.0,
-      "target_share": 0.1362397820163488
+      "total_targets": 54.0,
+      "target_share": 0.13636363636363635
     }
   },
   {
@@ -4999,8 +4999,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.093841642228739
+      "total_targets": 33.0,
+      "target_share": 0.08847184986595175
     }
   },
   {
@@ -5025,12 +5025,12 @@
       "std_scoring_ppg": 0.3090909090909091,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.0,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
-      "target_share": 0.014563106796116505
+      "target_share": 0.01366742596810934
     }
   },
   {
@@ -5060,7 +5060,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
-      "target_share": 0.050156739811912224
+      "target_share": 0.045584045584045586
     }
   },
   {
@@ -5212,7 +5212,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.007832898172323759
+      "target_share": 0.007352941176470588
     }
   },
   {
@@ -5271,8 +5271,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.002849002849002849
     }
   },
   {
@@ -5296,13 +5296,13 @@
       "half_ppr_ppg": 5.2250000000000005,
       "std_scoring_ppg": 4.141666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.38461538461538464,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 39.0,
-      "target_share": 0.09466019417475728
+      "total_targets": 41.0,
+      "target_share": 0.09339407744874716
     }
   },
   {
@@ -5318,7 +5318,7 @@
     "name": "Baker Mayfield",
     "team": "TB",
     "position": "QB",
-    "age": 30.6,
+    "age": 30.7,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -5448,13 +5448,13 @@
       "half_ppr_ppg": 0.8,
       "std_scoring_ppg": 0.5,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2,
+      "rec_rz_tgt_pg": 0.16666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.011730205278592375
+      "target_share": 0.011049723756906077
     }
   },
   {
@@ -5508,13 +5508,13 @@
       "half_ppr_ppg": 1.9916666666666663,
       "std_scoring_ppg": 1.325,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 22.0,
-      "target_share": 0.056265984654731455
+      "total_targets": 23.0,
+      "target_share": 0.054502369668246446
     }
   },
   {
@@ -5627,8 +5627,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 76.0,
-      "target_share": 0.18811881188118812
+      "total_targets": 80.0,
+      "target_share": 0.18867924528301888
     }
   },
   {
@@ -5705,8 +5705,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 4.0,
-      "target_share": 0.010582010582010581
+      "total_targets": 5.0,
+      "target_share": 0.012315270935960592
     }
   },
   {
@@ -5762,13 +5762,13 @@
       "half_ppr_ppg": 3.999999999999999,
       "std_scoring_ppg": 3.05,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8,
-      "rush_rz_att_pg": 0.1,
+      "rec_rz_tgt_pg": 0.7272727272727273,
+      "rush_rz_att_pg": 0.09090909090909091,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
-      "target_share": 0.09326424870466321
+      "target_share": 0.08633093525179857
     }
   },
   {
@@ -5822,13 +5822,13 @@
       "half_ppr_ppg": 5.71,
       "std_scoring_ppg": 5.66,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.1,
+      "rec_rz_tgt_pg": 0.09090909090909091,
       "rush_rz_att_pg": 2.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005952380952380952
+      "target_share": 0.0056179775280898875
     }
   },
   {
@@ -5873,8 +5873,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 12.0,
-      "target_share": 0.0392156862745098
+      "total_targets": 13.0,
+      "target_share": 0.038348082595870206
     }
   },
   {
@@ -5882,7 +5882,7 @@
     "name": "Marlon Mack",
     "team": "ARI",
     "position": "RB",
-    "age": 29.7,
+    "age": 29.8,
     "usage": {}
   },
   {
@@ -6011,8 +6011,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 26.0,
-      "target_share": 0.06649616368286446
+      "total_targets": 31.0,
+      "target_share": 0.07345971563981042
     }
   },
   {
@@ -6096,7 +6096,7 @@
     "name": "Andy Isabella",
     "team": "SF",
     "position": "WR",
-    "age": 29.0,
+    "age": 29.1,
     "usage": {}
   },
   {
@@ -6126,7 +6126,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.02046783625730994
+      "target_share": 0.019178082191780823
     }
   },
   {
@@ -6134,7 +6134,7 @@
     "name": "David Martin-Robinson",
     "team": "TEN",
     "position": "TE",
-    "age": 25.9,
+    "age": 26.0,
     "usage": {
       "games": 10,
       "avg_off_snap_pct": 0.0,
@@ -6155,8 +6155,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.0026109660574412533
+      "total_targets": 2.0,
+      "target_share": 0.004901960784313725
     }
   },
   {
@@ -6262,7 +6262,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.018276762402088774
+      "target_share": 0.01715686274509804
     }
   },
   {
@@ -6359,8 +6359,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 16.0,
-      "target_share": 0.0392156862745098
+      "total_targets": 18.0,
+      "target_share": 0.04054054054054054
     }
   },
   {
@@ -6444,7 +6444,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
-      "target_share": 0.03611738148984198
+      "target_share": 0.03285420944558522
     }
   },
   {
@@ -6481,8 +6481,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 9.0,
-      "target_share": 0.025423728813559324
+      "total_targets": 11.0,
+      "target_share": 0.029177718832891247
     }
   },
   {
@@ -6490,7 +6490,7 @@
     "name": "Cody Hollister",
     "team": "TEN",
     "position": "WR",
-    "age": 32.0,
+    "age": 32.1,
     "usage": {}
   },
   {
@@ -6498,7 +6498,7 @@
     "name": "Jeff Foreman",
     "team": "LV",
     "position": "WR",
-    "age": 25.9,
+    "age": 26.0,
     "usage": {}
   },
   {
@@ -6535,8 +6535,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.007874015748031496
+      "total_targets": 4.0,
+      "target_share": 0.00954653937947494
     }
   },
   {
@@ -6544,7 +6544,7 @@
     "name": "Stanley Morgan Jr.",
     "team": "TEN",
     "position": "WR",
-    "age": 29.2,
+    "age": 29.3,
     "usage": {}
   },
   {
@@ -6641,8 +6641,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.007936507936507936
+      "total_targets": 4.0,
+      "target_share": 0.009852216748768473
     }
   },
   {
@@ -6650,7 +6650,7 @@
     "name": "David Durden",
     "team": "DAL",
     "position": "WR",
-    "age": 26.9,
+    "age": 27.0,
     "usage": {}
   },
   {
@@ -6674,13 +6674,13 @@
       "half_ppr_ppg": 13.008333333333333,
       "std_scoring_ppg": 11.966666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
-      "rush_rz_att_pg": 3.25,
+      "rec_rz_tgt_pg": 0.46153846153846156,
+      "rush_rz_att_pg": 3.230769230769231,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 38.0,
-      "target_share": 0.09844559585492228
+      "total_targets": 39.0,
+      "target_share": 0.09352517985611511
     }
   },
   {
@@ -6710,7 +6710,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0024752475247524753
+      "target_share": 0.0023584905660377358
     }
   },
   {
@@ -6758,13 +6758,13 @@
       "half_ppr_ppg": 5.775000000000001,
       "std_scoring_ppg": 5.233333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
-      "rush_rz_att_pg": 1.5,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 1.4615384615384615,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.043859649122807015
+      "target_share": 0.0410958904109589
     }
   },
   {
@@ -6823,8 +6823,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.0023584905660377358
     }
   },
   {
@@ -6848,13 +6848,13 @@
       "half_ppr_ppg": 2.1125000000000003,
       "std_scoring_ppg": 1.55,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.375,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 15.0,
-      "target_share": 0.047021943573667714
+      "total_targets": 16.0,
+      "target_share": 0.045584045584045586
     }
   },
   {
@@ -6940,13 +6940,13 @@
       "half_ppr_ppg": 3.8499999999999996,
       "std_scoring_ppg": 3.141666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.15384615384615385,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.0915032679738562
+      "total_targets": 29.0,
+      "target_share": 0.0855457227138643
     }
   },
   {
@@ -7062,13 +7062,13 @@
       "half_ppr_ppg": 4.441666666666666,
       "std_scoring_ppg": 2.983333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
+      "rec_rz_tgt_pg": 0.7692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 54.0,
-      "target_share": 0.14285714285714285
+      "total_targets": 57.0,
+      "target_share": 0.14039408866995073
     }
   },
   {
@@ -7161,12 +7161,12 @@
       "std_scoring_ppg": 0.4875,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.3333333333333333,
+      "rush_rz_att_pg": 0.3076923076923077,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005221932114882507
+      "target_share": 0.004901960784313725
     }
   },
   {
@@ -7228,13 +7228,13 @@
       "half_ppr_ppg": 12.788333333333334,
       "std_scoring_ppg": 11.538333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
-      "rush_rz_att_pg": 1.4166666666666667,
+      "rec_rz_tgt_pg": 0.46153846153846156,
+      "rush_rz_att_pg": 1.4615384615384615,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.08333333333333333,
       "avg_pass_int": 0.0,
-      "total_targets": 39.0,
-      "target_share": 0.12225705329153605
+      "total_targets": 40.0,
+      "target_share": 0.11396011396011396
     }
   },
   {
@@ -7378,7 +7378,7 @@
     "name": "Cody Schrader",
     "team": "JAX",
     "position": "RB",
-    "age": 26.2,
+    "age": 26.3,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -7424,7 +7424,7 @@
     "name": "O.J. Howard",
     "team": "LV",
     "position": "TE",
-    "age": 31.0,
+    "age": 31.1,
     "usage": {}
   },
   {
@@ -7448,7 +7448,7 @@
     "name": "Cam Grandy",
     "team": "CIN",
     "position": "TE",
-    "age": 26.0,
+    "age": 26.1,
     "usage": {
       "games": 3,
       "avg_off_snap_pct": 0.0,
@@ -7470,7 +7470,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002304147465437788
+      "target_share": 0.002127659574468085
     }
   },
   {
@@ -7532,8 +7532,8 @@
       "half_ppr_ppg": 11.20909090909091,
       "std_scoring_ppg": 8.572727272727274,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.9090909090909091,
-      "rush_rz_att_pg": 0.2727272727272727,
+      "rec_rz_tgt_pg": 0.9166666666666666,
+      "rush_rz_att_pg": 0.25,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
@@ -7562,13 +7562,13 @@
       "half_ppr_ppg": 23.34166666666667,
       "std_scoring_ppg": 21.88333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
-      "rush_rz_att_pg": 4.416666666666667,
+      "rec_rz_tgt_pg": 0.3076923076923077,
+      "rush_rz_att_pg": 4.3076923076923075,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 40.0,
-      "target_share": 0.10840108401084012
+      "target_share": 0.09876543209876543
     }
   },
   {
@@ -7651,8 +7651,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 57.0,
-      "target_share": 0.16101694915254236
+      "total_targets": 60.0,
+      "target_share": 0.15915119363395225
     }
   },
   {
@@ -7682,7 +7682,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0023923444976076554
+      "target_share": 0.002242152466367713
     }
   },
   {
@@ -7736,7 +7736,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
-      "target_share": 0.04404145077720207
+      "target_share": 0.0407673860911271
     }
   },
   {
@@ -7874,13 +7874,13 @@
       "half_ppr_ppg": 1.3833333333333335,
       "std_scoring_ppg": 1.0916666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 0.15384615384615385,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.02072538860103627
+      "total_targets": 10.0,
+      "target_share": 0.023980815347721823
     }
   },
   {
@@ -7909,8 +7909,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 44.0,
-      "target_share": 0.1164021164021164
+      "total_targets": 49.0,
+      "target_share": 0.1206896551724138
     }
   },
   {
@@ -7972,13 +7972,13 @@
       "half_ppr_ppg": 0.975,
       "std_scoring_ppg": 0.8083333333333332,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 7.0,
-      "target_share": 0.017902813299232736
+      "total_targets": 8.0,
+      "target_share": 0.018957345971563982
     }
   },
   {
@@ -8108,7 +8108,7 @@
     "name": "Elijah Cooks",
     "team": "PHI",
     "position": "WR",
-    "age": 27.1,
+    "age": 27.2,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -8190,7 +8190,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
-      "target_share": 0.03814713896457766
+      "target_share": 0.03535353535353535
     }
   },
   {
@@ -8260,7 +8260,7 @@
     "name": "Emeka Egbuka",
     "team": "TB",
     "position": "WR",
-    "age": 23.1,
+    "age": 23.2,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -8276,13 +8276,13 @@
       "half_ppr_ppg": 12.0,
       "std_scoring_ppg": 9.833333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.7692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 101.0,
-      "target_share": 0.2603092783505155
+      "total_targets": 110.0,
+      "target_share": 0.2644230769230769
     }
   },
   {
@@ -8365,8 +8365,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 26.0,
-      "target_share": 0.08496732026143791
+      "total_targets": 32.0,
+      "target_share": 0.0943952802359882
     }
   },
   {
@@ -8506,13 +8506,13 @@
       "half_ppr_ppg": 16.38181818181818,
       "std_scoring_ppg": 12.47272727272727,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.9090909090909091,
-      "rush_rz_att_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rush_rz_att_pg": 0.08333333333333333,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 107.0,
-      "target_share": 0.27365728900255754
+      "total_targets": 118.0,
+      "target_share": 0.2796208530805687
     }
   },
   {
@@ -8683,12 +8683,12 @@
       "std_scoring_ppg": 11.690909090909093,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 2.3333333333333335,
+      "rush_rz_att_pg": 2.230769230769231,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 23.0,
-      "target_share": 0.06036745406824147
+      "total_targets": 26.0,
+      "target_share": 0.06205250596658711
     }
   },
   {
@@ -8750,13 +8750,13 @@
       "half_ppr_ppg": 6.51,
       "std_scoring_ppg": 6.11,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 0.9166666666666666,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.02577319587628866
+      "target_share": 0.02403846153846154
     }
   },
   {
@@ -8854,7 +8854,7 @@
     "name": "Jacob Warren",
     "team": "NE",
     "position": "TE",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {}
   },
   {
@@ -8982,7 +8982,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.003236245954692557
+      "target_share": 0.0029498525073746312
     }
   },
   {
@@ -9014,13 +9014,13 @@
       "half_ppr_ppg": 1.1727272727272726,
       "std_scoring_ppg": 0.809090909090909,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 0.16666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 18.0,
-      "target_share": 0.05084745762711865
+      "target_share": 0.04774535809018567
     }
   },
   {
@@ -9066,7 +9066,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002304147465437788
+      "target_share": 0.002127659574468085
     }
   },
   {
@@ -9326,13 +9326,13 @@
       "half_ppr_ppg": 3.5250000000000004,
       "std_scoring_ppg": 2.7750000000000004,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.38461538461538464,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.0784313725490196
+      "total_targets": 36.0,
+      "target_share": 0.08108108108108109
     }
   },
   {
@@ -9423,8 +9423,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.002652519893899204
     }
   },
   {
@@ -9538,7 +9538,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
-      "target_share": 0.026785714285714284
+      "target_share": 0.025280898876404494
     }
   },
   {
@@ -9622,13 +9622,13 @@
       "half_ppr_ppg": 8.863636363636363,
       "std_scoring_ppg": 6.545454545454546,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.7272727272727273,
-      "rush_rz_att_pg": 0.0,
+      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rush_rz_att_pg": 0.16666666666666666,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 21.0,
-      "target_share": 0.054404145077720206
+      "total_targets": 31.0,
+      "target_share": 0.07434052757793765
     }
   },
   {
@@ -9666,7 +9666,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.006472491909385114
+      "target_share": 0.0058997050147492625
     }
   },
   {
@@ -9696,7 +9696,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.02168021680216802
+      "target_share": 0.019753086419753086
     }
   },
   {
@@ -9720,13 +9720,13 @@
       "half_ppr_ppg": 3.8428571428571425,
       "std_scoring_ppg": 2.7714285714285714,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.125,
-      "rush_rz_att_pg": 0.125,
+      "rec_rz_tgt_pg": 0.1111111111111111,
+      "rush_rz_att_pg": 0.4444444444444444,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 17.0,
-      "target_share": 0.04207920792079208
+      "total_targets": 18.0,
+      "target_share": 0.04245283018867924
     }
   },
   {
@@ -9948,7 +9948,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.00980392156862745
+      "target_share": 0.009009009009009009
     }
   },
   {
@@ -9972,13 +9972,13 @@
       "half_ppr_ppg": 9.466666666666667,
       "std_scoring_ppg": 8.175,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
-      "rush_rz_att_pg": 1.0833333333333333,
+      "rec_rz_tgt_pg": 0.5384615384615384,
+      "rush_rz_att_pg": 1.3076923076923077,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 36.0,
-      "target_share": 0.08823529411764706
+      "total_targets": 42.0,
+      "target_share": 0.0945945945945946
     }
   },
   {
@@ -10048,7 +10048,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.019417475728155338
+      "target_share": 0.018223234624145785
     }
   },
   {
@@ -10104,13 +10104,13 @@
       "half_ppr_ppg": 6.925,
       "std_scoring_ppg": 6.55,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.1666666666666667,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.1538461538461537,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
-      "target_share": 0.03869047619047619
+      "target_share": 0.03651685393258427
     }
   },
   {
@@ -10150,13 +10150,13 @@
       "half_ppr_ppg": 8.988888888888887,
       "std_scoring_ppg": 7.155555555555555,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.2222222222222223,
+      "rec_rz_tgt_pg": 1.2,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 63.0,
-      "target_share": 0.17796610169491525
+      "total_targets": 70.0,
+      "target_share": 0.1856763925729443
     }
   },
   {
@@ -10270,7 +10270,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002976190476190476
+      "target_share": 0.0028089887640449437
     }
   },
   {
@@ -10286,7 +10286,7 @@
     "name": "Caleb Williams",
     "team": "CHI",
     "position": "QB",
-    "age": 24.0,
+    "age": 24.1,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -10332,13 +10332,13 @@
       "half_ppr_ppg": 10.379999999999999,
       "std_scoring_ppg": 8.379999999999999,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.2,
+      "rec_rz_tgt_pg": 1.1666666666666667,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 35.0,
-      "target_share": 0.10416666666666667
+      "total_targets": 41.0,
+      "target_share": 0.1151685393258427
     }
   },
   {
@@ -10346,7 +10346,7 @@
     "name": "Aaron Parker",
     "team": "KC",
     "position": "WR",
-    "age": 27.5,
+    "age": 27.6,
     "usage": {}
   },
   {
@@ -10476,7 +10476,7 @@
     "name": "Bryce Oliver",
     "team": "TEN",
     "position": "WR",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -10498,7 +10498,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0026109660574412533
+      "target_share": 0.0024509803921568627
     }
   },
   {
@@ -10528,7 +10528,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
-      "target_share": 0.0196078431372549
+      "target_share": 0.017699115044247787
     }
   },
   {
@@ -10666,13 +10666,13 @@
       "half_ppr_ppg": 11.941666666666665,
       "std_scoring_ppg": 8.9,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.7692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.08333333333333333,
-      "total_targets": 115.0,
-      "target_share": 0.28465346534653463
+      "total_targets": 120.0,
+      "target_share": 0.2830188679245283
     }
   },
   {
@@ -10802,7 +10802,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
-      "target_share": 0.07989690721649484
+      "target_share": 0.07451923076923077
     }
   },
   {
@@ -10864,13 +10864,13 @@
       "half_ppr_ppg": 3.0666666666666664,
       "std_scoring_ppg": 2.2333333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
+      "rec_rz_tgt_pg": 0.75,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.023054755043227664
+      "total_targets": 10.0,
+      "target_share": 0.026737967914438502
     }
   },
   {
@@ -10924,13 +10924,13 @@
       "half_ppr_ppg": 13.236363636363636,
       "std_scoring_ppg": 12.1,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 2.6363636363636362,
+      "rec_rz_tgt_pg": 0.08333333333333333,
+      "rush_rz_att_pg": 2.75,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 36.0,
-      "target_share": 0.09523809523809523
+      "total_targets": 40.0,
+      "target_share": 0.09852216748768473
     }
   },
   {
@@ -11174,7 +11174,7 @@
     "name": "Tayon Fleet-Davis",
     "team": "KC",
     "position": "RB",
-    "age": 27.0,
+    "age": 27.1,
     "usage": {}
   },
   {
@@ -11214,13 +11214,13 @@
       "half_ppr_ppg": 2.933333333333333,
       "std_scoring_ppg": 2.2666666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.15384615384615385,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
-      "target_share": 0.09226190476190477
+      "target_share": 0.08707865168539326
     }
   },
   {
@@ -11312,13 +11312,13 @@
       "half_ppr_ppg": 1.22,
       "std_scoring_ppg": 0.9199999999999999,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2,
+      "rec_rz_tgt_pg": 0.16666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.025906735751295335
+      "target_share": 0.023980815347721823
     }
   },
   {
@@ -11418,13 +11418,13 @@
       "half_ppr_ppg": 14.191666666666668,
       "std_scoring_ppg": 13.608333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 3.3333333333333335,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 3.5384615384615383,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 18.0,
-      "target_share": 0.058823529411764705
+      "total_targets": 20.0,
+      "target_share": 0.058997050147492625
     }
   },
   {
@@ -11480,7 +11480,7 @@
     "name": "Matthew Golden",
     "team": "GB",
     "position": "WR",
-    "age": 22.3,
+    "age": 22.4,
     "usage": {
       "games": 9,
       "avg_off_snap_pct": 0.0,
@@ -11496,13 +11496,13 @@
       "half_ppr_ppg": 5.011111111111111,
       "std_scoring_ppg": 3.677777777777777,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2222222222222222,
-      "rush_rz_att_pg": 0.1111111111111111,
+      "rec_rz_tgt_pg": 0.2,
+      "rush_rz_att_pg": 0.1,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.0935672514619883
+      "total_targets": 33.0,
+      "target_share": 0.09041095890410959
     }
   },
   {
@@ -11510,7 +11510,7 @@
     "name": "Theo Wease Jr.",
     "team": "MIA",
     "position": "WR",
-    "age": 24.4,
+    "age": 24.5,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -11564,13 +11564,13 @@
       "half_ppr_ppg": 5.7250000000000005,
       "std_scoring_ppg": 4.183333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.6923076923076923,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 52.0,
-      "target_share": 0.15249266862170088
+      "total_targets": 56.0,
+      "target_share": 0.15469613259668508
     }
   },
   {
@@ -11684,13 +11684,13 @@
       "half_ppr_ppg": 8.65,
       "std_scoring_ppg": 8.233333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 2.1666666666666665,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 2.1538461538461537,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 17.0,
-      "target_share": 0.04497354497354497
+      "total_targets": 19.0,
+      "target_share": 0.046798029556650245
     }
   },
   {
@@ -11720,7 +11720,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.006472491909385114
+      "target_share": 0.0058997050147492625
     }
   },
   {
@@ -11750,7 +11750,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.010958904109589041
+      "target_share": 0.010178117048346057
     }
   },
   {
@@ -11820,13 +11820,13 @@
       "half_ppr_ppg": 15.336363636363636,
       "std_scoring_ppg": 11.427272727272726,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.5454545454545454,
+      "rec_rz_tgt_pg": 1.4166666666666667,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 131.0,
-      "target_share": 0.30184331797235026
+      "total_targets": 139.0,
+      "target_share": 0.2957446808510638
     }
   },
   {
@@ -11855,8 +11855,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 15.0,
-      "target_share": 0.04398826979472141
+      "total_targets": 18.0,
+      "target_share": 0.049723756906077346
     }
   },
   {
@@ -11880,13 +11880,13 @@
       "half_ppr_ppg": 4.516666666666666,
       "std_scoring_ppg": 3.5583333333333322,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
-      "rush_rz_att_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.38461538461538464,
+      "rush_rz_att_pg": 0.3076923076923077,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.07349081364829396
+      "total_targets": 34.0,
+      "target_share": 0.081145584725537
     }
   },
   {
@@ -11948,13 +11948,13 @@
       "half_ppr_ppg": 5.2250000000000005,
       "std_scoring_ppg": 4.6000000000000005,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.3076923076923077,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 31.0,
-      "target_share": 0.07416267942583732
+      "total_targets": 34.0,
+      "target_share": 0.07623318385650224
     }
   },
   {
@@ -12014,7 +12014,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
-      "target_share": 0.08357348703170028
+      "target_share": 0.07754010695187166
     }
   },
   {
@@ -12128,7 +12128,7 @@
     "name": "Master Teague",
     "team": "PIT",
     "position": "RB",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {}
   },
   {
@@ -12168,13 +12168,13 @@
       "half_ppr_ppg": 1.025,
       "std_scoring_ppg": 0.525,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.0,
+      "rec_rz_tgt_pg": 0.6,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 6.0,
-      "target_share": 0.01634877384196185
+      "total_targets": 11.0,
+      "target_share": 0.027777777777777776
     }
   },
   {
@@ -12228,7 +12228,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.008797653958944282
+      "target_share": 0.00804289544235925
     }
   },
   {
@@ -12290,7 +12290,7 @@
     "name": "Will Levis",
     "team": "TEN",
     "position": "QB",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -12320,7 +12320,7 @@
     "name": "Jacob Saylors",
     "team": "DET",
     "position": "RB",
-    "age": 25.7,
+    "age": 25.8,
     "usage": {
       "games": 4,
       "avg_off_snap_pct": 0.0,
@@ -12371,8 +12371,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 70.0,
-      "target_share": 0.20833333333333334
+      "total_targets": 72.0,
+      "target_share": 0.20224719101123595
     }
   },
   {
@@ -12466,13 +12466,13 @@
       "half_ppr_ppg": 1.875,
       "std_scoring_ppg": 1.5416666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.3076923076923077,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 16.0,
-      "target_share": 0.043596730245231606
+      "total_targets": 20.0,
+      "target_share": 0.050505050505050504
     }
   },
   {
@@ -12550,13 +12550,13 @@
       "half_ppr_ppg": 2.858333333333333,
       "std_scoring_ppg": 2.066666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
-      "rush_rz_att_pg": 0.75,
+      "rec_rz_tgt_pg": 0.38461538461538464,
+      "rush_rz_att_pg": 0.6923076923076923,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
-      "target_share": 0.06220095693779904
+      "target_share": 0.05829596412556054
     }
   },
   {
@@ -12672,7 +12672,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0027100271002710027
+      "target_share": 0.0024691358024691358
     }
   },
   {
@@ -12748,7 +12748,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.04398826979472141
+      "target_share": 0.04143646408839779
     }
   },
   {
@@ -12869,8 +12869,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 43.0,
-      "target_share": 0.12609970674486803
+      "total_targets": 44.0,
+      "target_share": 0.11796246648793565
     }
   },
   {
@@ -12940,13 +12940,13 @@
       "half_ppr_ppg": 4.808333333333334,
       "std_scoring_ppg": 4.6000000000000005,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.4166666666666667,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.5384615384615385,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 10.0,
-      "target_share": 0.02557544757033248
+      "total_targets": 11.0,
+      "target_share": 0.026066350710900472
     }
   },
   {
@@ -12978,13 +12978,13 @@
       "half_ppr_ppg": 6.224999999999999,
       "std_scoring_ppg": 4.85,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.625,
-      "rush_rz_att_pg": 0.875,
+      "rec_rz_tgt_pg": 0.6666666666666666,
+      "rush_rz_att_pg": 0.7777777777777778,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.06320541760722348
+      "total_targets": 32.0,
+      "target_share": 0.06570841889117043
     }
   },
   {
@@ -13013,8 +13013,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 25.0,
-      "target_share": 0.08090614886731391
+      "total_targets": 26.0,
+      "target_share": 0.07669616519174041
     }
   },
   {
@@ -13122,13 +13122,13 @@
       "half_ppr_ppg": 1.1363636363636365,
       "std_scoring_ppg": 0.9545454545454546,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.18181818181818182,
+      "rec_rz_tgt_pg": 0.16666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.026143790849673203
+      "target_share": 0.02359882005899705
     }
   },
   {
@@ -13258,7 +13258,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
-      "target_share": 0.04899135446685879
+      "target_share": 0.045454545454545456
     }
   },
   {
@@ -13266,7 +13266,7 @@
     "name": "Jalen Jackson",
     "team": "JAX",
     "position": "RB",
-    "age": 25.4,
+    "age": 25.5,
     "usage": {}
   },
   {
@@ -13311,8 +13311,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 118.0,
-      "target_share": 0.26636568848758463
+      "total_targets": 127.0,
+      "target_share": 0.26078028747433263
     }
   },
   {
@@ -13344,13 +13344,13 @@
       "half_ppr_ppg": 3.190909090909091,
       "std_scoring_ppg": 2.3727272727272726,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.18181818181818182,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 19.0,
-      "target_share": 0.05956112852664577
+      "total_targets": 27.0,
+      "target_share": 0.07692307692307693
     }
   },
   {
@@ -13380,7 +13380,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.0048543689320388345
+      "target_share": 0.004555808656036446
     }
   },
   {
@@ -13448,7 +13448,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005865102639296188
+      "target_share": 0.0055248618784530384
     }
   },
   {
@@ -13534,13 +13534,13 @@
       "half_ppr_ppg": 2.309090909090909,
       "std_scoring_ppg": 1.9454545454545455,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.36363636363636365,
+      "rec_rz_tgt_pg": 0.6666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 16.0,
-      "target_share": 0.04145077720207254
+      "total_targets": 22.0,
+      "target_share": 0.05275779376498801
     }
   },
   {
@@ -13548,7 +13548,7 @@
     "name": "Trishton Jackson",
     "team": "ARI",
     "position": "WR",
-    "age": 27.7,
+    "age": 27.8,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -13624,13 +13624,13 @@
       "half_ppr_ppg": 10.675000000000002,
       "std_scoring_ppg": 8.591666666666669,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
+      "rec_rz_tgt_pg": 0.6923076923076923,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 80.0,
-      "target_share": 0.19607843137254902
+      "total_targets": 90.0,
+      "target_share": 0.20270270270270271
     }
   },
   {
@@ -13646,7 +13646,7 @@
     "name": "A.J. Rose",
     "team": "LAR",
     "position": "RB",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {}
   },
   {
@@ -13676,7 +13676,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
-      "target_share": 0.07119741100323625
+      "target_share": 0.06489675516224189
     }
   },
   {
@@ -13700,13 +13700,13 @@
       "half_ppr_ppg": 14.433333333333332,
       "std_scoring_ppg": 13.433333333333332,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
-      "rush_rz_att_pg": 3.0,
+      "rec_rz_tgt_pg": 0.6153846153846154,
+      "rush_rz_att_pg": 2.923076923076923,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 33.0,
-      "target_share": 0.08439897698209718
+      "total_targets": 35.0,
+      "target_share": 0.08293838862559241
     }
   },
   {
@@ -13714,7 +13714,7 @@
     "name": "Thayer Thomas",
     "team": "DEN",
     "position": "WR",
-    "age": 27.5,
+    "age": 27.6,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -13811,8 +13811,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.06698564593301436
+      "total_targets": 31.0,
+      "target_share": 0.06950672645739911
     }
   },
   {
@@ -13849,8 +13849,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.002257336343115124
+      "total_targets": 4.0,
+      "target_share": 0.008213552361396304
     }
   },
   {
@@ -13996,13 +13996,13 @@
       "half_ppr_ppg": 8.258333333333335,
       "std_scoring_ppg": 6.925000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5833333333333334,
-      "rush_rz_att_pg": 1.0,
+      "rec_rz_tgt_pg": 0.5384615384615384,
+      "rush_rz_att_pg": 1.0769230769230769,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 36.0,
-      "target_share": 0.09278350515463918
+      "total_targets": 38.0,
+      "target_share": 0.09134615384615384
     }
   },
   {
@@ -14118,13 +14118,13 @@
       "half_ppr_ppg": 5.28,
       "std_scoring_ppg": 3.9800000000000004,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3,
+      "rec_rz_tgt_pg": 0.2727272727272727,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 44.0,
-      "target_share": 0.12903225806451613
+      "total_targets": 46.0,
+      "target_share": 0.12332439678284182
     }
   },
   {
@@ -14161,8 +14161,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.093841642228739
+      "total_targets": 35.0,
+      "target_share": 0.0938337801608579
     }
   },
   {
@@ -14194,13 +14194,13 @@
       "half_ppr_ppg": 4.85,
       "std_scoring_ppg": 3.475,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.0,
+      "rec_rz_tgt_pg": 0.8,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 23.0,
-      "target_share": 0.059278350515463915
+      "total_targets": 31.0,
+      "target_share": 0.07451923076923077
     }
   },
   {
@@ -14230,7 +14230,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 63.0,
-      "target_share": 0.16321243523316062
+      "target_share": 0.1510791366906475
     }
   },
   {
@@ -14338,7 +14338,7 @@
       "half_ppr_ppg": 1.5,
       "std_scoring_ppg": 1.1,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
@@ -14390,7 +14390,7 @@
     "name": "Amar Johnson",
     "team": "LAC",
     "position": "RB",
-    "age": 22.8,
+    "age": 22.9,
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
@@ -14498,13 +14498,13 @@
       "half_ppr_ppg": 4.3,
       "std_scoring_ppg": 3.3833333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.18181818181818182,
-      "rush_rz_att_pg": 0.18181818181818182,
+      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rush_rz_att_pg": 0.16666666666666666,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 13.0,
-      "target_share": 0.03672316384180791
+      "total_targets": 14.0,
+      "target_share": 0.03713527851458886
     }
   },
   {
@@ -14512,7 +14512,7 @@
     "name": "Darrel Williams",
     "team": "NO",
     "position": "RB",
-    "age": 30.6,
+    "age": 30.7,
     "usage": {}
   },
   {
@@ -14618,7 +14618,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 90.0,
-      "target_share": 0.23809523809523808
+      "target_share": 0.22167487684729065
     }
   },
   {
@@ -14815,8 +14815,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 47.0,
-      "target_share": 0.12335958005249344
+      "total_targets": 48.0,
+      "target_share": 0.11455847255369929
     }
   },
   {
@@ -14900,7 +14900,7 @@
     "name": "Najee Harris",
     "team": "LAC",
     "position": "RB",
-    "age": 27.7,
+    "age": 27.8,
     "usage": {
       "games": 3,
       "avg_off_snap_pct": 0.0,
@@ -14967,8 +14967,8 @@
       "avg_pass_att": 0.625,
       "avg_pass_cmp": 0.125,
       "avg_pass_int": 0.0,
-      "total_targets": 5.0,
-      "target_share": 0.012376237623762377
+      "total_targets": 7.0,
+      "target_share": 0.01650943396226415
     }
   },
   {
@@ -14997,8 +14997,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 15.0,
-      "target_share": 0.03456221198156682
+      "total_targets": 16.0,
+      "target_share": 0.03404255319148936
     }
   },
   {
@@ -15022,13 +15022,13 @@
       "half_ppr_ppg": 2.527272727272728,
       "std_scoring_ppg": 1.6181818181818186,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 0.08333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
-      "target_share": 0.06188118811881188
+      "target_share": 0.0589622641509434
     }
   },
   {
@@ -15242,7 +15242,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0027397260273972603
+      "target_share": 0.002544529262086514
     }
   },
   {
@@ -15442,7 +15442,7 @@
     "name": "A.J. Green",
     "team": "ARI",
     "position": "WR",
-    "age": 37.3,
+    "age": 37.4,
     "usage": {}
   },
   {
@@ -15471,8 +15471,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 14.0,
-      "target_share": 0.03580562659846547
+      "total_targets": 15.0,
+      "target_share": 0.035545023696682464
     }
   },
   {
@@ -15526,7 +15526,7 @@
     "name": "Josh Whyle",
     "team": "GB",
     "position": "TE",
-    "age": 26.2,
+    "age": 26.3,
     "usage": {
       "games": 4,
       "avg_off_snap_pct": 0.0,
@@ -15547,8 +15547,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.008771929824561403
+      "total_targets": 4.0,
+      "target_share": 0.010958904109589041
     }
   },
   {
@@ -15586,7 +15586,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
-      "target_share": 0.07672634271099744
+      "target_share": 0.07109004739336493
     }
   },
   {
@@ -15691,8 +15691,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 74.0,
-      "target_share": 0.1942257217847769
+      "total_targets": 85.0,
+      "target_share": 0.20286396181384247
     }
   },
   {
@@ -15722,7 +15722,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0026455026455026454
+      "target_share": 0.0024630541871921183
     }
   },
   {
@@ -15822,7 +15822,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
-      "target_share": 0.0136986301369863
+      "target_share": 0.01272264631043257
     }
   },
   {
@@ -16044,13 +16044,13 @@
       "half_ppr_ppg": 1.2,
       "std_scoring_ppg": 0.7416666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.15384615384615385,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
-      "target_share": 0.05571847507331378
+      "target_share": 0.052486187845303865
     }
   },
   {
@@ -16303,12 +16303,12 @@
       "std_scoring_ppg": 3.466666666666667,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 1.0,
+      "rush_rz_att_pg": 0.75,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.007352941176470588
+      "total_targets": 4.0,
+      "target_share": 0.009009009009009009
     }
   },
   {
@@ -16378,13 +16378,13 @@
       "half_ppr_ppg": 11.836363636363636,
       "std_scoring_ppg": 10.60909090909091,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2727272727272727,
-      "rush_rz_att_pg": 2.3636363636363638,
+      "rec_rz_tgt_pg": 0.25,
+      "rush_rz_att_pg": 2.3333333333333335,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.093841642228739
+      "total_targets": 35.0,
+      "target_share": 0.0938337801608579
     }
   },
   {
@@ -16459,8 +16459,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 18.0,
-      "target_share": 0.05263157894736842
+      "total_targets": 22.0,
+      "target_share": 0.06027397260273973
     }
   },
   {
@@ -16544,7 +16544,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0024509803921568627
+      "target_share": 0.0022522522522522522
     }
   },
   {
@@ -16590,7 +16590,7 @@
     "name": "Montrell Johnson Jr.",
     "team": "PHI",
     "position": "RB",
-    "age": 23.1,
+    "age": 23.2,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -16682,13 +16682,13 @@
       "half_ppr_ppg": 6.5555555555555545,
       "std_scoring_ppg": 5.833333333333332,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.1111111111111111,
-      "rush_rz_att_pg": 1.1111111111111112,
+      "rec_rz_tgt_pg": 0.1,
+      "rush_rz_att_pg": 1.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
-      "target_share": 0.045454545454545456
+      "target_share": 0.042600896860986545
     }
   },
   {
@@ -16750,7 +16750,7 @@
     "name": "Cade Otton",
     "team": "TB",
     "position": "TE",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -16771,8 +16771,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 62.0,
-      "target_share": 0.15979381443298968
+      "total_targets": 66.0,
+      "target_share": 0.15865384615384615
     }
   },
   {
@@ -16826,7 +16826,7 @@
     "name": "Christian Kirk",
     "team": "HOU",
     "position": "WR",
-    "age": 29.0,
+    "age": 29.1,
     "usage": {
       "games": 8,
       "avg_off_snap_pct": 0.0,
@@ -16842,13 +16842,13 @@
       "half_ppr_ppg": 4.5375000000000005,
       "std_scoring_ppg": 3.225,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
+      "rec_rz_tgt_pg": 0.6666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 37.0,
-      "target_share": 0.08980582524271845
+      "total_targets": 40.0,
+      "target_share": 0.09111617312072894
     }
   },
   {
@@ -16880,13 +16880,13 @@
       "half_ppr_ppg": 4.927272727272729,
       "std_scoring_ppg": 3.7454545454545456,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2727272727272727,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 34.0,
-      "target_share": 0.08994708994708994
+      "total_targets": 40.0,
+      "target_share": 0.09852216748768473
     }
   },
   {
@@ -16915,8 +16915,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.008928571428571428
+      "total_targets": 4.0,
+      "target_share": 0.011235955056179775
     }
   },
   {
@@ -16945,8 +16945,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 9.0,
-      "target_share": 0.023622047244094488
+      "total_targets": 12.0,
+      "target_share": 0.028639618138424822
     }
   },
   {
@@ -17000,13 +17000,13 @@
       "half_ppr_ppg": 2.7916666666666665,
       "std_scoring_ppg": 1.8333333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 16.0,
-      "target_share": 0.043835616438356165
+      "total_targets": 20.0,
+      "target_share": 0.05089058524173028
     }
   },
   {
@@ -17073,8 +17073,8 @@
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 78.0,
-      "target_share": 0.21138211382113822
+      "total_targets": 84.0,
+      "target_share": 0.2074074074074074
     }
   },
   {
@@ -17098,13 +17098,13 @@
       "half_ppr_ppg": 10.275,
       "std_scoring_ppg": 7.691666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.7692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 105.0,
-      "target_share": 0.2966101694915254
+      "total_targets": 109.0,
+      "target_share": 0.2891246684350133
     }
   },
   {
@@ -17144,13 +17144,13 @@
       "half_ppr_ppg": 2.2,
       "std_scoring_ppg": 2.0333333333333337,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.25,
-      "rush_rz_att_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.23076923076923078,
+      "rush_rz_att_pg": 0.3076923076923077,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.020172910662824207
+      "target_share": 0.01871657754010695
     }
   },
   {
@@ -17312,13 +17312,13 @@
       "half_ppr_ppg": 2.3833333333333333,
       "std_scoring_ppg": 1.383333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
-      "rush_rz_att_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.38461538461538464,
+      "rush_rz_att_pg": 0.3076923076923077,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 29.0,
-      "target_share": 0.07611548556430446
+      "total_targets": 32.0,
+      "target_share": 0.07637231503579953
     }
   },
   {
@@ -17377,8 +17377,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 3.0,
-      "target_share": 0.009708737864077669
+      "total_targets": 4.0,
+      "target_share": 0.011799410029498525
     }
   },
   {
@@ -17424,7 +17424,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
-      "target_share": 0.05865102639296188
+      "target_share": 0.05361930294906166
     }
   },
   {
@@ -17530,7 +17530,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.007731958762886598
+      "target_share": 0.007211538461538462
     }
   },
   {
@@ -17719,8 +17719,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 80.0,
-      "target_share": 0.1941747572815534
+      "total_targets": 84.0,
+      "target_share": 0.19134396355353075
     }
   },
   {
@@ -17744,13 +17744,13 @@
       "half_ppr_ppg": 6.636363636363637,
       "std_scoring_ppg": 4.8181818181818175,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8181818181818182,
+      "rec_rz_tgt_pg": 1.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 60.0,
-      "target_share": 0.16260162601626016
+      "total_targets": 65.0,
+      "target_share": 0.16049382716049382
     }
   },
   {
@@ -18030,7 +18030,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 94.0,
-      "target_share": 0.2561307901907357
+      "target_share": 0.23737373737373738
     }
   },
   {
@@ -18100,13 +18100,13 @@
       "half_ppr_ppg": 6.581818181818182,
       "std_scoring_ppg": 5.490909090909091,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.36363636363636365,
-      "rush_rz_att_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rush_rz_att_pg": 0.08333333333333333,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 39.0,
-      "target_share": 0.10051546391752578
+      "target_share": 0.09375
     }
   },
   {
@@ -18138,7 +18138,7 @@
     "name": "Je'Quan Burton",
     "team": "MIA",
     "position": "WR",
-    "age": 25.7,
+    "age": 25.8,
     "usage": {}
   },
   {
@@ -18245,8 +18245,8 @@
       "avg_pass_att": 0.09090909090909091,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.08465608465608465
+      "total_targets": 35.0,
+      "target_share": 0.08620689655172414
     }
   },
   {
@@ -18330,7 +18330,7 @@
     "name": "Marcedes Lewis",
     "team": "DEN",
     "position": "TE",
-    "age": 41.5,
+    "age": 41.6,
     "usage": {
       "games": 3,
       "avg_off_snap_pct": 0.0,
@@ -18465,8 +18465,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 3.0,
+      "target_share": 0.006160164271047228
     }
   },
   {
@@ -18582,7 +18582,7 @@
       "half_ppr_ppg": 11.333333333333334,
       "std_scoring_ppg": 8.833333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
+      "rec_rz_tgt_pg": 0.6923076923076923,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
@@ -18686,7 +18686,7 @@
     "name": "Jaylen Smith",
     "team": "SEA",
     "position": "WR",
-    "age": 28.3,
+    "age": 28.4,
     "usage": {}
   },
   {
@@ -18724,7 +18724,7 @@
     "name": "Devin Funchess",
     "team": "DET",
     "position": "TE",
-    "age": 31.5,
+    "age": 31.6,
     "usage": {}
   },
   {
@@ -18762,7 +18762,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002881844380403458
+      "target_share": 0.00267379679144385
     }
   },
   {
@@ -18816,13 +18816,13 @@
       "half_ppr_ppg": 9.65,
       "std_scoring_ppg": 8.4625,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6,
-      "rush_rz_att_pg": 1.5,
+      "rec_rz_tgt_pg": 0.5454545454545454,
+      "rush_rz_att_pg": 1.4545454545454546,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 25.0,
-      "target_share": 0.056433408577878104
+      "total_targets": 31.0,
+      "target_share": 0.06365503080082136
     }
   },
   {
@@ -18860,7 +18860,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0025906735751295338
+      "target_share": 0.002398081534772182
     }
   },
   {
@@ -18990,7 +18990,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
-      "target_share": 0.012953367875647668
+      "target_share": 0.011990407673860911
     }
   },
   {
@@ -19225,8 +19225,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 11.0,
-      "target_share": 0.030136986301369864
+      "total_targets": 13.0,
+      "target_share": 0.03307888040712468
     }
   },
   {
@@ -19305,12 +19305,12 @@
       "std_scoring_ppg": 3.3625,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 1.0,
+      "rush_rz_att_pg": 0.8888888888888888,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
-      "target_share": 0.029411764705882353
+      "target_share": 0.02654867256637168
     }
   },
   {
@@ -19402,7 +19402,7 @@
     "name": "Quentin Johnston",
     "team": "LAC",
     "position": "WR",
-    "age": 24.2,
+    "age": 24.3,
     "usage": {
       "games": 11,
       "avg_off_snap_pct": 0.0,
@@ -19500,7 +19500,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.04398826979472141
+      "target_share": 0.04143646408839779
     }
   },
   {
@@ -19592,13 +19592,13 @@
       "half_ppr_ppg": 5.63,
       "std_scoring_ppg": 4.33,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4,
+      "rec_rz_tgt_pg": 0.36363636363636365,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 41.0,
-      "target_share": 0.11988304093567251
+      "target_share": 0.11232876712328767
     }
   },
   {
@@ -19635,8 +19635,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 7.0,
-      "target_share": 0.017326732673267328
+      "total_targets": 8.0,
+      "target_share": 0.018867924528301886
     }
   },
   {
@@ -19727,8 +19727,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 68.0,
-      "target_share": 0.1863013698630137
+      "total_targets": 73.0,
+      "target_share": 0.18575063613231552
     }
   },
   {
@@ -19768,13 +19768,13 @@
       "half_ppr_ppg": 6.324999999999999,
       "std_scoring_ppg": 4.991666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.46153846153846156,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 50.0,
-      "target_share": 0.12135922330097088
+      "total_targets": 55.0,
+      "target_share": 0.1252847380410023
     }
   },
   {
@@ -19820,7 +19820,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
-      "target_share": 0.08767123287671233
+      "target_share": 0.08142493638676845
     }
   },
   {
@@ -19828,7 +19828,7 @@
     "name": "Payton Thorne",
     "team": "CIN",
     "position": "QB",
-    "age": 24.4,
+    "age": 24.5,
     "usage": {}
   },
   {
@@ -19860,13 +19860,13 @@
       "half_ppr_ppg": 9.408333333333331,
       "std_scoring_ppg": 6.908333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
+      "rec_rz_tgt_pg": 0.46153846153846156,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 84.0,
-      "target_share": 0.27450980392156865
+      "total_targets": 95.0,
+      "target_share": 0.28023598820059
     }
   },
   {
@@ -19874,7 +19874,7 @@
     "name": "Blake Watson",
     "team": "TEN",
     "position": "RB",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -19957,8 +19957,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 22.0,
-      "target_share": 0.04966139954853273
+      "total_targets": 23.0,
+      "target_share": 0.04722792607802875
     }
   },
   {
@@ -20006,13 +20006,13 @@
       "half_ppr_ppg": 6.6375,
       "std_scoring_ppg": 4.8875,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
-      "rush_rz_att_pg": 0.625,
+      "rec_rz_tgt_pg": 0.4444444444444444,
+      "rush_rz_att_pg": 0.5555555555555556,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 30.0,
-      "target_share": 0.0783289817232376
+      "total_targets": 34.0,
+      "target_share": 0.08333333333333333
     }
   },
   {
@@ -20042,7 +20042,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
-      "target_share": 0.023017902813299233
+      "target_share": 0.02132701421800948
     }
   },
   {
@@ -20170,7 +20170,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0023923444976076554
+      "target_share": 0.002242152466367713
     }
   },
   {
@@ -20298,7 +20298,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.027247956403269755
+      "target_share": 0.025252525252525252
     }
   },
   {
@@ -20306,7 +20306,7 @@
     "name": "Carlos Washington Jr.",
     "team": "ATL",
     "position": "RB",
-    "age": 26.9,
+    "age": 27.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -20376,13 +20376,13 @@
       "half_ppr_ppg": 4.737500000000001,
       "std_scoring_ppg": 3.6750000000000003,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.4444444444444444,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 32.0,
-      "target_share": 0.08398950131233596
+      "total_targets": 35.0,
+      "target_share": 0.08353221957040573
     }
   },
   {
@@ -20466,7 +20466,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
-      "target_share": 0.08877284595300261
+      "target_share": 0.08333333333333333
     }
   },
   {
@@ -20496,7 +20496,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.003236245954692557
+      "target_share": 0.0029498525073746312
     }
   },
   {
@@ -20564,7 +20564,7 @@
     "name": "Tre'Shaun Harrison",
     "team": "TEN",
     "position": "WR",
-    "age": 25.4,
+    "age": 25.5,
     "usage": {}
   },
   {
@@ -20664,13 +20664,13 @@
       "half_ppr_ppg": 5.490909090909091,
       "std_scoring_ppg": 4.172727272727273,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.45454545454545453,
+      "rec_rz_tgt_pg": 0.5,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 64.0,
-      "target_share": 0.1671018276762402
+      "total_targets": 67.0,
+      "target_share": 0.1642156862745098
     }
   },
   {
@@ -20800,7 +20800,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0023923444976076554
+      "target_share": 0.002242152466367713
     }
   },
   {
@@ -20816,7 +20816,7 @@
     "name": "Jabari Small",
     "team": "DET",
     "position": "RB",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -20898,7 +20898,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 33.0,
-      "target_share": 0.0744920993227991
+      "target_share": 0.06776180698151951
     }
   },
   {
@@ -20990,7 +20990,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.03134796238244514
+      "target_share": 0.02849002849002849
     }
   },
   {
@@ -21092,13 +21092,13 @@
       "half_ppr_ppg": 5.9818181818181815,
       "std_scoring_ppg": 4.4363636363636365,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.45454545454545453,
+      "rec_rz_tgt_pg": 0.5833333333333334,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.09090909090909091,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.09090909090909091,
-      "total_targets": 50.0,
-      "target_share": 0.16181229773462782
+      "total_targets": 53.0,
+      "target_share": 0.15634218289085547
     }
   },
   {
@@ -21128,7 +21128,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
-      "target_share": 0.014563106796116505
+      "target_share": 0.01366742596810934
     }
   },
   {
@@ -21181,8 +21181,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 52.0,
-      "target_share": 0.16993464052287582
+      "total_targets": 57.0,
+      "target_share": 0.168141592920354
     }
   },
   {
@@ -21362,13 +21362,13 @@
       "half_ppr_ppg": 9.658333333333333,
       "std_scoring_ppg": 9.075,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 2.5833333333333335,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 2.6923076923076925,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 18.0,
-      "target_share": 0.0430622009569378
+      "total_targets": 19.0,
+      "target_share": 0.042600896860986545
     }
   },
   {
@@ -21596,7 +21596,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.020833333333333332
+      "target_share": 0.019662921348314606
     }
   },
   {
@@ -21664,7 +21664,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
-      "target_share": 0.020316027088036117
+      "target_share": 0.018480492813141684
     }
   },
   {
@@ -21709,8 +21709,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.019801980198019802
+      "total_targets": 9.0,
+      "target_share": 0.02122641509433962
     }
   },
   {
@@ -21756,7 +21756,7 @@
     "name": "Brian Hoyer",
     "team": "LV",
     "position": "QB",
-    "age": 40.1,
+    "age": 40.2,
     "usage": {}
   },
   {
@@ -21832,7 +21832,7 @@
     "name": "Chase Edmonds",
     "team": "WSH",
     "position": "RB",
-    "age": 29.6,
+    "age": 29.7,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -21884,7 +21884,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
-      "target_share": 0.06583072100313479
+      "target_share": 0.05982905982905983
     }
   },
   {
@@ -21916,7 +21916,7 @@
       "half_ppr_ppg": 8.033333333333333,
       "std_scoring_ppg": 6.325,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
+      "rec_rz_tgt_pg": 0.6923076923076923,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
@@ -22044,13 +22044,13 @@
       "half_ppr_ppg": 7.053846153846153,
       "std_scoring_ppg": 5.207692307692307,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.38461538461538464,
-      "rush_rz_att_pg": 0.07692307692307693,
+      "rec_rz_tgt_pg": 0.35714285714285715,
+      "rush_rz_att_pg": 0.07142857142857142,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 11.0,
-      "target_share": 0.03559870550161812
+      "total_targets": 16.0,
+      "target_share": 0.0471976401179941
     }
   },
   {
@@ -22088,7 +22088,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.01084010840108401
+      "target_share": 0.009876543209876543
     }
   },
   {
@@ -22096,7 +22096,7 @@
     "name": "Gerald Everett",
     "team": "CHI",
     "position": "TE",
-    "age": 31.4,
+    "age": 31.5,
     "usage": {}
   },
   {
@@ -22126,7 +22126,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
-      "target_share": 0.08504398826979472
+      "target_share": 0.08011049723756906
     }
   },
   {
@@ -22163,8 +22163,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 78.0,
-      "target_share": 0.18660287081339713
+      "total_targets": 83.0,
+      "target_share": 0.1860986547085202
     }
   },
   {
@@ -22392,7 +22392,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 69.0,
-      "target_share": 0.15575620767494355
+      "target_share": 0.14168377823408623
     }
   },
   {
@@ -22424,13 +22424,13 @@
       "half_ppr_ppg": 3.1833333333333336,
       "std_scoring_ppg": 2.35,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
+      "rec_rz_tgt_pg": 0.38461538461538464,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.06796116504854369
+      "total_targets": 30.0,
+      "target_share": 0.0683371298405467
     }
   },
   {
@@ -22462,13 +22462,13 @@
       "half_ppr_ppg": 0.175,
       "std_scoring_ppg": 0.1125,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.125,
+      "rec_rz_tgt_pg": 0.1111111111111111,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005865102639296188
+      "target_share": 0.005361930294906166
     }
   },
   {
@@ -22590,7 +22590,7 @@
     "name": "Lynn Bowden Jr.",
     "team": "NO",
     "position": "WR",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {}
   },
   {
@@ -22598,7 +22598,7 @@
     "name": "Xavier Weaver",
     "team": "ARI",
     "position": "WR",
-    "age": 25.1,
+    "age": 25.2,
     "usage": {
       "games": 6,
       "avg_off_snap_pct": 0.0,
@@ -22620,7 +22620,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.01805869074492099
+      "target_share": 0.01642710472279261
     }
   },
   {
@@ -22704,7 +22704,7 @@
     "name": "DJ Moore",
     "team": "CHI",
     "position": "WR",
-    "age": 28.6,
+    "age": 28.7,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -22720,13 +22720,13 @@
       "half_ppr_ppg": 8.498333333333333,
       "std_scoring_ppg": 6.915,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
-      "rush_rz_att_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.6923076923076923,
+      "rush_rz_att_pg": 0.15384615384615385,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.08333333333333333,
       "avg_pass_int": 0.0,
-      "total_targets": 63.0,
-      "target_share": 0.16666666666666666
+      "total_targets": 66.0,
+      "target_share": 0.1625615763546798
     }
   },
   {
@@ -22750,13 +22750,13 @@
       "half_ppr_ppg": 3.536363636363636,
       "std_scoring_ppg": 2.7636363636363637,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.36363636363636365,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 28.0,
-      "target_share": 0.06930693069306931
+      "total_targets": 33.0,
+      "target_share": 0.07783018867924528
     }
   },
   {
@@ -22796,13 +22796,13 @@
       "half_ppr_ppg": 12.681818181818182,
       "std_scoring_ppg": 10.090909090909092,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.1818181818181819,
-      "rush_rz_att_pg": 0.09090909090909091,
+      "rec_rz_tgt_pg": 1.1666666666666667,
+      "rush_rz_att_pg": 0.08333333333333333,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 95.0,
-      "target_share": 0.23058252427184467
+      "total_targets": 103.0,
+      "target_share": 0.23462414578587698
     }
   },
   {
@@ -22856,7 +22856,7 @@
     "name": "Kevin Foelsch",
     "team": "PIT",
     "position": "TE",
-    "age": 24.6,
+    "age": 24.7,
     "usage": {}
   },
   {
@@ -22896,13 +22896,13 @@
       "half_ppr_ppg": 0.36,
       "std_scoring_ppg": 0.21000000000000002,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.1,
+      "rec_rz_tgt_pg": 0.09090909090909091,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.00980392156862745
+      "target_share": 0.009009009009009009
     }
   },
   {
@@ -23118,13 +23118,13 @@
       "half_ppr_ppg": 11.045454545454545,
       "std_scoring_ppg": 9.227272727272727,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8181818181818182,
+      "rec_rz_tgt_pg": 0.8333333333333334,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 70.0,
-      "target_share": 0.16129032258064516
+      "total_targets": 81.0,
+      "target_share": 0.1723404255319149
     }
   },
   {
@@ -23194,13 +23194,13 @@
       "half_ppr_ppg": 1.2416666666666667,
       "std_scoring_ppg": 0.8250000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
-      "rush_rz_att_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 0.15384615384615385,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 12.0,
-      "target_share": 0.03508771929824561
+      "total_targets": 13.0,
+      "target_share": 0.03561643835616438
     }
   },
   {
@@ -23254,13 +23254,13 @@
       "half_ppr_ppg": 9.375000000000002,
       "std_scoring_ppg": 7.541666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
-      "rush_rz_att_pg": 1.1666666666666667,
+      "rec_rz_tgt_pg": 0.9230769230769231,
+      "rush_rz_att_pg": 1.3846153846153846,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 51.0,
-      "target_share": 0.1495601173020528
+      "total_targets": 58.0,
+      "target_share": 0.1554959785522788
     }
   },
   {
@@ -23356,7 +23356,7 @@
     "name": "Nolan Henderson",
     "team": "BAL",
     "position": "QB",
-    "age": 27.4,
+    "age": 27.5,
     "usage": {}
   },
   {
@@ -23418,8 +23418,8 @@
       "half_ppr_ppg": 17.491666666666667,
       "std_scoring_ppg": 16.366666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
-      "rush_rz_att_pg": 3.0,
+      "rec_rz_tgt_pg": 0.15384615384615385,
+      "rush_rz_att_pg": 3.3076923076923075,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
@@ -23508,7 +23508,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.020527859237536656
+      "target_share": 0.019337016574585635
     }
   },
   {
@@ -23579,7 +23579,7 @@
       "std_scoring_ppg": 0.1875,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.2,
+      "rush_rz_att_pg": 0.18181818181818182,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
@@ -23622,7 +23622,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0024752475247524753
+      "target_share": 0.0023584905660377358
     }
   },
   {
@@ -23654,13 +23654,13 @@
       "half_ppr_ppg": 6.391666666666667,
       "std_scoring_ppg": 5.891666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.0833333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
-      "target_share": 0.04611650485436893
+      "target_share": 0.04328018223234624
     }
   },
   {
@@ -23692,13 +23692,13 @@
       "half_ppr_ppg": 4.075,
       "std_scoring_ppg": 2.9916666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
+      "rec_rz_tgt_pg": 0.38461538461538464,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 33.0,
-      "target_share": 0.07894736842105263
+      "total_targets": 35.0,
+      "target_share": 0.07847533632286996
     }
   },
   {
@@ -23743,8 +23743,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 57.0,
-      "target_share": 0.1786833855799373
+      "total_targets": 65.0,
+      "target_share": 0.18518518518518517
     }
   },
   {
@@ -23842,7 +23842,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.019417475728155338
+      "target_share": 0.018223234624145785
     }
   },
   {
@@ -23872,7 +23872,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
-      "target_share": 0.04404145077720207
+      "target_share": 0.0407673860911271
     }
   },
   {
@@ -23904,13 +23904,13 @@
       "half_ppr_ppg": 1.6727272727272726,
       "std_scoring_ppg": 1.0363636363636364,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.2727272727272727,
-      "rush_rz_att_pg": 0.0,
+      "rec_rz_tgt_pg": 0.25,
+      "rush_rz_att_pg": 0.08333333333333333,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 24.0,
-      "target_share": 0.058823529411764705
+      "total_targets": 25.0,
+      "target_share": 0.05630630630630631
     }
   },
   {
@@ -24028,7 +24028,7 @@
     "name": "Irvin Charles",
     "team": "NYJ",
     "position": "WR",
-    "age": 28.6,
+    "age": 28.7,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -24074,13 +24074,13 @@
       "half_ppr_ppg": 2.4111111111111114,
       "std_scoring_ppg": 1.8555555555555554,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.18181818181818182,
+      "rec_rz_tgt_pg": 0.16666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 13.0,
-      "target_share": 0.03324808184143223
+      "total_targets": 14.0,
+      "target_share": 0.03317535545023697
     }
   },
   {
@@ -24218,13 +24218,13 @@
       "half_ppr_ppg": 14.908333333333333,
       "std_scoring_ppg": 12.741666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 2.25,
+      "rec_rz_tgt_pg": 2.230769230769231,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 99.0,
-      "target_share": 0.2531969309462916
+      "total_targets": 105.0,
+      "target_share": 0.24881516587677724
     }
   },
   {
@@ -24381,8 +24381,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.002257336343115124
+      "total_targets": 2.0,
+      "target_share": 0.004106776180698152
     }
   },
   {
@@ -24468,7 +24468,7 @@
     "name": "Kaden Prather",
     "team": "BUF",
     "position": "WR",
-    "age": 23.2,
+    "age": 23.3,
     "usage": {}
   },
   {
@@ -24492,13 +24492,13 @@
       "half_ppr_ppg": 9.354545454545457,
       "std_scoring_ppg": 8.945454545454547,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.09090909090909091,
-      "rush_rz_att_pg": 3.0,
+      "rec_rz_tgt_pg": 0.08333333333333333,
+      "rush_rz_att_pg": 2.8333333333333335,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 10.0,
-      "target_share": 0.032362459546925564
+      "total_targets": 13.0,
+      "target_share": 0.038348082595870206
     }
   },
   {
@@ -24574,7 +24574,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0023923444976076554
+      "target_share": 0.002242152466367713
     }
   },
   {
@@ -24782,13 +24782,13 @@
       "half_ppr_ppg": 2.1249999999999996,
       "std_scoring_ppg": 1.833333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.3076923076923077,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
-      "target_share": 0.04838709677419355
+      "target_share": 0.04468085106382979
     }
   },
   {
@@ -24796,7 +24796,7 @@
     "name": "Austin Aune",
     "team": "ATL",
     "position": "QB",
-    "age": 32.2,
+    "age": 32.3,
     "usage": {}
   },
   {
@@ -24850,7 +24850,7 @@
     "name": "Trevor Siemian",
     "team": "TEN",
     "position": "QB",
-    "age": 33.9,
+    "age": 34.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -24986,7 +24986,7 @@
     "name": "Chris Smith",
     "team": "SEA",
     "position": "RB",
-    "age": 26.2,
+    "age": 26.3,
     "usage": {}
   },
   {
@@ -25088,13 +25088,13 @@
       "half_ppr_ppg": 4.7749999999999995,
       "std_scoring_ppg": 3.941666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.7692307692307693,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 39.0,
-      "target_share": 0.11016949152542373
+      "total_targets": 42.0,
+      "target_share": 0.11140583554376658
     }
   },
   {
@@ -25254,13 +25254,13 @@
       "half_ppr_ppg": 6.0,
       "std_scoring_ppg": 5.25,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 5.0,
-      "target_share": 0.014619883040935672
+      "total_targets": 9.0,
+      "target_share": 0.024657534246575342
     }
   },
   {
@@ -25314,7 +25314,7 @@
       "avg_pass_cmp": 0.5,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002824858757062147
+      "target_share": 0.002652519893899204
     }
   },
   {
@@ -25432,13 +25432,13 @@
       "half_ppr_ppg": 2.55,
       "std_scoring_ppg": 1.8,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.6666666666666666,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 7.0,
-      "target_share": 0.020833333333333332
+      "total_targets": 9.0,
+      "target_share": 0.025280898876404494
     }
   },
   {
@@ -25506,7 +25506,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.0024271844660194173
+      "target_share": 0.002277904328018223
     }
   },
   {
@@ -25628,7 +25628,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.029239766081871343
+      "target_share": 0.0273972602739726
     }
   },
   {
@@ -25636,7 +25636,7 @@
     "name": "Jace Sternberger",
     "team": "BUF",
     "position": "TE",
-    "age": 29.4,
+    "age": 29.5,
     "usage": {}
   },
   {
@@ -25695,8 +25695,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 18.0,
-      "target_share": 0.05642633228840126
+      "total_targets": 21.0,
+      "target_share": 0.05982905982905983
     }
   },
   {
@@ -25725,8 +25725,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 33.0,
-      "target_share": 0.08549222797927461
+      "total_targets": 39.0,
+      "target_share": 0.09352517985611511
     }
   },
   {
@@ -25734,7 +25734,7 @@
     "name": "Chig Okonkwo",
     "team": "TEN",
     "position": "TE",
-    "age": 26.2,
+    "age": 26.3,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -25755,8 +25755,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 51.0,
-      "target_share": 0.13315926892950392
+      "total_targets": 53.0,
+      "target_share": 0.12990196078431374
     }
   },
   {
@@ -25788,13 +25788,13 @@
       "half_ppr_ppg": 3.4499999999999997,
       "std_scoring_ppg": 3.1999999999999997,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.25,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.2307692307692308,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
-      "target_share": 0.02346041055718475
+      "target_share": 0.022099447513812154
     }
   },
   {
@@ -25810,7 +25810,7 @@
     "name": "Shemar Bridges",
     "team": "BAL",
     "position": "WR",
-    "age": 27.9,
+    "age": 28.0,
     "usage": {}
   },
   {
@@ -26094,7 +26094,7 @@
     "name": "Dalton Keene",
     "team": "HOU",
     "position": "TE",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -26236,7 +26236,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 18.0,
-      "target_share": 0.040632054176072234
+      "target_share": 0.03696098562628337
     }
   },
   {
@@ -26273,8 +26273,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.002680965147453083
     }
   },
   {
@@ -26366,13 +26366,13 @@
       "half_ppr_ppg": 7.333333333333332,
       "std_scoring_ppg": 5.250000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
+      "rec_rz_tgt_pg": 0.9230769230769231,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 78.0,
-      "target_share": 0.17607223476297967
+      "total_targets": 94.0,
+      "target_share": 0.19301848049281314
     }
   },
   {
@@ -26401,8 +26401,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 1.0,
-      "target_share": 0.0027100271002710027
+      "total_targets": 2.0,
+      "target_share": 0.0049382716049382715
     }
   },
   {
@@ -26431,8 +26431,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 21.0,
-      "target_share": 0.05370843989769821
+      "total_targets": 23.0,
+      "target_share": 0.054502369668246446
     }
   },
   {
@@ -26465,12 +26465,12 @@
       "std_scoring_ppg": 3.02,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.7,
+      "rush_rz_att_pg": 0.8181818181818182,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 11.0,
-      "target_share": 0.02534562211981567
+      "total_targets": 12.0,
+      "target_share": 0.02553191489361702
     }
   },
   {
@@ -26508,7 +26508,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
-      "target_share": 0.09399477806788512
+      "target_share": 0.08823529411764706
     }
   },
   {
@@ -26592,7 +26592,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
-      "target_share": 0.027649769585253458
+      "target_share": 0.02553191489361702
     }
   },
   {
@@ -26616,7 +26616,7 @@
     "name": "Damien Martinez",
     "team": "SEA",
     "position": "RB",
-    "age": 21.8,
+    "age": 21.9,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -26667,8 +26667,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 15.0,
-      "target_share": 0.04398826979472141
+      "total_targets": 18.0,
+      "target_share": 0.049723756906077346
     }
   },
   {
@@ -26697,8 +26697,8 @@
       "avg_pass_att": 0.16666666666666666,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 10.0,
-      "target_share": 0.03134796238244514
+      "total_targets": 13.0,
+      "target_share": 0.037037037037037035
     }
   },
   {
@@ -26736,7 +26736,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
-      "target_share": 0.002304147465437788
+      "target_share": 0.002127659574468085
     }
   },
   {
@@ -26822,7 +26822,7 @@
     "name": "Melvin Gordon III",
     "team": "BAL",
     "position": "RB",
-    "age": 32.6,
+    "age": 32.7,
     "usage": {}
   },
   {
@@ -26838,7 +26838,7 @@
     "name": "Stephen Anderson",
     "team": "LAC",
     "position": "TE",
-    "age": 32.8,
+    "age": 32.9,
     "usage": {}
   },
   {
@@ -26868,7 +26868,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.004784688995215311
+      "target_share": 0.004484304932735426
     }
   },
   {
@@ -27006,7 +27006,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 44.0,
-      "target_share": 0.1286549707602339
+      "target_share": 0.12054794520547946
     }
   },
   {
@@ -27114,13 +27114,13 @@
       "half_ppr_ppg": 2.9166666666666674,
       "std_scoring_ppg": 2.291666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 0.25,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 0.23076923076923078,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
-      "target_share": 0.06896551724137931
+      "target_share": 0.06267806267806268
     }
   },
   {
@@ -27144,13 +27144,13 @@
       "half_ppr_ppg": 4.054545454545454,
       "std_scoring_ppg": 3.145454545454545,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.36363636363636365,
+      "rec_rz_tgt_pg": 0.5,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 25.0,
-      "target_share": 0.07836990595611286
+      "total_targets": 31.0,
+      "target_share": 0.08831908831908832
     }
   },
   {
@@ -27175,12 +27175,12 @@
       "std_scoring_ppg": 1.3875000000000002,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.0,
+      "rush_rz_att_pg": 0.1111111111111111,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
-      "target_share": 0.015748031496062992
+      "target_share": 0.014319809069212411
     }
   },
   {
@@ -27212,13 +27212,13 @@
       "half_ppr_ppg": 1.4909090909090912,
       "std_scoring_ppg": 1.0363636363636362,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.3076923076923077,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 15.0,
-      "target_share": 0.0410958904109589
+      "total_targets": 21.0,
+      "target_share": 0.05343511450381679
     }
   },
   {
@@ -27242,13 +27242,13 @@
       "half_ppr_ppg": 10.016666666666667,
       "std_scoring_ppg": 8.141666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 1.0,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 75.0,
-      "target_share": 0.21994134897360704
+      "total_targets": 87.0,
+      "target_share": 0.23324396782841822
     }
   },
   {
@@ -27315,8 +27315,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 29.0,
-      "target_share": 0.08357348703170028
+      "total_targets": 36.0,
+      "target_share": 0.0962566844919786
     }
   },
   {
@@ -27400,7 +27400,7 @@
     "name": "Romeo Doubs",
     "team": "GB",
     "position": "WR",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -27416,13 +27416,13 @@
       "half_ppr_ppg": 9.058333333333334,
       "std_scoring_ppg": 7.183333333333334,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 1.1666666666666667,
+      "rec_rz_tgt_pg": 1.0769230769230769,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 71.0,
-      "target_share": 0.20760233918128654
+      "total_targets": 73.0,
+      "target_share": 0.2
     }
   },
   {
@@ -27460,7 +27460,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 45.0,
-      "target_share": 0.11658031088082901
+      "target_share": 0.1079136690647482
     }
   },
   {
@@ -27560,13 +27560,13 @@
       "half_ppr_ppg": 3.208333333333334,
       "std_scoring_ppg": 2.3333333333333335,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
+      "rec_rz_tgt_pg": 0.15384615384615385,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 38.0,
-      "target_share": 0.09921671018276762
+      "total_targets": 42.0,
+      "target_share": 0.10294117647058823
     }
   },
   {
@@ -27733,8 +27733,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 26.0,
-      "target_share": 0.059907834101382486
+      "total_targets": 32.0,
+      "target_share": 0.06808510638297872
     }
   },
   {
@@ -27766,7 +27766,7 @@
     "name": "Jase McClellan",
     "team": "TB",
     "position": "RB",
-    "age": 23.4,
+    "age": 23.5,
     "usage": {}
   },
   {
@@ -27774,7 +27774,7 @@
     "name": "Snoop Conner",
     "team": "DAL",
     "position": "RB",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -27798,7 +27798,7 @@
     "name": "Miles Boykin",
     "team": "CHI",
     "position": "WR",
-    "age": 29.1,
+    "age": 29.2,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -27844,13 +27844,13 @@
       "half_ppr_ppg": 8.066666666666666,
       "std_scoring_ppg": 7.5249999999999995,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 1.5833333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 1.8461538461538463,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
-      "target_share": 0.0423728813559322
+      "target_share": 0.03978779840848806
     }
   },
   {
@@ -27874,13 +27874,13 @@
       "half_ppr_ppg": 5.358333333333334,
       "std_scoring_ppg": 4.1499999999999995,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.75,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.8461538461538461,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 47.0,
-      "target_share": 0.1227154046997389
+      "total_targets": 55.0,
+      "target_share": 0.13480392156862744
     }
   },
   {
@@ -27888,7 +27888,7 @@
     "name": "Keith Kirkwood",
     "team": "BAL",
     "position": "WR",
-    "age": 31.9,
+    "age": 32.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -27965,12 +27965,12 @@
       "std_scoring_ppg": 1.788888888888889,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.4444444444444444,
+      "rush_rz_att_pg": 0.4,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 9.0,
-      "target_share": 0.024657534246575342
+      "total_targets": 10.0,
+      "target_share": 0.02544529262086514
     }
   },
   {
@@ -28040,13 +28040,13 @@
       "half_ppr_ppg": 7.833333333333333,
       "std_scoring_ppg": 7.416666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 2.0,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 2.1538461538461537,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 11.0,
-      "target_share": 0.02997275204359673
+      "total_targets": 13.0,
+      "target_share": 0.03282828282828283
     }
   },
   {
@@ -28092,7 +28092,7 @@
     "name": "Aron Cruickshank",
     "team": "PIT",
     "position": "WR",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {}
   },
   {
@@ -28132,13 +28132,13 @@
       "half_ppr_ppg": 11.043333333333331,
       "std_scoring_ppg": 8.876666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.8461538461538461,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.08333333333333333,
       "avg_pass_cmp": 0.08333333333333333,
       "avg_pass_int": 0.0,
-      "total_targets": 79.0,
-      "target_share": 0.2316715542521994
+      "total_targets": 86.0,
+      "target_share": 0.23756906077348067
     }
   },
   {
@@ -28176,7 +28176,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.010309278350515464
+      "target_share": 0.009615384615384616
     }
   },
   {
@@ -28192,7 +28192,7 @@
     "name": "Sage Surratt",
     "team": "ARI",
     "position": "TE",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {
@@ -28224,13 +28224,13 @@
       "half_ppr_ppg": 7.290000000000001,
       "std_scoring_ppg": 5.590000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6,
+      "rec_rz_tgt_pg": 0.6363636363636364,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 52.0,
-      "target_share": 0.14985590778097982
+      "total_targets": 55.0,
+      "target_share": 0.14705882352941177
     }
   },
   {
@@ -28284,7 +28284,7 @@
     "name": "Reggie Roberson Jr.",
     "team": "TEN",
     "position": "WR",
-    "age": 27.1,
+    "age": 27.2,
     "usage": {}
   },
   {
@@ -28321,8 +28321,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.023391812865497075
+      "total_targets": 10.0,
+      "target_share": 0.0273972602739726
     }
   },
   {
@@ -28450,7 +28450,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
-      "target_share": 0.025936599423631124
+      "target_share": 0.02406417112299465
     }
   },
   {
@@ -28656,7 +28656,7 @@
     "name": "Bijan Robinson",
     "team": "ATL",
     "position": "RB",
-    "age": 23.8,
+    "age": 23.9,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -28672,13 +28672,13 @@
       "half_ppr_ppg": 18.99166666666667,
       "std_scoring_ppg": 16.741666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6666666666666666,
-      "rush_rz_att_pg": 1.8333333333333333,
+      "rec_rz_tgt_pg": 0.6153846153846154,
+      "rush_rz_att_pg": 2.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 68.0,
-      "target_share": 0.18528610354223432
+      "total_targets": 70.0,
+      "target_share": 0.17676767676767677
     }
   },
   {
@@ -28743,12 +28743,12 @@
       "std_scoring_ppg": 0.875,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
-      "rush_rz_att_pg": 0.5,
+      "rush_rz_att_pg": 0.4444444444444444,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005865102639296188
+      "target_share": 0.005361930294906166
     }
   },
   {
@@ -28756,7 +28756,7 @@
     "name": "Kevin White",
     "team": "NO",
     "position": "WR",
-    "age": 33.4,
+    "age": 33.5,
     "usage": {}
   },
   {
@@ -28853,8 +28853,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 46.0,
-      "target_share": 0.1488673139158576
+      "total_targets": 50.0,
+      "target_share": 0.14749262536873156
     }
   },
   {
@@ -28989,8 +28989,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 37.0,
-      "target_share": 0.08525345622119816
+      "total_targets": 39.0,
+      "target_share": 0.08297872340425531
     }
   },
   {
@@ -29065,8 +29065,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 4.0,
-      "target_share": 0.010443864229765013
+      "total_targets": 5.0,
+      "target_share": 0.012254901960784314
     }
   },
   {
@@ -29136,13 +29136,13 @@
       "half_ppr_ppg": 5.2700000000000005,
       "std_scoring_ppg": 4.07,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.1,
-      "rush_rz_att_pg": 0.1,
+      "rec_rz_tgt_pg": 0.09090909090909091,
+      "rush_rz_att_pg": 0.18181818181818182,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 34.0,
-      "target_share": 0.08333333333333333
+      "total_targets": 35.0,
+      "target_share": 0.07882882882882883
     }
   },
   {
@@ -29288,13 +29288,13 @@
       "half_ppr_ppg": 8.366666666666665,
       "std_scoring_ppg": 7.616666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4166666666666667,
-      "rush_rz_att_pg": 2.0,
+      "rec_rz_tgt_pg": 0.5384615384615384,
+      "rush_rz_att_pg": 2.230769230769231,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 27.0,
-      "target_share": 0.06553398058252427
+      "total_targets": 30.0,
+      "target_share": 0.0683371298405467
     }
   },
   {
@@ -29354,7 +29354,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005649717514124294
+      "target_share": 0.005305039787798408
     }
   },
   {
@@ -29383,8 +29383,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 2.0,
-      "target_share": 0.005952380952380952
+      "total_targets": 3.0,
+      "target_share": 0.008426966292134831
     }
   },
   {
@@ -29468,13 +29468,13 @@
       "half_ppr_ppg": 8.125,
       "std_scoring_ppg": 6.875000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.375,
-      "rush_rz_att_pg": 0.5,
+      "rec_rz_tgt_pg": 0.3333333333333333,
+      "rush_rz_att_pg": 0.5555555555555556,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 30.0,
-      "target_share": 0.0847457627118644
+      "total_targets": 31.0,
+      "target_share": 0.08222811671087533
     }
   },
   {
@@ -29830,13 +29830,13 @@
       "half_ppr_ppg": 8.266666666666666,
       "std_scoring_ppg": 6.488888888888889,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4444444444444444,
-      "rush_rz_att_pg": 0.1111111111111111,
+      "rec_rz_tgt_pg": 0.4,
+      "rush_rz_att_pg": 0.1,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 63.0,
-      "target_share": 0.16321243523316062
+      "total_targets": 69.0,
+      "target_share": 0.16546762589928057
     }
   },
   {
@@ -29890,13 +29890,13 @@
       "half_ppr_ppg": 9.739999999999998,
       "std_scoring_ppg": 8.09,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.4,
+      "rec_rz_tgt_pg": 0.45454545454545453,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 59.0,
-      "target_share": 0.15989159891598917
+      "total_targets": 67.0,
+      "target_share": 0.1654320987654321
     }
   },
   {
@@ -29971,8 +29971,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 7.0,
-      "target_share": 0.01907356948228883
+      "total_targets": 8.0,
+      "target_share": 0.020202020202020204
     }
   },
   {
@@ -30118,13 +30118,13 @@
       "half_ppr_ppg": 2.6818181818181817,
       "std_scoring_ppg": 2.0454545454545454,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.36363636363636365,
+      "rec_rz_tgt_pg": 0.3333333333333333,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 35.0,
-      "target_share": 0.09186351706036745
+      "total_targets": 37.0,
+      "target_share": 0.0883054892601432
     }
   },
   {
@@ -30154,7 +30154,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
-      "target_share": 0.02708803611738149
+      "target_share": 0.024640657084188913
     }
   },
   {
@@ -30282,7 +30282,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.024509803921568627
+      "target_share": 0.02252252252252252
     }
   },
   {
@@ -30404,7 +30404,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
-      "target_share": 0.005420054200542005
+      "target_share": 0.0049382716049382715
     }
   },
   {
@@ -30502,7 +30502,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.009404388714733543
+      "target_share": 0.008547008547008548
     }
   },
   {
@@ -30862,13 +30862,13 @@
       "half_ppr_ppg": 3.8833333333333333,
       "std_scoring_ppg": 3.3000000000000003,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.16666666666666666,
-      "rush_rz_att_pg": 0.4166666666666667,
+      "rec_rz_tgt_pg": 0.23076923076923078,
+      "rush_rz_att_pg": 0.38461538461538464,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 21.0,
-      "target_share": 0.06051873198847262
+      "total_targets": 24.0,
+      "target_share": 0.06417112299465241
     }
   },
   {
@@ -30876,7 +30876,7 @@
     "name": "Jeremy McNichols",
     "team": "WSH",
     "position": "RB",
-    "age": 29.9,
+    "age": 30.0,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -30892,13 +30892,13 @@
       "half_ppr_ppg": 4.208333333333333,
       "std_scoring_ppg": 3.5,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.08333333333333333,
-      "rush_rz_att_pg": 0.3333333333333333,
+      "rec_rz_tgt_pg": 0.07692307692307693,
+      "rush_rz_att_pg": 0.3076923076923077,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 22.0,
-      "target_share": 0.06547619047619048
+      "total_targets": 23.0,
+      "target_share": 0.06460674157303371
     }
   },
   {
@@ -30960,13 +30960,13 @@
       "half_ppr_ppg": 5.0,
       "std_scoring_ppg": 4.0,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
+      "rec_rz_tgt_pg": 0.46153846153846156,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 44.0,
-      "target_share": 0.10138248847926268
+      "total_targets": 47.0,
+      "target_share": 0.1
     }
   },
   {
@@ -31026,7 +31026,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.00821917808219178
+      "target_share": 0.007633587786259542
     }
   },
   {
@@ -31056,7 +31056,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
-      "target_share": 0.03571428571428571
+      "target_share": 0.033707865168539325
     }
   },
   {
@@ -31240,7 +31240,7 @@
     "name": "Gunnar Helm",
     "team": "TEN",
     "position": "TE",
-    "age": 23.2,
+    "age": 23.3,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -31261,8 +31261,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 44.0,
-      "target_share": 0.11488250652741515
+      "total_targets": 46.0,
+      "target_share": 0.11274509803921569
     }
   },
   {
@@ -31292,7 +31292,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 27.0,
-      "target_share": 0.08823529411764706
+      "target_share": 0.07964601769911504
     }
   },
   {
@@ -31370,13 +31370,13 @@
       "half_ppr_ppg": 8.408333333333333,
       "std_scoring_ppg": 6.116666666666666,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8333333333333334,
+      "rec_rz_tgt_pg": 0.8461538461538461,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 75.0,
-      "target_share": 0.21613832853025935
+      "total_targets": 78.0,
+      "target_share": 0.20855614973262032
     }
   },
   {
@@ -31465,8 +31465,8 @@
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.002544529262086514
     }
   },
   {

@@ -1,5 +1,6 @@
 # dashboard_services/sleeper_bulk_stats.py
 
+import concurrent.futures
 import json
 import os
 import requests
@@ -91,10 +92,11 @@ def fetch_season_stats(season: int, weeks: List[int]) -> Dict[int, List[Dict[str
     return out
 
 
+MAX_WORKERS = 12  # tune this if you hit rate limits
+
 def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
     """
-    For each Sleeper player ID in `pids`, call:
-      https://api.sleeper.app/stats/nfl/player/{pid}?season_type=regular&season=2025
+    Fetch Sleeper redzone stats for all relevant players in parallel.
 
     Returns:
         {
@@ -106,50 +108,70 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
             ...
         }
     """
+    players_index = load_relevant_index()
+
+    # Only query players we actually care about
+    pids = [
+        pid
+        for pid, meta in players_index.items()
+        if (meta or {}).get("pos") in ALLOWED_POS
+    ]
+
+    print(f"[sleeper_redzone] Fetching stats for {len(pids)} players in parallel...")
 
     rz_map: Dict[str, dict] = {}
-    players_index = load_relevant_index()
-    pids = list(players_index.keys())
-    print("[sleeper_redzone] Fetching stats for all players in Sleeper...")
-    for pid in pids:
-        if players_index.get(pid, {}).get("pos") in ALLOWED_POS:
-            url = (
-                f"{SLEEPER_STATS_BASE}/stats/nfl/player/{pid}"
-                f"?season_type=regular&season={season}"
-            )
 
-            resp = requests.get(url, timeout=20)
+    # one Session reused for all requests
+    session = requests.Session()
 
+    def fetch_one(pid: str):
+        url = (
+            f"{SLEEPER_STATS_BASE}/stats/nfl/player/{pid}"
+            f"?season_type=regular&season={season}"
+        )
+        try:
+            resp = session.get(url, timeout=10)
             if resp.status_code != 200:
                 print(f"[sleeper_redzone] {pid} -> HTTP {resp.status_code}, skipping")
-                continue
+                return pid, None
 
             data = resp.json()
             if not isinstance(data, dict):
                 print(f"[sleeper_redzone] Unexpected response for {pid}: {type(data)}")
-                continue
-            # Extract fields (Sleeper uses many different variations)
-            rec_rz_tgt = float(data.get("stats").get("rec_rz_tgt") or 0.0)
-            rush_rz_att = float(data.get("stats").get("rush_rz_att") or 0.0)
+                return pid, None
 
-            # games played is typically "gp"
-            games = data.get("stats").get("gp") or 0
+            stats = data.get("stats") or {}
+            rec_rz_tgt = float(stats.get("rec_rz_tgt") or 0.0)
+            rush_rz_att = float(stats.get("rush_rz_att") or 0.0)
+
+            games = stats.get("gp") or 0
             try:
                 games = float(games)
-            except:
+            except Exception:
                 games = 0.0
 
-            if games > 0:
-                rec_rz_pg = rec_rz_tgt / games
-                rush_rz_pg = rush_rz_att / games
-            else:
-                rec_rz_pg = 0.0
-                rush_rz_pg = 0.0
+            if games <= 0:
+                return pid, None
 
-            rz_map[pid] = {
+            rec_rz_pg = rec_rz_tgt / games
+            rush_rz_pg = rush_rz_att / games
+
+            return pid, {
                 "rec_rz_tgt_pg": rec_rz_pg,
                 "rush_rz_att_pg": rush_rz_pg,
+                "rz_touches_pg": rec_rz_pg + rush_rz_pg,
             }
+        except Exception as e:
+            print(f"[sleeper_redzone] Error for {pid}: {e}")
+            return pid, None
+
+    # Run in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(fetch_one, pid): pid for pid in pids}
+        for fut in concurrent.futures.as_completed(futures):
+            pid, result = fut.result()
+            if result is not None:
+                rz_map[pid] = result
 
     print(f"[sleeper_redzone] Built redzone stats for {len(rz_map)} players")
     return rz_map

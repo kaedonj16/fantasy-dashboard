@@ -6,7 +6,6 @@ from typing import Dict
 from dashboard_services.players import get_league_rostered_player_ids
 from dashboard_services.utils import load_players_index, load_usage_table
 
-
 POS_WHITELIST = {"QB", "RB", "WR", "TE"}
 
 

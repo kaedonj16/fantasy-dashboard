@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import re
 import numpy as np
 import pandas as pd
+import re
 import requests
 import time
 from bs4 import BeautifulSoup
@@ -20,13 +20,11 @@ from dashboard_services.api import (
     get_nfl_state,
     avatar_from_users,
     get_transactions,
-    fetch_team_game_logs_html,
 )
-from dashboard_services.data_building.value_model_training import normalize_name
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.players import build_roster_display_maps
 from dashboard_services.styles import recap_css, tickerCss
-from dashboard_services.utils import safe_owner_name, path_week_stats, write_json
+from dashboard_services.utils import safe_owner_name
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -664,41 +662,72 @@ def build_week_activity(
         week: int
         ts: datetime (UTC)
         data: structured payload for HTML
+    Optimized to minimize repeated lookups and work.
     """
+
+    # You can still change this to a dynamic list if needed
     season_weeks = list(range(1, 19))
 
     roster_name, roster_avatar = build_roster_display_maps(league_id)
-    tx_by_week = get_transactions_by_week(league_id, season_weeks)
+    tx_by_week = get_transactions_by_week(league_id, season_weeks) or {}
 
     rows: list[dict] = []
+
+    # Fast path: no transactions at all
+    if not tx_by_week:
+        return pd.DataFrame(columns=["kind", "week", "ts", "data"])
+
     players_map = players_map or {}
     pmap_get = players_map.get
+    rows_append = rows.append
+
+    # Memoize pinfo per player id so we don't rebuild dicts repeatedly
+    pinfo_cache: Dict[str, Dict[str, Any]] = {}
 
     def pinfo(pid: str) -> dict[str, Any]:
-        p = pmap_get(str(pid)) or {}
+        pid_str = str(pid)
+        cached = pinfo_cache.get(pid_str)
+        if cached is not None:
+            return cached
+
+        p = pmap_get(pid_str) or {}
         gp = p.get
-        return {
-            "name": gp("name", str(pid)),
+        info = {
+            "name": gp("name", pid_str),
             "pos": gp("pos", ""),
             "team": gp("team", "FA"),
             "age": gp("age", None),
         }
+        pinfo_cache[pid_str] = info
+        return info
 
-    for week in season_weeks:
-        txs = tx_by_week.get(week, []) or []
+    # Iterate only over weeks that actually have transactions
+    for week, txs in tx_by_week.items():
+        if not txs:
+            continue
 
         for t in txs:
             ttype = t.get("type")
-            ts_val = t.get("status_updated") or t.get("created") or 0
-            ts = datetime.fromtimestamp(ts_val / 1000.0, tz=timezone.utc)
 
-            if ttype in ("waiver", "waiver_add") and isinstance(t.get("adds"), dict):
-                adds = t["adds"]
+            # Compute timestamp once, cheaply
+            ts_raw = t.get("status_updated") or t.get("created")
+            if ts_raw:
+                ts = datetime.fromtimestamp(ts_raw / 1000.0, tz=timezone.utc)
+            else:
+                ts = None
+
+            # ---------- WAIVERS ----------
+            if ttype in ("waiver", "waiver_add"):
+                adds = t.get("adds")
+                if not isinstance(adds, dict) or not adds:
+                    continue
+
                 by_rid: dict[str, list[dict]] = defaultdict(list)
                 for pid, rid in adds.items():
                     by_rid[str(rid)].append(pinfo(pid))
+
                 for rid, players in by_rid.items():
-                    rows.append(
+                    rows_append(
                         {
                             "kind": "waiver",
                             "week": week,
@@ -713,28 +742,38 @@ def build_week_activity(
                     )
                 continue
 
+            # ---------- TRADES ----------
             if ttype == "trade":
                 adds = t.get("adds") or {}
                 drops = t.get("drops") or {}
                 draft_picks = t.get("draft_picks") or []
 
-                team_ids = sorted(
-                    set(map(str, (t.get("roster_ids") or [])))  # base rosters in Sleeper tx
-                    | {str(v) for v in adds.values()}  # teams receiving players
-                    | {str(v) for v in drops.values()}  # teams sending players
-                )
+                # If absolutely nothing happened, skip
+                if not adds and not drops and not draft_picks:
+                    continue
+
+                # Collect all team IDs involved in this trade
+                base_rosters = set(map(str, t.get("roster_ids") or []))
+                rec_teams = {str(v) for v in adds.values()} if adds else set()
+                send_teams = {str(v) for v in drops.values()} if drops else set()
+
+                team_ids = base_rosters | rec_teams | send_teams
+                if not team_ids:
+                    continue
 
                 team_objs = []
-                for rid in team_ids:
-                    gets = [pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == rid]
-                    sends = [pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == rid]
+                team_objs_append = team_objs.append
+
+                for rid in sorted(team_ids):
+                    gets = [pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == rid] if adds else []
+                    sends = [pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == rid] if drops else []
 
                     try:
                         rid_int = int(rid)
                     except Exception:
                         rid_int = None
 
-                    team_objs.append(
+                    team_objs_append(
                         {
                             "rid": rid,
                             "roster_id": rid_int,
@@ -745,7 +784,7 @@ def build_week_activity(
                         }
                     )
 
-                rows.append(
+                rows_append(
                     {
                         "kind": "trade",
                         "week": week,
@@ -756,12 +795,15 @@ def build_week_activity(
                         },
                     }
                 )
-                continue
+
+    if not rows:
+        return pd.DataFrame(columns=["kind", "week", "ts", "data"])
 
     df = pd.DataFrame(rows)
-    if not df.empty:
-        df["ts"] = pd.to_datetime(df["ts"], errors="coerce")
-        df = df.sort_values("ts", ascending=False).reset_index(drop=True)
+
+    # ts is already datetime, but this makes us robust if any None snuck in
+    df["ts"] = pd.to_datetime(df["ts"], errors="coerce")
+    df = df.sort_values("ts", ascending=False).reset_index(drop=True)
     return df
 
 
@@ -930,6 +972,8 @@ def compute_sos_by_team(
     return out
 
 
+from collections import defaultdict
+
 def playoff_bracket(
     winners_bracket,
     roster_name_map,
@@ -960,6 +1004,7 @@ def playoff_bracket(
 
     roster_name = {_k(k): v for k, v in (roster_name_map or {}).items()}
 
+    # --- figure out who is in the playoffs + byes ---------------------------
     all_playoff_rids = set()
     round1_rids = set()
     for m in winners_bracket:
@@ -970,6 +1015,9 @@ def playoff_bracket(
                 all_playoff_rids.add(rid)
                 if r == 1:
                     round1_rids.add(rid)
+
+    # use this BEFORE we inject bye matches so we know "real" field size
+    playoff_field_size = len(all_playoff_rids)
 
     bye_rids = all_playoff_rids - round1_rids
     bye_rids_sorted = sorted(bye_rids, key=seed_key)
@@ -1034,6 +1082,48 @@ def playoff_bracket(
             continue
         rounds[r].sort(key=lambda x: x.get("m", 0))
 
+    # --------- dynamic round labels based on size / number of rounds --------
+    total_rounds = max(round_nums)
+
+    def get_round_label(r: int) -> str:
+        """
+        Make the labels adapt to:
+        - 4-team playoffs (2 rounds): Semifinals -> Finals
+        - 6-team playoffs (3 rounds): Round 1 -> Semifinals -> Finals
+        - 8-team playoffs (3 rounds): Quarterfinals -> Semifinals -> Finals
+        - bigger fields: generic + last two rounds as Semis/Finals.
+        """
+        if total_rounds == 1:
+            # just a championship game
+            return "Finals 🏆"
+
+        # final is always "Finals"
+        if r == total_rounds:
+            return "Finals 🏆"
+
+        if total_rounds == 2:
+            # 4-team bracket: R1 = Semis, R2 = Finals
+            return "Semifinals"
+
+        if total_rounds == 3:
+            # 3-round bracket: handle 6-team vs 8-team naming
+            if r == total_rounds - 1:
+                return "Semifinals"
+            # earliest round:
+            if playoff_field_size >= 8:
+                return "Quarterfinals"
+            else:
+                return "Round 1"
+
+        # 4+ rounds: last two named, earlier ones generic / quarters
+        if r == total_rounds - 1:
+            return "Semifinals"
+        if r == total_rounds - 2:
+            return "Quarterfinals"
+
+        return f"Round {r}"
+
+    # ---------------------- slot + HTML rendering ---------------------------
     def resolve_slot(match, side_key):
         rid = match.get(side_key)
         from_spec = match.get(f"{side_key}_from")
@@ -1093,7 +1183,7 @@ def playoff_bracket(
 
     html_rounds = []
     for r in round_nums:
-        round_label = {1: "Round 1", 2: "Semifinals", 3: "Finals 🏆"}.get(r, f"Round {r}")
+        round_label = get_round_label(r)
         matches = rounds[r]
         match_html = []
         for m in matches:
@@ -1137,7 +1227,21 @@ def playoff_bracket(
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
 
 
-def seed_top6_from_team_stats(team_stats, roster_map):
+
+def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
+    """
+    Build a seed_map {roster_id: seed} for the top N teams (N = playoff_size)
+    based on Wins, PF, PA, owner name tiebreak.
+
+    This works for:
+      - 4-team playoffs (playoff_size=4)
+      - 6-team (playoff_size=6)
+      - 8-team (playoff_size=8)
+      - etc.
+    """
+    if playoff_size <= 0:
+        raise ValueError("playoff_size must be positive")
+
     required_cols = {"owner", "Wins", "PF", "PA"}
     missing = required_cols - set(team_stats.columns)
     if missing:
@@ -1145,6 +1249,7 @@ def seed_top6_from_team_stats(team_stats, roster_map):
     if not isinstance(roster_map, dict) or not roster_map:
         raise ValueError("roster_map must be a non-empty dict of {roster_id: team_name}")
 
+    # Map normalized owner name -> roster_id
     name_to_rid: dict[str, str] = {}
     for rid, name in roster_map.items():
         if isinstance(name, str):
@@ -1174,10 +1279,16 @@ def seed_top6_from_team_stats(team_stats, roster_map):
             continue
         seed_map[rid] = seed
         seed += 1
-        if seed > 6:
+        if seed > playoff_size:
             break
 
     return seed_map
+
+
+# Backwards-compatible wrapper if you still use the old function name anywhere
+def seed_top6_from_team_stats(team_stats, roster_map):
+    return seed_top_n_from_team_stats(team_stats, roster_map, playoff_size=6)
+
 
 
 def render_standings_table(team_stats, length):
@@ -1440,179 +1551,3 @@ def build_standings_map(team_stats, roster_map) -> dict[int, int]:
         standings[rid] = seed
     return standings
 
-
-def _parse_stat_lines_for_pos(lines, pos_code: str) -> Dict[str, Any]:
-    """
-    lines: list of text lines from the cell for that week, e.g.
-      QB: ["320-2-1", "3-19-0"]
-      RB: ["8-69-0", "1-6-0"]
-    """
-
-    def _parse_nums(line: str) -> list[int]:
-        line = line.strip()
-        if not line:
-            return []
-
-        parts = line.split("-")
-        nums: list[int] = []
-        i = 0
-        while i < len(parts):
-            part = parts[i].strip()
-            if part == "":
-                if i + 1 < len(parts) and parts[i + 1].strip():
-                    nums.append(-int(parts[i + 1].strip()))
-                    i += 2
-                else:
-                    i += 1
-            else:
-                nums.append(int(part))
-                i += 1
-            if len(nums) >= 3:
-                break
-        return nums
-
-    nums_by_line: list[list[int]] = []
-    for line in lines:
-        nums = _parse_nums(line)
-        if nums:
-            nums_by_line.append(nums)
-
-    stats: Dict[str, Any] = {}
-
-    if pos_code == "QB":
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            py, ptd, ints = nums_by_line[0][:3]
-            stats.update({"pass_yds": py, "pass_td": ptd, "int": ints})
-        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
-            ra, ry, rtd = nums_by_line[1][:3]
-            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
-
-    elif pos_code in {"RB", "WR"}:
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            ra, ry, rtd = nums_by_line[0][:3]
-            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
-        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
-            rec, r_yards, rtd2 = nums_by_line[1][:3]
-            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd2})
-
-    elif pos_code == "TE":
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            rec, r_yards, rtd = nums_by_line[0][:3]
-            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd})
-
-    else:
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            a, b, c = nums_by_line[0][:3]
-            stats.update({"stat1": a, "stat2": b, "stat3": c})
-
-    return stats
-
-
-def _parse_position_table_for_week(
-    table,
-    pos_code: str,
-    target_week: int,
-) -> Dict[str, Dict[str, Any]]:
-    thead = table.find("thead")
-    tbody = table.find("tbody")
-    if not thead or not tbody:
-        return {}
-
-    head_rows = thead.find_all("tr")
-    if not head_rows:
-        return {}
-
-    week_hdr_cells = head_rows[0].find_all("th")
-    week_col_idx = None
-    target_label = f"Wk {target_week}".lower()
-
-    for i, th in enumerate(week_hdr_cells):
-        txt = th.get_text(strip=True).lower()
-        if txt == target_label:
-            week_col_idx = i
-            break
-
-    if week_col_idx is None:
-        return {}
-
-    pos_players: Dict[str, Dict[str, Any]] = {}
-
-    for tr in tbody.find_all("tr"):
-        cells = tr.find_all("td")
-        if len(cells) <= week_col_idx:
-            continue
-
-        name_cell = cells[0]
-        link = name_cell.find("a")
-        player_name = (
-            link.get_text(strip=True) if link is not None else name_cell.get_text(strip=True)
-        )
-        if not player_name:
-            continue
-        player_name = normalize_name(player_name)
-
-        stat_cell = cells[week_col_idx]
-        plain_text = stat_cell.get_text(strip=True)
-        if plain_text == "" or plain_text == "0":
-            continue
-
-        lines = list(stat_cell.stripped_strings)
-        stats = _parse_stat_lines_for_pos(lines, pos_code)
-        if stats:
-            pos_players[player_name] = stats
-
-    return pos_players
-
-
-def parse_team_week_pos_player_stats(
-    html: str,
-    target_week: int,
-) -> Dict[str, Dict[str, Dict[str, Any]]]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    heading_to_pos = {
-        "Quarterbacks": "QB",
-        "Running Backs": "RB",
-        "Wide Receivers": "WR",
-        "Tight Ends": "TE",
-    }
-
-    result: Dict[str, Dict[str, Dict[str, Any]]] = {}
-
-    for h2 in soup.find_all("h2"):
-        heading = h2.get_text(strip=True)
-        pos_code = heading_to_pos.get(heading)
-        if not pos_code:
-            continue
-
-        table = h2.find_next("table")
-        if not table:
-            continue
-
-        pos_players = _parse_position_table_for_week(table, pos_code, target_week)
-        result[pos_code] = pos_players
-
-    return result
-
-
-def build_and_save_week_stats_for_league(
-    teams_index: Dict[str, Dict[str, Any]],
-    season: int,
-    week: int,
-) -> Path:
-    league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
-
-    print(f"[week_stats] building stats for the week")
-    for team_abv in teams_index.keys():
-        try:
-            html = fetch_team_game_logs_html(team_abv, season)
-            pos_player_stats = parse_team_week_pos_player_stats(html, week)
-            league_week_stats[team_abv] = pos_player_stats
-        except Exception as e:
-            print(f"[week_stats] Error for {team_abv} week {week}: {e}")
-            league_week_stats[team_abv] = {}
-
-    out_path = path_week_stats(season, week)
-    write_json(out_path, league_week_stats)
-    print(f"[week_stats] Wrote → {out_path}")
-    return out_path
