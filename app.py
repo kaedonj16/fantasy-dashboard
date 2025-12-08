@@ -131,6 +131,11 @@ FORM_HTML = """
         margin-top: 6px;
       }
       .h1 {text-align: center;}
+      .error-message {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #fecaca;
+      }
     </style>
   </head>
   <body>
@@ -142,12 +147,18 @@ FORM_HTML = """
           <input type="text" id="league" name="league" required value="{{ league or '' }}">
         </div>
         <button type="submit">Generate Dashboard</button>
+        {% if error %}
+        <div class="error-message">
+          {{ error }}
+        </div>
+        {% endif %}
         <div class="hint">Paste your Sleeper league ID, hit generate, and we’ll build the dashboard.</div>
       </form>
     </div>
   </body>
 </html>
 """
+
 
 BASE_HTML = """
 <!doctype html>
@@ -395,6 +406,28 @@ def build_nav(league_id: str, active: str,) -> str:
 def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
     nav_html = build_nav(league_id, active)
     return BASE_HTML.format(title=title, nav=nav_html, body=body_html, plotly_js=plotly_js)
+
+def validate_league_id(league_id: str) -> bool:
+    """
+    Basic validation for a Sleeper league ID.
+
+    - Rejects empty/whitespace
+    - Calls get_league and treats any exception / missing league_id as invalid
+    """
+    league_id = (league_id or "").strip()
+    if not league_id:
+        return False
+
+    try:
+        league = get_league(league_id)
+    except Exception as e:
+        print(f"[validate_league_id] error checking league {league_id}: {e}")
+        return False
+
+    if not isinstance(league, dict):
+        return False
+
+    return bool(league.get("league_id"))
 
 
 def build_league_context(league_id: str) -> dict:
@@ -2783,8 +2816,20 @@ def maybe_run_daily():
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    default_weeks = get_nfl_state().get("week")
+
     if request.method == "POST":
         league_id = request.form.get("league", "").strip()
+
+        # Validate the Sleeper league ID before doing any heavy work
+        if not validate_league_id(league_id):
+            return render_template_string(
+                FORM_HTML,
+                league=league_id,
+                weeks=default_weeks,
+                error="Invalid Sleeper league ID. Please check it and try again.",
+            )
+
         cache_key = league_id
         now = time.time()
         print("cache keys currently:", list(DASHBOARD_CACHE.keys()))
@@ -2800,9 +2845,14 @@ def index():
 
         return redirect(url_for("page_dashboard", league_id=league_id))
 
-    # GET -> show the form (unchanged)
-    default_weeks = get_nfl_state().get("week")
-    return render_template_string(FORM_HTML, league=None, weeks=default_weeks)
+    # GET -> show the form
+    return render_template_string(
+        FORM_HTML,
+        league=None,
+        weeks=default_weeks,
+        error=None,
+    )
+
 
 
 @app.route("/league/<league_id>")
