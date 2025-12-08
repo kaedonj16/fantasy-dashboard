@@ -34,7 +34,6 @@ parse==1.20.2
 pillow==11.3.0
 playwright==1.56.0
 plotly==6.5.0
-pyee==13.0.0
 pyparsing==3.2.5
 pyppeteer==2.0.0
 pyquery==2.0.1
