@@ -35,13 +35,11 @@ pillow==11.3.0
 playwright==1.56.0
 plotly==6.5.0
 pyparsing==3.2.5
-pyppeteer==2.0.0
 pyquery==2.0.1
 python-dateutil==2.9.0.post0
 pytz==2025.2
 reportlab==4.4.5
 requests==2.32.5
-requests-html==0.10.0
 scikit-learn==1.6.1
 scipy==1.13.1
 sklearn==0.0
