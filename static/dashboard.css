@@ -1814,7 +1814,6 @@ tbody tr:nth-child(even){
   display:grid;
   grid-auto-rows: minmax(30px, auto);
   row-gap: 6px;
-  height: 570px;
 }
 .m-row{
   display:grid;

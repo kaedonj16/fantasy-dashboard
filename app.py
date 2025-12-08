@@ -22,7 +22,7 @@ from dashboard_services.data_building.value_model_training import build_ml_value
 from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
-    compute_team_projections_for_weeks, format_player_stats
+    compute_team_projections_for_weeks
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
@@ -31,9 +31,9 @@ from dashboard_services.service import build_tables, playoff_bracket, matchup_ca
 from dashboard_services.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
     load_players_index, \
-    load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_standings_cache_for_league, \
-    clear_weekly_cache_for_league, build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
-    fetch_week_from_tank01, load_week_stats, build_and_save_week_stats_for_league
+    load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_weekly_cache_for_league, \
+    build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
+    fetch_week_from_tank01
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -1217,8 +1217,10 @@ def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
     df_weekly = ctx["df_weekly"]
+    rosters = ctx["rosters"]
+    num_teams = len({str(r.get("roster_id")) for r in rosters})
 
-    standings_html = render_standings(team_stats, 10)
+    standings_html = render_standings(team_stats, num_teams)
     table_html = render_team_stats(team_stats, df_weekly[df_weekly["finalized"] == True].copy())
     power_playoffs_html = render_power_and_playoffs(team_stats, roster_map, ctx["league_id"])
     sidebar_html = render_standings_sidebar(team_stats)

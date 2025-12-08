@@ -11,7 +11,6 @@ from dashboard_services.api import (
     get_users,
     get_rosters,
     avatar_from_users,
-    get_nfl_state,
     get_nfl_scores_for_date,
     build_team_game_lookup,
 )
@@ -41,6 +40,15 @@ def build_matchup_preview(
     users = get_users(league_id) or []
     rosters = get_rosters(league_id) or []
 
+    # figure out league size from rosters / roster_map
+    if rosters:
+        num_teams = len({str(r.get("roster_id")) for r in rosters})
+    else:
+        num_teams = len(roster_map) if roster_map else 0
+
+    # expected number of head-to-head games
+    expected_matchups = max(1, num_teams // 2) if num_teams else None
+
     # Precompute maps for fast lookup
     owner_id_by_rid: Dict[str, Optional[str]] = {}
     record_by_rid: Dict[str, tuple[int, int]] = {}
@@ -54,7 +62,6 @@ def build_matchup_preview(
         u["user_id"]: u.get("display_name") for u in users if "user_id" in u
     }
 
-    # Cache avatars per owner_id, since avatar_from_users may scan the list
     avatar_cache: Dict[Optional[str], Any] = {}
 
     def get_avatar(owner_id: Optional[str]) -> Any:
@@ -118,7 +125,12 @@ def build_matchup_preview(
             else {"name": "TBD", "avatar": None, "starters": [], "pts_total": None}
         )
         out.append({"matchup_id": mid, "left": left, "right": right})
-    return out[:5]
+
+    # if we know how many matchups to expect, cap to that; otherwise return all
+    if expected_matchups is not None:
+        return out[:expected_matchups]
+    return out
+
 
 
 def render_matchup_carousel_weeks(
