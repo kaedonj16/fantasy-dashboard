@@ -80,7 +80,6 @@ def build_idp_players_index() -> dict:
 
         if not sleeper_id:
             # Optionally log unmatched Tank01 IDPs for debugging
-            # print(f"[IDP] No Sleeper match for {name} ({team}, {raw_pos})")
             continue
 
         bye_week = teams_index.get(team, {}).get("byeWeek")

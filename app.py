@@ -418,7 +418,6 @@ def validate_league_id(league_id: str) -> bool:
 
     try:
         league = get_league(league_id)
-        print(league)
     except Exception as e:
         print(f"[validate_league_id] error checking league {league_id}: {e}")
         return False
@@ -2356,17 +2355,17 @@ def build_teams_body(ctx: dict) -> str:
     for obj in model_vals:
         if not isinstance(obj, dict):
             continue
-        nm = str(obj.get("search_name") or "").strip().lower()
-        if not nm:
+        safe_name = str(obj.get("search_name") or "").strip().lower()
+        if not safe_name:
             continue
         pos_lbl = obj.get("pos_rank_label") or obj.get("position") or obj.get("pos") or ""
-        name_to_rank_label[nm] = str(pos_lbl)
+        name_to_rank_label[safe_name] = str(pos_lbl)
         age_val = obj.get("age")
         if age_val is not None:
             try:
-                name_to_age[nm] = float(age_val)
+                name_to_age[safe_name] = float(age_val)
             except Exception:
-                name_to_age[nm] = None
+                name_to_age[safe_name] = None
 
     # map sleeper_id -> row
     by_id: dict[str, dict] = {
@@ -2532,7 +2531,7 @@ def build_teams_body(ctx: dict) -> str:
 
         rows_html = []
         for p in plist:
-            name_raw = p.get('name', '')
+            name_raw = p.get('search_name', '')
             name_key = str(name_raw or "").strip().lower()
 
             rank_label = name_to_rank_label.get(
