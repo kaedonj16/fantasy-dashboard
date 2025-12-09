@@ -10,6 +10,48 @@ from pathlib import Path
 from typing import Any, List, Dict, Optional, Union
 
 
+# ---- League context globals ----
+SCORING_SETTINGS: Dict[str, Any] = {}
+ROSTER_POSITIONS: List[str] = []
+LEAGUE_SETTINGS: Dict[str, Any] = {}
+TOTAL_ROSTERS: int = 0
+SLEEPER_BASE = "https://api.sleeper.app/v1"
+SCORING_DEFAULTS = {
+    # Passing
+    "twoPointConversions": 2,
+    "passYards": 0.04,
+    "passAttempts": -0.5,
+    "passTD": 4,
+    "passCompletions": 1,
+    "passInterceptions": -2,
+    # Receiving
+    "pointsPerReception": 1,
+    "receivingYards": 0.1,
+    "receivingTD": 6,
+    "targets": 0.1,
+    # Rushing
+    "carries": 0.2,
+    "rushYards": 0.1,
+    "rushTD": 6,
+    "fumbles": -2,
+    # Kicking
+    "fgMade": 3,
+    "fgMissed": -1,
+    "xpMade": 1,
+    "xpMissed": -1,
+}
+TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+BASE = f"https://{TANK01_HOST}"
+TANK01_API_KEY = os.getenv("TANK01_API_KEY")
+FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
+
+if not TANK01_API_KEY:
+    raise RuntimeError("TANK01_API_KEY is not set. Export it or hardcode it temporarily.")
+
+# Reuse a single Session and a single headers dict for all Tank01 calls
+SESSION = requests.Session()
+
+
 def _make_hashable(x: Any):
     """
     Recursively turn lists/dicts/sets into hashable structures
@@ -86,49 +128,11 @@ def ttl_cache(ttl: int = 300):
     return decorator
 
 
-SLEEPER_BASE = "https://api.sleeper.app/v1"
-SCORING_DEFAULTS = {
-    # Passing
-    "twoPointConversions": 2,
-    "passYards": 0.04,
-    "passAttempts": -0.5,
-    "passTD": 4,
-    "passCompletions": 1,
-    "passInterceptions": -2,
-    # Receiving
-    "pointsPerReception": 1,
-    "receivingYards": 0.1,
-    "receivingTD": 6,
-    "targets": 0.1,
-    # Rushing
-    "carries": 0.2,
-    "rushYards": 0.1,
-    "rushTD": 6,
-    "fumbles": -2,
-    # Kicking
-    "fgMade": 3,
-    "fgMissed": -1,
-    "xpMade": 1,
-    "xpMissed": -1,
-}
-TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-BASE = f"https://{TANK01_HOST}"
-TANK01_API_KEY = os.getenv("TANK01_API_KEY")
-FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
-
-if not TANK01_API_KEY:
-    raise RuntimeError("TANK01_API_KEY is not set. Export it or hardcode it temporarily.")
-
-# Reuse a single Session and a single headers dict for all Tank01 calls
-SESSION = requests.Session()
-
-
 def _headers(rapidapi_key: str) -> Dict[str, str]:
     return {
         "x-rapidapi-host": TANK01_HOST,
         "x-rapidapi-key": str(rapidapi_key),
     }
-
 
 TANK01_HEADERS = _headers(TANK01_API_KEY)
 
@@ -158,8 +162,57 @@ def fetch_json(path: str, timeout: int = 25) -> dict:
 
 
 @ttl_cache(ttl=300)
-def get_league(league_id: str) -> List[dict]:
-    return fetch_json(f"/league/{league_id}")
+def get_league(league_id: str) -> dict:
+    """
+    Fetch a Sleeper league and cache league-wide context in module globals.
+
+    Populates:
+      - SCORING_SETTINGS
+      - ROSTER_POSITIONS
+      - LEAGUE_SETTINGS
+      - TOTAL_ROSTERS
+    """
+    global SCORING_SETTINGS, ROSTER_POSITIONS, LEAGUE_SETTINGS, TOTAL_ROSTERS
+
+    league = fetch_json(f"/league/{league_id}") or {}
+
+    if isinstance(league, dict):
+        SCORING_SETTINGS = league.get("scoring_settings") or {}
+        ROSTER_POSITIONS = league.get("roster_positions") or []
+        LEAGUE_SETTINGS = league.get("settings") or {}
+        TOTAL_ROSTERS = int(league.get("total_rosters") or 0)
+
+    return league
+
+def get_scoring_settings() -> Dict[str, Any]:
+    """
+    Raw scoring_settings from Sleeper for the current league.
+    """
+    return SCORING_SETTINGS
+
+
+def get_effective_scoring_settings() -> Dict[str, float]:
+    """
+    Defaults overlaid with league-specific scoring.
+    League scoring overrides defaults.
+    """
+    merged = dict(SCORING_DEFAULTS)
+    merged.update(SCORING_SETTINGS or {})
+    return merged
+
+
+def get_roster_positions() -> List[str]:
+    return ROSTER_POSITIONS
+
+
+def get_league_settings() -> Dict[str, Any]:
+    return LEAGUE_SETTINGS
+
+
+def get_total_rosters() -> int:
+    return TOTAL_ROSTERS
+
+
 
 
 @ttl_cache(ttl=300)

@@ -107,8 +107,8 @@
     "home": "MIA",
     "espnLink": "https://www.espn.com/nfl/boxscore/_/gameId/401772934",
     "cbsLink": "https://www.cbssports.com/nfl/gametracker/boxscore/NFL_20251221_CIN@MIA",
-    "gameTime": "8:20p",
-    "gameTime_epoch": "1766366400.0",
+    "gameTime": "1:00p",
+    "gameTime_epoch": "1766340000.0",
     "season": "2025",
     "neutralSite": "False",
     "gameStatusCode": "0"
@@ -221,8 +221,8 @@
     "home": "BAL",
     "espnLink": "https://www.espn.com/nfl/boxscore/_/gameId/401772804",
     "cbsLink": "https://www.cbssports.com/nfl/gametracker/boxscore/NFL_20251221_NE@BAL",
-    "gameTime": "1:00p",
-    "gameTime_epoch": "1766340000.0",
+    "gameTime": "8:20p",
+    "gameTime_epoch": "1766366400.0",
     "season": "2025",
     "neutralSite": "False",
     "gameStatusCode": "0"

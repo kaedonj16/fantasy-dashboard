@@ -5,6 +5,8 @@ import json
 import os
 import requests
 import time
+from datetime import date
+from pathlib import Path
 from typing import Any, Dict, List
 
 from dashboard_services.utils import load_relevant_index
@@ -14,12 +16,12 @@ SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your syst
 ALLOWED_POS = ["RB", "WR"]
 
 WEEK_CACHE_TTL = 24 * 60 * 60  # 1 day, adjust as you want
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "cache", "sleeper_stats")
+CACHE_DIR = Path(__file__).resolve().parents[2] / "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def _week_cache_path(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"sleeper_stats_{season}_week_{week}.json")
+    return os.path.join(CACHE_DIR,  f"sleeper_stats/sleeper_stats_s{season}_w{week}_{date.today().isoformat()}.json")
 
 
 def _is_cache_fresh(path: str) -> bool:

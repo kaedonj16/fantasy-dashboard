@@ -7,14 +7,14 @@ from dashboard_services.data_building.team_enrichment import enrich_all_team_inf
     enrich_teams_index_with_rushing
 from dashboard_services.data_building.value_exports import export_engine_values
 from dashboard_services.data_building.value_model_training import rewrite_value_table_with_model
+from dashboard_services.idp import build_idp_players_index
 from dashboard_services.utils import path_teams_index, load_usage_table, load_teams_index, load_model_value_table, \
     load_engine_table, get_live_game_ids_for_today, load_week_schedule, build_and_save_week_stats_for_league
 
 
 def build_daily_data(season: int, week: int):
     live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
-    if live_game_ids:
-        build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
+    build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
     if load_fantasycalc_api_values() is None or load_dynastyprocess_values() is None:
         scrape_all_vendor_values()

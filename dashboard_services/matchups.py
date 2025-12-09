@@ -12,7 +12,7 @@ from dashboard_services.api import (
     get_rosters,
     avatar_from_users,
     get_nfl_scores_for_date,
-    build_team_game_lookup,
+    build_team_game_lookup, get_league_settings, get_bracket,
 )
 from dashboard_services.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
 
@@ -32,7 +32,6 @@ def build_matchup_preview(
         players_map: Dict[str, Dict[str, str]],
 ) -> List[dict]:
     mlist = get_matchups(league_id, week) or []
-
     if not mlist:
         return []
 
@@ -40,13 +39,21 @@ def build_matchup_preview(
     users = get_users(league_id) or []
     rosters = get_rosters(league_id) or []
 
+    # Pull league settings to find playoff start week
+    settings = get_league_settings()
+    playoff_week_start = int(settings.get("playoff_week_start") or 0)
+
+    # Brackets
+    winners_bracket = get_bracket(league_id, "winners") or []
+    losers_bracket  = get_bracket(league_id, "losers") or []
+
     # figure out league size from rosters / roster_map
     if rosters:
         num_teams = len({str(r.get("roster_id")) for r in rosters})
     else:
         num_teams = len(roster_map) if roster_map else 0
 
-    # expected number of head-to-head games
+    # expected number of head-to-head games in regular season
     expected_matchups = max(1, num_teams // 2) if num_teams else None
 
     # Precompute maps for fast lookup
@@ -55,8 +62,11 @@ def build_matchup_preview(
     for r in rosters:
         rid_str = str(r.get("roster_id"))
         owner_id_by_rid[rid_str] = r.get("owner_id")
-        settings = r.get("settings") or {}
-        record_by_rid[rid_str] = (settings.get("wins", 0), settings.get("losses", 0))
+        r_settings = r.get("settings") or {}
+        record_by_rid[rid_str] = (
+            r_settings.get("wins", 0),
+            r_settings.get("losses", 0),
+        )
 
     username_by_owner: Dict[str, Optional[str]] = {
         u["user_id"]: u.get("display_name") for u in users if "user_id" in u
@@ -69,11 +79,6 @@ def build_matchup_preview(
             avatar_cache[owner_id] = avatar_from_users(users, owner_id) if owner_id is not None else None
         return avatar_cache[owner_id]
 
-    by_mid: Dict[Any, List[dict]] = {}
-    for m in mlist:
-        mid = m.get("matchup_id")
-        by_mid.setdefault(mid, []).append(m)
-
     def _from_players_map(pid: str) -> Dict[str, str]:
         if players_map:
             info = players_map.get(pid)
@@ -82,7 +87,11 @@ def build_matchup_preview(
         if info:
             name = info.get("name") or pid
             nfl = info.get("team") or "FA"
-            pos = info.get("pos") or (info.get("fantasy_positions", [""])[0] if info.get("fantasy_positions") else "")
+            pos = info.get("pos") or (
+                info.get("fantasy_positions", [""])[0]
+                if info.get("fantasy_positions")
+                else ""
+            )
             return {"name": name, "nfl": nfl, "pos": pos}
         if pid.isalpha() and 2 <= len(pid) <= 3:
             return {"name": f"{pid} D/ST", "nfl": pid, "pos": "DEF"}
@@ -91,9 +100,15 @@ def build_matchup_preview(
     def _pinfo(pid: str, pts_map: Dict[str, float]) -> dict:
         base = _from_players_map(pid)
         pts = pts_map.get(pid) if pts_map else None
-        return {"pid": pid, "name": base["name"], "pos": base["pos"], "nfl": base["nfl"], "pts": pts}
+        return {
+            "pid": pid,
+            "name": base["name"],
+            "pos": base["pos"],
+            "nfl": base["nfl"],
+            "pts": pts,
+        }
 
-    def _team_block(row: dict) -> dict:
+    def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
         starters_raw = [s for s in (row.get("starters") or []) if s]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
@@ -113,20 +128,180 @@ def build_matchup_preview(
             "username": username,
         }
 
+    def _team_block_tbd(rid: Optional[int | str]) -> dict:
+        rid_str = str(rid) if rid is not None else None
+        name = "TBD"
+        record = "-"
+
+        if rid_str and rid_str in roster_map:
+            name = roster_map[rid_str]
+        if rid_str and rid_str in record_by_rid:
+            w, l = record_by_rid[rid_str]
+            record = f"{w}-{l}"
+
+        owner_id = owner_id_by_rid.get(rid_str)
+        return {
+            "name": name,
+            "starters": [],
+            "pts_total": None,
+            "avatar": get_avatar(owner_id) if owner_id else None,
+            "record": record,
+            "username": username_by_owner.get(owner_id) if owner_id else None,
+        }
+
+    # ------------------------------------------------------------------
+    # PLAYOFF BRANCH – winners + losers bracket
+    # ------------------------------------------------------------------
+    is_playoff_week = (
+        bool(playoff_week_start)
+        and week >= playoff_week_start
+        and (winners_bracket or losers_bracket)
+    )
+
+    if is_playoff_week:
+        # Map roster_id -> matchup row for *this* fantasy week
+        by_rid: Dict[str, dict] = {}
+        for row in mlist:
+            rid_str = str(row.get("roster_id"))
+            if rid_str not in by_rid:
+                by_rid[rid_str] = row
+
+        # Combine winners + losers for result resolution
+        all_brackets = list(winners_bracket) + list(losers_bracket)
+
+        # result_by_match[m] = {"w": roster_id or None, "l": roster_id or None}
+        result_by_match: Dict[int, Dict[str, Optional[int]]] = {}
+
+        for b in all_brackets:
+            try:
+                mid = int(b.get("m"))
+            except (TypeError, ValueError):
+                continue
+
+            entry = result_by_match.setdefault(mid, {"w": None, "l": None})
+
+            w_team = b.get("w")
+            l_team = b.get("l")
+
+            if w_team is not None:
+                try:
+                    entry["w"] = int(w_team)
+                except (TypeError, ValueError):
+                    pass
+
+            if l_team is not None:
+                try:
+                    entry["l"] = int(l_team)
+                except (TypeError, ValueError):
+                    pass
+
+        def _resolve_slot(b: dict, slot_key: str, from_key: str) -> Optional[int]:
+            """
+            Resolve t1 / t2 from either a direct value or a from-spec:
+            - tX: direct roster id
+            - tX_from: {"w": match_no} or {"l": match_no}
+            """
+            direct = b.get(slot_key)
+            if direct is not None:
+                try:
+                    return int(direct)
+                except (TypeError, ValueError):
+                    return None
+
+            from_spec = b.get(from_key)
+            if not isinstance(from_spec, dict) or not from_spec:
+                return None
+
+            if "w" in from_spec:
+                prev_m = from_spec["w"]
+                try:
+                    prev_m = int(prev_m)
+                except (TypeError, ValueError):
+                    return None
+                return result_by_match.get(prev_m, {}).get("w")
+
+            if "l" in from_spec:
+                prev_m = from_spec["l"]
+                try:
+                    prev_m = int(prev_m)
+                except (TypeError, ValueError):
+                    return None
+                return result_by_match.get(prev_m, {}).get("l")
+
+            return None
+
+        # Round mapping: playoff_week_start -> round 1, etc.
+        current_round = (week - playoff_week_start) + 1
+
+        def _build_round_matchups(bracket_list: List[dict]) -> List[dict]:
+            out_matches: List[dict] = []
+            for b in bracket_list:
+                if b.get("r") != current_round:
+                    continue
+
+                mid = b.get("m")
+
+                t1_rid = _resolve_slot(b, "t1", "t1_from")
+                t2_rid = _resolve_slot(b, "t2", "t2_from")
+
+                left_row = by_rid.get(str(t1_rid)) if t1_rid is not None else None
+                right_row = by_rid.get(str(t2_rid)) if t2_rid is not None else None
+
+                if left_row is not None:
+                    left = _team_block_from_match_row(left_row)
+                else:
+                    left = _team_block_tbd(t1_rid)
+
+                if right_row is not None:
+                    right = _team_block_from_match_row(right_row)
+                else:
+                    right = _team_block_tbd(t2_rid)
+
+                out_matches.append({
+                    "matchup_id": mid,
+                    "left": left,
+                    "right": right,
+                })
+            return out_matches
+
+        # Build matches for both winners & losers in this round
+        playoff_out: List[dict] = []
+        playoff_out.extend(_build_round_matchups(winners_bracket))
+        playoff_out.extend(_build_round_matchups(losers_bracket))
+
+        # In playoffs we usually want *all* games (winners + losers),
+        # so do NOT cap by expected_matchups here.
+        return playoff_out
+
+    # ------------------------------------------------------------------
+    # REGULAR SEASON BRANCH – existing logic
+    # ------------------------------------------------------------------
+    by_mid: Dict[Any, List[dict]] = {}
+    for m in mlist:
+        mid = m.get("matchup_id")
+        by_mid.setdefault(mid, []).append(m)
+
     out = []
     for mid, rows in by_mid.items():
         if not rows:
             continue
         rows_sorted = sorted(rows, key=lambda r: str(r.get("roster_id")))
-        left = _team_block(rows_sorted[0])
+        left = _team_block_from_match_row(rows_sorted[0])
         right = (
-            _team_block(rows_sorted[1])
+            _team_block_from_match_row(rows_sorted[1])
             if len(rows_sorted) > 1
-            else {"name": "TBD", "avatar": None, "starters": [], "pts_total": None}
+            else {
+                "name": "TBD",
+                "avatar": None,
+                "starters": [],
+                "pts_total": None,
+                "record": "-",
+                "username": None,
+            }
         )
         out.append({"matchup_id": mid, "left": left, "right": right})
 
-    # if we know how many matchups to expect, cap to that; otherwise return all
+    # In regular season, we can still cap by expected_matchups if desired
     if expected_matchups is not None:
         return out[:expected_matchups]
     return out
@@ -368,13 +543,28 @@ def format_player_stats(
     """
     Returns a compact stat line with no player name, e.g.:
       "4 rec, 61 yds, 1 td"
-    Drops any 0-value TD lines.
+
+    For offensive positions (QB/RB/WR/TE) this behaves exactly as before.
+    For IDP, all defensive positions (DL/DE/DT/LB/DB/CB/S, etc.) are pulled
+    from the single "IDP" bucket per team in week_stats.
+
+    Drops any 0-value TD lines and skips empty lines.
     """
+    # Map raw position -> bucket used in week_stats
+    defensive_positions = {
+        "DL", "DE", "DT",      # line
+        "EDGE",
+        "LB", "ILB", "OLB",    # linebackers
+        "DB", "CB", "S", "FS", "SS",  # secondary
+    }
+
+    lookup_pos = "IDP" if pos in defensive_positions or pos == "IDP" else pos
+
     team_data = teams_stats.get(team)
     if not team_data:
         return None
 
-    pos_data = team_data.get(pos)
+    pos_data = team_data.get(lookup_pos)
     if not pos_data:
         return None
 
@@ -382,12 +572,14 @@ def format_player_stats(
     if not player_stats:
         return None
 
-    def phrase(v: int, singular: str, plural: str) -> str:
-        return f"{v} {singular if v == 1 else plural}"
+    def phrase(v: int | float, singular: str, plural: str) -> str:
+        v_int = int(v)
+        return f"{v_int} {singular if v_int == 1 else plural}"
 
     parts: list[str] = []
 
-    if pos == "QB":
+    # ---------------- QB / RB / WR / TE (unchanged behavior) ----------------
+    if lookup_pos == "QB":
         py = player_stats.get("pass_yds", 0)
         ptd = player_stats.get("pass_td", 0)
         ints = player_stats.get("int", 0)
@@ -408,7 +600,7 @@ def format_player_stats(
         if rtd > 0:
             parts.append(phrase(rtd, "rush td", "rush tds"))
 
-    elif pos in {"RB", "WR", "TE"}:
+    elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
         ry = player_stats.get("rush_yds", 0)
         rtd = player_stats.get("rush_td", 0)
@@ -430,6 +622,64 @@ def format_player_stats(
         if rtd > 0:
             parts.append(phrase(rtd, "td", "tds"))
 
+    # ---------------- IDP branch (new) ----------------
+    elif lookup_pos == "IDP":
+        # Common Sleeper IDP fields from your example + typical ones
+        tkl = player_stats.get("idp_tkl", 0)
+        tkl_solo = player_stats.get("idp_tkl_solo", 0)
+        tkl_ast = player_stats.get("idp_tkl_ast", 0)
+        qb_hit = player_stats.get("idp_qb_hit", 0)
+        ff = player_stats.get("idp_ff", 0) or player_stats.get("idp_forced_fum", 0)
+        sack = (
+            player_stats.get("idp_sack")
+            or player_stats.get("idp_sk")
+            or player_stats.get("idp_sacks")
+            or 0
+        )
+        int_def = player_stats.get("idp_int", 0)
+        pd = player_stats.get("idp_pd", 0) or player_stats.get("idp_pass_def", 0)
+
+        # Tackles
+        if tkl:
+            # total tackles line, e.g. "2 tkl"
+            parts.append(phrase(tkl, "tkl", "tkl"))
+            # optional breakdown in parentheses " (1 solo, 1 ast)"
+            breakdown_bits = []
+            if tkl_solo:
+                breakdown_bits.append(phrase(tkl_solo, "solo", "solo"))
+            if tkl_ast:
+                breakdown_bits.append(phrase(tkl_ast, "ast", "ast"))
+            if breakdown_bits:
+                parts[-1] += f" ({', '.join(breakdown_bits)})"
+
+        # Sacks
+        if sack:
+            parts.append(phrase(sack, "sack", "sacks"))
+
+        # Forced fumbles
+        if ff:
+            parts.append(phrase(ff, "FF", "FF"))
+
+        # QB hits
+        if qb_hit:
+            parts.append(phrase(qb_hit, "QB hit", "QB hits"))
+
+        # Interceptions
+        if int_def:
+            parts.append(phrase(int_def, "int", "ints"))
+
+        # Passes defended
+        if pd:
+            parts.append(phrase(pd, "PD", "PD"))
+
+        # Fallback: if we somehow didn't pick anything but the dict has numbers,
+        # add a compact "key=value" dump to avoid returning "no stats".
+        if not parts:
+            for k, v in player_stats.items():
+                if isinstance(v, (int, float)) and v != 0:
+                    parts.append(f"{k}={int(v)}")
+
+    # ---------------- Other positions (unchanged generic behavior) ----------------
     else:
         for k, v in player_stats.items():
             if isinstance(v, int) and v != 0:
@@ -439,6 +689,7 @@ def format_player_stats(
         return "no stats"
 
     return ", ".join(parts)
+
 
 
 def build_offense_rankings(teams_index: dict) -> dict:
@@ -748,8 +999,15 @@ def render_matchup_slide(
         name = p.get("name", "")
         nfl = p.get("nfl", "")
         pos = p.get("pos")
-
-        actual = p.get("pts") or 0.0
+        if pos not in ["QB","RB", "WR", "TE", "K", "DEF"]:
+            pos = "IDP"
+        if pos == "IDP":
+            team_stats = week_stats.get(nfl, {})
+            pos_data = team_stats.get(pos, {})
+            player_stats = pos_data.get(normalize_name(name),{})
+            actual = player_stats.get('pts_idp', 0.0)
+        else:
+            actual = p.get("pts") or 0.0
 
         proj_val = week_proj_map.get(pid, 0.0)
         is_bye = False

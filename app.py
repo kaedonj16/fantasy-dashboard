@@ -15,7 +15,8 @@ from typing import List, Dict, Any
 from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
-    get_nfl_state, get_bracket, avatar_from_users, get_nfl_scores_for_date, build_team_game_lookup
+    get_nfl_state, get_bracket, avatar_from_users, get_nfl_scores_for_date, build_team_game_lookup, \
+    get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
 from dashboard_services.data_building.value_model_training import build_ml_value_table
@@ -33,7 +34,7 @@ from dashboard_services.utils import load_teams_index, streak_class, build_teams
     load_players_index, \
     load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_weekly_cache_for_league, \
     build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
-    fetch_week_from_tank01
+    fetch_week_from_tank01, count_roster_positions, load_idp_index
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -50,6 +51,8 @@ VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
 PAGE_HTML_TTL = 60  # seconds; bump if you want
 
 daily_init_done = False
+os.environ["TZ"] = "America/New_York"
+time.tzset()
 
 # directory to hold value-table files
 VALUE_TABLE_DIR = Path(__file__).resolve().parents[0] / "data"
@@ -407,19 +410,15 @@ def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
     nav_html = build_nav(league_id, active)
     return BASE_HTML.format(title=title, nav=nav_html, body=body_html, plotly_js=plotly_js)
 
-def validate_league_id(league_id: str) -> bool:
-    """
-    Basic validation for a Sleeper league ID.
 
-    - Rejects empty/whitespace
-    - Calls get_league and treats any exception / missing league_id as invalid
-    """
+def validate_league_id(league_id: str) -> bool:
     league_id = (league_id or "").strip()
     if not league_id:
         return False
 
     try:
         league = get_league(league_id)
+        print(league)
     except Exception as e:
         print(f"[validate_league_id] error checking league {league_id}: {e}")
         return False
@@ -442,6 +441,12 @@ def build_league_context(league_id: str) -> dict:
     league = timed("get_league", get_league, league_id)
     traded = timed("get_traded_picks", get_traded_picks, league_id)
     current = timed("get_nfl_state", get_nfl_state)
+    scoring_settings = get_effective_scoring_settings()   # defaults overlaid with league scoring_settings
+    raw_scoring_settings = get_scoring_settings() if 'get_scoring_settings' in globals() else None  # optional
+    roster_positions = get_roster_positions()
+    league_settings = get_league_settings()
+    total_rosters = get_total_rosters()
+
 
     # Shared global data
     players = timed("get_nfl_players(global)", get_players_global)
@@ -490,8 +495,8 @@ def build_league_context(league_id: str) -> dict:
     model_value_table = load_model_value_table() or []
 
     return {
-        "league_id": league_id,
         "league": league,
+        "league_id": league_id,
         "rosters": rosters,
         "users": users,
         "traded": traded,
@@ -511,9 +516,11 @@ def build_league_context(league_id: str) -> dict:
         "picks_by_roster": picks_by_roster,
         "team_game_lookup": team_game_lookup,
         "model_value_table": model_value_table,
-        # NOTE: we intentionally DO NOT populate:
-        #   proj_by_week, statuses, matchups_by_week, proj_by_roster, df_weekly["proj"]
-        # Those are added lazily by ensure_weekly_bits()
+        "scoring_settings": scoring_settings,          # effective (defaults + league overrides)
+        "raw_scoring_settings": raw_scoring_settings,  # if you expose the raw one, otherwise drop this
+        "roster_positions": roster_positions,
+        "league_settings": league_settings,
+        "total_rosters": total_rosters,
     }
 
 
@@ -542,7 +549,10 @@ def ensure_weekly_bits(ctx: dict) -> None:
     players_map = ctx["players_map"]
 
     proj_by_week = build_projections_by_week(current_season, weeks)
-    statuses = build_status_by_week(current_season, weeks, players_index, teams_index)
+    if any(k in count_roster_positions(get_roster_positions()) for k in ["DL","LB", "DB","IDP_FLEX"]):
+        statuses = build_status_by_week(current_season, weeks, players_index, teams_index, load_idp_index())
+    else:
+        statuses = build_status_by_week(current_season, weeks, players_index, teams_index)
     matchups_by_week = build_matchups_by_week(
         league_id,
         range(1, weeks),
@@ -635,6 +645,7 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
             weeks,
             players_index,
             teams_index,
+
         )
 
         ctx["matchups_by_week"] = build_matchups_by_week(
@@ -1838,11 +1849,11 @@ def build_projections_by_week(season: int, weeks: int):
     return bundles
 
 
-def build_status_by_week(season: int, weeks: int, players_index, teams_index):
+def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: dict[str, dict] = None ):
     bundles = {}
     for w in range(1, weeks):
         try:
-            statuses = build_status_for_week(season, w, players_index, teams_index)
+            statuses = build_status_for_week(season, w, players_index, teams_index, idp_player_index)
             bundles[w] = {
                 "statuses": statuses,
             }
@@ -2458,13 +2469,14 @@ def build_teams_body(ctx: dict) -> str:
     # ----------------- Z-scores & positional index -----------------
     team_pos_z: dict[int, dict[str, float]] = defaultdict(dict)
     team_pos_index: dict[int, float] = {}
+    slot_counts = count_roster_positions(get_roster_positions())
 
     LINEUP_WEIGHTS = {
-        "QB": 1,
-        "RB": 2,
-        "WR": 3,
-        "TE": 1,
-        "FLEX": 2,
+        "QB": slot_counts.get("QB"),
+        "RB": slot_counts.get("RB"),
+        "WR": slot_counts.get("WR"),
+        "TE": slot_counts.get("TE"),
+        "FLEX": slot_counts.get("FLEX"),
     }
     weight_sum = sum(LINEUP_WEIGHTS[pos] for pos in POS_ORDER if LINEUP_WEIGHTS.get(pos, 0) > 0) or 1.0
 

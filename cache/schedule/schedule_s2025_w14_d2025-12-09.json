@@ -253,7 +253,7 @@
     "gameDate": "20251208",
     "espnID": "401772822",
     "teamIDHome": "18",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final/OT",
     "gameWeek": "Week 14",
     "teamIDAway": "27",
     "home": "LAC",
@@ -263,6 +263,6 @@
     "gameTime_epoch": "1765242900.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   }
 ]
