@@ -3,7 +3,7 @@ player_id,name,position,team,engine_value
 8151,Kenneth Walker III,RB,SEA,462.2
 3258,,,,248.1
 7591,Justin Fields,QB,NYJ,599.5
-7602,Kylen Granson,TE,PHI,362.3
+7602,Kylen Granson,TE,PHI,361.9
 11584,Bucky Irving,RB,TB,810.9
 12496,Tai Felton,WR,MIN,443.9
 9497,Jalin Hyatt,WR,NYG,443.5
@@ -217,7 +217,7 @@ player_id,name,position,team,engine_value
 12542,Efton Chism III,WR,NE,409.8
 7595,Tylan Wallace,WR,BAL,416.9
 7596,Elijah Moore,WR,BUF,465.0
-8130,Trey McBride,TE,ARI,793.1
+8130,Trey McBride,TE,ARI,783.7
 8147,John Metchie III,WR,NYJ,495.3
 11821,Tahj Washington,WR,MIA,410.3
 12547,Kyle Williams,WR,NE,458.4
@@ -251,7 +251,7 @@ player_id,name,position,team,engine_value
 6843,Albert Okwuegbunam Jr.,TE,LV,466.5
 9225,Tank Bigsby,RB,PHI,420.0
 13122,Carter Runyon,TE,LV,386.5
-8177,Grant Calcaterra,TE,PHI,380.5
+8177,Grant Calcaterra,TE,PHI,379.3
 12529,TreVeyon Henderson,RB,NE,637.8
 12487,Terrance Ferguson,TE,LAR,409.8
 10212,Josh Whyle,TE,GB,397.7
@@ -323,7 +323,7 @@ player_id,name,position,team,engine_value
 11647,Kimani Vidal,RB,LAC,552.5
 9754,Quentin Johnston,WR,LAC,634.7
 8849,Tanner Conner,TE,MIA,385.1
-4574,Cooper Rush,QB,BAL,292.9
+4574,Cooper Rush,QB,BAL,280.4
 9486,Dontayvion Wicks,WR,GB,533.8
 7946,Jack Stoll,TE,NO,373.2
 11604,Brock Bowers,TE,LV,720.2

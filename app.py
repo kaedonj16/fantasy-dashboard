@@ -38,6 +38,7 @@ from dashboard_services.utils import load_teams_index, streak_class, build_teams
 
 daily_lock = threading.Lock()
 daily_completed = None
+EASTERN = ZoneInfo("America/New_York")
 
 DASHBOARD_CACHE = {}  # {league_id: {"ctx": ..., "ts": ..., "page_html": {page: (ts, html)}}}
 
@@ -247,14 +248,15 @@ def get_teams_index_global():
 
 
 
-def run_daily_data_async():
+def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
     thread = threading.Thread(
         target=build_daily_data,
-        args=(CURRENT_SEASON,CURRENT_WEEK),
-        daemon=True
+        args=(season, week),
+        daemon=True,
     )
     thread.start()
+
 
 
 def _weeks_hash(weeks):
@@ -602,9 +604,9 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
     current_season = ctx["current_season"]
     current_week = ctx["current_week"]
     weeks = ctx["weeks"]  # this is your int (e.g. 18)
-
     # ---------- Standings / core weekly data ----------
     if page in ("standings", "dashboard", "weekly"):
+        ctx["rosters"] = get_rosters(league_id)
         df_weekly, team_stats, roster_map = build_tables(
             league_id, current_week, players, users, rosters
         )
@@ -627,7 +629,9 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
 
     # ---------- Weekly projections, statuses, matchups ----------
     if page in ("weekly", "dashboard"):
+        print("about to call clear_weekly_cache_for_league", clear_weekly_cache_for_league)
         clear_weekly_cache_for_league()
+        ctx["rosters"] = get_rosters(league_id)
 
         # make sure projections for current week are refreshed at the source
         get_week_projections_cached(
@@ -2531,6 +2535,7 @@ def build_teams_body(ctx: dict) -> str:
 
         rows_html = []
         for p in plist:
+            name = p.get("name")
             name_raw = p.get('search_name', '')
             name_key = str(name_raw or "").strip().lower()
 
@@ -2550,7 +2555,7 @@ def build_teams_body(ctx: dict) -> str:
                 "<div class='player-activity'>"
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
                 "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
-                f"      <div style='font-weight:600'>{name_raw}</div>"
+                f"      <div style='font-weight:600'>{name}</div>"
                 f"      <div style='color:#64748b;font-size:12px'>"
                 f"        {rank_label} • {p.get('team', '')} • {age} yrs"
                 "      </div>"
@@ -2803,26 +2808,32 @@ def page_teams(league_id):
 def maybe_run_daily():
     global daily_completed
 
-    today = date.today().isoformat()
+    # What day is it in Eastern Time?
+    today_et: date = datetime.now(EASTERN).date()
 
-    # if already done for today, nothing to do
-    if daily_completed == today:
+    # If we've already done today's ET date, bail
+    if daily_completed == today_et:
         return
 
-    # ensure only one thread runs it
+    # Only one thread should kick off the job
     if daily_lock.acquire(blocking=False):
         try:
-            if daily_completed != today:
-                print(f"[startup] Running daily data process for {today}...")
+            if daily_completed != today_et:
+                print(f"[daily] Running daily data process for {today_et} (ET)...")
 
-                # run async (don’t block request)
-                run_daily_data_async()
+                # Get up-to-date season/week from Sleeper / your NFL state
+                state = get_nfl_state() or {}
+                season = int(state.get("season"))
+                week = int(state.get("week"))
 
-                # mark as done *immediately* so we don't spawn multiple threads
-                daily_completed = today
+                # Run async so you don't block the request
+                run_daily_data_async(season, week)
 
+                # Mark as done for this ET date
+                daily_completed = today_et
         finally:
             daily_lock.release()
+
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -2998,6 +3009,7 @@ def api_refresh_page():
         # Re-render just the page body for this page
         if page == "dashboard":
             ensure_weekly_bits(ctx)
+            print(get_rosters)
             body_html = build_dashboard_body(ctx)
         elif page == "standings":
             body_html = build_standings_body(ctx)
@@ -3035,9 +3047,6 @@ def logout():
     session.clear()
     return redirect(url_for("index"))
 
-
-CURRENT_SEASON = 2025
-CURRENT_WEEK = get_nfl_state().get("week")
 
 # ---------- global cache for model value table used by trade eval ----------
 _MODEL_VALUE_CACHE = None

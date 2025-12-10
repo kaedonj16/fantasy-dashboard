@@ -9,7 +9,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Union
 
-
 # ---- League context globals ----
 SCORING_SETTINGS: Dict[str, Any] = {}
 ROSTER_POSITIONS: List[str] = []
@@ -111,9 +110,6 @@ def ttl_cache(ttl: int = 300):
             result = func(*args, **kwargs)
             _cache[key] = result
             return result
-            value = func(*args, **kwargs)
-            _cache[key] = (now, value)
-            return value
 
         # expose cache and a convenience clearer if you ever want it
         wrapper._cache = _cache

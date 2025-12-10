@@ -241,6 +241,11 @@ def load_week_stats(season: int, week: int) -> Optional[Dict]:
     return read_json(path_week_stats(season, week))
 
 
+def load_week_sched(season: int, week: int) -> Optional[Dict]:
+    """Returns cached weekly stats or None."""
+    return read_json(path_week_schedule(season, week))
+
+
 def save_players_index(index_data: Dict) -> None:
     """index_data example: { sleeper_id: { 'name': ..., 'team': ..., 'tank01_id': ... }, ... }"""
     write_json(path_players_index(), index_data)
@@ -1157,6 +1162,7 @@ def clear_activity_cache_for_league(league_id: str) -> None:
         get_users.clear_cache()
 
     if hasattr(get_rosters, "_cache"):
+        print("clearing rosters")
         get_rosters.clear_cache()
 
 
@@ -1183,10 +1189,13 @@ def clear_teams_cache_for_league() -> None:
 
 
 def clear_weekly_cache_for_league() -> None:
-    live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
-    if live_game_ids:
-        build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
+    # print("INSIDE clear_weekly_cache_for_league in", __name__)
+    week_schedule = load_week_sched(season, week)
+    live_game_ids = get_live_game_ids_for_today(week_schedule)
+    build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
+    print("get_rosters repr:", get_rosters)
+    print("get_rosters attrs:", [a for a in dir(get_rosters) if "cache" in a])
     if hasattr(get_nfl_state, "_cache"):
         get_nfl_state.clear_cache()
 
@@ -1198,10 +1207,10 @@ def clear_weekly_cache_for_league() -> None:
 
     if hasattr(get_rosters, "_cache"):
         get_rosters.clear_cache()
+        print("cleared rosters")
 
     if hasattr(get_nfl_state, "_cache"):
         get_nfl_state.clear_cache()
-
 
 
 def _safe_int(val: Any) -> int:
@@ -1412,8 +1421,8 @@ def get_live_game_ids_for_today(
             gid = game.get("gameID")
             if gid:
                 live_ids.append(str(gid))
-
-    return live_ids
+    print("here")
+    return live_ids if live_ids else []
 
 
 def overlay_idp_stats_from_sleeper(
