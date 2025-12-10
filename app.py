@@ -271,30 +271,6 @@ def _weeks_hash(weeks):
     return hashlib.sha1(raw.encode()).hexdigest()[:10]
 
 
-def get_cached_model_value_table(league_id: str, season: int, weeks: List[int]):
-    key = f"values_{season}_{_weeks_hash(weeks)}"
-
-    entry = DASHBOARD_CACHE.get(league_id, {})
-    bundle = entry.get("value_tables", {})
-
-    record = bundle.get(key)
-
-    # Case 1: cache hit
-    if record:
-        ts, value_table = record
-        if time.time() - ts < VALUE_CACHE_TTL:
-            return value_table
-        # cache exists but expired → fall through to load from disk
-
-    # Case 2: no cache OR cache expired → try loading from disk
-    disk_table = load_model_value_table()
-    if disk_table:
-        return disk_table
-
-    # Case 3: nothing exists
-    return None
-
-
 def store_value_table(
         league_id: str,
         season: int,
@@ -3196,7 +3172,6 @@ def api_trade_eval():
             "adjustment": 0.0,
         }
 
-    # ---------- Build both sides + apply adjustment ----------
     side_a = build_side(side_a_players, side_a_picks)
     side_b = build_side(side_b_players, side_b_picks)
 
@@ -3208,7 +3183,6 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    # ---------- Percentage-based fair threshold ----------
     FAIR_PCT = 0.08  # 8% band; tweak as needed
     baseline = max(a_eff, b_eff, 1.0)
     fair_band = baseline * FAIR_PCT
@@ -3250,37 +3224,12 @@ def _sanitize_for_json(obj):
 
 @app.route("/api/league-players")
 def api_league_players():
-    league_id = (request.args.get("league_id") or "global").strip()
-    season = int(request.args.get("season") or CURRENT_SEASON)
-    weeks = list(range(1, 19))
 
-    # ----- 1) Get / cache your model player values -----
-    model_value_table = get_cached_model_value_table(league_id, season, weeks)
-    if model_value_table is None:
-        print(f"[league_players] cache MISS for league={league_id}, season={season}")
-        model_value_table = build_ml_value_table()
-        store_value_table(league_id, season, weeks, model_value_table)
-    else:
-        print(f"[league_players] cache HIT for league={league_id}, season={season}")
-
-    # model_value_table is expected to be a list[dict] of players
+    model_value_table = load_model_value_table()
     if not isinstance(model_value_table, list):
-        # if your existing implementation returns a dict, adapt as needed
         raise ValueError("model_value_table must be a list of player objects")
 
-    # ----- 2) Normalize players & mark them as type='player' -----
-    players = []
-    for obj in model_value_table:
-        if not isinstance(obj, dict):
-            continue
-        p = dict(obj)  # shallow copy so we don’t mutate cache
-        p.setdefault("type", "player")
-        # make sure id is a string (helps frontend comparisons)
-        if "id" in p and p["id"] is not None:
-            p["id"] = str(p["id"])
-        players.append(p)
-
-    cleaned = _sanitize_for_json(players)
+    cleaned = _sanitize_for_json(model_value_table)
     return jsonify(cleaned)
 
 

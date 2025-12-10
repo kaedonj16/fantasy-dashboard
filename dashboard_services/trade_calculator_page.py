@@ -152,9 +152,6 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           if (!p || typeof p !== "object") return false;
           const pos = String(p.position || "").toUpperCase();
 
-          // Ignore picks for this sidebar
-          if (pos === "PICK") return false;
-
           if (activePosFilter === "ALL") return true;
           return pos === activePosFilter;
         }});
@@ -181,7 +178,7 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           const metaSpan = document.createElement("span");
           metaSpan.className = "all-players-meta";
           const metaBits = [];
-          if (p.position) metaBits.push(String(p.pos_rank_label).toUpperCase());
+          if (p.position != "PICK") metaBits.push(String(p.pos_rank_label).toUpperCase());
           if (p.team) metaBits.push(p.team);
           if (p.age != null) metaBits.push(p.age + " yrs");
           metaSpan.textContent = metaBits.join(" · ");
@@ -351,7 +348,9 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
 
           const labelName = document.createElement("span");
           const metaBits = [];
-          if (p.pos_rank_label) metaBits.push(p.pos_rank_label);
+          if (p.pos_rank_label != null && p.pos_rank_label !== "") {{
+            metaBits.push(p.pos_rank_label);
+          }}
           if (p.team) metaBits.push(p.team);
           if (p.age != null) metaBits.push(p.age + " yrs");
           labelName.textContent = p.name;
@@ -421,7 +420,9 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
             const item = document.createElement("div");
             item.className = "dropdown-item";
             const meta = [];
-            if (p.pos_rank_label) meta.push(p.pos_rank_label);
+            if (p.pos_rank_label != null && p.pos_rank_label !== "") {{
+              metaBits.push(p.pos_rank_label);
+            }}
             if (p.team) meta.push(p.team);
             if (p.age != null) meta.push(p.age + " yrs");
             item.textContent = p.name + (meta.length ? " — " + meta.join(" · ") : "");
