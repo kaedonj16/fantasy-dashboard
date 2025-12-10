@@ -1421,7 +1421,7 @@ def get_live_game_ids_for_today(
             gid = game.get("gameID")
             if gid:
                 live_ids.append(str(gid))
-    print("here")
+
     return live_ids if live_ids else []
 
 

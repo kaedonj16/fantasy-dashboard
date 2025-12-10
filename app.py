@@ -7,7 +7,7 @@ import pandas as pd
 import threading
 import time
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
@@ -74,6 +74,10 @@ FORM_HTML = """
   <head>
     <meta charset="utf-8">
     <title>BR Fantasy Dashboard</title>
+
+    <!-- Favicon -->
+    <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+
     <style>
       body {
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
@@ -156,7 +160,7 @@ FORM_HTML = """
           {{ error }}
         </div>
         {% endif %}
-        <div class="hint">Paste your Sleeper league ID, hit generate, and we’ll build the dashboard.</div>
+        <div class="hint">Paste your Sleeper league ID, hit generate, and we'll build the dashboard.</div>
       </form>
     </div>
   </body>
@@ -171,7 +175,9 @@ BASE_HTML = """
     <meta charset="utf-8">
     <title>{title}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- use your existing dashboard CSS here -->
+
+    <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+
     <link rel="stylesheet" href="/static/dashboard.css">
     <script>
       {plotly_js}
@@ -186,6 +192,7 @@ BASE_HTML = """
   </body>
 </html>
 """
+
 
 def timed(label: str, fn, *args, **kwargs):
     """
