@@ -35,7 +35,4 @@ if __name__ == "__main__":
     CURRENT_SEASON = current.get("season")
     CURRENT_WEEK = current.get("week")
 
-    # simplest: hard-code week or compute from your own helper
-    from dashboard_services.utils import get_current_nfl_week  # if you have something like this
-
     build_daily_data(CURRENT_SEASON, CURRENT_WEEK)
