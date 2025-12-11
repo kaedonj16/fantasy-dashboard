@@ -10,7 +10,7 @@ player_id,name,position,team,engine_value
 5374,Justin Watson,WR,HOU,411.7
 4464,,,,278.0
 7537,Jaret Patterson,RB,LAC,357.6
-11655,Tyrone Tracy Jr.,RB,NYG,375.4
+11655,Tyrone Tracy Jr.,RB,NYG,338.5
 9226,De'Von Achane,RB,MIA,779.4
 12732,Dominic Lovett,WR,DET,416.7
 8146,Garrett Wilson,WR,NYJ,678.0
@@ -351,7 +351,7 @@ player_id,name,position,team,engine_value
 6850,Harrison Bryant,TE,HOU,362.3
 5012,Mark Andrews,TE,BAL,415.2
 4098,Kareem Hunt,RB,KC,424.9
-13150,Darius Cooper,WR,PHI,429.2
+13150,Darius Cooper,WR,PHI,422.5
 421,Matthew Stafford,QB,LAR,568.2
 7891,Brock Wright,TE,DET,411.4
 4663,Austin Ekeler,RB,WSH,299.2
@@ -391,7 +391,7 @@ player_id,name,position,team,engine_value
 12171,British Brooks,RB,HOU,156.3
 8799,Zaire Mitchell-Paden,TE,NO,373.5
 4988,Nick Chubb,RB,HOU,300.5
-4040,JuJu Smith-Schuster,WR,KC,451.4
+4040,JuJu Smith-Schuster,WR,KC,438.1
 12498,Mason Taylor,TE,NYJ,459.7
 11562,Spencer Rattler,QB,NO,567.9
 5121,Braxton Berrios,WR,HOU,390.2
@@ -420,7 +420,7 @@ player_id,name,position,team,engine_value
 4234,Noah Brown,WR,WSH,424.8
 8129,Dameon Pierce,RB,HOU,244.2
 11565,J.J. McCarthy,QB,MIN,570.5
-12482,Savion Williams,WR,GB,481.1
+12482,Savion Williams,WR,GB,475.0
 11157,Brycen Tremayne,WR,CAR,427.9
 8145,Jeremy Ruckert,TE,NYJ,418.2
 9480,Brenton Strange,TE,JAX,495.3
