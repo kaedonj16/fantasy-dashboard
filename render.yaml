@@ -9,8 +9,6 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
     autoDeploy: true
-
-jobs:
   - type: cron
     name: daily-stats-job
     runtime: python
