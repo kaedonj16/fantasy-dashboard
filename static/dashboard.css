@@ -1381,7 +1381,7 @@ tbody tr:nth-child(even){
 /* Teams grid + pos strength */
 .teams-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 16px;
 }
 
