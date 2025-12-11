@@ -3,6 +3,7 @@ services:
   - type: web
     name: brfantasy
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
@@ -13,7 +14,7 @@ services:
     name: daily-stats-job
     runtime: python
     schedule: 0 8 * * *
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python -m dashboard_services.data_building.build_daily_value_table
     envVars:
