@@ -71,7 +71,7 @@ def _make_hashable(x: Any):
 
 # dashboard_services/api.py
 
-_cache = {}
+cache = {}
 
 def _freeze(obj):
     """Recursively convert unhashable types into hashable ones for cache keys."""
@@ -207,8 +207,6 @@ def get_league_settings() -> Dict[str, Any]:
 
 def get_total_rosters() -> int:
     return TOTAL_ROSTERS
-
-
 
 
 @ttl_cache(ttl=300)

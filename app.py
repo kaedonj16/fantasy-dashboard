@@ -72,10 +72,9 @@ FORM_HTML = """
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8">
+    <meta charset="utf-8" name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>BR Fantasy Dashboard</title>
 
-    <!-- Favicon -->
     <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
 
     <style>
@@ -172,7 +171,7 @@ BASE_HTML = """
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8">
+    <meta charset="utf-8" name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -613,7 +612,7 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
     # ---------- Weekly projections, statuses, matchups ----------
     if page in ("weekly", "dashboard"):
         print("about to call clear_weekly_cache_for_league", clear_weekly_cache_for_league)
-        clear_weekly_cache_for_league()
+        clear_weekly_cache_for_league(league_id)
         ctx["rosters"] = get_rosters(league_id)
 
         # make sure projections for current week are refreshed at the source
@@ -669,7 +668,7 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
 
     # ---------- Teams page ----------
     if page == "teams":
-        clear_teams_cache_for_league()
+        clear_teams_cache_for_league(league_id)
         # if rosters / users may change, re-pull them
         ctx["rosters"] = get_rosters(league_id)
         ctx["users"] = get_users(league_id)
@@ -2988,11 +2987,9 @@ def api_refresh_page():
     try:
         # Refresh the ctx for this league + page
         ctx = refresh_league_ctx_section(league_id, page)
-
         # Re-render just the page body for this page
         if page == "dashboard":
             ensure_weekly_bits(ctx)
-            print(get_rosters)
             body_html = build_dashboard_body(ctx)
         elif page == "standings":
             body_html = build_standings_body(ctx)
@@ -3234,4 +3231,4 @@ def api_league_players():
 
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(debug=True)

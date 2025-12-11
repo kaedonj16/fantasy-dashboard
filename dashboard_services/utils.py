@@ -21,8 +21,10 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore,
+    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
 )
+import traceback
+
 
 # ------------------------------------------------
 # Core paths / constants
@@ -1125,6 +1127,46 @@ def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
 # Cache clearing helpers
 # ------------------------------------------------
 
+
+def _clear_func_cache_for_league(func: Any, expected_name: str, league_id: str) -> None:
+    """
+    Remove cache entries for a given league_id from a ttl_cache-decorated function.
+
+    Assumes keys are of the form:
+        (func_name, frozen_args, frozen_kwargs)
+
+    and that league_id is passed as the first positional argument.
+    """
+    if not hasattr(func, "_cache"):
+        return
+
+    cache = func._cache
+    league_id = str(league_id)
+
+    keys_to_del = []
+
+    for key in list(cache.keys()):
+        # Defensive unpack, in case something else ever gets put in the cache
+        try:
+            func_name, args, kwargs = key
+        except ValueError:
+            continue
+
+        if func_name != expected_name:
+            continue
+
+        # Our decorator stores frozen_args, so args is a tuple-like of the original args
+        if not args:
+            continue
+
+        # We call these functions with league_id as the first positional arg
+        if str(args[0]) == league_id:
+            keys_to_del.append(key)
+
+    for k in keys_to_del:
+        cache.pop(k, None)
+
+
 def clear_activity_cache_for_league(league_id: str) -> None:
     """
     Clear only the caches relevant to the Activity page for a given league:
@@ -1132,85 +1174,52 @@ def clear_activity_cache_for_league(league_id: str) -> None:
       - traded picks
       - users/rosters
     """
-    league_id = str(league_id)
 
-    # 1) Clear transactions for all weeks
-    if hasattr(get_transactions, "_cache"):
-        keys_to_del = []
-        for key in list(get_transactions._cache.keys()):
-            func_name, args, kwargs = key
-            if func_name != "get_transactions":
-                continue
-            if len(args) >= 1 and str(args[0]) == league_id:
-                keys_to_del.append(key)
-        for k in keys_to_del:
-            get_transactions._cache.pop(k, None)
+    # 1) Clear transactions for all weeks in this league
+    _clear_func_cache_for_league(get_transactions, "get_transactions", league_id)
 
     # 2) Clear traded picks for this league
-    if hasattr(get_traded_picks, "_cache"):
-        keys_to_del = []
-        for key in list(get_traded_picks._cache.keys()):
-            func_name, args, kwargs = key
-            if func_name != "get_traded_picks":
-                continue
-            if len(args) >= 1 and str(args[0]) == league_id:
-                keys_to_del.append(key)
-        for k in keys_to_del:
-            get_traded_picks._cache.pop(k, None)
+    _clear_func_cache_for_league(get_traded_picks, "get_traded_picks", league_id)
 
-    if hasattr(get_users, "_cache"):
-        get_users.clear_cache()
+    # 3) Clear users/rosters for this league (more aggressive: wipe entire cache)
+    _clear_func_cache_for_league(get_users, "get_users", league_id)
 
-    if hasattr(get_rosters, "_cache"):
-        print("clearing rosters")
-        get_rosters.clear_cache()
+    _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
 
 
-def clear_standings_cache_for_league() -> None:
-    if hasattr(get_nfl_state, "_cache"):
-        get_nfl_state.clear_cache()
+def clear_standings_cache_for_league(league_id: str) -> None:
+    # These are global, not per-league in your code, so just nuke them
+    _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
 
-    if hasattr(get_nfl_players, "_cache"):
-        get_nfl_players.clear_cache()
+    _clear_func_cache_for_league(get_nfl_players, "get_nfl_players", league_id)
 
-    if hasattr(get_users, "_cache"):
-        get_users.clear_cache()
+    _clear_func_cache_for_league(get_users, "get_users", league_id)
 
-    if hasattr(get_rosters, "_cache"):
-        get_rosters.clear_cache()
+    _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
 
 
-def clear_teams_cache_for_league() -> None:
-    if hasattr(get_users, "_cache"):
-        get_users.clear_cache()
+def clear_teams_cache_for_league(league_id: str) -> None:
+    try:
+        _clear_func_cache_for_league(get_users, "get_users", league_id)
+        _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
+    except Exception as e:
+        print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))
+        traceback.print_exc()
 
-    if hasattr(get_rosters, "_cache"):
-        get_rosters.clear_cache()
 
-
-def clear_weekly_cache_for_league() -> None:
-
-    # print("INSIDE clear_weekly_cache_for_league in", __name__)
-    week_schedule = load_week_sched(season, week)
-    live_game_ids = get_live_game_ids_for_today(week_schedule)
-    build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
-    print("get_rosters repr:", get_rosters)
-    print("get_rosters attrs:", [a for a in dir(get_rosters) if "cache" in a])
-    if hasattr(get_nfl_state, "_cache"):
-        get_nfl_state.clear_cache()
-
-    if hasattr(get_nfl_players, "_cache"):
-        get_nfl_players.clear_cache()
-
-    if hasattr(get_users, "_cache"):
-        get_users.clear_cache()
-
-    if hasattr(get_rosters, "_cache"):
-        get_rosters.clear_cache()
-        print("cleared rosters")
-
-    if hasattr(get_nfl_state, "_cache"):
-        get_nfl_state.clear_cache()
+def clear_weekly_cache_for_league(league_id: str) -> None:
+    # Weekly page touches NFL state, players, users, rosters.
+    # If you later make them per-league, you can reuse _clear_func_cache_for_league.
+    try:
+        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
+        _clear_func_cache_for_league(get_nfl_players, "get_nfl_players", league_id)
+        _clear_func_cache_for_league(get_users, "get_users", league_id)
+        _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
+        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
+        _clear_func_cache_for_league(get_matchups, "get_matchups", league_id)
+    except Exception as e:
+        print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))
+        traceback.print_exc()
 
 
 def _safe_int(val: Any) -> int:
