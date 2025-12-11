@@ -3,7 +3,6 @@ services:
   - type: web
     name: brfantasy
     runtime: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
