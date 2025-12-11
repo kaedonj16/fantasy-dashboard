@@ -10,9 +10,12 @@ services:
         value: "3.11.9"
     autoDeploy: true
 
-cronJobs:
-  - name: daily-stats-job
-    schedule: "0 5 * * *"   # Run every day at 5:00AM UTC (~midnight ET in standard time)
+jobs:
+  - type: cron
+    name: daily-stats-job
+    runtime: python
+    schedule: "0 3 * * *"
+    buildCommand: "pip install -r requirements.txt"
     command: "python cron_daily.py"
     envVars:
       - key: PYTHON_VERSION

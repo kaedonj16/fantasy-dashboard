@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from dashboard_services.api import get_nfl_state
 from dashboard_services.data_building.external_values_scraper import scrape_all_vendor_values, \
     load_fantasycalc_api_values, load_dynastyprocess_values
 from dashboard_services.data_building.sleeper_usage import write_usage_table_snapshot
@@ -26,3 +27,15 @@ def build_daily_data(season: int, week: int):
 
     if load_model_value_table() is None:
         rewrite_value_table_with_model()
+
+
+if __name__ == "__main__":
+    # adjust this however you determine current season/week
+    current = get_nfl_state()
+    CURRENT_SEASON = current.get("season")
+    CURRENT_WEEK = current.get("week")
+
+    # simplest: hard-code week or compute from your own helper
+    from dashboard_services.utils import get_current_nfl_week  # if you have something like this
+
+    build_daily_data(CURRENT_SEASON, CURRENT_WEEK)
