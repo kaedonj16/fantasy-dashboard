@@ -1,20 +1,22 @@
+---
 services:
   - type: web
     name: brfantasy
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11.9"
+        value: 3.11.9
     autoDeploy: true
   - type: cron
     name: daily-stats-job
     runtime: python
-    schedule: "0 8 * * *"
-    buildCommand: "pip install -r requirements.txt"
-    command: "python -m dashboard_services.data_building.build_daily_value_table"
+    schedule: 0 8 * * *
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m dashboard_services.data_building.build_daily_value_table
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11.9"
+        value: 3.11.9
