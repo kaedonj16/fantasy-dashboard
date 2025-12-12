@@ -278,7 +278,7 @@
     "name": "Ben Mason",
     "team": "LAC",
     "position": "TE",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {}
   },
   {
@@ -348,27 +348,27 @@
     "position": "RB",
     "age": 23.3,
     "usage": {
-      "games": 6,
+      "games": 7,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 44.333333333333336,
-      "avg_targets": 4.0,
-      "avg_receptions": 3.8333333333333335,
-      "avg_rec_yards": 39.833333333333336,
-      "avg_rec_tds": 0.5,
-      "avg_carries": 17.166666666666668,
-      "avg_rush_yards": 58.833333333333336,
-      "avg_rush_tds": 0.16666666666666666,
-      "ppr_ppg": 17.366666666666664,
-      "half_ppr_ppg": 15.449999999999998,
-      "std_scoring_ppg": 13.533333333333331,
+      "avg_off_snaps": 38.0,
+      "avg_targets": 3.857142857142857,
+      "avg_receptions": 3.4285714285714284,
+      "avg_rec_yards": 35.714285714285715,
+      "avg_rec_tds": 0.42857142857142855,
+      "avg_carries": 17.0,
+      "avg_rush_yards": 59.0,
+      "avg_rush_tds": 0.14285714285714285,
+      "ppr_ppg": 16.04285714285714,
+      "half_ppr_ppg": 14.328571428571426,
+      "std_scoring_ppg": 12.614285714285712,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5,
-      "rush_rz_att_pg": 1.6666666666666667,
+      "rec_rz_tgt_pg": 0.5714285714285714,
+      "rush_rz_att_pg": 1.5714285714285714,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 24.0,
-      "target_share": 0.057692307692307696
+      "total_targets": 27.0,
+      "target_share": 0.060267857142857144
     }
   },
   {
@@ -880,7 +880,7 @@
     "name": "Jacob Cowing",
     "team": "SF",
     "position": "WR",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -1474,7 +1474,7 @@
     "name": "A.J. Brown",
     "team": "PHI",
     "position": "WR",
-    "age": 28.4,
+    "age": 28.5,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -1846,7 +1846,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
-      "target_share": 0.016826923076923076
+      "target_share": 0.015625
     }
   },
   {
@@ -2210,7 +2210,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 53.0,
-      "target_share": 0.12740384615384615
+      "target_share": 0.11830357142857142
     }
   },
   {
@@ -2658,7 +2658,7 @@
     "name": "Dalton Kincaid",
     "team": "BUF",
     "position": "TE",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {
       "games": 9,
       "avg_off_snap_pct": 0.0,
@@ -2722,27 +2722,27 @@
     "position": "TE",
     "age": 25.2,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 55.30769230769231,
-      "avg_targets": 6.538461538461538,
-      "avg_receptions": 4.769230769230769,
-      "avg_rec_yards": 48.53846153846154,
-      "avg_rec_tds": 0.07692307692307693,
+      "avg_off_snaps": 51.357142857142854,
+      "avg_targets": 6.928571428571429,
+      "avg_receptions": 5.214285714285714,
+      "avg_rec_yards": 56.92857142857143,
+      "avg_rec_tds": 0.2857142857142857,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 10.084615384615386,
-      "half_ppr_ppg": 7.700000000000001,
-      "std_scoring_ppg": 5.315384615384615,
+      "ppr_ppg": 12.621428571428572,
+      "half_ppr_ppg": 10.014285714285716,
+      "std_scoring_ppg": 7.407142857142857,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 85.0,
-      "target_share": 0.21464646464646464
+      "total_targets": 97.0,
+      "target_share": 0.2219679633867277
     }
   },
   {
@@ -2802,7 +2802,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.007575757575757576
+      "target_share": 0.006864988558352402
     }
   },
   {
@@ -3794,7 +3794,7 @@
     "name": "Daylen Baldwin",
     "team": "ARI",
     "position": "WR",
-    "age": 26.0,
+    "age": 26.1,
     "usage": {}
   },
   {
@@ -4560,7 +4560,7 @@
     "name": "Carson Wentz",
     "team": "MIN",
     "position": "QB",
-    "age": 32.9,
+    "age": 33.0,
     "usage": {
       "games": 5,
       "avg_off_snap_pct": 0.0,
@@ -4666,7 +4666,7 @@
     "name": "Derius Davis",
     "team": "LAC",
     "position": "WR",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {
       "games": 9,
       "avg_off_snap_pct": 0.0,
@@ -4904,27 +4904,27 @@
     "position": "WR",
     "age": 28.1,
     "usage": {
-      "games": 11,
+      "games": 12,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 51.81818181818182,
-      "avg_targets": 4.909090909090909,
-      "avg_receptions": 2.0,
-      "avg_rec_yards": 29.90909090909091,
-      "avg_rec_tds": 0.09090909090909091,
+      "avg_off_snaps": 47.5,
+      "avg_targets": 5.0,
+      "avg_receptions": 2.0833333333333335,
+      "avg_rec_yards": 30.333333333333332,
+      "avg_rec_tds": 0.08333333333333333,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 5.536363636363637,
-      "half_ppr_ppg": 4.536363636363637,
-      "std_scoring_ppg": 3.536363636363636,
+      "ppr_ppg": 5.616666666666667,
+      "half_ppr_ppg": 4.575,
+      "std_scoring_ppg": 3.533333333333333,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5454545454545454,
+      "rec_rz_tgt_pg": 0.5,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 54.0,
-      "target_share": 0.13636363636363635
+      "total_targets": 60.0,
+      "target_share": 0.13729977116704806
     }
   },
   {
@@ -5320,25 +5320,25 @@
     "position": "QB",
     "age": 30.7,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 64.0,
+      "avg_off_snaps": 59.42857142857143,
       "avg_targets": 0.0,
       "avg_receptions": 0.0,
       "avg_rec_yards": 0.0,
       "avg_rec_tds": 0.0,
-      "avg_carries": 3.3076923076923075,
-      "avg_rush_yards": 72.15384615384616,
-      "avg_rush_tds": 0.07692307692307693,
-      "ppr_ppg": 16.567692307692308,
-      "half_ppr_ppg": 16.567692307692308,
-      "std_scoring_ppg": 16.567692307692308,
+      "avg_carries": 3.142857142857143,
+      "avg_rush_yards": 67.07142857142857,
+      "avg_rush_tds": 0.07142857142857142,
+      "ppr_ppg": 16.825714285714287,
+      "half_ppr_ppg": 16.825714285714287,
+      "std_scoring_ppg": 16.825714285714287,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
-      "avg_pass_att": 32.07692307692308,
-      "avg_pass_cmp": 19.76923076923077,
-      "avg_pass_int": 0.46153846153846156,
+      "avg_pass_att": 32.214285714285715,
+      "avg_pass_cmp": 19.714285714285715,
+      "avg_pass_int": 0.5,
       "total_targets": 0.0,
       "target_share": 0.0
     }
@@ -5386,7 +5386,7 @@
     "name": "Salvon Ahmed",
     "team": "IND",
     "position": "RB",
-    "age": 26.9,
+    "age": 27.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -5982,7 +5982,7 @@
     "name": "Bryson Green",
     "team": "ARI",
     "position": "WR",
-    "age": 22.9,
+    "age": 23.0,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -6938,7 +6938,7 @@
     "name": "Garrett Gilbert",
     "team": "NE",
     "position": "QB",
-    "age": 34.4,
+    "age": 34.5,
     "usage": {}
   },
   {
@@ -6976,7 +6976,7 @@
     "name": "Justin Rigg",
     "team": "TEN",
     "position": "TE",
-    "age": 27.7,
+    "age": 27.8,
     "usage": {}
   },
   {
@@ -7302,7 +7302,7 @@
     "name": "Jordan Moore",
     "team": "CIN",
     "position": "WR",
-    "age": 23.6,
+    "age": 23.7,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -7880,7 +7880,7 @@
     "name": "LeQuint Allen Jr.",
     "team": "JAX",
     "position": "RB",
-    "age": 21.3,
+    "age": 21.4,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -8092,7 +8092,7 @@
     "name": "Javon Wims",
     "team": "CAR",
     "position": "WR",
-    "age": 31.2,
+    "age": 31.3,
     "usage": {}
   },
   {
@@ -8212,7 +8212,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
-      "target_share": 0.03535353535353535
+      "target_share": 0.032036613272311214
     }
   },
   {
@@ -8244,7 +8244,7 @@
     "name": "Trayveon Williams",
     "team": "LAC",
     "position": "RB",
-    "age": 28.1,
+    "age": 28.2,
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
@@ -8274,7 +8274,7 @@
     "name": "Colton Dowell",
     "team": "BAL",
     "position": "WR",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {}
   },
   {
@@ -8284,27 +8284,27 @@
     "position": "WR",
     "age": 23.2,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 56.0,
-      "avg_targets": 8.461538461538462,
-      "avg_receptions": 4.153846153846154,
-      "avg_rec_yards": 62.0,
-      "avg_rec_tds": 0.46153846153846156,
-      "avg_carries": 0.15384615384615385,
-      "avg_rush_yards": 0.6923076923076923,
+      "avg_off_snaps": 52.0,
+      "avg_targets": 8.357142857142858,
+      "avg_receptions": 4.142857142857143,
+      "avg_rec_yards": 62.142857142857146,
+      "avg_rec_tds": 0.42857142857142855,
+      "avg_carries": 0.14285714285714285,
+      "avg_rush_yards": 0.6428571428571429,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 13.346153846153843,
-      "half_ppr_ppg": 11.26923076923077,
-      "std_scoring_ppg": 9.192307692307693,
+      "ppr_ppg": 13.135714285714284,
+      "half_ppr_ppg": 11.064285714285715,
+      "std_scoring_ppg": 8.992857142857144,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.7692307692307693,
+      "rec_rz_tgt_pg": 0.7142857142857143,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 110.0,
-      "target_share": 0.2644230769230769
+      "total_targets": 117.0,
+      "target_share": 0.2611607142857143
     }
   },
   {
@@ -8366,7 +8366,7 @@
     "name": "Isaiah Likely",
     "team": "BAL",
     "position": "TE",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {
       "games": 10,
       "avg_off_snap_pct": 0.0,
@@ -8758,27 +8758,27 @@
     "position": "RB",
     "age": 24.1,
     "usage": {
-      "games": 11,
+      "games": 12,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 14.090909090909092,
-      "avg_targets": 0.9090909090909091,
-      "avg_receptions": 0.7272727272727273,
-      "avg_rec_yards": 3.090909090909091,
-      "avg_rec_tds": 0.09090909090909091,
-      "avg_carries": 6.545454545454546,
-      "avg_rush_yards": 27.818181818181817,
-      "avg_rush_tds": 0.45454545454545453,
-      "ppr_ppg": 7.090909090909091,
-      "half_ppr_ppg": 6.7272727272727275,
-      "std_scoring_ppg": 6.363636363636363,
+      "avg_off_snaps": 12.916666666666666,
+      "avg_targets": 0.8333333333333334,
+      "avg_receptions": 0.6666666666666666,
+      "avg_rec_yards": 2.8333333333333335,
+      "avg_rec_tds": 0.08333333333333333,
+      "avg_carries": 6.333333333333333,
+      "avg_rush_yards": 26.083333333333332,
+      "avg_rush_tds": 0.5,
+      "ppr_ppg": 7.058333333333334,
+      "half_ppr_ppg": 6.7250000000000005,
+      "std_scoring_ppg": 6.391666666666667,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.07692307692307693,
-      "rush_rz_att_pg": 1.0,
+      "rec_rz_tgt_pg": 0.07142857142857142,
+      "rush_rz_att_pg": 1.1428571428571428,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.02403846153846154
+      "target_share": 0.022321428571428572
     }
   },
   {
@@ -9508,7 +9508,7 @@
     "name": "Courtney Jackson",
     "team": "SEA",
     "position": "WR",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -9978,7 +9978,7 @@
     "name": "RJ Harvey",
     "team": "DEN",
     "position": "RB",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -10804,27 +10804,27 @@
     "position": "WR",
     "age": 32.3,
     "usage": {
-      "games": 4,
+      "games": 5,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 44.25,
-      "avg_targets": 7.75,
-      "avg_receptions": 3.5,
-      "avg_rec_yards": 35.0,
-      "avg_rec_tds": 0.25,
+      "avg_off_snaps": 35.4,
+      "avg_targets": 8.6,
+      "avg_receptions": 4.0,
+      "avg_rec_yards": 54.4,
+      "avg_rec_tds": 0.2,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 8.5,
-      "half_ppr_ppg": 6.75,
-      "std_scoring_ppg": 5.0,
+      "ppr_ppg": 10.64,
+      "half_ppr_ppg": 8.64,
+      "std_scoring_ppg": 6.640000000000001,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 1.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 31.0,
-      "target_share": 0.07451923076923077
+      "total_targets": 43.0,
+      "target_share": 0.09598214285714286
     }
   },
   {
@@ -11494,7 +11494,7 @@
     "name": "Brian Cobbs",
     "team": "ARI",
     "position": "WR",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {}
   },
   {
@@ -12190,13 +12190,13 @@
       "half_ppr_ppg": 1.5399999999999998,
       "std_scoring_ppg": 0.8400000000000001,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6,
+      "rec_rz_tgt_pg": 0.5,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 11.0,
-      "target_share": 0.027777777777777776
+      "target_share": 0.02517162471395881
     }
   },
   {
@@ -12474,27 +12474,27 @@
     "position": "WR",
     "age": 29.5,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 31.76923076923077,
-      "avg_targets": 1.5384615384615385,
-      "avg_receptions": 0.6153846153846154,
-      "avg_rec_yards": 5.0,
-      "avg_rec_tds": 0.15384615384615385,
+      "avg_off_snaps": 29.5,
+      "avg_targets": 2.142857142857143,
+      "avg_receptions": 1.0,
+      "avg_rec_yards": 10.214285714285714,
+      "avg_rec_tds": 0.14285714285714285,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 2.0384615384615383,
-      "half_ppr_ppg": 1.7307692307692308,
-      "std_scoring_ppg": 1.4230769230769231,
+      "ppr_ppg": 2.8785714285714286,
+      "half_ppr_ppg": 2.3785714285714286,
+      "std_scoring_ppg": 1.8785714285714286,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3076923076923077,
+      "rec_rz_tgt_pg": 0.42857142857142855,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 20.0,
-      "target_share": 0.050505050505050504
+      "total_targets": 30.0,
+      "target_share": 0.06864988558352403
     }
   },
   {
@@ -12640,7 +12640,7 @@
     "name": "Ra'Shaun Henry",
     "team": "SEA",
     "position": "WR",
-    "age": 27.8,
+    "age": 27.9,
     "usage": {}
   },
   {
@@ -13562,7 +13562,7 @@
     "name": "Tim Patrick",
     "team": "JAX",
     "position": "WR",
-    "age": 32.0,
+    "age": 32.1,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -13622,7 +13622,7 @@
     "name": "Frank Gore Jr.",
     "team": "BUF",
     "position": "RB",
-    "age": 23.7,
+    "age": 23.8,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -13818,7 +13818,7 @@
     "name": "Tommy Sweeney",
     "team": "CHI",
     "position": "TE",
-    "age": 30.4,
+    "age": 30.5,
     "usage": {}
   },
   {
@@ -13910,7 +13910,7 @@
     "name": "Kody Case",
     "team": "IND",
     "position": "WR",
-    "age": 27.2,
+    "age": 27.3,
     "usage": {}
   },
   {
@@ -14026,27 +14026,27 @@
     "position": "RB",
     "age": 26.9,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 35.84615384615385,
-      "avg_targets": 2.923076923076923,
-      "avg_receptions": 2.5384615384615383,
-      "avg_rec_yards": 13.23076923076923,
+      "avg_off_snaps": 33.285714285714285,
+      "avg_targets": 2.7857142857142856,
+      "avg_receptions": 2.4285714285714284,
+      "avg_rec_yards": 12.714285714285714,
       "avg_rec_tds": 0.0,
-      "avg_carries": 9.0,
-      "avg_rush_yards": 36.46153846153846,
-      "avg_rush_tds": 0.3076923076923077,
-      "ppr_ppg": 9.353846153846156,
-      "half_ppr_ppg": 8.084615384615386,
-      "std_scoring_ppg": 6.815384615384616,
+      "avg_carries": 8.428571428571429,
+      "avg_rush_yards": 35.285714285714285,
+      "avg_rush_tds": 0.2857142857142857,
+      "ppr_ppg": 8.942857142857145,
+      "half_ppr_ppg": 7.728571428571429,
+      "std_scoring_ppg": 6.514285714285714,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.5384615384615384,
-      "rush_rz_att_pg": 1.0769230769230769,
+      "rec_rz_tgt_pg": 0.5,
+      "rush_rz_att_pg": 1.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 38.0,
-      "target_share": 0.09134615384615384
+      "total_targets": 39.0,
+      "target_share": 0.08705357142857142
     }
   },
   {
@@ -14224,27 +14224,27 @@
     "position": "WR",
     "age": 29.8,
     "usage": {
-      "games": 5,
+      "games": 6,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 44.2,
-      "avg_targets": 6.2,
-      "avg_receptions": 3.2,
-      "avg_rec_yards": 38.8,
-      "avg_rec_tds": 0.0,
+      "avg_off_snaps": 36.833333333333336,
+      "avg_targets": 6.0,
+      "avg_receptions": 3.3333333333333335,
+      "avg_rec_yards": 35.666666666666664,
+      "avg_rec_tds": 0.16666666666666666,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 7.08,
-      "half_ppr_ppg": 5.4799999999999995,
-      "std_scoring_ppg": 3.88,
+      "ppr_ppg": 8.233333333333333,
+      "half_ppr_ppg": 6.566666666666666,
+      "std_scoring_ppg": 4.8999999999999995,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.8,
+      "rec_rz_tgt_pg": 0.8333333333333334,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 31.0,
-      "target_share": 0.07451923076923077
+      "total_targets": 36.0,
+      "target_share": 0.08035714285714286
     }
   },
   {
@@ -14764,25 +14764,25 @@
     "position": "QB",
     "age": 37.3,
     "usage": {
-      "games": 6,
+      "games": 7,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 46.5,
+      "avg_off_snaps": 39.857142857142854,
       "avg_targets": 0.0,
       "avg_receptions": 0.0,
       "avg_rec_yards": 0.0,
       "avg_rec_tds": 0.0,
-      "avg_carries": 0.8333333333333334,
-      "avg_rush_yards": 72.33333333333333,
+      "avg_carries": 0.7142857142857143,
+      "avg_rush_yards": 115.28571428571429,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 7.283333333333334,
-      "half_ppr_ppg": 7.283333333333334,
-      "std_scoring_ppg": 7.283333333333334,
+      "ppr_ppg": 10.088571428571429,
+      "half_ppr_ppg": 10.088571428571429,
+      "std_scoring_ppg": 10.088571428571429,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
-      "avg_pass_att": 23.0,
-      "avg_pass_cmp": 14.0,
-      "avg_pass_int": 0.5,
+      "avg_pass_att": 26.0,
+      "avg_pass_cmp": 16.285714285714285,
+      "avg_pass_int": 0.42857142857142855,
       "total_targets": 0.0,
       "target_share": 0.0
     }
@@ -15600,7 +15600,7 @@
     "name": "Kelly Akharaiyi",
     "team": "ARI",
     "position": "WR",
-    "age": 25.8,
+    "age": 25.9,
     "usage": {}
   },
   {
@@ -16216,7 +16216,7 @@
     "name": "Dezmon Patmon",
     "team": "CAR",
     "position": "WR",
-    "age": 27.3,
+    "age": 27.4,
     "usage": {}
   },
   {
@@ -16550,7 +16550,7 @@
     "name": "Logan Thomas",
     "team": "SF",
     "position": "TE",
-    "age": 34.4,
+    "age": 34.5,
     "usage": {}
   },
   {
@@ -16816,7 +16816,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 66.0,
-      "target_share": 0.15865384615384615
+      "target_share": 0.14732142857142858
     }
   },
   {
@@ -17340,7 +17340,7 @@
     "name": "Jerome Ford",
     "team": "CLE",
     "position": "RB",
-    "age": 26.2,
+    "age": 26.3,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -17476,7 +17476,7 @@
     "name": "Ulysses Bentley IV",
     "team": "IND",
     "position": "RB",
-    "age": 24.9,
+    "age": 25.0,
     "usage": {
       "games": 1,
       "avg_off_snap_pct": 0.0,
@@ -17574,7 +17574,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
-      "target_share": 0.007211538461538462
+      "target_share": 0.006696428571428571
     }
   },
   {
@@ -18014,7 +18014,7 @@
     "name": "Mason Pline",
     "team": "NO",
     "position": "TE",
-    "age": 25.8,
+    "age": 25.9,
     "usage": {
       "games": 0,
       "avg_off_snap_pct": 0.0,
@@ -18074,7 +18074,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 94.0,
-      "target_share": 0.23737373737373738
+      "target_share": 0.2151029748283753
     }
   },
   {
@@ -18130,27 +18130,27 @@
     "position": "WR",
     "age": 23.6,
     "usage": {
-      "games": 12,
+      "games": 13,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 37.0,
-      "avg_targets": 3.25,
-      "avg_receptions": 2.0,
-      "avg_rec_yards": 23.916666666666668,
-      "avg_rec_tds": 0.4166666666666667,
-      "avg_carries": 0.5,
-      "avg_rush_yards": 1.4166666666666667,
+      "avg_off_snaps": 34.15384615384615,
+      "avg_targets": 3.076923076923077,
+      "avg_receptions": 1.8461538461538463,
+      "avg_rec_yards": 22.076923076923077,
+      "avg_rec_tds": 0.38461538461538464,
+      "avg_carries": 0.46153846153846156,
+      "avg_rush_yards": 1.3076923076923077,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 7.033333333333332,
-      "half_ppr_ppg": 6.033333333333334,
-      "std_scoring_ppg": 5.033333333333334,
+      "ppr_ppg": 6.4923076923076914,
+      "half_ppr_ppg": 5.56923076923077,
+      "std_scoring_ppg": 4.6461538461538465,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.3333333333333333,
-      "rush_rz_att_pg": 0.08333333333333333,
+      "rec_rz_tgt_pg": 0.3076923076923077,
+      "rush_rz_att_pg": 0.07692307692307693,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 39.0,
-      "target_share": 0.09375
+      "total_targets": 40.0,
+      "target_share": 0.08928571428571429
     }
   },
   {
@@ -18236,7 +18236,7 @@
     "name": "Tyler Hudson",
     "team": "LAR",
     "position": "WR",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {}
   },
   {
@@ -18300,27 +18300,27 @@
     "position": "WR",
     "age": 24.0,
     "usage": {
-      "games": 0,
+      "games": 1,
       "avg_off_snap_pct": 0.0,
       "avg_off_snaps": 0.0,
-      "avg_targets": 0.0,
-      "avg_receptions": 0.0,
-      "avg_rec_yards": 0.0,
+      "avg_targets": 2.0,
+      "avg_receptions": 2.0,
+      "avg_rec_yards": 38.0,
       "avg_rec_tds": 0.0,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 0.0,
-      "half_ppr_ppg": 0.0,
-      "std_scoring_ppg": 0.0,
+      "ppr_ppg": 5.8,
+      "half_ppr_ppg": 4.8,
+      "std_scoring_ppg": 3.8,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 2.0,
+      "target_share": 0.004464285714285714
     }
   },
   {
@@ -18920,7 +18920,7 @@
     "name": "Brandon Powell",
     "team": "MIN",
     "position": "WR",
-    "age": 30.2,
+    "age": 30.3,
     "usage": {}
   },
   {
@@ -19180,7 +19180,7 @@
     "name": "Aaron Shampklin",
     "team": "MIA",
     "position": "RB",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {}
   },
   {
@@ -19514,7 +19514,7 @@
     "name": "Luis Perez",
     "team": "LAC",
     "position": "QB",
-    "age": 31.3,
+    "age": 31.4,
     "usage": {}
   },
   {
@@ -19888,7 +19888,7 @@
     "name": "Zay Flowers",
     "team": "BAL",
     "position": "WR",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -20342,7 +20342,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
-      "target_share": 0.025252525252525252
+      "target_share": 0.02288329519450801
     }
   },
   {
@@ -21390,7 +21390,7 @@
     "name": "Kareem Hunt",
     "team": "KC",
     "position": "RB",
-    "age": 30.3,
+    "age": 30.4,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,
@@ -21792,7 +21792,7 @@
     "name": "Willie Snead IV",
     "team": "MIA",
     "position": "WR",
-    "age": 33.1,
+    "age": 33.2,
     "usage": {}
   },
   {
@@ -22520,7 +22520,7 @@
     "name": "Tim DeMorat",
     "team": "WSH",
     "position": "QB",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {}
   },
   {
@@ -23796,7 +23796,7 @@
     "name": "Malik Willis",
     "team": "GB",
     "position": "QB",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {
       "games": 2,
       "avg_off_snap_pct": 0.0,
@@ -23894,7 +23894,7 @@
     "name": "Johnny Mundt",
     "team": "JAX",
     "position": "TE",
-    "age": 31.0,
+    "age": 31.1,
     "usage": {
       "games": 12,
       "avg_off_snap_pct": 0.0,
@@ -28070,27 +28070,27 @@
     "position": "RB",
     "age": 25.7,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 18.692307692307693,
-      "avg_targets": 1.0,
-      "avg_receptions": 0.9230769230769231,
-      "avg_rec_yards": 7.615384615384615,
+      "avg_off_snaps": 17.357142857142858,
+      "avg_targets": 0.9285714285714286,
+      "avg_receptions": 0.8571428571428571,
+      "avg_rec_yards": 7.071428571428571,
       "avg_rec_tds": 0.0,
-      "avg_carries": 8.307692307692308,
-      "avg_rush_yards": 29.076923076923077,
-      "avg_rush_tds": 0.6153846153846154,
-      "ppr_ppg": 8.284615384615385,
-      "half_ppr_ppg": 7.823076923076924,
-      "std_scoring_ppg": 7.361538461538462,
+      "avg_carries": 7.857142857142857,
+      "avg_rush_yards": 28.285714285714285,
+      "avg_rush_tds": 0.5714285714285714,
+      "ppr_ppg": 7.821428571428571,
+      "half_ppr_ppg": 7.392857142857143,
+      "std_scoring_ppg": 6.964285714285714,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.07692307692307693,
-      "rush_rz_att_pg": 2.1538461538461537,
+      "rec_rz_tgt_pg": 0.07142857142857142,
+      "rush_rz_att_pg": 2.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
-      "target_share": 0.03282828282828283
+      "target_share": 0.029748283752860413
     }
   },
   {
@@ -28220,7 +28220,7 @@
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
-      "target_share": 0.009615384615384616
+      "target_share": 0.008928571428571428
     }
   },
   {
@@ -28532,7 +28532,7 @@
     "name": "Trevon Wesco",
     "team": "LV",
     "position": "TE",
-    "age": 30.2,
+    "age": 30.3,
     "usage": {}
   },
   {
@@ -28564,7 +28564,7 @@
     "name": "Jerreth Sterns",
     "team": "LAR",
     "position": "WR",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -28702,27 +28702,27 @@
     "position": "RB",
     "age": 23.9,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 49.76923076923077,
-      "avg_targets": 5.384615384615385,
-      "avg_receptions": 4.3076923076923075,
-      "avg_rec_yards": 46.30769230769231,
-      "avg_rec_tds": 0.15384615384615385,
-      "avg_carries": 16.53846153846154,
-      "avg_rush_yards": 83.15384615384616,
-      "avg_rush_tds": 0.38461538461538464,
-      "ppr_ppg": 20.33076923076923,
-      "half_ppr_ppg": 18.17692307692308,
-      "std_scoring_ppg": 16.023076923076925,
+      "avg_off_snaps": 46.214285714285715,
+      "avg_targets": 5.785714285714286,
+      "avg_receptions": 4.571428571428571,
+      "avg_rec_yards": 48.857142857142854,
+      "avg_rec_tds": 0.14285714285714285,
+      "avg_carries": 16.714285714285715,
+      "avg_rush_yards": 83.85714285714286,
+      "avg_rush_tds": 0.42857142857142855,
+      "ppr_ppg": 20.985714285714288,
+      "half_ppr_ppg": 18.700000000000006,
+      "std_scoring_ppg": 16.414285714285715,
       "std_ppg": 0.0,
-      "rec_rz_tgt_pg": 0.6153846153846154,
-      "rush_rz_att_pg": 2.0,
+      "rec_rz_tgt_pg": 0.6428571428571429,
+      "rush_rz_att_pg": 1.9285714285714286,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 70.0,
-      "target_share": 0.17676767676767677
+      "total_targets": 81.0,
+      "target_share": 0.1853546910755149
     }
   },
   {
@@ -28746,7 +28746,7 @@
     "name": "Nick Williams",
     "team": "DEN",
     "position": "WR",
-    "age": 35.0,
+    "age": 35.1,
     "usage": {}
   },
   {
@@ -29528,27 +29528,27 @@
     "position": "TE",
     "age": 25.9,
     "usage": {
-      "games": 9,
+      "games": 10,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 4.0,
-      "avg_targets": 0.0,
-      "avg_receptions": 0.0,
-      "avg_rec_yards": 0.0,
-      "avg_rec_tds": 0.0,
+      "avg_off_snaps": 3.6,
+      "avg_targets": 0.1,
+      "avg_receptions": 0.1,
+      "avg_rec_yards": 0.6,
+      "avg_rec_tds": 0.1,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 0.0,
-      "half_ppr_ppg": 0.0,
-      "std_scoring_ppg": 0.0,
+      "ppr_ppg": 0.76,
+      "half_ppr_ppg": 0.71,
+      "std_scoring_ppg": 0.6599999999999999,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 0.0,
-      "target_share": 0.0
+      "total_targets": 1.0,
+      "target_share": 0.002232142857142857
     }
   },
   {
@@ -29996,27 +29996,27 @@
     "position": "TE",
     "age": 28.2,
     "usage": {
-      "games": 13,
+      "games": 14,
       "avg_off_snap_pct": 0.0,
-      "avg_off_snaps": 32.23076923076923,
-      "avg_targets": 0.46153846153846156,
-      "avg_receptions": 0.38461538461538464,
-      "avg_rec_yards": 2.5384615384615383,
+      "avg_off_snaps": 29.928571428571427,
+      "avg_targets": 0.5714285714285714,
+      "avg_receptions": 0.5,
+      "avg_rec_yards": 3.2142857142857144,
       "avg_rec_tds": 0.0,
       "avg_carries": 0.0,
       "avg_rush_yards": 0.0,
       "avg_rush_tds": 0.0,
-      "ppr_ppg": 0.6384615384615385,
-      "half_ppr_ppg": 0.4461538461538461,
-      "std_scoring_ppg": 0.25384615384615383,
+      "ppr_ppg": 0.8214285714285714,
+      "half_ppr_ppg": 0.5714285714285714,
+      "std_scoring_ppg": 0.32142857142857145,
       "std_ppg": 0.0,
       "rec_rz_tgt_pg": 0.0,
       "rush_rz_att_pg": 0.0,
       "avg_pass_att": 0.0,
       "avg_pass_cmp": 0.0,
       "avg_pass_int": 0.0,
-      "total_targets": 8.0,
-      "target_share": 0.020202020202020204
+      "total_targets": 10.0,
+      "target_share": 0.02288329519450801
     }
   },
   {
@@ -30662,7 +30662,7 @@
     "name": "Ryan McDaniel",
     "team": "JAX",
     "position": "WR",
-    "age": 26.7,
+    "age": 26.8,
     "usage": {}
   },
   {
@@ -30768,7 +30768,7 @@
     "name": "Kobe Hudson",
     "team": "CAR",
     "position": "WR",
-    "age": 24.2,
+    "age": 24.3,
     "usage": {}
   },
   {
@@ -30806,7 +30806,7 @@
     "name": "Dre Miller",
     "team": "GB",
     "position": "WR",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {
@@ -31162,7 +31162,7 @@
     "name": "Cam Ward",
     "team": "TEN",
     "position": "QB",
-    "age": 23.5,
+    "age": 23.6,
     "usage": {
       "games": 13,
       "avg_off_snap_pct": 0.0,

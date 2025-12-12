@@ -1,18 +1,16 @@
-from flask import Flask, request, jsonify, render_template_string
+from typing import Optional
 
-app = Flask(__name__)
+def build_trade_calculator_body(league_id: Optional[str], season: Optional[int]) -> str:
+    league_val = league_id or ""
+    season_val = season if season is not None else ""
 
-CURRENT_SEASON = 2025
-
-
-def build_trade_calculator_body(league_id: str, season: int) -> str:
     return f"""
     <div class="page-layout">
       <main class="page-main">
 
         <!-- Hidden fields used by JS to load players -->
-        <input type="hidden" id="leagueIdInput" value="{league_id}">
-        <input type="hidden" id="seasonInput"   value="{season}">
+        <input type="hidden" id="leagueIdInput" value="{league_val}">
+        <input type="hidden" id="seasonInput"   value="{season_val}">
 
         <div class="card">
           <div class="card-header-row">
@@ -180,7 +178,7 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
           const metaBits = [];
           if (p.position && p.position.toUpperCase() !== "PICK") {{
             if (p.pos_rank_label) {{
-                metaBits.push(String(p.pos_rank_label).toUpperCase());
+              metaBits.push(String(p.pos_rank_label).toUpperCase());
             }}
           }}
           if (p.team) metaBits.push(p.team);
@@ -217,18 +215,13 @@ def build_trade_calculator_body(league_id: str, season: int) -> str:
         const seasonInput = document.getElementById("seasonInput");
         const errorBox    = document.getElementById("errorBox");
 
-        if (!leagueInput) {{
-          throw new Error("leagueIdInput element not found in DOM.");
-        }}
+        const leagueId = leagueInput ? (leagueInput.value || "").trim() : "";
+        const season   = (seasonInput && seasonInput.value) ? seasonInput.value.trim() : "";
 
-        const leagueId = (leagueInput.value || "").trim();
-        const season   = (seasonInput && seasonInput.value ? seasonInput.value.trim() : "");
+        // If no league ID, fall back to a global pool
+        const effectiveLeagueId = leagueId || "global";
 
-        if (!leagueId) {{
-          throw new Error("Enter a league ID before searching players.");
-        }}
-
-        const params = new URLSearchParams({{ league_id: leagueId }});
+        const params = new URLSearchParams({{ league_id: effectiveLeagueId }});
         if (season) params.set("season", season);
 
         const res = await fetch("/api/league-players?" + params.toString());

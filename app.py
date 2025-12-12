@@ -11,7 +11,7 @@ from datetime import date, datetime
 from flask import Flask, request, render_template_string, redirect, url_for, jsonify, render_template
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_rosters, get_users, get_league, get_traded_picks, get_nfl_players, \
@@ -19,7 +19,6 @@ from dashboard_services.api import get_rosters, get_users, get_league, get_trade
     get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
-from dashboard_services.data_building.value_model_training import build_ml_value_table
 from dashboard_services.graphs_page import build_graphs_body
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
@@ -68,102 +67,75 @@ app = Flask(
 app.secret_key = os.urandom(32)
 plotly_js = get_plotlyjs()
 
-FORM_HTML = """
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" name="google-adsense-account" content="ca-pub-9164153092633845">
-    <title>BR Fantasy Dashboard</title>
 
-    <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+FORM_BODY = """
+<div class="home-page">
+  <section class="home-hero">
+    <div class="home-hero-left">
+      <h1 class="home-title">BR Fantasy Dashboard</h1>
+      <p class="home-subtitle">
+        Turn your Sleeper league into a real front office:
+        live projections, matchup previews, power rankings, and more—all in one place.
+      </p>
 
-    <style>
-      body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-        background: white;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-        flex-direction: column;
-      }
-      .shell {
-        background: #122d4b;
-        padding: 24px 28px;
-        border-radius: 16px;
-        box-shadow: 0 18px 40px rgba(0,0,0,.55);
-        width: 380px;
-      }
-      h1 {
-        font-size: 20px;
-        margin-bottom: 16px;
-      }
-      label {
-        display: block;
-        font-size: 13px;
-        margin-bottom: 4px;
-        color: #9ca3af;
-      }
-      input[type="text"], input[type="number"] {
-        width: 94.3%;
-        padding: 8px 10px;
-        border-radius: 8px;
-        border: 1px solid #1f2937;
-        background: #7d8895;
-        color: white;
-        font-size: 14px;
-      }
-      .row {
-        margin-bottom: 12px;
-      }
-      button {
-        width: 100%;
-        padding: 9px 10px;
-        border-radius: 10px;
-        border: none;
-        background: #38bdf8;
-        color: #0f172a;
-        font-weight: 600;
-        cursor: pointer;
-        font-size: 14px;
-        margin-top: 4px;
-      }
-      button:hover {
-        background: #0ea5e9;
-      }
-      .hint {
-        font-size: 12px;
-        color: #6b7280;
-        margin-top: 6px;
-      }
-      .h1 {text-align: center;}
-      .error-message {
-        margin-top: 8px;
-        font-size: 13px;
-        color: #fecaca;
-      }
-    </style>
-  </head>
-  <body>
-    <div><img src="/static/BR_Logo.png" alt="League Logo" class="site-logo" style="height:125px"/></div>
-    <div class="shell">
-      <form method="post">
-        <div class="row">
-          <label for="league">Sleeper League ID</label>
-          <input type="text" id="league" name="league" required value="{{ league or '' }}">
-        </div>
-        <button type="submit">Generate Dashboard</button>
-        {% if error %}
-        <div class="error-message">
-          {{ error }}
-        </div>
-        {% endif %}
-        <div class="hint">Paste your Sleeper league ID, hit generate, and we'll build the dashboard.</div>
-      </form>
+      <ul class="home-bullets">
+        <li>League-wide dashboard with weekly storylines and stats</li>
+        <li>Matchup hub with projections and live scoring context</li>
+        <li>Trade calculator powered by custom value models</li>
+      </ul>
     </div>
-  </body>
-</html>
+
+    <div class="home-hero-right">
+      <div class="home-card">
+        <h2 class="home-card-title">Get started</h2>
+        <form method="post">
+          <div class="row">
+            <label for="league">Sleeper League ID</label>
+            <input type="text"
+                   id="league"
+                   name="league"
+                   required
+                   value="{{ league or '' }}">
+          </div>
+          <button type="submit">Generate Dashboard</button>
+
+          {% if error %}
+          <div class="error-message">
+            {{ error }}
+          </div>
+          {% endif %}
+
+          <p class="hint">
+            Paste your Sleeper league ID, hit generate, and we'll build the dashboard.
+          </p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-feature-grid">
+    <div class="home-feature-card">
+      <h3>Weekly Hub</h3>
+      <p>
+        See every starter, projection, and live score in one view.
+        Perfect for Sunday trash talk and recap videos.
+      </p>
+    </div>
+    <div class="home-feature-card">
+      <h3>Trade Calculator</h3>
+      <p>
+        Evaluate trades with BR’s custom value engine so you don’t get fleeced
+        by the league shark.
+      </p>
+    </div>
+    <div class="home-feature-card">
+      <h3>Graphs & Insights</h3>
+      <p>
+        Visualize PF, PA, luck, and schedule strength so you can prove who’s actually good.
+      </p>
+    </div>
+  </section>
+</div>
 """
 
 
@@ -187,6 +159,24 @@ BASE_HTML = """
     <main id="page-root" class="overview-layout">
       {body}
     </main>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="site-footer-left">
+          <span class="footer-brand">BR Fantasy</span>
+          <span class="footer-tagline">Tools for obsessive commissioners.</span>
+        </div>
+        <div class="site-footer-links">
+          <a href="{privacy_url}">Privacy</a>
+          <a href="{faq_url}">FAQ</a>
+          <a href="{support_url}">Support the site</a>
+          <a href="{yt_url}" target="_blank" rel="noopener">YouTube</a>
+          <a href="{contact_url}">Contact</a>
+        </div>
+        <div class="site-footer-note">
+          © 2025 BR Fantasy. All rights reserved.
+        </div>
+      </div>
+    </footer>
     <script src="/static/app.js"></script>
   </body>
 </html>
@@ -330,20 +320,43 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
-def build_nav(league_id: str, active: str,) -> str:
+def build_nav(league_id: Optional[str], active: str) -> str:
     """
-    active: one of 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
+    active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
+    active (global pages): 'home','privacy','faq','contact','support'
     """
+    if not league_id:
+        def simple_pill(label: str, href: str, key: str) -> str:
+            cls = "nav-pill active" if key == active else "nav-pill"
+            return f"<a class='{cls}' href='{href}'>{label}</a>"
+
+        pills = [
+            simple_pill("Home", "/", "home"),
+            simple_pill("Trade Calc", "/trade", "trade"),
+            simple_pill("FAQ", "/faq", "faq"),
+            simple_pill("Privacy", "/privacy", "privacy"),
+            simple_pill("Support the site", "/support", "support"),
+            simple_pill("Contact", "/contact", "contact"),
+        ]
+
+        return (
+            "<nav class='top-nav'>"
+            "  <div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div>"
+            "  <div>"
+            f"    {''.join(pills)}"
+            "  </div>"
+            "</nav>"
+        )
+
+    # -------- League nav (with league_id) --------
 
     def nav_pill(label: str, endpoint: str, key: str) -> str:
         cls = "nav-pill active" if key == active else "nav-pill"
         href = url_for(endpoint, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
-    # pages where a refresh makes sense
     refreshable_pages = {"dashboard", "weekly", "teams", "activity", "standings"}
 
-    # label per page
     refresh_label_map = {
         "dashboard": "↻",
         "weekly": "↻",
@@ -353,8 +366,6 @@ def build_nav(league_id: str, active: str,) -> str:
     }
     refresh_label = refresh_label_map.get(active, "↻")
 
-    # default season -> empty string if None
-
     refresh_btn = ""
     if active in refreshable_pages:
         refresh_btn = (
@@ -363,13 +374,14 @@ def build_nav(league_id: str, active: str,) -> str:
             f"        class='refresh-icon'"
             f"        data-page='{active}'"
             f"        data-league='{league_id}'"
-            f"        style='display:inline-flex;gap:6px;color: #122d4b;font-size: x-large;background: white;border: white;transform: rotate(90deg);'>"
+            f"        style='display:inline-flex;gap:6px;color: #122d4b;font-size: x-large;"
+            f"               background: white;border: white;transform: rotate(90deg);'>"
             f"{refresh_label}"
             f"</button>"
         )
 
     pills = [
-        refresh_btn,  # may be empty string if not a refreshable page
+        refresh_btn,
         nav_pill("Dashboard", "page_dashboard", "dashboard"),
         nav_pill("Weekly Hub", "page_weekly", "weekly"),
         nav_pill("Trade Calc", "page_trade", "trade"),
@@ -390,9 +402,20 @@ def build_nav(league_id: str, active: str,) -> str:
     )
 
 
-def render_page(title: str, league_id: str, active: str, body_html: str) -> str:
+def render_page(title: str, league_id: Optional[str], active: str, body_html: str) -> str:
     nav_html = build_nav(league_id, active)
-    return BASE_HTML.format(title=title, nav=nav_html, body=body_html, plotly_js=plotly_js)
+    return BASE_HTML.format(
+        title=title,
+        nav=nav_html,
+        body=body_html,
+        plotly_js=plotly_js,
+        privacy_url=league_url( "privacy", league_id),
+        faq_url=league_url("faq", league_id),
+        support_url=league_url("support", league_id),
+        contact_url=league_url("contact", league_id),
+        yt_url="https://youtube.com/@hoodiekj",
+    )
+
 
 
 def validate_league_id(league_id: str) -> bool:
@@ -2719,6 +2742,284 @@ def build_teams_body(ctx: dict) -> str:
     </script>
     """
 
+@app.route("/privacy")
+@app.route("/league/<league_id>/privacy")
+def privacy_page(league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">Privacy Policy</h1>
+            <p class="static-hero-sub">
+              How we handle data within the BR Fantasy Dashboard.
+            </p>
+
+            <div class="static-section">
+              <div class="static-section-title">What We Collect</div>
+              <p>
+                We use your Sleeper league ID and public Sleeper data to build dashboards,
+                projections, and tools. No passwords, payment info, or sensitive personal data
+                is collected.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">What We Don't Collect</div>
+              <p>
+                We don’t store personal identifying information, sell data, or track you outside
+                of this site.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data Storage</div>
+              <p>
+                League data is cached temporarily on the server to improve performance.
+                You may request removal at any time via the Contact page.
+              </p>
+            </div>
+
+            <div class="highlight-box">
+              Have questions or want your league data removed?  
+              Reach out using the Contact page.
+            </div>
+
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Privacy", league_id if league_id else None, "privacy", body)
+
+
+@app.route("/support")
+@app.route("/league/<league_id>/support")
+def support_page(league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+            <h1 class="static-hero-title">Support the Site</h1>
+            <p class="static-hero-sub">
+              BR Fantasy is a passion project. Here’s how you can help it grow.
+            </p>
+
+            <div class="static-section">
+              <div class="static-section-title">1. Direct Support</div>
+              <p>
+                If you find the dashboard helpful for your league, you can support
+                ongoing development and hosting costs.
+              </p>
+              <p style="margin-top:10px;">
+                You can add your own link here (Patreon, Ko-fi, PayPal, etc.):
+              </p>
+              <p style="margin-top:6px;">
+                <a class="link-pill" href="#"
+                   onclick="alert('Replace this with your real donation link.'); return false;">
+                  💸 Make a donation
+                </a>
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">2. Premium Ad-Free Mode (Coming Soon)</div>
+              <p>
+                The long-term plan is to offer a premium, ad-free experience with extra
+                features (advanced graphs, additional projections, league history views,
+                and more) while keeping a solid free version for everyone.
+              </p>
+              <p style="margin-top:8px;">
+                Want early access or to give feedback on premium ideas? Reach out on the
+                Contact page and include “Premium” in your message.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">3. Share With Your League</div>
+              <p>
+                Honestly one of the best ways to support this is just using it.
+                Share the link with your league mates, show the dashboards on stream,
+                or use the matchup previews in your weekly recaps.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">4. Follow & Subscribe</div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+              </div>
+            </div>
+
+            <div class="highlight-box">
+              Every bit of support helps keep the site online and evolving for future seasons.
+              Thanks for using BR Fantasy.
+            </div>
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Support",league_id if league_id else None, "support", body)
+
+@app.route("/faq")
+@app.route("/league/<league_id>/faq")
+def faq_page(league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+            <h1 class="static-hero-title">FAQ</h1>
+            <p class="static-hero-sub">
+              Answers to common questions about the BR Fantasy Dashboard.
+            </p>
+
+            <div class="static-section">
+              <div class="static-section-title">General</div>
+
+              <details class="faq-item" open>
+                <summary>What is the BR Fantasy Dashboard?</summary>
+                <p>
+                  It’s a custom fantasy football dashboard that pulls in your Sleeper league
+                  data and turns it into power rankings, weekly summaries, matchup previews,
+                  graphs, and more—all in one place.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>What do I need to use it?</summary>
+                <p>
+                  All you need is your Sleeper league ID. Paste it into the home screen,
+                  and the dashboard will fetch public data for that league.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Does this change anything in my Sleeper league?</summary>
+                <p>
+                  No. The dashboard is read-only. It just reads public data from Sleeper’s
+                  API and never modifies your league, rosters, or settings.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data & Privacy</div>
+
+              <details class="faq-item">
+                <summary>What data do you store?</summary>
+                <p>
+                  Some league data may be cached temporarily so pages load quickly
+                  (rosters, users, scores, projections, etc.). We do not store your
+                  password or payment information. See the Privacy Policy for more details.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Can I have my league data removed?</summary>
+                <p>
+                  Yes. Use the Contact page to send your Sleeper league ID and request
+                  removal. We’ll clear cached data for that league.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Premium / Ads / Support</div>
+
+              <details class="faq-item">
+                <summary>Is there a premium or ad-free mode?</summary>
+                <p>
+                  A premium, ad-free experience is planned. The idea is to keep a fully
+                  functional free tier while offering extra features and an ad-free UI for
+                  people who want to support the project.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>How can I support the site?</summary>
+                <p>
+                  You can support the project through donations, using premium when it’s
+                  available, or by sharing the site with your league mates.
+                  Visit the Support page for options.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Issues & Feedback</div>
+
+              <details class="faq-item">
+                <summary>The numbers look wrong—what should I do?</summary>
+                <p>
+                  First, hit the refresh button on the nav to clear cached data for your
+                  league. If something still looks off, send a message via the Contact
+                  page with your league ID and a short description of the issue.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Can I request new features?</summary>
+                <p>
+                  Absolutely. This project is built for fantasy degenerates.
+                  Drop your ideas on the Contact page and they might make it onto the roadmap.
+                </p>
+              </details>
+            </div>
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy FAQ",league_id if league_id else None, "faq", body)
+
+
+@app.route("/contact", methods=["GET", "POST"])
+@app.route("/league/<league_id>/contact")
+def contact_page(league_id: Optional[str] = None):
+    # super simple "email us" style page; you can later hook this to a form handler
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">Contact</h1>
+            <p class="static-hero-sub">
+              Questions, bugs, feature requests — reach out anytime.
+            </p>
+
+            <div class="static-section">
+              <div class="static-section-title">Message</div>
+              <p>You can message the creator directly via social platforms:</p>
+
+              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+              </div>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">What to include</div>
+              <ul style="margin-left:20px; color:#4b5563; font-size:14px;">
+                <li>Your Sleeper league ID</li>
+                <li>Which page you were on</li>
+                <li>What wasn’t working or looked incorrect</li>
+                <li>Screenshots if possible</li>
+              </ul>
+            </div>
+
+            <div class="highlight-box">
+              Feedback helps shape future features — thanks for helping improve BR Fantasy.
+            </div>
+
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Contact",league_id if league_id else None, "contact", body)
+
+
+def league_url(slug: str, league_id: Optional[str] = None) -> str:
+    """
+    Build a URL that keeps league context if we have one.
+    slug examples: 'faq', 'privacy', 'support', 'contact'
+    """
+    if league_id:
+        return f"/league/{league_id}/{slug}"
+    return f"/{slug}"
+
 
 @app.route("/league/<league_id>/dashboard")
 def page_dashboard(league_id):
@@ -2743,10 +3044,15 @@ def page_weekly(league_id):
     return render_page("Weekly Hub", league_id, "weekly", body)
 
 
+@app.route("/trade")
 @app.route("/league/<league_id>/trade")
-def page_trade(league_id):
-    ctx = get_league_ctx_from_cache(league_id)
-    body = build_trade_calculator_body(ctx["league_id"], ctx["current_season"])
+def page_trade(league_id: Optional[str] = None):
+    if league_id:
+        ctx = get_league_ctx_from_cache(league_id)
+        body = build_trade_calculator_body(ctx["league_id"], ctx["current_season"])
+    else:
+        current_season = get_nfl_state().get("current_season")
+        body = build_trade_calculator_body(None, current_season)
     return render_page("Trade Calculator", league_id, "trade", body)
 
 
@@ -2827,34 +3133,45 @@ def index():
 
         # Validate the Sleeper league ID before doing any heavy work
         if not validate_league_id(league_id):
-            return render_template_string(
-                FORM_HTML,
+            body_html = render_template_string(
+                FORM_BODY,
                 league=league_id,
                 weeks=default_weeks,
                 error="Invalid Sleeper league ID. Please check it and try again.",
             )
+            return render_page(
+                "BR Fantasy Dashboard",
+                None,                # no league yet
+                "home",              # active page label
+                body_html
+            )
 
-        cache_key = league_id
+        # Cache handling
         now = time.time()
-        print("cache keys currently:", list(DASHBOARD_CACHE.keys()))
+        entry = DASHBOARD_CACHE.get(league_id)
 
-        entry = DASHBOARD_CACHE.get(cache_key)
         if entry and (now - entry["ts"] < CACHE_TTL):
-            # we already have a fresh context; jump to dashboard
             return redirect(url_for("page_dashboard", league_id=league_id))
 
-        # build and cache context instead of HTML
+        # Build + cache context
         ctx = build_league_context(league_id)
-        DASHBOARD_CACHE[cache_key] = {"ctx": ctx, "ts": now}
+        DASHBOARD_CACHE[league_id] = {"ctx": ctx, "ts": now}
 
         return redirect(url_for("page_dashboard", league_id=league_id))
 
-    # GET -> show the form
-    return render_template_string(
-        FORM_HTML,
+    # GET — render home page with no league
+    body_html = render_template_string(
+        FORM_BODY,
         league=None,
         weeks=default_weeks,
         error=None,
+    )
+
+    return render_page(
+        "BR Fantasy Dashboard",
+        None,      # no league yet
+        "home",
+        body_html
     )
 
 

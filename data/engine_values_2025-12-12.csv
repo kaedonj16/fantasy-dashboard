@@ -4,7 +4,7 @@ player_id,name,position,team,engine_value
 3258,,,,248.1
 7591,Justin Fields,QB,NYJ,599.5
 7602,Kylen Granson,TE,PHI,361.9
-11584,Bucky Irving,RB,TB,810.9
+11584,Bucky Irving,RB,TB,775.2
 12496,Tai Felton,WR,MIN,443.9
 9497,Jalin Hyatt,WR,NYG,443.5
 5374,Justin Watson,WR,HOU,411.7
@@ -41,7 +41,7 @@ player_id,name,position,team,engine_value
 2359,Ameer Abdullah,RB,IND,191.4
 4066,Evan Engram,TE,DEN,378.3
 10236,Dalton Kincaid,TE,BUF,593.2
-7553,Kyle Pitts Sr.,TE,ATL,510.6
+7553,Kyle Pitts Sr.,TE,ATL,610.8
 8698,Jake Tonges,TE,SF,439.0
 7594,Chuba Hubbard,RB,CAR,390.5
 3214,Hunter Henry,TE,NE,437.4
@@ -78,7 +78,7 @@ player_id,name,position,team,engine_value
 4035,Alvin Kamara,RB,NO,364.5
 12510,Jalen Milroe,QB,SEA,340.0
 7525,DeVonta Smith,WR,PHI,596.5
-7090,Darnell Mooney,WR,ATL,471.6
+7090,Darnell Mooney,WR,ATL,470.4
 11563,Bo Nix,QB,DEN,684.5
 9479,Darnell Washington,TE,PIT,442.1
 4718,Dare Ogunbowale,RB,HOU,132.3
@@ -86,7 +86,7 @@ player_id,name,position,team,engine_value
 7436,Mason Kinsey,WR,TEN,366.0
 8583,,,,357.6
 10218,Xavier Hutchinson,WR,HOU,525.8
-4892,Baker Mayfield,QB,TB,565.5
+4892,Baker Mayfield,QB,TB,569.0
 12699,LaJohntay Wester,WR,BAL,413.1
 5113,Cedrick Wilson Jr.,WR,MIA,338.2
 9501,DeMario Douglas,WR,NE,552.0
@@ -137,14 +137,14 @@ player_id,name,position,team,engine_value
 7610,,,,391.9
 11806,Casey Washington,WR,ATL,448.7
 6144,Trayveon Williams,RB,LAC,111.7
-12514,Emeka Egbuka,WR,TB,682.0
+12514,Emeka Egbuka,WR,TB,671.6
 12505,Jalen Royals,WR,KC,421.1
 8131,Isaiah Likely,TE,BAL,443.6
 6149,Darius Slayton,WR,NYG,486.3
 9493,Puka Nacua,WR,LAR,965.5
 5010,Will Dissly,TE,LAC,348.7
 12512,Quinshon Judkins,RB,CLE,763.8
-9506,Sean Tucker,RB,TB,445.9
+9506,Sean Tucker,RB,TB,450.5
 3286,Demarcus Robinson,WR,SF,374.3
 4881,Lamar Jackson,QB,BAL,616.9
 8885,Tucker Fisk,TE,LAC,372.5
@@ -179,7 +179,7 @@ player_id,name,position,team,engine_value
 8144,Chris Olave,WR,NO,701.2
 1837,Jimmy Garoppolo,QB,LAR,188.8
 6804,Jordan Love,QB,GB,602.7
-2216,Mike Evans,WR,TB,512.5
+2216,Mike Evans,WR,TB,544.9
 6943,Gabe Davis,WR,BUF,496.3
 6790,D'Andre Swift,RB,CHI,484.7
 2306,Jameis Winston,QB,NYG,731.7
@@ -201,11 +201,11 @@ player_id,name,position,team,engine_value
 12469,Dylan Sampson,RB,CLE,517.4
 8188,Tyquan Thornton,WR,KC,516.0
 7670,Joshua Palmer,WR,BUF,503.2
-11474,Dylan Drummond,WR,ATL,476.8
+11474,Dylan Drummond,WR,ATL,471.2
 8181,Connor Heyward,TE,PIT,379.6
 11237,Jacob Saylors,RB,DET,209.2
 1339,Zach Ertz,TE,WSH,380.0
-6154,David Sills V,WR,ATL,381.5
+6154,David Sills V,WR,ATL,405.0
 12374,Brenden Bates,TE,CLE,378.9
 12455,Brashard Smith,RB,KC,496.9
 12535,Isaac TeSlaa,WR,DET,495.7
@@ -229,10 +229,10 @@ player_id,name,position,team,engine_value
 7233,,,,354.2
 7531,Feleipe Franks,TE,ATL,358.7
 11559,Michael Penix Jr.,QB,ATL,577.2
-8136,Rachaad White,RB,TB,385.7
+8136,Rachaad White,RB,TB,375.8
 8125,Calvin Austin III,WR,PIT,508.8
 7600,Pat Freiermuth,TE,PIT,440.1
-4037,Chris Godwin Jr.,WR,TB,497.8
+4037,Chris Godwin Jr.,WR,TB,517.5
 9487,Parker Washington,WR,JAX,596.7
 5938,Lil'Jordan Humphrey,WR,NYG,427.1
 12928,Amar Johnson,RB,LAC,430.5
@@ -240,7 +240,7 @@ player_id,name,position,team,engine_value
 11299,Zavier Scott,RB,MIN,262.8
 3155,,,,305.6
 11620,Rome Odunze,WR,CHI,650.7
-1166,Kirk Cousins,QB,ATL,361.0
+1166,Kirk Cousins,QB,ATL,412.4
 11381,Travis Vokolek,TE,ARI,357.6
 4033,David Njoku,TE,CLE,419.6
 7083,Tyler Huntley,QB,BAL,528.9
@@ -300,7 +300,7 @@ player_id,name,position,team,engine_value
 12531,Trevor Etienne,RB,CAR,454.9
 8183,Brock Purdy,QB,SF,629.4
 8112,Drake London,WR,ATL,913.6
-12485,Tez Johnson,WR,TB,552.9
+12485,Tez Johnson,WR,TB,543.3
 6826,Cole Kmet,TE,CHI,433.2
 11384,Owen Wright,RB,TB,139.9
 111,Marcedes Lewis,TE,DEN,222.5
@@ -395,7 +395,7 @@ player_id,name,position,team,engine_value
 12498,Mason Taylor,TE,NYJ,459.7
 11562,Spencer Rattler,QB,NO,567.9
 5121,Braxton Berrios,WR,HOU,390.2
-4314,Johnny Mundt,TE,JAX,315.2
+4314,Johnny Mundt,TE,JAX,300.0
 8208,Tyler Badie,RB,DEN,267.4
 11168,Xavier Smith,WR,LAR,402.1
 12412,Terrell Jennings,RB,NE,378.6
@@ -464,7 +464,7 @@ player_id,name,position,team,engine_value
 12540,Chimere Dike,WR,TEN,581.8
 9758,C.J. Stroud,QB,HOU,592.9
 2749,Raheem Mostert,RB,LV,194.9
-8132,Tyler Allgeier,RB,ATL,430.2
+8132,Tyler Allgeier,RB,ATL,418.9
 5892,David Montgomery,RB,DET,406.1
 7526,Jaylen Waddle,WR,MIA,642.0
 11421,Ryan Miller,WR,TB,421.6
@@ -472,7 +472,7 @@ player_id,name,position,team,engine_value
 8500,John FitzPatrick,TE,GB,400.0
 7049,Jauan Jennings,WR,SF,576.9
 4082,Curtis Samuel,WR,BUF,400.5
-9509,Bijan Robinson,RB,ATL,895.9
+9509,Bijan Robinson,RB,ATL,910.8
 12504,Kaleb Johnson,RB,PIT,448.4
 8800,Malik Davis,RB,DAL,222.2
 11603,AJ Barner,TE,SEA,485.0
@@ -489,14 +489,14 @@ player_id,name,position,team,engine_value
 6920,Isaiah Hodgins,WR,PIT,535.6
 11632,Malik Nabers,WR,NYG,726.4
 4199,Aaron Jones Sr.,RB,MIN,332.0
-11820,Devin Culp,TE,TB,379.3
+11820,Devin Culp,TE,TB,389.4
 7538,,,,356.7
 7585,Davis Mills,QB,HOU,553.3
 12538,,,,440.2
 11631,Brian Thomas Jr.,WR,JAX,601.9
 3202,Austin Hooper,TE,NE,333.3
 8142,Alec Pierce,WR,IND,607.6
-7075,Charlie Woerner,TE,ATL,345.3
+7075,Charlie Woerner,TE,ATL,347.9
 4972,Mason Rudolph,QB,PIT,353.1
 5955,Hunter Renfrow,WR,CAR,491.1
 12503,Isaiah Bond,WR,CLE,494.1
