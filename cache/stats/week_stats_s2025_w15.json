@@ -2,7 +2,7 @@
   "ARI": {
     "QB": {
       "jacoby brissett": {
-        "pass_yds": 43,
+        "pass_yds": 74,
         "pass_td": 1,
         "int": 0,
         "rush_att": 0,
@@ -11,14 +11,6 @@
       }
     },
     "RB": {
-      "bam knight": {
-        "rush_att": 1,
-        "rush_yds": -2,
-        "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
-        "rec_td": 0
-      },
       "michael carter": {
         "rush_att": 5,
         "rush_yds": 23,
@@ -28,16 +20,24 @@
         "rec_td": 0
       },
       "emari demercado": {
-        "rush_att": 0,
-        "rush_yds": 0,
+        "rush_att": 1,
+        "rush_yds": 1,
         "rush_td": 0,
         "rec": 1,
         "rec_yds": -5,
         "rec_td": 0
+      },
+      "bam knight": {
+        "rush_att": 1,
+        "rush_yds": -2,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
       }
     },
     "WR": {
-      "jalen brooks": {
+      "andre baccellia": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
@@ -45,7 +45,7 @@
         "rec_yds": 0,
         "rec_td": 0
       },
-      "andre baccellia": {
+      "jalen brooks": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
@@ -57,20 +57,12 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 6,
         "rec_td": 0
       }
     },
     "TE": {
-      "trey mcbride": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 5,
-        "rec_yds": 47,
-        "rec_td": 1
-      },
       "pharaoh brown": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -78,6 +70,22 @@
         "rec": 2,
         "rec_yds": 1,
         "rec_td": 0
+      },
+      "elijah higgins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 3,
+        "rec_td": 0
+      },
+      "trey mcbride": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 7,
+        "rec_yds": 69,
+        "rec_td": 1
       }
     },
     "DEF": {
@@ -85,9 +93,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 0,
-        "yds_allowed": 126,
+        "yds_allowed": 230,
         "fumbles_recovered": 0,
-        "pts_allowed": 11,
+        "pts_allowed": 17,
         "safeties": 0
       }
     }
@@ -677,11 +685,11 @@
   "BAL": {
     "QB": {
       "lamar jackson": {
-        "pass_yds": 6,
-        "pass_td": 0,
+        "pass_yds": 136,
+        "pass_td": 2,
         "int": 1,
-        "rush_att": 0,
-        "rush_yds": 0,
+        "rush_att": 2,
+        "rush_yds": 26,
         "rush_td": 0
       }
     },
@@ -690,20 +698,20 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 2,
-        "rec_td": 0
+        "rec": 2,
+        "rec_yds": 32,
+        "rec_td": 1
       },
       "derrick henry": {
-        "rush_att": 5,
-        "rush_yds": 14,
+        "rush_att": 6,
+        "rush_yds": 17,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       },
       "keaton mitchell": {
-        "rush_att": 3,
+        "rush_att": 4,
         "rush_yds": 25,
         "rush_td": 0,
         "rec": 0,
@@ -713,6 +721,22 @@
     },
     "WR": {
       "zay flowers": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 54,
+        "rec_td": 1
+      },
+      "deandre hopkins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 32,
+        "rec_td": 0
+      },
+      "lajohntay wester": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
@@ -726,8 +750,16 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 4,
+        "rec": 2,
+        "rec_yds": 18,
+        "rec_td": 0
+      },
+      "charlie kolar": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
         "rec_td": 0
       }
     },
@@ -735,8 +767,8 @@
       "team": {
         "def_td": 0,
         "def_int": 1,
-        "sacks": 1,
-        "yds_allowed": 81,
+        "sacks": 2,
+        "yds_allowed": 155,
         "fumbles_recovered": 0,
         "pts_allowed": 0,
         "safeties": 0
@@ -746,15 +778,23 @@
   "BUF": {
     "QB": {
       "josh allen": {
-        "pass_yds": 11,
-        "pass_td": 0,
+        "pass_yds": 39,
+        "pass_td": 2,
         "int": 0,
-        "rush_att": 3,
-        "rush_yds": 12,
+        "rush_att": 5,
+        "rush_yds": 35,
         "rush_td": 0
       }
     },
     "RB": {
+      "james cook": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "ray davis": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -764,29 +804,37 @@
         "rec_td": 0
       },
       "ty johnson": {
-        "rush_att": 1,
-        "rush_yds": 9,
+        "rush_att": 2,
+        "rush_yds": 11,
         "rush_td": 0,
         "rec": 1,
         "rec_yds": 4,
         "rec_td": 0
       },
       "james cook iii": {
-        "rush_att": 4,
-        "rush_yds": 14,
+        "rush_att": 9,
+        "rush_yds": 47,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 4,
+        "rec_td": 1
+      }
+    },
+    "WR": {
+      "brandin cooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
-      }
-    },
-    "WR": {
+      },
       "khalil shakir": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 7,
+        "rec": 2,
+        "rec_yds": 8,
         "rec_td": 0
       }
     },
@@ -798,16 +846,24 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
+      },
+      "dawson knox": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 23,
+        "rec_td": 1
       }
     },
     "DEF": {
       "team": {
         "def_td": 0,
         "def_int": 0,
-        "sacks": 0,
-        "yds_allowed": 173,
+        "sacks": 1,
+        "yds_allowed": 279,
         "fumbles_recovered": 0,
-        "pts_allowed": 14,
+        "pts_allowed": 24,
         "safeties": 0
       }
     }
@@ -821,7 +877,7 @@
   "CHI": {
     "QB": {
       "caleb williams": {
-        "pass_yds": 97,
+        "pass_yds": 190,
         "pass_td": 1,
         "int": 0,
         "rush_att": 0,
@@ -831,16 +887,16 @@
     },
     "RB": {
       "kyle monangai": {
-        "rush_att": 5,
-        "rush_yds": 13,
+        "rush_att": 8,
+        "rush_yds": 29,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       },
       "d'andre swift": {
-        "rush_att": 7,
-        "rush_yds": 34,
+        "rush_att": 10,
+        "rush_yds": 45,
         "rush_td": 1,
         "rec": 0,
         "rec_yds": 0,
@@ -848,6 +904,14 @@
       }
     },
     "WR": {
+      "luther burden": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "devin duvernay": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -860,26 +924,42 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 3,
+        "rec": 3,
+        "rec_yds": 47,
         "rec_td": 1
       },
       "luther burden iii": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 3,
-        "rec_yds": 59,
+        "rec": 5,
+        "rec_yds": 78,
+        "rec_td": 0
+      },
+      "olamide zaccheaus": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
         "rec_td": 0
       }
     },
     "TE": {
-      "colston loveland": {
+      "cole kmet": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 2,
-        "rec_yds": 35,
+        "rec": 1,
+        "rec_yds": 11,
+        "rec_td": 0
+      },
+      "colston loveland": {
+        "rush_att": 1,
+        "rush_yds": -2,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 54,
         "rec_td": 0
       }
     },
@@ -887,8 +967,8 @@
       "team": {
         "def_td": 0,
         "def_int": 0,
-        "sacks": 1,
-        "yds_allowed": 22,
+        "sacks": 2,
+        "yds_allowed": 57,
         "fumbles_recovered": 0,
         "pts_allowed": 0,
         "safeties": 0
@@ -898,7 +978,7 @@
   "CIN": {
     "QB": {
       "joe burrow": {
-        "pass_yds": 44,
+        "pass_yds": 109,
         "pass_td": 0,
         "int": 1,
         "rush_att": 1,
@@ -907,30 +987,38 @@
       }
     },
     "RB": {
+      "chase brown": {
+        "rush_att": 9,
+        "rush_yds": 37,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
       "samaje perine": {
-        "rush_att": 4,
-        "rush_yds": 21,
+        "rush_att": 6,
+        "rush_yds": 28,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       },
-      "chase brown": {
-        "rush_att": 6,
-        "rush_yds": 28,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 6,
-        "rec_td": 0
-      }
-    },
-    "WR": {
-      "charlie jones": {
+      "tahj brooks": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "WR": {
+      "ja'marr chase": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 6,
+        "rec_yds": 78,
         "rec_td": 0
       },
       "andrei iosivas": {
@@ -941,12 +1029,12 @@
         "rec_yds": 0,
         "rec_td": 0
       },
-      "ja'marr chase": {
+      "charlie jones": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 2,
-        "rec_yds": 20,
+        "rec": 0,
+        "rec_yds": 0,
         "rec_td": 0
       }
     },
@@ -966,6 +1054,14 @@
         "rec": 1,
         "rec_yds": 7,
         "rec_td": 0
+      },
+      "tanner hudson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
       }
     },
     "DEF": {
@@ -973,9 +1069,9 @@
         "def_td": 0,
         "def_int": 1,
         "sacks": 2,
-        "yds_allowed": 34,
+        "yds_allowed": 193,
         "fumbles_recovered": 0,
-        "pts_allowed": 0,
+        "pts_allowed": 14,
         "safeties": 0
       }
     }
@@ -983,7 +1079,7 @@
   "CLE": {
     "QB": {
       "shedeur sanders": {
-        "pass_yds": 12,
+        "pass_yds": 54,
         "pass_td": 0,
         "int": 0,
         "rush_att": 1,
@@ -993,8 +1089,8 @@
     },
     "RB": {
       "quinshon judkins": {
-        "rush_att": 3,
-        "rush_yds": 7,
+        "rush_att": 5,
+        "rush_yds": 9,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
@@ -1002,12 +1098,12 @@
       }
     },
     "WR": {
-      "jerry jeudy": {
+      "isaiah bond": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 42,
         "rec_td": 0
       },
       "malachi corley": {
@@ -1017,14 +1113,27 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
+      },
+      "jerry jeudy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
       }
     },
     "TE": {
+      "harold fannin": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "harold fannin jr.": {
         "rush_att": 1,
         "rush_yds": 2,
         "rush_td": 0,
-        "rec": 2,
+        "rec": 3,
         "rec_yds": 12,
         "rec_td": 0
       }
@@ -1033,8 +1142,8 @@
       "team": {
         "def_td": 0,
         "def_int": 0,
-        "sacks": 0,
-        "yds_allowed": 150,
+        "sacks": 1,
+        "yds_allowed": 257,
         "fumbles_recovered": 0,
         "pts_allowed": 14,
         "safeties": 0
@@ -1068,15 +1177,23 @@
   "HOU": {
     "QB": {
       "c.j. stroud": {
-        "pass_yds": 90,
+        "pass_yds": 177,
         "pass_td": 1,
         "int": 0,
-        "rush_att": 3,
-        "rush_yds": 4,
+        "rush_att": 4,
+        "rush_yds": 10,
         "rush_td": 0
       }
     },
     "RB": {
+      "british brooks": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "woody marks": {
         "rush_att": 7,
         "rush_yds": 30,
@@ -1086,16 +1203,16 @@
         "rec_td": 0
       },
       "dare ogunbowale": {
-        "rush_att": 1,
-        "rush_yds": 0,
+        "rush_att": 2,
+        "rush_yds": 4,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 18,
         "rec_td": 0
       },
       "jawhar jordan": {
-        "rush_att": 1,
-        "rush_yds": 0,
+        "rush_att": 5,
+        "rush_yds": 9,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
@@ -1111,12 +1228,12 @@
         "rec_yds": 57,
         "rec_td": 1
       },
-      "jaylin noel": {
+      "jayden higgins": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 4,
         "rec_td": 0
       },
       "xavier hutchinson": {
@@ -1126,6 +1243,14 @@
         "rec": 1,
         "rec_yds": 16,
         "rec_td": 0
+      },
+      "jaylin noel": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
       }
     },
     "TE": {
@@ -1133,8 +1258,16 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 9,
+        "rec": 6,
+        "rec_yds": 59,
+        "rec_td": 0
+      },
+      "cade stover": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 15,
         "rec_td": 0
       }
     },
@@ -1142,8 +1275,8 @@
       "team": {
         "def_td": 1,
         "def_int": 0,
-        "sacks": 0,
-        "yds_allowed": 64,
+        "sacks": 1,
+        "yds_allowed": 94,
         "fumbles_recovered": 1,
         "pts_allowed": 7,
         "safeties": 0
@@ -1159,11 +1292,11 @@
   "JAX": {
     "QB": {
       "trevor lawrence": {
-        "pass_yds": 108,
-        "pass_td": 2,
+        "pass_yds": 192,
+        "pass_td": 3,
         "int": 0,
-        "rush_att": 2,
-        "rush_yds": 22,
+        "rush_att": 4,
+        "rush_yds": 48,
         "rush_td": 1
       }
     },
@@ -1184,13 +1317,21 @@
         "rec_yds": 16,
         "rec_td": 1
       },
-      "travis etienne jr.": {
-        "rush_att": 5,
-        "rush_yds": 19,
+      "lequint allen jr.": {
+        "rush_att": 0,
+        "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 5,
         "rec_td": 0
+      },
+      "travis etienne jr.": {
+        "rush_att": 8,
+        "rush_yds": 18,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 20,
+        "rec_td": 1
       }
     },
     "WR": {
@@ -1198,8 +1339,8 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 4,
-        "rec_yds": 65,
+        "rec": 5,
+        "rec_yds": 71,
         "rec_td": 0
       },
       "brian thomas": {
@@ -1208,6 +1349,14 @@
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
+        "rec_td": 0
+      },
+      "parker washington": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 53,
         "rec_td": 0
       },
       "brian thomas jr.": {
@@ -1240,11 +1389,11 @@
     "DEF": {
       "team": {
         "def_td": 0,
-        "def_int": 0,
+        "def_int": 1,
         "sacks": 0,
-        "yds_allowed": 91,
+        "yds_allowed": 125,
         "fumbles_recovered": 0,
-        "pts_allowed": 7,
+        "pts_allowed": 10,
         "safeties": 0
       }
     }
@@ -1252,34 +1401,34 @@
   "KC": {
     "QB": {
       "patrick mahomes": {
-        "pass_yds": 36,
+        "pass_yds": 94,
         "pass_td": 0,
         "int": 0,
-        "rush_att": 1,
-        "rush_yds": 12,
+        "rush_att": 2,
+        "rush_yds": 15,
         "rush_td": 1
       }
     },
     "RB": {
       "kareem hunt": {
-        "rush_att": 2,
-        "rush_yds": 5,
+        "rush_att": 4,
+        "rush_yds": 6,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 8,
         "rec_td": 0
       },
       "isiah pacheco": {
-        "rush_att": 5,
-        "rush_yds": 5,
+        "rush_att": 7,
+        "rush_yds": 14,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       },
       "brashard smith": {
-        "rush_att": 1,
-        "rush_yds": 2,
+        "rush_att": 2,
+        "rush_yds": 1,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
@@ -1299,8 +1448,8 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 2,
-        "rec_yds": 15,
+        "rec": 5,
+        "rec_yds": 39,
         "rec_td": 0
       },
       "tyquan thornton": {
@@ -1315,8 +1464,8 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 26,
         "rec_td": 0
       }
     },
@@ -1333,11 +1482,11 @@
     "DEF": {
       "team": {
         "def_td": 0,
-        "def_int": 0,
-        "sacks": 1,
-        "yds_allowed": 46,
+        "def_int": 1,
+        "sacks": 2,
+        "yds_allowed": 128,
         "fumbles_recovered": 0,
-        "pts_allowed": 3,
+        "pts_allowed": 10,
         "safeties": 0
       }
     }
@@ -1345,11 +1494,11 @@
   "LAC": {
     "QB": {
       "justin herbert": {
-        "pass_yds": 16,
-        "pass_td": 0,
-        "int": 0,
-        "rush_att": 0,
-        "rush_yds": 0,
+        "pass_yds": 103,
+        "pass_td": 1,
+        "int": 1,
+        "rush_att": 1,
+        "rush_yds": 1,
         "rush_td": 0
       }
     },
@@ -1363,41 +1512,54 @@
         "rec_td": 0
       },
       "kimani vidal": {
-        "rush_att": 4,
+        "rush_att": 5,
         "rush_yds": 24,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 15,
         "rec_td": 0
       }
     },
     "WR": {
-      "tre' harris": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
-        "rec_td": 0
-      },
       "keenan allen": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 8,
+        "rec": 3,
+        "rec_yds": 16,
+        "rec_td": 0
+      },
+      "tre' harris": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 41,
         "rec_td": 0
       },
       "keandre lambert-smith": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 16,
+        "rec_td": 1
+      },
+      "ladd mcconkey": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 7,
         "rec_td": 0
       }
     },
     "TE": {
+      "oronde gadsden": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "oronde gadsden ii": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -1412,9 +1574,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 2,
-        "yds_allowed": 56,
+        "yds_allowed": 126,
         "fumbles_recovered": 0,
-        "pts_allowed": 7,
+        "pts_allowed": 13,
         "safeties": 0
       }
     }
@@ -1428,15 +1590,23 @@
   "LV": {
     "QB": {
       "kenny pickett": {
-        "pass_yds": 30,
+        "pass_yds": 70,
         "pass_td": 0,
-        "int": 0,
+        "int": 1,
         "rush_att": 1,
         "rush_yds": 8,
         "rush_td": 0
       }
     },
     "RB": {
+      "ashton jeanty": {
+        "rush_att": 7,
+        "rush_yds": 29,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 13,
+        "rec_td": 0
+      },
       "dylan laube": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -1445,32 +1615,16 @@
         "rec_yds": 0,
         "rec_td": 0
       },
-      "ashton jeanty": {
-        "rush_att": 3,
-        "rush_yds": 9,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 4,
-        "rec_td": 0
-      },
       "raheem mostert": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 2,
         "rec_td": 0
       }
     },
     "WR": {
-      "tre tucker": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
-        "rec_td": 0
-      },
       "jack bech": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -1486,6 +1640,14 @@
         "rec": 2,
         "rec_yds": 10,
         "rec_td": 0
+      },
+      "tre tucker": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
       }
     },
     "TE": {
@@ -1493,8 +1655,8 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": -1,
+        "rec": 5,
+        "rec_yds": 28,
         "rec_td": 0
       }
     },
@@ -1503,9 +1665,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 1,
-        "yds_allowed": 96,
+        "yds_allowed": 248,
         "fumbles_recovered": 0,
-        "pts_allowed": 10,
+        "pts_allowed": 24,
         "safeties": 0
       }
     }
@@ -1529,8 +1691,8 @@
     "QB": {},
     "RB": {
       "corey kiner": {
-        "rush_att": 0,
-        "rush_yds": 0,
+        "rush_att": 1,
+        "rush_yds": 4,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
@@ -1544,26 +1706,26 @@
   "NE": {
     "QB": {
       "drake maye": {
-        "pass_yds": 66,
+        "pass_yds": 112,
         "pass_td": 0,
         "int": 0,
-        "rush_att": 3,
-        "rush_yds": 32,
+        "rush_att": 4,
+        "rush_yds": 43,
         "rush_td": 2
       }
     },
     "RB": {
       "treveyon henderson": {
-        "rush_att": 8,
-        "rush_yds": 31,
-        "rush_td": 0,
+        "rush_att": 12,
+        "rush_yds": 78,
+        "rush_td": 1,
         "rec": 1,
         "rec_yds": 7,
         "rec_td": 0
       },
       "rhamondre stevenson": {
-        "rush_att": 5,
-        "rush_yds": 39,
+        "rush_att": 6,
+        "rush_yds": 50,
         "rush_td": 0,
         "rec": 2,
         "rec_yds": 11,
@@ -1587,6 +1749,14 @@
         "rec_yds": 0,
         "rec_td": 0
       },
+      "mack hollins": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 36,
+        "rec_td": 0
+      },
       "kyle williams": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -1595,24 +1765,33 @@
         "rec_yds": 0,
         "rec_td": 0
       },
-      "mack hollins": {
+      "stefon diggs": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
         "rec": 2,
+        "rec_yds": 10,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "hunter henry": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
         "rec_yds": 18,
         "rec_td": 0
       }
     },
-    "TE": {},
     "DEF": {
       "team": {
         "def_td": 0,
         "def_int": 0,
         "sacks": 2,
-        "yds_allowed": 34,
+        "yds_allowed": 120,
         "fumbles_recovered": 0,
-        "pts_allowed": 0,
+        "pts_allowed": 14,
         "safeties": 0
       }
     }
@@ -1636,11 +1815,11 @@
   "NYG": {
     "QB": {
       "jaxson dart": {
-        "pass_yds": 42,
+        "pass_yds": 76,
         "pass_td": 0,
-        "int": 0,
-        "rush_att": 0,
-        "rush_yds": 0,
+        "int": 1,
+        "rush_att": 4,
+        "rush_yds": 41,
         "rush_td": 0
       }
     },
@@ -1649,52 +1828,76 @@
         "rush_att": 1,
         "rush_yds": 3,
         "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 1,
+        "rec_td": 0
+      },
+      "tyrone tracy": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       },
       "tyrone tracy jr.": {
-        "rush_att": 3,
-        "rush_yds": 13,
-        "rush_td": 0,
+        "rush_att": 9,
+        "rush_yds": 49,
+        "rush_td": 1,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
       }
     },
     "WR": {
-      "darius slayton": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 19,
-        "rec_td": 0
-      },
       "wan'dale robinson": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 17,
+        "rec": 3,
+        "rec_yds": 26,
+        "rec_td": 0
+      },
+      "darius slayton": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 3,
+        "rec_yds": 43,
+        "rec_td": 0
+      },
+      "dalen cambre": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jalin hyatt": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
         "rec_td": 0
       }
     },
     "TE": {
-      "theo johnson": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 6,
-        "rec_td": 0
-      },
       "daniel bellinger": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
+        "rec_td": 0
+      },
+      "theo johnson": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 6,
         "rec_td": 0
       }
     },
@@ -1703,9 +1906,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 1,
-        "yds_allowed": 156,
+        "yds_allowed": 180,
         "fumbles_recovered": 0,
-        "pts_allowed": 10,
+        "pts_allowed": 22,
         "safeties": 0
       }
     }
@@ -1713,48 +1916,56 @@
   "NYJ": {
     "QB": {
       "brady cook": {
-        "pass_yds": 51,
+        "pass_yds": 73,
         "pass_td": 1,
-        "int": 0,
+        "int": 1,
         "rush_att": 2,
         "rush_yds": 13,
         "rush_td": 0
       }
     },
     "RB": {
-      "breece hall": {
-        "rush_att": 5,
-        "rush_yds": 10,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 9,
-        "rec_td": 0
-      },
       "isaiah davis": {
-        "rush_att": 3,
-        "rush_yds": 13,
+        "rush_att": 5,
+        "rush_yds": 24,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
+      },
+      "breece hall": {
+        "rush_att": 8,
+        "rush_yds": 15,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 9,
+        "rec_td": 0
       }
     },
     "WR": {
+      "john metchie": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "adonai mitchell": {
+        "rush_att": 1,
+        "rush_yds": -4,
+        "rush_td": 0,
+        "rec": 2,
+        "rec_yds": 17,
+        "rec_td": 1
+      },
       "isaiah williams": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 25,
+        "rec": 2,
+        "rec_yds": 29,
         "rec_td": 0
-      },
-      "adonai mitchell": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 9,
-        "rec_td": 1
       },
       "john metchie iii": {
         "rush_att": 1,
@@ -1766,12 +1977,17 @@
       }
     },
     "TE": {
+      "andrew beck": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "jeremy ruckert": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 3,
+        "rec": 2,
+        "rec_yds": 13,
         "rec_td": 0
       }
     },
@@ -1780,9 +1996,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 0,
-        "yds_allowed": 161,
+        "yds_allowed": 270,
         "fumbles_recovered": 0,
-        "pts_allowed": 21,
+        "pts_allowed": 31,
         "safeties": 0
       }
     }
@@ -1790,21 +2006,29 @@
   "PHI": {
     "QB": {
       "jalen hurts": {
-        "pass_yds": 68,
-        "pass_td": 1,
+        "pass_yds": 148,
+        "pass_td": 2,
         "int": 0,
-        "rush_att": 2,
-        "rush_yds": 11,
+        "rush_att": 6,
+        "rush_yds": 40,
         "rush_td": 0
       }
     },
     "RB": {
       "saquon barkley": {
-        "rush_att": 11,
-        "rush_yds": 21,
-        "rush_td": 0,
+        "rush_att": 20,
+        "rush_yds": 50,
+        "rush_td": 1,
         "rec": 2,
         "rec_yds": 14,
+        "rec_td": 0
+      },
+      "tank bigsby": {
+        "rush_att": 3,
+        "rush_yds": 14,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
         "rec_td": 0
       },
       "will shipley": {
@@ -1814,23 +2038,31 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
-      },
-      "tank bigsby": {
+      }
+    },
+    "WR": {
+      "britain covey": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
-      }
-    },
-    "WR": {
+      },
       "devonta smith": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
         "rec": 2,
         "rec_yds": 50,
+        "rec_td": 0
+      },
+      "a.j. brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 14,
         "rec_td": 0
       }
     },
@@ -1839,17 +2071,17 @@
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 4,
-        "rec_td": 1
+        "rec": 6,
+        "rec_yds": 70,
+        "rec_td": 2
       }
     },
     "DEF": {
       "team": {
         "def_td": 0,
-        "def_int": 0,
-        "sacks": 2,
-        "yds_allowed": 30,
+        "def_int": 1,
+        "sacks": 3,
+        "yds_allowed": 82,
         "fumbles_recovered": 0,
         "pts_allowed": 0,
         "safeties": 0
@@ -2440,6 +2672,14 @@
       }
     },
     "RB": {
+      "jacory croskey-merritt": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
       "chase edmonds": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -2455,10 +2695,8 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
-      }
-    },
-    "WR": {
-      "terry mclaurin": {
+      },
+      "colson yankoff": {
         "rush_att": 0,
         "rush_yds": 0,
         "rush_td": 0,
@@ -2467,23 +2705,63 @@
         "rec_td": 0
       }
     },
-    "TE": {}
+    "WR": {
+      "noah brown": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "jaylin lane": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "terry mclaurin": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      },
+      "deebo samuel": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    },
+    "TE": {
+      "john bates": {
+        "rec": 0,
+        "rec_yds": 0,
+        "rec_td": 0
+      }
+    }
   },
   "WSH": {
     "QB": {
       "marcus mariota": {
-        "pass_yds": 64,
+        "pass_yds": 80,
         "pass_td": 0,
         "int": 0,
-        "rush_att": 4,
-        "rush_yds": 30,
+        "rush_att": 5,
+        "rush_yds": 32,
         "rush_td": 0
       }
     },
     "RB": {
       "jacory croskey-merritt": {
-        "rush_att": 7,
-        "rush_yds": 50,
+        "rush_att": 8,
+        "rush_yds": 60,
         "rush_td": 1,
         "rec": 0,
         "rec_yds": 0,
@@ -2498,11 +2776,11 @@
         "rec_td": 0
       },
       "jeremy mcnichols": {
-        "rush_att": 5,
-        "rush_yds": 9,
+        "rush_att": 8,
+        "rush_yds": 15,
         "rush_td": 0,
-        "rec": 0,
-        "rec_yds": 0,
+        "rec": 1,
+        "rec_yds": 16,
         "rec_td": 0
       }
     },
@@ -2541,14 +2819,6 @@
       }
     },
     "TE": {
-      "john bates": {
-        "rush_att": 0,
-        "rush_yds": 0,
-        "rush_td": 0,
-        "rec": 1,
-        "rec_yds": 19,
-        "rec_td": 0
-      },
       "colson yankoff": {
         "rush_att": 0,
         "rush_yds": 0,
@@ -2556,16 +2826,24 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
+      },
+      "john bates": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 19,
+        "rec_td": 0
       }
     },
     "DEF": {
       "team": {
         "def_td": 0,
-        "def_int": 0,
-        "sacks": 0,
-        "yds_allowed": 58,
+        "def_int": 1,
+        "sacks": 1,
+        "yds_allowed": 185,
         "fumbles_recovered": 0,
-        "pts_allowed": 0,
+        "pts_allowed": 7,
         "safeties": 0
       }
     }

@@ -1043,16 +1043,17 @@ def render_matchup_slide(
         stats = None
         if nfl:
             team_code = str(nfl).upper()
+            if team_code == "WAS":
+                team_code = "WSH"
             game = None
 
             if team_game_lookup:
                 game = team_game_lookup.get(team_code)
             if game is None and team_schedule_lookup:
                 game = team_schedule_lookup.get(team_code)
-
             # normalized name (special-case Ken Walker)
             lookup_name = "ken walker" if name == "Kenneth Walker" else name
-
+            print(team_code, game)
             if game:
                 game_line = format_team_game_line(team_code, game, pos, side)
             stats = format_player_stats(
