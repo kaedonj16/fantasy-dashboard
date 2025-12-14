@@ -33,7 +33,8 @@ from dashboard_services.utils import load_teams_index, streak_class, build_teams
     load_players_index, \
     load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_weekly_cache_for_league, \
     build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
-    fetch_week_from_tank01, count_roster_positions, load_idp_index
+    fetch_week_from_tank01, count_roster_positions, load_idp_index, get_live_game_ids_for_today, \
+    build_and_save_week_stats_for_league, load_week_schedule
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -634,9 +635,10 @@ def refresh_league_ctx_section(league_id: str, page: str) -> dict:
 
     # ---------- Weekly projections, statuses, matchups ----------
     if page in ("weekly", "dashboard"):
-        print("about to call clear_weekly_cache_for_league", clear_weekly_cache_for_league)
         clear_weekly_cache_for_league(league_id)
         ctx["rosters"] = get_rosters(league_id)
+        live_game_ids = get_live_game_ids_for_today(load_week_schedule(current_season, current_week))
+        build_and_save_week_stats_for_league(load_teams_index(), current_season, current_week, live_game_ids)
 
         # make sure projections for current week are refreshed at the source
         get_week_projections_cached(

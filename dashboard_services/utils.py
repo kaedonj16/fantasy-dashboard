@@ -1583,9 +1583,9 @@ def build_and_save_week_stats_for_league(
 
         session = requests.Session()
 
+        print(f"[week_stats] fetching live Tank01 stats")
         for game_id in live_game_ids:
             try:
-                print(f"[week_stats] fetching live Tank01 stats for game {game_id}")
                 boxscore = fetch_tank_boxscore(game_id, session=session)
                 live_stats = build_live_stats_for_game_from_tank(boxscore, players_index)
                 merge_live_stats_into_league_week_stats(league_week_stats, live_stats)

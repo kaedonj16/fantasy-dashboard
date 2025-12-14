@@ -588,7 +588,7 @@ def format_player_stats(
         rtd = player_stats.get("rush_td", 0)
 
         if py:
-            parts.append(phrase(py, "pass yd", "pass yds"))
+            parts.append(phrase(py, "yd", "yds"))
         if ptd > 0:
             parts.append(phrase(ptd, "td", "tds"))
         if ints:
@@ -596,9 +596,9 @@ def format_player_stats(
         if ra:
             parts.append(phrase(ra, "car", "car"))
         if ry:
-            parts.append(phrase(ry, "rush yd", "rush yds"))
+            parts.append(phrase(ry, "yd", "yds"))
         if rtd > 0:
-            parts.append(phrase(rtd, "rush td", "rush tds"))
+            parts.append(phrase(rtd, "td", "tds"))
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
