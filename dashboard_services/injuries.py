@@ -6,8 +6,7 @@ from typing import Dict, List
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
-from .api import get_nfl_players
-from .players import build_roster_map, get_league_rostered_player_ids
+from .players import get_league_rostered_player_ids
 
 INJURY_STATUSES = {"IR", "OUT", "DOUBTFUL", "QUESTIONABLE", "PUP", "NFI", "SUSP"}
 INJURY_SHORT_STATUSES = {"Q", "D", "O", "IR"}
@@ -29,16 +28,19 @@ def build_player_news_url(name: str, nfl_team: str | None = None) -> str:
 
 def build_injury_report(
     league_id: str,
+    players: dict[str, dict[str, str]],
+    roster_map: dict[str, str],
+    rosters: dict[str, dict[str, str]],
     local_tz: str = "America/New_York",
     include_free_agents: bool = False,
+
 ) -> pd.DataFrame:
     """
     Build an injury table for the league:
       columns: Team, Player, Pos, NFL, Status, Injury, Body, Last Updated, NewsUrl
     """
-    players = get_nfl_players()
-    roster_map = build_roster_map(league_id)  # roster_id -> Team Name
-    rostered = get_league_rostered_player_ids(league_id)
+
+    rostered = get_league_rostered_player_ids(league_id, rosters)
 
     tz_local = ZoneInfo(local_tz)
     tz_utc = ZoneInfo("UTC")

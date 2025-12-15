@@ -15,13 +15,13 @@ from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
 from zoneinfo import ZoneInfo
 
 from dashboard_services.api import (
-    get_matchups,
     _avatar_url,
     get_nfl_state,
     avatar_from_users,
     get_transactions,
 )
 from dashboard_services.matchups import build_matchup_preview
+from dashboard_services.platform_api import get_matchups
 from dashboard_services.players import build_roster_display_maps
 from dashboard_services.styles import recap_css, tickerCss
 from dashboard_services.utils import safe_owner_name
@@ -79,13 +79,15 @@ def matchup_cards_last_week(
     players_map: dict,
     rosters: list,
     users: list,
+    platform: str,
+    season: str
 ) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
       top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to 3 ], ...}
     """
     last_week = int(df_weekly["week"].max())
-    raw = get_matchups(league_id, last_week) or []
+    raw = get_matchups(platform, league_id, last_week, season) or []
 
     # group rows per matchup_id
     by_mid: dict[Any, list] = defaultdict(list)
@@ -108,7 +110,7 @@ def matchup_cards_last_week(
             settings.get("losses", 0),
         )
         owner_id = r.get("owner_id")
-        avatar_by_rid[rid] = avatar_from_users(users, owner_id)
+        avatar_by_rid[rid] = avatar_from_users(platform, users, owner_id)
 
     buckets: dict[str, list] = defaultdict(list)
 
@@ -252,44 +254,14 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
     return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
 
 
-def render_week_recap_tab(
-    league_id: str,
-    df_weekly: pd.DataFrame,
-    roster_map: dict,
-    players_map: dict,
-    rosters: list,
-    users: list,
-) -> str:
-    """
-    Returns a single <div class='card' data-section='recap'> ... </div> block
-    that you can insert into your main page (no new page).
-    """
-    week, matchup_html, top_by_pos = matchup_cards_last_week(
-        league_id, df_weekly, roster_map, players_map, rosters, users
-    )
-
-    sidebar_html = render_top_three(top_by_pos)
-
-    return f"""
-    <div class="card recap" data-section="recap">
-      <div class="recap-grid">
-        <h2>Week {week} Recap</h2>
-        {matchup_html}
-      </div>
-    </div>
-    <div class="card potw" data-section="recap">
-          {sidebar_html}
-    </div>
-    {recap_css}
-    """
-
-
 def build_tables(
     league_id: str,
     max_week: int,
     players: dict,
     users: list[dict],
     rosters: list[dict],
+    season,
+    platform
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     """Fetch and process league data into DataFrames."""
 
@@ -313,7 +285,7 @@ def build_tables(
             owner_id, f"Roster {rid}"
         )
 
-    matchups_by_week = build_matchups_by_week(league_id, range(1, 18), roster_map, players)
+    matchups_by_week = build_matchups_by_week(league_id, range(1, 18), roster_map, players, season, platform)
 
     # precompute owner_avatar using user_by_id only (no extra scan over users)
     owner_avatar: dict[str, Union[str, None]] = {}
@@ -327,14 +299,14 @@ def build_tables(
         if user_data:
             user_meta = user_data.get("metadata") or {}
             u_id = user_data.get("avatar")
-            avatar_id = user_meta.get("avatar") or (f"https://sleepercdn.com/avatars/{u_id}" if u_id else None)
+            avatar_id = user_meta.get("avatar") or (f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
 
         owner_avatar[display] = _avatar_url(avatar_id)
 
     weekly_rows: list[dict] = []
     for week in range(1, max_week + 1):
         try:
-            week_data = get_matchups(league_id, week)
+            week_data = get_matchups(platform, league_id, week, season)
         except requests.HTTPError:
             break
         if not week_data:
@@ -579,7 +551,7 @@ def get_owner_id(
     return next((r["owner_id"] for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
 
 
-def build_matchups_by_week(league_id, weeks, roster_map, players_map):
+def build_matchups_by_week(league_id, weeks, roster_map, players_map, season, platform):
     by_week: dict[int, list] = {}
     for w in weeks:
         matchups = build_matchup_preview(
@@ -587,6 +559,8 @@ def build_matchups_by_week(league_id, weeks, roster_map, players_map):
             week=w,
             roster_map=roster_map,
             players_map=players_map,
+            season=season,
+            platform=platform
         )
         by_week[w] = matchups or []
     return by_week
@@ -654,6 +628,8 @@ def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[in
 
 def build_week_activity(
     league_id: str,
+    platform,
+    season,
     players_map: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> pd.DataFrame:
     """
@@ -668,9 +644,8 @@ def build_week_activity(
     # You can still change this to a dynamic list if needed
     season_weeks = list(range(1, 19))
 
-    roster_name, roster_avatar = build_roster_display_maps(league_id)
+    roster_name, roster_avatar = build_roster_display_maps(league_id, platform, season)
     tx_by_week = get_transactions_by_week(league_id, season_weeks) or {}
-
     rows: list[dict] = []
 
     # Fast path: no transactions at all
@@ -1410,18 +1385,21 @@ def render_teams_sidebar(teams: List[dict]) -> str:
             out.append("</div></div>")
             return "".join(out)
 
-        sections = [
-            render_player_list("Starters", t["starters"]),
-            render_player_list("Bench", t["bench"]),
-            render_player_list("Taxi", t["taxi"], extra_class="taxi"),
-        ]
+        sections = []
+        if t["starters"]:
+            sections.append(render_player_list("Starters", t["starters"]))
+        if t["bench"]:
+            sections.append(render_player_list("Bench", t["bench"]))
+        if t["taxi"]:
+            sections.append(render_player_list("Taxi", t["taxi"], extra_class="taxi"))
 
         picks = t.get("picks") or []
         picks_out: list[str] = []
-        picks_out.append("<div class='team-section'>")
-        picks_out.append("<div class='team-section-title'>Picks</div>")
-        picks_out.append("<div class='player-list picks-list'>")
-        if picks:
+        if t.get("picks"):
+            print(picks)
+            picks_out.append("<div class='team-section'>")
+            picks_out.append("<div class='team-section-title'>Picks</div>")
+            picks_out.append("<div class='player-list picks-list'>")
             for pk in picks:
                 season = pk.get("season", "")
                 rnd = pk.get("round", "")
@@ -1430,8 +1408,6 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                 picks_out.append(
                     f"<div class='pick-row'>{season} • Round {rnd}{via_txt}</div>"
                 )
-        else:
-            picks_out.append("<div class='player-row empty'>No picks</div>")
         picks_out.append("</div></div>")
 
         body_html = (

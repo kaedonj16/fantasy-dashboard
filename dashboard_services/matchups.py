@@ -6,13 +6,13 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from dashboard_services.api import (
+from dashboard_services.api import avatar_from_users, get_nfl_scores_for_date, build_team_game_lookup, \
+    get_league_settings
+from dashboard_services.platform_api import (
     get_matchups,
     get_users,
     get_rosters,
-    avatar_from_users,
-    get_nfl_scores_for_date,
-    build_team_game_lookup, get_league_settings, get_bracket,
+    get_bracket
 )
 from dashboard_services.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
 
@@ -30,22 +30,24 @@ def build_matchup_preview(
         week: int,
         roster_map: Dict[str, str],
         players_map: Dict[str, Dict[str, str]],
+        season: str,
+        platform: str
 ) -> List[dict]:
-    mlist = get_matchups(league_id, week) or []
+    mlist = get_matchups(platform, league_id, week, season) or []
     if not mlist:
         return []
 
     # Pre-fetch users/rosters once instead of per team
-    users = get_users(league_id) or []
-    rosters = get_rosters(league_id) or []
+    users = get_users(platform, league_id, season) or []
+    rosters = get_rosters(platform, league_id, season) or []
 
     # Pull league settings to find playoff start week
     settings = get_league_settings()
     playoff_week_start = int(settings.get("playoff_week_start") or 0)
 
     # Brackets
-    winners_bracket = get_bracket(league_id, "winners") or []
-    losers_bracket  = get_bracket(league_id, "losers") or []
+    winners_bracket = get_bracket(platform, league_id, "winners", season) or []
+    losers_bracket  = get_bracket(platform, league_id, "losers", season) or []
 
     # figure out league size from rosters / roster_map
     if rosters:
@@ -76,7 +78,7 @@ def build_matchup_preview(
 
     def get_avatar(owner_id: Optional[str]) -> Any:
         if owner_id not in avatar_cache:
-            avatar_cache[owner_id] = avatar_from_users(users, owner_id) if owner_id is not None else None
+            avatar_cache[owner_id] = avatar_from_users(platform, users, owner_id) if owner_id is not None else None
         return avatar_cache[owner_id]
 
     def _from_players_map(pid: str) -> Dict[str, str]:
@@ -533,6 +535,15 @@ def build_defense_rankings(teams_index: dict) -> dict:
 
     return rankings
 
+def has_any_stats(stats: Dict[str, Any]) -> bool:
+    """
+    Returns True if at least one numeric stat is non-zero.
+    """
+    for v in stats.values():
+        if isinstance(v, (int, float)) and v != 0:
+            return True
+    return False
+
 
 def format_player_stats(
         teams_stats: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]],
@@ -541,44 +552,104 @@ def format_player_stats(
         player: str,
 ) -> Optional[str]:
     """
-    Returns a compact stat line with no player name, e.g.:
-      "4 rec, 61 yds, 1 td"
-
-    For offensive positions (QB/RB/WR/TE) this behaves exactly as before.
-    For IDP, all defensive positions (DL/DE/DT/LB/DB/CB/S, etc.) are pulled
-    from the single "IDP" bucket per team in week_stats.
-
-    Drops any 0-value TD lines and skips empty lines.
+    Returns a compact stat line with no player name.
+    Supports: QB/RB/WR/TE, K (incl PK), IDP, and combined DEF/DST.
     """
-    # Map raw position -> bucket used in week_stats
     defensive_positions = {
-        "DL", "DE", "DT",      # line
+        "DL", "DE", "DT",
         "EDGE",
-        "LB", "ILB", "OLB",    # linebackers
-        "DB", "CB", "S", "FS", "SS",  # secondary
+        "LB", "ILB", "OLB",
+        "DB", "CB", "S", "FS", "SS",
     }
 
-    lookup_pos = "IDP" if pos in defensive_positions or pos == "IDP" else pos
+    pos_norm = (pos or "").strip().upper()
+
+    # ---------- helpers ----------
+    def phrase(v: int | float, singular: str, plural: str) -> str:
+        v_int = int(v)
+        return f"{v_int} {singular if v_int == 1 else plural}"
+
+    def first_key(d: Dict[str, Any], *keys: str, default: int | float = 0):
+        for k in keys:
+            if k in d and d.get(k) is not None:
+                return d.get(k)
+        return default
+
+    def sum_numeric_fields(objs: Dict[str, Any]) -> Dict[str, float]:
+        """
+        objs: {name_key: {stat: val, ...}, ...}
+        returns a single dict with all numeric stats summed.
+        """
+        combined: Dict[str, float] = {}
+        for _, st in (objs or {}).items():
+            if not isinstance(st, dict):
+                continue
+            for k, v in st.items():
+                if isinstance(v, (int, float)):
+                    combined[k] = combined.get(k, 0.0) + float(v)
+        return combined
+
+    def fmt_dst_line(combined: Dict[str, Any]) -> str:
+        parts: list[str] = []
+
+        # Common DST/defense keys across various feeds
+        sack = first_key(combined, "sack", "sacks", "def_sack", "def_sacks", "idp_sack", "idp_sacks", default=0)
+        ints = first_key(combined, "int", "ints", "def_int", "def_ints", "idp_int", default=0)
+        ff   = first_key(combined, "ff", "forced_fum", "forced_fumbles", "def_ff", "idp_ff", "idp_forced_fum", default=0)
+        fr   = first_key(combined, "fum_rec", "fumble_recovery", "fumble_recoveries", "def_fr", "idp_fum_rec", default=0)
+        td   = first_key(combined, "def_td", "dst_td", "td", "tds", "def_tds", "idp_td", default=0)
+
+        pa   = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
+        ya   = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
+
+        if sack: parts.append(phrase(sack, "sack", "sacks"))
+        if ints: parts.append(phrase(ints, "int", "ints"))
+        if ff:   parts.append(phrase(ff, "FF", "FF"))
+        if fr:   parts.append(phrase(fr, "FR", "FR"))
+        if td:   parts.append(phrase(td, "TD", "TD"))
+
+        # only show PA/YA if present (avoid spamming zeros)
+        if pa: parts.append(f"{int(pa)} PA")
+        if ya: parts.append(f"{int(ya)} YA")
+
+        return ", ".join(parts)
+
+    # ---------- pick lookup bucket ----------
+    if pos_norm == "PK":
+        lookup_pos = "K"
+    elif pos_norm in ("DEF", "DST", "D/ST"):
+        lookup_pos = "DEF"
+    else:
+        lookup_pos = "IDP" if pos_norm in defensive_positions or pos_norm == "IDP" else pos_norm
 
     team_data = teams_stats.get(team)
     if not team_data:
         return None
 
+    parts: list[str] = []
+
+    # ---------- DEF/DST combined branch ----------
+    if lookup_pos == "DEF":
+        if isinstance(team_data.get("IDP"), dict) and team_data.get("IDP"):
+            combined = sum_numeric_fields(team_data["IDP"])
+        else:
+            return None
+
+        if not has_any_stats(combined):
+            return None
+
+        return fmt_dst_line(combined)
+
+    # ---------- normal per-player lookup ----------
     pos_data = team_data.get(lookup_pos)
     if not pos_data:
         return None
 
     player_stats = pos_data.get(normalize_name(player))
-    if not player_stats:
+    if not player_stats or not has_any_stats(player_stats):
         return None
 
-    def phrase(v: int | float, singular: str, plural: str) -> str:
-        v_int = int(v)
-        return f"{v_int} {singular if v_int == 1 else plural}"
-
-    parts: list[str] = []
-
-    # ---------------- QB / RB / WR / TE (unchanged behavior) ----------------
+    # ---------------- QB / RB / WR / TE ----------------
     if lookup_pos == "QB":
         py = player_stats.get("pass_yds", 0)
         ptd = player_stats.get("pass_td", 0)
@@ -587,18 +658,12 @@ def format_player_stats(
         ry = player_stats.get("rush_yds", 0)
         rtd = player_stats.get("rush_td", 0)
 
-        if py:
-            parts.append(phrase(py, "yd", "yds"))
-        if ptd > 0:
-            parts.append(phrase(ptd, "td", "tds"))
-        if ints:
-            parts.append(phrase(ints, "int", "ints"))
-        if ra:
-            parts.append(phrase(ra, "car", "car"))
-        if ry:
-            parts.append(phrase(ry, "yd", "yds"))
-        if rtd > 0:
-            parts.append(phrase(rtd, "td", "tds"))
+        if py: parts.append(phrase(py, "yd", "yds"))
+        if ptd > 0: parts.append(phrase(ptd, "td", "tds"))
+        if ints: parts.append(phrase(ints, "int", "ints"))
+        if ra: parts.append(phrase(ra, "car", "car"))
+        if ry: parts.append(phrase(ry, "yd", "yds"))
+        if rtd > 0: parts.append(phrase(rtd, "td", "tds"))
 
     elif lookup_pos in {"RB", "WR", "TE"}:
         ra = player_stats.get("rush_att", 0)
@@ -608,86 +673,63 @@ def format_player_stats(
         rec_yds = player_stats.get("rec_yds", 0)
         rec_td = player_stats.get("rec_td", 0)
 
-        if rec:
-            parts.append(phrase(rec, "rec", "rec"))
-        if rec_yds:
-            parts.append(phrase(rec_yds, "yd", "yds"))
-        if rec_td > 0:
-            parts.append(phrase(rec_td, "td", "tds"))
+        if rec: parts.append(phrase(rec, "rec", "rec"))
+        if rec_yds: parts.append(phrase(rec_yds, "yd", "yds"))
+        if rec_td > 0: parts.append(phrase(rec_td, "td", "tds"))
 
-        if ra:
-            parts.append(phrase(ra, "car", "car"))
-        if ry:
-            parts.append(phrase(ry, "yd", "yds"))
-        if rtd > 0:
-            parts.append(phrase(rtd, "td", "tds"))
+        if ra: parts.append(phrase(ra, "car", "car"))
+        if ry: parts.append(phrase(ry, "yd", "yds"))
+        if rtd > 0: parts.append(phrase(rtd, "td", "tds"))
 
-    # ---------------- IDP branch (new) ----------------
+    # ---------------- K / PK ----------------
+    elif lookup_pos == "K":
+        fg_m = first_key(player_stats, "fgm", "fg_made", "field_goals_made", default=0)
+        fg_a = first_key(player_stats, "fga", "fg_att", "field_goals_attempted", default=0)
+        xp_m = first_key(player_stats, "xpm", "xp_made", "pat_made", "extra_points_made", default=0)
+        xp_a = first_key(player_stats, "xpa", "xp_att", "pat_att", "extra_points_attempted", default=0)
+        fg_long = first_key(player_stats, "fg_long", "fg_longest", "fg_lng", "lng", default=0)
+
+        if fg_a: parts.append(f"{int(fg_m)}/{int(fg_a)} FG")
+        elif fg_m: parts.append(phrase(fg_m, "FG", "FG"))
+
+        if xp_a: parts.append(f"{int(xp_m)}/{int(xp_a)} XP")
+        elif xp_m: parts.append(phrase(xp_m, "XP", "XP"))
+
+        if fg_long: parts.append(f"long {int(fg_long)}")
+
+    # ---------------- IDP ----------------
     elif lookup_pos == "IDP":
-        # Common Sleeper IDP fields from your example + typical ones
         tkl = player_stats.get("idp_tkl", 0)
         tkl_solo = player_stats.get("idp_tkl_solo", 0)
         tkl_ast = player_stats.get("idp_tkl_ast", 0)
         qb_hit = player_stats.get("idp_qb_hit", 0)
         ff = player_stats.get("idp_ff", 0) or player_stats.get("idp_forced_fum", 0)
-        sack = (
-            player_stats.get("idp_sack")
-            or player_stats.get("idp_sk")
-            or player_stats.get("idp_sacks")
-            or 0
-        )
+        sack = player_stats.get("idp_sack") or player_stats.get("idp_sk") or player_stats.get("idp_sacks") or 0
         int_def = player_stats.get("idp_int", 0)
         pd = player_stats.get("idp_pd", 0) or player_stats.get("idp_pass_def", 0)
 
-        # Tackles
         if tkl:
-            # total tackles line, e.g. "2 tkl"
             parts.append(phrase(tkl, "tkl", "tkl"))
-            # optional breakdown in parentheses " (1 solo, 1 ast)"
             breakdown_bits = []
-            if tkl_solo:
-                breakdown_bits.append(phrase(tkl_solo, "solo", "solo"))
-            if tkl_ast:
-                breakdown_bits.append(phrase(tkl_ast, "ast", "ast"))
+            if tkl_solo: breakdown_bits.append(phrase(tkl_solo, "solo", "solo"))
+            if tkl_ast: breakdown_bits.append(phrase(tkl_ast, "ast", "ast"))
             if breakdown_bits:
                 parts[-1] += f" ({', '.join(breakdown_bits)})"
 
-        # Sacks
-        if sack:
-            parts.append(phrase(sack, "sack", "sacks"))
+        if sack: parts.append(phrase(sack, "sack", "sacks"))
+        if ff: parts.append(phrase(ff, "FF", "FF"))
+        if qb_hit: parts.append(phrase(qb_hit, "QB hit", "QB hits"))
+        if int_def: parts.append(phrase(int_def, "int", "ints"))
+        if pd: parts.append(phrase(pd, "PD", "PD"))
 
-        # Forced fumbles
-        if ff:
-            parts.append(phrase(ff, "FF", "FF"))
-
-        # QB hits
-        if qb_hit:
-            parts.append(phrase(qb_hit, "QB hit", "QB hits"))
-
-        # Interceptions
-        if int_def:
-            parts.append(phrase(int_def, "int", "ints"))
-
-        # Passes defended
-        if pd:
-            parts.append(phrase(pd, "PD", "PD"))
-
-        # Fallback: if we somehow didn't pick anything but the dict has numbers,
-        # add a compact "key=value" dump to avoid returning "no stats".
-        if not parts:
-            for k, v in player_stats.items():
-                if isinstance(v, (int, float)) and v != 0:
-                    parts.append(f"{k}={int(v)}")
-
-    # ---------------- Other positions (unchanged generic behavior) ----------------
+    # ---------------- fallback ----------------
     else:
         for k, v in player_stats.items():
             if isinstance(v, int) and v != 0:
                 parts.append(f"{k}={v}")
 
     if not parts:
-        return "no stats"
-
+        return None
     return ", ".join(parts)
 
 
@@ -1053,12 +1095,12 @@ def render_matchup_slide(
                 game = team_schedule_lookup.get(team_code)
             # normalized name (special-case Ken Walker)
             lookup_name = "ken walker" if name == "Kenneth Walker" else name
-            print(team_code, game)
             if game:
                 game_line = format_team_game_line(team_code, game, pos, side)
+
             stats = format_player_stats(
                 week_stats,
-                team_code,
+                team_code if team_code != "WSH" else "WAS",
                 pos,
                 lookup_name,
             )

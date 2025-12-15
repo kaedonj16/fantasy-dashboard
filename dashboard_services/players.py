@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from .api import get_rosters, get_users, avatar_from_users
+from .api import avatar_from_users
+from .platform_api import get_users, get_rosters
 
 
 def _first(seq, default=None):
@@ -48,6 +49,8 @@ def get_players_map(data: dict | None = None) -> dict[str, dict[str, str]]:
 
 def build_roster_map(
     league_id: str,
+    platform: str,
+    season: str,
     users: Optional[list[dict]] = None,
     rosters: Optional[list[dict]] = None,
 ) -> Dict[str, str]:
@@ -55,9 +58,9 @@ def build_roster_map(
     roster_id -> display team name
     """
     if users is None:
-        users = get_users(league_id)
+        users = get_users(platform, league_id, season)
     if rosters is None:
-        rosters = get_rosters(league_id)
+        rosters = get_rosters(platform, league_id, season)
 
     # Precompute fallback names for all users
     user_fallback: Dict[str, str] = {}
@@ -83,11 +86,10 @@ def build_roster_map(
     return roster_map
 
 
-def get_league_rostered_player_ids(league_id: str) -> Dict[str, List[str]]:
+def get_league_rostered_player_ids(league_id: str, rosters) -> Dict[str, List[str]]:
     """
     roster_id -> [player_id, ...] including reserve.
     """
-    rosters = get_rosters(league_id) or []
     by_roster: Dict[str, List[str]] = {}
 
     for r in rosters:
@@ -100,14 +102,14 @@ def get_league_rostered_player_ids(league_id: str) -> Dict[str, List[str]]:
     return by_roster
 
 
-def build_roster_display_maps(league_id: str):
+def build_roster_display_maps(league_id: str, platform, season):
     """
     Returns:
       roster_name:   roster_id -> display name
       roster_avatar: roster_id -> avatar url or None
     """
-    users = get_users(league_id)
-    rosters = get_rosters(league_id)
+    users = get_users(platform, league_id, season)
+    rosters = get_rosters(platform, league_id, season)
 
     user_fallback: Dict[str, str] = {}
     for u in users:
@@ -131,6 +133,6 @@ def build_roster_display_maps(league_id: str):
 
         name = meta.get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
         roster_name[rid] = name
-        roster_avatar[rid] = avatar_from_users(users, owner_id)
+        roster_avatar[rid] = avatar_from_users(platform, users, owner_id)
 
     return roster_name, roster_avatar

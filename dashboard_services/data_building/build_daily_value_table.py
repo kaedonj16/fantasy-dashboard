@@ -20,7 +20,7 @@ def build_daily_data(season: int, week: int):
         scrape_all_vendor_values()
 
     if load_usage_table() is None or load_engine_table() is None:
-        write_usage_table_snapshot(2025, weeks=range(1, 19))
+        write_usage_table_snapshot(2025, weeks=range(week, 19))
         enrich_all_team_info(season)
         enrich_teams_index_with_rushing(Path(path_teams_index()))
         export_engine_values()

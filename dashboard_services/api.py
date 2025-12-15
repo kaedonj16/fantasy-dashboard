@@ -134,7 +134,7 @@ TANK01_HEADERS = _headers(TANK01_API_KEY)
 
 
 @ttl_cache(ttl=300)
-def avatar_from_users(users: list[dict], owner_id: Optional[str]) -> Optional[str]:
+def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> Optional[str]:
     if not owner_id:
         return None
     u = next((u for u in users if u.get("user_id") == owner_id), None)
@@ -146,7 +146,9 @@ def avatar_from_users(users: list[dict], owner_id: Optional[str]) -> Optional[st
     if avatar_meta:
         return avatar_meta
     if profile_id:
-        return f"https://sleepercdn.com/avatars/{profile_id}"
+        if platform == "sleeper":
+            return f"https://sleepercdn.com/avatars/{profile_id}"
+        return f"{profile_id}"
     return None
 
 

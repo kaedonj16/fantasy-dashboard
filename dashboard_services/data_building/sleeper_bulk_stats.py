@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
-from dashboard_services.utils import load_relevant_index
+from dashboard_services.utils import load_relevant_index, write_json, load_week_stats, read_json
 
 SLEEPER_BASE = "https://api.sleeper.app"
 SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your system
@@ -31,54 +31,49 @@ def _is_cache_fresh(path: str) -> bool:
     return (time.time() - mtime) <= WEEK_CACHE_TTL
 
 
-def fetch_week_stats(season: int, week: int, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
+def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
     """
-    Fetch stats for a single NFL week from Sleeper.
-
-    Uses a JSON file cache per (season, week).
-    If the cache is corrupt or not a list, it is ignored and overwritten.
+    Load stats for a single NFL week from the existing cache file.
+    If the file does not exist (or is unreadable / wrong shape), fetch from Sleeper and write it.
     """
-    cache_path = _week_cache_path(season, week)
+    cache_path = Path(_week_cache_path(season, week))
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1) Try cache
-    if not force_refresh and _is_cache_fresh(cache_path):
+    # 1) Load only (no cache selection logic)
+    if cache_path.exists():
         try:
-            with open(cache_path, "r") as f:
-                data = json.load(f)
-
+            data = read_json(str(cache_path))
             if isinstance(data, dict):
                 return data
-
-            print(f"[sleeper_bulk_stats] Cache for {season} wk{week} is not a dict, got {type(data)}. Refetching...")
+            print(f"[sleeper_bulk_stats] Existing file is not a dict ({type(data)}): {cache_path.name}. Refetching...")
         except json.JSONDecodeError as e:
-            print(f"[sleeper_bulk_stats] Corrupt JSON cache for {season} wk{week} at {cache_path}: {e}. Deleting...")
+            print(f"[sleeper_bulk_stats] Corrupt JSON at {cache_path.name}: {e}. Refetching...")
         except Exception as e:
-            print(f"[sleeper_bulk_stats] Error reading cache for {season} wk{week}: {e}. Refetching...")
+            print(f"[sleeper_bulk_stats] Error reading {cache_path.name}: {e}. Refetching...")
 
-        # If we get here, cache is bad → delete it so we can rewrite
+    stats_dir = Path(CACHE_DIR) / "sleeper_stats"
+    if not stats_dir.exists():
+        return
+
+    pattern = f"sleeper_stats_s{season}_w{week}_*.json"
+    for p in stats_dir.glob(pattern):
         try:
-            os.remove(cache_path)
-        except OSError:
+            p.unlink()
+        except Exception:
             pass
 
-    # 2) Fetch from Sleeper API
-    url = f"{SLEEPER_BASE}/v1/stats/nfl/regular/{season}/{week}"  # or the correct stats endpoint
-    resp = requests.get(url, params={"season": season}, timeout=20)
+    # 2) Fetch if missing / bad
+    url = f"{SLEEPER_BASE}/v1/stats/nfl/regular/{season}/{week}"
+    resp = requests.get(url, timeout=20)
     resp.raise_for_status()
     data = resp.json()
 
     if not isinstance(data, dict):
-        print(f"[sleeper_bulk_stats] WARNING: Sleeper returned non-dict for {season} wk{week}: {type(data)}")
-        # You can choose to return [] or wrap it; I'd do empty to avoid blowing up downstream
-        data = []
+        print(f"[sleeper_bulk_stats] WARNING: Sleeper returned non-dict ({type(data)}); using empty dict.")
+        data = {}
 
-    # 3) Save clean JSON to cache
-    try:
-        with open(cache_path, "w") as f:
-            json.dump(data, f)
-    except Exception as e:
-        print(f"[sleeper_bulk_stats] Failed to write cache for {season} wk{week} at {cache_path}: {e}")
-
+    # 3) Save and return
+    write_json(str(cache_path), data)
     return data
 
 
