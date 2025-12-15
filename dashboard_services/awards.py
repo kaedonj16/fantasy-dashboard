@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .api import get_matchups
+from .platform_api import get_matchups
 from .players import build_roster_map
 
 
@@ -51,6 +51,10 @@ def render_awards_section(awards: dict) -> str:
 
 def highest_single_game_points(league_id: str,
                                players_map: dict,
+                               platform: str,
+                               season,
+                               users,
+                               rosters,
                                weeks=range(1, 18),) -> dict:
     """
     Returns a dict for the single highest fantasy score by any NFL player in your league:
@@ -61,12 +65,12 @@ def highest_single_game_points(league_id: str,
     Set started_only=True to consider only players that were in starting lineups.
     """
     # You likely already have this helper; otherwise map roster_id -> "Team (Owner)"
-    roster_map = build_roster_map(league_id)
+    roster_map = build_roster_map(platform, league_id, season, users, rosters)
     best = ["", 0.0, "", "", "", ""]
 
 
     for w in range(1, weeks):
-        matchups = get_matchups(league_id, w) or []
+        matchups = get_matchups(platform, league_id, w, season) or []
         for row in matchups:
             rid = row.get("roster_id")
             owner = roster_map.get(str(rid), f"Roster {rid}")
@@ -95,7 +99,7 @@ def highest_single_game_points(league_id: str,
     return best
 
 
-def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id: str) -> dict:
+def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id: str, platform: str, season: str, users, rosters) -> dict:
     """
     Returns a dict with keys mapping to tuples of display-friendly values.
       highest_single_week: (team, week, points)
@@ -159,7 +163,7 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
             cons.append((t, float(pts.std(ddof=0)), int(len(pts))))
     d["most_consistent"] = min(cons, key=lambda x: x[1]) if cons else None
 
-    best_started = highest_single_game_points(league_id, players_map, 18)
+    best_started = highest_single_game_points(league_id, players_map, platform, season, users, rosters, 18)
     d["highest_player"] = best_started
 
     return d

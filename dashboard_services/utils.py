@@ -8,6 +8,7 @@ import pandas as pd
 import re
 import requests
 import time
+import traceback
 from bs4 import BeautifulSoup
 from collections import defaultdict, Counter
 from datetime import date, datetime, timezone
@@ -23,8 +24,6 @@ from dashboard_services.api import (
     get_nfl_state,
     get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
 )
-import traceback
-
 
 # ------------------------------------------------
 # Core paths / constants
@@ -1035,6 +1034,8 @@ def pinfo_for_pid(
     }
 
 
+from typing import List, Dict
+
 def build_teams_overview(
     rosters: List[dict],
     users_list: List[dict],
@@ -1042,16 +1043,102 @@ def build_teams_overview(
     players: Dict[str, dict],
     players_index: Dict[str, dict],
     teams_index: Dict[str, dict],
+    platform: str,
 ) -> List[dict]:
     teams_ctx: List[dict] = []
     users_by_id = {str(u["user_id"]): u for u in users_list}
+
+    def normalize_pos(pos: str) -> str:
+        p = (pos or "").strip().upper()
+        if p == "PK":
+            return "K"
+        if p in ("D/ST", "DST", "DEF"):
+            return "DEF"
+        return p
+
+    # Traditional ESPN-ish ordering target
+    SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
+    ORDER_RANK = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "FLEX": 4, "K": 5, "DEF": 6}
+
+    def is_flex(pos: str) -> bool:
+        return pos in ("RB", "WR", "TE")
+
+    def sort_starters_espn(starter_pids: List[str]) -> List[str]:
+        """
+        Reorders the given starter player IDs into:
+        QB, RB, RB, WR, WR, TE, FLEX, K, DEF (best-effort).
+        Extras get appended in a stable order.
+        """
+        # Build (pid, pos) list
+        enriched = []
+        for pid in starter_pids:
+            p = pinfo_for_pid(pid, players_index, teams_index, players) or {}
+            pos = normalize_pos(p.get("pos") or p.get("position") or "")
+            enriched.append((pid, pos))
+
+        # Buckets
+        buckets = {"QB": [], "RB": [], "WR": [], "TE": [], "K": [], "DEF": [], "OTHER": []}
+        for pid, pos in enriched:
+            if pos in buckets:
+                buckets[pos].append(pid)
+            else:
+                buckets["OTHER"].append(pid)
+
+        ordered: List[str] = []
+
+        # Fill fixed slots in the classic order
+        used = set()
+
+        def take(bucket_key: str) -> str | None:
+            arr = buckets.get(bucket_key, [])
+            while arr:
+                pid = arr.pop(0)
+                if pid not in used:
+                    used.add(pid)
+                    return pid
+            return None
+
+        def take_flex() -> str | None:
+            # Prefer RB/WR/TE in that order for FLEX (you can swap priority if you want)
+            for k in ("RB", "WR", "TE"):
+                pid = take(k)
+                if pid:
+                    return pid
+            return None
+
+        for slot in SLOT_ORDER:
+            if slot == "FLEX":
+                pid = take_flex()
+            else:
+                pid = take(slot)
+            if pid:
+                ordered.append(pid)
+
+        # Append any remaining starters (superflex, extra flex, IDP, etc.)
+        leftovers: List[str] = []
+        # remaining known buckets (in a sensible rank order)
+        for key in ("QB", "RB", "WR", "TE", "K", "DEF"):
+            for pid in buckets[key]:
+                if pid not in used:
+                    leftovers.append(pid)
+                    used.add(pid)
+        # others last
+        for pid in buckets["OTHER"]:
+            if pid not in used:
+                leftovers.append(pid)
+                used.add(pid)
+
+        # Keep stable relative ordering for anything we didn't consume
+        return ordered + leftovers
+
+    def enrich_list(pids: List[str]) -> List[dict]:
+        return [pinfo_for_pid(pid, players_index, teams_index, players) for pid in pids]
 
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = str(r.get("owner_id") or "")
         user = users_by_id.get(owner_id, {})
 
-        # record from roster.settings
         settings = r.get("settings", {}) or {}
         wins = int(settings.get("wins", 0))
         losses = int(settings.get("losses", 0))
@@ -1061,22 +1148,23 @@ def build_teams_overview(
             record += f"-{ties}"
 
         starters_pids = r.get("starters", []) or []
+        print(starters_pids)
         players_pids = r.get("players", []) or []
         ir_pids = r.get("reserve", []) or []
         taxi_pids = r.get("taxi", []) or []
+
+        # ESPN: re-sort starters into traditional layout
+        if (platform or "").lower().strip() == "espn":
+            starters_pids = sort_starters_espn(list(starters_pids))
 
         starter_set = set(starters_pids)
         ir_set = set(ir_pids)
         taxi_set = set(taxi_pids)
 
         bench_pids = [
-            pid
-            for pid in players_pids
+            pid for pid in players_pids
             if pid not in starter_set and pid not in ir_set and pid not in taxi_set
         ]
-
-        def enrich_list(pids: List[str]) -> List[dict]:
-            return [pinfo_for_pid(pid, players_index, teams_index, players) for pid in pids]
 
         teams_ctx.append({
             "roster_id": rid,
@@ -1095,6 +1183,7 @@ def build_teams_overview(
 
     teams_ctx.sort(key=lambda t: t["name"].lower())
     return teams_ctx
+
 
 
 def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
@@ -1433,117 +1522,156 @@ def get_live_game_ids_for_today(
 
     return live_ids if live_ids else []
 
+# expects these exist in your project (same pattern as IDP)
+# from dashboard_services.utils import load_idp_index, load_players_index
+# from dashboard_services.paths import CACHE_DIR
 
-def overlay_idp_stats_from_sleeper(
+def overlay_idp_and_k_stats_from_sleeper(
     league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
     season: int,
     week: int,
     teams_index: Dict[str, Dict[str, Any]],
 ) -> None:
     """
-    Mutates league_week_stats in place by adding IDP stats from Sleeper.
+    Mutates league_week_stats in place by adding:
+      - IDP stats under:  league_week_stats[TEAM]["IDP"][name_lower] = {...}
+      - K stats under:    league_week_stats[TEAM]["K"][name_lower]   = {...}
 
     Uses:
-      - idp_players_index.json (sleeperId -> {name, team, pos, ...})
+      - idp_players_index.json  (sleeperId -> {name, team, pos})
+      - players_index.json (or similar) for kickers (sleeperId -> {name, team, pos})
       - sleeper_stats_s{season}_w{week}_*.json (sleeperId -> stat dict)
-
-    Resulting structure matches existing week_stats:
-      league_week_stats[team_abv][pos][player_name_lower] = { ...idp_stats... }
     """
-    # ----- Load IDP player index -----
+
+    # ----- Load IDP index -----
     idp_index = load_idp_index()
     if not isinstance(idp_index, dict):
-        print("[week_stats][IDP] idp_players_index.json is not a dict, skipping.")
+        print("[week_stats][IDP/K] idp_players_index.json is not a dict, skipping.")
         return
+
+    # ----- Load main player index for kickers -----
+    # If you already have a canonical "players_index" loader, use that.
+    players_index = load_players_index()
+    if not isinstance(players_index, dict):
+        players_index = {}
+        print("[week_stats][IDP/K] players_index not available; kicker overlay may be skipped.")
 
     # ----- Find the Sleeper stats file for this season/week -----
     pattern = CACHE_DIR / f"sleeper_stats/sleeper_stats_s{season}_w{week}_*.json"
     candidates = sorted(glob.glob(str(pattern)))
     if not candidates:
-        # fallback: maybe no date suffix
         fallback = CACHE_DIR / f"sleeper_stats_s{season}_w{week}.json"
         if fallback.exists():
             candidates = [str(fallback)]
         else:
-            print(f"[week_stats][IDP] No sleeper stats file matching {pattern} or {fallback}")
+            print(f"[week_stats][IDP/K] No sleeper stats file matching {pattern} or {fallback}")
             return
 
-    sleeper_stats_path = Path(candidates[-1])  # latest match
-    print(f"[week_stats][IDP] Using Sleeper stats file: {sleeper_stats_path.name}")
+    sleeper_stats_path = Path(candidates[-1])
+    print(f"[week_stats][IDP/K] Using Sleeper stats file: {sleeper_stats_path.name}")
 
     try:
         with sleeper_stats_path.open("r", encoding="utf-8") as f:
             sleeper_stats = json.load(f)
     except Exception as e:
-        print(f"[week_stats][IDP] Failed to load {sleeper_stats_path}: {e}")
+        print(f"[week_stats][IDP/K] Failed to load {sleeper_stats_path}: {e}")
         return
 
     if not isinstance(sleeper_stats, dict):
-        print("[week_stats][IDP] Sleeper stats JSON not a dict, skipping.")
+        print("[week_stats][IDP/K] Sleeper stats JSON not a dict, skipping.")
         return
 
-    # ----- Build a small mapping to handle WSH/WAS, and validate teams -----
     valid_teams = set(teams_index.keys())
-    # normalize WSH → WAS in the stats structure
+
     def normalize_team_abv(abv: str) -> str:
-        if abv == "WSH":
-            return "WAS"
+        abv = (abv or "").strip().upper()
         return abv
 
-    # ----- Walk through each Sleeper IDP in the stats -----
-    IDP_BUCKET = "IDP"
-    added_count = 0
-
-    # ----- Walk through each Sleeper IDP in the stats -----
-    for sleeper_id, raw_stats in sleeper_stats.items():
-        meta = idp_index.get(str(sleeper_id))
-        if not meta:
-            continue  # not an IDP or not in index
-
-        name = (meta.get("name") or "").strip()
-        team_abv = (meta.get("team") or "").strip().upper()
-        pos = (meta.get("pos") or "").strip().upper()  # DB/DL/LB
-
-        if not name or not team_abv:
-            continue
-
-        team_abv = normalize_team_abv(team_abv)
-        if team_abv not in valid_teams:
-            # Team not known in teams_index; skip to avoid junk keys
-            continue
-
-        name_key = name.lower()
-
-        # Clean stats: keep numeric values
+    def clean_numeric_stats(raw_stats: Any) -> Dict[str, float]:
         if not isinstance(raw_stats, dict):
-            continue
-
-        stats_clean: Dict[str, float | str] = {}
+            return {}
+        out: Dict[str, float] = {}
         for k, v in raw_stats.items():
             if isinstance(v, (int, float)):
-                stats_clean[k] = float(v)
+                out[k] = float(v)
+        return out
 
+    IDP_BUCKET = "IDP"
+    K_BUCKET = "K"
+
+    idp_added = 0
+    k_added = 0
+
+    for sleeper_id, raw_stats in sleeper_stats.items():
+        stats_clean = clean_numeric_stats(raw_stats)
         if not stats_clean:
             continue
 
-        # Optionally keep their defensive position inside the stat blob
-        stats_clean.setdefault("pos", pos)
+        sid = str(sleeper_id)
 
-        # Ensure team bucket exists
+        # --------------------
+        # IDP overlay
+        # --------------------
+        meta_idp = idp_index.get(sid)
+        if meta_idp:
+            name = (meta_idp.get("name") or "").strip()
+            team_abv = normalize_team_abv(meta_idp.get("team") or "")
+            pos = (meta_idp.get("pos") or "").strip().upper()  # DB/DL/LB
+
+            if name and team_abv in valid_teams:
+                name_key = name.lower()
+                stats_clean_idp = dict(stats_clean)
+                stats_clean_idp.setdefault("pos", pos)
+
+                team_bucket = league_week_stats.setdefault(team_abv, {})
+                idp_bucket = team_bucket.setdefault(IDP_BUCKET, {})
+
+                existing = idp_bucket.get(name_key, {})
+                if isinstance(existing, dict):
+                    existing.update(stats_clean_idp)
+                    idp_bucket[name_key] = existing
+                else:
+                    idp_bucket[name_key] = stats_clean_idp
+
+                idp_added += 1
+
+            # IMPORTANT: if it’s IDP, don’t also treat as kicker
+            continue
+
+        # --------------------
+        # K overlay (from players_index)
+        # --------------------
+        meta_p = players_index.get(sid)
+        if not meta_p:
+            continue
+
+        pos = (meta_p.get("pos") or "").strip().upper()
+        if pos != "PK":
+            continue
+
+        name = (meta_p.get("name") or "").strip()
+        team_abv = normalize_team_abv(meta_p.get("team") or "")
+        if not name or team_abv not in valid_teams:
+            continue
+
+        name_key = name.lower()
+        stats_clean_k = dict(stats_clean)
+        stats_clean_k.setdefault("pos", "PK")
+
         team_bucket = league_week_stats.setdefault(team_abv, {})
-        # Put ALL defensive players under "IDP"
-        idp_bucket = team_bucket.setdefault(IDP_BUCKET, {})
+        k_bucket = team_bucket.setdefault(K_BUCKET, {})
 
-        existing = idp_bucket.get(name_key, {})
+        existing = k_bucket.get(name_key, {})
         if isinstance(existing, dict):
-            existing.update(stats_clean)
-            idp_bucket[name_key] = existing
+            existing.update(stats_clean_k)
+            k_bucket[name_key] = existing
         else:
-            idp_bucket[name_key] = stats_clean
+            k_bucket[name_key] = stats_clean_k
 
-        added_count += 1
+        k_added += 1
 
-    print(f"[week_stats][IDP] Added/updated {added_count} IDP stat lines.")
+    print(f"[week_stats][IDP/K] Added/updated {idp_added} IDP stat lines.")
+    print(f"[week_stats][IDP/K] Added/updated {k_added} K stat lines.")
 
 
 def build_and_save_week_stats_for_league(
@@ -1593,7 +1721,7 @@ def build_and_save_week_stats_for_league(
                 print(f"[week_stats] Tank01 error for {game_id}: {e}")
 
     # ---------- Overlay IDP stats from Sleeper ----------
-    overlay_idp_stats_from_sleeper(
+    overlay_idp_and_k_stats_from_sleeper(
         league_week_stats=league_week_stats,
         season=season,
         week=week,
