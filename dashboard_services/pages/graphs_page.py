@@ -315,7 +315,7 @@ def build_graphs_body(ctx: dict) -> str:
 
     # ---------- Main layout ----------
     main_html = f"""
-      <div class="page-layout">
+      <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
 

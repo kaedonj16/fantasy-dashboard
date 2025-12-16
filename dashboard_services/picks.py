@@ -61,12 +61,12 @@ def _bucket_for_pick_in_round(pos_in_round: int, picks_per_round: int = 10) -> s
 
 
 def load_pick_value_table(
-    fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
-    dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
-    picks_per_round: int = 10,
-    w_fc: float = 0.55,
-    w_dp: float = 0.45,
-    current_year: int | None = None,
+        fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
+        dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
+        picks_per_round: int = 10,
+        w_fc: float = 0.55,
+        w_dp: float = 0.45,
+        current_year: int | None = None,
 ) -> Dict[str, float]:
     """
     Build a draft pick value table by merging FantasyCalc + DynastyProcess.
@@ -172,7 +172,7 @@ def load_pick_value_table(
                 try:
                     year = int(m.group("year"))
                     # NOTE: this follows the original logic; no functional change.
-                    rnd = int(m.group("round"))           # type: ignore[arg-type]
+                    rnd = int(m.group("round"))  # type: ignore[arg-type]
                     pos_in_round = int(m.group("pos_in_round"))
                     raw_val = float(getattr(row, value_col))
                 except Exception:

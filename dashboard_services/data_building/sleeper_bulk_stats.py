@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
-from dashboard_services.utils import load_relevant_index, write_json, load_week_stats, read_json
+from dashboard_services.utils import load_relevant_index, write_json, read_json
 
 SLEEPER_BASE = "https://api.sleeper.app"
 SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your system
@@ -21,7 +21,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def _week_cache_path(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR,  f"sleeper_stats/sleeper_stats_s{season}_w{week}_{date.today().isoformat()}.json")
+    return os.path.join(CACHE_DIR, f"sleeper_stats/sleeper_stats_s{season}_w{week}_{date.today().isoformat()}.json")
 
 
 def _is_cache_fresh(path: str) -> bool:
@@ -90,6 +90,7 @@ def fetch_season_stats(season: int, weeks: List[int]) -> Dict[int, List[Dict[str
 
 
 MAX_WORKERS = 12  # tune this if you hit rate limits
+
 
 def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
     """

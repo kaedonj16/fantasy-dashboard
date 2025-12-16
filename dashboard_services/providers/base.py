@@ -23,9 +23,9 @@ class UserInfo:
 class RosterInfo:
     roster_id: str
     owner_id: Optional[str]
-    players: List[str]      # canonical player ids (your app’s ids)
-    starters: List[str]     # canonical
-    reserve: List[str]      # canonical
+    players: List[str]  # canonical player ids (your app’s ids)
+    starters: List[str]  # canonical
+    reserve: List[str]  # canonical
     metadata: Dict[str, Any]
     settings: Dict[str, Any]
 
@@ -35,14 +35,17 @@ class MatchupRow:
     matchup_id: int
     roster_id: str
     points: float
-    players: List[str]                 # canonical ids
-    starters: List[str]                # canonical ids
+    players: List[str]  # canonical ids
+    starters: List[str]  # canonical ids
     starters_points: List[float]
-    players_points: Dict[str, float]   # canonical id -> pts
+    players_points: Dict[str, float]  # canonical id -> pts
 
 
 class Provider(Protocol):
     def get_league(self, league_id: str, season: int) -> LeagueInfo: ...
+
     def get_users(self, league_id: str, season: int) -> List[UserInfo]: ...
+
     def get_rosters(self, league_id: str, season: int) -> List[RosterInfo]: ...
+
     def get_matchups(self, league_id: str, season: int, week: int) -> List[MatchupRow]: ...

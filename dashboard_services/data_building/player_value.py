@@ -95,10 +95,10 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         # scaled formula (empirically tuned)
         # NOTE: INTs are a penalty (negative contribution)
         score = (
-            (yds / 300.0) * 0.50 +
-            (tds / 3.5) * 0.60 -
-            (ints / 2.5) * 0.20 +
-            (ppg / 30.0) * 0.50
+                (yds / 300.0) * 0.50 +
+                (tds / 3.5) * 0.60 -
+                (ints / 2.5) * 0.20 +
+                (ppg / 30.0) * 0.50
         )
 
         return max(0.0, min(1.0, score))
@@ -110,10 +110,10 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         recs = float(u.get("avg_receptions", 0) or 0)
 
         score = (
-            (carries / 18.0) * 0.40 +
-            (yds / 90.0) * 0.40 +
-            (recs / 4.0) * 0.20 +
-            (ppg / 25.0) * 0.50
+                (carries / 18.0) * 0.40 +
+                (yds / 90.0) * 0.40 +
+                (recs / 4.0) * 0.20 +
+                (ppg / 25.0) * 0.50
         )
         return max(0.0, min(1.0, score))
 
@@ -124,10 +124,10 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         yds = float(u.get("avg_rec_yards", 0) or 0)
 
         score = (
-            (tgt / 11.0) * 0.45 +
-            (rec / 7.0) * 0.30 +
-            (yds / 90.0) * 0.40 +
-            (ppg / 22.0) * 0.50
+                (tgt / 11.0) * 0.45 +
+                (rec / 7.0) * 0.30 +
+                (yds / 90.0) * 0.40 +
+                (ppg / 22.0) * 0.50
         )
         return max(0.0, min(1.0, score))
 
@@ -137,9 +137,9 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         yds = float(u.get("avg_rec_yards", 0) or 0)
 
         score = (
-            (tgt / 9.0) * 0.30 +
-            (yds / 75.0) * 0.25 +
-            (ppg / 19.5) * 0.35  # TE scoring deflated
+                (tgt / 9.0) * 0.30 +
+                (yds / 75.0) * 0.25 +
+                (ppg / 19.5) * 0.35  # TE scoring deflated
         )
         return max(0.0, min(1.0, score))
 
@@ -339,9 +339,9 @@ def build_value_table_for_usage() -> Dict[str, float]:
         w_ppg, w_age, w_rz = POS_WEIGHTS[pos]
 
         pos_scores[pid] = (
-            w_ppg * ppg_norm +
-            w_age * age_curve +
-            w_rz * rz_norm
+                w_ppg * ppg_norm +
+                w_age * age_curve +
+                w_rz * rz_norm
         )
 
     # ----------------------------------------

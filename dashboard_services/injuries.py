@@ -27,12 +27,12 @@ def build_player_news_url(name: str, nfl_team: str | None = None) -> str:
 
 
 def build_injury_report(
-    league_id: str,
-    players: dict[str, dict[str, str]],
-    roster_map: dict[str, str],
-    rosters: dict[str, dict[str, str]],
-    local_tz: str = "America/New_York",
-    include_free_agents: bool = False,
+        league_id: str,
+        players: dict[str, dict[str, str]],
+        roster_map: dict[str, str],
+        rosters: dict[str, dict[str, str]],
+        local_tz: str = "America/New_York",
+        include_free_agents: bool = False,
 
 ) -> pd.DataFrame:
     """
@@ -73,8 +73,8 @@ def build_injury_report(
         pos = p.get("position") or fantasy_positions[0] or ""
         nfl_team = p.get("team") or "FA"
 
-        status = p.get("status") or ""           # e.g., Active, IR, Out, Questionable
-        inj = p.get("injury_status") or ""       # e.g., Out, Questionable
+        status = p.get("status") or ""  # e.g., Active, IR, Out, Questionable
+        inj = p.get("injury_status") or ""  # e.g., Out, Questionable
         body = p.get("injury_body_part") or ""
         news_url = build_player_news_url(name, nfl_team)
 

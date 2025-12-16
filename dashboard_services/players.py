@@ -48,11 +48,11 @@ def get_players_map(data: dict | None = None) -> dict[str, dict[str, str]]:
 
 
 def build_roster_map(
-    league_id: str,
-    platform: str,
-    season: str,
-    users: Optional[list[dict]] = None,
-    rosters: Optional[list[dict]] = None,
+        league_id: str,
+        platform: str,
+        season: str,
+        users: Optional[list[dict]] = None,
+        rosters: Optional[list[dict]] = None,
 ) -> Dict[str, str]:
     """
     roster_id -> display team name
@@ -68,10 +68,10 @@ def build_roster_map(
         uid = u["user_id"]
         meta = u.get("metadata") or {}
         name = (
-            meta.get("team_name")
-            or u.get("display_name")
-            or u.get("username")
-            or str(uid)
+                meta.get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or str(uid)
         )
         user_fallback[uid] = name
 
@@ -116,10 +116,10 @@ def build_roster_display_maps(league_id: str, platform, season):
         uid = u["user_id"]
         meta = u.get("metadata") or {}
         name = (
-            meta.get("team_name")
-            or u.get("display_name")
-            or u.get("username")
-            or str(uid)
+                meta.get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or str(uid)
         )
         user_fallback[uid] = name
 

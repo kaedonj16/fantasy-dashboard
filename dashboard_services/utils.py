@@ -294,9 +294,9 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 # ------------------------------------------------
 
 def cache_tank01_sleeper_index(
-    rapidapi_key: str,
-    cache_path: Path = CACHE_DIR / "players_index.json",
-    force_refresh: bool = False,
+        rapidapi_key: str,
+        cache_path: Path = CACHE_DIR / "players_index.json",
+        force_refresh: bool = False,
 ) -> Dict[str, dict]:
     """
     Returns { sleeperbotid(str): { 'name': str, 'team': str, 'tankId': str } }
@@ -318,10 +318,10 @@ def cache_tank01_sleeper_index(
     for p in players:
         # Try multiple key variants Tank01 may use
         sleeper = (
-            p.get("sleeperBotID")
-            or p.get("sleeperId")
-            or p.get("sleeper_id")
-            or p.get("sleeperid")
+                p.get("sleeperBotID")
+                or p.get("sleeperId")
+                or p.get("sleeper_id")
+                or p.get("sleeperid")
         )
         if not sleeper:  # skip if no Sleeper id available
             continue
@@ -342,10 +342,10 @@ def cache_tank01_sleeper_index(
 
 
 def get_week_projections_cached(
-    season: int,
-    week: int,
-    fetch_fn: Callable[[int, int], Dict[str, float]],
-    force_refresh: bool = False,
+        season: int,
+        week: int,
+        fetch_fn: Callable[[int, int], Dict[str, float]],
+        force_refresh: bool = False,
 ) -> Dict[str, float]:
     """
     fetch_fn should call Tank01 /getNFLProjections and return:
@@ -425,10 +425,10 @@ def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
 
 
 def get_week_schedule_cached(
-    season: int,
-    week: int,
-    fetch_fn: Callable[[int, int, str], List[Dict]],
-    season_type: str = "reg",
+        season: int,
+        week: int,
+        fetch_fn: Callable[[int, int, str], List[Dict]],
+        season_type: str = "reg",
 ) -> List[Dict]:
     """
     fetch_fn should call Tank01 /getNFLSchedule (or your schedule endpoint)
@@ -603,8 +603,8 @@ def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
 
 
 def map_weekly_projections_to_sleeper(
-    weekly_rows: List[dict],
-    idx_sleeper: Dict[str, dict],
+        weekly_rows: List[dict],
+        idx_sleeper: Dict[str, dict],
 ) -> Dict[str, float]:
     """
     Convert Tank01 rows -> { sleeper_id: projected_points }.
@@ -707,10 +707,10 @@ def byes_for_season(payload: dict, season: int) -> dict[str, Optional[int]]:
 
 
 def cache_tank01_teams_index(
-    rapidapi_key: str,
-    season: int,
-    cache_path: Path,
-    force_refresh: bool = False,
+        rapidapi_key: str,
+        season: int,
+        cache_path: Path,
+        force_refresh: bool = False,
 ) -> Dict[str, dict]:
     """
     Builds and caches:
@@ -754,8 +754,9 @@ def cache_tank01_teams_index(
 # Game / player status for a given week
 # ------------------------------------------------
 
-BEFORE_WINDOW = 5 * 60        # 5 minutes
+BEFORE_WINDOW = 5 * 60  # 5 minutes
 IN_WINDOW = 3 * 60 * 60
+
 
 def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -> str:
     """
@@ -836,11 +837,11 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
 
 
 def build_status_by_pid(
-    players_info: dict[str, dict],
-    games_by_team: dict[str, dict],
-    teams_index: dict[str, dict],
-    current_week: int,
-    idp_players_info: Optional[dict[str, dict]] = None,
+        players_info: dict[str, dict],
+        games_by_team: dict[str, dict],
+        teams_index: dict[str, dict],
+        current_week: int,
+        idp_players_info: Optional[dict[str, dict]] = None,
 ) -> dict[str, str]:
     """
     players_info:     { pid: { 'team': 'NYJ', ... }, ... }  # offensive / regular players
@@ -916,10 +917,10 @@ def build_status_by_pid(
 
 
 def build_matchup_player(
-    pid: str,
-    proj_map: dict[str, float],
-    actual_map: dict[str, float],
-    status_by_pid: dict[str, str],
+        pid: str,
+        proj_map: dict[str, float],
+        actual_map: dict[str, float],
+        status_by_pid: dict[str, str],
 ) -> dict:
     base = _from_players_map(pid)  # existing helper in your codebase
     # base has: name, pos, nfl, etc.
@@ -937,15 +938,16 @@ def build_matchup_player(
 
 
 def build_status_for_week(
-    season: int,
-    week: int,
-    players_index: dict[str, dict],
-    teams_index: dict[str, dict],
-    idp_player_index: dict[str, dict] = None,
+        season: int,
+        week: int,
+        players_index: dict[str, dict],
+        teams_index: dict[str, dict],
+        idp_player_index: dict[str, dict] = None,
 ) -> dict[str, str]:
     games = get_nfl_games_for_week(week, season)
     games_by_team = build_games_by_team(games)
-    return build_status_by_pid(players_index, games_by_team, teams_index, week, idp_player_index if idp_player_index else None)
+    return build_status_by_pid(players_index, games_by_team, teams_index, week,
+                               idp_player_index if idp_player_index else None)
 
 
 def decorate_player_display(player: dict) -> dict:
@@ -985,9 +987,9 @@ def decorate_player_display(player: dict) -> dict:
 
 
 def get_nfl_games_for_week(
-    week: int,
-    season: int,
-    season_type: str = "reg",
+        week: int,
+        season: int,
+        season_type: str = "reg",
 ) -> list[dict]:
     return get_week_schedule_cached(
         season=season,
@@ -998,10 +1000,10 @@ def get_nfl_games_for_week(
 
 
 def pinfo_for_pid(
-    pid: str,
-    players_index: dict[str, dict],
-    teams_index: dict[str, dict],
-    players: dict[str, dict],
+        pid: str,
+        players_index: dict[str, dict],
+        teams_index: dict[str, dict],
+        players: dict[str, dict],
 ) -> dict:
     """
     Build a display object for a player or DEF using:
@@ -1036,14 +1038,15 @@ def pinfo_for_pid(
 
 from typing import List, Dict
 
+
 def build_teams_overview(
-    rosters: List[dict],
-    users_list: List[dict],
-    picks_by_roster: Dict[str, List[dict]],
-    players: Dict[str, dict],
-    players_index: Dict[str, dict],
-    teams_index: Dict[str, dict],
-    platform: str,
+        rosters: List[dict],
+        users_list: List[dict],
+        picks_by_roster: Dict[str, List[dict]],
+        players: Dict[str, dict],
+        players_index: Dict[str, dict],
+        teams_index: Dict[str, dict],
+        platform: str,
 ) -> List[dict]:
     teams_ctx: List[dict] = []
     users_by_id = {str(u["user_id"]): u for u in users_list}
@@ -1148,7 +1151,6 @@ def build_teams_overview(
             record += f"-{ties}"
 
         starters_pids = r.get("starters", []) or []
-        print(starters_pids)
         players_pids = r.get("players", []) or []
         ir_pids = r.get("reserve", []) or []
         taxi_pids = r.get("taxi", []) or []
@@ -1183,7 +1185,6 @@ def build_teams_overview(
 
     teams_ctx.sort(key=lambda t: t["name"].lower())
     return teams_ctx
-
 
 
 def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
@@ -1392,8 +1393,8 @@ def _normalize_dst_stats(team_block: Dict[str, Any]) -> Dict[str, int]:
 
 
 def build_live_stats_for_game_from_tank(
-    boxscore: dict,
-    players_index: dict,
+        boxscore: dict,
+        players_index: dict,
 ) -> dict:
     """
     Returns:
@@ -1458,9 +1459,10 @@ def build_live_stats_for_game_from_tank(
 
     return out
 
+
 def merge_live_stats_into_league_week_stats(
-    league_week_stats: dict,
-    live_stats: dict,
+        league_week_stats: dict,
+        live_stats: dict,
 ) -> None:
     """
     Mutates league_week_stats in-place, overwriting or adding stats
@@ -1479,8 +1481,8 @@ def merge_live_stats_into_league_week_stats(
 
 
 def get_live_game_ids_for_today(
-    schedule: Iterable[Dict[str, Any]],
-    today: date | None = None,
+        schedule: Iterable[Dict[str, Any]],
+        today: date | None = None,
 ) -> List[str]:
     """
     Return Tank01 gameIDs for games:
@@ -1522,25 +1524,23 @@ def get_live_game_ids_for_today(
 
     return live_ids if live_ids else []
 
+
 # expects these exist in your project (same pattern as IDP)
 # from dashboard_services.utils import load_idp_index, load_players_index
 # from dashboard_services.paths import CACHE_DIR
 
 def overlay_idp_and_k_stats_from_sleeper(
-    league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
-    season: int,
-    week: int,
-    teams_index: Dict[str, Dict[str, Any]],
+        league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
+        season: int,
+        week: int,
+        teams_index: Dict[str, Dict[str, Any]],
 ) -> None:
     """
     Mutates league_week_stats in place by adding:
       - IDP stats under:  league_week_stats[TEAM]["IDP"][name_lower] = {...}
       - K stats under:    league_week_stats[TEAM]["K"][name_lower]   = {...}
 
-    Uses:
-      - idp_players_index.json  (sleeperId -> {name, team, pos})
-      - players_index.json (or similar) for kickers (sleeperId -> {name, team, pos})
-      - sleeper_stats_s{season}_w{week}_*.json (sleeperId -> stat dict)
+    Normalizes team abbreviations (e.g., WSH -> WAS) so keys match teams_index.
     """
 
     # ----- Load IDP index -----
@@ -1550,7 +1550,6 @@ def overlay_idp_and_k_stats_from_sleeper(
         return
 
     # ----- Load main player index for kickers -----
-    # If you already have a canonical "players_index" loader, use that.
     players_index = load_players_index()
     if not isinstance(players_index, dict):
         players_index = {}
@@ -1581,10 +1580,25 @@ def overlay_idp_and_k_stats_from_sleeper(
         print("[week_stats][IDP/K] Sleeper stats JSON not a dict, skipping.")
         return
 
-    valid_teams = set(teams_index.keys())
+    valid_teams = set((teams_index or {}).keys())
+
+    # --- Team normalization (WSH -> WAS, etc.) ---
+    TEAM_ALIASES = {
+        "WSH": "WAS",
+        # add more if you find them later
+        # "JAX": "JAC",
+        # "LA": "LAR",
+    }
 
     def normalize_team_abv(abv: str) -> str:
         abv = (abv or "").strip().upper()
+        abv = TEAM_ALIASES.get(abv, abv)
+
+        # If teams_index uses the opposite code (rare), still land on a valid key
+        if abv and abv not in valid_teams:
+            for k, v in TEAM_ALIASES.items():
+                if v == abv and k in valid_teams:
+                    return k
         return abv
 
     def clean_numeric_stats(raw_stats: Any) -> Dict[str, float]:
@@ -1618,22 +1632,26 @@ def overlay_idp_and_k_stats_from_sleeper(
             team_abv = normalize_team_abv(meta_idp.get("team") or "")
             pos = (meta_idp.get("pos") or "").strip().upper()  # DB/DL/LB
 
-            if name and team_abv in valid_teams:
-                name_key = name.lower()
-                stats_clean_idp = dict(stats_clean)
-                stats_clean_idp.setdefault("pos", pos)
+            if not name or not team_abv:
+                continue
+            if valid_teams and team_abv not in valid_teams:
+                continue
 
-                team_bucket = league_week_stats.setdefault(team_abv, {})
-                idp_bucket = team_bucket.setdefault(IDP_BUCKET, {})
+            name_key = name.lower()
+            stats_clean_idp = dict(stats_clean)
+            stats_clean_idp.setdefault("pos", pos)
 
-                existing = idp_bucket.get(name_key, {})
-                if isinstance(existing, dict):
-                    existing.update(stats_clean_idp)
-                    idp_bucket[name_key] = existing
-                else:
-                    idp_bucket[name_key] = stats_clean_idp
+            team_bucket = league_week_stats.setdefault(team_abv, {})
+            idp_bucket = team_bucket.setdefault(IDP_BUCKET, {})
 
-                idp_added += 1
+            existing = idp_bucket.get(name_key, {})
+            if isinstance(existing, dict):
+                existing.update(stats_clean_idp)
+                idp_bucket[name_key] = existing
+            else:
+                idp_bucket[name_key] = stats_clean_idp
+
+            idp_added += 1
 
             # IMPORTANT: if it’s IDP, don’t also treat as kicker
             continue
@@ -1651,7 +1669,10 @@ def overlay_idp_and_k_stats_from_sleeper(
 
         name = (meta_p.get("name") or "").strip()
         team_abv = normalize_team_abv(meta_p.get("team") or "")
-        if not name or team_abv not in valid_teams:
+
+        if not name or not team_abv:
+            continue
+        if valid_teams and team_abv not in valid_teams:
             continue
 
         name_key = name.lower()
@@ -1670,15 +1691,31 @@ def overlay_idp_and_k_stats_from_sleeper(
 
         k_added += 1
 
+    # Optional cleanup: if something else already created WSH, merge into WAS and delete WSH
+    if "WSH" in league_week_stats and "WAS" in league_week_stats:
+        try:
+            for bucket, players in (league_week_stats.get("WSH") or {}).items():
+                dest_bucket = league_week_stats["WAS"].setdefault(bucket, {})
+                if isinstance(players, dict):
+                    for name_key, stat_blob in players.items():
+                        if isinstance(stat_blob, dict):
+                            dest_bucket.setdefault(name_key, {}).update(stat_blob)
+                        else:
+                            dest_bucket[name_key] = stat_blob
+            del league_week_stats["WSH"]
+        except Exception:
+            # don’t break the pipeline for a cleanup step
+            pass
+
     print(f"[week_stats][IDP/K] Added/updated {idp_added} IDP stat lines.")
     print(f"[week_stats][IDP/K] Added/updated {k_added} K stat lines.")
 
 
 def build_and_save_week_stats_for_league(
-    teams_index: Dict[str, Dict[str, Any]],
-    season: int,
-    week: int,
-    live_game_ids: Optional[Iterable[str]] = None,
+        teams_index: Dict[str, Dict[str, Any]],
+        season: int,
+        week: int,
+        live_game_ids: Optional[Iterable[str]] = None,
 ) -> Path:
     """
     1) Build baseline week stats from your existing HTML pipeline.
@@ -1734,7 +1771,6 @@ def build_and_save_week_stats_for_league(
     return out_path
 
 
-
 def normalize_name(name: str) -> str:
     suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
 
@@ -1753,8 +1789,8 @@ def normalize_name(name: str) -> str:
 
 
 def parse_team_week_pos_player_stats(
-    html: str,
-    target_week: int,
+        html: str,
+        target_week: int,
 ) -> Dict[str, Dict[str, Dict[str, Any]]]:
     soup = BeautifulSoup(html, "html.parser")
 
@@ -1784,9 +1820,9 @@ def parse_team_week_pos_player_stats(
 
 
 def parse_position_table_for_week(
-    table,
-    pos_code: str,
-    target_week: int,
+        table,
+        pos_code: str,
+        target_week: int,
 ) -> Dict[str, Dict[str, Any]]:
     thead = table.find("thead")
     tbody = table.find("tbody")
@@ -1913,3 +1949,16 @@ def count_roster_positions(positions: list[str]) -> dict[str, int]:
       ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
     """
     return dict(Counter(positions))
+
+
+def timed(label: str, fn, *args, **kwargs):
+    """
+    Helper to log how long a block takes.
+    Usage: result = timed("build_tables", build_tables, ...)
+    """
+    t0 = time.perf_counter()
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        dt = time.perf_counter() - t0
+        print(f"[TIMING] {label}: {dt:.2f}s")

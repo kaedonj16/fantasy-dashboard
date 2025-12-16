@@ -56,6 +56,7 @@ def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[st
         return []  # ESPN trades later
     return sleeper_get_traded_picks(league_id)
 
+
 def get_bracket(platform: str, league_id: str, kind: str, season: int):
     if platform == "espn":
         import os
@@ -64,4 +65,4 @@ def get_bracket(platform: str, league_id: str, kind: str, season: int):
             season=season,
             kind=kind,
         )
-    return sleeper_get_bracket(league_id,kind)
+    return sleeper_get_bracket(league_id, kind)

@@ -1,6 +1,7 @@
 # Tactical Blueprint League Report
 
 This pack includes a single Python script that:
+
 - pulls Sleeper league data (users/rosters/matchups),
 - computes PF, PA, AVG, MAX, MIN, STD, Win%,
 - generates four visuals + a weekly scoreboard,
@@ -22,6 +23,7 @@ python3 app.py
 ```
 
 Outputs in the same folder:
+
 - `weekly_points.csv`
 - `league_summary.csv`
 - `pf_vs_pa.png`

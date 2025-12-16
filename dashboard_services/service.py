@@ -23,7 +23,7 @@ from dashboard_services.api import (
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups
 from dashboard_services.players import build_roster_display_maps
-from dashboard_services.styles import recap_css, tickerCss
+from dashboard_services.styles import tickerCss
 from dashboard_services.utils import safe_owner_name
 
 
@@ -73,14 +73,14 @@ def render_weekly_highlight_ticker(high: dict, week: int) -> str:
 
 
 def matchup_cards_last_week(
-    league_id: str,
-    df_weekly: pd.DataFrame,
-    roster_map: dict,
-    players_map: dict,
-    rosters: list,
-    users: list,
-    platform: str,
-    season: str
+        league_id: str,
+        df_weekly: pd.DataFrame,
+        roster_map: dict,
+        players_map: dict,
+        rosters: list,
+        users: list,
+        platform: str,
+        season: str
 ) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
@@ -255,13 +255,13 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
 
 
 def build_tables(
-    league_id: str,
-    max_week: int,
-    players: dict,
-    users: list[dict],
-    rosters: list[dict],
-    season,
-    platform
+        league_id: str,
+        max_week: int,
+        players: dict,
+        users: list[dict],
+        rosters: list[dict],
+        season,
+        platform
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     """Fetch and process league data into DataFrames."""
 
@@ -269,10 +269,10 @@ def build_tables(
 
     user_fallback = {
         u["user_id"]: (
-            (u.get("metadata") or {}).get("team_name")
-            or u.get("display_name")
-            or u.get("username")
-            or str(u["user_id"])
+                (u.get("metadata") or {}).get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or str(u["user_id"])
         )
         for u in users
     }
@@ -299,7 +299,8 @@ def build_tables(
         if user_data:
             user_meta = user_data.get("metadata") or {}
             u_id = user_data.get("avatar")
-            avatar_id = user_meta.get("avatar") or (f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
+            avatar_id = user_meta.get("avatar") or (
+                f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
 
         owner_avatar[display] = _avatar_url(avatar_id)
 
@@ -399,11 +400,11 @@ def build_tables(
     W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.2, 0.3, 0.15, 0.20, 0.15
     team_stats["Win%"] = win_pct
     team_stats["PowerScore"] = (
-        W_WIN * team_stats["Z_WinPercentage"]
-        + W_AVG * team_stats["Z_Avg"]
-        + W_LAST3 * team_stats["Z_Last3"]
-        + W_CONS * team_stats["Z_Consistency"]
-        + W_CEIL * team_stats["Z_Ceiling"]
+            W_WIN * team_stats["Z_WinPercentage"]
+            + W_AVG * team_stats["Z_Avg"]
+            + W_LAST3 * team_stats["Z_Last3"]
+            + W_CONS * team_stats["Z_Consistency"]
+            + W_CEIL * team_stats["Z_Ceiling"]
     )
 
     sos = build_team_strength(team_stats)
@@ -537,7 +538,7 @@ def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.
 
     team_stats["Record"] = team_stats[["Wins", "Losses", "Ties"]].apply(
         lambda r: f"{int(r.Wins)}-{int(r.Losses)}"
-        + (f"-{int(r.Ties)}" if r.Ties else ""),
+                  + (f"-{int(r.Ties)}" if r.Ties else ""),
         axis=1,
     )
 
@@ -545,8 +546,8 @@ def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.
 
 
 def get_owner_id(
-    rosters: Optional[list[dict]] = None,
-    roster_id: Optional[str] = None,
+        rosters: Optional[list[dict]] = None,
+        roster_id: Optional[str] = None,
 ) -> Optional[str]:
     return next((r["owner_id"] for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
 
@@ -627,10 +628,10 @@ def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[in
 
 
 def build_week_activity(
-    league_id: str,
-    platform,
-    season,
-    players_map: Optional[Dict[str, Dict[str, str]]] = None,
+        league_id: str,
+        platform,
+        season,
+        players_map: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> pd.DataFrame:
     """
     Builds a season-long activity table with:
@@ -854,10 +855,10 @@ def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
 
 
 def compute_sos_by_team(
-    all_matchups: Dict[int, List[dict]],
-    team_strength: Dict[int, float],
-    weeks_past: int,
-    users: Dict[int, str],
+        all_matchups: Dict[int, List[dict]],
+        team_strength: Dict[int, float],
+        weeks_past: int,
+        users: Dict[int, str],
 ) -> Dict[int, dict]:
     out: dict[Any, dict[str, Any]] = {
         owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
@@ -949,12 +950,13 @@ def compute_sos_by_team(
 
 from collections import defaultdict
 
+
 def playoff_bracket(
-    winners_bracket,
-    roster_name_map,
-    roster_avatar_map,
-    match_scores=None,
-    seed_map=None,
+        winners_bracket,
+        roster_name_map,
+        roster_avatar_map,
+        match_scores=None,
+        seed_map=None,
 ):
     if not winners_bracket:
         return "<div class='po-empty'>No playoff bracket available.</div>"
@@ -1202,7 +1204,6 @@ def playoff_bracket(
     return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
 
 
-
 def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
     """
     Build a seed_map {roster_id: seed} for the top N teams (N = playoff_size)
@@ -1263,7 +1264,6 @@ def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
 # Backwards-compatible wrapper if you still use the old function name anywhere
 def seed_top6_from_team_stats(team_stats, roster_map):
     return seed_top_n_from_team_stats(team_stats, roster_map, playoff_size=6)
-
 
 
 def render_standings_table(team_stats, length):
@@ -1347,11 +1347,11 @@ def render_teams_sidebar(teams: List[dict]) -> str:
             f"data-team-id='{t['roster_id']}'>{label}</button>"
         )
     header_html = (
-        "<div class='manager-pills-carousel'>"
-        "<button class='pill-arrow pill-arrow-left' type='button'>&lsaquo;</button> "
-        "<div class='manager-pills-row'>"
-        + "".join(pill_buttons)
-        + "</div><button class='pill-arrow pill-arrow-right' type='button'>&rsaquo;</button></div>"
+            "<div class='manager-pills-carousel'>"
+            "<button class='pill-arrow pill-arrow-left' type='button'>&lsaquo;</button> "
+            "<div class='manager-pills-row'>"
+            + "".join(pill_buttons)
+            + "</div><button class='pill-arrow pill-arrow-right' type='button'>&rsaquo;</button></div>"
     )
 
     panel_html_parts = []
@@ -1396,7 +1396,6 @@ def render_teams_sidebar(teams: List[dict]) -> str:
         picks = t.get("picks") or []
         picks_out: list[str] = []
         if t.get("picks"):
-            print(picks)
             picks_out.append("<div class='team-section'>")
             picks_out.append("<div class='team-section-title'>Picks</div>")
             picks_out.append("<div class='player-list picks-list'>")
@@ -1411,10 +1410,10 @@ def render_teams_sidebar(teams: List[dict]) -> str:
         picks_out.append("</div></div>")
 
         body_html = (
-            "<div class='team-body'>"
-            + "".join(sections)
-            + "".join(picks_out)
-            + "</div>"
+                "<div class='team-body'>"
+                + "".join(sections)
+                + "".join(picks_out)
+                + "</div>"
         )
 
         panel_html_parts.append(
@@ -1435,10 +1434,10 @@ def render_teams_sidebar(teams: List[dict]) -> str:
 
 
 def build_picks_by_roster(
-    num_future_seasons: int = 3,
-    league: dict = None,
-    rosters: List[dict] = None,
-    traded: List[dict] = None,
+        num_future_seasons: int = 3,
+        league: dict = None,
+        rosters: List[dict] = None,
+        traded: List[dict] = None,
 ) -> Dict[str, List[dict]]:
     current_season = int(league["season"])
     num_rounds = int(league["settings"].get("draft_rounds", 4))
@@ -1471,9 +1470,9 @@ def build_picks_by_roster(
 
         for p in all_picks:
             if (
-                p["season"] == season
-                and p["round"] == rnd
-                and p["original_roster_id"] == original
+                    p["season"] == season
+                    and p["round"] == rnd
+                    and p["original_roster_id"] == original
             ):
                 p["owner_roster_id"] = new_owner
 
@@ -1526,4 +1525,3 @@ def build_standings_map(team_stats, roster_map) -> dict[int, int]:
         seed = idx + 1
         standings[rid] = seed
     return standings
-

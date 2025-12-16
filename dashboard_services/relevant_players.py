@@ -10,7 +10,7 @@ POS_WHITELIST = {"QB", "RB", "WR", "TE"}
 
 
 def build_relevant_players_index(
-    league_id: str,
+        league_id: str,
 ) -> Dict[str, dict]:
     """
     Return only fantasy-relevant players, with usage stats attached:
@@ -102,8 +102,8 @@ def build_relevant_players_index(
 
 
 def write_relevant_players_index(
-    league_id: str,
-    out_path: str = "cache/players_index_relevant.json",
+        league_id: str,
+        out_path: str = "cache/players_index_relevant.json",
 ):
     relevant_index = build_relevant_players_index(league_id)
     with open(out_path, "w", encoding="utf-8") as f:

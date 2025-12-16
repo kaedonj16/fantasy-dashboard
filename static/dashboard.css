@@ -1,37 +1,25 @@
-/* ===========================
-   Zoom Scaling
-   =========================== */
-@media (max-width: 1600px) {
+/* ============================================================
+   Responsive scaling WITHOUT css zoom (Plotly-safe)
+   ============================================================ */
 
-    html,
-    body {
-        zoom: 0.9;
-    }
+:root { --page-scale: 1; }
+
+/* pick the same scale values you had */
+@media (max-width: 1600px) { :root { --page-scale: 0.9; } }
+@media (max-width: 1400px) { :root { --page-scale: 0.8; } }
+@media (max-width: 1200px) { :root { --page-scale: 0.7; } }
+@media (max-width: 1000px) { :root { --page-scale: 0.6; } }
+
+/* scale the page content, but keep layout width correct */
+body {
+  transform: scale(var(--page-scale));
+  transform-origin: top left;
+  width: calc(100% / var(--page-scale));
 }
 
-@media (max-width: 1400px) {
+/* IMPORTANT: remove any zoom */
+html, body { zoom: 1; }
 
-    html,
-    body {
-        zoom: 0.8;
-    }
-}
-
-@media (max-width: 1200px) {
-
-    html,
-    body {
-        zoom: 0.7;
-    }
-}
-
-@media (max-width: 1000px) {
-
-    html,
-    body {
-        zoom: 0.6;
-    }
-}
 
 /* ============================================
    THEME ROOT VARIABLES (LIGHT MODE DEFAULT)
@@ -1775,7 +1763,6 @@ tbody tr:nth-child(even) {
     border-radius: 16px;
     padding: 12px;
     display: grid;
-    grid-template-rows: repeat(4, 1fr);
 }
 
 .side-card h3 {
@@ -3866,4 +3853,20 @@ body {
 
 .platform-btn.espn img {
     filter: none;
+}
+
+/* If you use a CSS zoom/scale on the page, disable it for Plotly */
+[data-page="graphs"] {
+  zoom: 1 !important;
+  transform: none !important;
+}
+
+/* If the zoom is applied on a specific wrapper, neutralize it here too */
+[data-page="graphs"] .page-main,
+[data-page="graphs"] .page-layout,
+[data-page="graphs"] .card,
+[data-page="graphs"] .plotly-graph-div,
+[data-page="graphs"] .js-plotly-plot {
+  zoom: 1 !important;
+  transform: none !important;
 }

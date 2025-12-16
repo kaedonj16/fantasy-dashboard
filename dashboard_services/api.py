@@ -69,9 +69,11 @@ def _make_hashable(x: Any):
     # fallback for weird/custom objects
     return repr(x)
 
+
 # dashboard_services/api.py
 
 cache = {}
+
 
 def _freeze(obj):
     """Recursively convert unhashable types into hashable ones for cache keys."""
@@ -83,7 +85,6 @@ def _freeze(obj):
     if isinstance(obj, set):
         return tuple(sorted(_freeze(x) for x in obj))
     return obj  # assume hashable
-
 
 
 def ttl_cache(ttl: int = 300):
@@ -129,6 +130,7 @@ def _headers(rapidapi_key: str) -> Dict[str, str]:
         "x-rapidapi-host": TANK01_HOST,
         "x-rapidapi-key": str(rapidapi_key),
     }
+
 
 TANK01_HEADERS = _headers(TANK01_API_KEY)
 
@@ -181,6 +183,7 @@ def get_league(league_id: str) -> dict:
         TOTAL_ROSTERS = int(league.get("total_rosters") or 0)
 
     return league
+
 
 def get_scoring_settings() -> Dict[str, Any]:
     """
@@ -273,8 +276,8 @@ class Tank01Error(Exception):
 
 @ttl_cache(ttl=300)
 def get_tank01_player_gamelogs(
-    tank_player_id: str,
-    season: Optional[int] = None,
+        tank_player_id: str,
+        season: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Call Tank01 and return a list of game dicts for a given player.
@@ -336,6 +339,7 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     data = resp.json() or {}
     return data.get("body") or {}
 
+
 @ttl_cache(ttl=300)
 def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None) -> dict:
     """
@@ -355,7 +359,6 @@ def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None
     if isinstance(data, dict) and "body" in data:
         return data["body"]
     return data
-
 
 
 def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:

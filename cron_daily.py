@@ -14,5 +14,6 @@ def main():
     # run your existing function
     build_daily_data(season, week)
 
+
 if __name__ == "__main__":
     main()

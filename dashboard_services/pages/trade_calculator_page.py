@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 def build_trade_calculator_body(league_id: Optional[str], season: Optional[int]) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""

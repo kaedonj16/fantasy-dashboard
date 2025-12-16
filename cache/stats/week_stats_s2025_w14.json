@@ -561,6 +561,37 @@
         "tm_st_snp": 31.0,
         "pos": "DL"
       }
+    },
+    "K": {
+      "chad ryland": {
+        "fga": 2.0,
+        "fgm": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 38.0,
+        "fgm_pct": 50.0,
+        "fgm_yds": 38.0,
+        "fgm_yds_over_30": 8.0,
+        "fgmiss": 1.0,
+        "fgmiss_50p": 1.0,
+        "fgmiss_60p": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 5.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 4.0,
+        "pts_ppr": 4.0,
+        "pts_std": 4.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 70.0,
+        "tm_off_snp": 62.0,
+        "tm_st_snp": 31.0,
+        "xpa": 2.0,
+        "xpm": 2.0,
+        "pos": "PK"
+      }
     }
   },
   "ATL": {
@@ -1133,6 +1164,7 @@
         "pos": "LB"
       },
       "jordan fuller": {
+        "def_snp": 1.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_tkl": 1.0,
@@ -1141,6 +1173,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 2.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 61.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 27.0,
         "pos": "DB"
       },
       "demarcco hellams": {
@@ -1149,6 +1185,45 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "zane gonzalez": {
+        "fg_blkd": 1.0,
+        "fga": 4.0,
+        "fgm": 3.0,
+        "fgm_20_29": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 43.0,
+        "fgm_pct": 75.0,
+        "fgm_yds": 105.0,
+        "fgm_yds_over_30": 18.0,
+        "fgmiss": 1.0,
+        "fgmiss_50_59": 1.0,
+        "fgmiss_50p": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 9.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 9.0,
+        "pts_ppr": 9.0,
+        "pts_std": 9.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 61.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 27.0,
+        "pos": "PK"
+      },
+      "lenny krieg": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
       }
     }
   },
@@ -1741,6 +1816,36 @@
         "tm_off_snp": 80.0,
         "tm_st_snp": 29.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "tyler loop": {
+        "fga": 3.0,
+        "fgm": 3.0,
+        "fgm_20_29": 1.0,
+        "fgm_30_39": 2.0,
+        "fgm_lng": 36.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 100.0,
+        "fgm_yds_over_30": 12.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 10.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 9.0,
+        "pts_ppr": 9.0,
+        "pts_std": 9.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 52.0,
+        "tm_off_snp": 80.0,
+        "tm_st_snp": 29.0,
+        "xpa": 2.0,
+        "xpm": 1.0,
+        "xpmiss": 1.0,
+        "pos": "PK"
       }
     }
   },
@@ -2341,6 +2446,39 @@
         "pos_rank_std": 999.0,
         "pos": "DL"
       }
+    },
+    "K": {
+      "matt prater": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_20_29": 1.0,
+        "fgm_lng": 26.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 26.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 7.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 7.0,
+        "pts_ppr": 7.0,
+        "pts_std": 7.0,
+        "st_snp": 12.0,
+        "tm_def_snp": 60.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 24.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      },
+      "tyler bass": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      }
     }
   },
   "CAR": {
@@ -2917,6 +3055,35 @@
         "tm_st_snp": 25.0,
         "pos": "DL"
       }
+    },
+    "K": {
+      "cairo santos": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 41.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 74.0,
+        "fgm_yds_over_30": 14.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 7.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 8.0,
+        "pts_ppr": 8.0,
+        "pts_std": 8.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 53.0,
+        "tm_off_snp": 70.0,
+        "tm_st_snp": 25.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
+      }
     }
   },
   "CIN": {
@@ -3464,6 +3631,33 @@
         "tm_st_snp": 24.0,
         "pos": "LB"
       }
+    },
+    "K": {
+      "evan mcpherson": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 4.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 4.0,
+        "pts_ppr": 4.0,
+        "pts_std": 4.0,
+        "st_snp": 10.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 60.0,
+        "tm_st_snp": 24.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      },
+      "cade york": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      }
     }
   },
   "CLE": {
@@ -3760,10 +3954,6 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
-        "st_snp": 19.0,
-        "tm_def_snp": 66.0,
-        "tm_off_snp": 69.0,
-        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "easton mascarenas-arnold": {
@@ -4056,6 +4246,33 @@
         "tm_st_snp": 35.0,
         "pos": "LB"
       }
+    },
+    "K": {
+      "andre szmyt": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 38.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 38.0,
+        "fgm_yds_over_30": 8.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 5.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 5.0,
+        "pts_ppr": 5.0,
+        "pts_std": 5.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 66.0,
+        "tm_off_snp": 69.0,
+        "tm_st_snp": 35.0,
+        "xpa": 2.0,
+        "xpm": 2.0,
+        "pos": "PK"
+      }
     }
   },
   "DAL": {
@@ -4152,6 +4369,38 @@
         "rec": 1,
         "rec_yds": 7,
         "rec_td": 0
+      }
+    },
+    "K": {
+      "brandon aubrey": {
+        "fga": 5.0,
+        "fgm": 5.0,
+        "fgm_20_29": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_50_59": 2.0,
+        "fgm_50p": 3.0,
+        "fgm_60p": 1.0,
+        "fgm_lng": 63.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 246.0,
+        "fgm_yds_over_30": 97.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 16.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 23.0,
+        "pts_ppr": 23.0,
+        "pts_std": 23.0,
+        "st_snp": 14.0,
+        "st_tkl_solo": 1.0,
+        "tm_def_snp": 62.0,
+        "tm_off_snp": 82.0,
+        "tm_st_snp": 34.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
       }
     },
     "IDP": {
@@ -5190,6 +5439,33 @@
         "tm_st_snp": 19.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "wil lutz": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_20_29": 1.0,
+        "fgm_lng": 23.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 23.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 6.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 6.0,
+        "pts_ppr": 6.0,
+        "pts_std": 6.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 50.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 19.0,
+        "xpa": 3.0,
+        "xpm": 3.0,
+        "pos": "PK"
+      }
     }
   },
   "DET": {
@@ -5779,6 +6055,38 @@
         "tm_off_snp": 62.0,
         "tm_st_snp": 34.0,
         "pos": "DL"
+      }
+    },
+    "K": {
+      "jake bates": {
+        "fg_blkd": 1.0,
+        "fga": 4.0,
+        "fgm": 3.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 2.0,
+        "fgm_lng": 47.0,
+        "fgm_pct": 75.0,
+        "fgm_yds": 131.0,
+        "fgm_yds_over_30": 41.0,
+        "fgmiss": 1.0,
+        "fgmiss_50_59": 1.0,
+        "fgmiss_50p": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 14.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 15.0,
+        "pts_ppr": 15.0,
+        "pts_std": 15.0,
+        "st_snp": 17.0,
+        "tm_def_snp": 82.0,
+        "tm_off_snp": 62.0,
+        "tm_st_snp": 34.0,
+        "xpa": 5.0,
+        "xpm": 5.0,
+        "pos": "PK"
       }
     }
   },
@@ -6381,6 +6689,34 @@
         "tm_st_snp": 25.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "lucas havrisik": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      },
+      "brandon mcmanus": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 4.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 4.0,
+        "pts_ppr": 4.0,
+        "pts_std": 4.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 70.0,
+        "tm_off_snp": 53.0,
+        "tm_st_snp": 25.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      }
     }
   },
   "HOU": {
@@ -6830,7 +7166,6 @@
       },
       "jaylen reed": {
         "gms_active": 1.0,
-        "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
@@ -6989,6 +7324,34 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pos": "LB"
+      }
+    },
+    "K": {
+      "ka'imi fairbairn": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_20_29": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 35.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 63.0,
+        "fgm_yds_over_30": 5.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 8.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 8.0,
+        "pts_ppr": 8.0,
+        "pts_std": 8.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 70.0,
+        "tm_st_snp": 27.0,
+        "xpa": 2.0,
+        "xpm": 2.0,
+        "pos": "PK"
       }
     }
   },
@@ -7579,6 +7942,15 @@
         "tm_st_snp": 27.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "spencer shrader": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      }
     }
   },
   "JAX": {
@@ -8164,6 +8536,34 @@
         "tm_off_snp": 64.0,
         "tm_st_snp": 27.0,
         "pos": "DL"
+      }
+    },
+    "K": {
+      "cam little": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 48.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 83.0,
+        "fgm_yds_over_30": 23.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 10.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 11.0,
+        "pts_ppr": 11.0,
+        "pts_std": 11.0,
+        "st_snp": 13.0,
+        "tm_def_snp": 70.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 27.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
       }
     }
   },
@@ -8759,6 +9159,35 @@
         "tm_st_snp": 27.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "harrison butker": {
+        "fga": 2.0,
+        "fgm": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 36.0,
+        "fgm_pct": 50.0,
+        "fgm_yds": 36.0,
+        "fgm_yds_over_30": 6.0,
+        "fgmiss": 1.0,
+        "fgmiss_40_49": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 4.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 3.0,
+        "pts_ppr": 3.0,
+        "pts_std": 3.0,
+        "st_snp": 6.0,
+        "tm_def_snp": 70.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 27.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
+      }
     }
   },
   "LAC": {
@@ -8854,6 +9283,7 @@
     },
     "IDP": {
       "rj mickens": {
+        "def_snp": 46.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -8864,9 +9294,14 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 3.0,
+        "st_snp": 7.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "da'shawn hand": {
+        "def_snp": 45.0,
         "fum": 1.0,
         "fum_lost": 1.0,
         "gms_active": 1.0,
@@ -8885,9 +9320,14 @@
         "pts_idp": 12.0,
         "pts_ppr": -2.0,
         "pts_std": -2.0,
+        "st_snp": 6.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "odafe oweh": {
+        "def_snp": 27.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_qb_hit": 2.0,
@@ -8902,6 +9342,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 14.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "naquan jones": {
@@ -8912,6 +9355,7 @@
         "pos": "DL"
       },
       "tarheeb still": {
+        "def_snp": 56.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -8924,6 +9368,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 14.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "josh fuga": {
@@ -8948,6 +9395,7 @@
         "pos": "DB"
       },
       "khalil mack": {
+        "def_snp": 56.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -8960,6 +9408,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 11.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "marlowe wax": {
@@ -8968,7 +9419,11 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 28.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "garmon randolph": {
@@ -8979,6 +9434,7 @@
         "pos": "LB"
       },
       "teair tart": {
+        "def_snp": 44.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -8991,6 +9447,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 3.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "kendall williamson": {
@@ -8999,10 +9459,15 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 22.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "jamaree caldwell": {
+        "def_snp": 23.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_ff": 1.0,
@@ -9013,9 +9478,14 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 7.0,
+        "st_snp": 6.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "denzel perryman": {
+        "def_snp": 45.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9027,17 +9497,26 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 6.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "deane leonard": {
+        "def_snp": 1.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 28.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "tuli tuipulotu": {
+        "def_snp": 52.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9048,10 +9527,15 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 5.0,
+        "st_snp": 11.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "cam hart": {
+        "def_snp": 54.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_int": 1.0,
@@ -9067,9 +9551,14 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 22.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "troy dye": {
+        "def_snp": 14.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_ff": 1.0,
@@ -9084,10 +9573,15 @@
         "pts_ppr": 1.0,
         "pts_std": 1.0,
         "st_ff": 1.0,
+        "st_snp": 20.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "donte jackson": {
+        "def_snp": 40.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9101,9 +9595,13 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 17.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "elijah molden": {
+        "def_snp": 36.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9114,6 +9612,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 6.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "jordan oladokun": {
@@ -9124,6 +9625,7 @@
         "pos": "DB"
       },
       "daiyan henley": {
+        "def_snp": 70.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9136,18 +9638,28 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 17.0,
+        "st_snp": 2.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "del'shawn phillips": {
+        "def_snp": 1.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 28.0,
         "st_tkl_solo": 3.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "justin eboigbe": {
+        "def_snp": 12.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_tkl": 1.0,
@@ -9156,10 +9668,15 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 1.0,
+        "st_snp": 21.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "otito ogbonnia": {
+        "def_snp": 17.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_tkl": 2.0,
@@ -9169,14 +9686,23 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 6.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "bud dupree": {
+        "def_snp": 17.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 12.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "kyle peko": {
@@ -9208,6 +9734,7 @@
         "pos": "DB"
       },
       "tony jefferson": {
+        "def_snp": 44.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_int": 1.0,
@@ -9219,6 +9746,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 19.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "emany johnson": {
@@ -9229,14 +9759,20 @@
         "pos": "LB"
       },
       "benjamin st-juste": {
+        "def_snp": 17.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 27.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "derwin james jr.": {
+        "def_snp": 64.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -9247,7 +9783,40 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 8.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "cameron dicker": {
+        "fga": 5.0,
+        "fgm": 5.0,
+        "fgm_30_39": 2.0,
+        "fgm_40_49": 2.0,
+        "fgm_50_59": 1.0,
+        "fgm_50p": 1.0,
+        "fgm_lng": 54.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 210.0,
+        "fgm_yds_over_30": 60.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 16.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 20.0,
+        "pts_ppr": 20.0,
+        "pts_std": 20.0,
+        "st_snp": 14.0,
+        "tm_def_snp": 71.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 35.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
       }
     }
   },
@@ -9812,6 +10381,39 @@
         "pos_rank_std": 999.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "joshua karty": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      },
+      "harrison mevis": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_20_29": 1.0,
+        "fgm_lng": 26.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 26.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 9.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 9.0,
+        "pts_ppr": 9.0,
+        "pts_std": 9.0,
+        "st_snp": 7.0,
+        "tm_def_snp": 62.0,
+        "tm_off_snp": 70.0,
+        "tm_st_snp": 31.0,
+        "xpa": 6.0,
+        "xpm": 6.0,
+        "pos": "PK"
+      }
     }
   },
   "LV": {
@@ -10353,6 +10955,33 @@
         "tm_off_snp": 50.0,
         "tm_st_snp": 19.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "daniel carlson": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 46.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 46.0,
+        "fgm_yds_over_30": 16.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 5.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 6.0,
+        "pts_ppr": 6.0,
+        "pts_std": 6.0,
+        "st_snp": 6.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 50.0,
+        "tm_st_snp": 19.0,
+        "xpa": 2.0,
+        "xpm": 2.0,
+        "pos": "PK"
       }
     }
   },
@@ -10957,6 +11586,43 @@
         "tm_st_snp": 31.0,
         "pos": "DL"
       }
+    },
+    "K": {
+      "jason sanders": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "PK"
+      },
+      "riley patterson": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_40_49": 1.0,
+        "fgm_50_59": 1.0,
+        "fgm_50p": 1.0,
+        "fgm_lng": 53.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 96.0,
+        "fgm_yds_over_30": 36.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 10.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 13.0,
+        "pts_ppr": 13.0,
+        "pts_std": 13.0,
+        "st_snp": 13.0,
+        "tm_def_snp": 58.0,
+        "tm_off_snp": 65.0,
+        "tm_st_snp": 31.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      }
     }
   },
   "MIN": {
@@ -11476,6 +12142,33 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "will reichard": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 45.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 45.0,
+        "fgm_yds_over_30": 15.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 7.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 8.0,
+        "pts_ppr": 8.0,
+        "pts_std": 8.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 52.0,
+        "tm_off_snp": 64.0,
+        "tm_st_snp": 16.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
       }
     }
   },
@@ -12043,6 +12736,61 @@
         "tm_off_snp": 58.0,
         "tm_st_snp": 22.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "charlie smyth": {
+        "fga": 2.0,
+        "fgm": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 30.0,
+        "fgm_pct": 50.0,
+        "fgm_yds": 30.0,
+        "fgmiss": 1.0,
+        "fgmiss_40_49": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 6.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 5.0,
+        "pts_ppr": 5.0,
+        "pts_std": 5.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 58.0,
+        "tm_st_snp": 22.0,
+        "xpa": 3.0,
+        "xpm": 3.0,
+        "pos": "PK"
+      },
+      "blake grupe": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_20_29": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 36.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 64.0,
+        "fgm_yds_over_30": 6.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 7.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 7.0,
+        "pts_ppr": 7.0,
+        "pts_std": 7.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 70.0,
+        "tm_st_snp": 27.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
       }
     }
   },
@@ -12619,6 +13367,33 @@
         "pos_rank_std": 999.0,
         "pos": "DB"
       }
+    },
+    "K": {
+      "nick folk": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_lng": 31.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 31.0,
+        "fgm_yds_over_30": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 4.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 4.0,
+        "pts_ppr": 4.0,
+        "pts_std": 4.0,
+        "st_snp": 2.0,
+        "tm_def_snp": 65.0,
+        "tm_off_snp": 58.0,
+        "tm_st_snp": 31.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
+      }
     }
   },
   "PHI": {
@@ -12738,6 +13513,7 @@
         "pos": "DB"
       },
       "adoree' jackson": {
+        "def_snp": 56.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12750,6 +13526,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 22.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "tariq castro-fields": {
@@ -12782,6 +13562,7 @@
       },
       "jalyx hunt": {
         "bonus_sack_2p": 1.0,
+        "def_snp": 40.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_ff": 1.0,
@@ -12796,6 +13577,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 35.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "ta'quon graham": {
@@ -12811,6 +13596,10 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 7.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "andre' sam": {
@@ -12819,10 +13608,15 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 14.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "moro ojomo": {
+        "def_snp": 57.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12834,6 +13628,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 1.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "sydney brown": {
@@ -12842,9 +13640,14 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 28.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "jordan davis": {
+        "def_snp": 45.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12859,6 +13662,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 24.0,
+        "st_snp": 13.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "titus leo": {
@@ -12869,14 +13676,20 @@
         "pos": "DL"
       },
       "michael carter ii": {
+        "def_snp": 2.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "cooper dejean": {
+        "def_snp": 74.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12884,11 +13697,16 @@
         "idp_tkl": 2.0,
         "idp_tkl_ast": 1.0,
         "idp_tkl_solo": 1.0,
+        "off_snp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 9.0,
+        "st_snp": 8.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "gabe hall": {
@@ -12899,14 +13717,20 @@
         "pos": "DL"
       },
       "ty robinson": {
+        "def_snp": 7.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 7.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "jaelan phillips": {
+        "def_snp": 59.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12919,9 +13743,14 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 13.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "nakobe dean": {
+        "def_snp": 65.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12937,9 +13766,14 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 23.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "nolan smith jr.": {
+        "def_snp": 44.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12951,6 +13785,9 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 11.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "ogbo okoronkwo": {
@@ -12961,6 +13798,7 @@
         "pos": "DL"
       },
       "byron young": {
+        "def_snp": 32.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_fum_rec": 1.0,
@@ -12975,6 +13813,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 26.0,
+        "st_snp": 7.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "ambry thomas": {
@@ -12985,6 +13827,7 @@
         "pos": "DB"
       },
       "reed blankenship": {
+        "def_snp": 74.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -12996,6 +13839,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 16.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "kelee ringo": {
@@ -13004,6 +13851,10 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 29.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "jeremiah trotter jr.": {
@@ -13012,9 +13863,14 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 28.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "zack baun": {
+        "def_snp": 74.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -13028,6 +13884,10 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 16.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "smael mondon jr.": {
@@ -13036,10 +13896,15 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 21.0,
         "st_tkl_solo": 1.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "marcus epps": {
+        "def_snp": 72.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -13049,9 +13914,13 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 6.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
       },
       "jihaad campbell": {
+        "def_snp": 9.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_tkl": 2.0,
@@ -13060,17 +13929,27 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 4.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "LB"
       },
       "brandon graham": {
+        "def_snp": 30.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DL"
       },
       "quinyon mitchell": {
+        "def_snp": 74.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "gs": 1.0,
@@ -13083,7 +13962,42 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 3.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "jake elliott": {
+        "fga": 5.0,
+        "fgm": 4.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 2.0,
+        "fgm_50_59": 1.0,
+        "fgm_50p": 1.0,
+        "fgm_lng": 54.0,
+        "fgm_pct": 80.0,
+        "fgm_yds": 169.0,
+        "fgm_yds_over_30": 49.0,
+        "fgmiss": 1.0,
+        "fgmiss_40_49": 1.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 13.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 16.0,
+        "pts_ppr": 16.0,
+        "pts_std": 16.0,
+        "st_snp": 13.0,
+        "tm_def_snp": 74.0,
+        "tm_off_snp": 71.0,
+        "tm_st_snp": 35.0,
+        "xpa": 1.0,
+        "xpm": 1.0,
+        "pos": "PK"
       }
     }
   },
@@ -13678,6 +14592,33 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pos": "DL"
+      }
+    },
+    "K": {
+      "chris boswell": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_20_29": 2.0,
+        "fgm_lng": 32.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 51.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 9.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 9.0,
+        "pts_ppr": 9.0,
+        "pts_std": 9.0,
+        "st_snp": 12.0,
+        "tm_def_snp": 80.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 29.0,
+        "xpa": 3.0,
+        "xpm": 3.0,
+        "pos": "PK"
       }
     }
   },
@@ -14279,6 +15220,36 @@
         "pos_rank_std": 999.0,
         "pos": "LB"
       }
+    },
+    "K": {
+      "jason myers": {
+        "fga": 3.0,
+        "fgm": 3.0,
+        "fgm_20_29": 1.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 48.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 107.0,
+        "fgm_yds_over_30": 25.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 13.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 14.0,
+        "pts_ppr": 14.0,
+        "pts_std": 14.0,
+        "st_snp": 14.0,
+        "st_tkl_solo": 1.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 61.0,
+        "tm_st_snp": 27.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      }
     }
   },
   "SF": {
@@ -14759,7 +15730,6 @@
         "pos": "LB"
       },
       "c.j. brewer": {
-        "def_snp": 12.0,
         "gms_active": 1.0,
         "gp": 1.0,
         "idp_tkl": 1.0,
@@ -14768,9 +15738,6 @@
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
         "pts_idp": 2.0,
-        "tm_def_snp": 58.0,
-        "tm_off_snp": 74.0,
-        "tm_st_snp": 22.0,
         "pos": "DL"
       },
       "calijah kancey": {
@@ -14871,6 +15838,34 @@
         "tm_off_snp": 74.0,
         "tm_st_snp": 22.0,
         "pos": "DB"
+      }
+    },
+    "K": {
+      "chase mclaughlin": {
+        "fga": 2.0,
+        "fgm": 2.0,
+        "fgm_30_39": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 41.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 78.0,
+        "fgm_yds_over_30": 18.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 8.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 9.0,
+        "pts_ppr": 9.0,
+        "pts_std": 9.0,
+        "st_snp": 9.0,
+        "tm_def_snp": 58.0,
+        "tm_off_snp": 74.0,
+        "tm_st_snp": 22.0,
+        "xpa": 2.0,
+        "xpm": 2.0,
+        "pos": "PK"
       }
     }
   },
@@ -15068,7 +16063,7 @@
         "gp": 1.0,
         "gs": 1.0,
         "idp_pass_def": 2.0,
-        "idp_qb_hit": 2.0,
+        "idp_qb_hit": 1.0,
         "idp_tkl": 5.0,
         "idp_tkl_ast": 1.0,
         "idp_tkl_loss": 2.0,
@@ -15076,7 +16071,7 @@
         "pos_rank_half_ppr": 999.0,
         "pos_rank_ppr": 999.0,
         "pos_rank_std": 999.0,
-        "pts_idp": 21.0,
+        "pts_idp": 20.0,
         "tm_def_snp": 69.0,
         "tm_off_snp": 66.0,
         "tm_st_snp": 35.0,
@@ -15430,6 +16425,34 @@
         "tm_st_snp": 35.0,
         "pos": "LB"
       }
+    },
+    "K": {
+      "joey slye": {
+        "fga": 1.0,
+        "fgm": 1.0,
+        "fgm_40_49": 1.0,
+        "fgm_lng": 41.0,
+        "fgm_pct": 100.0,
+        "fgm_yds": 41.0,
+        "fgm_yds_over_30": 11.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "kick_pts": 7.0,
+        "penalty": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_half_ppr": 8.0,
+        "pts_ppr": 8.0,
+        "pts_std": 8.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 69.0,
+        "tm_off_snp": 66.0,
+        "tm_st_snp": 35.0,
+        "xpa": 4.0,
+        "xpm": 4.0,
+        "pos": "PK"
+      }
     }
   },
   "WAS": {
@@ -15542,6 +16565,490 @@
         "rec": 1,
         "rec_yds": 8,
         "rec_td": 0
+      }
+    },
+    "IDP": {
+      "ricky barber": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DL"
+      },
+      "jeremy reaves": {
+        "def_snp": 11.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_tkl": 1.0,
+        "idp_tkl_ast": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 1.0,
+        "st_snp": 10.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "javon kinlaw": {
+        "def_snp": 40.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_tkl": 1.0,
+        "idp_tkl_ast": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 1.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "noah igbinoghene": {
+        "def_snp": 29.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_pass_def": 1.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_ast": 1.0,
+        "idp_tkl_solo": 2.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 8.0,
+        "st_snp": 2.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "tre hawkins iii": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      },
+      "eddie goldman": {
+        "def_snp": 29.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_tkl": 2.0,
+        "idp_tkl_ast": 1.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 4.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "bobby wagner": {
+        "bonus_tkl_10p": 1.0,
+        "def_snp": 64.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_sack": 1.0,
+        "idp_tkl": 16.0,
+        "idp_tkl_ast": 10.0,
+        "idp_tkl_solo": 6.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 29.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "sheldon day": {
+        "def_snp": 19.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "penalty": 1.0,
+        "penalty_yd": 5.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "von miller": {
+        "def_snp": 22.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_sack": 1.0,
+        "idp_sack_yd": 9.0,
+        "idp_tkl": 4.0,
+        "idp_tkl_ast": 2.0,
+        "idp_tkl_loss": 1.0,
+        "idp_tkl_solo": 2.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 15.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "dorance armstrong": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DL"
+      },
+      "jordan magee": {
+        "def_snp": 35.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_ast": 2.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 4.0,
+        "st_snp": 16.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "deatrich wise jr.": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DL"
+      },
+      "mike sainristil": {
+        "def_snp": 64.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_pass_def": 1.0,
+        "idp_tkl": 5.0,
+        "idp_tkl_ast": 2.0,
+        "idp_tkl_loss": 1.0,
+        "idp_tkl_solo": 3.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 13.0,
+        "st_snp": 6.0,
+        "st_tkl_solo": 1.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "jacob martin": {
+        "def_snp": 39.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_tkl": 4.0,
+        "idp_tkl_ast": 3.0,
+        "idp_tkl_solo": 1.0,
+        "penalty": 1.0,
+        "penalty_yd": 9.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 6.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "darius rush": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      },
+      "will harris": {
+        "def_snp": 64.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_sack": 1.0,
+        "idp_sack_yd": 3.0,
+        "idp_tkl": 2.0,
+        "idp_tkl_ast": 1.0,
+        "idp_tkl_loss": 1.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 11.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "marshon lattimore": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      },
+      "kain medrano": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 11.0,
+        "st_tkl_solo": 1.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "jer'zhan newton": {
+        "def_snp": 23.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "robert mcdaniel": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      },
+      "frankie luvu": {
+        "def_snp": 64.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_pass_def": 1.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_ast": 1.0,
+        "idp_tkl_solo": 2.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 8.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "quan martin": {
+        "def_snp": 57.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_tkl": 7.0,
+        "idp_tkl_ast": 3.0,
+        "idp_tkl_solo": 4.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 11.0,
+        "st_snp": 6.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "daron payne": {
+        "def_snp": 41.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_sack": 1.0,
+        "idp_tkl": 2.0,
+        "idp_tkl_ast": 1.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 10.0,
+        "st_snp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "percy butler": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "penalty": 1.0,
+        "penalty_yd": 10.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 11.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "nick bellore": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 16.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "tyler owens": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 16.0,
+        "st_tkl_solo": 1.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "antonio hamilton sr.": {
+        "def_snp": 13.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_solo": 3.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 6.0,
+        "st_snp": 8.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "demarcus walker": {
+        "def_snp": 18.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_tkl": 2.0,
+        "idp_tkl_ast": 2.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 2.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DL"
+      },
+      "jonathan jones": {
+        "def_snp": 51.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "gs": 1.0,
+        "idp_pass_def": 2.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_ast": 2.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 10.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "DB"
+      },
+      "trey amos": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      },
+      "javontae jean-baptiste": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DL"
+      },
+      "preston smith": {
+        "def_snp": 21.0,
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "idp_qb_hit": 1.0,
+        "idp_tkl": 3.0,
+        "idp_tkl_ast": 2.0,
+        "idp_tkl_solo": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pts_idp": 5.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "LB"
+      },
+      "t.j. maguranyanga": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DL"
+      },
+      "car'lin vigers": {
+        "gms_active": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "pos": "DB"
+      }
+    },
+    "K": {
+      "jake moody": {
+        "gms_active": 1.0,
+        "gp": 1.0,
+        "pos_rank_half_ppr": 999.0,
+        "pos_rank_ppr": 999.0,
+        "pos_rank_std": 999.0,
+        "st_snp": 1.0,
+        "tm_def_snp": 64.0,
+        "tm_off_snp": 52.0,
+        "tm_st_snp": 16.0,
+        "pos": "PK"
       }
     }
   }

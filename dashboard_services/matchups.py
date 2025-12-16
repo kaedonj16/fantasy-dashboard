@@ -47,7 +47,7 @@ def build_matchup_preview(
 
     # Brackets
     winners_bracket = get_bracket(platform, league_id, "winners", season) or []
-    losers_bracket  = get_bracket(platform, league_id, "losers", season) or []
+    losers_bracket = get_bracket(platform, league_id, "losers", season) or []
 
     # figure out league size from rosters / roster_map
     if rosters:
@@ -155,9 +155,9 @@ def build_matchup_preview(
     # PLAYOFF BRANCH – winners + losers bracket
     # ------------------------------------------------------------------
     is_playoff_week = (
-        bool(playoff_week_start)
-        and week >= playoff_week_start
-        and (winners_bracket or losers_bracket)
+            bool(playoff_week_start)
+            and week >= playoff_week_start
+            and (winners_bracket or losers_bracket)
     )
 
     if is_playoff_week:
@@ -309,11 +309,10 @@ def build_matchup_preview(
     return out
 
 
-
 def render_matchup_carousel_weeks(
-    slides_by_week: dict[int, str],
-    dashboard: bool,
-    active_week: int | None = None,
+        slides_by_week: dict[int, str],
+        dashboard: bool,
+        active_week: int | None = None,
 ) -> str:
     """
     Render a single matchup carousel card.
@@ -348,7 +347,6 @@ def render_matchup_carousel_weeks(
         </div>
       </div>
     """
-
 
 
 def add_bye_weeks_to_players():
@@ -404,7 +402,6 @@ def team_live_totals(
     return actual_total, live_proj_total
 
 
-
 def compute_team_projections_for_weeks(
         matchups_by_week: dict[int, list[dict]],
         statuses_by_week: dict[int, dict],
@@ -457,7 +454,6 @@ def compute_team_projections_for_weeks(
                 proj_by_roster[(week, str(rid))] = live_proj_total
 
     return proj_by_roster
-
 
 
 def build_team_schedule_lookup(games: List[dict]) -> Dict[str, dict]:
@@ -535,6 +531,7 @@ def build_defense_rankings(teams_index: dict) -> dict:
 
     return rankings
 
+
 def has_any_stats(stats: Dict[str, Any]) -> bool:
     """
     Returns True if at least one numeric stat is non-zero.
@@ -595,12 +592,12 @@ def format_player_stats(
         # Common DST/defense keys across various feeds
         sack = first_key(combined, "sack", "sacks", "def_sack", "def_sacks", "idp_sack", "idp_sacks", default=0)
         ints = first_key(combined, "int", "ints", "def_int", "def_ints", "idp_int", default=0)
-        ff   = first_key(combined, "ff", "forced_fum", "forced_fumbles", "def_ff", "idp_ff", "idp_forced_fum", default=0)
-        fr   = first_key(combined, "fum_rec", "fumble_recovery", "fumble_recoveries", "def_fr", "idp_fum_rec", default=0)
-        td   = first_key(combined, "def_td", "dst_td", "td", "tds", "def_tds", "idp_td", default=0)
+        ff = first_key(combined, "ff", "forced_fum", "forced_fumbles", "def_ff", "idp_ff", "idp_forced_fum", default=0)
+        fr = first_key(combined, "fum_rec", "fumble_recovery", "fumble_recoveries", "def_fr", "idp_fum_rec", default=0)
+        td = first_key(combined, "def_td", "dst_td", "td", "tds", "def_tds", "idp_td", default=0)
 
-        pa   = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
-        ya   = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
+        pa = first_key(combined, "pts_allow", "points_allowed", "def_pts_allow", "dst_pa", default=0)
+        ya = first_key(combined, "yds_allow", "yards_allowed", "def_yds_allow", "dst_ya", default=0)
 
         if sack: parts.append(phrase(sack, "sack", "sacks"))
         if ints: parts.append(phrase(ints, "int", "ints"))
@@ -646,6 +643,7 @@ def format_player_stats(
         return None
 
     player_stats = pos_data.get(normalize_name(player))
+
     if not player_stats or not has_any_stats(player_stats):
         return None
 
@@ -689,11 +687,15 @@ def format_player_stats(
         xp_a = first_key(player_stats, "xpa", "xp_att", "pat_att", "extra_points_attempted", default=0)
         fg_long = first_key(player_stats, "fg_long", "fg_longest", "fg_lng", "lng", default=0)
 
-        if fg_a: parts.append(f"{int(fg_m)}/{int(fg_a)} FG")
-        elif fg_m: parts.append(phrase(fg_m, "FG", "FG"))
+        if fg_a:
+            parts.append(f"{int(fg_m)}/{int(fg_a)} FG")
+        elif fg_m:
+            parts.append(phrase(fg_m, "FG", "FG"))
 
-        if xp_a: parts.append(f"{int(xp_m)}/{int(xp_a)} XP")
-        elif xp_m: parts.append(phrase(xp_m, "XP", "XP"))
+        if xp_a:
+            parts.append(f"{int(xp_m)}/{int(xp_a)} XP")
+        elif xp_m:
+            parts.append(phrase(xp_m, "XP", "XP"))
 
         if fg_long: parts.append(f"long {int(fg_long)}")
 
@@ -731,7 +733,6 @@ def format_player_stats(
     if not parts:
         return None
     return ", ".join(parts)
-
 
 
 def build_offense_rankings(teams_index: dict) -> dict:
@@ -1041,12 +1042,13 @@ def render_matchup_slide(
         name = p.get("name", "")
         nfl = p.get("nfl", "")
         pos = p.get("pos")
-        if pos not in ["QB","RB", "WR", "TE", "K", "DEF"]:
+        if pos not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
             pos = "IDP"
+
         if pos == "IDP":
             team_stats = week_stats.get(nfl, {})
             pos_data = team_stats.get(pos, {})
-            player_stats = pos_data.get(normalize_name(name),{})
+            player_stats = pos_data.get(normalize_name(name), {})
             actual = player_stats.get('pts_idp', 0.0)
         else:
             actual = p.get("pts") or 0.0
@@ -1059,7 +1061,8 @@ def render_matchup_slide(
             if proj_val == 0.0 and player_index.get("byeWeek") == w:
                 is_bye = True
 
-        status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+        status = status_by_pid.get(pid if pid != "WAS" else "WSH", STATUS_NOT_STARTED)
+
         if status == "BYE":
             is_bye = True
 

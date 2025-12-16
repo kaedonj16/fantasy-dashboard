@@ -62,11 +62,11 @@ KTC_URL = "https://keeptradecut.com/dynasty-rankings?page=0"
 
 
 def fetch_fantasycalc_api_values(
-    *,
-    is_dynasty: bool = True,
-    num_qbs: int = 1,
-    num_teams: Optional[int] = None,
-    ppr: float = 1.0,
+        *,
+        is_dynasty: bool = True,
+        num_qbs: int = 1,
+        num_teams: Optional[int] = None,
+        ppr: float = 1.0,
 ) -> List[dict]:
     """
     Call FantasyCalc values API and return the parsed JSON list.
@@ -98,8 +98,8 @@ def fetch_fantasycalc_api_values(
 
 
 def write_fantasycalc_api_to_csv(
-    values: List[dict],
-    out_csv: Path = path_fantasycalc_values(),
+        values: List[dict],
+        out_csv: Path = path_fantasycalc_values(),
 ) -> None:
     """
     Flatten FantasyCalc API payload into a CSV with one row per player.
@@ -174,7 +174,7 @@ def write_fantasycalc_api_to_csv(
 
 
 def load_fantasycalc_api_values(
-    csv_path: Path = path_fantasycalc_values(),
+        csv_path: Path = path_fantasycalc_values(),
 ) -> Optional[List[dict]]:
     """
     Load the FantasyCalc API CSV if it exists; otherwise return None.
@@ -189,7 +189,7 @@ def load_fantasycalc_api_values(
 
 
 def download_dynastyprocess_values_csv(
-    out_csv: Path = path_dynastyprocess_values(),
+        out_csv: Path = path_dynastyprocess_values(),
 ) -> None:
     """
     Download dynastyprocess values.csv and store it under data/.
@@ -220,7 +220,7 @@ def download_dynastyprocess_values_csv(
 
 
 def load_dynastyprocess_values(
-    csv_path: Path = path_dynastyprocess_values(),
+        csv_path: Path = path_dynastyprocess_values(),
 ) -> Optional[List[dict]]:
     """
     Load DynastyProcess values.csv as a list of dicts.
@@ -240,12 +240,12 @@ def load_dynastyprocess_values(
 # ============================================================
 
 def scrape_all_vendor_values(
-    *,
-    is_dynasty: bool = True,
-    num_qbs: int = 1,
-    num_teams: Optional[int] = None,
-    ppr: float = 1.0,
-    roster_map: Optional[Dict[str, str]] = None,
+        *,
+        is_dynasty: bool = True,
+        num_qbs: int = 1,
+        num_teams: Optional[int] = None,
+        ppr: float = 1.0,
+        roster_map: Optional[Dict[str, str]] = None,
 ) -> None:
     """
     Refresh external vendor value CSVs:

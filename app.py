@@ -19,10 +19,11 @@ from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_u
     get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.data_building.build_daily_value_table import build_daily_data
-from dashboard_services.pages.graphs_page import build_graphs_body
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
+from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.platform_api import (
     get_league,
@@ -35,7 +36,6 @@ from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
     seed_top6_from_team_stats, build_standings_map
-from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.utils import load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
     load_players_index, \
     load_week_projection, bucket_for_slot, clear_activity_cache_for_league, clear_weekly_cache_for_league, \
@@ -75,14 +75,13 @@ app = Flask(
 app.secret_key = os.urandom(32)
 plotly_js = get_plotlyjs()
 
-
 FORM_BODY = """
 <div class="home-page">
     <section class="home-hero">
         <div class="home-hero-left">
             <h1 class="home-title">BR Fantasy Dashboard</h1>
             <p class="home-subtitle">
-                Turn your Sleeper league into a real front office: live
+                Turn your Fantasy league into a real front office: live
                 projections, matchup previews, power rankings, and more—all in
                 one place.
             </p>
@@ -169,7 +168,6 @@ FORM_BODY = """
 </div>
 """
 
-
 BASE_HTML = """
 <!doctype html>
 <html>
@@ -214,21 +212,9 @@ BASE_HTML = """
 """
 
 
-def timed(label: str, fn, *args, **kwargs):
-    """
-    Helper to log how long a block takes.
-    Usage: result = timed("build_tables", build_tables, ...)
-    """
-    t0 = time.perf_counter()
-    try:
-        return fn(*args, **kwargs)
-    finally:
-        dt = time.perf_counter() - t0
-        print(f"[TIMING] {label}: {dt:.2f}s")
-
-
 def _cache_key(platform: str, season: int, league_id: str):
     return str(platform).lower().strip(), int(season), str(league_id).strip()
+
 
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
@@ -242,6 +228,7 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
     if time.time() - ts > PAGE_HTML_TTL:
         return None
     return html
+
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
@@ -276,7 +263,6 @@ def get_teams_index_global():
     return _TEAMS_INDEX_GLOBAL
 
 
-
 def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
     thread = threading.Thread(
@@ -285,7 +271,6 @@ def run_daily_data_async(season: int, week: int) -> None:
         daemon=True,
     )
     thread.start()
-
 
 
 def _weeks_hash(weeks):
@@ -601,7 +586,7 @@ def ensure_weekly_bits(ctx: dict) -> None:
     players_map = ctx["players_map"]
 
     proj_by_week = build_projections_by_week(current_season, weeks)
-    if any(k in count_roster_positions(get_roster_positions()) for k in ["DL","LB", "DB","IDP_FLEX"]):
+    if any(k in count_roster_positions(get_roster_positions()) for k in ["DL", "LB", "DB", "IDP_FLEX"]):
         statuses = build_status_by_week(current_season, weeks, players_index, teams_index, load_idp_index())
     else:
         statuses = build_status_by_week(current_season, weeks, players_index, teams_index)
@@ -630,7 +615,6 @@ def ensure_weekly_bits(ctx: dict) -> None:
     key_series = list(zip(df["week"].astype(int), df["roster_id"].astype(str)))
     df["proj"] = [proj_by_roster.get(k, float("nan")) for k in key_series]
     ctx["df_weekly"] = df
-
 
 
 def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int) -> dict:
@@ -1329,7 +1313,8 @@ def build_standings_body(ctx: dict) -> str:
 
     standings_html = render_standings(team_stats, num_teams)
     table_html = render_team_stats(team_stats, df_weekly[df_weekly["finalized"] == True].copy())
-    power_playoffs_html = render_power_and_playoffs(team_stats, roster_map, ctx["league_id"], ctx["platform"], ctx["current_season"])
+    power_playoffs_html = render_power_and_playoffs(team_stats, roster_map, ctx["league_id"], ctx["platform"],
+                                                    ctx["current_season"])
     sidebar_html = render_standings_sidebar(team_stats)
 
     body = f"""
@@ -1702,9 +1687,11 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
 
 
 def build_weekly_hub_body(ctx: dict) -> str:
+    import json
+
     league_id = ctx["league_id"]
     platform = ctx["platform"]
-    season = ctx["current_season"]
+    season = ctx["current_season"]  # use current_season consistently
     rosters = ctx["rosters"]
     users = ctx["users"]
     df_weekly = ctx["df_weekly"]
@@ -1725,8 +1712,15 @@ def build_weekly_hub_body(ctx: dict) -> str:
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
 
-    # Default week: current if valid, else last prior
-    default_week = current_week if current_week in range(1, weeks) else (weeks - 1)
+    # Weeks are typically 1..weeks inclusive. Clamp safely.
+    max_week = int(weeks)
+    if max_week < 1:
+        max_week = 1
+
+    def clamp_week(w: int) -> int:
+        return max(1, min(max_week, int(w)))
+
+    default_week = clamp_week(current_week if current_week else max_week)
 
     # --- Matchups for default week only ---
     default_matchups = matchups_by_week.get(default_week, []) or []
@@ -1755,12 +1749,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
     # --- Week dropdown ---
     options = []
-    for w in range(1, weeks):
+    for w in range(1, max_week + 1):
         sel = " selected" if w == default_week else ""
         options.append(f"<option value='{w}'{sel}>Week {w}</option>")
     week_select_html = "".join(options)
 
-    # --- Only prebuild DEFAULT week’s left + sidebar panels ---
+    # --- Only prebuild DEFAULT week’s panels ---
     top_scorers_html = render_weekly_top_scorers_for_week(
         league_id,
         df_weekly,
@@ -1786,8 +1780,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
           </div>
     """
 
-    platform_js = json.dumps(ctx["platform"])
-    season_js = json.dumps(ctx["season"])  # NOTE: ctx["season"] not current_season
+    platform_js = json.dumps(platform)
+    season_js = json.dumps(season)
     league_js = json.dumps(league_id)
 
     return f"""
@@ -1834,45 +1828,73 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
 <script>
 (function() {{
-  var leagueId = {league_js};
+  var leagueId  = {league_js};
+  var platform  = {platform_js};
+  var season    = {season_js};
 
   var sel = document.getElementById('hubWeek');
   if (!sel) return;
 
+  // Guard: if this template is injected again, don't stack handlers
+  if (sel.__hubWeekBound) return;
+  sel.__hubWeekBound = true;
+
   var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
   var loadingOverlay    = document.getElementById('weeklyMatchupsLoading');
 
+  var mainContainer = document.querySelector('.week-main-panels');
+  var sideContainer = document.querySelector('.week-side-panels');
+
   function showLoading() {{
-    if (loadingOverlay) {{
-      loadingOverlay.classList.remove('hidden');
-    }}
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+    sel.disabled = true;
   }}
 
   function hideLoading() {{
-    if (loadingOverlay) {{
-      loadingOverlay.classList.add('hidden');
-    }}
+    if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    sel.disabled = false;
   }}
 
+  // Abort in-flight request if user changes weeks quickly
+  var controller = null;
+  var requestSeq = 0;
+
   sel.addEventListener('change', function() {{
-    var w = this.value;
+    var w = String(this.value || '');
+
+    if (!w) return;
+
+    // cancel previous request
+    if (controller) {{
+      try {{ controller.abort(); }} catch (e) {{}}
+    }}
+    controller = (window.AbortController ? new AbortController() : null);
+
+    var mySeq = ++requestSeq;
 
     showLoading();
 
-    fetch('/api/weekly-week?platform=' + encodeURIComponent(platform) +
-          '&season=' + encodeURIComponent(season) +
-          '&league_id=' + encodeURIComponent(leagueId) +
-          '&week=' + encodeURIComponent(w))
-      .then(function(res) {{ return res.json(); }})
+    var url =
+      '/api/weekly-week?platform=' + encodeURIComponent(platform) +
+      '&season=' + encodeURIComponent(season) +
+      '&league_id=' + encodeURIComponent(leagueId) +
+      '&week=' + encodeURIComponent(w);
+
+    fetch(url, {{
+      signal: controller ? controller.signal : undefined
+    }})
+      .then(function(res) {{
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      }})
       .then(function(data) {{
-        if (!data.ok) {{
-          console.error('Failed to load week', w, data.error);
-          hideLoading();
+        // ignore stale responses
+        if (mySeq !== requestSeq) return;
+
+        if (!data || !data.ok) {{
+          console.error('Failed to load week', w, data && data.error);
           return;
         }}
-
-        var mainContainer = document.querySelector('.week-main-panels');
-        var sideContainer = document.querySelector('.week-side-panels');
 
         if (mainContainer && typeof data.top_html === 'string') {{
           mainContainer.innerHTML =
@@ -1889,20 +1911,26 @@ def build_weekly_hub_body(ctx: dict) -> str:
         }}
 
         if (matchupsContainer && typeof data.matchups_html === 'string') {{
-          // only replace inner carousel HTML, keep shell + overlay
           matchupsContainer.innerHTML = data.matchups_html;
 
-          // re-align the carousel to the first slide + wire up buttons
+          // re-align/wire carousel controls
           if (typeof window.resetMatchupCarousels === 'function') {{
             window.resetMatchupCarousels(matchupsContainer);
           }}
-        }}
 
-        hideLoading();
+          // if your page uses other init hooks after HTML swaps
+          if (typeof window.initPageRoot === 'function') {{
+            window.initPageRoot(matchupsContainer);
+          }}
+        }}
       }})
       .catch(function(err) {{
+        if (err && err.name === 'AbortError') return; // expected on fast switching
         console.error('Error fetching week', w, err);
-        hideLoading();
+      }})
+      .finally(function() {{
+        // only hide if we're still the latest request
+        if (mySeq === requestSeq) hideLoading();
       }});
   }});
 }})();
@@ -1915,7 +1943,7 @@ def build_projections_by_week(season: int, weeks: int):
     for w in range(1, weeks):
         try:
             projections = load_week_projection(season, w)
-            bundles[w] = { "projections": projections, }
+            bundles[w] = {"projections": projections, }
         except Exception as e:
             print(f"Error loading week {w} projections: {e}")
             bundles[w] = {"projections": {}}
@@ -1923,7 +1951,7 @@ def build_projections_by_week(season: int, weeks: int):
     return bundles
 
 
-def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: dict[str, dict] = None ):
+def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: dict[str, dict] = None):
     bundles = {}
     for w in range(1, weeks):
         try:
@@ -2811,6 +2839,7 @@ def build_teams_body(ctx: dict) -> str:
     </script>
     """
 
+
 @app.route("/privacy")
 @app.route("/league/<league_id>/privacy")
 def privacy_page(league_id: Optional[str] = None):
@@ -2876,9 +2905,6 @@ def support_page(league_id: Optional[str] = None):
                 If you find the dashboard helpful for your league, you can support
                 ongoing development and hosting costs.
               </p>
-              <p style="margin-top:10px;">
-                You can add your own link here (Patreon, Ko-fi, PayPal, etc.):
-              </p>
               <p style="margin-top:6px;">
                 <a
                   class="link-pill"
@@ -2929,7 +2955,8 @@ def support_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy Support",league_id if league_id else None, "support", body)
+    return render_page("BR Fantasy Support", league_id if league_id else None, "support", body)
+
 
 @app.route("/faq")
 @app.route("/league/<league_id>/faq")
@@ -3037,7 +3064,7 @@ def faq_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy FAQ",league_id if league_id else None, "faq", body)
+    return render_page("BR Fantasy FAQ", league_id if league_id else None, "faq", body)
 
 
 @app.route("/contact", methods=["GET", "POST"])
@@ -3081,7 +3108,7 @@ def contact_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy Contact",league_id if league_id else None, "contact", body)
+    return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body)
 
 
 def league_url(slug: str, league_id: Optional[str] = None) -> str:
@@ -3105,7 +3132,7 @@ def page_dashboard(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/standings")
 def page_standings(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = timed("build_standings_body", build_standings_body, ctx)
+    body = build_standings_body(ctx)
     return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
 
 
@@ -3136,7 +3163,7 @@ def page_activity(platform: str, season: int, league_id: str):
         return render_page("BR Fantasy Activity", league_id, "activity", cached, platform, season)
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = timed("build_activity_body", build_activity_body, ctx)
+    body = build_activity_body(ctx)
     store_page_html(platform, season, league_id, "activity", body)
     return render_page("BR Fantasy Activity", league_id, "activity", body, platform, season)
 
@@ -3148,7 +3175,7 @@ def page_graphs(platform: str, season: int, league_id: str):
         return render_page("BR Fantasy Graphs", league_id, "graphs", cached, platform, season)
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body_html = timed("build_graphs_body", build_graphs_body, ctx)
+    body_html = build_graphs_body(ctx)
     store_page_html(platform, season, league_id, "graphs", body_html)
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
@@ -3160,7 +3187,7 @@ def page_teams(platform: str, season: int, league_id: str):
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body_html = timed("build_teams_body", build_teams_body, ctx)
+    body_html = build_teams_body(ctx)
     store_page_html(platform, season, league_id, "teams", body_html)
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
 
@@ -3381,7 +3408,6 @@ def api_refresh_page():
         else:
             body_html = ""
 
-
         return jsonify({
             "ok": True,
             "refreshed_at": datetime.now().isoformat(timespec="seconds"),
@@ -3393,7 +3419,6 @@ def api_refresh_page():
             "ok": False,
             "error": f"Refresh failed: {e}",
         }), 500
-
 
 
 @app.route("/logout")
@@ -3597,7 +3622,6 @@ def _sanitize_for_json(obj):
 
 @app.route("/api/league-players")
 def api_league_players():
-
     model_value_table = load_model_value_table()
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")

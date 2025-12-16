@@ -55,7 +55,7 @@ def highest_single_game_points(league_id: str,
                                season,
                                users,
                                rosters,
-                               weeks=range(1, 18),) -> dict:
+                               weeks=range(1, 18), ) -> dict:
     """
     Returns a dict for the single highest fantasy score by any NFL player in your league:
       {
@@ -67,7 +67,6 @@ def highest_single_game_points(league_id: str,
     # You likely already have this helper; otherwise map roster_id -> "Team (Owner)"
     roster_map = build_roster_map(platform, league_id, season, users, rosters)
     best = ["", 0.0, "", "", "", ""]
-
 
     for w in range(1, weeks):
         matchups = get_matchups(platform, league_id, w, season) or []
@@ -99,7 +98,8 @@ def highest_single_game_points(league_id: str,
     return best
 
 
-def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id: str, platform: str, season: str, users, rosters) -> dict:
+def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id: str, platform: str, season: str, users,
+                          rosters) -> dict:
     """
     Returns a dict with keys mapping to tuples of display-friendly values.
       highest_single_week: (team, week, points)

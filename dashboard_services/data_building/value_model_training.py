@@ -866,11 +866,11 @@ def rewrite_value_table_with_model() -> Path:
             name = f"{year} {rnd}{suffix}"
 
         cleaned_assets.append({
-            "id": key,           # trade calculator uses this as pick id
-            "name": name,        # display string
-            "team": "Pick",      # keeps schema consistent
+            "id": key,  # trade calculator uses this as pick id
+            "name": name,  # display string
+            "team": "Pick",  # keeps schema consistent
             "position": "PICK",  # lets UI / logic distinguish picks
-            "age": None,         # no age for picks
+            "age": None,  # no age for picks
             "value": float(val),
             "search_name": normalize_name(name),
             "pos_rank": None,
@@ -925,4 +925,3 @@ def rewrite_value_table_with_model() -> Path:
     print(f"[value_model] Wrote model values (players + picks) → {out_path}")
 
     return out_path
-

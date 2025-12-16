@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional, List, Tuple
 ESPN_BENCH_SLOT = 20
 ESPN_IR_SLOT = 21
 
+
 def _record_and_streak(team_raw: Dict[str, Any]) -> Tuple[str, str]:
     """
     Returns:
@@ -32,11 +33,11 @@ def _record_and_streak(team_raw: Dict[str, Any]) -> Tuple[str, str]:
 
 
 def transform_espn_roster_to_unified(
-    espn_roster: Dict[str, Any],
-    *,
-    league_id: str,
-    owner_map: Optional[Dict[str, str]] = None,
-    pro_team_id_to_abbrev: Optional[Dict[int, str]] = None,
+        espn_roster: Dict[str, Any],
+        *,
+        league_id: str,
+        owner_map: Optional[Dict[str, str]] = None,
+        pro_team_id_to_abbrev: Optional[Dict[int, str]] = None,
 ) -> Dict[str, Any]:
     """
     espn_roster: one item from your espn get_rosters() output:
@@ -133,8 +134,8 @@ def transform_espn_roster_to_unified(
         "keepers": None,
         "league_id": str(league_id),
         "metadata": {
-            "record": record_str,     # will be "" unless you fetch per-week outcomes elsewhere
-            "streak": streak_str,     # e.g. "2W"
+            "record": record_str,  # will be "" unless you fetch per-week outcomes elsewhere
+            "streak": streak_str,  # e.g. "2W"
         },
         "owner_id": unified_owner,
         "player_map": None,
@@ -152,7 +153,8 @@ def transform_espn_roster_to_unified(
             # not available from your shown ESPN payload; keep defaults:
             "ppts": 0,
             "ppts_decimal": 0,
-            "total_moves": int(team_raw.get("transactionCounter") or 0) if team_raw.get("transactionCounter") is not None else 0,
+            "total_moves": int(team_raw.get("transactionCounter") or 0) if team_raw.get(
+                "transactionCounter") is not None else 0,
             "waiver_budget_used": 0,
             "waiver_position": 0,
         },

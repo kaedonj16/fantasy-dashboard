@@ -32,14 +32,13 @@ HEADERS = {
     )
 }
 
-
 MAX_WORKERS_TARGETS = 6  # tune this based on how aggressive you want to be
 
 
 def fetch_team_target_share(
-    team: str,
-    season: int,
-    session: requests.Session,
+        team: str,
+        season: int,
+        session: requests.Session,
 ) -> Dict[str, Tuple[float, float]]:
     """
     Scrape Footballguys Team Targets page for one team and season.

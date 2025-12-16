@@ -100,6 +100,7 @@ def build_idp_players_index() -> dict:
     print(f"IDP index built. Total IDPs: {len(idp_index)} → {outfile}")
     return idp_index
 
+
 import json
 import os
 import requests
