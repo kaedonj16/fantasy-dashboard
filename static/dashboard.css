@@ -1,25 +1,34 @@
-/* ============================================================
-   Responsive scaling WITHOUT css zoom (Plotly-safe)
-   ============================================================ */
-
 :root { --page-scale: 1; }
-
-/* pick the same scale values you had */
 @media (max-width: 1600px) { :root { --page-scale: 0.9; } }
 @media (max-width: 1400px) { :root { --page-scale: 0.8; } }
 @media (max-width: 1200px) { :root { --page-scale: 0.7; } }
 @media (max-width: 1000px) { :root { --page-scale: 0.6; } }
 
-/* scale the page content, but keep layout width correct */
+html, body {
+  height: 100%;
+  margin: 0;
+  zoom: 1;
+}
+
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* scale ONLY the app content */
+#app-scale {
   transform: scale(var(--page-scale));
   transform-origin: top left;
   width: calc(100% / var(--page-scale));
+  flex: 1 0 auto;      /* this pushes footer down */
+  min-height: 0;
 }
 
-/* IMPORTANT: remove any zoom */
-html, body { zoom: 1; }
-
+/* footer stays at the bottom naturally */
+.site-footer {
+  margin-top: 0;       /* no need for auto anymore */
+}
 
 /* ============================================
    THEME ROOT VARIABLES (LIGHT MODE DEFAULT)

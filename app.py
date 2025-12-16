@@ -168,6 +168,7 @@ FORM_BODY = """
 </div>
 """
 
+
 BASE_HTML = """
 <!doctype html>
 <html>
@@ -184,10 +185,13 @@ BASE_HTML = """
     </script>
   </head>
   <body>
-    {nav}
-    <main id="page-root" class="overview-layout">
-      {body}
-    </main>
+    <div id="app-scale">
+      {nav}
+      <main id="page-root" class="overview-layout">
+        {body}
+      </main>
+    </div>
+
     <footer class="site-footer">
       <div class="site-footer-inner">
         <div class="site-footer-left">
@@ -206,10 +210,12 @@ BASE_HTML = """
         </div>
       </div>
     </footer>
+
     <script src="/static/app.js"></script>
   </body>
 </html>
 """
+
 
 
 def _cache_key(platform: str, season: int, league_id: str):
@@ -2841,8 +2847,8 @@ def build_teams_body(ctx: dict) -> str:
 
 
 @app.route("/privacy")
-@app.route("/league/<league_id>/privacy")
-def privacy_page(league_id: Optional[str] = None):
+@app.route("/<platform>/<int:season>/<league_id>/privacy")
+def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     body = """
         <div class="static-page">
           <div class="static-card-page">
@@ -2889,8 +2895,8 @@ def privacy_page(league_id: Optional[str] = None):
 
 
 @app.route("/support")
-@app.route("/league/<league_id>/support")
-def support_page(league_id: Optional[str] = None):
+@app.route("/<platform>/<int:season>/<league_id>/support")
+def support_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     body = """
         <div class="static-page">
           <div class="static-card-page">
@@ -2955,12 +2961,12 @@ def support_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy Support", league_id if league_id else None, "support", body)
+    return render_page("BR Fantasy Support", league_id if league_id else None, "support", body, platform, season)
 
 
 @app.route("/faq")
-@app.route("/league/<league_id>/faq")
-def faq_page(league_id: Optional[str] = None):
+@app.route("/<platform>/<int:season>/<league_id>/faq")
+def faq_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     body = """
         <div class="static-page">
           <div class="static-card-page">
@@ -3064,12 +3070,12 @@ def faq_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy FAQ", league_id if league_id else None, "faq", body)
+    return render_page("BR Fantasy FAQ", league_id if league_id else None, "faq", body, platform, season)
 
 
 @app.route("/contact", methods=["GET", "POST"])
-@app.route("/league/<league_id>/contact")
-def contact_page(league_id: Optional[str] = None):
+@app.route("/<platform>/<int:season>/<league_id>/contact")
+def contact_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     # super simple "email us" style page; you can later hook this to a form handler
     body = """
         <div class="static-page">
@@ -3108,7 +3114,7 @@ def contact_page(league_id: Optional[str] = None):
           </div>
         </div>
         """
-    return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body)
+    return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body, platform, season)
 
 
 def league_url(slug: str, league_id: Optional[str] = None) -> str:
@@ -3146,7 +3152,7 @@ def page_weekly(platform: str, season: int, league_id: str):
 
 @app.route("/trade")
 @app.route("/<platform>/<int:season>/<league_id>/trade")
-def page_trade(platform: str, season: int, league_id: Optional[str] = None):
+def page_trade(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     if league_id:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         body = build_trade_calculator_body(ctx["league_id"], ctx["current_season"])

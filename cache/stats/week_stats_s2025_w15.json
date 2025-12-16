@@ -9460,7 +9460,7 @@
   "MIA": {
     "QB": {
       "tua tagovailoa": {
-        "pass_yds": 61,
+        "pass_yds": 65,
         "pass_td": 0,
         "int": 1,
         "rush_att": 1,
@@ -9470,7 +9470,7 @@
     },
     "RB": {
       "de'von achane": {
-        "rush_att": 8,
+        "rush_att": 9,
         "rush_yds": 49,
         "rush_td": 0,
         "rec": 2,
@@ -9551,9 +9551,9 @@
         "def_td": 0,
         "def_int": 0,
         "sacks": 2,
-        "yds_allowed": 116,
+        "yds_allowed": 187,
         "fumbles_recovered": 0,
-        "pts_allowed": 7,
+        "pts_allowed": 14,
         "safeties": 0
       }
     },
@@ -12512,8 +12512,8 @@
   "PIT": {
     "QB": {
       "aaron rodgers": {
-        "pass_yds": 105,
-        "pass_td": 0,
+        "pass_yds": 124,
+        "pass_td": 1,
         "int": 0,
         "rush_att": 0,
         "rush_yds": 0,
@@ -12522,16 +12522,16 @@
     },
     "RB": {
       "kenneth gainwell": {
-        "rush_att": 3,
-        "rush_yds": 3,
+        "rush_att": 5,
+        "rush_yds": 44,
         "rush_td": 0,
         "rec": 6,
         "rec_yds": 41,
         "rec_td": 0
       },
       "jaylen warren": {
-        "rush_att": 8,
-        "rush_yds": 20,
+        "rush_att": 11,
+        "rush_yds": 31,
         "rush_td": 0,
         "rec": 1,
         "rec_yds": 0,
@@ -12570,6 +12570,14 @@
         "rec": 0,
         "rec_yds": 0,
         "rec_td": 0
+      },
+      "marquez valdes-scantling": {
+        "rush_att": 0,
+        "rush_yds": 0,
+        "rush_td": 0,
+        "rec": 1,
+        "rec_yds": 19,
+        "rec_td": 1
       },
       "calvin austin iii": {
         "rush_att": 0,
@@ -12610,8 +12618,8 @@
       "team": {
         "def_td": 0,
         "def_int": 1,
-        "sacks": 0,
-        "yds_allowed": 113,
+        "sacks": 1,
+        "yds_allowed": 105,
         "fumbles_recovered": 0,
         "pts_allowed": 3,
         "safeties": 0
