@@ -18,7 +18,7 @@ from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_u
     get_nfl_scores_for_date, build_team_game_lookup, \
     get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters
 from dashboard_services.awards import compute_awards_season, render_awards_section
-from dashboard_services.data_building.build_daily_value_table import build_daily_data
+from data_building.build_daily_value_table import build_daily_data
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks

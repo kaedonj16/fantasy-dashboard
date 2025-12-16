@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, Any, Iterable
 
-from dashboard_services.data_building.nfl_target_share import fetch_league_target_share
-from dashboard_services.data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
+from data_building.nfl_target_share import fetch_league_target_share
+from data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from dashboard_services.service import age_from_bday
 from dashboard_services.utils import canon_team, load_players_index
 
@@ -255,7 +255,8 @@ def write_usage_table_snapshot(
 
     It uses the usage data from build_usage_map_for_season(season, weeks).
     """
-    DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+    DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+    print(DATA_DIR)
     players_index: Dict[str, dict] = load_players_index()
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
 

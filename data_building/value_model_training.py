@@ -29,7 +29,7 @@ from dashboard_services.utils import load_teams_index, bucket_for_slot, normaliz
 # Paths / constants
 # ------------------------------------------------
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 

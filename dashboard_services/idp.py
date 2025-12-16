@@ -106,7 +106,7 @@ import os
 import requests
 from pathlib import Path
 
-from dashboard_services.data_building.sleeper_bulk_stats import CACHE_DIR
+from data_building.sleeper_bulk_stats import CACHE_DIR
 
 TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
 TANK01_HEADERS = {
