@@ -42,12 +42,15 @@ def build_matchup_preview(
     rosters = get_rosters(platform, league_id, season) or []
 
     # Pull league settings to find playoff start week
-    settings = get_league_settings()
+    settings = get_league_settings() or {}
     playoff_week_start = int(settings.get("playoff_week_start") or 0)
 
-    # Brackets
-    winners_bracket = get_bracket(platform, league_id, "winners", season) or []
-    losers_bracket = get_bracket(platform, league_id, "losers", season) or []
+    # Brackets (always defined)
+    winners_bracket: List[dict] = []
+    losers_bracket: List[dict] = []
+    if playoff_week_start and week >= playoff_week_start:
+        winners_bracket = get_bracket(platform, league_id, "winners", season) or []
+        losers_bracket = get_bracket(platform, league_id, "losers", season) or []
 
     # figure out league size from rosters / roster_map
     if rosters:
@@ -81,11 +84,14 @@ def build_matchup_preview(
             avatar_cache[owner_id] = avatar_from_users(platform, users, owner_id) if owner_id is not None else None
         return avatar_cache[owner_id]
 
+    def _to_int(x) -> Optional[int]:
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
+
     def _from_players_map(pid: str) -> Dict[str, str]:
-        if players_map:
-            info = players_map.get(pid)
-        else:
-            info = None
+        info = players_map.get(pid) if players_map else None
         if info:
             name = info.get("name") or pid
             nfl = info.get("team") or "FA"
@@ -95,8 +101,11 @@ def build_matchup_preview(
                 else ""
             )
             return {"name": name, "nfl": nfl, "pos": pos}
+
+        # DEF fallback for team abbrevs
         if pid.isalpha() and 2 <= len(pid) <= 3:
             return {"name": f"{pid} D/ST", "nfl": pid, "pos": "DEF"}
+
         return {"name": pid, "nfl": "FA", "pos": ""}
 
     def _pinfo(pid: str, pts_map: Dict[str, float]) -> dict:
@@ -155,125 +164,106 @@ def build_matchup_preview(
     # PLAYOFF BRANCH – winners + losers bracket
     # ------------------------------------------------------------------
     is_playoff_week = (
-            bool(playoff_week_start)
-            and week >= playoff_week_start
-            and (winners_bracket or losers_bracket)
+        bool(playoff_week_start)
+        and week >= playoff_week_start
+        and (winners_bracket or losers_bracket)
     )
 
     if is_playoff_week:
-        # Map roster_id -> matchup row for *this* fantasy week
+        # Map roster_id -> matchup row for this fantasy week
         by_rid: Dict[str, dict] = {}
         for row in mlist:
             rid_str = str(row.get("roster_id"))
             if rid_str not in by_rid:
                 by_rid[rid_str] = row
 
-        # Combine winners + losers for result resolution
         all_brackets = list(winners_bracket) + list(losers_bracket)
 
-        # result_by_match[m] = {"w": roster_id or None, "l": roster_id or None}
-        result_by_match: Dict[int, Dict[str, Optional[int]]] = {}
+        # Determine which bracket rounds exist, and map fantasy week offset to a round.
+        rounds_present = sorted({r for r in (_to_int(b.get("r")) for b in all_brackets) if r is not None})
+        if not rounds_present:
+            # Brackets exist but malformed; fall back to regular season grouping
+            is_playoff_week = False
+        else:
+            week_offset = max(0, week - playoff_week_start)  # 0 for first playoff week
+            idx = min(week_offset, len(rounds_present) - 1)
+            current_round = rounds_present[idx]
 
-        for b in all_brackets:
-            try:
-                mid = int(b.get("m"))
-            except (TypeError, ValueError):
-                continue
+            # result_by_match[m] = {"w": roster_id or None, "l": roster_id or None}
+            result_by_match: Dict[int, Dict[str, Optional[int]]] = {}
 
-            entry = result_by_match.setdefault(mid, {"w": None, "l": None})
-
-            w_team = b.get("w")
-            l_team = b.get("l")
-
-            if w_team is not None:
-                try:
-                    entry["w"] = int(w_team)
-                except (TypeError, ValueError):
-                    pass
-
-            if l_team is not None:
-                try:
-                    entry["l"] = int(l_team)
-                except (TypeError, ValueError):
-                    pass
-
-        def _resolve_slot(b: dict, slot_key: str, from_key: str) -> Optional[int]:
-            """
-            Resolve t1 / t2 from either a direct value or a from-spec:
-            - tX: direct roster id
-            - tX_from: {"w": match_no} or {"l": match_no}
-            """
-            direct = b.get(slot_key)
-            if direct is not None:
-                try:
-                    return int(direct)
-                except (TypeError, ValueError):
-                    return None
-
-            from_spec = b.get(from_key)
-            if not isinstance(from_spec, dict) or not from_spec:
-                return None
-
-            if "w" in from_spec:
-                prev_m = from_spec["w"]
-                try:
-                    prev_m = int(prev_m)
-                except (TypeError, ValueError):
-                    return None
-                return result_by_match.get(prev_m, {}).get("w")
-
-            if "l" in from_spec:
-                prev_m = from_spec["l"]
-                try:
-                    prev_m = int(prev_m)
-                except (TypeError, ValueError):
-                    return None
-                return result_by_match.get(prev_m, {}).get("l")
-
-            return None
-
-        # Round mapping: playoff_week_start -> round 1, etc.
-        current_round = (week - playoff_week_start) + 1
-
-        def _build_round_matchups(bracket_list: List[dict]) -> List[dict]:
-            out_matches: List[dict] = []
-            for b in bracket_list:
-                if b.get("r") != current_round:
+            for b in all_brackets:
+                mid = _to_int(b.get("m"))
+                if mid is None:
                     continue
 
-                mid = b.get("m")
+                entry = result_by_match.setdefault(mid, {"w": None, "l": None})
 
-                t1_rid = _resolve_slot(b, "t1", "t1_from")
-                t2_rid = _resolve_slot(b, "t2", "t2_from")
+                w_team = _to_int(b.get("w"))
+                l_team = _to_int(b.get("l"))
 
-                left_row = by_rid.get(str(t1_rid)) if t1_rid is not None else None
-                right_row = by_rid.get(str(t2_rid)) if t2_rid is not None else None
+                if w_team is not None:
+                    entry["w"] = w_team
+                if l_team is not None:
+                    entry["l"] = l_team
 
-                if left_row is not None:
-                    left = _team_block_from_match_row(left_row)
-                else:
-                    left = _team_block_tbd(t1_rid)
+            def _resolve_slot(b: dict, slot_key: str, from_key: str) -> Optional[int]:
+                """
+                Resolve t1 / t2 from either a direct value or a from-spec:
+                  - tX: direct roster id
+                  - tX_from: {"w": match_no} or {"l": match_no}
+                """
+                direct = _to_int(b.get(slot_key))
+                if direct is not None:
+                    return direct
 
-                if right_row is not None:
-                    right = _team_block_from_match_row(right_row)
-                else:
-                    right = _team_block_tbd(t2_rid)
+                from_spec = b.get(from_key)
+                if not isinstance(from_spec, dict) or not from_spec:
+                    return None
 
-                out_matches.append({
-                    "matchup_id": mid,
-                    "left": left,
-                    "right": right,
-                })
-            return out_matches
+                if "w" in from_spec:
+                    prev_m = _to_int(from_spec.get("w"))
+                    if prev_m is None:
+                        return None
+                    return result_by_match.get(prev_m, {}).get("w")
 
-        # Build matches for both winners & losers in this round
-        playoff_out: List[dict] = []
-        playoff_out.extend(_build_round_matchups(winners_bracket))
-        playoff_out.extend(_build_round_matchups(losers_bracket))
+                if "l" in from_spec:
+                    prev_m = _to_int(from_spec.get("l"))
+                    if prev_m is None:
+                        return None
+                    return result_by_match.get(prev_m, {}).get("l")
 
-        # In playoffs we usually want *all* games (winners + losers),
-        # so do NOT cap by expected_matchups here.
-        return playoff_out
+                return None
+
+            def _build_round_matchups(bracket_list: List[dict]) -> List[dict]:
+                out_matches: List[dict] = []
+                for b in bracket_list:
+                    if _to_int(b.get("r")) != current_round:
+                        continue
+
+                    mid = b.get("m")  # keep original (can be str/int)
+                    t1_rid = _resolve_slot(b, "t1", "t1_from")
+                    t2_rid = _resolve_slot(b, "t2", "t2_from")
+
+                    left_row = by_rid.get(str(t1_rid)) if t1_rid is not None else None
+                    right_row = by_rid.get(str(t2_rid)) if t2_rid is not None else None
+
+                    left = _team_block_from_match_row(left_row) if left_row is not None else _team_block_tbd(t1_rid)
+                    right = _team_block_from_match_row(right_row) if right_row is not None else _team_block_tbd(t2_rid)
+
+                    out_matches.append({
+                        "matchup_id": mid,
+                        "left": left,
+                        "right": right,
+                    })
+                return out_matches
+
+            playoff_out: List[dict] = []
+            playoff_out.extend(_build_round_matchups(winners_bracket))
+            playoff_out.extend(_build_round_matchups(losers_bracket))
+
+            # In playoffs we want all games we can render. No capping.
+            return playoff_out
 
     # ------------------------------------------------------------------
     # REGULAR SEASON BRANCH – existing logic
@@ -283,7 +273,7 @@ def build_matchup_preview(
         mid = m.get("matchup_id")
         by_mid.setdefault(mid, []).append(m)
 
-    out = []
+    out: List[dict] = []
     for mid, rows in by_mid.items():
         if not rows:
             continue
@@ -303,7 +293,6 @@ def build_matchup_preview(
         )
         out.append({"matchup_id": mid, "left": left, "right": right})
 
-    # In regular season, we can still cap by expected_matchups if desired
     if expected_matchups is not None:
         return out[:expected_matchups]
     return out
@@ -312,7 +301,7 @@ def build_matchup_preview(
 def render_matchup_carousel_weeks(
         slides_by_week: dict[int, str],
         dashboard: bool,
-        active_week: int | None = None,
+        active_week: Optional[int] = None,
 ) -> str:
     """
     Render a single matchup carousel card.

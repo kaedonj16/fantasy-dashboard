@@ -2854,10 +2854,6 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, l
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Privacy Policy</h1>
-            <p class="static-hero-sub">
-              How we handle data within the BR Fantasy Dashboard.
-            </p>
-
             <div class="static-section">
               <div class="static-section-title">What We Collect</div>
               <p>
@@ -2901,9 +2897,6 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None, l
         <div class="static-page">
           <div class="static-card-page">
             <h1 class="static-hero-title">Support the Site</h1>
-            <p class="static-hero-sub">
-              BR Fantasy is a passion project. Here’s how you can help it grow.
-            </p>
 
             <div class="static-section">
               <div class="static-section-title">1. Direct Support</div>
@@ -2971,9 +2964,6 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None, leagu
         <div class="static-page">
           <div class="static-card-page">
             <h1 class="static-hero-title">FAQ</h1>
-            <p class="static-hero-sub">
-              Answers to common questions about the BR Fantasy Dashboard.
-            </p>
 
             <div class="static-section">
               <div class="static-section-title">General</div>
@@ -3082,9 +3072,6 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None, l
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Contact</h1>
-            <p class="static-hero-sub">
-              Questions, bugs, feature requests — reach out anytime.
-            </p>
 
             <div class="static-section">
               <div class="static-section-title">Message</div>

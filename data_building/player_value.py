@@ -146,6 +146,43 @@ def _production_component_fixed(u: dict, pos: str) -> float:
     return 0.0
 
 
+def availability_score(u: dict, pos: str, games_possible: float = 17.0) -> float:
+    """
+    Availability in [0..1]. 1.0 = always plays, lower = misses time.
+
+    Uses:
+      - games played so far (u["games"])
+      - optional games_possible (u["games_possible"] or inferred default)
+    Adds:
+      - shrinkage so small samples (early/mid season) don't overreact
+      - position floors so RBs aren't punished as harshly as QBs, etc.
+    """
+    # Played games so far
+    g_played = float(u.get("games") or 0.0)
+
+    # If you can pass in season-to-date games (week number), set u["games_possible"].
+    # Otherwise we fall back to 17, and shrinkage will prevent extreme penalties early.
+    g_possible = float(u.get("games_possible") or games_possible)
+
+    if g_possible <= 0:
+        g_possible = games_possible
+
+    # Raw rate (what we observed so far)
+    raw_rate = (g_played / g_possible) if g_possible > 0 else 0.0
+
+    # Shrink toward a typical starter availability rate to avoid harsh early-season swings.
+    # k = pseudo-games (bigger = more conservative).
+    k = 6.0
+    prior = 0.88  # "typical" availability baseline
+    rate = (raw_rate * g_possible + prior * k) / (g_possible + k)
+
+    # Position-specific floors: RB misses time more often; keep the penalty reasonable
+    floor_by_pos = {"QB": 0.80, "RB": 0.75, "WR": 0.78, "TE": 0.76}
+    floor = floor_by_pos.get(pos, 0.75)
+
+    return max(floor, min(1.0, rate))
+
+
 def build_value_table_for_usage() -> Dict[str, float]:
     """
     Build dynasty-style value table on 0–999.9 scale using:
@@ -263,6 +300,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
             except (TypeError, ValueError):
                 age = None
 
+        avail = availability_score(u, pos)
         ppg = float(u.get("ppr_ppg") or 0.0)
 
         # QB / non-QB production component (your custom logic)
@@ -276,6 +314,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
             "pos": pos,
             "age": age if age is not None else 0.0,
             "age_opt": age,
+            "avail": avail,
             "ppg": ppg,
             "prod_raw": prod_raw,
             "rz_targets": rz_targets,
@@ -338,11 +377,12 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         w_ppg, w_age, w_rz = POS_WEIGHTS[pos]
 
-        pos_scores[pid] = (
-                w_ppg * ppg_norm +
-                w_age * age_curve +
-                w_rz * rz_norm
-        )
+        base = (w_ppg * ppg_norm + w_age * age_curve + w_rz * rz_norm)
+
+        # mild penalty: availability 0..1 maps to 0.85..1.00 multiplier
+        base *= (0.8 + 0.2 * p["avail"])
+
+        pos_scores[pid] = base
 
     # ----------------------------------------
     # 4) VORP (dynasty-PPG horizon)
@@ -360,7 +400,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
         future_af = horizon_age_factor(pos, age_for_horizon)
         horizon_scale = (future_af / current_af) if current_af else future_af
 
-        dynasty_ppg = p["ppg"] * horizon_scale
+        dynasty_ppg = p["ppg"] * horizon_scale * p["avail"]
         p["dynasty_ppg"] = dynasty_ppg
 
         dynasty_ppg_by_pos.setdefault(pos, []).append((pid, dynasty_ppg))
@@ -389,7 +429,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
     # 5) Blend base score + scarcity → global 0–999.9
     # ----------------------------------------
     final_scores: Dict[str, float] = {}
-    SCARCITY_ALPHA = 0.4  # how much VORP shapes the final value
+    SCARCITY_ALPHA = 0.3  # how much VORP shapes the final value
 
     for pid, base_score in pos_scores.items():
         vor_norm = vor_map[pid] / max_vor if max_vor > 0 else 0.0

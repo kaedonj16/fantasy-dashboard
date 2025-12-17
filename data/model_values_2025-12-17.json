@@ -27,10 +27,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 33.7,
-    "value": 43.9,
+    "value": 42.6,
     "search_name": "mycole pruitt",
-    "pos_rank": 271,
-    "pos_rank_label": "TE271"
+    "pos_rank": 276,
+    "pos_rank_label": "TE276"
   },
   {
     "id": "1346",
@@ -40,8 +40,8 @@
     "age": 35.1,
     "value": 35.5,
     "search_name": "marquise goodwin",
-    "pos_rank": 741,
-    "pos_rank_label": "WR741"
+    "pos_rank": 740,
+    "pos_rank_label": "WR740"
   },
   {
     "id": "8831",
@@ -93,10 +93,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 26.1,
-    "value": 91.1,
+    "value": 86.8,
     "search_name": "kyric mcgowan",
-    "pos_rank": 262,
-    "pos_rank_label": "WR262"
+    "pos_rank": 295,
+    "pos_rank_label": "WR295"
   },
   {
     "id": "7591",
@@ -139,8 +139,8 @@
     "age": 22.6,
     "value": 23.4,
     "search_name": "gavin bartholomew",
-    "pos_rank": 319,
-    "pos_rank_label": "TE319"
+    "pos_rank": 318,
+    "pos_rank_label": "TE318"
   },
   {
     "id": "10235",
@@ -183,8 +183,8 @@
     "age": 27.7,
     "value": 58.4,
     "search_name": "kylen granson",
-    "pos_rank": 207,
-    "pos_rank_label": "TE207"
+    "pos_rank": 206,
+    "pos_rank_label": "TE206"
   },
   {
     "id": "8194",
@@ -227,8 +227,8 @@
     "age": 24.2,
     "value": 61.6,
     "search_name": "jalin hyatt",
-    "pos_rank": 587,
-    "pos_rank_label": "WR587"
+    "pos_rank": 589,
+    "pos_rank_label": "WR589"
   },
   {
     "id": "5128",
@@ -236,10 +236,10 @@
     "team": "PIT",
     "position": "QB",
     "age": 30.9,
-    "value": 15.7,
+    "value": 15.8,
     "search_name": "logan woodside",
-    "pos_rank": 180,
-    "pos_rank_label": "QB180"
+    "pos_rank": 179,
+    "pos_rank_label": "QB179"
   },
   {
     "id": "13053",
@@ -348,8 +348,8 @@
     "age": 29.9,
     "value": 75.2,
     "search_name": "tre'quan smith",
-    "pos_rank": 426,
-    "pos_rank_label": "WR426"
+    "pos_rank": 425,
+    "pos_rank_label": "WR425"
   },
   {
     "id": "8881",
@@ -359,8 +359,8 @@
     "age": 29.0,
     "value": 72.7,
     "search_name": "willie johnson",
-    "pos_rank": 470,
-    "pos_rank_label": "WR470"
+    "pos_rank": 469,
+    "pos_rank_label": "WR469"
   },
   {
     "id": "4464",
@@ -381,8 +381,8 @@
     "age": 29.9,
     "value": 69.0,
     "search_name": "cam sims",
-    "pos_rank": 521,
-    "pos_rank_label": "WR521"
+    "pos_rank": 519,
+    "pos_rank_label": "WR519"
   },
   {
     "id": "4229",
@@ -414,8 +414,8 @@
     "age": 25.8,
     "value": 83.1,
     "search_name": "toa taua",
-    "pos_rank": 121,
-    "pos_rank_label": "RB121"
+    "pos_rank": 120,
+    "pos_rank_label": "RB120"
   },
   {
     "id": "7537",
@@ -447,8 +447,8 @@
     "age": 25.3,
     "value": 48.7,
     "search_name": "dayton wade",
-    "pos_rank": 670,
-    "pos_rank_label": "WR670"
+    "pos_rank": 672,
+    "pos_rank_label": "WR672"
   },
   {
     "id": "12788",
@@ -458,8 +458,8 @@
     "age": 23.8,
     "value": 44.2,
     "search_name": "will sheppard",
-    "pos_rank": 701,
-    "pos_rank_label": "WR701"
+    "pos_rank": 700,
+    "pos_rank_label": "WR700"
   },
   {
     "id": "12237",
@@ -469,8 +469,8 @@
     "age": 26.4,
     "value": 89.6,
     "search_name": "lincoln sefcik",
-    "pos_rank": 77,
-    "pos_rank_label": "TE77"
+    "pos_rank": 76,
+    "pos_rank_label": "TE76"
   },
   {
     "id": "12231",
@@ -510,11 +510,11 @@
     "name": "Ian Bunting",
     "team": "DAL",
     "position": "TE",
-    "age": 29.8,
-    "value": 54.8,
+    "age": 29.9,
+    "value": 53.3,
     "search_name": "ian bunting",
-    "pos_rank": 221,
-    "pos_rank_label": "TE221"
+    "pos_rank": 227,
+    "pos_rank_label": "TE227"
   },
   {
     "id": "7859",
@@ -546,8 +546,8 @@
     "age": 24.9,
     "value": 46.4,
     "search_name": "jacob cowing",
-    "pos_rank": 687,
-    "pos_rank_label": "WR687"
+    "pos_rank": 685,
+    "pos_rank_label": "WR685"
   },
   {
     "id": "11655",
@@ -568,8 +568,8 @@
     "age": 30.1,
     "value": 71.9,
     "search_name": "alex mcgough",
-    "pos_rank": 480,
-    "pos_rank_label": "WR480"
+    "pos_rank": 479,
+    "pos_rank_label": "WR479"
   },
   {
     "id": "6598",
@@ -579,8 +579,8 @@
     "age": 30.0,
     "value": 54.1,
     "search_name": "trenton irwin",
-    "pos_rank": 625,
-    "pos_rank_label": "WR625"
+    "pos_rank": 626,
+    "pos_rank_label": "WR626"
   },
   {
     "id": "8185",
@@ -590,8 +590,8 @@
     "age": 26.6,
     "value": 92.9,
     "search_name": "johnny johnson",
-    "pos_rank": 243,
-    "pos_rank_label": "WR243"
+    "pos_rank": 241,
+    "pos_rank_label": "WR241"
   },
   {
     "id": "12063",
@@ -612,8 +612,8 @@
     "age": 26.8,
     "value": 13.4,
     "search_name": "jake haener",
-    "pos_rank": 185,
-    "pos_rank_label": "QB185"
+    "pos_rank": 186,
+    "pos_rank_label": "QB186"
   },
   {
     "id": "4362",
@@ -621,10 +621,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 30.3,
-    "value": 64.8,
+    "value": 60.5,
     "search_name": "cethan carter",
-    "pos_rank": 185,
-    "pos_rank_label": "TE185"
+    "pos_rank": 201,
+    "pos_rank_label": "TE201"
   },
   {
     "id": "9226",
@@ -632,7 +632,7 @@
     "team": "MIA",
     "position": "RB",
     "age": 24.2,
-    "value": 712.3,
+    "value": 721.9,
     "search_name": "de'von achane",
     "pos_rank": 3,
     "pos_rank_label": "RB3"
@@ -645,8 +645,8 @@
     "age": 25.4,
     "value": 108.5,
     "search_name": "david white",
-    "pos_rank": 149,
-    "pos_rank_label": "WR149"
+    "pos_rank": 150,
+    "pos_rank_label": "WR150"
   },
   {
     "id": "8409",
@@ -654,10 +654,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 25.9,
-    "value": 92.3,
+    "value": 91.1,
     "search_name": "tyler snead",
-    "pos_rank": 247,
-    "pos_rank_label": "WR247"
+    "pos_rank": 258,
+    "pos_rank_label": "WR258"
   },
   {
     "id": "11419",
@@ -667,8 +667,8 @@
     "age": 27.2,
     "value": 85.3,
     "search_name": "kade warner",
-    "pos_rank": 313,
-    "pos_rank_label": "WR313"
+    "pos_rank": 312,
+    "pos_rank_label": "WR312"
   },
   {
     "id": "8229",
@@ -678,8 +678,8 @@
     "age": 28.1,
     "value": 66.6,
     "search_name": "isaiah weston",
-    "pos_rank": 544,
-    "pos_rank_label": "WR544"
+    "pos_rank": 538,
+    "pos_rank_label": "WR538"
   },
   {
     "id": "2463",
@@ -689,8 +689,8 @@
     "age": 31.5,
     "value": 53.7,
     "search_name": "jesse james",
-    "pos_rank": 226,
-    "pos_rank_label": "TE226"
+    "pos_rank": 225,
+    "pos_rank_label": "TE225"
   },
   {
     "id": "11874",
@@ -711,8 +711,8 @@
     "age": 23.1,
     "value": 75.6,
     "search_name": "dominic lovett",
-    "pos_rank": 417,
-    "pos_rank_label": "WR417"
+    "pos_rank": 416,
+    "pos_rank_label": "WR416"
   },
   {
     "id": "12036",
@@ -744,8 +744,8 @@
     "age": 26.3,
     "value": 59.8,
     "search_name": "ihmir smith-marsette",
-    "pos_rank": 594,
-    "pos_rank_label": "WR594"
+    "pos_rank": 596,
+    "pos_rank_label": "WR596"
   },
   {
     "id": "12933",
@@ -766,8 +766,8 @@
     "age": 30.4,
     "value": 69.4,
     "search_name": "greg ward",
-    "pos_rank": 517,
-    "pos_rank_label": "WR517"
+    "pos_rank": 515,
+    "pos_rank_label": "WR515"
   },
   {
     "id": "8442",
@@ -788,8 +788,8 @@
     "age": 23.9,
     "value": 71.1,
     "search_name": "ricky white",
-    "pos_rank": 491,
-    "pos_rank_label": "WR491"
+    "pos_rank": 492,
+    "pos_rank_label": "WR492"
   },
   {
     "id": "7568",
@@ -810,8 +810,8 @@
     "age": 27.2,
     "value": 93.2,
     "search_name": "shae wyatt",
-    "pos_rank": 241,
-    "pos_rank_label": "WR241"
+    "pos_rank": 239,
+    "pos_rank_label": "WR239"
   },
   {
     "id": "12154",
@@ -843,8 +843,8 @@
     "age": 28.6,
     "value": 65.0,
     "search_name": "kaden smith",
-    "pos_rank": 180,
-    "pos_rank_label": "TE180"
+    "pos_rank": 179,
+    "pos_rank_label": "TE179"
   },
   {
     "id": "11802",
@@ -884,11 +884,11 @@
     "name": "Mack Hollins",
     "team": "NE",
     "position": "WR",
-    "age": 32.2,
+    "age": 32.3,
     "value": 83.3,
     "search_name": "mack hollins",
-    "pos_rank": 326,
-    "pos_rank_label": "WR326"
+    "pos_rank": 324,
+    "pos_rank_label": "WR324"
   },
   {
     "id": "12528",
@@ -920,8 +920,8 @@
     "age": 30.8,
     "value": 43.1,
     "search_name": "pharoh cooper",
-    "pos_rank": 710,
-    "pos_rank_label": "WR710"
+    "pos_rank": 708,
+    "pos_rank_label": "WR708"
   },
   {
     "id": "12061",
@@ -953,8 +953,8 @@
     "age": 31.9,
     "value": 53.3,
     "search_name": "geronimo allison",
-    "pos_rank": 630,
-    "pos_rank_label": "WR630"
+    "pos_rank": 631,
+    "pos_rank_label": "WR631"
   },
   {
     "id": "9224",
@@ -973,10 +973,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 27.9,
-    "value": 64.7,
+    "value": 63.5,
     "search_name": "la'mical perine",
-    "pos_rank": 198,
-    "pos_rank_label": "RB198"
+    "pos_rank": 197,
+    "pos_rank_label": "RB197"
   },
   {
     "id": "7904",
@@ -1006,10 +1006,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.2,
-    "value": 70.3,
+    "value": 66.0,
     "search_name": "mathew sexton",
-    "pos_rank": 505,
-    "pos_rank_label": "WR505"
+    "pos_rank": 546,
+    "pos_rank_label": "WR546"
   },
   {
     "id": "11624",
@@ -1041,8 +1041,8 @@
     "age": 27.4,
     "value": 63.5,
     "search_name": "demetric felton",
-    "pos_rank": 201,
-    "pos_rank_label": "RB201"
+    "pos_rank": 198,
+    "pos_rank_label": "RB198"
   },
   {
     "id": "8195",
@@ -1074,8 +1074,8 @@
     "age": 24.2,
     "value": 109.9,
     "search_name": "mac dalena",
-    "pos_rank": 141,
-    "pos_rank_label": "WR141"
+    "pos_rank": 142,
+    "pos_rank_label": "WR142"
   },
   {
     "id": "12658",
@@ -1085,8 +1085,8 @@
     "age": 25.0,
     "value": 90.5,
     "search_name": "jackson hawes",
-    "pos_rank": 72,
-    "pos_rank_label": "TE72"
+    "pos_rank": 73,
+    "pos_rank_label": "TE73"
   },
   {
     "id": "6797",
@@ -1140,8 +1140,8 @@
     "age": 25.0,
     "value": 68.9,
     "search_name": "jamari thrash",
-    "pos_rank": 522,
-    "pos_rank_label": "WR522"
+    "pos_rank": 520,
+    "pos_rank_label": "WR520"
   },
   {
     "id": "12486",
@@ -1184,8 +1184,8 @@
     "age": 27.4,
     "value": 77.4,
     "search_name": "isaac rex",
-    "pos_rank": 108,
-    "pos_rank_label": "TE108"
+    "pos_rank": 107,
+    "pos_rank_label": "TE107"
   },
   {
     "id": "6011",
@@ -1206,8 +1206,8 @@
     "age": 28.0,
     "value": 86.5,
     "search_name": "deonte harty",
-    "pos_rank": 298,
-    "pos_rank_label": "WR298"
+    "pos_rank": 296,
+    "pos_rank_label": "WR296"
   },
   {
     "id": "12151",
@@ -1217,8 +1217,8 @@
     "age": 26.2,
     "value": 94.0,
     "search_name": "julian hicks",
-    "pos_rank": 236,
-    "pos_rank_label": "WR236"
+    "pos_rank": 234,
+    "pos_rank_label": "WR234"
   },
   {
     "id": "6806",
@@ -1239,8 +1239,8 @@
     "age": 24.2,
     "value": 106.9,
     "search_name": "jahmal banks",
-    "pos_rank": 162,
-    "pos_rank_label": "WR162"
+    "pos_rank": 161,
+    "pos_rank_label": "WR161"
   },
   {
     "id": "7606",
@@ -1250,8 +1250,8 @@
     "age": 26.9,
     "value": 72.0,
     "search_name": "kadarius toney",
-    "pos_rank": 477,
-    "pos_rank_label": "WR477"
+    "pos_rank": 476,
+    "pos_rank_label": "WR476"
   },
   {
     "id": "11495",
@@ -1261,8 +1261,8 @@
     "age": 26.7,
     "value": 87.8,
     "search_name": "bryan thompson",
-    "pos_rank": 286,
-    "pos_rank_label": "WR286"
+    "pos_rank": 285,
+    "pos_rank_label": "WR285"
   },
   {
     "id": "11650",
@@ -1272,8 +1272,8 @@
     "age": 24.7,
     "value": 108.2,
     "search_name": "luke mccaffrey",
-    "pos_rank": 150,
-    "pos_rank_label": "WR150"
+    "pos_rank": 151,
+    "pos_rank_label": "WR151"
   },
   {
     "id": "4217",
@@ -1305,8 +1305,8 @@
     "age": 26.7,
     "value": 77.0,
     "search_name": "ellis merriweather",
-    "pos_rank": 133,
-    "pos_rank_label": "RB133"
+    "pos_rank": 132,
+    "pos_rank_label": "RB132"
   },
   {
     "id": "3200",
@@ -1316,8 +1316,8 @@
     "age": 32.8,
     "value": 95.9,
     "search_name": "sterling shepard",
-    "pos_rank": 222,
-    "pos_rank_label": "WR222"
+    "pos_rank": 221,
+    "pos_rank_label": "WR221"
   },
   {
     "id": "7751",
@@ -1327,8 +1327,8 @@
     "age": 26.5,
     "value": 87.2,
     "search_name": "dax milne",
-    "pos_rank": 295,
-    "pos_rank_label": "WR295"
+    "pos_rank": 294,
+    "pos_rank_label": "WR294"
   },
   {
     "id": "10210",
@@ -1338,8 +1338,8 @@
     "age": 25.8,
     "value": 42.2,
     "search_name": "cameron latu",
-    "pos_rank": 281,
-    "pos_rank_label": "TE281"
+    "pos_rank": 279,
+    "pos_rank_label": "TE279"
   },
   {
     "id": "6519",
@@ -1371,8 +1371,8 @@
     "age": 26.3,
     "value": 90.9,
     "search_name": "jesse matthews",
-    "pos_rank": 269,
-    "pos_rank_label": "WR269"
+    "pos_rank": 266,
+    "pos_rank_label": "WR266"
   },
   {
     "id": "12969",
@@ -1390,11 +1390,11 @@
     "name": "Rashod Bateman",
     "team": "BAL",
     "position": "WR",
-    "age": 26.0,
+    "age": 26.1,
     "value": 104.9,
     "search_name": "rashod bateman",
-    "pos_rank": 171,
-    "pos_rank_label": "WR171"
+    "pos_rank": 170,
+    "pos_rank_label": "WR170"
   },
   {
     "id": "7087",
@@ -1426,8 +1426,8 @@
     "age": 27.7,
     "value": 82.6,
     "search_name": "tyreik mcallister",
-    "pos_rank": 332,
-    "pos_rank_label": "WR332"
+    "pos_rank": 330,
+    "pos_rank_label": "WR330"
   },
   {
     "id": "13013",
@@ -1456,11 +1456,11 @@
     "name": "Stephen Sullivan",
     "team": "CAR",
     "position": "TE",
-    "age": 29.0,
+    "age": 29.1,
     "value": 65.4,
     "search_name": "stephen sullivan",
-    "pos_rank": 178,
-    "pos_rank_label": "TE178"
+    "pos_rank": 177,
+    "pos_rank_label": "TE177"
   },
   {
     "id": "5089",
@@ -1514,8 +1514,8 @@
     "age": 28.9,
     "value": 55.8,
     "search_name": "antonio callaway",
-    "pos_rank": 609,
-    "pos_rank_label": "WR609"
+    "pos_rank": 610,
+    "pos_rank_label": "WR610"
   },
   {
     "id": "5032",
@@ -1580,8 +1580,8 @@
     "age": 26.9,
     "value": 62.4,
     "search_name": "matt corral",
-    "pos_rank": 93,
-    "pos_rank_label": "QB93"
+    "pos_rank": 92,
+    "pos_rank_label": "QB92"
   },
   {
     "id": "8094",
@@ -1591,8 +1591,8 @@
     "age": 28.7,
     "value": 61.3,
     "search_name": "michael jacobson",
-    "pos_rank": 198,
-    "pos_rank_label": "TE198"
+    "pos_rank": 196,
+    "pos_rank_label": "TE196"
   },
   {
     "id": "1817",
@@ -1602,8 +1602,8 @@
     "age": 32.5,
     "value": 61.6,
     "search_name": "sammy watkins",
-    "pos_rank": 588,
-    "pos_rank_label": "WR588"
+    "pos_rank": 590,
+    "pos_rank_label": "WR590"
   },
   {
     "id": "11524",
@@ -1646,8 +1646,8 @@
     "age": 26.0,
     "value": 44.9,
     "search_name": "deven thompkins",
-    "pos_rank": 698,
-    "pos_rank_label": "WR698"
+    "pos_rank": 695,
+    "pos_rank_label": "WR695"
   },
   {
     "id": "7594",
@@ -1690,8 +1690,8 @@
     "age": 28.0,
     "value": 54.9,
     "search_name": "tay martin",
-    "pos_rank": 618,
-    "pos_rank_label": "WR618"
+    "pos_rank": 619,
+    "pos_rank_label": "WR619"
   },
   {
     "id": "7288",
@@ -1734,8 +1734,8 @@
     "age": 24.4,
     "value": 105.5,
     "search_name": "xavier guillory",
-    "pos_rank": 169,
-    "pos_rank_label": "WR169"
+    "pos_rank": 168,
+    "pos_rank_label": "WR168"
   },
   {
     "id": "5323",
@@ -1745,8 +1745,8 @@
     "age": 29.2,
     "value": 87.7,
     "search_name": "equanimeous st. brown",
-    "pos_rank": 288,
-    "pos_rank_label": "WR288"
+    "pos_rank": 287,
+    "pos_rank_label": "WR287"
   },
   {
     "id": "10213",
@@ -1778,8 +1778,8 @@
     "age": 26.6,
     "value": 102.8,
     "search_name": "dazz newsome",
-    "pos_rank": 186,
-    "pos_rank_label": "WR186"
+    "pos_rank": 185,
+    "pos_rank_label": "WR185"
   },
   {
     "id": "11564",
@@ -1822,8 +1822,8 @@
     "age": 27.7,
     "value": 82.8,
     "search_name": "cade johnson",
-    "pos_rank": 328,
-    "pos_rank_label": "WR328"
+    "pos_rank": 326,
+    "pos_rank_label": "WR326"
   },
   {
     "id": "8219",
@@ -1844,8 +1844,8 @@
     "age": 32.8,
     "value": 44.1,
     "search_name": "michael thomas",
-    "pos_rank": 703,
-    "pos_rank_label": "WR703"
+    "pos_rank": 702,
+    "pos_rank_label": "WR702"
   },
   {
     "id": "7599",
@@ -1908,10 +1908,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 27.0,
-    "value": 66.6,
+    "value": 62.3,
     "search_name": "zaquandre white",
-    "pos_rank": 181,
-    "pos_rank_label": "RB181"
+    "pos_rank": 203,
+    "pos_rank_label": "RB203"
   },
   {
     "id": "7842",
@@ -1921,8 +1921,8 @@
     "age": 28.2,
     "value": 79.3,
     "search_name": "luke farrell",
-    "pos_rank": 99,
-    "pos_rank_label": "TE99"
+    "pos_rank": 98,
+    "pos_rank_label": "TE98"
   },
   {
     "id": "12169",
@@ -1932,8 +1932,8 @@
     "age": NaN,
     "value": 108.7,
     "search_name": "reggie brown",
-    "pos_rank": 148,
-    "pos_rank_label": "WR148"
+    "pos_rank": 149,
+    "pos_rank_label": "WR149"
   },
   {
     "id": "8135",
@@ -1976,8 +1976,8 @@
     "age": 26.7,
     "value": 91.2,
     "search_name": "griffin hebert",
-    "pos_rank": 261,
-    "pos_rank_label": "WR261"
+    "pos_rank": 257,
+    "pos_rank_label": "WR257"
   },
   {
     "id": "8207",
@@ -1987,8 +1987,8 @@
     "age": 25.1,
     "value": 72.9,
     "search_name": "tyler goodson",
-    "pos_rank": 151,
-    "pos_rank_label": "RB151"
+    "pos_rank": 149,
+    "pos_rank_label": "RB149"
   },
   {
     "id": "5286",
@@ -2007,10 +2007,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.4,
-    "value": 74.1,
+    "value": 72.9,
     "search_name": "darius hagans",
-    "pos_rank": 145,
-    "pos_rank_label": "RB145"
+    "pos_rank": 150,
+    "pos_rank_label": "RB150"
   },
   {
     "id": "13249",
@@ -2062,10 +2062,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 22.7,
-    "value": 123.8,
+    "value": 121.8,
     "search_name": "jaylen wright",
-    "pos_rank": 55,
-    "pos_rank_label": "RB55"
+    "pos_rank": 59,
+    "pos_rank_label": "RB59"
   },
   {
     "id": "13225",
@@ -2084,10 +2084,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 28.5,
-    "value": 68.1,
+    "value": 66.8,
     "search_name": "ben skowronek",
-    "pos_rank": 528,
-    "pos_rank_label": "WR528"
+    "pos_rank": 532,
+    "pos_rank_label": "WR532"
   },
   {
     "id": "12524",
@@ -2130,15 +2130,15 @@
     "age": 26.3,
     "value": 88.9,
     "search_name": "landon parker",
-    "pos_rank": 280,
-    "pos_rank_label": "WR280"
+    "pos_rank": 279,
+    "pos_rank_label": "WR279"
   },
   {
     "id": "13063",
     "name": "Darius Lassiter",
     "team": "JAX",
     "position": "WR",
-    "age": 25.3,
+    "age": 25.4,
     "value": 111.0,
     "search_name": "darius lassiter",
     "pos_rank": 137,
@@ -2152,8 +2152,8 @@
     "age": 22.5,
     "value": 47.9,
     "search_name": "jamaal pritchett",
-    "pos_rank": 672,
-    "pos_rank_label": "WR672"
+    "pos_rank": 673,
+    "pos_rank_label": "WR673"
   },
   {
     "id": "4421",
@@ -2193,11 +2193,11 @@
     "name": "Jerry Jeudy",
     "team": "CLE",
     "position": "WR",
-    "age": 26.6,
-    "value": 154.1,
+    "age": 26.7,
+    "value": 154.6,
     "search_name": "jerry jeudy",
-    "pos_rank": 69,
-    "pos_rank_label": "WR69"
+    "pos_rank": 68,
+    "pos_rank_label": "WR68"
   },
   {
     "id": "13014",
@@ -2229,8 +2229,8 @@
     "age": 26.5,
     "value": 90.9,
     "search_name": "tyshaun james",
-    "pos_rank": 270,
-    "pos_rank_label": "WR270"
+    "pos_rank": 267,
+    "pos_rank_label": "WR267"
   },
   {
     "id": "7541",
@@ -2240,8 +2240,8 @@
     "age": 28.1,
     "value": 58.3,
     "search_name": "cornell powell",
-    "pos_rank": 599,
-    "pos_rank_label": "WR599"
+    "pos_rank": 600,
+    "pos_rank_label": "WR600"
   },
   {
     "id": "1071",
@@ -2249,10 +2249,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 36.3,
-    "value": 39.0,
+    "value": 34.7,
     "search_name": "mohamed sanu",
-    "pos_rank": 727,
-    "pos_rank_label": "WR727"
+    "pos_rank": 744,
+    "pos_rank_label": "WR744"
   },
   {
     "id": "6075",
@@ -2262,8 +2262,8 @@
     "age": 28.8,
     "value": 66.3,
     "search_name": "jesper horsted",
-    "pos_rank": 175,
-    "pos_rank_label": "TE175"
+    "pos_rank": 174,
+    "pos_rank_label": "TE174"
   },
   {
     "id": "7996",
@@ -2284,8 +2284,8 @@
     "age": 26.1,
     "value": 64.8,
     "search_name": "daylen baldwin",
-    "pos_rank": 564,
-    "pos_rank_label": "WR564"
+    "pos_rank": 563,
+    "pos_rank_label": "WR563"
   },
   {
     "id": "8908",
@@ -2295,8 +2295,8 @@
     "age": 26.9,
     "value": 73.0,
     "search_name": "brandon lewis",
-    "pos_rank": 463,
-    "pos_rank_label": "WR463"
+    "pos_rank": 462,
+    "pos_rank_label": "WR462"
   },
   {
     "id": "5253",
@@ -2339,8 +2339,8 @@
     "age": 23.0,
     "value": 59.1,
     "search_name": "zach horton",
-    "pos_rank": 206,
-    "pos_rank_label": "TE206"
+    "pos_rank": 205,
+    "pos_rank_label": "TE205"
   },
   {
     "id": "12239",
@@ -2381,10 +2381,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.6,
-    "value": 70.3,
+    "value": 66.0,
     "search_name": "calvin jackson",
-    "pos_rank": 506,
-    "pos_rank_label": "WR506"
+    "pos_rank": 547,
+    "pos_rank_label": "WR547"
   },
   {
     "id": "11111",
@@ -2394,8 +2394,8 @@
     "age": 28.0,
     "value": 70.6,
     "search_name": "sy barnett",
-    "pos_rank": 498,
-    "pos_rank_label": "WR498"
+    "pos_rank": 499,
+    "pos_rank_label": "WR499"
   },
   {
     "id": "7547",
@@ -2427,8 +2427,8 @@
     "age": 23.2,
     "value": 100.0,
     "search_name": "quali conley",
-    "pos_rank": 80,
-    "pos_rank_label": "RB80"
+    "pos_rank": 81,
+    "pos_rank_label": "RB81"
   },
   {
     "id": "8213",
@@ -2438,8 +2438,8 @@
     "age": 27.2,
     "value": 69.9,
     "search_name": "dai'jean dixon",
-    "pos_rank": 512,
-    "pos_rank_label": "WR512"
+    "pos_rank": 510,
+    "pos_rank_label": "WR510"
   },
   {
     "id": "5828",
@@ -2449,8 +2449,8 @@
     "age": 33.7,
     "value": 55.6,
     "search_name": "diontae spencer",
-    "pos_rank": 613,
-    "pos_rank_label": "WR613"
+    "pos_rank": 614,
+    "pos_rank_label": "WR614"
   },
   {
     "id": "6233",
@@ -2471,8 +2471,8 @@
     "age": 26.3,
     "value": 79.7,
     "search_name": "tyrell shavers",
-    "pos_rank": 361,
-    "pos_rank_label": "WR361"
+    "pos_rank": 362,
+    "pos_rank_label": "WR362"
   },
   {
     "id": "3269",
@@ -2482,8 +2482,8 @@
     "age": 32.5,
     "value": 56.3,
     "search_name": "chris moore",
-    "pos_rank": 608,
-    "pos_rank_label": "WR608"
+    "pos_rank": 609,
+    "pos_rank_label": "WR609"
   },
   {
     "id": "2410",
@@ -2504,8 +2504,8 @@
     "age": 26.0,
     "value": 95.7,
     "search_name": "justyn ross",
-    "pos_rank": 224,
-    "pos_rank_label": "WR224"
+    "pos_rank": 223,
+    "pos_rank_label": "WR223"
   },
   {
     "id": "11306",
@@ -2515,8 +2515,8 @@
     "age": 24.8,
     "value": 88.7,
     "search_name": "xavier gipson",
-    "pos_rank": 283,
-    "pos_rank_label": "WR283"
+    "pos_rank": 282,
+    "pos_rank_label": "WR282"
   },
   {
     "id": "13251",
@@ -2548,8 +2548,8 @@
     "age": 32.7,
     "value": 55.1,
     "search_name": "brandon zylstra",
-    "pos_rank": 616,
-    "pos_rank_label": "WR616"
+    "pos_rank": 617,
+    "pos_rank_label": "WR617"
   },
   {
     "id": "6334",
@@ -2581,8 +2581,8 @@
     "age": 30.3,
     "value": 70.6,
     "search_name": "travis fulgham",
-    "pos_rank": 499,
-    "pos_rank_label": "WR499"
+    "pos_rank": 500,
+    "pos_rank_label": "WR500"
   },
   {
     "id": "11158",
@@ -2592,8 +2592,8 @@
     "age": 26.7,
     "value": 86.4,
     "search_name": "jalen sample",
-    "pos_rank": 301,
-    "pos_rank_label": "WR301"
+    "pos_rank": 300,
+    "pos_rank_label": "WR300"
   },
   {
     "id": "2588",
@@ -2658,8 +2658,8 @@
     "age": 27.2,
     "value": 57.4,
     "search_name": "christian trahan",
-    "pos_rank": 212,
-    "pos_rank_label": "TE212"
+    "pos_rank": 211,
+    "pos_rank_label": "TE211"
   },
   {
     "id": "12541",
@@ -2669,15 +2669,15 @@
     "age": 23.0,
     "value": 141.0,
     "search_name": "dont'e thornton",
-    "pos_rank": 78,
-    "pos_rank_label": "WR78"
+    "pos_rank": 77,
+    "pos_rank_label": "WR77"
   },
   {
     "id": "1825",
     "name": "Jarvis Landry",
     "team": "NO",
     "position": "WR",
-    "age": 33.0,
+    "age": 33.1,
     "value": 42.4,
     "search_name": "jarvis landry",
     "pos_rank": 712,
@@ -2691,8 +2691,8 @@
     "age": 32.2,
     "value": 43.0,
     "search_name": "mo alie-cox",
-    "pos_rank": 278,
-    "pos_rank_label": "TE278"
+    "pos_rank": 274,
+    "pos_rank_label": "TE274"
   },
   {
     "id": "11592",
@@ -2765,11 +2765,11 @@
     "name": "Dimitri Stanley",
     "team": "GB",
     "position": "WR",
-    "age": 26.1,
-    "value": 94.7,
+    "age": 26.2,
+    "value": 94.0,
     "search_name": "dimitri stanley",
-    "pos_rank": 226,
-    "pos_rank_label": "WR226"
+    "pos_rank": 235,
+    "pos_rank_label": "WR235"
   },
   {
     "id": "10859",
@@ -2790,8 +2790,8 @@
     "age": 22.9,
     "value": 136.9,
     "search_name": "jacolby george",
-    "pos_rank": 82,
-    "pos_rank_label": "WR82"
+    "pos_rank": 81,
+    "pos_rank_label": "WR81"
   },
   {
     "id": "11385",
@@ -2801,8 +2801,8 @@
     "age": 26.9,
     "value": 82.8,
     "search_name": "brian walker",
-    "pos_rank": 94,
-    "pos_rank_label": "TE94"
+    "pos_rank": 93,
+    "pos_rank_label": "TE93"
   },
   {
     "id": "8878",
@@ -2823,8 +2823,8 @@
     "age": 33.0,
     "value": 117.7,
     "search_name": "carson wentz",
-    "pos_rank": 34,
-    "pos_rank_label": "QB34"
+    "pos_rank": 33,
+    "pos_rank_label": "QB33"
   },
   {
     "id": "8123",
@@ -2867,8 +2867,8 @@
     "age": 26.4,
     "value": 73.3,
     "search_name": "isaiah bowser",
-    "pos_rank": 149,
-    "pos_rank_label": "RB149"
+    "pos_rank": 146,
+    "pos_rank_label": "RB146"
   },
   {
     "id": "10234",
@@ -2878,8 +2878,8 @@
     "age": 25.3,
     "value": 94.0,
     "search_name": "derius davis",
-    "pos_rank": 237,
-    "pos_rank_label": "WR237"
+    "pos_rank": 236,
+    "pos_rank_label": "WR236"
   },
   {
     "id": "12551",
@@ -2900,8 +2900,8 @@
     "age": 39.0,
     "value": 46.1,
     "search_name": "desean jackson",
-    "pos_rank": 691,
-    "pos_rank_label": "WR691"
+    "pos_rank": 688,
+    "pos_rank_label": "WR688"
   },
   {
     "id": "12859",
@@ -2919,11 +2919,11 @@
     "name": "Brenden Rice",
     "team": "NE",
     "position": "WR",
-    "age": 23.7,
-    "value": 46.8,
+    "age": 23.8,
+    "value": 50.6,
     "search_name": "brenden rice",
-    "pos_rank": 684,
-    "pos_rank_label": "WR684"
+    "pos_rank": 655,
+    "pos_rank_label": "WR655"
   },
   {
     "id": "4035",
@@ -3021,8 +3021,8 @@
     "age": 28.1,
     "value": 104.9,
     "search_name": "darnell mooney",
-    "pos_rank": 172,
-    "pos_rank_label": "WR172"
+    "pos_rank": 171,
+    "pos_rank_label": "WR171"
   },
   {
     "id": "7427",
@@ -3032,8 +3032,8 @@
     "age": 29.1,
     "value": 65.4,
     "search_name": "tyler mabry",
-    "pos_rank": 179,
-    "pos_rank_label": "TE179"
+    "pos_rank": 178,
+    "pos_rank_label": "TE178"
   },
   {
     "id": "13108",
@@ -3063,10 +3063,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 24.3,
-    "value": 80.4,
+    "value": 77.4,
     "search_name": "darnell washington",
-    "pos_rank": 98,
-    "pos_rank_label": "TE98"
+    "pos_rank": 108,
+    "pos_rank_label": "TE108"
   },
   {
     "id": "4718",
@@ -3098,8 +3098,8 @@
     "age": 24.0,
     "value": 87.4,
     "search_name": "rashod owens",
-    "pos_rank": 293,
-    "pos_rank_label": "WR293"
+    "pos_rank": 292,
+    "pos_rank_label": "WR292"
   },
   {
     "id": "8407",
@@ -3109,8 +3109,8 @@
     "age": 25.8,
     "value": 62.7,
     "search_name": "tj pledger",
-    "pos_rank": 204,
-    "pos_rank_label": "RB204"
+    "pos_rank": 201,
+    "pos_rank_label": "RB201"
   },
   {
     "id": "11911",
@@ -3131,8 +3131,8 @@
     "age": 26.1,
     "value": 91.9,
     "search_name": "sam pinckney",
-    "pos_rank": 251,
-    "pos_rank_label": "WR251"
+    "pos_rank": 248,
+    "pos_rank_label": "WR248"
   },
   {
     "id": "2161",
@@ -3175,8 +3175,8 @@
     "age": 27.3,
     "value": 75.4,
     "search_name": "mason kinsey",
-    "pos_rank": 421,
-    "pos_rank_label": "WR421"
+    "pos_rank": 420,
+    "pos_rank_label": "WR420"
   },
   {
     "id": "12715",
@@ -3197,8 +3197,8 @@
     "age": 27.2,
     "value": 72.0,
     "search_name": "stone smartt",
-    "pos_rank": 130,
-    "pos_rank_label": "TE130"
+    "pos_rank": 129,
+    "pos_rank_label": "TE129"
   },
   {
     "id": "10218",
@@ -3208,8 +3208,8 @@
     "age": 25.5,
     "value": 118.5,
     "search_name": "xavier hutchinson",
-    "pos_rank": 108,
-    "pos_rank_label": "WR108"
+    "pos_rank": 107,
+    "pos_rank_label": "WR107"
   },
   {
     "id": "8411",
@@ -3219,8 +3219,8 @@
     "age": 31.0,
     "value": 71.7,
     "search_name": "devon allen",
-    "pos_rank": 482,
-    "pos_rank_label": "WR482"
+    "pos_rank": 483,
+    "pos_rank_label": "WR483"
   },
   {
     "id": "4892",
@@ -3241,8 +3241,8 @@
     "age": 36.9,
     "value": 45.9,
     "search_name": "julio jones",
-    "pos_rank": 693,
-    "pos_rank_label": "WR693"
+    "pos_rank": 689,
+    "pos_rank_label": "WR689"
   },
   {
     "id": "12699",
@@ -3252,8 +3252,8 @@
     "age": 23.7,
     "value": 75.9,
     "search_name": "lajohntay wester",
-    "pos_rank": 414,
-    "pos_rank_label": "WR414"
+    "pos_rank": 412,
+    "pos_rank_label": "WR412"
   },
   {
     "id": "6918",
@@ -3274,8 +3274,8 @@
     "age": 26.6,
     "value": 52.7,
     "search_name": "xavier johnson",
-    "pos_rank": 635,
-    "pos_rank_label": "WR635"
+    "pos_rank": 636,
+    "pos_rank_label": "WR636"
   },
   {
     "id": "7992",
@@ -3294,10 +3294,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 30.8,
-    "value": 50.8,
+    "value": 75.2,
     "search_name": "cedrick wilson",
-    "pos_rank": 648,
-    "pos_rank_label": "WR648"
+    "pos_rank": 426,
+    "pos_rank_label": "WR426"
   },
   {
     "id": "9501",
@@ -3351,8 +3351,8 @@
     "age": 31.0,
     "value": 67.8,
     "search_name": "tanner gentry",
-    "pos_rank": 530,
-    "pos_rank_label": "WR530"
+    "pos_rank": 526,
+    "pos_rank_label": "WR526"
   },
   {
     "id": "6659",
@@ -3373,8 +3373,8 @@
     "age": 30.5,
     "value": 70.8,
     "search_name": "jordan veasy",
-    "pos_rank": 495,
-    "pos_rank_label": "WR495"
+    "pos_rank": 496,
+    "pos_rank_label": "WR496"
   },
   {
     "id": "7002",
@@ -3428,8 +3428,8 @@
     "age": 25.7,
     "value": 107.2,
     "search_name": "devin carter",
-    "pos_rank": 159,
-    "pos_rank_label": "WR159"
+    "pos_rank": 158,
+    "pos_rank_label": "WR158"
   },
   {
     "id": "8196",
@@ -3448,10 +3448,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 29.7,
-    "value": 67.0,
+    "value": 65.7,
     "search_name": "josh malone",
-    "pos_rank": 535,
-    "pos_rank_label": "WR535"
+    "pos_rank": 551,
+    "pos_rank_label": "WR551"
   },
   {
     "id": "5008",
@@ -3461,8 +3461,8 @@
     "age": 30.4,
     "value": 56.1,
     "search_name": "durham smythe",
-    "pos_rank": 216,
-    "pos_rank_label": "TE216"
+    "pos_rank": 215,
+    "pos_rank_label": "TE215"
   },
   {
     "id": "7546",
@@ -3483,8 +3483,8 @@
     "age": 23.3,
     "value": 50.9,
     "search_name": "joaquin davis",
-    "pos_rank": 647,
-    "pos_rank_label": "WR647"
+    "pos_rank": 648,
+    "pos_rank_label": "WR648"
   },
   {
     "id": "4750",
@@ -3494,8 +3494,8 @@
     "age": 30.9,
     "value": 70.5,
     "search_name": "lance lenoir",
-    "pos_rank": 503,
-    "pos_rank_label": "WR503"
+    "pos_rank": 504,
+    "pos_rank_label": "WR504"
   },
   {
     "id": "11176",
@@ -3516,8 +3516,8 @@
     "age": 26.1,
     "value": 88.7,
     "search_name": "dyami brown",
-    "pos_rank": 284,
-    "pos_rank_label": "WR284"
+    "pos_rank": 283,
+    "pos_rank_label": "WR283"
   },
   {
     "id": "7521",
@@ -3527,8 +3527,8 @@
     "age": 28.2,
     "value": 72.1,
     "search_name": "chris blair",
-    "pos_rank": 474,
-    "pos_rank_label": "WR474"
+    "pos_rank": 473,
+    "pos_rank_label": "WR473"
   },
   {
     "id": "10219",
@@ -3547,10 +3547,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 24.7,
-    "value": 91.9,
+    "value": 90.6,
     "search_name": "daijun edwards",
-    "pos_rank": 103,
-    "pos_rank_label": "RB103"
+    "pos_rank": 107,
+    "pos_rank_label": "RB107"
   },
   {
     "id": "7038",
@@ -3560,19 +3560,19 @@
     "age": 28.3,
     "value": 65.9,
     "search_name": "darius anderson",
-    "pos_rank": 188,
-    "pos_rank_label": "RB188"
+    "pos_rank": 185,
+    "pos_rank_label": "RB185"
   },
   {
     "id": "8127",
     "name": "Charlie Kolar",
     "team": "BAL",
     "position": "TE",
-    "age": 26.8,
+    "age": 26.9,
     "value": 71.0,
     "search_name": "charlie kolar",
-    "pos_rank": 137,
-    "pos_rank_label": "TE137"
+    "pos_rank": 136,
+    "pos_rank_label": "TE136"
   },
   {
     "id": "4152",
@@ -3593,19 +3593,19 @@
     "age": 33.9,
     "value": 43.8,
     "search_name": "james o'shaughnessy",
-    "pos_rank": 272,
-    "pos_rank_label": "TE272"
+    "pos_rank": 269,
+    "pos_rank_label": "TE269"
   },
   {
     "id": "11548",
     "name": "Aaron Dykes",
     "team": "MIN",
     "position": "RB",
-    "age": 26.0,
-    "value": 84.2,
+    "age": 26.1,
+    "value": 81.9,
     "search_name": "aaron dykes",
-    "pos_rank": 119,
-    "pos_rank_label": "RB119"
+    "pos_rank": 122,
+    "pos_rank_label": "RB122"
   },
   {
     "id": "12810",
@@ -3615,8 +3615,8 @@
     "age": 24.3,
     "value": 103.0,
     "search_name": "elijhah badger",
-    "pos_rank": 183,
-    "pos_rank_label": "WR183"
+    "pos_rank": 180,
+    "pos_rank_label": "WR180"
   },
   {
     "id": "7308",
@@ -3624,10 +3624,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 29.6,
-    "value": 67.7,
+    "value": 63.3,
     "search_name": "nick bowers",
-    "pos_rank": 164,
-    "pos_rank_label": "TE164"
+    "pos_rank": 191,
+    "pos_rank_label": "TE191"
   },
   {
     "id": "11556",
@@ -3637,8 +3637,8 @@
     "age": 26.3,
     "value": 79.9,
     "search_name": "devin leary",
-    "pos_rank": 64,
-    "pos_rank_label": "QB64"
+    "pos_rank": 63,
+    "pos_rank_label": "QB63"
   },
   {
     "id": "1373",
@@ -3681,8 +3681,8 @@
     "age": 33.4,
     "value": 44.6,
     "search_name": "jordan matthews",
-    "pos_rank": 270,
-    "pos_rank_label": "TE270"
+    "pos_rank": 268,
+    "pos_rank_label": "TE268"
   },
   {
     "id": "8484",
@@ -3725,8 +3725,8 @@
     "age": 29.1,
     "value": 87.7,
     "search_name": "andy isabella",
-    "pos_rank": 289,
-    "pos_rank_label": "WR289"
+    "pos_rank": 288,
+    "pos_rank_label": "WR288"
   },
   {
     "id": "11210",
@@ -3736,8 +3736,8 @@
     "age": 25.7,
     "value": 66.8,
     "search_name": "malik heath",
-    "pos_rank": 539,
-    "pos_rank_label": "WR539"
+    "pos_rank": 533,
+    "pos_rank_label": "WR533"
   },
   {
     "id": "12357",
@@ -3769,8 +3769,8 @@
     "age": 33.4,
     "value": 53.1,
     "search_name": "albert wilson",
-    "pos_rank": 632,
-    "pos_rank_label": "WR632"
+    "pos_rank": 633,
+    "pos_rank_label": "WR633"
   },
   {
     "id": "12114",
@@ -3780,8 +3780,8 @@
     "age": 24.8,
     "value": 35.6,
     "search_name": "joshua cephus",
-    "pos_rank": 739,
-    "pos_rank_label": "WR739"
+    "pos_rank": 738,
+    "pos_rank_label": "WR738"
   },
   {
     "id": "13208",
@@ -3791,8 +3791,8 @@
     "age": 24.9,
     "value": 46.5,
     "search_name": "kyrese rowan",
-    "pos_rank": 685,
-    "pos_rank_label": "WR685"
+    "pos_rank": 683,
+    "pos_rank_label": "WR683"
   },
   {
     "id": "12520",
@@ -3802,8 +3802,8 @@
     "age": 23.7,
     "value": 88.8,
     "search_name": "xavier restrepo",
-    "pos_rank": 281,
-    "pos_rank_label": "WR281"
+    "pos_rank": 280,
+    "pos_rank_label": "WR280"
   },
   {
     "id": "12893",
@@ -3813,8 +3813,8 @@
     "age": 24.0,
     "value": 91.7,
     "search_name": "nate mccollum",
-    "pos_rank": 255,
-    "pos_rank_label": "WR255"
+    "pos_rank": 252,
+    "pos_rank_label": "WR252"
   },
   {
     "id": "8917",
@@ -3824,8 +3824,8 @@
     "age": 29.4,
     "value": 87.8,
     "search_name": "kavontae turpin",
-    "pos_rank": 287,
-    "pos_rank_label": "WR287"
+    "pos_rank": 286,
+    "pos_rank_label": "WR286"
   },
   {
     "id": "11636",
@@ -3835,8 +3835,8 @@
     "age": 24.7,
     "value": 37.3,
     "search_name": "johnny wilson",
-    "pos_rank": 731,
-    "pos_rank_label": "WR731"
+    "pos_rank": 730,
+    "pos_rank_label": "WR730"
   },
   {
     "id": "6869",
@@ -3846,8 +3846,8 @@
     "age": 28.9,
     "value": 54.0,
     "search_name": "adam trautman",
-    "pos_rank": 225,
-    "pos_rank_label": "TE225"
+    "pos_rank": 224,
+    "pos_rank_label": "TE224"
   },
   {
     "id": "12725",
@@ -3890,8 +3890,8 @@
     "age": 31.4,
     "value": 66.1,
     "search_name": "corey coleman",
-    "pos_rank": 553,
-    "pos_rank_label": "WR553"
+    "pos_rank": 545,
+    "pos_rank_label": "WR545"
   },
   {
     "id": "11589",
@@ -3923,8 +3923,8 @@
     "age": 28.7,
     "value": 77.8,
     "search_name": "josh oliver",
-    "pos_rank": 105,
-    "pos_rank_label": "TE105"
+    "pos_rank": 104,
+    "pos_rank_label": "TE104"
   },
   {
     "id": "4420",
@@ -3934,8 +3934,8 @@
     "age": 32.1,
     "value": 47.1,
     "search_name": "cody hollister",
-    "pos_rank": 679,
-    "pos_rank_label": "WR679"
+    "pos_rank": 680,
+    "pos_rank_label": "WR680"
   },
   {
     "id": "11850",
@@ -3967,8 +3967,8 @@
     "age": 25.7,
     "value": 56.7,
     "search_name": "blake whiteheart",
-    "pos_rank": 215,
-    "pos_rank_label": "TE215"
+    "pos_rank": 214,
+    "pos_rank_label": "TE214"
   },
   {
     "id": "6069",
@@ -3978,8 +3978,8 @@
     "age": 29.3,
     "value": 65.3,
     "search_name": "stanley morgan",
-    "pos_rank": 558,
-    "pos_rank_label": "WR558"
+    "pos_rank": 555,
+    "pos_rank_label": "WR555"
   },
   {
     "id": "12670",
@@ -4000,8 +4000,8 @@
     "age": 27.1,
     "value": 77.7,
     "search_name": "erik krommenhoek",
-    "pos_rank": 106,
-    "pos_rank_label": "TE106"
+    "pos_rank": 105,
+    "pos_rank_label": "TE105"
   },
   {
     "id": "10224",
@@ -4022,8 +4022,8 @@
     "age": 28.3,
     "value": 61.9,
     "search_name": "devin duvernay",
-    "pos_rank": 586,
-    "pos_rank_label": "WR586"
+    "pos_rank": 588,
+    "pos_rank_label": "WR588"
   },
   {
     "id": "11505",
@@ -4052,11 +4052,11 @@
     "name": "Dante Pettis",
     "team": "NO",
     "position": "WR",
-    "age": 30.1,
+    "age": 30.2,
     "value": 65.8,
     "search_name": "dante pettis",
-    "pos_rank": 554,
-    "pos_rank_label": "WR554"
+    "pos_rank": 549,
+    "pos_rank_label": "WR549"
   },
   {
     "id": "8192",
@@ -4066,8 +4066,8 @@
     "age": 26.5,
     "value": 82.5,
     "search_name": "curtis hodges",
-    "pos_rank": 95,
-    "pos_rank_label": "TE95"
+    "pos_rank": 94,
+    "pos_rank_label": "TE94"
   },
   {
     "id": "6081",
@@ -4088,8 +4088,8 @@
     "age": 27.6,
     "value": 58.1,
     "search_name": "thaddeus moss",
-    "pos_rank": 210,
-    "pos_rank_label": "TE210"
+    "pos_rank": 209,
+    "pos_rank_label": "TE209"
   },
   {
     "id": "11435",
@@ -4151,11 +4151,11 @@
     "name": "Zach Evans",
     "team": "NYJ",
     "position": "RB",
-    "age": 24.5,
-    "value": 98.7,
+    "age": 24.6,
+    "value": 100.7,
     "search_name": "zach evans",
-    "pos_rank": 86,
-    "pos_rank_label": "RB86"
+    "pos_rank": 78,
+    "pos_rank_label": "RB78"
   },
   {
     "id": "7980",
@@ -4198,8 +4198,8 @@
     "age": 33.5,
     "value": 57.9,
     "search_name": "deandre hopkins",
-    "pos_rank": 602,
-    "pos_rank_label": "WR602"
+    "pos_rank": 603,
+    "pos_rank_label": "WR603"
   },
   {
     "id": "8778",
@@ -4220,8 +4220,8 @@
     "age": 35.8,
     "value": 42.8,
     "search_name": "marvin jones",
-    "pos_rank": 711,
-    "pos_rank_label": "WR711"
+    "pos_rank": 709,
+    "pos_rank_label": "WR709"
   },
   {
     "id": "8168",
@@ -4231,8 +4231,8 @@
     "age": 25.3,
     "value": 75.3,
     "search_name": "skyy moore",
-    "pos_rank": 423,
-    "pos_rank_label": "WR423"
+    "pos_rank": 422,
+    "pos_rank_label": "WR422"
   },
   {
     "id": "8221",
@@ -4262,10 +4262,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 31.1,
-    "value": 64.8,
+    "value": 60.5,
     "search_name": "adam shaheen",
-    "pos_rank": 186,
-    "pos_rank_label": "TE186"
+    "pos_rank": 202,
+    "pos_rank_label": "TE202"
   },
   {
     "id": "6271",
@@ -4275,8 +4275,8 @@
     "age": 28.4,
     "value": 86.4,
     "search_name": "olamide zaccheaus",
-    "pos_rank": 302,
-    "pos_rank_label": "WR302"
+    "pos_rank": 301,
+    "pos_rank_label": "WR301"
   },
   {
     "id": "12090",
@@ -4286,19 +4286,19 @@
     "age": 24.7,
     "value": 90.3,
     "search_name": "corey crooms",
-    "pos_rank": 276,
-    "pos_rank_label": "WR276"
+    "pos_rank": 273,
+    "pos_rank_label": "WR273"
   },
   {
     "id": "13189",
     "name": "Luke Floriea",
     "team": "CLE",
     "position": "WR",
-    "age": 24.1,
-    "value": 25.9,
+    "age": 24.2,
+    "value": 14.4,
     "search_name": "luke floriea",
-    "pos_rank": 756,
-    "pos_rank_label": "WR756"
+    "pos_rank": 767,
+    "pos_rank_label": "WR767"
   },
   {
     "id": "6694",
@@ -4319,8 +4319,8 @@
     "age": 25.1,
     "value": 65.3,
     "search_name": "julius chestnut",
-    "pos_rank": 193,
-    "pos_rank_label": "RB193"
+    "pos_rank": 189,
+    "pos_rank_label": "RB189"
   },
   {
     "id": "10225",
@@ -4330,8 +4330,8 @@
     "age": 24.7,
     "value": 52.4,
     "search_name": "jonathan mingo",
-    "pos_rank": 638,
-    "pos_rank_label": "WR638"
+    "pos_rank": 639,
+    "pos_rank_label": "WR639"
   },
   {
     "id": "2394",
@@ -4363,8 +4363,8 @@
     "age": 27.2,
     "value": 36.2,
     "search_name": "sam ehlinger",
-    "pos_rank": 134,
-    "pos_rank_label": "QB134"
+    "pos_rank": 133,
+    "pos_rank_label": "QB133"
   },
   {
     "id": "6774",
@@ -4396,8 +4396,8 @@
     "age": 24.2,
     "value": 16.1,
     "search_name": "tommy mellott",
-    "pos_rank": 766,
-    "pos_rank_label": "WR766"
+    "pos_rank": 765,
+    "pos_rank_label": "WR765"
   },
   {
     "id": "8921",
@@ -4407,16 +4407,16 @@
     "age": 28.9,
     "value": 53.2,
     "search_name": "maurice alexander",
-    "pos_rank": 631,
-    "pos_rank_label": "WR631"
+    "pos_rank": 632,
+    "pos_rank_label": "WR632"
   },
   {
     "id": "13119",
     "name": "Collin Schlee",
     "team": "WSH",
     "position": "QB",
-    "age": 24.5,
-    "value": 83.5,
+    "age": 24.6,
+    "value": 85.5,
     "search_name": "collin schlee",
     "pos_rank": 56,
     "pos_rank_label": "QB56"
@@ -4473,8 +4473,8 @@
     "age": 30.9,
     "value": 53.3,
     "search_name": "leonard fournette",
-    "pos_rank": 241,
-    "pos_rank_label": "RB241"
+    "pos_rank": 239,
+    "pos_rank_label": "RB239"
   },
   {
     "id": "6045",
@@ -4484,8 +4484,8 @@
     "age": 28.8,
     "value": 71.0,
     "search_name": "gary jennings",
-    "pos_rank": 492,
-    "pos_rank_label": "WR492"
+    "pos_rank": 493,
+    "pos_rank_label": "WR493"
   },
   {
     "id": "12062",
@@ -4504,7 +4504,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 24.3,
-    "value": 4.5,
+    "value": 4.6,
     "search_name": "lew nichols",
     "pos_rank": 373,
     "pos_rank_label": "RB373"
@@ -4517,8 +4517,8 @@
     "age": 27.1,
     "value": 72.0,
     "search_name": "travell harris",
-    "pos_rank": 478,
-    "pos_rank_label": "WR478"
+    "pos_rank": 477,
+    "pos_rank_label": "WR477"
   },
   {
     "id": "5872",
@@ -4548,10 +4548,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 23.4,
-    "value": 125.1,
+    "value": 123.9,
     "search_name": "montana lemonious-craig",
-    "pos_rank": 98,
-    "pos_rank_label": "WR98"
+    "pos_rank": 101,
+    "pos_rank_label": "WR101"
   },
   {
     "id": "8226",
@@ -4559,10 +4559,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 27.5,
-    "value": 65.5,
+    "value": 64.2,
     "search_name": "greg bell",
-    "pos_rank": 191,
-    "pos_rank_label": "RB191"
+    "pos_rank": 194,
+    "pos_rank_label": "RB194"
   },
   {
     "id": "7943",
@@ -4605,8 +4605,8 @@
     "age": 26.9,
     "value": 87.5,
     "search_name": "jason brownlee",
-    "pos_rank": 292,
-    "pos_rank_label": "WR292"
+    "pos_rank": 291,
+    "pos_rank_label": "WR291"
   },
   {
     "id": "2391",
@@ -4636,7 +4636,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 25.7,
-    "value": 95.1,
+    "value": 93.9,
     "search_name": "alfonzo graham",
     "pos_rank": 97,
     "pos_rank_label": "RB97"
@@ -4649,8 +4649,8 @@
     "age": 27.3,
     "value": 62.9,
     "search_name": "hunter long",
-    "pos_rank": 194,
-    "pos_rank_label": "TE194"
+    "pos_rank": 192,
+    "pos_rank_label": "TE192"
   },
   {
     "id": "12756",
@@ -4682,8 +4682,8 @@
     "age": 30.4,
     "value": 59.4,
     "search_name": "david blough",
-    "pos_rank": 97,
-    "pos_rank_label": "QB97"
+    "pos_rank": 96,
+    "pos_rank_label": "QB96"
   },
   {
     "id": "12815",
@@ -4704,8 +4704,8 @@
     "age": 26.5,
     "value": 72.0,
     "search_name": "racey mcmath",
-    "pos_rank": 479,
-    "pos_rank_label": "WR479"
+    "pos_rank": 478,
+    "pos_rank_label": "WR478"
   },
   {
     "id": "8154",
@@ -4715,8 +4715,8 @@
     "age": 26.7,
     "value": 112.8,
     "search_name": "brian robinson",
-    "pos_rank": 69,
-    "pos_rank_label": "RB69"
+    "pos_rank": 68,
+    "pos_rank_label": "RB68"
   },
   {
     "id": "12544",
@@ -4756,11 +4756,11 @@
     "name": "Britain Covey",
     "team": "PHI",
     "position": "WR",
-    "age": 28.7,
+    "age": 28.8,
     "value": 67.4,
     "search_name": "britain covey",
-    "pos_rank": 533,
-    "pos_rank_label": "WR533"
+    "pos_rank": 530,
+    "pos_rank_label": "WR530"
   },
   {
     "id": "12718",
@@ -4803,8 +4803,8 @@
     "age": 28.5,
     "value": 66.3,
     "search_name": "dominique dafney",
-    "pos_rank": 176,
-    "pos_rank_label": "TE176"
+    "pos_rank": 175,
+    "pos_rank_label": "TE175"
   },
   {
     "id": "9490",
@@ -4814,8 +4814,8 @@
     "age": 24.2,
     "value": 25.5,
     "search_name": "tyler scott",
-    "pos_rank": 757,
-    "pos_rank_label": "WR757"
+    "pos_rank": 756,
+    "pos_rank_label": "WR756"
   },
   {
     "id": "13258",
@@ -4836,8 +4836,8 @@
     "age": 31.3,
     "value": 66.8,
     "search_name": "javon wims",
-    "pos_rank": 540,
-    "pos_rank_label": "WR540"
+    "pos_rank": 534,
+    "pos_rank_label": "WR534"
   },
   {
     "id": "7610",
@@ -4847,8 +4847,8 @@
     "age": 25.6,
     "value": 22.7,
     "search_name": "trey lance",
-    "pos_rank": 166,
-    "pos_rank_label": "QB166"
+    "pos_rank": 163,
+    "pos_rank_label": "QB163"
   },
   {
     "id": "11139",
@@ -4858,8 +4858,8 @@
     "age": 27.2,
     "value": 47.9,
     "search_name": "elijah cooks",
-    "pos_rank": 673,
-    "pos_rank_label": "WR673"
+    "pos_rank": 674,
+    "pos_rank_label": "WR674"
   },
   {
     "id": "12773",
@@ -4869,8 +4869,8 @@
     "age": 24.7,
     "value": 22.8,
     "search_name": "dj uiagalelei",
-    "pos_rank": 165,
-    "pos_rank_label": "QB165"
+    "pos_rank": 162,
+    "pos_rank_label": "QB162"
   },
   {
     "id": "11806",
@@ -4880,8 +4880,8 @@
     "age": 24.8,
     "value": 71.6,
     "search_name": "casey washington",
-    "pos_rank": 485,
-    "pos_rank_label": "WR485"
+    "pos_rank": 486,
+    "pos_rank_label": "WR486"
   },
   {
     "id": "5102",
@@ -4902,8 +4902,8 @@
     "age": 29.2,
     "value": 65.3,
     "search_name": "devine ozigbo",
-    "pos_rank": 194,
-    "pos_rank_label": "RB194"
+    "pos_rank": 190,
+    "pos_rank_label": "RB190"
   },
   {
     "id": "11374",
@@ -4911,10 +4911,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 27.1,
-    "value": 62.7,
+    "value": 58.4,
     "search_name": "james blackman",
-    "pos_rank": 89,
-    "pos_rank_label": "QB89"
+    "pos_rank": 97,
+    "pos_rank_label": "QB97"
   },
   {
     "id": "6144",
@@ -4957,8 +4957,8 @@
     "age": 24.4,
     "value": 105.4,
     "search_name": "david wallis",
-    "pos_rank": 170,
-    "pos_rank_label": "WR170"
+    "pos_rank": 169,
+    "pos_rank_label": "WR169"
   },
   {
     "id": "12505",
@@ -4968,8 +4968,8 @@
     "age": 22.8,
     "value": 68.1,
     "search_name": "jalen royals",
-    "pos_rank": 529,
-    "pos_rank_label": "WR529"
+    "pos_rank": 525,
+    "pos_rank_label": "WR525"
   },
   {
     "id": "6926",
@@ -4990,8 +4990,8 @@
     "age": 26.5,
     "value": 91.0,
     "search_name": "warren jackson",
-    "pos_rank": 265,
-    "pos_rank_label": "WR265"
+    "pos_rank": 262,
+    "pos_rank_label": "WR262"
   },
   {
     "id": "8131",
@@ -5012,8 +5012,8 @@
     "age": 28.9,
     "value": 119.2,
     "search_name": "darius slayton",
-    "pos_rank": 107,
-    "pos_rank_label": "WR107"
+    "pos_rank": 106,
+    "pos_rank_label": "WR106"
   },
   {
     "id": "4323",
@@ -5023,8 +5023,8 @@
     "age": 31.1,
     "value": 70.7,
     "search_name": "darrell daniels",
-    "pos_rank": 139,
-    "pos_rank_label": "TE139"
+    "pos_rank": 138,
+    "pos_rank_label": "TE138"
   },
   {
     "id": "1387",
@@ -5056,8 +5056,8 @@
     "age": 26.5,
     "value": 89.6,
     "search_name": "zack kuntz",
-    "pos_rank": 78,
-    "pos_rank_label": "TE78"
+    "pos_rank": 77,
+    "pos_rank_label": "TE77"
   },
   {
     "id": "8876",
@@ -5078,8 +5078,8 @@
     "age": 28.4,
     "value": 67.3,
     "search_name": "chase allen",
-    "pos_rank": 169,
-    "pos_rank_label": "TE169"
+    "pos_rank": 168,
+    "pos_rank_label": "TE168"
   },
   {
     "id": "12738",
@@ -5100,8 +5100,8 @@
     "age": 31.5,
     "value": 65.7,
     "search_name": "amari cooper",
-    "pos_rank": 555,
-    "pos_rank_label": "WR555"
+    "pos_rank": 552,
+    "pos_rank_label": "WR552"
   },
   {
     "id": "9493",
@@ -5131,10 +5131,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 30.1,
-    "value": 68.3,
+    "value": 64.0,
     "search_name": "devonte dedmon",
-    "pos_rank": 527,
-    "pos_rank_label": "WR527"
+    "pos_rank": 570,
+    "pos_rank_label": "WR570"
   },
   {
     "id": "5010",
@@ -5144,8 +5144,8 @@
     "age": 29.4,
     "value": 43.3,
     "search_name": "will dissly",
-    "pos_rank": 274,
-    "pos_rank_label": "TE274"
+    "pos_rank": 270,
+    "pos_rank_label": "TE270"
   },
   {
     "id": "11543",
@@ -5166,8 +5166,8 @@
     "age": 26.3,
     "value": 89.5,
     "search_name": "john jackson",
-    "pos_rank": 278,
-    "pos_rank_label": "WR278"
+    "pos_rank": 275,
+    "pos_rank_label": "WR275"
   },
   {
     "id": "13212",
@@ -5177,8 +5177,8 @@
     "age": 24.6,
     "value": 15.8,
     "search_name": "cade mcdonald",
-    "pos_rank": 767,
-    "pos_rank_label": "WR767"
+    "pos_rank": 766,
+    "pos_rank_label": "WR766"
   },
   {
     "id": "12392",
@@ -5188,8 +5188,8 @@
     "age": 24.2,
     "value": 64.9,
     "search_name": "tre mosley",
-    "pos_rank": 562,
-    "pos_rank_label": "WR562"
+    "pos_rank": 561,
+    "pos_rank_label": "WR561"
   },
   {
     "id": "8033",
@@ -5221,8 +5221,8 @@
     "age": 36.1,
     "value": 44.7,
     "search_name": "kyle rudolph",
-    "pos_rank": 268,
-    "pos_rank_label": "TE268"
+    "pos_rank": 267,
+    "pos_rank_label": "TE267"
   },
   {
     "id": "12512",
@@ -5276,8 +5276,8 @@
     "age": 31.2,
     "value": 79.9,
     "search_name": "demarcus robinson",
-    "pos_rank": 359,
-    "pos_rank_label": "WR359"
+    "pos_rank": 360,
+    "pos_rank_label": "WR360"
   },
   {
     "id": "4881",
@@ -5298,8 +5298,8 @@
     "age": 26.9,
     "value": 64.7,
     "search_name": "tucker fisk",
-    "pos_rank": 187,
-    "pos_rank_label": "TE187"
+    "pos_rank": 184,
+    "pos_rank_label": "TE184"
   },
   {
     "id": "12118",
@@ -5320,8 +5320,8 @@
     "age": 25.0,
     "value": 15.8,
     "search_name": "graham mertz",
-    "pos_rank": 179,
-    "pos_rank_label": "QB179"
+    "pos_rank": 180,
+    "pos_rank_label": "QB180"
   },
   {
     "id": "11941",
@@ -5386,8 +5386,8 @@
     "age": 35.3,
     "value": 52.5,
     "search_name": "adam thielen",
-    "pos_rank": 636,
-    "pos_rank_label": "WR636"
+    "pos_rank": 637,
+    "pos_rank_label": "WR637"
   },
   {
     "id": "2822",
@@ -5397,8 +5397,8 @@
     "age": 32.5,
     "value": 57.7,
     "search_name": "adam humphries",
-    "pos_rank": 603,
-    "pos_rank_label": "WR603"
+    "pos_rank": 604,
+    "pos_rank_label": "WR604"
   },
   {
     "id": "1737",
@@ -5419,8 +5419,8 @@
     "age": 27.1,
     "value": 51.0,
     "search_name": "charlie jones",
-    "pos_rank": 646,
-    "pos_rank_label": "WR646"
+    "pos_rank": 647,
+    "pos_rank_label": "WR647"
   },
   {
     "id": "8116",
@@ -5474,8 +5474,8 @@
     "age": 26.1,
     "value": 94.7,
     "search_name": "jadakis bonds",
-    "pos_rank": 227,
-    "pos_rank_label": "WR227"
+    "pos_rank": 225,
+    "pos_rank_label": "WR225"
   },
   {
     "id": "6834",
@@ -5485,15 +5485,15 @@
     "age": 28.3,
     "value": 67.3,
     "search_name": "jared pinkney",
-    "pos_rank": 170,
-    "pos_rank_label": "TE170"
+    "pos_rank": 169,
+    "pos_rank_label": "TE169"
   },
   {
     "id": "5902",
     "name": "Penny Hart",
     "team": "ATL",
     "position": "WR",
-    "age": 29.4,
+    "age": 29.5,
     "value": 73.8,
     "search_name": "penny hart",
     "pos_rank": 449,
@@ -5518,19 +5518,19 @@
     "age": 28.0,
     "value": 82.8,
     "search_name": "marcus simms",
-    "pos_rank": 329,
-    "pos_rank_label": "WR329"
+    "pos_rank": 327,
+    "pos_rank_label": "WR327"
   },
   {
     "id": "12743",
     "name": "Junior Bergen",
     "team": "SF",
     "position": "WR",
-    "age": 23.1,
-    "value": 46.2,
+    "age": 23.2,
+    "value": 45.1,
     "search_name": "junior bergen",
-    "pos_rank": 690,
-    "pos_rank_label": "WR690"
+    "pos_rank": 694,
+    "pos_rank_label": "WR694"
   },
   {
     "id": "12526",
@@ -5562,8 +5562,8 @@
     "age": 32.6,
     "value": 61.6,
     "search_name": "nelson agholor",
-    "pos_rank": 589,
-    "pos_rank_label": "WR589"
+    "pos_rank": 591,
+    "pos_rank_label": "WR591"
   },
   {
     "id": "12492",
@@ -5606,8 +5606,8 @@
     "age": 23.2,
     "value": 55.8,
     "search_name": "kalel mullings",
-    "pos_rank": 230,
-    "pos_rank_label": "RB230"
+    "pos_rank": 228,
+    "pos_rank_label": "RB228"
   },
   {
     "id": "8435",
@@ -5617,8 +5617,8 @@
     "age": 27.9,
     "value": 57.0,
     "search_name": "kwamie lassiter",
-    "pos_rank": 605,
-    "pos_rank_label": "WR605"
+    "pos_rank": 606,
+    "pos_rank_label": "WR606"
   },
   {
     "id": "11159",
@@ -5628,8 +5628,8 @@
     "age": 26.3,
     "value": 85.9,
     "search_name": "zion bowens",
-    "pos_rank": 308,
-    "pos_rank_label": "WR308"
+    "pos_rank": 307,
+    "pos_rank_label": "WR307"
   },
   {
     "id": "11082",
@@ -5639,8 +5639,8 @@
     "age": 25.6,
     "value": 61.5,
     "search_name": "ben sims",
-    "pos_rank": 197,
-    "pos_rank_label": "TE197"
+    "pos_rank": 195,
+    "pos_rank_label": "TE195"
   },
   {
     "id": "8197",
@@ -5650,8 +5650,8 @@
     "age": 26.7,
     "value": 88.3,
     "search_name": "peyton hendershot",
-    "pos_rank": 81,
-    "pos_rank_label": "TE81"
+    "pos_rank": 80,
+    "pos_rank_label": "TE80"
   },
   {
     "id": "9230",
@@ -5672,8 +5672,8 @@
     "age": 28.0,
     "value": 78.4,
     "search_name": "n'keal harry",
-    "pos_rank": 102,
-    "pos_rank_label": "TE102"
+    "pos_rank": 101,
+    "pos_rank_label": "TE101"
   },
   {
     "id": "4998",
@@ -5681,10 +5681,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 30.8,
-    "value": 67.0,
+    "value": 62.6,
     "search_name": "daesean hamilton",
-    "pos_rank": 536,
-    "pos_rank_label": "WR536"
+    "pos_rank": 583,
+    "pos_rank_label": "WR583"
   },
   {
     "id": "12772",
@@ -5705,8 +5705,8 @@
     "age": 32.6,
     "value": 44.0,
     "search_name": "robbie chosen",
-    "pos_rank": 705,
-    "pos_rank_label": "WR705"
+    "pos_rank": 704,
+    "pos_rank_label": "WR704"
   },
   {
     "id": "5284",
@@ -5714,10 +5714,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 29.1,
-    "value": 45.3,
+    "value": 44.8,
     "search_name": "jeff wilson",
-    "pos_rank": 269,
-    "pos_rank_label": "RB269"
+    "pos_rank": 271,
+    "pos_rank_label": "RB271"
   },
   {
     "id": "3257",
@@ -5837,8 +5837,8 @@
     "age": 25.4,
     "value": 37.1,
     "search_name": "eli pancol",
-    "pos_rank": 732,
-    "pos_rank_label": "WR732"
+    "pos_rank": 731,
+    "pos_rank_label": "WR731"
   },
   {
     "id": "2152",
@@ -5848,8 +5848,8 @@
     "age": 33.1,
     "value": 23.5,
     "search_name": "teddy bridgewater",
-    "pos_rank": 162,
-    "pos_rank_label": "QB162"
+    "pos_rank": 159,
+    "pos_rank_label": "QB159"
   },
   {
     "id": "13154",
@@ -5868,10 +5868,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 25.3,
-    "value": 107.3,
+    "value": 102.9,
     "search_name": "anthony schwartz",
-    "pos_rank": 158,
-    "pos_rank_label": "WR158"
+    "pos_rank": 184,
+    "pos_rank_label": "WR184"
   },
   {
     "id": "5038",
@@ -5881,8 +5881,8 @@
     "age": 29.8,
     "value": 69.3,
     "search_name": "michael gallup",
-    "pos_rank": 518,
-    "pos_rank_label": "WR518"
+    "pos_rank": 516,
+    "pos_rank_label": "WR516"
   },
   {
     "id": "8632",
@@ -5892,8 +5892,8 @@
     "age": 27.2,
     "value": 52.3,
     "search_name": "javonta payton",
-    "pos_rank": 639,
-    "pos_rank_label": "WR639"
+    "pos_rank": 640,
+    "pos_rank_label": "WR640"
   },
   {
     "id": "7593",
@@ -5901,7 +5901,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.9,
-    "value": 40.9,
+    "value": 41.0,
     "search_name": "trey sermon",
     "pos_rank": 278,
     "pos_rank_label": "RB278"
@@ -5925,8 +5925,8 @@
     "age": 26.9,
     "value": 82.4,
     "search_name": "jaelon darden",
-    "pos_rank": 334,
-    "pos_rank_label": "WR334"
+    "pos_rank": 333,
+    "pos_rank_label": "WR333"
   },
   {
     "id": "8249",
@@ -5980,8 +5980,8 @@
     "age": 29.3,
     "value": 65.6,
     "search_name": "austin walter",
-    "pos_rank": 190,
-    "pos_rank_label": "RB190"
+    "pos_rank": 187,
+    "pos_rank_label": "RB187"
   },
   {
     "id": "89",
@@ -6002,8 +6002,8 @@
     "age": 25.2,
     "value": 109.1,
     "search_name": "kyle sheets",
-    "pos_rank": 146,
-    "pos_rank_label": "WR146"
+    "pos_rank": 147,
+    "pos_rank_label": "WR147"
   },
   {
     "id": "11599",
@@ -6013,8 +6013,8 @@
     "age": 25.5,
     "value": 55.6,
     "search_name": "cade stover",
-    "pos_rank": 220,
-    "pos_rank_label": "TE220"
+    "pos_rank": 219,
+    "pos_rank_label": "TE219"
   },
   {
     "id": "13191",
@@ -6024,15 +6024,15 @@
     "age": 25.0,
     "value": 102.3,
     "search_name": "tj sheffield",
-    "pos_rank": 189,
-    "pos_rank_label": "WR189"
+    "pos_rank": 188,
+    "pos_rank_label": "WR188"
   },
   {
     "id": "11038",
     "name": "Derek Parish",
     "team": "JAX",
     "position": "TE",
-    "age": 26.9,
+    "age": 27.0,
     "value": 75.8,
     "search_name": "derek parish",
     "pos_rank": 115,
@@ -6046,8 +6046,8 @@
     "age": 25.3,
     "value": 103.1,
     "search_name": "ramel keyton",
-    "pos_rank": 182,
-    "pos_rank_label": "WR182"
+    "pos_rank": 179,
+    "pos_rank_label": "WR179"
   },
   {
     "id": "3582",
@@ -6057,8 +6057,8 @@
     "age": 31.9,
     "value": 44.5,
     "search_name": "chester rogers",
-    "pos_rank": 699,
-    "pos_rank_label": "WR699"
+    "pos_rank": 698,
+    "pos_rank_label": "WR698"
   },
   {
     "id": "12533",
@@ -6090,8 +6090,8 @@
     "age": 25.5,
     "value": 94.2,
     "search_name": "jermaine jackson",
-    "pos_rank": 235,
-    "pos_rank_label": "WR235"
+    "pos_rank": 233,
+    "pos_rank_label": "WR233"
   },
   {
     "id": "9756",
@@ -6112,8 +6112,8 @@
     "age": 34.7,
     "value": 36.1,
     "search_name": "josh gordon",
-    "pos_rank": 736,
-    "pos_rank_label": "WR736"
+    "pos_rank": 735,
+    "pos_rank_label": "WR735"
   },
   {
     "id": "4179",
@@ -6134,8 +6134,8 @@
     "age": 31.5,
     "value": 70.6,
     "search_name": "chad beebe",
-    "pos_rank": 500,
-    "pos_rank_label": "WR500"
+    "pos_rank": 501,
+    "pos_rank_label": "WR501"
   },
   {
     "id": "12746",
@@ -6145,8 +6145,8 @@
     "age": 23.7,
     "value": 44.2,
     "search_name": "jp richardson",
-    "pos_rank": 702,
-    "pos_rank_label": "WR702"
+    "pos_rank": 701,
+    "pos_rank_label": "WR701"
   },
   {
     "id": "12360",
@@ -6156,8 +6156,8 @@
     "age": 26.9,
     "value": 85.6,
     "search_name": "latreal jones",
-    "pos_rank": 310,
-    "pos_rank_label": "WR310"
+    "pos_rank": 309,
+    "pos_rank_label": "WR309"
   },
   {
     "id": "13120",
@@ -6266,8 +6266,8 @@
     "age": 29.6,
     "value": 72.8,
     "search_name": "chris finke",
-    "pos_rank": 467,
-    "pos_rank_label": "WR467"
+    "pos_rank": 466,
+    "pos_rank_label": "WR466"
   },
   {
     "id": "6111",
@@ -6332,8 +6332,8 @@
     "age": 30.6,
     "value": 71.7,
     "search_name": "parker hesse",
-    "pos_rank": 132,
-    "pos_rank_label": "TE132"
+    "pos_rank": 130,
+    "pos_rank_label": "TE130"
   },
   {
     "id": "12470",
@@ -6343,8 +6343,8 @@
     "age": 23.3,
     "value": 79.0,
     "search_name": "riley leonard",
-    "pos_rank": 68,
-    "pos_rank_label": "QB68"
+    "pos_rank": 67,
+    "pos_rank_label": "QB67"
   },
   {
     "id": "5101",
@@ -6354,8 +6354,8 @@
     "age": 29.4,
     "value": 70.2,
     "search_name": "deon cain",
-    "pos_rank": 508,
-    "pos_rank_label": "WR508"
+    "pos_rank": 506,
+    "pos_rank_label": "WR506"
   },
   {
     "id": "12848",
@@ -6409,8 +6409,8 @@
     "age": 29.1,
     "value": 65.3,
     "search_name": "terry godwin",
-    "pos_rank": 559,
-    "pos_rank_label": "WR559"
+    "pos_rank": 556,
+    "pos_rank_label": "WR556"
   },
   {
     "id": "4453",
@@ -6420,8 +6420,8 @@
     "age": 30.7,
     "value": 75.9,
     "search_name": "victor bolden",
-    "pos_rank": 415,
-    "pos_rank_label": "WR415"
+    "pos_rank": 413,
+    "pos_rank_label": "WR413"
   },
   {
     "id": "1144",
@@ -6508,8 +6508,8 @@
     "age": 26.7,
     "value": 85.6,
     "search_name": "gabe davis",
-    "pos_rank": 311,
-    "pos_rank_label": "WR311"
+    "pos_rank": 310,
+    "pos_rank_label": "WR310"
   },
   {
     "id": "12892",
@@ -6541,8 +6541,8 @@
     "age": 32.7,
     "value": 53.4,
     "search_name": "tevin coleman",
-    "pos_rank": 240,
-    "pos_rank_label": "RB240"
+    "pos_rank": 238,
+    "pos_rank_label": "RB238"
   },
   {
     "id": "2306",
@@ -6563,8 +6563,8 @@
     "age": 26.4,
     "value": 52.9,
     "search_name": "nick nash",
-    "pos_rank": 633,
-    "pos_rank_label": "WR633"
+    "pos_rank": 634,
+    "pos_rank_label": "WR634"
   },
   {
     "id": "11102",
@@ -6585,8 +6585,8 @@
     "age": 31.1,
     "value": 62.0,
     "search_name": "river cracraft",
-    "pos_rank": 584,
-    "pos_rank_label": "WR584"
+    "pos_rank": 586,
+    "pos_rank_label": "WR586"
   },
   {
     "id": "12939",
@@ -6607,8 +6607,8 @@
     "age": 26.0,
     "value": 94.3,
     "search_name": "lawrence keys",
-    "pos_rank": 231,
-    "pos_rank_label": "WR231"
+    "pos_rank": 229,
+    "pos_rank_label": "WR229"
   },
   {
     "id": "10651",
@@ -6640,8 +6640,8 @@
     "age": 37.9,
     "value": 36.4,
     "search_name": "andre roberts",
-    "pos_rank": 735,
-    "pos_rank_label": "WR735"
+    "pos_rank": 734,
+    "pos_rank_label": "WR734"
   },
   {
     "id": "9227",
@@ -6704,10 +6704,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.3,
-    "value": 74.1,
+    "value": 72.9,
     "search_name": "john lovett",
-    "pos_rank": 146,
-    "pos_rank_label": "RB146"
+    "pos_rank": 151,
+    "pos_rank_label": "RB151"
   },
   {
     "id": "12641",
@@ -6739,8 +6739,8 @@
     "age": 28.4,
     "value": 58.1,
     "search_name": "parris campbell",
-    "pos_rank": 600,
-    "pos_rank_label": "WR600"
+    "pos_rank": 601,
+    "pos_rank_label": "WR601"
   },
   {
     "id": "1479",
@@ -6750,8 +6750,8 @@
     "age": 33.6,
     "value": 137.8,
     "search_name": "keenan allen",
-    "pos_rank": 81,
-    "pos_rank_label": "WR81"
+    "pos_rank": 80,
+    "pos_rank_label": "WR80"
   },
   {
     "id": "7746",
@@ -6761,8 +6761,8 @@
     "age": 27.5,
     "value": 71.7,
     "search_name": "austin trammell",
-    "pos_rank": 483,
-    "pos_rank_label": "WR483"
+    "pos_rank": 484,
+    "pos_rank_label": "WR484"
   },
   {
     "id": "8938",
@@ -6783,8 +6783,8 @@
     "age": 26.6,
     "value": 78.3,
     "search_name": "tyler hoosman",
-    "pos_rank": 131,
-    "pos_rank_label": "RB131"
+    "pos_rank": 130,
+    "pos_rank_label": "RB130"
   },
   {
     "id": "2307",
@@ -6805,15 +6805,15 @@
     "age": 24.4,
     "value": 43.7,
     "search_name": "luke grimm",
-    "pos_rank": 708,
-    "pos_rank_label": "WR708"
+    "pos_rank": 706,
+    "pos_rank_label": "WR706"
   },
   {
     "id": "3198",
     "name": "Derrick Henry",
     "team": "BAL",
     "position": "RB",
-    "age": 31.9,
+    "age": 32.0,
     "value": 283.8,
     "search_name": "derrick henry",
     "pos_rank": 20,
@@ -6849,8 +6849,8 @@
     "age": 27.7,
     "value": 79.7,
     "search_name": "cody chrest",
-    "pos_rank": 362,
-    "pos_rank_label": "WR362"
+    "pos_rank": 363,
+    "pos_rank_label": "WR363"
   },
   {
     "id": "7771",
@@ -6860,8 +6860,8 @@
     "age": 27.9,
     "value": 66.6,
     "search_name": "jake funk",
-    "pos_rank": 182,
-    "pos_rank_label": "RB182"
+    "pos_rank": 181,
+    "pos_rank_label": "RB181"
   },
   {
     "id": "8214",
@@ -6882,8 +6882,8 @@
     "age": 26.2,
     "value": 64.1,
     "search_name": "brian cobbs",
-    "pos_rank": 569,
-    "pos_rank_label": "WR569"
+    "pos_rank": 568,
+    "pos_rank_label": "WR568"
   },
   {
     "id": "12501",
@@ -6902,7 +6902,7 @@
     "team": "MIA",
     "position": "WR",
     "age": 24.5,
-    "value": 38.8,
+    "value": 38.4,
     "search_name": "theo wease",
     "pos_rank": 728,
     "pos_rank_label": "WR728"
@@ -6923,8 +6923,8 @@
     "name": "Malik Washington",
     "team": "MIA",
     "position": "WR",
-    "age": 24.9,
-    "value": 135.3,
+    "age": 25.0,
+    "value": 134.9,
     "search_name": "malik washington",
     "pos_rank": 84,
     "pos_rank_label": "WR84"
@@ -6959,8 +6959,8 @@
     "age": 25.7,
     "value": 49.4,
     "search_name": "kevin austin",
-    "pos_rank": 662,
-    "pos_rank_label": "WR662"
+    "pos_rank": 663,
+    "pos_rank_label": "WR663"
   },
   {
     "id": "12534",
@@ -6981,8 +6981,8 @@
     "age": 26.5,
     "value": 65.4,
     "search_name": "dareke young",
-    "pos_rank": 557,
-    "pos_rank_label": "WR557"
+    "pos_rank": 554,
+    "pos_rank_label": "WR554"
   },
   {
     "id": "11574",
@@ -6992,8 +6992,8 @@
     "age": 26.0,
     "value": 45.2,
     "search_name": "dylan laube",
-    "pos_rank": 271,
-    "pos_rank_label": "RB271"
+    "pos_rank": 270,
+    "pos_rank_label": "RB270"
   },
   {
     "id": "12975",
@@ -7014,8 +7014,8 @@
     "age": 28.6,
     "value": 65.0,
     "search_name": "brandon dillon",
-    "pos_rank": 181,
-    "pos_rank_label": "TE181"
+    "pos_rank": 180,
+    "pos_rank_label": "TE180"
   },
   {
     "id": "11528",
@@ -7025,8 +7025,8 @@
     "age": 25.6,
     "value": 103.8,
     "search_name": "garett maag",
-    "pos_rank": 178,
-    "pos_rank_label": "WR178"
+    "pos_rank": 175,
+    "pos_rank_label": "WR175"
   },
   {
     "id": "7564",
@@ -7045,10 +7045,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 25.7,
-    "value": 82.9,
+    "value": 80.8,
     "search_name": "greg dulcich",
-    "pos_rank": 93,
-    "pos_rank_label": "TE93"
+    "pos_rank": 96,
+    "pos_rank_label": "TE96"
   },
   {
     "id": "12469",
@@ -7069,8 +7069,8 @@
     "age": 23.7,
     "value": 122.3,
     "search_name": "shane watts",
-    "pos_rank": 59,
-    "pos_rank_label": "RB59"
+    "pos_rank": 58,
+    "pos_rank_label": "RB58"
   },
   {
     "id": "5917",
@@ -7113,8 +7113,8 @@
     "age": 26.2,
     "value": 90.4,
     "search_name": "joshua palmer",
-    "pos_rank": 275,
-    "pos_rank_label": "WR275"
+    "pos_rank": 272,
+    "pos_rank_label": "WR272"
   },
   {
     "id": "6037",
@@ -7135,8 +7135,8 @@
     "age": 30.7,
     "value": 66.7,
     "search_name": "jamal agnew",
-    "pos_rank": 543,
-    "pos_rank_label": "WR543"
+    "pos_rank": 537,
+    "pos_rank_label": "WR537"
   },
   {
     "id": "7086",
@@ -7146,8 +7146,8 @@
     "age": 29.5,
     "value": 75.3,
     "search_name": "john hightower",
-    "pos_rank": 424,
-    "pos_rank_label": "WR424"
+    "pos_rank": 423,
+    "pos_rank_label": "WR423"
   },
   {
     "id": "6239",
@@ -7177,10 +7177,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 25.6,
-    "value": 94.1,
+    "value": 92.8,
     "search_name": "master teague",
-    "pos_rank": 98,
-    "pos_rank_label": "RB98"
+    "pos_rank": 100,
+    "pos_rank_label": "RB100"
   },
   {
     "id": "5171",
@@ -7190,8 +7190,8 @@
     "age": 30.6,
     "value": 58.4,
     "search_name": "kevin rader",
-    "pos_rank": 208,
-    "pos_rank_label": "TE208"
+    "pos_rank": 207,
+    "pos_rank_label": "TE207"
   },
   {
     "id": "11478",
@@ -7201,8 +7201,8 @@
     "age": 27.2,
     "value": 72.7,
     "search_name": "gavin holmes",
-    "pos_rank": 471,
-    "pos_rank_label": "WR471"
+    "pos_rank": 470,
+    "pos_rank_label": "WR470"
   },
   {
     "id": "11474",
@@ -7245,8 +7245,8 @@
     "age": 26.8,
     "value": 60.9,
     "search_name": "davis cheek",
-    "pos_rank": 94,
-    "pos_rank_label": "QB94"
+    "pos_rank": 93,
+    "pos_rank_label": "QB93"
   },
   {
     "id": "8181",
@@ -7256,19 +7256,19 @@
     "age": 26.9,
     "value": 55.9,
     "search_name": "connor heyward",
-    "pos_rank": 217,
-    "pos_rank_label": "TE217"
+    "pos_rank": 216,
+    "pos_rank_label": "TE216"
   },
   {
     "id": "11998",
     "name": "Emani Bailey",
     "team": "CAR",
     "position": "RB",
-    "age": 24.0,
-    "value": 114.3,
+    "age": 24.1,
+    "value": 106.9,
     "search_name": "emani bailey",
-    "pos_rank": 67,
-    "pos_rank_label": "RB67"
+    "pos_rank": 70,
+    "pos_rank_label": "RB70"
   },
   {
     "id": "6156",
@@ -7311,8 +7311,8 @@
     "age": 26.5,
     "value": 21.5,
     "search_name": "will levis",
-    "pos_rank": 167,
-    "pos_rank_label": "QB167"
+    "pos_rank": 164,
+    "pos_rank_label": "QB164"
   },
   {
     "id": "11237",
@@ -7333,8 +7333,8 @@
     "age": 35.1,
     "value": 90.0,
     "search_name": "zach ertz",
-    "pos_rank": 75,
-    "pos_rank_label": "TE75"
+    "pos_rank": 74,
+    "pos_rank_label": "TE74"
   },
   {
     "id": "11190",
@@ -7342,10 +7342,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 24.9,
-    "value": 104.6,
+    "value": 103.3,
     "search_name": "keilahn harris",
-    "pos_rank": 174,
-    "pos_rank_label": "WR174"
+    "pos_rank": 177,
+    "pos_rank_label": "WR177"
   },
   {
     "id": "4197",
@@ -7353,10 +7353,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 30.7,
-    "value": 67.0,
+    "value": 62.6,
     "search_name": "isaiah mckenzie",
-    "pos_rank": 537,
-    "pos_rank_label": "WR537"
+    "pos_rank": 584,
+    "pos_rank_label": "WR584"
   },
   {
     "id": "6402",
@@ -7366,8 +7366,8 @@
     "age": 28.7,
     "value": 35.3,
     "search_name": "steven sims",
-    "pos_rank": 743,
-    "pos_rank_label": "WR743"
+    "pos_rank": 742,
+    "pos_rank_label": "WR742"
   },
   {
     "id": "1916",
@@ -7377,8 +7377,8 @@
     "age": 34.0,
     "value": 43.8,
     "search_name": "martavis bryant",
-    "pos_rank": 707,
-    "pos_rank_label": "WR707"
+    "pos_rank": 705,
+    "pos_rank_label": "WR705"
   },
   {
     "id": "12532",
@@ -7388,8 +7388,8 @@
     "age": 24.1,
     "value": 75.4,
     "search_name": "ja'corey brooks",
-    "pos_rank": 422,
-    "pos_rank_label": "WR422"
+    "pos_rank": 421,
+    "pos_rank_label": "WR421"
   },
   {
     "id": "11931",
@@ -7407,11 +7407,11 @@
     "name": "David Sills V",
     "team": "ATL",
     "position": "WR",
-    "age": 29.5,
-    "value": 79.6,
+    "age": 29.6,
+    "value": 80.0,
     "search_name": "david sills",
-    "pos_rank": 365,
-    "pos_rank_label": "WR365"
+    "pos_rank": 359,
+    "pos_rank_label": "WR359"
   },
   {
     "id": "12374",
@@ -7421,8 +7421,8 @@
     "age": 26.2,
     "value": 43.2,
     "search_name": "brenden bates",
-    "pos_rank": 275,
-    "pos_rank_label": "TE275"
+    "pos_rank": 271,
+    "pos_rank_label": "TE271"
   },
   {
     "id": "6870",
@@ -7432,8 +7432,8 @@
     "age": 27.1,
     "value": 70.2,
     "search_name": "bryan edwards",
-    "pos_rank": 509,
-    "pos_rank_label": "WR509"
+    "pos_rank": 507,
+    "pos_rank_label": "WR507"
   },
   {
     "id": "4029",
@@ -7454,8 +7454,8 @@
     "age": 29.1,
     "value": 62.8,
     "search_name": "trey ragas",
-    "pos_rank": 203,
-    "pos_rank_label": "RB203"
+    "pos_rank": 200,
+    "pos_rank_label": "RB200"
   },
   {
     "id": "12455",
@@ -7520,8 +7520,8 @@
     "age": 27.9,
     "value": 82.8,
     "search_name": "ra'shaun henry",
-    "pos_rank": 330,
-    "pos_rank_label": "WR330"
+    "pos_rank": 328,
+    "pos_rank_label": "WR328"
   },
   {
     "id": "7032",
@@ -7531,8 +7531,8 @@
     "age": 28.2,
     "value": 72.7,
     "search_name": "tyrie cleveland",
-    "pos_rank": 472,
-    "pos_rank_label": "WR472"
+    "pos_rank": 471,
+    "pos_rank_label": "WR471"
   },
   {
     "id": "7439",
@@ -7542,8 +7542,8 @@
     "age": 28.8,
     "value": 61.3,
     "search_name": "tommy hudson",
-    "pos_rank": 199,
-    "pos_rank_label": "TE199"
+    "pos_rank": 197,
+    "pos_rank_label": "TE197"
   },
   {
     "id": "5046",
@@ -7564,8 +7564,8 @@
     "age": 26.5,
     "value": 55.9,
     "search_name": "will mallory",
-    "pos_rank": 218,
-    "pos_rank_label": "TE218"
+    "pos_rank": 217,
+    "pos_rank_label": "TE217"
   },
   {
     "id": "4157",
@@ -7586,8 +7586,8 @@
     "age": 26.5,
     "value": 91.6,
     "search_name": "malik flowers",
-    "pos_rank": 256,
-    "pos_rank_label": "WR256"
+    "pos_rank": 253,
+    "pos_rank_label": "WR253"
   },
   {
     "id": "11583",
@@ -7597,8 +7597,8 @@
     "age": 22.4,
     "value": 56.2,
     "search_name": "jonathon brooks",
-    "pos_rank": 226,
-    "pos_rank_label": "RB226"
+    "pos_rank": 225,
+    "pos_rank_label": "RB225"
   },
   {
     "id": "11371",
@@ -7606,10 +7606,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 25.4,
-    "value": 61.1,
+    "value": 55.1,
     "search_name": "julian hill",
-    "pos_rank": 201,
-    "pos_rank_label": "TE201"
+    "pos_rank": 220,
+    "pos_rank_label": "TE220"
   },
   {
     "id": "8063",
@@ -7630,8 +7630,8 @@
     "age": 25.7,
     "value": 44.1,
     "search_name": "michael woods",
-    "pos_rank": 704,
-    "pos_rank_label": "WR704"
+    "pos_rank": 703,
+    "pos_rank_label": "WR703"
   },
   {
     "id": "13173",
@@ -7652,8 +7652,8 @@
     "age": 27.3,
     "value": 62.4,
     "search_name": "t.j. vasher",
-    "pos_rank": 583,
-    "pos_rank_label": "WR583"
+    "pos_rank": 585,
+    "pos_rank_label": "WR585"
   },
   {
     "id": "6311",
@@ -7663,8 +7663,8 @@
     "age": 30.3,
     "value": 62.5,
     "search_name": "patrick laird",
-    "pos_rank": 205,
-    "pos_rank_label": "RB205"
+    "pos_rank": 202,
+    "pos_rank_label": "RB202"
   },
   {
     "id": "5250",
@@ -7674,8 +7674,8 @@
     "age": 31.6,
     "value": 50.6,
     "search_name": "robert foster",
-    "pos_rank": 655,
-    "pos_rank_label": "WR655"
+    "pos_rank": 656,
+    "pos_rank_label": "WR656"
   },
   {
     "id": "4144",
@@ -7683,10 +7683,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 30.3,
-    "value": 64.3,
+    "value": 63.7,
     "search_name": "jonnu smith",
-    "pos_rank": 188,
-    "pos_rank_label": "TE188"
+    "pos_rank": 189,
+    "pos_rank_label": "TE189"
   },
   {
     "id": "7376",
@@ -7707,8 +7707,8 @@
     "age": 27.4,
     "value": 53.5,
     "search_name": "jalen virgil",
-    "pos_rank": 629,
-    "pos_rank_label": "WR629"
+    "pos_rank": 630,
+    "pos_rank_label": "WR630"
   },
   {
     "id": "9231",
@@ -7737,11 +7737,11 @@
     "name": "Ben Bryant",
     "team": "NYJ",
     "position": "QB",
-    "age": 26.2,
-    "value": 82.1,
+    "age": 26.3,
+    "value": 77.3,
     "search_name": "ben bryant",
-    "pos_rank": 61,
-    "pos_rank_label": "QB61"
+    "pos_rank": 69,
+    "pos_rank_label": "QB69"
   },
   {
     "id": "7607",
@@ -7751,8 +7751,8 @@
     "age": 26.6,
     "value": 79.0,
     "search_name": "michael carter",
-    "pos_rank": 128,
-    "pos_rank_label": "RB128"
+    "pos_rank": 127,
+    "pos_rank_label": "RB127"
   },
   {
     "id": "12521",
@@ -7773,8 +7773,8 @@
     "age": 24.1,
     "value": 91.1,
     "search_name": "efton chism",
-    "pos_rank": 263,
-    "pos_rank_label": "WR263"
+    "pos_rank": 259,
+    "pos_rank_label": "WR259"
   },
   {
     "id": "12515",
@@ -7806,8 +7806,8 @@
     "age": 31.4,
     "value": 51.6,
     "search_name": "jordan wilkins",
-    "pos_rank": 249,
-    "pos_rank_label": "RB249"
+    "pos_rank": 248,
+    "pos_rank_label": "RB248"
   },
   {
     "id": "8824",
@@ -7817,8 +7817,8 @@
     "age": 27.9,
     "value": 70.6,
     "search_name": "samson nacua",
-    "pos_rank": 501,
-    "pos_rank_label": "WR501"
+    "pos_rank": 502,
+    "pos_rank_label": "WR502"
   },
   {
     "id": "7595",
@@ -7828,8 +7828,8 @@
     "age": 26.6,
     "value": 75.6,
     "search_name": "tylan wallace",
-    "pos_rank": 418,
-    "pos_rank_label": "WR418"
+    "pos_rank": 417,
+    "pos_rank_label": "WR417"
   },
   {
     "id": "4068",
@@ -7839,8 +7839,8 @@
     "age": 31.2,
     "value": 71.5,
     "search_name": "mike williams",
-    "pos_rank": 487,
-    "pos_rank_label": "WR487"
+    "pos_rank": 488,
+    "pos_rank_label": "WR488"
   },
   {
     "id": "8431",
@@ -7850,8 +7850,8 @@
     "age": 26.5,
     "value": 80.7,
     "search_name": "chase garbers",
-    "pos_rank": 62,
-    "pos_rank_label": "QB62"
+    "pos_rank": 61,
+    "pos_rank_label": "QB61"
   },
   {
     "id": "11382",
@@ -7872,8 +7872,8 @@
     "age": 28.9,
     "value": 45.9,
     "search_name": "auden tate",
-    "pos_rank": 694,
-    "pos_rank_label": "WR694"
+    "pos_rank": 690,
+    "pos_rank_label": "WR690"
   },
   {
     "id": "8118",
@@ -7883,8 +7883,8 @@
     "age": 25.0,
     "value": 22.6,
     "search_name": "david bell",
-    "pos_rank": 760,
-    "pos_rank_label": "WR760"
+    "pos_rank": 759,
+    "pos_rank_label": "WR759"
   },
   {
     "id": "12907",
@@ -7894,8 +7894,8 @@
     "age": 24.0,
     "value": 51.1,
     "search_name": "quentin skinner",
-    "pos_rank": 644,
-    "pos_rank_label": "WR644"
+    "pos_rank": 645,
+    "pos_rank_label": "WR645"
   },
   {
     "id": "5886",
@@ -7905,8 +7905,8 @@
     "age": 29.6,
     "value": 49.4,
     "search_name": "hakeem butler",
-    "pos_rank": 663,
-    "pos_rank_label": "WR663"
+    "pos_rank": 664,
+    "pos_rank_label": "WR664"
   },
   {
     "id": "7596",
@@ -7916,8 +7916,8 @@
     "age": 25.7,
     "value": 72.8,
     "search_name": "elijah moore",
-    "pos_rank": 468,
-    "pos_rank_label": "WR468"
+    "pos_rank": 467,
+    "pos_rank_label": "WR467"
   },
   {
     "id": "12218",
@@ -7971,8 +7971,8 @@
     "age": 27.4,
     "value": 79.8,
     "search_name": "freddie swain",
-    "pos_rank": 360,
-    "pos_rank_label": "WR360"
+    "pos_rank": 361,
+    "pos_rank_label": "WR361"
   },
   {
     "id": "8147",
@@ -7993,8 +7993,8 @@
     "age": 25.2,
     "value": 73.0,
     "search_name": "jared wayne",
-    "pos_rank": 464,
-    "pos_rank_label": "WR464"
+    "pos_rank": 463,
+    "pos_rank_label": "WR463"
   },
   {
     "id": "8189",
@@ -8004,8 +8004,8 @@
     "age": 27.0,
     "value": 65.4,
     "search_name": "trestan ebner",
-    "pos_rank": 192,
-    "pos_rank_label": "RB192"
+    "pos_rank": 188,
+    "pos_rank_label": "RB188"
   },
   {
     "id": "8206",
@@ -8024,10 +8024,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 24.6,
-    "value": 84.9,
+    "value": 84.5,
     "search_name": "tahj washington",
-    "pos_rank": 314,
-    "pos_rank_label": "WR314"
+    "pos_rank": 316,
+    "pos_rank_label": "WR316"
   },
   {
     "id": "8058",
@@ -8037,8 +8037,8 @@
     "age": 26.7,
     "value": 77.0,
     "search_name": "nate mccrary",
-    "pos_rank": 134,
-    "pos_rank_label": "RB134"
+    "pos_rank": 133,
+    "pos_rank_label": "RB133"
   },
   {
     "id": "8747",
@@ -8048,8 +8048,8 @@
     "age": 26.7,
     "value": 89.2,
     "search_name": "roger carter",
-    "pos_rank": 79,
-    "pos_rank_label": "TE79"
+    "pos_rank": 78,
+    "pos_rank_label": "TE78"
   },
   {
     "id": "5220",
@@ -8057,10 +8057,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 31.3,
-    "value": 53.8,
+    "value": 52.6,
     "search_name": "godwin igwebuike",
-    "pos_rank": 238,
-    "pos_rank_label": "RB238"
+    "pos_rank": 243,
+    "pos_rank_label": "RB243"
   },
   {
     "id": "6089",
@@ -8070,8 +8070,8 @@
     "age": 30.7,
     "value": 70.7,
     "search_name": "daniel helm",
-    "pos_rank": 140,
-    "pos_rank_label": "TE140"
+    "pos_rank": 139,
+    "pos_rank_label": "TE139"
   },
   {
     "id": "12547",
@@ -8092,8 +8092,8 @@
     "age": 32.1,
     "value": 70.8,
     "search_name": "tim patrick",
-    "pos_rank": 496,
-    "pos_rank_label": "WR496"
+    "pos_rank": 497,
+    "pos_rank_label": "WR497"
   },
   {
     "id": "7009",
@@ -8147,8 +8147,8 @@
     "age": 28.2,
     "value": 63.7,
     "search_name": "a.j. rose",
-    "pos_rank": 199,
-    "pos_rank_label": "RB199"
+    "pos_rank": 195,
+    "pos_rank_label": "RB195"
   },
   {
     "id": "12497",
@@ -8180,8 +8180,8 @@
     "age": 27.6,
     "value": 60.9,
     "search_name": "thayer thomas",
-    "pos_rank": 590,
-    "pos_rank_label": "WR590"
+    "pos_rank": 592,
+    "pos_rank_label": "WR592"
   },
   {
     "id": "9495",
@@ -8202,8 +8202,8 @@
     "age": 30.5,
     "value": 64.0,
     "search_name": "tommy sweeney",
-    "pos_rank": 191,
-    "pos_rank_label": "TE191"
+    "pos_rank": 187,
+    "pos_rank_label": "TE187"
   },
   {
     "id": "11136",
@@ -8224,8 +8224,8 @@
     "age": 26.6,
     "value": 59.7,
     "search_name": "noah gray",
-    "pos_rank": 205,
-    "pos_rank_label": "TE205"
+    "pos_rank": 204,
+    "pos_rank_label": "TE204"
   },
   {
     "id": "12245",
@@ -8246,8 +8246,8 @@
     "age": 28.9,
     "value": 60.5,
     "search_name": "andre baccellia",
-    "pos_rank": 593,
-    "pos_rank_label": "WR593"
+    "pos_rank": 595,
+    "pos_rank_label": "WR595"
   },
   {
     "id": "3328",
@@ -8257,8 +8257,8 @@
     "age": 31.2,
     "value": 66.8,
     "search_name": "rashard higgins",
-    "pos_rank": 541,
-    "pos_rank_label": "WR541"
+    "pos_rank": 535,
+    "pos_rank_label": "WR535"
   },
   {
     "id": "11359",
@@ -8334,8 +8334,8 @@
     "age": 26.9,
     "value": 122.7,
     "search_name": "rachaad white",
-    "pos_rank": 58,
-    "pos_rank_label": "RB58"
+    "pos_rank": 57,
+    "pos_rank_label": "RB57"
   },
   {
     "id": "8220",
@@ -8387,10 +8387,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 30.6,
-    "value": 54.7,
+    "value": 53.5,
     "search_name": "boston scott",
-    "pos_rank": 234,
-    "pos_rank_label": "RB234"
+    "pos_rank": 237,
+    "pos_rank_label": "RB237"
   },
   {
     "id": "4531",
@@ -8400,8 +8400,8 @@
     "age": 30.8,
     "value": 67.2,
     "search_name": "ricky seals-jones",
-    "pos_rank": 171,
-    "pos_rank_label": "TE171"
+    "pos_rank": 170,
+    "pos_rank_label": "TE170"
   },
   {
     "id": "8125",
@@ -8409,10 +8409,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 26.7,
-    "value": 120.4,
+    "value": 118.2,
     "search_name": "calvin austin",
-    "pos_rank": 105,
-    "pos_rank_label": "WR105"
+    "pos_rank": 108,
+    "pos_rank_label": "WR108"
   },
   {
     "id": "11918",
@@ -8431,10 +8431,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 27.1,
-    "value": 90.3,
+    "value": 91.0,
     "search_name": "pat freiermuth",
-    "pos_rank": 73,
-    "pos_rank_label": "TE73"
+    "pos_rank": 72,
+    "pos_rank_label": "TE72"
   },
   {
     "id": "2711",
@@ -8488,8 +8488,8 @@
     "age": 24.7,
     "value": 36.7,
     "search_name": "juice wells",
-    "pos_rank": 734,
-    "pos_rank_label": "WR734"
+    "pos_rank": 733,
+    "pos_rank_label": "WR733"
   },
   {
     "id": "6730",
@@ -8510,8 +8510,8 @@
     "age": 32.0,
     "value": 47.1,
     "search_name": "c.j. board",
-    "pos_rank": 680,
-    "pos_rank_label": "WR680"
+    "pos_rank": 681,
+    "pos_rank_label": "WR681"
   },
   {
     "id": "11729",
@@ -8521,8 +8521,8 @@
     "age": 24.4,
     "value": 45.3,
     "search_name": "sione vaki",
-    "pos_rank": 270,
-    "pos_rank_label": "RB270"
+    "pos_rank": 269,
+    "pos_rank_label": "RB269"
   },
   {
     "id": "5938",
@@ -8573,11 +8573,11 @@
     "name": "Camren McDonald",
     "team": "LAR",
     "position": "TE",
-    "age": 26.5,
+    "age": 26.6,
     "value": 88.8,
     "search_name": "camren mcdonald",
-    "pos_rank": 80,
-    "pos_rank_label": "TE80"
+    "pos_rank": 79,
+    "pos_rank_label": "TE79"
   },
   {
     "id": "11182",
@@ -8587,8 +8587,8 @@
     "age": 28.1,
     "value": 76.9,
     "search_name": "ronald awatt",
-    "pos_rank": 135,
-    "pos_rank_label": "RB135"
+    "pos_rank": 134,
+    "pos_rank_label": "RB134"
   },
   {
     "id": "12033",
@@ -8598,8 +8598,8 @@
     "age": 24.8,
     "value": 109.2,
     "search_name": "oj hiliare",
-    "pos_rank": 145,
-    "pos_rank_label": "WR145"
+    "pos_rank": 146,
+    "pos_rank_label": "WR146"
   },
   {
     "id": "11607",
@@ -8664,8 +8664,8 @@
     "age": 30.5,
     "value": 57.7,
     "search_name": "laquon treadwell",
-    "pos_rank": 604,
-    "pos_rank_label": "WR604"
+    "pos_rank": 605,
+    "pos_rank_label": "WR605"
   },
   {
     "id": "3312",
@@ -8686,8 +8686,8 @@
     "age": 28.5,
     "value": 66.2,
     "search_name": "k.j. osborn",
-    "pos_rank": 550,
-    "pos_rank_label": "WR550"
+    "pos_rank": 541,
+    "pos_rank_label": "WR541"
   },
   {
     "id": "11620",
@@ -8706,10 +8706,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 27.5,
-    "value": 25.1,
+    "value": 25.2,
     "search_name": "raheem blackshear",
-    "pos_rank": 339,
-    "pos_rank_label": "RB339"
+    "pos_rank": 338,
+    "pos_rank_label": "RB338"
   },
   {
     "id": "4335",
@@ -8741,8 +8741,8 @@
     "age": 27.2,
     "value": 58.0,
     "search_name": "kaden davis",
-    "pos_rank": 601,
-    "pos_rank_label": "WR601"
+    "pos_rank": 602,
+    "pos_rank_label": "WR602"
   },
   {
     "id": "2381",
@@ -8763,8 +8763,8 @@
     "age": 39.2,
     "value": 20.8,
     "search_name": "chase daniel",
-    "pos_rank": 171,
-    "pos_rank_label": "QB171"
+    "pos_rank": 169,
+    "pos_rank_label": "QB169"
   },
   {
     "id": "1166",
@@ -8851,8 +8851,8 @@
     "age": 26.9,
     "value": 84.9,
     "search_name": "keshunn abram",
-    "pos_rank": 315,
-    "pos_rank_label": "WR315"
+    "pos_rank": 314,
+    "pos_rank_label": "WR314"
   },
   {
     "id": "10221",
@@ -8884,8 +8884,8 @@
     "age": 26.1,
     "value": 86.0,
     "search_name": "chase cota",
-    "pos_rank": 303,
-    "pos_rank_label": "WR303"
+    "pos_rank": 302,
+    "pos_rank_label": "WR302"
   },
   {
     "id": "8184",
@@ -8895,8 +8895,8 @@
     "age": 26.5,
     "value": 79.5,
     "search_name": "d'vonte price",
-    "pos_rank": 126,
-    "pos_rank_label": "RB126"
+    "pos_rank": 125,
+    "pos_rank_label": "RB125"
   },
   {
     "id": "4381",
@@ -8906,8 +8906,8 @@
     "age": 35.3,
     "value": 13.1,
     "search_name": "taysom hill",
-    "pos_rank": 187,
-    "pos_rank_label": "QB187"
+    "pos_rank": 188,
+    "pos_rank_label": "QB188"
   },
   {
     "id": "5409",
@@ -8917,8 +8917,8 @@
     "age": 31.1,
     "value": 64.1,
     "search_name": "tanner hudson",
-    "pos_rank": 190,
-    "pos_rank_label": "TE190"
+    "pos_rank": 186,
+    "pos_rank_label": "TE186"
   },
   {
     "id": "2197",
@@ -9003,10 +9003,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 27.7,
-    "value": 72.4,
+    "value": 71.2,
     "search_name": "rodney williams",
-    "pos_rank": 128,
-    "pos_rank_label": "TE128"
+    "pos_rank": 135,
+    "pos_rank_label": "TE135"
   },
   {
     "id": "8201",
@@ -9027,8 +9027,8 @@
     "age": 26.7,
     "value": 87.7,
     "search_name": "cam johnson",
-    "pos_rank": 290,
-    "pos_rank_label": "WR290"
+    "pos_rank": 289,
+    "pos_rank_label": "WR289"
   },
   {
     "id": "5235",
@@ -9038,8 +9038,8 @@
     "age": 30.6,
     "value": 71.7,
     "search_name": "david wells",
-    "pos_rank": 133,
-    "pos_rank_label": "TE133"
+    "pos_rank": 131,
+    "pos_rank_label": "TE131"
   },
   {
     "id": "11522",
@@ -9049,8 +9049,8 @@
     "age": 26.7,
     "value": 94.7,
     "search_name": "jerome kapp",
-    "pos_rank": 228,
-    "pos_rank_label": "WR228"
+    "pos_rank": 226,
+    "pos_rank_label": "WR226"
   },
   {
     "id": "7159",
@@ -9082,8 +9082,8 @@
     "age": 24.9,
     "value": 24.4,
     "search_name": "bub means",
-    "pos_rank": 758,
-    "pos_rank_label": "WR758"
+    "pos_rank": 757,
+    "pos_rank_label": "WR757"
   },
   {
     "id": "8433",
@@ -9093,8 +9093,8 @@
     "age": 27.2,
     "value": 77.7,
     "search_name": "cade brewer",
-    "pos_rank": 107,
-    "pos_rank_label": "TE107"
+    "pos_rank": 106,
+    "pos_rank_label": "TE106"
   },
   {
     "id": "3342",
@@ -9115,8 +9115,8 @@
     "age": 26.1,
     "value": 95.0,
     "search_name": "sam james",
-    "pos_rank": 225,
-    "pos_rank_label": "WR225"
+    "pos_rank": 224,
+    "pos_rank_label": "WR224"
   },
   {
     "id": "8931",
@@ -9148,8 +9148,8 @@
     "age": 25.7,
     "value": 100.5,
     "search_name": "nay'quan wright",
-    "pos_rank": 78,
-    "pos_rank_label": "RB78"
+    "pos_rank": 79,
+    "pos_rank_label": "RB79"
   },
   {
     "id": "3695",
@@ -9159,8 +9159,8 @@
     "age": 32.3,
     "value": 41.9,
     "search_name": "j.p. holtz",
-    "pos_rank": 282,
-    "pos_rank_label": "TE282"
+    "pos_rank": 280,
+    "pos_rank_label": "TE280"
   },
   {
     "id": "5661",
@@ -9170,8 +9170,8 @@
     "age": 29.9,
     "value": 72.1,
     "search_name": "chris lacy",
-    "pos_rank": 475,
-    "pos_rank_label": "WR475"
+    "pos_rank": 474,
+    "pos_rank_label": "WR474"
   },
   {
     "id": "8159",
@@ -9181,8 +9181,8 @@
     "age": 26.3,
     "value": 24.2,
     "search_name": "desmond ridder",
-    "pos_rank": 159,
-    "pos_rank_label": "QB159"
+    "pos_rank": 157,
+    "pos_rank_label": "QB157"
   },
   {
     "id": "8177",
@@ -9200,11 +9200,11 @@
     "name": "Diontae Johnson",
     "team": "CLE",
     "position": "WR",
-    "age": 29.4,
+    "age": 29.5,
     "value": 64.3,
     "search_name": "diontae johnson",
-    "pos_rank": 568,
-    "pos_rank_label": "WR568"
+    "pos_rank": 567,
+    "pos_rank_label": "WR567"
   },
   {
     "id": "12529",
@@ -9225,8 +9225,8 @@
     "age": 37.4,
     "value": 16.5,
     "search_name": "a.j. green",
-    "pos_rank": 765,
-    "pos_rank_label": "WR765"
+    "pos_rank": 764,
+    "pos_rank_label": "WR764"
   },
   {
     "id": "12487",
@@ -9247,8 +9247,8 @@
     "age": 28.1,
     "value": 13.5,
     "search_name": "stetson bennett",
-    "pos_rank": 184,
-    "pos_rank_label": "QB184"
+    "pos_rank": 185,
+    "pos_rank_label": "QB185"
   },
   {
     "id": "8697",
@@ -9280,8 +9280,8 @@
     "age": 26.3,
     "value": 72.2,
     "search_name": "josh whyle",
-    "pos_rank": 129,
-    "pos_rank_label": "TE129"
+    "pos_rank": 128,
+    "pos_rank_label": "TE128"
   },
   {
     "id": "12755",
@@ -9291,8 +9291,8 @@
     "age": 25.9,
     "value": 68.9,
     "search_name": "kelly akharaiyi",
-    "pos_rank": 523,
-    "pos_rank_label": "WR523"
+    "pos_rank": 521,
+    "pos_rank_label": "WR521"
   },
   {
     "id": "3271",
@@ -9302,8 +9302,8 @@
     "age": 33.0,
     "value": 54.4,
     "search_name": "tyler higbee",
-    "pos_rank": 223,
-    "pos_rank_label": "TE223"
+    "pos_rank": 222,
+    "pos_rank_label": "TE222"
   },
   {
     "id": "12831",
@@ -9313,8 +9313,8 @@
     "age": 25.2,
     "value": 109.3,
     "search_name": "tyler kahmann",
-    "pos_rank": 144,
-    "pos_rank_label": "WR144"
+    "pos_rank": 145,
+    "pos_rank_label": "WR145"
   },
   {
     "id": "12865",
@@ -9322,7 +9322,7 @@
     "team": "MIA",
     "position": "WR",
     "age": 24.3,
-    "value": 38.8,
+    "value": 38.4,
     "search_name": "aj henning",
     "pos_rank": 729,
     "pos_rank_label": "WR729"
@@ -9335,8 +9335,8 @@
     "age": 27.9,
     "value": 79.7,
     "search_name": "danny davis",
-    "pos_rank": 363,
-    "pos_rank_label": "WR363"
+    "pos_rank": 364,
+    "pos_rank_label": "WR364"
   },
   {
     "id": "8225",
@@ -9346,8 +9346,8 @@
     "age": 25.2,
     "value": 56.9,
     "search_name": "daniel bellinger",
-    "pos_rank": 213,
-    "pos_rank_label": "TE213"
+    "pos_rank": 212,
+    "pos_rank_label": "TE212"
   },
   {
     "id": "12506",
@@ -9379,8 +9379,8 @@
     "age": 28.3,
     "value": 66.2,
     "search_name": "lawrence cager",
-    "pos_rank": 551,
-    "pos_rank_label": "WR551"
+    "pos_rank": 542,
+    "pos_rank_label": "WR542"
   },
   {
     "id": "5123",
@@ -9390,8 +9390,8 @@
     "age": 31.4,
     "value": 54.5,
     "search_name": "trenton cannon",
-    "pos_rank": 235,
-    "pos_rank_label": "RB235"
+    "pos_rank": 233,
+    "pos_rank_label": "RB233"
   },
   {
     "id": "11225",
@@ -9399,10 +9399,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 26.8,
-    "value": 72.0,
+    "value": 70.7,
     "search_name": "noah gindorff",
-    "pos_rank": 131,
-    "pos_rank_label": "TE131"
+    "pos_rank": 140,
+    "pos_rank_label": "TE140"
   },
   {
     "id": "8825",
@@ -9456,8 +9456,8 @@
     "age": 28.4,
     "value": 52.1,
     "search_name": "lucky jackson",
-    "pos_rank": 642,
-    "pos_rank_label": "WR642"
+    "pos_rank": 643,
+    "pos_rank_label": "WR643"
   },
   {
     "id": "4034",
@@ -9478,8 +9478,8 @@
     "age": 28.8,
     "value": 65.0,
     "search_name": "eli wolf",
-    "pos_rank": 182,
-    "pos_rank_label": "TE182"
+    "pos_rank": 181,
+    "pos_rank_label": "TE181"
   },
   {
     "id": "4018",
@@ -9489,8 +9489,8 @@
     "age": 29.4,
     "value": 31.2,
     "search_name": "joe mixon",
-    "pos_rank": 322,
-    "pos_rank_label": "RB322"
+    "pos_rank": 321,
+    "pos_rank_label": "RB321"
   },
   {
     "id": "5919",
@@ -9511,8 +9511,8 @@
     "age": 26.0,
     "value": 95.9,
     "search_name": "xavier white",
-    "pos_rank": 223,
-    "pos_rank_label": "WR223"
+    "pos_rank": 222,
+    "pos_rank_label": "WR222"
   },
   {
     "id": "7216",
@@ -9530,11 +9530,11 @@
     "name": "Jaray Jenkins",
     "team": "PIT",
     "position": "WR",
-    "age": 25.9,
-    "value": 92.3,
+    "age": 26.0,
+    "value": 89.2,
     "search_name": "jaray jenkins",
-    "pos_rank": 248,
-    "pos_rank_label": "WR248"
+    "pos_rank": 277,
+    "pos_rank_label": "WR277"
   },
   {
     "id": "12389",
@@ -9542,10 +9542,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 24.9,
-    "value": 44.7,
+    "value": 42.9,
     "search_name": "hayden rucci",
-    "pos_rank": 269,
-    "pos_rank_label": "TE269"
+    "pos_rank": 275,
+    "pos_rank_label": "TE275"
   },
   {
     "id": "12028",
@@ -9555,19 +9555,19 @@
     "age": NaN,
     "value": 99.4,
     "search_name": "tamerik williams",
-    "pos_rank": 82,
-    "pos_rank_label": "RB82"
+    "pos_rank": 83,
+    "pos_rank_label": "RB83"
   },
   {
     "id": "2545",
     "name": "Geoff Swaim",
     "team": "CLE",
     "position": "TE",
-    "age": 32.2,
+    "age": 32.3,
     "value": 42.3,
     "search_name": "geoff swaim",
-    "pos_rank": 280,
-    "pos_rank_label": "TE280"
+    "pos_rank": 278,
+    "pos_rank_label": "TE278"
   },
   {
     "id": "7496",
@@ -9575,10 +9575,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.7,
-    "value": 59.2,
+    "value": 63.0,
     "search_name": "nick westbrook-ikhine",
-    "pos_rank": 595,
-    "pos_rank_label": "WR595"
+    "pos_rank": 580,
+    "pos_rank_label": "WR580"
   },
   {
     "id": "12477",
@@ -9588,8 +9588,8 @@
     "age": 25.1,
     "value": 21.5,
     "search_name": "kurtis rourke",
-    "pos_rank": 168,
-    "pos_rank_label": "QB168"
+    "pos_rank": 165,
+    "pos_rank_label": "QB165"
   },
   {
     "id": "8070",
@@ -9665,8 +9665,8 @@
     "age": 26.6,
     "value": 34.9,
     "search_name": "dante miller",
-    "pos_rank": 312,
-    "pos_rank_label": "RB312"
+    "pos_rank": 311,
+    "pos_rank_label": "RB311"
   },
   {
     "id": "11646",
@@ -9687,8 +9687,8 @@
     "age": 31.9,
     "value": 35.5,
     "search_name": "kyle sloter",
-    "pos_rank": 135,
-    "pos_rank_label": "QB135"
+    "pos_rank": 134,
+    "pos_rank_label": "QB134"
   },
   {
     "id": "11943",
@@ -9720,8 +9720,8 @@
     "age": 25.3,
     "value": 52.0,
     "search_name": "jaleel mclaughlin",
-    "pos_rank": 246,
-    "pos_rank_label": "RB246"
+    "pos_rank": 245,
+    "pos_rank_label": "RB245"
   },
   {
     "id": "12493",
@@ -9762,7 +9762,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 27.1,
-    "value": 232.9,
+    "value": 231.9,
     "search_name": "jaylen warren",
     "pos_rank": 25,
     "pos_rank_label": "RB25"
@@ -9784,10 +9784,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 33.7,
-    "value": 46.0,
+    "value": 44.8,
     "search_name": "robert woods",
-    "pos_rank": 692,
-    "pos_rank_label": "WR692"
+    "pos_rank": 696,
+    "pos_rank_label": "WR696"
   },
   {
     "id": "5142",
@@ -9808,8 +9808,8 @@
     "age": 25.3,
     "value": 66.2,
     "search_name": "luke musgrave",
-    "pos_rank": 177,
-    "pos_rank_label": "TE177"
+    "pos_rank": 176,
+    "pos_rank_label": "TE176"
   },
   {
     "id": "6768",
@@ -9817,10 +9817,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 27.8,
-    "value": 120.1,
+    "value": 103.7,
     "search_name": "tua tagovailoa",
-    "pos_rank": 33,
-    "pos_rank_label": "QB33"
+    "pos_rank": 38,
+    "pos_rank_label": "QB38"
   },
   {
     "id": "9512",
@@ -9852,8 +9852,8 @@
     "age": 25.3,
     "value": 120.1,
     "search_name": "malik knowles",
-    "pos_rank": 106,
-    "pos_rank_label": "WR106"
+    "pos_rank": 105,
+    "pos_rank_label": "WR105"
   },
   {
     "id": "8076",
@@ -9863,8 +9863,8 @@
     "age": 28.0,
     "value": 69.7,
     "search_name": "michael bandy",
-    "pos_rank": 514,
-    "pos_rank_label": "WR514"
+    "pos_rank": 512,
+    "pos_rank_label": "WR512"
   },
   {
     "id": "8570",
@@ -9918,8 +9918,8 @@
     "age": 25.6,
     "value": 106.5,
     "search_name": "t.j. luther",
-    "pos_rank": 163,
-    "pos_rank_label": "WR163"
+    "pos_rank": 162,
+    "pos_rank_label": "WR162"
   },
   {
     "id": "5987",
@@ -9927,10 +9927,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 27.5,
-    "value": 35.3,
+    "value": 34.9,
     "search_name": "alexander mattison",
-    "pos_rank": 311,
-    "pos_rank_label": "RB311"
+    "pos_rank": 312,
+    "pos_rank_label": "RB312"
   },
   {
     "id": "8205",
@@ -9973,8 +9973,8 @@
     "age": 31.2,
     "value": 55.7,
     "search_name": "anthony miller",
-    "pos_rank": 612,
-    "pos_rank_label": "WR612"
+    "pos_rank": 613,
+    "pos_rank_label": "WR613"
   },
   {
     "id": "11387",
@@ -9984,8 +9984,8 @@
     "age": 26.9,
     "value": 87.6,
     "search_name": "sean ryan",
-    "pos_rank": 291,
-    "pos_rank_label": "WR291"
+    "pos_rank": 290,
+    "pos_rank_label": "WR290"
   },
   {
     "id": "8111",
@@ -10006,19 +10006,19 @@
     "age": 28.9,
     "value": 51.1,
     "search_name": "kristian wilkerson",
-    "pos_rank": 645,
-    "pos_rank_label": "WR645"
+    "pos_rank": 646,
+    "pos_rank_label": "WR646"
   },
   {
     "id": "11344",
     "name": "Keytaon Thompson",
     "team": "DET",
     "position": "WR",
-    "age": 27.1,
-    "value": 84.1,
+    "age": 27.2,
+    "value": 83.8,
     "search_name": "keytaon thompson",
-    "pos_rank": 318,
-    "pos_rank_label": "WR318"
+    "pos_rank": 317,
+    "pos_rank_label": "WR317"
   },
   {
     "id": "12852",
@@ -10026,10 +10026,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 23.0,
-    "value": 141.3,
+    "value": 136.9,
     "search_name": "monaray baldwin",
-    "pos_rank": 77,
-    "pos_rank_label": "WR77"
+    "pos_rank": 82,
+    "pos_rank_label": "WR82"
   },
   {
     "id": "4950",
@@ -10083,8 +10083,8 @@
     "age": 23.0,
     "value": 89.5,
     "search_name": "gage larvadain",
-    "pos_rank": 279,
-    "pos_rank_label": "WR279"
+    "pos_rank": 276,
+    "pos_rank_label": "WR276"
   },
   {
     "id": "6699",
@@ -10094,8 +10094,8 @@
     "age": 29.1,
     "value": 83.0,
     "search_name": "gunner olszewski",
-    "pos_rank": 327,
-    "pos_rank_label": "WR327"
+    "pos_rank": 325,
+    "pos_rank_label": "WR325"
   },
   {
     "id": "2374",
@@ -10113,7 +10113,7 @@
     "name": "Saquon Barkley",
     "team": "PHI",
     "position": "RB",
-    "age": 28.8,
+    "age": 28.9,
     "value": 401.7,
     "search_name": "saquon barkley",
     "pos_rank": 13,
@@ -10125,10 +10125,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 26.7,
-    "value": 86.9,
+    "value": 82.6,
     "search_name": "chris coleman",
-    "pos_rank": 296,
-    "pos_rank_label": "WR296"
+    "pos_rank": 331,
+    "pos_rank_label": "WR331"
   },
   {
     "id": "12518",
@@ -10160,8 +10160,8 @@
     "age": 24.5,
     "value": 91.7,
     "search_name": "dillon johnson",
-    "pos_rank": 105,
-    "pos_rank_label": "RB105"
+    "pos_rank": 104,
+    "pos_rank_label": "RB104"
   },
   {
     "id": "5241",
@@ -10169,10 +10169,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 29.5,
-    "value": 66.5,
+    "value": 65.3,
     "search_name": "christian blake",
-    "pos_rank": 545,
-    "pos_rank_label": "WR545"
+    "pos_rank": 557,
+    "pos_rank_label": "WR557"
   },
   {
     "id": "11575",
@@ -10245,11 +10245,11 @@
     "name": "Marcell Ateman",
     "team": "BUF",
     "position": "WR",
-    "age": 31.2,
+    "age": 31.3,
     "value": 65.5,
     "search_name": "marcell ateman",
-    "pos_rank": 556,
-    "pos_rank_label": "WR556"
+    "pos_rank": 553,
+    "pos_rank_label": "WR553"
   },
   {
     "id": "12472",
@@ -10292,8 +10292,8 @@
     "age": 26.3,
     "value": 52.0,
     "search_name": "jerome ford",
-    "pos_rank": 247,
-    "pos_rank_label": "RB247"
+    "pos_rank": 246,
+    "pos_rank_label": "RB246"
   },
   {
     "id": "5285",
@@ -10303,19 +10303,19 @@
     "age": 30.9,
     "value": 60.7,
     "search_name": "ross dwelley",
-    "pos_rank": 203,
-    "pos_rank_label": "TE203"
+    "pos_rank": 200,
+    "pos_rank_label": "TE200"
   },
   {
     "id": "7039",
     "name": "Cody White",
     "team": "SEA",
     "position": "WR",
-    "age": 27.0,
-    "value": 73.1,
+    "age": 27.1,
+    "value": 74.2,
     "search_name": "cody white",
-    "pos_rank": 461,
-    "pos_rank_label": "WR461"
+    "pos_rank": 442,
+    "pos_rank_label": "WR442"
   },
   {
     "id": "13241",
@@ -10334,10 +10334,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 29.3,
-    "value": 56.6,
+    "value": 55.4,
     "search_name": "qadree ollison",
-    "pos_rank": 224,
-    "pos_rank_label": "RB224"
+    "pos_rank": 230,
+    "pos_rank_label": "RB230"
   },
   {
     "id": "11630",
@@ -10345,10 +10345,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 24.5,
-    "value": 74.2,
+    "value": 75.8,
     "search_name": "roman wilson",
-    "pos_rank": 442,
-    "pos_rank_label": "WR442"
+    "pos_rank": 414,
+    "pos_rank_label": "WR414"
   },
   {
     "id": "12826",
@@ -10391,8 +10391,8 @@
     "age": 35.3,
     "value": 23.2,
     "search_name": "matt barkley",
-    "pos_rank": 164,
-    "pos_rank_label": "QB164"
+    "pos_rank": 161,
+    "pos_rank_label": "QB161"
   },
   {
     "id": "10227",
@@ -10402,8 +10402,8 @@
     "age": 25.5,
     "value": 64.3,
     "search_name": "payne durham",
-    "pos_rank": 189,
-    "pos_rank_label": "TE189"
+    "pos_rank": 185,
+    "pos_rank_label": "TE185"
   },
   {
     "id": "11924",
@@ -10413,8 +10413,8 @@
     "age": 26.1,
     "value": 89.8,
     "search_name": "tanner mordecai",
-    "pos_rank": 52,
-    "pos_rank_label": "QB52"
+    "pos_rank": 51,
+    "pos_rank_label": "QB51"
   },
   {
     "id": "8158",
@@ -10444,10 +10444,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 25.1,
-    "value": 47.0,
+    "value": 46.6,
     "search_name": "andrew armstrong",
-    "pos_rank": 683,
-    "pos_rank_label": "WR683"
+    "pos_rank": 682,
+    "pos_rank_label": "WR682"
   },
   {
     "id": "8243",
@@ -10545,8 +10545,8 @@
     "age": 25.6,
     "value": 20.8,
     "search_name": "emory jones",
-    "pos_rank": 172,
-    "pos_rank_label": "QB172"
+    "pos_rank": 170,
+    "pos_rank_label": "QB170"
   },
   {
     "id": "12070",
@@ -10567,8 +10567,8 @@
     "age": 25.5,
     "value": 107.0,
     "search_name": "wayne ruby",
-    "pos_rank": 160,
-    "pos_rank_label": "WR160"
+    "pos_rank": 159,
+    "pos_rank_label": "WR159"
   },
   {
     "id": "12531",
@@ -10578,8 +10578,8 @@
     "age": 21.4,
     "value": 91.9,
     "search_name": "trevor etienne",
-    "pos_rank": 104,
-    "pos_rank_label": "RB104"
+    "pos_rank": 103,
+    "pos_rank_label": "RB103"
   },
   {
     "id": "8183",
@@ -10611,8 +10611,8 @@
     "age": 27.8,
     "value": 71.7,
     "search_name": "brandon aiyuk",
-    "pos_rank": 484,
-    "pos_rank_label": "WR484"
+    "pos_rank": 485,
+    "pos_rank_label": "WR485"
   },
   {
     "id": "11099",
@@ -10633,8 +10633,8 @@
     "age": 28.8,
     "value": 66.5,
     "search_name": "darwin thompson",
-    "pos_rank": 185,
-    "pos_rank_label": "RB185"
+    "pos_rank": 182,
+    "pos_rank_label": "RB182"
   },
   {
     "id": "12068",
@@ -10677,8 +10677,8 @@
     "age": 29.5,
     "value": 71.8,
     "search_name": "vyncint smith",
-    "pos_rank": 481,
-    "pos_rank_label": "WR481"
+    "pos_rank": 480,
+    "pos_rank_label": "WR480"
   },
   {
     "id": "6165",
@@ -10743,8 +10743,8 @@
     "age": 29.6,
     "value": 54.9,
     "search_name": "d'onta foreman",
-    "pos_rank": 232,
-    "pos_rank_label": "RB232"
+    "pos_rank": 231,
+    "pos_rank_label": "RB231"
   },
   {
     "id": "12144",
@@ -10752,10 +10752,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 25.8,
-    "value": 96.9,
+    "value": 92.5,
     "search_name": "je'quan burton",
-    "pos_rank": 220,
-    "pos_rank_label": "WR220"
+    "pos_rank": 246,
+    "pos_rank_label": "WR246"
   },
   {
     "id": "11329",
@@ -10776,19 +10776,19 @@
     "age": 27.7,
     "value": 60.7,
     "search_name": "quintez cephus",
-    "pos_rank": 592,
-    "pos_rank_label": "WR592"
+    "pos_rank": 594,
+    "pos_rank_label": "WR594"
   },
   {
     "id": "7358",
     "name": "Jake Bargas",
     "team": "NO",
     "position": "RB",
-    "age": 29.0,
+    "age": 29.1,
     "value": 52.7,
     "search_name": "jake bargas",
-    "pos_rank": 244,
-    "pos_rank_label": "RB244"
+    "pos_rank": 242,
+    "pos_rank_label": "RB242"
   },
   {
     "id": "11148",
@@ -10820,8 +10820,8 @@
     "age": 32.0,
     "value": 44.5,
     "search_name": "cyril grayson",
-    "pos_rank": 700,
-    "pos_rank_label": "WR700"
+    "pos_rank": 699,
+    "pos_rank_label": "WR699"
   },
   {
     "id": "8732",
@@ -10831,8 +10831,8 @@
     "age": 28.0,
     "value": 86.0,
     "search_name": "raleigh webb",
-    "pos_rank": 304,
-    "pos_rank_label": "WR304"
+    "pos_rank": 303,
+    "pos_rank_label": "WR303"
   },
   {
     "id": "6826",
@@ -10842,8 +10842,8 @@
     "age": 26.8,
     "value": 89.8,
     "search_name": "cole kmet",
-    "pos_rank": 76,
-    "pos_rank_label": "TE76"
+    "pos_rank": 75,
+    "pos_rank_label": "TE75"
   },
   {
     "id": "11618",
@@ -10853,8 +10853,8 @@
     "age": 24.0,
     "value": 124.7,
     "search_name": "jalen mcmillan",
-    "pos_rank": 101,
-    "pos_rank_label": "WR101"
+    "pos_rank": 100,
+    "pos_rank_label": "WR100"
   },
   {
     "id": "11384",
@@ -10908,8 +10908,8 @@
     "age": 29.2,
     "value": 53.7,
     "search_name": "ray-ray mccloud",
-    "pos_rank": 628,
-    "pos_rank_label": "WR628"
+    "pos_rank": 629,
+    "pos_rank_label": "WR629"
   },
   {
     "id": "4149",
@@ -10930,8 +10930,8 @@
     "age": 26.8,
     "value": 66.2,
     "search_name": "jalen tolbert",
-    "pos_rank": 552,
-    "pos_rank_label": "WR552"
+    "pos_rank": 543,
+    "pos_rank_label": "WR543"
   },
   {
     "id": "11598",
@@ -10952,8 +10952,8 @@
     "age": 28.7,
     "value": 71.0,
     "search_name": "preston williams",
-    "pos_rank": 493,
-    "pos_rank_label": "WR493"
+    "pos_rank": 494,
+    "pos_rank_label": "WR494"
   },
   {
     "id": "11034",
@@ -10963,8 +10963,8 @@
     "age": 25.6,
     "value": 46.4,
     "search_name": "jalen brooks",
-    "pos_rank": 688,
-    "pos_rank_label": "WR688"
+    "pos_rank": 686,
+    "pos_rank_label": "WR686"
   },
   {
     "id": "4150",
@@ -11007,8 +11007,8 @@
     "age": 23.7,
     "value": 114.8,
     "search_name": "taylor elgersma",
-    "pos_rank": 37,
-    "pos_rank_label": "QB37"
+    "pos_rank": 35,
+    "pos_rank_label": "QB35"
   },
   {
     "id": "24",
@@ -11029,8 +11029,8 @@
     "age": 26.1,
     "value": 80.5,
     "search_name": "holton ahlers",
-    "pos_rank": 63,
-    "pos_rank_label": "QB63"
+    "pos_rank": 62,
+    "pos_rank_label": "QB62"
   },
   {
     "id": "6819",
@@ -11051,8 +11051,8 @@
     "age": 23.7,
     "value": 23.8,
     "search_name": "ja'lynn polk",
-    "pos_rank": 759,
-    "pos_rank_label": "WR759"
+    "pos_rank": 758,
+    "pos_rank_label": "WR758"
   },
   {
     "id": "6185",
@@ -11070,11 +11070,11 @@
     "name": "Dennis Houston",
     "team": "TB",
     "position": "WR",
-    "age": 26.6,
-    "value": 48.7,
+    "age": 26.7,
+    "value": 49.2,
     "search_name": "dennis houston",
-    "pos_rank": 671,
-    "pos_rank_label": "WR671"
+    "pos_rank": 668,
+    "pos_rank_label": "WR668"
   },
   {
     "id": "6155",
@@ -11084,8 +11084,8 @@
     "age": 28.4,
     "value": 75.7,
     "search_name": "jaylen smith",
-    "pos_rank": 416,
-    "pos_rank_label": "WR416"
+    "pos_rank": 415,
+    "pos_rank_label": "WR415"
   },
   {
     "id": "12457",
@@ -11106,8 +11106,8 @@
     "age": 31.6,
     "value": 54.6,
     "search_name": "devin funchess",
-    "pos_rank": 222,
-    "pos_rank_label": "TE222"
+    "pos_rank": 221,
+    "pos_rank_label": "TE221"
   },
   {
     "id": "12546",
@@ -11161,8 +11161,8 @@
     "age": 28.9,
     "value": 65.2,
     "search_name": "trinity benson",
-    "pos_rank": 561,
-    "pos_rank_label": "WR561"
+    "pos_rank": 560,
+    "pos_rank_label": "WR560"
   },
   {
     "id": "8013",
@@ -11172,8 +11172,8 @@
     "age": 27.6,
     "value": 69.3,
     "search_name": "tim jones",
-    "pos_rank": 519,
-    "pos_rank_label": "WR519"
+    "pos_rank": 517,
+    "pos_rank_label": "WR517"
   },
   {
     "id": "12884",
@@ -11194,15 +11194,15 @@
     "age": 30.3,
     "value": 69.2,
     "search_name": "brandon powell",
-    "pos_rank": 520,
-    "pos_rank_label": "WR520"
+    "pos_rank": 518,
+    "pos_rank_label": "WR518"
   },
   {
     "id": "8170",
     "name": "James Mitchell",
     "team": "CAR",
     "position": "TE",
-    "age": 26.3,
+    "age": 26.4,
     "value": 45.1,
     "search_name": "james mitchell",
     "pos_rank": 266,
@@ -11216,8 +11216,8 @@
     "age": NaN,
     "value": 110.0,
     "search_name": "rory starkey",
-    "pos_rank": 140,
-    "pos_rank_label": "WR140"
+    "pos_rank": 141,
+    "pos_rank_label": "WR141"
   },
   {
     "id": "3852",
@@ -11227,15 +11227,15 @@
     "age": 31.7,
     "value": 49.4,
     "search_name": "jaydon mickens",
-    "pos_rank": 664,
-    "pos_rank_label": "WR664"
+    "pos_rank": 665,
+    "pos_rank_label": "WR665"
   },
   {
     "id": "6913",
     "name": "Joe Reed",
     "team": "CHI",
     "position": "WR",
-    "age": 27.9,
+    "age": 28.0,
     "value": 79.1,
     "search_name": "joe reed",
     "pos_rank": 375,
@@ -11282,8 +11282,8 @@
     "age": 24.7,
     "value": 21.3,
     "search_name": "trey palmer",
-    "pos_rank": 763,
-    "pos_rank_label": "WR763"
+    "pos_rank": 762,
+    "pos_rank_label": "WR762"
   },
   {
     "id": "8413",
@@ -11304,8 +11304,8 @@
     "age": 27.7,
     "value": 82.6,
     "search_name": "marquez callaway",
-    "pos_rank": 333,
-    "pos_rank_label": "WR333"
+    "pos_rank": 332,
+    "pos_rank_label": "WR332"
   },
   {
     "id": "7458",
@@ -11337,8 +11337,8 @@
     "age": 32.1,
     "value": 50.6,
     "search_name": "byron pringle",
-    "pos_rank": 656,
-    "pos_rank_label": "WR656"
+    "pos_rank": 657,
+    "pos_rank_label": "WR657"
   },
   {
     "id": "11863",
@@ -11348,8 +11348,8 @@
     "age": 24.5,
     "value": 104.2,
     "search_name": "leon johnson",
-    "pos_rank": 177,
-    "pos_rank_label": "WR177"
+    "pos_rank": 174,
+    "pos_rank_label": "WR174"
   },
   {
     "id": "5911",
@@ -11359,8 +11359,8 @@
     "age": 29.9,
     "value": 72.9,
     "search_name": "jalen hurd",
-    "pos_rank": 466,
-    "pos_rank_label": "WR466"
+    "pos_rank": 465,
+    "pos_rank_label": "WR465"
   },
   {
     "id": "8809",
@@ -11368,10 +11368,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 26.2,
-    "value": 80.7,
+    "value": 76.4,
     "search_name": "aaron shampklin",
-    "pos_rank": 125,
-    "pos_rank_label": "RB125"
+    "pos_rank": 135,
+    "pos_rank_label": "RB135"
   },
   {
     "id": "5980",
@@ -11392,8 +11392,8 @@
     "age": 24.5,
     "value": 21.7,
     "search_name": "tru edwards",
-    "pos_rank": 761,
-    "pos_rank_label": "WR761"
+    "pos_rank": 760,
+    "pos_rank_label": "WR760"
   },
   {
     "id": "4995",
@@ -11403,8 +11403,8 @@
     "age": 29.5,
     "value": 54.2,
     "search_name": "ian thomas",
-    "pos_rank": 224,
-    "pos_rank_label": "TE224"
+    "pos_rank": 223,
+    "pos_rank_label": "TE223"
   },
   {
     "id": "11065",
@@ -11423,10 +11423,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 24.2,
-    "value": 94.0,
+    "value": 92.8,
     "search_name": "roc taylor",
-    "pos_rank": 238,
-    "pos_rank_label": "WR238"
+    "pos_rank": 243,
+    "pos_rank_label": "WR243"
   },
   {
     "id": "11544",
@@ -11436,8 +11436,8 @@
     "age": 27.2,
     "value": 83.8,
     "search_name": "avery davis",
-    "pos_rank": 319,
-    "pos_rank_label": "WR319"
+    "pos_rank": 318,
+    "pos_rank_label": "WR318"
   },
   {
     "id": "3242",
@@ -11458,8 +11458,8 @@
     "age": 23.9,
     "value": 107.3,
     "search_name": "keaton mitchell",
-    "pos_rank": 70,
-    "pos_rank_label": "RB70"
+    "pos_rank": 69,
+    "pos_rank_label": "RB69"
   },
   {
     "id": "11647",
@@ -11491,8 +11491,8 @@
     "age": 23.5,
     "value": 123.6,
     "search_name": "jalen white",
-    "pos_rank": 56,
-    "pos_rank_label": "RB56"
+    "pos_rank": 55,
+    "pos_rank_label": "RB55"
   },
   {
     "id": "9499",
@@ -11502,8 +11502,8 @@
     "age": 25.8,
     "value": 47.2,
     "search_name": "bryce ford-wheaton",
-    "pos_rank": 678,
-    "pos_rank_label": "WR678"
+    "pos_rank": 679,
+    "pos_rank_label": "WR679"
   },
   {
     "id": "2146",
@@ -11513,8 +11513,8 @@
     "age": 33.9,
     "value": 41.7,
     "search_name": "richard rodgers",
-    "pos_rank": 283,
-    "pos_rank_label": "TE283"
+    "pos_rank": 281,
+    "pos_rank_label": "TE281"
   },
   {
     "id": "9754",
@@ -11546,8 +11546,8 @@
     "age": 25.0,
     "value": 47.4,
     "search_name": "cornelius johnson",
-    "pos_rank": 677,
-    "pos_rank_label": "WR677"
+    "pos_rank": 678,
+    "pos_rank_label": "WR678"
   },
   {
     "id": "5709",
@@ -11566,10 +11566,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 27.7,
-    "value": 43.6,
+    "value": 41.0,
     "search_name": "tanner conner",
-    "pos_rank": 273,
-    "pos_rank_label": "TE273"
+    "pos_rank": 283,
+    "pos_rank_label": "TE283"
   },
   {
     "id": "8420",
@@ -11579,8 +11579,8 @@
     "age": 28.4,
     "value": 49.8,
     "search_name": "jack sorenson",
-    "pos_rank": 661,
-    "pos_rank_label": "WR661"
+    "pos_rank": 662,
+    "pos_rank_label": "WR662"
   },
   {
     "id": "4574",
@@ -11601,8 +11601,8 @@
     "age": 27.7,
     "value": 54.0,
     "search_name": "khalil herbert",
-    "pos_rank": 237,
-    "pos_rank_label": "RB237"
+    "pos_rank": 235,
+    "pos_rank_label": "RB235"
   },
   {
     "id": "9486",
@@ -11623,8 +11623,8 @@
     "age": 27.2,
     "value": 93.2,
     "search_name": "jontre kirklin",
-    "pos_rank": 242,
-    "pos_rank_label": "WR242"
+    "pos_rank": 240,
+    "pos_rank_label": "WR240"
   },
   {
     "id": "7946",
@@ -11645,8 +11645,8 @@
     "age": 27.4,
     "value": 63.1,
     "search_name": "darrynton evans",
-    "pos_rank": 202,
-    "pos_rank_label": "RB202"
+    "pos_rank": 199,
+    "pos_rank_label": "RB199"
   },
   {
     "id": "6823",
@@ -11665,10 +11665,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 27.0,
-    "value": 66.6,
+    "value": 62.3,
     "search_name": "zander horvath",
-    "pos_rank": 183,
-    "pos_rank_label": "RB183"
+    "pos_rank": 204,
+    "pos_rank_label": "RB204"
   },
   {
     "id": "11130",
@@ -11678,8 +11678,8 @@
     "age": 26.3,
     "value": 94.3,
     "search_name": "ontaria wilson",
-    "pos_rank": 232,
-    "pos_rank_label": "WR232"
+    "pos_rank": 230,
+    "pos_rank_label": "WR230"
   },
   {
     "id": "10983",
@@ -11689,8 +11689,8 @@
     "age": 27.4,
     "value": 21.4,
     "search_name": "sean clifford",
-    "pos_rank": 169,
-    "pos_rank_label": "QB169"
+    "pos_rank": 167,
+    "pos_rank_label": "QB167"
   },
   {
     "id": "11604",
@@ -11711,8 +11711,8 @@
     "age": 30.3,
     "value": 69.7,
     "search_name": "richie james",
-    "pos_rank": 515,
-    "pos_rank_label": "WR515"
+    "pos_rank": 513,
+    "pos_rank_label": "WR513"
   },
   {
     "id": "12107",
@@ -11744,8 +11744,8 @@
     "age": 25.0,
     "value": 93.8,
     "search_name": "aidan robbins",
-    "pos_rank": 99,
-    "pos_rank_label": "RB99"
+    "pos_rank": 98,
+    "pos_rank_label": "RB98"
   },
   {
     "id": "5209",
@@ -11753,10 +11753,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 30.5,
-    "value": 56.0,
+    "value": 51.6,
     "search_name": "mike boone",
-    "pos_rank": 229,
-    "pos_rank_label": "RB229"
+    "pos_rank": 249,
+    "pos_rank_label": "RB249"
   },
   {
     "id": "9482",
@@ -11832,8 +11832,8 @@
     "age": 28.8,
     "value": 71.3,
     "search_name": "kendall hinton",
-    "pos_rank": 488,
-    "pos_rank_label": "WR488"
+    "pos_rank": 489,
+    "pos_rank_label": "WR489"
   },
   {
     "id": "5289",
@@ -11843,8 +11843,8 @@
     "age": 30.0,
     "value": 72.8,
     "search_name": "cameron batson",
-    "pos_rank": 469,
-    "pos_rank_label": "WR469"
+    "pos_rank": 468,
+    "pos_rank_label": "WR468"
   },
   {
     "id": "3318",
@@ -11876,8 +11876,8 @@
     "age": 27.3,
     "value": 66.4,
     "search_name": "kylin hill",
-    "pos_rank": 186,
-    "pos_rank_label": "RB186"
+    "pos_rank": 183,
+    "pos_rank_label": "RB183"
   },
   {
     "id": "11380",
@@ -11898,8 +11898,8 @@
     "age": 26.8,
     "value": 70.2,
     "search_name": "donovan peoples-jones",
-    "pos_rank": 510,
-    "pos_rank_label": "WR510"
+    "pos_rank": 508,
+    "pos_rank_label": "WR508"
   },
   {
     "id": "9508",
@@ -11942,8 +11942,8 @@
     "age": 24.5,
     "value": 50.4,
     "search_name": "ainias smith",
-    "pos_rank": 659,
-    "pos_rank_label": "WR659"
+    "pos_rank": 660,
+    "pos_rank_label": "WR660"
   },
   {
     "id": "9505",
@@ -12017,7 +12017,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 24.2,
-    "value": 7.2,
+    "value": 7.3,
     "search_name": "max hurleman",
     "pos_rank": 372,
     "pos_rank_label": "RB372"
@@ -12030,8 +12030,8 @@
     "age": 31.0,
     "value": 68.7,
     "search_name": "khadarel hodge",
-    "pos_rank": 526,
-    "pos_rank_label": "WR526"
+    "pos_rank": 524,
+    "pos_rank_label": "WR524"
   },
   {
     "id": "11186",
@@ -12052,8 +12052,8 @@
     "age": 27.4,
     "value": 73.1,
     "search_name": "jalen camp",
-    "pos_rank": 462,
-    "pos_rank_label": "WR462"
+    "pos_rank": 461,
+    "pos_rank_label": "WR461"
   },
   {
     "id": "12134",
@@ -12063,8 +12063,8 @@
     "age": 26.4,
     "value": 91.0,
     "search_name": "sam wiglusz",
-    "pos_rank": 266,
-    "pos_rank_label": "WR266"
+    "pos_rank": 263,
+    "pos_rank_label": "WR263"
   },
   {
     "id": "8198",
@@ -12074,8 +12074,8 @@
     "age": 26.4,
     "value": 90.7,
     "search_name": "charleston rambo",
-    "pos_rank": 272,
-    "pos_rank_label": "WR272"
+    "pos_rank": 269,
+    "pos_rank_label": "WR269"
   },
   {
     "id": "10444",
@@ -12107,8 +12107,8 @@
     "age": 27.5,
     "value": 83.8,
     "search_name": "stanley berryhill",
-    "pos_rank": 320,
-    "pos_rank_label": "WR320"
+    "pos_rank": 319,
+    "pos_rank_label": "WR319"
   },
   {
     "id": "4187",
@@ -12118,8 +12118,8 @@
     "age": 30.1,
     "value": 74.0,
     "search_name": "brian hill",
-    "pos_rank": 147,
-    "pos_rank_label": "RB147"
+    "pos_rank": 144,
+    "pos_rank_label": "RB144"
   },
   {
     "id": "10860",
@@ -12129,8 +12129,8 @@
     "age": 27.2,
     "value": 65.3,
     "search_name": "malik cunningham",
-    "pos_rank": 560,
-    "pos_rank_label": "WR560"
+    "pos_rank": 558,
+    "pos_rank_label": "WR558"
   },
   {
     "id": "5967",
@@ -12151,8 +12151,8 @@
     "age": 24.7,
     "value": 62.3,
     "search_name": "nick kallerup",
-    "pos_rank": 196,
-    "pos_rank_label": "TE196"
+    "pos_rank": 194,
+    "pos_rank_label": "TE194"
   },
   {
     "id": "5854",
@@ -12206,8 +12206,8 @@
     "age": 25.8,
     "value": 23.3,
     "search_name": "joe milton",
-    "pos_rank": 163,
-    "pos_rank_label": "QB163"
+    "pos_rank": 160,
+    "pos_rank_label": "QB160"
   },
   {
     "id": "8234",
@@ -12217,8 +12217,8 @@
     "age": 26.3,
     "value": 64.6,
     "search_name": "jaivon heiligh",
-    "pos_rank": 566,
-    "pos_rank_label": "WR566"
+    "pos_rank": 565,
+    "pos_rank_label": "WR565"
   },
   {
     "id": "6453",
@@ -12228,8 +12228,8 @@
     "age": 29.1,
     "value": 46.3,
     "search_name": "d.j. montgomery",
-    "pos_rank": 689,
-    "pos_rank_label": "WR689"
+    "pos_rank": 687,
+    "pos_rank_label": "WR687"
   },
   {
     "id": "12499",
@@ -12248,10 +12248,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.0,
-    "value": 81.9,
+    "value": 80.7,
     "search_name": "mataeo durant",
-    "pos_rank": 123,
-    "pos_rank_label": "RB123"
+    "pos_rank": 124,
+    "pos_rank_label": "RB124"
   },
   {
     "id": "6247",
@@ -12272,8 +12272,8 @@
     "age": 25.3,
     "value": 109.9,
     "search_name": "jerrion ealy",
-    "pos_rank": 142,
-    "pos_rank_label": "WR142"
+    "pos_rank": 143,
+    "pos_rank_label": "WR143"
   },
   {
     "id": "7588",
@@ -12292,10 +12292,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 24.0,
-    "value": 67.7,
+    "value": 67.8,
     "search_name": "ke'shawn williams",
-    "pos_rank": 532,
-    "pos_rank_label": "WR532"
+    "pos_rank": 527,
+    "pos_rank_label": "WR527"
   },
   {
     "id": "12026",
@@ -12316,8 +12316,8 @@
     "age": 25.5,
     "value": 104.4,
     "search_name": "praise olatoke",
-    "pos_rank": 175,
-    "pos_rank_label": "WR175"
+    "pos_rank": 173,
+    "pos_rank_label": "WR173"
   },
   {
     "id": "11320",
@@ -12371,8 +12371,8 @@
     "age": 27.6,
     "value": 91.9,
     "search_name": "greg dortch",
-    "pos_rank": 252,
-    "pos_rank_label": "WR252"
+    "pos_rank": 249,
+    "pos_rank_label": "WR249"
   },
   {
     "id": "4622",
@@ -12382,8 +12382,8 @@
     "age": 32.7,
     "value": 54.8,
     "search_name": "keelan cole",
-    "pos_rank": 620,
-    "pos_rank_label": "WR620"
+    "pos_rank": 621,
+    "pos_rank_label": "WR621"
   },
   {
     "id": "8005",
@@ -12391,10 +12391,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 27.8,
-    "value": 76.1,
+    "value": 71.8,
     "search_name": "tarik black",
-    "pos_rank": 412,
-    "pos_rank_label": "WR412"
+    "pos_rank": 481,
+    "pos_rank_label": "WR481"
   },
   {
     "id": "7551",
@@ -12404,8 +12404,8 @@
     "age": 26.8,
     "value": 73.5,
     "search_name": "deon jackson",
-    "pos_rank": 148,
-    "pos_rank_label": "RB148"
+    "pos_rank": 145,
+    "pos_rank_label": "RB145"
   },
   {
     "id": "12467",
@@ -12426,8 +12426,8 @@
     "age": 30.8,
     "value": 67.0,
     "search_name": "dan arnold",
-    "pos_rank": 174,
-    "pos_rank_label": "TE174"
+    "pos_rank": 173,
+    "pos_rank_label": "TE173"
   },
   {
     "id": "12539",
@@ -12437,8 +12437,8 @@
     "age": 24.2,
     "value": 75.5,
     "search_name": "arian smith",
-    "pos_rank": 420,
-    "pos_rank_label": "WR420"
+    "pos_rank": 419,
+    "pos_rank_label": "WR419"
   },
   {
     "id": "7794",
@@ -12459,8 +12459,8 @@
     "age": 26.2,
     "value": 94.7,
     "search_name": "johnny king",
-    "pos_rank": 229,
-    "pos_rank_label": "WR229"
+    "pos_rank": 227,
+    "pos_rank_label": "WR227"
   },
   {
     "id": "6171",
@@ -12481,8 +12481,8 @@
     "age": 26.5,
     "value": 91.0,
     "search_name": "drake stoops",
-    "pos_rank": 267,
-    "pos_rank_label": "WR267"
+    "pos_rank": 264,
+    "pos_rank_label": "WR264"
   },
   {
     "id": "7944",
@@ -12492,8 +12492,8 @@
     "age": 28.3,
     "value": 69.7,
     "search_name": "michael strachan",
-    "pos_rank": 516,
-    "pos_rank_label": "WR516"
+    "pos_rank": 514,
+    "pos_rank_label": "WR514"
   },
   {
     "id": "5007",
@@ -12501,10 +12501,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.9,
-    "value": 70.3,
+    "value": 66.0,
     "search_name": "keke coutee",
-    "pos_rank": 507,
-    "pos_rank_label": "WR507"
+    "pos_rank": 548,
+    "pos_rank_label": "WR548"
   },
   {
     "id": "8783",
@@ -12533,11 +12533,11 @@
     "name": "Harrison Bryant",
     "team": "HOU",
     "position": "TE",
-    "age": 27.6,
+    "age": 27.7,
     "value": 67.1,
     "search_name": "harrison bryant",
-    "pos_rank": 172,
-    "pos_rank_label": "TE172"
+    "pos_rank": 171,
+    "pos_rank_label": "TE171"
   },
   {
     "id": "11189",
@@ -12569,8 +12569,8 @@
     "age": 29.1,
     "value": 68.8,
     "search_name": "davion davis",
-    "pos_rank": 524,
-    "pos_rank_label": "WR524"
+    "pos_rank": 522,
+    "pos_rank_label": "WR522"
   },
   {
     "id": "5012",
@@ -12589,10 +12589,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.7,
-    "value": 74.6,
+    "value": 73.3,
     "search_name": "max borghi",
-    "pos_rank": 144,
-    "pos_rank_label": "RB144"
+    "pos_rank": 147,
+    "pos_rank_label": "RB147"
   },
   {
     "id": "2331",
@@ -12602,8 +12602,8 @@
     "age": 32.3,
     "value": 49.4,
     "search_name": "breshad perriman",
-    "pos_rank": 665,
-    "pos_rank_label": "WR665"
+    "pos_rank": 666,
+    "pos_rank_label": "WR666"
   },
   {
     "id": "6956",
@@ -12613,8 +12613,8 @@
     "age": 28.3,
     "value": 67.5,
     "search_name": "devin asiasi",
-    "pos_rank": 165,
-    "pos_rank_label": "TE165"
+    "pos_rank": 164,
+    "pos_rank_label": "TE164"
   },
   {
     "id": "11530",
@@ -12635,8 +12635,8 @@
     "age": 35.3,
     "value": 49.3,
     "search_name": "randall cobb",
-    "pos_rank": 666,
-    "pos_rank_label": "WR666"
+    "pos_rank": 667,
+    "pos_rank_label": "WR667"
   },
   {
     "id": "4017",
@@ -12655,10 +12655,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 23.6,
-    "value": 114.3,
+    "value": 109.9,
     "search_name": "gavin hardison",
-    "pos_rank": 38,
-    "pos_rank_label": "QB38"
+    "pos_rank": 37,
+    "pos_rank_label": "QB37"
   },
   {
     "id": "8187",
@@ -12668,8 +12668,8 @@
     "age": 26.3,
     "value": 79.5,
     "search_name": "cj verdell",
-    "pos_rank": 127,
-    "pos_rank_label": "RB127"
+    "pos_rank": 126,
+    "pos_rank_label": "RB126"
   },
   {
     "id": "11105",
@@ -12677,10 +12677,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 25.9,
-    "value": 92.3,
+    "value": 91.1,
     "search_name": "shaquan davis",
-    "pos_rank": 249,
-    "pos_rank_label": "WR249"
+    "pos_rank": 260,
+    "pos_rank_label": "WR260"
   },
   {
     "id": "6753",
@@ -12690,8 +12690,8 @@
     "age": 31.0,
     "value": 53.6,
     "search_name": "derrick gore",
-    "pos_rank": 239,
-    "pos_rank_label": "RB239"
+    "pos_rank": 236,
+    "pos_rank_label": "RB236"
   },
   {
     "id": "2390",
@@ -12699,10 +12699,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 33.2,
-    "value": 44.9,
+    "value": 40.5,
     "search_name": "tyler kroft",
-    "pos_rank": 267,
-    "pos_rank_label": "TE267"
+    "pos_rank": 285,
+    "pos_rank_label": "TE285"
   },
   {
     "id": "12491",
@@ -12712,8 +12712,8 @@
     "age": 23.9,
     "value": 51.8,
     "search_name": "corey kiner",
-    "pos_rank": 248,
-    "pos_rank_label": "RB248"
+    "pos_rank": 247,
+    "pos_rank_label": "RB247"
   },
   {
     "id": "13145",
@@ -12723,8 +12723,8 @@
     "age": 23.6,
     "value": 122.8,
     "search_name": "shunderrick powell",
-    "pos_rank": 57,
-    "pos_rank_label": "RB57"
+    "pos_rank": 56,
+    "pos_rank_label": "RB56"
   },
   {
     "id": "6387",
@@ -12734,8 +12734,8 @@
     "age": 29.9,
     "value": 71.3,
     "search_name": "nsimba webster",
-    "pos_rank": 489,
-    "pos_rank_label": "WR489"
+    "pos_rank": 490,
+    "pos_rank_label": "WR490"
   },
   {
     "id": "4098",
@@ -12756,8 +12756,8 @@
     "age": 24.6,
     "value": 52.3,
     "search_name": "jalen cropper",
-    "pos_rank": 640,
-    "pos_rank_label": "WR640"
+    "pos_rank": 641,
+    "pos_rank_label": "WR641"
   },
   {
     "id": "7540",
@@ -12767,8 +12767,8 @@
     "age": 26.2,
     "value": 92.8,
     "search_name": "amari rodgers",
-    "pos_rank": 245,
-    "pos_rank_label": "WR245"
+    "pos_rank": 244,
+    "pos_rank_label": "WR244"
   },
   {
     "id": "1386",
@@ -12789,8 +12789,8 @@
     "age": 24.1,
     "value": 83.5,
     "search_name": "darius cooper",
-    "pos_rank": 321,
-    "pos_rank_label": "WR321"
+    "pos_rank": 320,
+    "pos_rank_label": "WR320"
   },
   {
     "id": "7352",
@@ -12800,8 +12800,8 @@
     "age": 29.1,
     "value": 68.8,
     "search_name": "matt cole",
-    "pos_rank": 525,
-    "pos_rank_label": "WR525"
+    "pos_rank": 523,
+    "pos_rank_label": "WR523"
   },
   {
     "id": "12954",
@@ -12822,8 +12822,8 @@
     "age": 32.4,
     "value": 50.6,
     "search_name": "marken michel",
-    "pos_rank": 657,
-    "pos_rank_label": "WR657"
+    "pos_rank": 658,
+    "pos_rank_label": "WR658"
   },
   {
     "id": "10862",
@@ -12833,8 +12833,8 @@
     "age": 26.1,
     "value": 79.2,
     "search_name": "dorian thompson-robinson",
-    "pos_rank": 66,
-    "pos_rank_label": "QB66"
+    "pos_rank": 65,
+    "pos_rank_label": "QB65"
   },
   {
     "id": "12007",
@@ -12910,8 +12910,8 @@
     "age": 30.6,
     "value": 98.9,
     "search_name": "james conner",
-    "pos_rank": 85,
-    "pos_rank_label": "RB85"
+    "pos_rank": 86,
+    "pos_rank_label": "RB86"
   },
   {
     "id": "7938",
@@ -12963,10 +12963,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 33.2,
-    "value": 47.1,
+    "value": 42.7,
     "search_name": "willie snead",
-    "pos_rank": 681,
-    "pos_rank_label": "WR681"
+    "pos_rank": 710,
+    "pos_rank_label": "WR710"
   },
   {
     "id": "345",
@@ -12998,8 +12998,8 @@
     "age": 27.7,
     "value": 60.9,
     "search_name": "samori toure",
-    "pos_rank": 591,
-    "pos_rank_label": "WR591"
+    "pos_rank": 593,
+    "pos_rank_label": "WR593"
   },
   {
     "id": "3976",
@@ -13031,8 +13031,8 @@
     "age": 30.8,
     "value": 88.8,
     "search_name": "josh reynolds",
-    "pos_rank": 282,
-    "pos_rank_label": "WR282"
+    "pos_rank": 281,
+    "pos_rank_label": "WR281"
   },
   {
     "id": "8174",
@@ -13042,8 +13042,8 @@
     "age": 25.1,
     "value": 99.5,
     "search_name": "kevin harris",
-    "pos_rank": 81,
-    "pos_rank_label": "RB81"
+    "pos_rank": 82,
+    "pos_rank_label": "RB82"
   },
   {
     "id": "5848",
@@ -13053,8 +13053,8 @@
     "age": 28.5,
     "value": 125.1,
     "search_name": "hollywood brown",
-    "pos_rank": 99,
-    "pos_rank_label": "WR99"
+    "pos_rank": 98,
+    "pos_rank_label": "WR98"
   },
   {
     "id": "13162",
@@ -13084,10 +13084,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 26.4,
-    "value": 83.5,
+    "value": 82.3,
     "search_name": "jacob copeland",
-    "pos_rank": 322,
-    "pos_rank_label": "WR322"
+    "pos_rank": 335,
+    "pos_rank_label": "WR335"
   },
   {
     "id": "12880",
@@ -13097,8 +13097,8 @@
     "age": 24.1,
     "value": 47.9,
     "search_name": "silas bolden",
-    "pos_rank": 674,
-    "pos_rank_label": "WR674"
+    "pos_rank": 675,
+    "pos_rank_label": "WR675"
   },
   {
     "id": "8676",
@@ -13119,8 +13119,8 @@
     "age": 32.9,
     "value": 48.8,
     "search_name": "damiere byrd",
-    "pos_rank": 668,
-    "pos_rank_label": "WR668"
+    "pos_rank": 670,
+    "pos_rank_label": "WR670"
   },
   {
     "id": "8489",
@@ -13130,8 +13130,8 @@
     "age": 27.4,
     "value": 67.4,
     "search_name": "drew ogletree",
-    "pos_rank": 168,
-    "pos_rank_label": "TE168"
+    "pos_rank": 167,
+    "pos_rank_label": "TE167"
   },
   {
     "id": "4089",
@@ -13141,8 +13141,8 @@
     "age": 31.5,
     "value": 58.4,
     "search_name": "gerald everett",
-    "pos_rank": 209,
-    "pos_rank_label": "TE209"
+    "pos_rank": 208,
+    "pos_rank_label": "TE208"
   },
   {
     "id": "3321",
@@ -13150,10 +13150,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 31.8,
-    "value": 190.5,
+    "value": 196.9,
     "search_name": "tyreek hill",
-    "pos_rank": 53,
-    "pos_rank_label": "WR53"
+    "pos_rank": 50,
+    "pos_rank_label": "WR50"
   },
   {
     "id": "6951",
@@ -13196,19 +13196,19 @@
     "age": 25.7,
     "value": 25.2,
     "search_name": "deneric prince",
-    "pos_rank": 338,
-    "pos_rank_label": "RB338"
+    "pos_rank": 339,
+    "pos_rank_label": "RB339"
   },
   {
     "id": "6973",
     "name": "J.J. Taylor",
     "team": "HOU",
     "position": "RB",
-    "age": 27.9,
+    "age": 28.0,
     "value": 73.0,
     "search_name": "j.j. taylor",
-    "pos_rank": 150,
-    "pos_rank_label": "RB150"
+    "pos_rank": 148,
+    "pos_rank_label": "RB148"
   },
   {
     "id": "6996",
@@ -13216,10 +13216,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 29.3,
-    "value": 31.5,
+    "value": 31.1,
     "search_name": "jamycal hasty",
-    "pos_rank": 320,
-    "pos_rank_label": "RB320"
+    "pos_rank": 322,
+    "pos_rank_label": "RB322"
   },
   {
     "id": "11605",
@@ -13251,8 +13251,8 @@
     "age": 25.7,
     "value": 102.3,
     "search_name": "sam schnee",
-    "pos_rank": 190,
-    "pos_rank_label": "WR190"
+    "pos_rank": 189,
+    "pos_rank_label": "WR189"
   },
   {
     "id": "6223",
@@ -13273,8 +13273,8 @@
     "age": 23.4,
     "value": 111.5,
     "search_name": "ethan garbers",
-    "pos_rank": 39,
-    "pos_rank_label": "QB39"
+    "pos_rank": 36,
+    "pos_rank_label": "QB36"
   },
   {
     "id": "8126",
@@ -13303,8 +13303,8 @@
     "name": "Marvin Harrison Jr.",
     "team": "ARI",
     "position": "WR",
-    "age": 23.3,
-    "value": 476.0,
+    "age": 23.4,
+    "value": 472.9,
     "search_name": "marvin harrison",
     "pos_rank": 18,
     "pos_rank_label": "WR18"
@@ -13348,10 +13348,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 28.4,
-    "value": 84.3,
+    "value": 86.0,
     "search_name": "scotty miller",
-    "pos_rank": 317,
-    "pos_rank_label": "WR317"
+    "pos_rank": 304,
+    "pos_rank_label": "WR304"
   },
   {
     "id": "11163",
@@ -13383,8 +13383,8 @@
     "age": 31.0,
     "value": 66.8,
     "search_name": "zach pascal",
-    "pos_rank": 542,
-    "pos_rank_label": "WR542"
+    "pos_rank": 536,
+    "pos_rank_label": "WR536"
   },
   {
     "id": "6063",
@@ -13394,8 +13394,8 @@
     "age": 29.9,
     "value": 53.9,
     "search_name": "tyron billy-johnson",
-    "pos_rank": 626,
-    "pos_rank_label": "WR626"
+    "pos_rank": 627,
+    "pos_rank_label": "WR627"
   },
   {
     "id": "12545",
@@ -13427,8 +13427,8 @@
     "age": 28.2,
     "value": 64.8,
     "search_name": "lynn bowden",
-    "pos_rank": 565,
-    "pos_rank_label": "WR565"
+    "pos_rank": 564,
+    "pos_rank_label": "WR564"
   },
   {
     "id": "11921",
@@ -13438,8 +13438,8 @@
     "age": 25.2,
     "value": 64.4,
     "search_name": "xavier weaver",
-    "pos_rank": 567,
-    "pos_rank_label": "WR567"
+    "pos_rank": 566,
+    "pos_rank_label": "WR566"
   },
   {
     "id": "10223",
@@ -13469,7 +13469,7 @@
     "team": "MIA",
     "position": "TE",
     "age": 30.2,
-    "value": 36.7,
+    "value": 36.2,
     "search_name": "chris myarick",
     "pos_rank": 294,
     "pos_rank_label": "TE294"
@@ -13526,8 +13526,8 @@
     "age": 29.2,
     "value": 54.5,
     "search_name": "john kelly",
-    "pos_rank": 236,
-    "pos_rank_label": "RB236"
+    "pos_rank": 234,
+    "pos_rank_label": "RB234"
   },
   {
     "id": "7569",
@@ -13557,10 +13557,10 @@
     "team": "PIT",
     "position": "QB",
     "age": 42.0,
-    "value": 116.2,
+    "value": 101.5,
     "search_name": "aaron rodgers",
-    "pos_rank": 35,
-    "pos_rank_label": "QB35"
+    "pos_rank": 40,
+    "pos_rank_label": "QB40"
   },
   {
     "id": "7603",
@@ -13579,10 +13579,10 @@
     "team": "PIT",
     "position": "TE",
     "age": 24.7,
-    "value": 96.9,
+    "value": 95.6,
     "search_name": "kevin foelsch",
-    "pos_rank": 62,
-    "pos_rank_label": "TE62"
+    "pos_rank": 63,
+    "pos_rank_label": "TE63"
   },
   {
     "id": "11862",
@@ -13601,10 +13601,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 33.1,
-    "value": 47.1,
+    "value": 42.7,
     "search_name": "odell beckham",
-    "pos_rank": 682,
-    "pos_rank_label": "WR682"
+    "pos_rank": 711,
+    "pos_rank_label": "WR711"
   },
   {
     "id": "5154",
@@ -13614,8 +13614,8 @@
     "age": 29.8,
     "value": 91.5,
     "search_name": "trent sherfield",
-    "pos_rank": 258,
-    "pos_rank_label": "WR258"
+    "pos_rank": 255,
+    "pos_rank_label": "WR255"
   },
   {
     "id": "12046",
@@ -13625,8 +13625,8 @@
     "age": 26.2,
     "value": 79.8,
     "search_name": "chevan cordeiro",
-    "pos_rank": 65,
-    "pos_rank_label": "QB65"
+    "pos_rank": 64,
+    "pos_rank_label": "QB64"
   },
   {
     "id": "1535",
@@ -13634,10 +13634,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 34.8,
-    "value": 31.0,
+    "value": 29.7,
     "search_name": "cordarrelle patterson",
-    "pos_rank": 323,
-    "pos_rank_label": "RB323"
+    "pos_rank": 325,
+    "pos_rank_label": "RB325"
   },
   {
     "id": "12818",
@@ -13691,15 +13691,15 @@
     "age": 29.5,
     "value": 65.0,
     "search_name": "nick bawden",
-    "pos_rank": 196,
-    "pos_rank_label": "RB196"
+    "pos_rank": 192,
+    "pos_rank_label": "RB192"
   },
   {
     "id": "8650",
     "name": "Lujuan Winningham",
     "team": "JAX",
     "position": "WR",
-    "age": 26.9,
+    "age": 27.0,
     "value": 80.5,
     "search_name": "lujuan winningham",
     "pos_rank": 353,
@@ -13735,8 +13735,8 @@
     "age": 22.7,
     "value": 75.3,
     "search_name": "jackson meeks",
-    "pos_rank": 425,
-    "pos_rank_label": "WR425"
+    "pos_rank": 424,
+    "pos_rank_label": "WR424"
   },
   {
     "id": "4061",
@@ -13779,8 +13779,8 @@
     "age": 26.6,
     "value": 94.3,
     "search_name": "marcus riley",
-    "pos_rank": 233,
-    "pos_rank_label": "WR233"
+    "pos_rank": 231,
+    "pos_rank_label": "WR231"
   },
   {
     "id": "3225",
@@ -13832,7 +13832,7 @@
     "team": "PIT",
     "position": "RB",
     "age": 26.8,
-    "value": 163.6,
+    "value": 164.1,
     "search_name": "kenneth gainwell",
     "pos_rank": 39,
     "pos_rank_label": "RB39"
@@ -13867,8 +13867,8 @@
     "age": 26.6,
     "value": 90.9,
     "search_name": "emeka emezie",
-    "pos_rank": 271,
-    "pos_rank_label": "WR271"
+    "pos_rank": 268,
+    "pos_rank_label": "WR268"
   },
   {
     "id": "11357",
@@ -13889,8 +13889,8 @@
     "age": 25.9,
     "value": 96.9,
     "search_name": "austin stogner",
-    "pos_rank": 63,
-    "pos_rank_label": "TE63"
+    "pos_rank": 62,
+    "pos_rank_label": "TE62"
   },
   {
     "id": "12976",
@@ -13933,8 +13933,8 @@
     "age": 30.8,
     "value": 42.5,
     "search_name": "deon yelder",
-    "pos_rank": 279,
-    "pos_rank_label": "TE279"
+    "pos_rank": 277,
+    "pos_rank_label": "TE277"
   },
   {
     "id": "6557",
@@ -13944,8 +13944,8 @@
     "age": 28.7,
     "value": 45.9,
     "search_name": "jeff smith",
-    "pos_rank": 695,
-    "pos_rank_label": "WR695"
+    "pos_rank": 691,
+    "pos_rank_label": "WR691"
   },
   {
     "id": "12254",
@@ -13955,8 +13955,8 @@
     "age": 26.2,
     "value": 92.7,
     "search_name": "phillip brooks",
-    "pos_rank": 246,
-    "pos_rank_label": "WR246"
+    "pos_rank": 245,
+    "pos_rank_label": "WR245"
   },
   {
     "id": "11388",
@@ -13977,8 +13977,8 @@
     "age": 26.7,
     "value": 21.1,
     "search_name": "clayton tune",
-    "pos_rank": 170,
-    "pos_rank_label": "QB170"
+    "pos_rank": 168,
+    "pos_rank_label": "QB168"
   },
   {
     "id": "13043",
@@ -13988,8 +13988,8 @@
     "age": 24.0,
     "value": 109.1,
     "search_name": "chris tyree",
-    "pos_rank": 147,
-    "pos_rank_label": "WR147"
+    "pos_rank": 148,
+    "pos_rank_label": "WR148"
   },
   {
     "id": "8138",
@@ -14043,8 +14043,8 @@
     "age": 30.4,
     "value": 67.5,
     "search_name": "tyler conklin",
-    "pos_rank": 166,
-    "pos_rank_label": "TE166"
+    "pos_rank": 165,
+    "pos_rank_label": "TE165"
   },
   {
     "id": "7612",
@@ -14052,10 +14052,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.7,
-    "value": 66.4,
+    "value": 67.6,
     "search_name": "dee eskridge",
-    "pos_rank": 547,
-    "pos_rank_label": "WR547"
+    "pos_rank": 529,
+    "pos_rank_label": "WR529"
   },
   {
     "id": "11946",
@@ -14076,8 +14076,8 @@
     "age": 24.8,
     "value": 93.5,
     "search_name": "ayir asante",
-    "pos_rank": 239,
-    "pos_rank_label": "WR239"
+    "pos_rank": 237,
+    "pos_rank_label": "WR237"
   },
   {
     "id": "12984",
@@ -14131,8 +14131,8 @@
     "age": 24.6,
     "value": 103.0,
     "search_name": "moose muhammad",
-    "pos_rank": 184,
-    "pos_rank_label": "WR184"
+    "pos_rank": 181,
+    "pos_rank_label": "WR181"
   },
   {
     "id": "4988",
@@ -14142,8 +14142,8 @@
     "age": 30.0,
     "value": 77.2,
     "search_name": "nick chubb",
-    "pos_rank": 132,
-    "pos_rank_label": "RB132"
+    "pos_rank": 131,
+    "pos_rank_label": "RB131"
   },
   {
     "id": "1992",
@@ -14153,8 +14153,8 @@
     "age": 32.3,
     "value": 55.1,
     "search_name": "allen robinson",
-    "pos_rank": 617,
-    "pos_rank_label": "WR617"
+    "pos_rank": 618,
+    "pos_rank_label": "WR618"
   },
   {
     "id": "4040",
@@ -14164,8 +14164,8 @@
     "age": 29.1,
     "value": 90.7,
     "search_name": "juju smith-schuster",
-    "pos_rank": 273,
-    "pos_rank_label": "WR273"
+    "pos_rank": 270,
+    "pos_rank_label": "WR270"
   },
   {
     "id": "4491",
@@ -14175,8 +14175,8 @@
     "age": 30.3,
     "value": 66.4,
     "search_name": "marcus kemp",
-    "pos_rank": 548,
-    "pos_rank_label": "WR548"
+    "pos_rank": 539,
+    "pos_rank_label": "WR539"
   },
   {
     "id": "11081",
@@ -14208,8 +14208,8 @@
     "age": 26.6,
     "value": 12.9,
     "search_name": "malik willis",
-    "pos_rank": 188,
-    "pos_rank_label": "QB188"
+    "pos_rank": 189,
+    "pos_rank_label": "QB189"
   },
   {
     "id": "4647",
@@ -14296,8 +14296,8 @@
     "age": 30.8,
     "value": 55.8,
     "search_name": "dontrell hilliard",
-    "pos_rank": 231,
-    "pos_rank_label": "RB231"
+    "pos_rank": 229,
+    "pos_rank_label": "RB229"
   },
   {
     "id": "8239",
@@ -14307,8 +14307,8 @@
     "age": 26.1,
     "value": 84.1,
     "search_name": "ricky person",
-    "pos_rank": 120,
-    "pos_rank_label": "RB120"
+    "pos_rank": 119,
+    "pos_rank_label": "RB119"
   },
   {
     "id": "616",
@@ -14329,8 +14329,8 @@
     "age": 24.2,
     "value": 105.6,
     "search_name": "key'shawn smith",
-    "pos_rank": 167,
-    "pos_rank_label": "WR167"
+    "pos_rank": 166,
+    "pos_rank_label": "WR166"
   },
   {
     "id": "312",
@@ -14340,8 +14340,8 @@
     "age": 40.3,
     "value": 35.6,
     "search_name": "matthew slater",
-    "pos_rank": 740,
-    "pos_rank_label": "WR740"
+    "pos_rank": 739,
+    "pos_rank_label": "WR739"
   },
   {
     "id": "6040",
@@ -14392,11 +14392,11 @@
     "name": "Bug Howard",
     "team": "TB",
     "position": "TE",
-    "age": 31.0,
+    "age": 31.1,
     "value": 71.7,
     "search_name": "bug howard",
-    "pos_rank": 134,
-    "pos_rank_label": "TE134"
+    "pos_rank": 132,
+    "pos_rank_label": "TE132"
   },
   {
     "id": "8861",
@@ -14406,8 +14406,8 @@
     "age": 28.7,
     "value": 56.6,
     "search_name": "irvin charles",
-    "pos_rank": 607,
-    "pos_rank_label": "WR607"
+    "pos_rank": 608,
+    "pos_rank_label": "WR608"
   },
   {
     "id": "11168",
@@ -14417,8 +14417,8 @@
     "age": 28.2,
     "value": 66.3,
     "search_name": "xavier smith",
-    "pos_rank": 549,
-    "pos_rank_label": "WR549"
+    "pos_rank": 540,
+    "pos_rank_label": "WR540"
   },
   {
     "id": "11351",
@@ -14439,19 +14439,19 @@
     "age": 24.8,
     "value": 81.9,
     "search_name": "terrell jennings",
-    "pos_rank": 124,
-    "pos_rank_label": "RB124"
+    "pos_rank": 123,
+    "pos_rank_label": "RB123"
   },
   {
     "id": "13079",
     "name": "Jahdae Walker",
     "team": "CHI",
     "position": "WR",
-    "age": 23.4,
+    "age": 23.5,
     "value": 71.0,
     "search_name": "jahdae walker",
-    "pos_rank": 494,
-    "pos_rank_label": "WR494"
+    "pos_rank": 495,
+    "pos_rank_label": "WR495"
   },
   {
     "id": "12398",
@@ -14461,8 +14461,8 @@
     "age": 26.1,
     "value": 94.7,
     "search_name": "jadon janke",
-    "pos_rank": 230,
-    "pos_rank_label": "WR230"
+    "pos_rank": 228,
+    "pos_rank_label": "WR228"
   },
   {
     "id": "12775",
@@ -14516,8 +14516,8 @@
     "age": 26.6,
     "value": 90.1,
     "search_name": "jalen wayne",
-    "pos_rank": 277,
-    "pos_rank_label": "WR277"
+    "pos_rank": 274,
+    "pos_rank_label": "WR274"
   },
   {
     "id": "11256",
@@ -14546,7 +14546,7 @@
     "name": "Kene Nwangwu",
     "team": "NYJ",
     "position": "RB",
-    "age": 27.8,
+    "age": 27.9,
     "value": 22.6,
     "search_name": "kene nwangwu",
     "pos_rank": 348,
@@ -14571,8 +14571,8 @@
     "age": 28.3,
     "value": 71.6,
     "search_name": "gerrit prince",
-    "pos_rank": 135,
-    "pos_rank_label": "TE135"
+    "pos_rank": 133,
+    "pos_rank_label": "TE133"
   },
   {
     "id": "4602",
@@ -14615,8 +14615,8 @@
     "age": 27.4,
     "value": 60.1,
     "search_name": "anthony brown",
-    "pos_rank": 95,
-    "pos_rank_label": "QB95"
+    "pos_rank": 94,
+    "pos_rank_label": "QB94"
   },
   {
     "id": "8209",
@@ -14626,8 +14626,8 @@
     "age": 24.4,
     "value": 102.7,
     "search_name": "makai polk",
-    "pos_rank": 187,
-    "pos_rank_label": "WR187"
+    "pos_rank": 186,
+    "pos_rank_label": "WR186"
   },
   {
     "id": "12170",
@@ -14637,8 +14637,8 @@
     "age": 24.5,
     "value": 103.0,
     "search_name": "jaaron hayek",
-    "pos_rank": 185,
-    "pos_rank_label": "WR185"
+    "pos_rank": 182,
+    "pos_rank_label": "WR182"
   },
   {
     "id": "12721",
@@ -14659,8 +14659,8 @@
     "age": 24.9,
     "value": 201.2,
     "search_name": "zach charbonnet",
-    "pos_rank": 30,
-    "pos_rank_label": "RB30"
+    "pos_rank": 29,
+    "pos_rank_label": "RB29"
   },
   {
     "id": "7854",
@@ -14670,8 +14670,8 @@
     "age": 27.8,
     "value": 78.4,
     "search_name": "miller forristall",
-    "pos_rank": 103,
-    "pos_rank_label": "TE103"
+    "pos_rank": 102,
+    "pos_rank_label": "TE102"
   },
   {
     "id": "12800",
@@ -14681,8 +14681,8 @@
     "age": 24.4,
     "value": 70.9,
     "search_name": "oscar cardenas",
-    "pos_rank": 138,
-    "pos_rank_label": "TE138"
+    "pos_rank": 137,
+    "pos_rank_label": "TE137"
   },
   {
     "id": "9502",
@@ -14692,8 +14692,8 @@
     "age": 26.1,
     "value": 45.3,
     "search_name": "tank dell",
-    "pos_rank": 697,
-    "pos_rank_label": "WR697"
+    "pos_rank": 693,
+    "pos_rank_label": "WR693"
   },
   {
     "id": "7561",
@@ -14703,8 +14703,8 @@
     "age": 27.6,
     "value": 52.9,
     "search_name": "elijah mitchell",
-    "pos_rank": 243,
-    "pos_rank_label": "RB243"
+    "pos_rank": 241,
+    "pos_rank_label": "RB241"
   },
   {
     "id": "7694",
@@ -14723,10 +14723,10 @@
     "team": "MIA",
     "position": "WR",
     "age": 28.0,
-    "value": 76.1,
+    "value": 71.8,
     "search_name": "mike harley",
-    "pos_rank": 413,
-    "pos_rank_label": "WR413"
+    "pos_rank": 482,
+    "pos_rank_label": "WR482"
   },
   {
     "id": "8166",
@@ -14736,8 +14736,8 @@
     "age": 28.3,
     "value": 55.8,
     "search_name": "dontario drummond",
-    "pos_rank": 610,
-    "pos_rank_label": "WR610"
+    "pos_rank": 611,
+    "pos_rank_label": "WR611"
   },
   {
     "id": "7143",
@@ -14791,8 +14791,8 @@
     "age": 25.7,
     "value": 91.3,
     "search_name": "jose barbon",
-    "pos_rank": 260,
-    "pos_rank_label": "WR260"
+    "pos_rank": 256,
+    "pos_rank_label": "WR256"
   },
   {
     "id": "7237",
@@ -14802,8 +14802,8 @@
     "age": 28.4,
     "value": 41.1,
     "search_name": "scotty washington",
-    "pos_rank": 284,
-    "pos_rank_label": "TE284"
+    "pos_rank": 282,
+    "pos_rank_label": "TE282"
   },
   {
     "id": "5962",
@@ -14813,8 +14813,8 @@
     "age": 29.2,
     "value": 70.2,
     "search_name": "keesean johnson",
-    "pos_rank": 511,
-    "pos_rank_label": "WR511"
+    "pos_rank": 509,
+    "pos_rank_label": "WR509"
   },
   {
     "id": "11298",
@@ -14824,8 +14824,8 @@
     "age": 26.3,
     "value": 79.3,
     "search_name": "ryan jones",
-    "pos_rank": 100,
-    "pos_rank_label": "TE100"
+    "pos_rank": 99,
+    "pos_rank_label": "TE99"
   },
   {
     "id": "11301",
@@ -14846,8 +14846,8 @@
     "age": 26.3,
     "value": 75.6,
     "search_name": "mitchell tinsley",
-    "pos_rank": 419,
-    "pos_rank_label": "WR419"
+    "pos_rank": 418,
+    "pos_rank_label": "WR418"
   },
   {
     "id": "11491",
@@ -14868,8 +14868,8 @@
     "age": 27.5,
     "value": 48.8,
     "search_name": "quez watkins",
-    "pos_rank": 669,
-    "pos_rank_label": "WR669"
+    "pos_rank": 671,
+    "pos_rank_label": "WR671"
   },
   {
     "id": "8232",
@@ -14890,8 +14890,8 @@
     "age": 28.0,
     "value": 66.1,
     "search_name": "jaquan hardy",
-    "pos_rank": 187,
-    "pos_rank_label": "RB187"
+    "pos_rank": 184,
+    "pos_rank_label": "RB184"
   },
   {
     "id": "2549",
@@ -14912,8 +14912,8 @@
     "age": 26.4,
     "value": 71.5,
     "search_name": "alec holler",
-    "pos_rank": 136,
-    "pos_rank_label": "TE136"
+    "pos_rank": 134,
+    "pos_rank_label": "TE134"
   },
   {
     "id": "11940",
@@ -14923,8 +14923,8 @@
     "age": 25.9,
     "value": 55.4,
     "search_name": "jaquae jackson",
-    "pos_rank": 614,
-    "pos_rank_label": "WR614"
+    "pos_rank": 615,
+    "pos_rank_label": "WR615"
   },
   {
     "id": "9228",
@@ -14956,8 +14956,8 @@
     "age": 24.0,
     "value": 30.9,
     "search_name": "lawrance toafili",
-    "pos_rank": 324,
-    "pos_rank_label": "RB324"
+    "pos_rank": 323,
+    "pos_rank_label": "RB323"
   },
   {
     "id": "11249",
@@ -14967,8 +14967,8 @@
     "age": 26.3,
     "value": 78.6,
     "search_name": "chris smith",
-    "pos_rank": 130,
-    "pos_rank_label": "RB130"
+    "pos_rank": 129,
+    "pos_rank_label": "RB129"
   },
   {
     "id": "11438",
@@ -14978,8 +14978,8 @@
     "age": 25.5,
     "value": 104.7,
     "search_name": "dallas daniels",
-    "pos_rank": 173,
-    "pos_rank_label": "WR173"
+    "pos_rank": 172,
+    "pos_rank_label": "WR172"
   },
   {
     "id": "5131",
@@ -14989,19 +14989,19 @@
     "age": 29.7,
     "value": 65.7,
     "search_name": "justin jackson",
-    "pos_rank": 189,
-    "pos_rank_label": "RB189"
+    "pos_rank": 186,
+    "pos_rank_label": "RB186"
   },
   {
     "id": "7560",
     "name": "Pooka Williams Jr.",
     "team": "CIN",
     "position": "WR",
-    "age": 26.8,
+    "age": 26.9,
     "value": 58.4,
     "search_name": "pooka williams",
-    "pos_rank": 597,
-    "pos_rank_label": "WR597"
+    "pos_rank": 598,
+    "pos_rank_label": "WR598"
   },
   {
     "id": "11540",
@@ -15022,8 +15022,8 @@
     "age": 32.9,
     "value": 54.3,
     "search_name": "devante parker",
-    "pos_rank": 623,
-    "pos_rank_label": "WR623"
+    "pos_rank": 624,
+    "pos_rank_label": "WR624"
   },
   {
     "id": "827",
@@ -15033,8 +15033,8 @@
     "age": 36.4,
     "value": 77.9,
     "search_name": "tyrod taylor",
-    "pos_rank": 69,
-    "pos_rank_label": "QB69"
+    "pos_rank": 68,
+    "pos_rank_label": "QB68"
   },
   {
     "id": "6032",
@@ -15055,8 +15055,8 @@
     "age": 26.8,
     "value": 106.0,
     "search_name": "jalen nailor",
-    "pos_rank": 166,
-    "pos_rank_label": "WR166"
+    "pos_rank": 165,
+    "pos_rank_label": "WR165"
   },
   {
     "id": "11649",
@@ -15066,8 +15066,8 @@
     "age": 23.8,
     "value": 31.3,
     "search_name": "kendall milton",
-    "pos_rank": 321,
-    "pos_rank_label": "RB321"
+    "pos_rank": 320,
+    "pos_rank_label": "RB320"
   },
   {
     "id": "1110",
@@ -15077,8 +15077,8 @@
     "age": 36.1,
     "value": 19.0,
     "search_name": "t.y. hilton",
-    "pos_rank": 764,
-    "pos_rank_label": "WR764"
+    "pos_rank": 763,
+    "pos_rank_label": "WR763"
   },
   {
     "id": "3445",
@@ -15088,8 +15088,8 @@
     "age": 31.4,
     "value": 64.9,
     "search_name": "marcus johnson",
-    "pos_rank": 563,
-    "pos_rank_label": "WR563"
+    "pos_rank": 562,
+    "pos_rank_label": "WR562"
   },
   {
     "id": "7611",
@@ -15107,7 +15107,7 @@
     "name": "Mitchell Evans",
     "team": "CAR",
     "position": "TE",
-    "age": 22.7,
+    "age": 22.8,
     "value": 85.9,
     "search_name": "mitchell evans",
     "pos_rank": 85,
@@ -15119,7 +15119,7 @@
     "team": "PIT",
     "position": "QB",
     "age": 24.2,
-    "value": 1.5,
+    "value": 1.6,
     "search_name": "will howard",
     "pos_rank": 202,
     "pos_rank_label": "QB202"
@@ -15143,8 +15143,8 @@
     "age": 32.9,
     "value": 50.6,
     "search_name": "ty montgomery",
-    "pos_rank": 658,
-    "pos_rank_label": "WR658"
+    "pos_rank": 659,
+    "pos_rank_label": "WR659"
   },
   {
     "id": "7867",
@@ -15165,8 +15165,8 @@
     "age": 28.3,
     "value": 65.0,
     "search_name": "jake hausmann",
-    "pos_rank": 183,
-    "pos_rank_label": "TE183"
+    "pos_rank": 182,
+    "pos_rank_label": "TE182"
   },
   {
     "id": "6938",
@@ -15176,8 +15176,8 @@
     "age": 26.5,
     "value": 53.3,
     "search_name": "cam akers",
-    "pos_rank": 242,
-    "pos_rank_label": "RB242"
+    "pos_rank": 240,
+    "pos_rank_label": "RB240"
   },
   {
     "id": "11115",
@@ -15187,8 +15187,8 @@
     "age": 27.4,
     "value": 83.4,
     "search_name": "terrell bynum",
-    "pos_rank": 324,
-    "pos_rank_label": "WR324"
+    "pos_rank": 322,
+    "pos_rank_label": "WR322"
   },
   {
     "id": "6108",
@@ -15198,8 +15198,8 @@
     "age": 28.9,
     "value": 65.3,
     "search_name": "jacques patrick",
-    "pos_rank": 195,
-    "pos_rank_label": "RB195"
+    "pos_rank": 191,
+    "pos_rank_label": "RB191"
   },
   {
     "id": "6886",
@@ -15218,10 +15218,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 26.0,
-    "value": 90.5,
+    "value": 89.2,
     "search_name": "duece watts",
-    "pos_rank": 274,
-    "pos_rank_label": "WR274"
+    "pos_rank": 278,
+    "pos_rank_label": "WR278"
   },
   {
     "id": "6857",
@@ -15239,11 +15239,11 @@
     "name": "Moochie Dixon",
     "team": "NO",
     "position": "WR",
-    "age": 24.2,
-    "value": 86.7,
+    "age": 24.3,
+    "value": 85.3,
     "search_name": "moochie dixon",
-    "pos_rank": 297,
-    "pos_rank_label": "WR297"
+    "pos_rank": 313,
+    "pos_rank_label": "WR313"
   },
   {
     "id": "12963",
@@ -15264,8 +15264,8 @@
     "age": 24.7,
     "value": 106.4,
     "search_name": "peter leblanc",
-    "pos_rank": 164,
-    "pos_rank_label": "WR164"
+    "pos_rank": 163,
+    "pos_rank_label": "WR163"
   },
   {
     "id": "2334",
@@ -15275,8 +15275,8 @@
     "age": 32.9,
     "value": 35.8,
     "search_name": "phillip dorsett",
-    "pos_rank": 737,
-    "pos_rank_label": "WR737"
+    "pos_rank": 736,
+    "pos_rank_label": "WR736"
   },
   {
     "id": "4234",
@@ -15286,8 +15286,8 @@
     "age": 29.9,
     "value": 64.1,
     "search_name": "noah brown",
-    "pos_rank": 570,
-    "pos_rank_label": "WR570"
+    "pos_rank": 569,
+    "pos_rank_label": "WR569"
   },
   {
     "id": "2750",
@@ -15297,8 +15297,8 @@
     "age": 32.7,
     "value": 21.5,
     "search_name": "deandre carter",
-    "pos_rank": 762,
-    "pos_rank_label": "WR762"
+    "pos_rank": 761,
+    "pos_rank_label": "WR761"
   },
   {
     "id": "4146",
@@ -15308,8 +15308,8 @@
     "age": 32.1,
     "value": 53.8,
     "search_name": "dede westbrook",
-    "pos_rank": 627,
-    "pos_rank_label": "WR627"
+    "pos_rank": 628,
+    "pos_rank_label": "WR628"
   },
   {
     "id": "8129",
@@ -15341,8 +15341,8 @@
     "age": 24.4,
     "value": 106.1,
     "search_name": "montorie foster",
-    "pos_rank": 165,
-    "pos_rank_label": "WR165"
+    "pos_rank": 164,
+    "pos_rank_label": "WR164"
   },
   {
     "id": "8222",
@@ -15352,8 +15352,8 @@
     "age": 26.4,
     "value": 93.4,
     "search_name": "josh johnson",
-    "pos_rank": 240,
-    "pos_rank_label": "WR240"
+    "pos_rank": 238,
+    "pos_rank_label": "WR238"
   },
   {
     "id": "11565",
@@ -15374,8 +15374,8 @@
     "age": 28.3,
     "value": 88.6,
     "search_name": "frank darby",
-    "pos_rank": 285,
-    "pos_rank_label": "WR285"
+    "pos_rank": 284,
+    "pos_rank_label": "WR284"
   },
   {
     "id": "12383",
@@ -15385,8 +15385,8 @@
     "age": 25.4,
     "value": 43.7,
     "search_name": "john jiles",
-    "pos_rank": 709,
-    "pos_rank_label": "WR709"
+    "pos_rank": 707,
+    "pos_rank_label": "WR707"
   },
   {
     "id": "12482",
@@ -15396,8 +15396,8 @@
     "age": 24.1,
     "value": 85.8,
     "search_name": "savion williams",
-    "pos_rank": 309,
-    "pos_rank_label": "WR309"
+    "pos_rank": 308,
+    "pos_rank_label": "WR308"
   },
   {
     "id": "6139",
@@ -15407,8 +15407,8 @@
     "age": 29.5,
     "value": 64.9,
     "search_name": "jace sternberger",
-    "pos_rank": 184,
-    "pos_rank_label": "TE184"
+    "pos_rank": 183,
+    "pos_rank_label": "TE183"
   },
   {
     "id": "11157",
@@ -15418,8 +15418,8 @@
     "age": 26.1,
     "value": 67.0,
     "search_name": "brycen tremayne",
-    "pos_rank": 538,
-    "pos_rank_label": "WR538"
+    "pos_rank": 531,
+    "pos_rank_label": "WR531"
   },
   {
     "id": "8145",
@@ -15471,10 +15471,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 21.9,
-    "value": 202.3,
+    "value": 198.4,
     "search_name": "ollie gordon",
-    "pos_rank": 29,
-    "pos_rank_label": "RB29"
+    "pos_rank": 30,
+    "pos_rank_label": "RB30"
   },
   {
     "id": "7554",
@@ -15484,8 +15484,8 @@
     "age": 26.9,
     "value": 78.8,
     "search_name": "tre' mckitty",
-    "pos_rank": 101,
-    "pos_rank_label": "TE101"
+    "pos_rank": 100,
+    "pos_rank_label": "TE100"
   },
   {
     "id": "8731",
@@ -15495,8 +15495,8 @@
     "age": 28.0,
     "value": 86.5,
     "search_name": "shemar bridges",
-    "pos_rank": 299,
-    "pos_rank_label": "WR299"
+    "pos_rank": 297,
+    "pos_rank_label": "WR297"
   },
   {
     "id": "12121",
@@ -15539,8 +15539,8 @@
     "age": 23.0,
     "value": 129.9,
     "search_name": "tre stewart",
-    "pos_rank": 52,
-    "pos_rank_label": "RB52"
+    "pos_rank": 51,
+    "pos_rank_label": "RB51"
   },
   {
     "id": "8152",
@@ -15572,8 +15572,8 @@
     "age": 26.4,
     "value": 87.4,
     "search_name": "kj hamler",
-    "pos_rank": 294,
-    "pos_rank_label": "WR294"
+    "pos_rank": 293,
+    "pos_rank_label": "WR293"
   },
   {
     "id": "8230",
@@ -15594,8 +15594,8 @@
     "age": 28.7,
     "value": 67.5,
     "search_name": "alize mack",
-    "pos_rank": 167,
-    "pos_rank_label": "TE167"
+    "pos_rank": 166,
+    "pos_rank_label": "TE166"
   },
   {
     "id": "8085",
@@ -15627,8 +15627,8 @@
     "age": 28.2,
     "value": 55.8,
     "search_name": "deontay burnett",
-    "pos_rank": 611,
-    "pos_rank_label": "WR611"
+    "pos_rank": 612,
+    "pos_rank_label": "WR612"
   },
   {
     "id": "8665",
@@ -15682,8 +15682,8 @@
     "age": 24.9,
     "value": 138.1,
     "search_name": "xavier legette",
-    "pos_rank": 80,
-    "pos_rank_label": "WR80"
+    "pos_rank": 79,
+    "pos_rank_label": "WR79"
   },
   {
     "id": "8186",
@@ -15715,8 +15715,8 @@
     "age": 25.6,
     "value": 35.4,
     "search_name": "jha'quan jackson",
-    "pos_rank": 742,
-    "pos_rank_label": "WR742"
+    "pos_rank": 741,
+    "pos_rank_label": "WR741"
   },
   {
     "id": "12889",
@@ -15735,10 +15735,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 24.4,
-    "value": 23.6,
+    "value": 23.2,
     "search_name": "jalin conyers",
-    "pos_rank": 318,
-    "pos_rank_label": "TE318"
+    "pos_rank": 319,
+    "pos_rank_label": "TE319"
   },
   {
     "id": "4080",
@@ -15748,8 +15748,8 @@
     "age": 30.7,
     "value": 52.8,
     "search_name": "zay jones",
-    "pos_rank": 634,
-    "pos_rank_label": "WR634"
+    "pos_rank": 635,
+    "pos_rank_label": "WR635"
   },
   {
     "id": "1559",
@@ -15757,10 +15757,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 36.0,
-    "value": 24.6,
+    "value": 20.2,
     "search_name": "mike glennon",
-    "pos_rank": 157,
-    "pos_rank_label": "QB157"
+    "pos_rank": 172,
+    "pos_rank_label": "QB172"
   },
   {
     "id": "5086",
@@ -15768,10 +15768,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 31.2,
-    "value": 63.1,
+    "value": 65.8,
     "search_name": "marquez valdes-scantling",
-    "pos_rank": 580,
-    "pos_rank_label": "WR580"
+    "pos_rank": 550,
+    "pos_rank_label": "WR550"
   },
   {
     "id": "12434",
@@ -15781,8 +15781,8 @@
     "age": NaN,
     "value": 99.4,
     "search_name": "kairee robinson",
-    "pos_rank": 83,
-    "pos_rank_label": "RB83"
+    "pos_rank": 84,
+    "pos_rank_label": "RB84"
   },
   {
     "id": "3048",
@@ -15845,10 +15845,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 25.7,
-    "value": 103.5,
+    "value": 102.2,
     "search_name": "jordan byrd",
-    "pos_rank": 180,
-    "pos_rank_label": "WR180"
+    "pos_rank": 190,
+    "pos_rank_label": "WR190"
   },
   {
     "id": "4147",
@@ -15869,8 +15869,8 @@
     "age": 33.8,
     "value": 47.9,
     "search_name": "jake kumerow",
-    "pos_rank": 675,
-    "pos_rank_label": "WR675"
+    "pos_rank": 676,
+    "pos_rank_label": "WR676"
   },
   {
     "id": "4981",
@@ -15891,8 +15891,8 @@
     "age": 30.1,
     "value": 73.0,
     "search_name": "john ross",
-    "pos_rank": 465,
-    "pos_rank_label": "WR465"
+    "pos_rank": 464,
+    "pos_rank_label": "WR464"
   },
   {
     "id": "11191",
@@ -15902,8 +15902,8 @@
     "age": 26.4,
     "value": 91.8,
     "search_name": "justin marshall",
-    "pos_rank": 253,
-    "pos_rank_label": "WR253"
+    "pos_rank": 250,
+    "pos_rank_label": "WR250"
   },
   {
     "id": "13210",
@@ -15935,8 +15935,8 @@
     "age": 29.7,
     "value": 43.2,
     "search_name": "drew sample",
-    "pos_rank": 276,
-    "pos_rank_label": "TE276"
+    "pos_rank": 272,
+    "pos_rank_label": "TE272"
   },
   {
     "id": "4252",
@@ -15946,8 +15946,8 @@
     "age": 29.9,
     "value": 71.3,
     "search_name": "isaiah ford",
-    "pos_rank": 490,
-    "pos_rank_label": "WR490"
+    "pos_rank": 491,
+    "pos_rank_label": "WR491"
   },
   {
     "id": "8171",
@@ -15957,8 +15957,8 @@
     "age": 26.5,
     "value": 91.6,
     "search_name": "kyle philips",
-    "pos_rank": 257,
-    "pos_rank_label": "WR257"
+    "pos_rank": 254,
+    "pos_rank_label": "WR254"
   },
   {
     "id": "12462",
@@ -15977,10 +15977,10 @@
     "team": "MIA",
     "position": "TE",
     "age": 33.3,
-    "value": 90.2,
+    "value": 87.6,
     "search_name": "darren waller",
-    "pos_rank": 74,
-    "pos_rank_label": "TE74"
+    "pos_rank": 81,
+    "pos_rank_label": "TE81"
   },
   {
     "id": "11608",
@@ -15990,8 +15990,8 @@
     "age": 24.9,
     "value": 125.0,
     "search_name": "isaiah williams",
-    "pos_rank": 100,
-    "pos_rank_label": "WR100"
+    "pos_rank": 99,
+    "pos_rank_label": "WR99"
   },
   {
     "id": "7622",
@@ -16012,8 +16012,8 @@
     "age": 23.6,
     "value": 56.2,
     "search_name": "tahj brooks",
-    "pos_rank": 227,
-    "pos_rank_label": "RB227"
+    "pos_rank": 226,
+    "pos_rank_label": "RB226"
   },
   {
     "id": "8539",
@@ -16045,8 +16045,8 @@
     "age": 33.1,
     "value": 55.2,
     "search_name": "alex erickson",
-    "pos_rank": 615,
-    "pos_rank_label": "WR615"
+    "pos_rank": 616,
+    "pos_rank_label": "WR616"
   },
   {
     "id": "5916",
@@ -16056,8 +16056,8 @@
     "age": 28.3,
     "value": 63.7,
     "search_name": "darrell henderson",
-    "pos_rank": 200,
-    "pos_rank_label": "RB200"
+    "pos_rank": 196,
+    "pos_rank_label": "RB196"
   },
   {
     "id": "11529",
@@ -16067,8 +16067,8 @@
     "age": 26.6,
     "value": 91.1,
     "search_name": "ed lee",
-    "pos_rank": 264,
-    "pos_rank_label": "WR264"
+    "pos_rank": 261,
+    "pos_rank_label": "WR261"
   },
   {
     "id": "12776",
@@ -16078,8 +16078,8 @@
     "age": 25.2,
     "value": 13.2,
     "search_name": "connor bazelak",
-    "pos_rank": 186,
-    "pos_rank_label": "QB186"
+    "pos_rank": 187,
+    "pos_rank_label": "QB187"
   },
   {
     "id": "6878",
@@ -16087,10 +16087,10 @@
     "team": "MIA",
     "position": "RB",
     "age": 26.8,
-    "value": 66.6,
+    "value": 62.3,
     "search_name": "anthony mcfarland",
-    "pos_rank": 184,
-    "pos_rank_label": "RB184"
+    "pos_rank": 205,
+    "pos_rank_label": "RB205"
   },
   {
     "id": "2320",
@@ -16144,8 +16144,8 @@
     "age": 23.2,
     "value": 139.1,
     "search_name": "dorian singer",
-    "pos_rank": 79,
-    "pos_rank_label": "WR79"
+    "pos_rank": 78,
+    "pos_rank_label": "WR78"
   },
   {
     "id": "12150",
@@ -16155,8 +16155,8 @@
     "age": 26.1,
     "value": 78.7,
     "search_name": "jarveon howard",
-    "pos_rank": 129,
-    "pos_rank_label": "RB129"
+    "pos_rank": 128,
+    "pos_rank_label": "RB128"
   },
   {
     "id": "12792",
@@ -16177,19 +16177,19 @@
     "age": 32.1,
     "value": 49.0,
     "search_name": "kenny golladay",
-    "pos_rank": 667,
-    "pos_rank_label": "WR667"
+    "pos_rank": 669,
+    "pos_rank_label": "WR669"
   },
   {
     "id": "13143",
     "name": "Dymere Miller",
     "team": "NYJ",
     "position": "WR",
-    "age": 24.5,
-    "value": 108.1,
+    "age": 24.6,
+    "value": 110.1,
     "search_name": "dymere miller",
-    "pos_rank": 151,
-    "pos_rank_label": "WR151"
+    "pos_rank": 140,
+    "pos_rank_label": "WR140"
   },
   {
     "id": "7915",
@@ -16210,8 +16210,8 @@
     "age": 28.8,
     "value": 56.6,
     "search_name": "damien harris",
-    "pos_rank": 225,
-    "pos_rank_label": "RB225"
+    "pos_rank": 224,
+    "pos_rank_label": "RB224"
   },
   {
     "id": "6451",
@@ -16221,8 +16221,8 @@
     "age": 29.0,
     "value": 43.2,
     "search_name": "stephen carlson",
-    "pos_rank": 277,
-    "pos_rank_label": "TE277"
+    "pos_rank": 273,
+    "pos_rank_label": "TE273"
   },
   {
     "id": "9484",
@@ -16254,8 +16254,8 @@
     "age": 25.8,
     "value": 93.2,
     "search_name": "markese stepp",
-    "pos_rank": 100,
-    "pos_rank_label": "RB100"
+    "pos_rank": 99,
+    "pos_rank_label": "RB99"
   },
   {
     "id": "19",
@@ -16276,8 +16276,8 @@
     "age": 29.9,
     "value": 85.6,
     "search_name": "russell gage",
-    "pos_rank": 312,
-    "pos_rank_label": "WR312"
+    "pos_rank": 311,
+    "pos_rank_label": "WR311"
   },
   {
     "id": "7752",
@@ -16331,8 +16331,8 @@
     "age": 25.6,
     "value": 103.8,
     "search_name": "devron harper",
-    "pos_rank": 179,
-    "pos_rank_label": "WR179"
+    "pos_rank": 176,
+    "pos_rank_label": "WR176"
   },
   {
     "id": "12483",
@@ -16351,7 +16351,7 @@
     "team": "PIT",
     "position": "WR",
     "age": 28.0,
-    "value": 352.0,
+    "value": 351.0,
     "search_name": "dk metcalf",
     "pos_rank": 26,
     "pos_rank_label": "WR26"
@@ -16364,8 +16364,8 @@
     "age": 22.7,
     "value": 58.8,
     "search_name": "ja'seem reed",
-    "pos_rank": 596,
-    "pos_rank_label": "WR596"
+    "pos_rank": 597,
+    "pos_rank_label": "WR597"
   },
   {
     "id": "167",
@@ -16397,8 +16397,8 @@
     "age": 25.7,
     "value": 86.5,
     "search_name": "jahan dotson",
-    "pos_rank": 300,
-    "pos_rank_label": "WR300"
+    "pos_rank": 298,
+    "pos_rank_label": "WR298"
   },
   {
     "id": "8160",
@@ -16419,8 +16419,8 @@
     "age": 26.4,
     "value": 94.3,
     "search_name": "isaiah winstead",
-    "pos_rank": 234,
-    "pos_rank_label": "WR234"
+    "pos_rank": 232,
+    "pos_rank_label": "WR232"
   },
   {
     "id": "7404",
@@ -16474,8 +16474,8 @@
     "age": 24.7,
     "value": 56.7,
     "search_name": "dalen cambre",
-    "pos_rank": 606,
-    "pos_rank_label": "WR606"
+    "pos_rank": 607,
+    "pos_rank_label": "WR607"
   },
   {
     "id": "1049",
@@ -16529,8 +16529,8 @@
     "age": 32.8,
     "value": 56.8,
     "search_name": "nick boyle",
-    "pos_rank": 214,
-    "pos_rank_label": "TE214"
+    "pos_rank": 213,
+    "pos_rank_label": "TE213"
   },
   {
     "id": "5139",
@@ -16549,10 +16549,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 29.0,
-    "value": 66.5,
+    "value": 65.3,
     "search_name": "ja'marcus bradley",
-    "pos_rank": 546,
-    "pos_rank_label": "WR546"
+    "pos_rank": 559,
+    "pos_rank_label": "WR559"
   },
   {
     "id": "6945",
@@ -16562,8 +16562,8 @@
     "age": 27.5,
     "value": 65.0,
     "search_name": "antonio gibson",
-    "pos_rank": 197,
-    "pos_rank_label": "RB197"
+    "pos_rank": 193,
+    "pos_rank_label": "RB193"
   },
   {
     "id": "12849",
@@ -16595,8 +16595,8 @@
     "age": 34.7,
     "value": 20.6,
     "search_name": "derek carr",
-    "pos_rank": 173,
-    "pos_rank_label": "QB173"
+    "pos_rank": 171,
+    "pos_rank_label": "QB171"
   },
   {
     "id": "7954",
@@ -16606,8 +16606,8 @@
     "age": 26.6,
     "value": 91.8,
     "search_name": "connor wedington",
-    "pos_rank": 254,
-    "pos_rank_label": "WR254"
+    "pos_rank": 251,
+    "pos_rank_label": "WR251"
   },
   {
     "id": "2214",
@@ -16628,8 +16628,8 @@
     "age": 30.2,
     "value": 63.4,
     "search_name": "mike gesicki",
-    "pos_rank": 193,
-    "pos_rank_label": "TE193"
+    "pos_rank": 190,
+    "pos_rank_label": "TE190"
   },
   {
     "id": "13221",
@@ -16637,10 +16637,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 25.4,
-    "value": 93.9,
+    "value": 89.5,
     "search_name": "brett gabbert",
-    "pos_rank": 51,
-    "pos_rank_label": "QB51"
+    "pos_rank": 52,
+    "pos_rank_label": "QB52"
   },
   {
     "id": "8840",
@@ -16672,8 +16672,8 @@
     "age": 23.5,
     "value": 130.0,
     "search_name": "jase mcclellan",
-    "pos_rank": 51,
-    "pos_rank_label": "RB51"
+    "pos_rank": 50,
+    "pos_rank_label": "RB50"
   },
   {
     "id": "8179",
@@ -16694,8 +16694,8 @@
     "age": 28.1,
     "value": 62.6,
     "search_name": "dylan soehner",
-    "pos_rank": 195,
-    "pos_rank_label": "TE195"
+    "pos_rank": 193,
+    "pos_rank_label": "TE193"
   },
   {
     "id": "7013",
@@ -16705,8 +16705,8 @@
     "age": 28.9,
     "value": 62.7,
     "search_name": "steven montez",
-    "pos_rank": 90,
-    "pos_rank_label": "QB90"
+    "pos_rank": 89,
+    "pos_rank_label": "QB89"
   },
   {
     "id": "5965",
@@ -16716,8 +16716,8 @@
     "age": 29.2,
     "value": 51.5,
     "search_name": "miles boykin",
-    "pos_rank": 643,
-    "pos_rank_label": "WR643"
+    "pos_rank": 644,
+    "pos_rank_label": "WR644"
   },
   {
     "id": "8408",
@@ -16727,8 +16727,8 @@
     "age": 26.6,
     "value": 113.6,
     "search_name": "jordan mason",
-    "pos_rank": 68,
-    "pos_rank_label": "RB68"
+    "pos_rank": 67,
+    "pos_rank_label": "RB67"
   },
   {
     "id": "12540",
@@ -16738,8 +16738,8 @@
     "age": 23.0,
     "value": 154.3,
     "search_name": "chimere dike",
-    "pos_rank": 68,
-    "pos_rank_label": "WR68"
+    "pos_rank": 69,
+    "pos_rank_label": "WR69"
   },
   {
     "id": "5134",
@@ -16749,8 +16749,8 @@
     "age": 32.0,
     "value": 46.5,
     "search_name": "keith kirkwood",
-    "pos_rank": 686,
-    "pos_rank_label": "WR686"
+    "pos_rank": 684,
+    "pos_rank_label": "WR684"
   },
   {
     "id": "9758",
@@ -16782,8 +16782,8 @@
     "age": 31.0,
     "value": 84.8,
     "search_name": "tajae sharpe",
-    "pos_rank": 316,
-    "pos_rank_label": "WR316"
+    "pos_rank": 315,
+    "pos_rank_label": "WR315"
   },
   {
     "id": "2755",
@@ -16846,10 +16846,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 25.3,
-    "value": 104.3,
+    "value": 103.0,
     "search_name": "aron cruickshank",
-    "pos_rank": 176,
-    "pos_rank_label": "WR176"
+    "pos_rank": 183,
+    "pos_rank_label": "WR183"
   },
   {
     "id": "7548",
@@ -16857,10 +16857,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 28.5,
-    "value": 67.4,
+    "value": 66.2,
     "search_name": "tyler vaughns",
-    "pos_rank": 534,
-    "pos_rank_label": "WR534"
+    "pos_rank": 544,
+    "pos_rank_label": "WR544"
   },
   {
     "id": "5292",
@@ -16870,8 +16870,8 @@
     "age": 30.3,
     "value": 70.8,
     "search_name": "devin ross",
-    "pos_rank": 497,
-    "pos_rank_label": "WR497"
+    "pos_rank": 498,
+    "pos_rank_label": "WR498"
   },
   {
     "id": "7526",
@@ -16879,7 +16879,7 @@
     "team": "MIA",
     "position": "WR",
     "age": 27.1,
-    "value": 354.3,
+    "value": 359.6,
     "search_name": "jaylen waddle",
     "pos_rank": 25,
     "pos_rank_label": "WR25"
@@ -16892,8 +16892,8 @@
     "age": 24.7,
     "value": 107.0,
     "search_name": "thyrick pitts",
-    "pos_rank": 161,
-    "pos_rank_label": "WR161"
+    "pos_rank": 160,
+    "pos_rank_label": "WR160"
   },
   {
     "id": "11421",
@@ -16912,10 +16912,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 36.2,
-    "value": 24.6,
+    "value": 20.2,
     "search_name": "blaine gabbert",
-    "pos_rank": 158,
-    "pos_rank_label": "QB158"
+    "pos_rank": 173,
+    "pos_rank_label": "QB173"
   },
   {
     "id": "7576",
@@ -16947,8 +16947,8 @@
     "age": 22.6,
     "value": 193.2,
     "search_name": "keon coleman",
-    "pos_rank": 51,
-    "pos_rank_label": "WR51"
+    "pos_rank": 52,
+    "pos_rank_label": "WR52"
   },
   {
     "id": "13074",
@@ -16969,8 +16969,8 @@
     "age": 26.3,
     "value": 82.0,
     "search_name": "travis dye",
-    "pos_rank": 122,
-    "pos_rank_label": "RB122"
+    "pos_rank": 121,
+    "pos_rank_label": "RB121"
   },
   {
     "id": "7466",
@@ -16991,8 +16991,8 @@
     "age": 27.2,
     "value": 72.7,
     "search_name": "reggie roberson",
-    "pos_rank": 473,
-    "pos_rank_label": "WR473"
+    "pos_rank": 472,
+    "pos_rank_label": "WR472"
   },
   {
     "id": "3894",
@@ -17002,8 +17002,8 @@
     "age": 31.8,
     "value": 53.5,
     "search_name": "garrett griffin",
-    "pos_rank": 227,
-    "pos_rank_label": "TE227"
+    "pos_rank": 226,
+    "pos_rank_label": "TE226"
   },
   {
     "id": "8500",
@@ -17013,8 +17013,8 @@
     "age": 25.8,
     "value": 58.0,
     "search_name": "john fitzpatrick",
-    "pos_rank": 211,
-    "pos_rank_label": "TE211"
+    "pos_rank": 210,
+    "pos_rank_label": "TE210"
   },
   {
     "id": "12959",
@@ -17035,8 +17035,8 @@
     "age": 28.4,
     "value": 195.4,
     "search_name": "jauan jennings",
-    "pos_rank": 50,
-    "pos_rank_label": "WR50"
+    "pos_rank": 51,
+    "pos_rank_label": "WR51"
   },
   {
     "id": "2460",
@@ -17068,8 +17068,8 @@
     "age": 29.3,
     "value": 69.8,
     "search_name": "curtis samuel",
-    "pos_rank": 513,
-    "pos_rank_label": "WR513"
+    "pos_rank": 511,
+    "pos_rank_label": "WR511"
   },
   {
     "id": "8756",
@@ -17079,8 +17079,8 @@
     "age": 27.4,
     "value": 54.8,
     "search_name": "brandon johnson",
-    "pos_rank": 621,
-    "pos_rank_label": "WR621"
+    "pos_rank": 622,
+    "pos_rank_label": "WR622"
   },
   {
     "id": "6181",
@@ -17101,8 +17101,8 @@
     "age": 27.1,
     "value": 58.4,
     "search_name": "mac hippenhammer",
-    "pos_rank": 598,
-    "pos_rank_label": "WR598"
+    "pos_rank": 599,
+    "pos_rank_label": "WR599"
   },
   {
     "id": "3652",
@@ -17134,8 +17134,8 @@
     "age": 26.5,
     "value": 91.0,
     "search_name": "jerreth sterns",
-    "pos_rank": 268,
-    "pos_rank_label": "WR268"
+    "pos_rank": 265,
+    "pos_rank_label": "WR265"
   },
   {
     "id": "12829",
@@ -17145,8 +17145,8 @@
     "age": 24.7,
     "value": 35.1,
     "search_name": "coleman owen",
-    "pos_rank": 744,
-    "pos_rank_label": "WR744"
+    "pos_rank": 743,
+    "pos_rank_label": "WR743"
   },
   {
     "id": "11601",
@@ -17186,11 +17186,11 @@
     "name": "Sam Howell",
     "team": "PHI",
     "position": "QB",
-    "age": 25.2,
-    "value": 12.9,
+    "age": 25.3,
+    "value": 13.7,
     "search_name": "sam howell",
-    "pos_rank": 189,
-    "pos_rank_label": "QB189"
+    "pos_rank": 184,
+    "pos_rank_label": "QB184"
   },
   {
     "id": "9509",
@@ -17233,8 +17233,8 @@
     "age": 35.1,
     "value": 38.6,
     "search_name": "nick williams",
-    "pos_rank": 730,
-    "pos_rank_label": "WR730"
+    "pos_rank": 727,
+    "pos_rank_label": "WR727"
   },
   {
     "id": "8240",
@@ -17264,10 +17264,10 @@
     "team": "PIT",
     "position": "RB",
     "age": 22.3,
-    "value": 131.1,
+    "value": 129.6,
     "search_name": "kaleb johnson",
-    "pos_rank": 50,
-    "pos_rank_label": "RB50"
+    "pos_rank": 52,
+    "pos_rank_label": "RB52"
   },
   {
     "id": "2312",
@@ -17299,8 +17299,8 @@
     "age": 24.2,
     "value": 100.2,
     "search_name": "micah bernard",
-    "pos_rank": 79,
-    "pos_rank_label": "RB79"
+    "pos_rank": 80,
+    "pos_rank_label": "RB80"
   },
   {
     "id": "8800",
@@ -17332,8 +17332,8 @@
     "age": 28.0,
     "value": 82.8,
     "search_name": "john hall",
-    "pos_rank": 331,
-    "pos_rank_label": "WR331"
+    "pos_rank": 329,
+    "pos_rank_label": "WR329"
   },
   {
     "id": "10861",
@@ -17354,8 +17354,8 @@
     "age": 26.2,
     "value": 79.2,
     "search_name": "ben wooldridge",
-    "pos_rank": 67,
-    "pos_rank_label": "QB67"
+    "pos_rank": 66,
+    "pos_rank_label": "QB66"
   },
   {
     "id": "5781",
@@ -17365,15 +17365,15 @@
     "age": 29.9,
     "value": 102.7,
     "search_name": "malik turner",
-    "pos_rank": 188,
-    "pos_rank_label": "WR188"
+    "pos_rank": 187,
+    "pos_rank_label": "WR187"
   },
   {
     "id": "3362",
     "name": "Jeff Driskel",
     "team": "LV",
     "position": "QB",
-    "age": 32.6,
+    "age": 32.7,
     "value": 18.6,
     "search_name": "jeff driskel",
     "pos_rank": 176,
@@ -17387,8 +17387,8 @@
     "age": 28.1,
     "value": 77.9,
     "search_name": "noah fant",
-    "pos_rank": 104,
-    "pos_rank_label": "TE104"
+    "pos_rank": 103,
+    "pos_rank_label": "TE103"
   },
   {
     "id": "6885",
@@ -17409,8 +17409,8 @@
     "age": 37.0,
     "value": 59.6,
     "search_name": "russell wilson",
-    "pos_rank": 96,
-    "pos_rank_label": "QB96"
+    "pos_rank": 95,
+    "pos_rank_label": "QB95"
   },
   {
     "id": "7191",
@@ -17431,8 +17431,8 @@
     "age": 29.2,
     "value": 54.2,
     "search_name": "james proche",
-    "pos_rank": 624,
-    "pos_rank_label": "WR624"
+    "pos_rank": 625,
+    "pos_rank_label": "WR625"
   },
   {
     "id": "7339",
@@ -17442,8 +17442,8 @@
     "age": 29.0,
     "value": 70.4,
     "search_name": "j.j. koski",
-    "pos_rank": 504,
-    "pos_rank_label": "WR504"
+    "pos_rank": 505,
+    "pos_rank_label": "WR505"
   },
   {
     "id": "8107",
@@ -17464,8 +17464,8 @@
     "age": 25.9,
     "value": 91.5,
     "search_name": "ramon jefferson",
-    "pos_rank": 107,
-    "pos_rank_label": "RB107"
+    "pos_rank": 106,
+    "pos_rank_label": "RB106"
   },
   {
     "id": "9494",
@@ -17574,8 +17574,8 @@
     "age": 23.8,
     "value": 47.8,
     "search_name": "javon baker",
-    "pos_rank": 676,
-    "pos_rank_label": "WR676"
+    "pos_rank": 677,
+    "pos_rank_label": "WR677"
   },
   {
     "id": "13121",
@@ -17596,8 +17596,8 @@
     "age": 25.8,
     "value": 61.1,
     "search_name": "colson yankoff",
-    "pos_rank": 202,
-    "pos_rank_label": "TE202"
+    "pos_rank": 199,
+    "pos_rank_label": "TE199"
   },
   {
     "id": "6920",
@@ -17605,10 +17605,10 @@
     "team": "PIT",
     "position": "WR",
     "age": 27.2,
-    "value": 91.5,
+    "value": 90.7,
     "search_name": "isaiah hodgins",
-    "pos_rank": 259,
-    "pos_rank_label": "WR259"
+    "pos_rank": 271,
+    "pos_rank_label": "WR271"
   },
   {
     "id": "11632",
@@ -17640,8 +17640,8 @@
     "age": 25.9,
     "value": 61.3,
     "search_name": "devin culp",
-    "pos_rank": 200,
-    "pos_rank_label": "TE200"
+    "pos_rank": 198,
+    "pos_rank_label": "TE198"
   },
   {
     "id": "7538",
@@ -17649,10 +17649,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 26.4,
-    "value": 36.8,
+    "value": 35.0,
     "search_name": "zach wilson",
-    "pos_rank": 133,
-    "pos_rank_label": "QB133"
+    "pos_rank": 135,
+    "pos_rank_label": "QB135"
   },
   {
     "id": "12549",
@@ -17673,8 +17673,8 @@
     "age": 26.8,
     "value": 83.5,
     "search_name": "michael young",
-    "pos_rank": 323,
-    "pos_rank_label": "WR323"
+    "pos_rank": 321,
+    "pos_rank_label": "WR321"
   },
   {
     "id": "7605",
@@ -17695,8 +17695,8 @@
     "age": 36.9,
     "value": 24.0,
     "search_name": "nick foles",
-    "pos_rank": 160,
-    "pos_rank_label": "QB160"
+    "pos_rank": 158,
+    "pos_rank_label": "QB158"
   },
   {
     "id": "8157",
@@ -17728,8 +17728,8 @@
     "age": 27.0,
     "value": 54.7,
     "search_name": "brandon smith",
-    "pos_rank": 622,
-    "pos_rank_label": "WR622"
+    "pos_rank": 623,
+    "pos_rank_label": "WR623"
   },
   {
     "id": "7585",
@@ -17739,8 +17739,8 @@
     "age": 27.2,
     "value": 115.4,
     "search_name": "davis mills",
-    "pos_rank": 36,
-    "pos_rank_label": "QB36"
+    "pos_rank": 34,
+    "pos_rank_label": "QB34"
   },
   {
     "id": "11226",
@@ -17750,8 +17750,8 @@
     "age": 26.9,
     "value": 82.4,
     "search_name": "tyjon lindsey",
-    "pos_rank": 335,
-    "pos_rank_label": "WR335"
+    "pos_rank": 334,
+    "pos_rank_label": "WR334"
   },
   {
     "id": "12538",
@@ -17761,8 +17761,8 @@
     "age": 24.2,
     "value": 101.6,
     "search_name": "brady cook",
-    "pos_rank": 40,
-    "pos_rank_label": "QB40"
+    "pos_rank": 39,
+    "pos_rank_label": "QB39"
   },
   {
     "id": "12500",
@@ -17770,10 +17770,10 @@
     "team": "MIA",
     "position": "QB",
     "age": 22.8,
-    "value": 24.0,
+    "value": 21.5,
     "search_name": "quinn ewers",
-    "pos_rank": 161,
-    "pos_rank_label": "QB161"
+    "pos_rank": 166,
+    "pos_rank_label": "QB166"
   },
   {
     "id": "12901",
@@ -17827,8 +17827,8 @@
     "age": 29.7,
     "value": 62.6,
     "search_name": "jake luton",
-    "pos_rank": 91,
-    "pos_rank_label": "QB91"
+    "pos_rank": 90,
+    "pos_rank_label": "QB90"
   },
   {
     "id": "12735",
@@ -17860,8 +17860,8 @@
     "age": 28.2,
     "value": 55.7,
     "search_name": "charlie woerner",
-    "pos_rank": 219,
-    "pos_rank_label": "TE219"
+    "pos_rank": 218,
+    "pos_rank_label": "TE218"
   },
   {
     "id": "13011",
@@ -17882,8 +17882,8 @@
     "age": 26.2,
     "value": 105.6,
     "search_name": "terique owens",
-    "pos_rank": 168,
-    "pos_rank_label": "WR168"
+    "pos_rank": 167,
+    "pos_rank_label": "WR167"
   },
   {
     "id": "4972",
@@ -17904,8 +17904,8 @@
     "age": 30.0,
     "value": 96.0,
     "search_name": "hunter renfrow",
-    "pos_rank": 221,
-    "pos_rank_label": "WR221"
+    "pos_rank": 220,
+    "pos_rank_label": "WR220"
   },
   {
     "id": "6845",
@@ -17926,8 +17926,8 @@
     "age": 24.5,
     "value": 91.7,
     "search_name": "tiyon evans",
-    "pos_rank": 106,
-    "pos_rank_label": "RB106"
+    "pos_rank": 105,
+    "pos_rank_label": "RB105"
   },
   {
     "id": "1425",
@@ -17970,8 +17970,8 @@
     "age": 28.1,
     "value": 49.9,
     "search_name": "simi fehoko",
-    "pos_rank": 660,
-    "pos_rank_label": "WR660"
+    "pos_rank": 661,
+    "pos_rank_label": "WR661"
   },
   {
     "id": "10866",
@@ -17992,8 +17992,8 @@
     "age": 29.0,
     "value": 71.6,
     "search_name": "omar bayless",
-    "pos_rank": 486,
-    "pos_rank_label": "WR486"
+    "pos_rank": 487,
+    "pos_rank_label": "WR487"
   },
   {
     "id": "11963",
@@ -18003,8 +18003,8 @@
     "age": 25.7,
     "value": 30.3,
     "search_name": "chris collier",
-    "pos_rank": 325,
-    "pos_rank_label": "RB325"
+    "pos_rank": 324,
+    "pos_rank_label": "RB324"
   },
   {
     "id": "11433",
@@ -18014,8 +18014,8 @@
     "age": 26.4,
     "value": 59.9,
     "search_name": "nate adkins",
-    "pos_rank": 204,
-    "pos_rank_label": "TE204"
+    "pos_rank": 203,
+    "pos_rank_label": "TE203"
   },
   {
     "id": "8114",
@@ -18036,8 +18036,8 @@
     "age": 30.8,
     "value": 67.1,
     "search_name": "troy fumagalli",
-    "pos_rank": 173,
-    "pos_rank_label": "TE173"
+    "pos_rank": 172,
+    "pos_rank_label": "TE172"
   },
   {
     "id": "6967",
@@ -18069,19 +18069,19 @@
     "age": 29.0,
     "value": 54.9,
     "search_name": "kelvin harmon",
-    "pos_rank": 619,
-    "pos_rank_label": "WR619"
+    "pos_rank": 620,
+    "pos_rank_label": "WR620"
   },
   {
     "id": "5162",
     "name": "Reggie Bonnafon",
     "team": "WSH",
     "position": "RB",
-    "age": 29.9,
+    "age": 30.0,
     "value": 54.9,
     "search_name": "reggie bonnafon",
-    "pos_rank": 233,
-    "pos_rank_label": "RB233"
+    "pos_rank": 232,
+    "pos_rank_label": "RB232"
   },
   {
     "id": "12471",
@@ -18091,8 +18091,8 @@
     "age": 22.3,
     "value": 99.1,
     "search_name": "dj giddens",
-    "pos_rank": 84,
-    "pos_rank_label": "RB84"
+    "pos_rank": 85,
+    "pos_rank_label": "RB85"
   },
   {
     "id": "12935",
@@ -18102,8 +18102,8 @@
     "age": 25.2,
     "value": 35.8,
     "search_name": "jakobie keeney-james",
-    "pos_rank": 738,
-    "pos_rank_label": "WR738"
+    "pos_rank": 737,
+    "pos_rank_label": "WR737"
   },
   {
     "id": "8212",
@@ -18124,8 +18124,8 @@
     "age": 23.6,
     "value": 192.6,
     "search_name": "kayshon boutte",
-    "pos_rank": 52,
-    "pos_rank_label": "WR52"
+    "pos_rank": 53,
+    "pos_rank_label": "WR53"
   },
   {
     "id": "11576",
@@ -18146,8 +18146,8 @@
     "age": 30.3,
     "value": 70.6,
     "search_name": "ishmael hyman",
-    "pos_rank": 502,
-    "pos_rank_label": "WR502"
+    "pos_rank": 503,
+    "pos_rank_label": "WR503"
   },
   {
     "id": "6798",
@@ -18157,8 +18157,8 @@
     "age": 27.0,
     "value": 62.0,
     "search_name": "jalen reagor",
-    "pos_rank": 585,
-    "pos_rank_label": "WR585"
+    "pos_rank": 587,
+    "pos_rank_label": "WR587"
   },
   {
     "id": "11496",
@@ -18201,8 +18201,8 @@
     "age": 28.8,
     "value": 72.1,
     "search_name": "bisi johnson",
-    "pos_rank": 476,
-    "pos_rank_label": "WR476"
+    "pos_rank": 475,
+    "pos_rank_label": "WR475"
   },
   {
     "id": "8436",
@@ -18212,8 +18212,8 @@
     "age": 30.3,
     "value": 67.8,
     "search_name": "neil pau'u",
-    "pos_rank": 531,
-    "pos_rank_label": "WR531"
+    "pos_rank": 528,
+    "pos_rank_label": "WR528"
   },
   {
     "id": "12757",
@@ -18223,8 +18223,8 @@
     "age": 23.9,
     "value": 37.0,
     "search_name": "hal presley",
-    "pos_rank": 733,
-    "pos_rank_label": "WR733"
+    "pos_rank": 732,
+    "pos_rank_label": "WR732"
   },
   {
     "id": "8891",
@@ -18297,8 +18297,8 @@
     "name": "Patrick Mahomes",
     "team": "KC",
     "position": "QB",
-    "age": 30.2,
-    "value": 401.4,
+    "age": 30.3,
+    "value": 400.0,
     "search_name": "patrick mahomes",
     "pos_rank": 6,
     "pos_rank_label": "QB6"
@@ -18311,8 +18311,8 @@
     "age": 27.7,
     "value": 79.7,
     "search_name": "dre miller",
-    "pos_rank": 364,
-    "pos_rank_label": "WR364"
+    "pos_rank": 365,
+    "pos_rank_label": "WR365"
   },
   {
     "id": "10216",
@@ -18333,8 +18333,8 @@
     "age": 26.7,
     "value": 45.7,
     "search_name": "danny gray",
-    "pos_rank": 696,
-    "pos_rank_label": "WR696"
+    "pos_rank": 692,
+    "pos_rank_label": "WR692"
   },
   {
     "id": "4985",
@@ -18344,8 +18344,8 @@
     "age": 29.9,
     "value": 56.2,
     "search_name": "rashaad penny",
-    "pos_rank": 228,
-    "pos_rank_label": "RB228"
+    "pos_rank": 227,
+    "pos_rank_label": "RB227"
   },
   {
     "id": "3895",
@@ -18355,8 +18355,8 @@
     "age": 32.7,
     "value": 52.5,
     "search_name": "marvin hall",
-    "pos_rank": 637,
-    "pos_rank_label": "WR637"
+    "pos_rank": 638,
+    "pos_rank_label": "WR638"
   },
   {
     "id": "6039",
@@ -18399,8 +18399,8 @@
     "age": 30.0,
     "value": 63.8,
     "search_name": "nick guggemos",
-    "pos_rank": 192,
-    "pos_rank_label": "TE192"
+    "pos_rank": 188,
+    "pos_rank_label": "TE188"
   },
   {
     "id": "10226",
@@ -18410,8 +18410,8 @@
     "age": 26.2,
     "value": 92.9,
     "search_name": "andrei iosivas",
-    "pos_rank": 244,
-    "pos_rank_label": "WR244"
+    "pos_rank": 242,
+    "pos_rank_label": "WR242"
   },
   {
     "id": "11113",
@@ -18429,11 +18429,11 @@
     "name": "Alex Bachman",
     "team": "LV",
     "position": "WR",
-    "age": 29.5,
-    "value": 86.0,
+    "age": 29.6,
+    "value": 86.5,
     "search_name": "alex bachman",
-    "pos_rank": 307,
-    "pos_rank_label": "WR307"
+    "pos_rank": 299,
+    "pos_rank_label": "WR299"
   },
   {
     "id": "7716",
@@ -18454,8 +18454,8 @@
     "age": 24.6,
     "value": 103.3,
     "search_name": "jerjuan newton",
-    "pos_rank": 181,
-    "pos_rank_label": "WR181"
+    "pos_rank": 178,
+    "pos_rank_label": "WR178"
   },
   {
     "id": "8245",
@@ -18465,8 +18465,8 @@
     "age": 27.3,
     "value": 81.6,
     "search_name": "derrick deese",
-    "pos_rank": 96,
-    "pos_rank_label": "TE96"
+    "pos_rank": 95,
+    "pos_rank_label": "TE95"
   },
   {
     "id": "12079",
@@ -18476,8 +18476,8 @@
     "age": 24.9,
     "value": 40.8,
     "search_name": "treyton welch",
-    "pos_rank": 285,
-    "pos_rank_label": "TE285"
+    "pos_rank": 284,
+    "pos_rank_label": "TE284"
   },
   {
     "id": "6849",
@@ -18517,7 +18517,7 @@
     "name": "DeeJay Dallas",
     "team": "CAR",
     "position": "RB",
-    "age": 27.2,
+    "age": 27.3,
     "value": 41.3,
     "search_name": "deejay dallas",
     "pos_rank": 277,
@@ -18531,8 +18531,8 @@
     "age": 26.7,
     "value": 92.2,
     "search_name": "ty scott",
-    "pos_rank": 250,
-    "pos_rank_label": "WR250"
+    "pos_rank": 247,
+    "pos_rank_label": "WR247"
   },
   {
     "id": "7549",
@@ -18553,8 +18553,8 @@
     "age": 26.1,
     "value": 109.9,
     "search_name": "ryan flournoy",
-    "pos_rank": 143,
-    "pos_rank_label": "WR143"
+    "pos_rank": 144,
+    "pos_rank_label": "WR144"
   },
   {
     "id": "12222",
@@ -18586,8 +18586,8 @@
     "age": 28.1,
     "value": 52.1,
     "search_name": "justice hill",
-    "pos_rank": 245,
-    "pos_rank_label": "RB245"
+    "pos_rank": 244,
+    "pos_rank_label": "RB244"
   },
   {
     "id": "12898",
@@ -18619,8 +18619,8 @@
     "age": 27.3,
     "value": 52.3,
     "search_name": "daniel arias",
-    "pos_rank": 641,
-    "pos_rank_label": "WR641"
+    "pos_rank": 642,
+    "pos_rank_label": "WR642"
   },
   {
     "id": "8193",
@@ -18630,8 +18630,8 @@
     "age": 28.0,
     "value": 62.5,
     "search_name": "e.j. perry",
-    "pos_rank": 92,
-    "pos_rank_label": "QB92"
+    "pos_rank": 91,
+    "pos_rank_label": "QB91"
   },
   {
     "id": "8134",
@@ -18649,11 +18649,11 @@
     "name": "Dontae Fleming",
     "team": "MIN",
     "position": "WR",
-    "age": 24.0,
-    "value": 44.0,
+    "age": 24.1,
+    "value": 44.8,
     "search_name": "dontae fleming",
-    "pos_rank": 706,
-    "pos_rank_label": "WR706"
+    "pos_rank": 697,
+    "pos_rank_label": "WR697"
   },
   {
     "id": "7989",
@@ -18674,8 +18674,8 @@
     "age": 26.2,
     "value": 83.4,
     "search_name": "shedrick jackson",
-    "pos_rank": 325,
-    "pos_rank_label": "WR325"
+    "pos_rank": 323,
+    "pos_rank_label": "WR323"
   },
   {
     "id": "9489",
