@@ -291,7 +291,7 @@
     "gameDate": "20251222",
     "espnID": "401772824",
     "teamIDHome": "14",
-    "gameStatus": "Scheduled",
+    "gameStatus": "Final",
     "gameWeek": "Week 16",
     "teamIDAway": "28",
     "home": "IND",
@@ -301,6 +301,6 @@
     "gameTime_epoch": "1766452500.0",
     "season": "2025",
     "neutralSite": "False",
-    "gameStatusCode": "0"
+    "gameStatusCode": "2"
   }
 ]

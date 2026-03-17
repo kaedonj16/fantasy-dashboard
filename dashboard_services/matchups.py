@@ -164,9 +164,9 @@ def build_matchup_preview(
     # PLAYOFF BRANCH – winners + losers bracket
     # ------------------------------------------------------------------
     is_playoff_week = (
-        bool(playoff_week_start)
-        and week >= playoff_week_start
-        and (winners_bracket or losers_bracket)
+            bool(playoff_week_start)
+            and week >= playoff_week_start
+            and (winners_bracket or losers_bracket)
     )
 
     if is_playoff_week:
@@ -608,7 +608,8 @@ def format_player_stats(
     else:
         lookup_pos = "IDP" if pos_norm in defensive_positions or pos_norm == "IDP" else pos_norm
 
-    team_data = teams_stats.get(team)
+    teams_stats = teams_stats or {}
+    team_data = teams_stats.get(team) or {}
     if not team_data:
         return None
 

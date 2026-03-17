@@ -3,12 +3,11 @@ import csv
 from datetime import date, timedelta
 from pathlib import Path
 
-from data_building.player_value import build_value_table_for_usage
 from dashboard_services.utils import load_relevant_index
+from data_building.player_value import build_value_table_for_usage
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 ENGINE_VALUES_CSV = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
-
 
 import csv
 from datetime import date, timedelta

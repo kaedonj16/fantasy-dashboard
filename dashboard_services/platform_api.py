@@ -18,40 +18,40 @@ from dashboard_services.providers.espn_api import (
 )
 
 
-def _norm_platform(platform: str) -> str:
+def norm_platform(platform: str) -> str:
     return (platform or "sleeper").lower().strip()
 
 
 def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:
-    platform = _norm_platform(platform)
+    platform = norm_platform(platform)
     if platform == "espn":
         return espn_get_league(season, league_id)
     return sleeper_get_league(league_id)
 
 
 def get_users(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = _norm_platform(platform)
+    platform = norm_platform(platform)
     if platform == "espn":
         return espn_get_users(season, league_id)
     return sleeper_get_users(league_id)
 
 
 def get_rosters(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = _norm_platform(platform)
+    platform = norm_platform(platform)
     if platform == "espn":
         return espn_get_rosters(season, league_id)
     return sleeper_get_rosters(league_id)
 
 
 def get_matchups(platform: str, league_id: str, week: int, season: int) -> List[Dict[str, Any]]:
-    platform = _norm_platform(platform)
+    platform = norm_platform(platform)
     if platform == "espn":
         return espn_get_matchups(season, league_id, week)
     return sleeper_get_matchups(league_id, week)
 
 
 def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = _norm_platform(platform)
+    platform = norm_platform(platform)
     if platform == "espn":
         return []  # ESPN trades later
     return sleeper_get_traded_picks(league_id)

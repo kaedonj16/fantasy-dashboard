@@ -7,10 +7,10 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, Any, Iterable
 
-from data_building.nfl_target_share import fetch_league_target_share
-from data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from dashboard_services.service import age_from_bday
 from dashboard_services.utils import canon_team, load_players_index
+from data_building.nfl_target_share import fetch_league_target_share
+from data_building.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 
 
 def build_usage_map_for_season(

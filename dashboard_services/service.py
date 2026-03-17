@@ -328,7 +328,9 @@ def build_tables(
 
     df_weekly = pd.DataFrame(weekly_rows)
     if df_weekly.empty:
-        raise SystemExit("No matchup data found. Check league ID and weeks.")
+        print("Warning: No matchup data found.")
+        return pd.DataFrame(), pd.DataFrame(), {}
+        # raise SystemExit("No matchup data found. Check league ID and weeks.")
 
     df_weekly["points_against"] = np.nan
     for (_, _mid), grp in df_weekly.groupby(["week", "matchup_id"]):
@@ -340,9 +342,17 @@ def build_tables(
 
     df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
 
-    _state = get_nfl_state()
+    _state = get_nfl_state() or {}
+    state_season_type = (_state.get("season_type") or "").lower()
+    live_season = int(_state.get("season") or datetime.now().year)
     current_leg = int(_state.get("leg") or _state.get("week") or 0)
-    df_weekly["finalized"] = df_weekly["week"] < current_leg
+
+    if season < live_season:
+        df_weekly["finalized"] = True
+    elif season == live_season and state_season_type == "off":
+        df_weekly["finalized"] = True
+    else:
+        df_weekly["finalized"] = df_weekly["week"] < current_leg
 
     finalized_mask = df_weekly["finalized"] == True
     df_finalized = df_weekly[finalized_mask].copy()
@@ -1513,6 +1523,7 @@ def pill(s):
 
 
 def build_standings_map(team_stats, roster_map) -> dict[int, int]:
+    print(team_stats.columns)
     ordered = (
         team_stats.sort_values(["Wins", "PF"], ascending=[False, False]).reset_index(drop=True)
     )

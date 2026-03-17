@@ -385,6 +385,45 @@ def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
     return team_map
 
 
+def resolve_league_id_for_season(platform: str, league_id: str, season: int) -> str:
+    """
+    For Sleeper, walk backward through previous_league_id until we find the
+    league whose `season` matches the requested season.
+
+    For ESPN (or anything else), just return the given league_id.
+    """
+    platform = str(platform or "").strip().lower()
+    if platform != "sleeper":
+        return str(league_id).strip()
+
+    seen = set()
+    current_league_id = str(league_id).strip()
+    target_season = int(season)
+
+    while current_league_id and current_league_id not in seen:
+        seen.add(current_league_id)
+
+        league = get_league(current_league_id)
+        if not league:
+            break
+
+        try:
+            league_season = int(league.get("season"))
+        except Exception:
+            league_season = None
+
+        if league_season == target_season:
+            return current_league_id
+
+        prev_id = league.get("previous_league_id")
+        if not prev_id:
+            break
+
+        current_league_id = str(prev_id).strip()
+
+    return str(league_id).strip()
+
+
 @ttl_cache(ttl=300)
 def fetch_team_game_logs_html(team_abv: str, season: int) -> str:
     """
