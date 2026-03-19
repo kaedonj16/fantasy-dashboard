@@ -56,7 +56,7 @@
   },
   "8151": {
     "name": "Kenneth Walker III",
-    "team": "SEA",
+    "team": "KC",
     "tankId": "4567048",
     "byeWeek": 8,
     "pos": "RB",
@@ -83,7 +83,7 @@
   },
   "7591": {
     "name": "Justin Fields",
-    "team": "NYJ",
+    "team": "KC",
     "tankId": "4362887",
     "byeWeek": 9,
     "pos": "QB",
@@ -146,7 +146,7 @@
   },
   "7602": {
     "name": "Kylen Granson",
-    "team": "PHI",
+    "team": "TEN",
     "tankId": "4039160",
     "byeWeek": 9,
     "pos": "TE",
@@ -506,7 +506,7 @@
   },
   "10215": {
     "name": "Jake Haener",
-    "team": "NO",
+    "team": "KC",
     "tankId": "4243322",
     "byeWeek": 11,
     "pos": "QB",
@@ -623,7 +623,7 @@
   },
   "7559": {
     "name": "Ihmir Smith-Marsette",
-    "team": "NYG",
+    "team": "ARI",
     "tankId": "4240573",
     "byeWeek": 14,
     "pos": "WR",
@@ -686,7 +686,7 @@
   },
   "12154": {
     "name": "Messiah Swinson",
-    "team": "ARI",
+    "team": "GB",
     "tankId": "4362770",
     "byeWeek": 8,
     "pos": "TE",
@@ -902,7 +902,7 @@
   },
   "12809": {
     "name": "Mac Dalena",
-    "team": "SEA",
+    "team": "NYJ",
     "tankId": "4431053",
     "byeWeek": 8,
     "pos": "WR",
@@ -1001,7 +1001,7 @@
   },
   "6011": {
     "name": "Gardner Minshew",
-    "team": "KC",
+    "team": "ARI",
     "tankId": "4038524",
     "byeWeek": 10,
     "pos": "QB",
@@ -1064,7 +1064,7 @@
   },
   "11650": {
     "name": "Luke McCaffrey",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4426948",
     "byeWeek": 12,
     "pos": "WR",
@@ -1559,7 +1559,7 @@
   },
   "5127": {
     "name": "Kyle Allen",
-    "team": "DET",
+    "team": "BUF",
     "tankId": "3115293",
     "byeWeek": 8,
     "pos": "QB",
@@ -1622,7 +1622,7 @@
   },
   "8135": {
     "name": "Treylon Burks",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4567156",
     "byeWeek": 12,
     "pos": "WR",
@@ -1631,7 +1631,7 @@
   },
   "12688": {
     "name": "Cam Miller",
-    "team": "LV",
+    "team": "MIA",
     "tankId": "4693331",
     "byeWeek": 8,
     "pos": "QB",
@@ -1685,7 +1685,7 @@
   },
   "13249": {
     "name": "Thomas Gordon",
-    "team": "CHI",
+    "team": "DET",
     "tankId": "4569615",
     "byeWeek": 5,
     "pos": "TE",
@@ -2090,7 +2090,7 @@
   },
   "11306": {
     "name": "Xavier Gipson",
-    "team": "PHI",
+    "team": "NYG",
     "tankId": "4427278",
     "byeWeek": 9,
     "pos": "WR",
@@ -2423,7 +2423,7 @@
   },
   "11621": {
     "name": "Brenden Rice",
-    "team": "NE",
+    "team": "LV",
     "tankId": "4686781",
     "byeWeek": 14,
     "pos": "WR",
@@ -2441,7 +2441,7 @@
   },
   "7565": {
     "name": "Terrace Marshall Jr.",
-    "team": "PHI",
+    "team": "MIA",
     "tankId": "4362630",
     "byeWeek": 9,
     "pos": "WR",
@@ -2504,7 +2504,7 @@
   },
   "7090": {
     "name": "Darnell Mooney",
-    "team": "ATL",
+    "team": "NYG",
     "tankId": "4040655",
     "byeWeek": 5,
     "pos": "WR",
@@ -2720,7 +2720,7 @@
   },
   "11969": {
     "name": "Xavier Johnson",
-    "team": "HOU",
+    "team": "CIN",
     "tankId": "4385430",
     "byeWeek": 6,
     "pos": "WR",
@@ -2873,7 +2873,7 @@
   },
   "5008": {
     "name": "Durham Smythe",
-    "team": "CHI",
+    "team": "BAL",
     "tankId": "3052897",
     "byeWeek": 5,
     "pos": "TE",
@@ -2891,7 +2891,7 @@
   },
   "12777": {
     "name": "Joaquin Davis",
-    "team": "DEN",
+    "team": "MIN",
     "tankId": "4696907",
     "byeWeek": 12,
     "pos": "WR",
@@ -2918,7 +2918,7 @@
   },
   "7587": {
     "name": "Dyami Brown",
-    "team": "JAX",
+    "team": "WAS",
     "tankId": "4361577",
     "byeWeek": 8,
     "pos": "WR",
@@ -2936,7 +2936,7 @@
   },
   "10219": {
     "name": "Chris Rodriguez Jr.",
-    "team": "WSH",
+    "team": "JAX",
     "tankId": "4362619",
     "byeWeek": 12,
     "pos": "RB",
@@ -2963,7 +2963,7 @@
   },
   "8127": {
     "name": "Charlie Kolar",
-    "team": "BAL",
+    "team": "LAC",
     "tankId": "4241263",
     "byeWeek": 7,
     "pos": "TE",
@@ -3026,7 +3026,7 @@
   },
   "1373": {
     "name": "Geno Smith",
-    "team": "LV",
+    "team": "NYJ",
     "tankId": "15864",
     "byeWeek": 8,
     "pos": "QB",
@@ -3098,7 +3098,7 @@
   },
   "11210": {
     "name": "Malik Heath",
-    "team": "GB",
+    "team": "ATL",
     "tankId": "4689334",
     "byeWeek": 5,
     "pos": "WR",
@@ -3278,7 +3278,7 @@
   },
   "12210": {
     "name": "Cole Burgess",
-    "team": "CIN",
+    "team": "PIT",
     "tankId": "5192448",
     "byeWeek": 10,
     "pos": "WR",
@@ -3332,7 +3332,7 @@
   },
   "6847": {
     "name": "Devin Duvernay",
-    "team": "CHI",
+    "team": "ARI",
     "tankId": "4039050",
     "byeWeek": 5,
     "pos": "WR",
@@ -3350,7 +3350,7 @@
   },
   "7543": {
     "name": "Travis Etienne Jr.",
-    "team": "JAX",
+    "team": "NO",
     "tankId": "4239996",
     "byeWeek": 8,
     "pos": "RB",
@@ -3395,7 +3395,7 @@
   },
   "11435": {
     "name": "Emanuel Wilson",
-    "team": "GB",
+    "team": "SEA",
     "tankId": "4887558",
     "byeWeek": 5,
     "pos": "RB",
@@ -3404,7 +3404,7 @@
   },
   "12267": {
     "name": "Qadir Ismail",
-    "team": "JAX",
+    "team": "CHI",
     "tankId": "4379769",
     "byeWeek": 8,
     "pos": "TE",
@@ -3521,7 +3521,7 @@
   },
   "8168": {
     "name": "Skyy Moore",
-    "team": "SF",
+    "team": "GB",
     "tankId": "4430191",
     "byeWeek": 14,
     "pos": "WR",
@@ -3557,7 +3557,7 @@
   },
   "6271": {
     "name": "Olamide Zaccheaus",
-    "team": "CHI",
+    "team": "ATL",
     "tankId": "3917914",
     "byeWeek": 5,
     "pos": "WR",
@@ -3683,7 +3683,7 @@
   },
   "11644": {
     "name": "Cody Schrader",
-    "team": "JAX",
+    "team": "DEN",
     "tankId": "4391845",
     "byeWeek": 8,
     "pos": "RB",
@@ -4034,7 +4034,7 @@
   },
   "11139": {
     "name": "Elijah Cooks",
-    "team": "PHI",
+    "team": "NO",
     "tankId": "4241588",
     "byeWeek": 9,
     "pos": "WR",
@@ -4097,7 +4097,7 @@
   },
   "11046": {
     "name": "Colton Dowell",
-    "team": "BAL",
+    "team": "SF",
     "tankId": "4250945",
     "byeWeek": 7,
     "pos": "WR",
@@ -4151,7 +4151,7 @@
   },
   "8131": {
     "name": "Isaiah Likely",
-    "team": "BAL",
+    "team": "NYG",
     "tankId": "4361050",
     "byeWeek": 7,
     "pos": "TE",
@@ -4196,7 +4196,7 @@
   },
   "9483": {
     "name": "Zack Kuntz",
-    "team": "NYJ",
+    "team": "MIA",
     "tankId": "4361417",
     "byeWeek": 9,
     "pos": "TE",
@@ -4358,7 +4358,7 @@
   },
   "10863": {
     "name": "A.T. Perry",
-    "team": "DEN",
+    "team": "PIT",
     "tankId": "4362019",
     "byeWeek": 12,
     "pos": "WR",
@@ -4421,7 +4421,7 @@
   },
   "11941": {
     "name": "Isaiah Wooden",
-    "team": "LAC",
+    "team": "CLE",
     "tankId": "4576845",
     "byeWeek": 12,
     "pos": "WR",
@@ -4430,7 +4430,7 @@
   },
   "12851": {
     "name": "Rivaldo Fairweather",
-    "team": "DAL",
+    "team": "ARI",
     "tankId": "4605858",
     "byeWeek": 10,
     "pos": "TE",
@@ -4565,7 +4565,7 @@
   },
   "6109": {
     "name": "Alec Ingold",
-    "team": "MIA",
+    "team": "LAC",
     "tankId": "3917668",
     "byeWeek": 12,
     "pos": "FB",
@@ -4682,7 +4682,7 @@
   },
   "11082": {
     "name": "Ben Sims",
-    "team": "MIN",
+    "team": "MIA",
     "tankId": "4373030",
     "byeWeek": 6,
     "pos": "TE",
@@ -4727,7 +4727,7 @@
   },
   "12772": {
     "name": "Courtney Jackson",
-    "team": "SEA",
+    "team": "NYG",
     "tankId": "4565172",
     "byeWeek": 8,
     "pos": "WR",
@@ -4799,7 +4799,7 @@
   },
   "4353": {
     "name": "Patrick Ricard",
-    "team": "BAL",
+    "team": "NYG",
     "tankId": "2975417",
     "byeWeek": 7,
     "pos": "FB",
@@ -4862,7 +4862,7 @@
   },
   "12909": {
     "name": "Eli Pancol",
-    "team": "JAX",
+    "team": "IND",
     "tankId": "4430288",
     "byeWeek": 8,
     "pos": "WR",
@@ -4871,7 +4871,7 @@
   },
   "2152": {
     "name": "Teddy Bridgewater",
-    "team": "TB",
+    "team": "DET",
     "tankId": "16728",
     "byeWeek": 9,
     "pos": "QB",
@@ -5051,7 +5051,7 @@
   },
   "12533": {
     "name": "Jacory Croskey-Merritt",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4575131",
     "byeWeek": 12,
     "pos": "RB",
@@ -5132,7 +5132,7 @@
   },
   "13120": {
     "name": "Jacoby Jones",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5083297",
     "byeWeek": 12,
     "pos": "WR",
@@ -5159,7 +5159,7 @@
   },
   "5927": {
     "name": "Terry McLaurin",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3121422",
     "byeWeek": 12,
     "pos": "WR",
@@ -5222,7 +5222,7 @@
   },
   "6111": {
     "name": "Jake Browning",
-    "team": "CIN",
+    "team": "TB",
     "tankId": "3886812",
     "byeWeek": 10,
     "pos": "QB",
@@ -5231,7 +5231,7 @@
   },
   "6828": {
     "name": "AJ Dillon",
-    "team": "PHI",
+    "team": "CAR",
     "tankId": "4239934",
     "byeWeek": 9,
     "pos": "RB",
@@ -5393,7 +5393,7 @@
   },
   "2216": {
     "name": "Mike Evans",
-    "team": "TB",
+    "team": "SF",
     "tankId": "16737",
     "byeWeek": 9,
     "pos": "WR",
@@ -5465,7 +5465,7 @@
   },
   "12478": {
     "name": "Nick Nash",
-    "team": "ATL",
+    "team": "WAS",
     "tankId": "4570242",
     "byeWeek": 5,
     "pos": "WR",
@@ -5537,7 +5537,7 @@
   },
   "9227": {
     "name": "Israel Abanikanda",
-    "team": "GB",
+    "team": "DAL",
     "tankId": "4429202",
     "byeWeek": 5,
     "pos": "RB",
@@ -5591,7 +5591,7 @@
   },
   "12641": {
     "name": "Jaylin Lane",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4602667",
     "byeWeek": 12,
     "pos": "WR",
@@ -5654,7 +5654,7 @@
   },
   "2307": {
     "name": "Marcus Mariota",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2576980",
     "byeWeek": 12,
     "pos": "QB",
@@ -5717,7 +5717,7 @@
   },
   "8214": {
     "name": "Cole Turner",
-    "team": "WSH",
+    "team": "MIA",
     "tankId": "4361438",
     "byeWeek": 12,
     "pos": "TE",
@@ -5807,7 +5807,7 @@
   },
   "8527": {
     "name": "Dareke Young",
-    "team": "SEA",
+    "team": "LV",
     "tankId": "4401805",
     "byeWeek": 8,
     "pos": "WR",
@@ -5888,7 +5888,7 @@
   },
   "5917": {
     "name": "Mecole Hardman",
-    "team": "GB",
+    "team": "BUF",
     "tankId": "4035004",
     "byeWeek": 5,
     "pos": "WR",
@@ -6032,7 +6032,7 @@
   },
   "8181": {
     "name": "Connor Heyward",
-    "team": "PIT",
+    "team": "LV",
     "tankId": "4241961",
     "byeWeek": 5,
     "pos": "TE",
@@ -6149,7 +6149,7 @@
   },
   "12532": {
     "name": "Ja'Corey Brooks",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4431506",
     "byeWeek": 12,
     "pos": "WR",
@@ -6329,7 +6329,7 @@
   },
   "11371": {
     "name": "Julian Hill",
-    "team": "MIA",
+    "team": "NE",
     "tankId": "4365395",
     "byeWeek": 12,
     "pos": "TE",
@@ -6473,7 +6473,7 @@
   },
   "12515": {
     "name": "Donovan Edwards",
-    "team": "WSH",
+    "team": "MIA",
     "tankId": "4431536",
     "byeWeek": 12,
     "pos": "RB",
@@ -6644,7 +6644,7 @@
   },
   "8147": {
     "name": "John Metchie III",
-    "team": "NYJ",
+    "team": "CAR",
     "tankId": "4567096",
     "byeWeek": 9,
     "pos": "WR",
@@ -6941,7 +6941,7 @@
   },
   "8136": {
     "name": "Rachaad White",
-    "team": "TB",
+    "team": "WAS",
     "tankId": "4697815",
     "byeWeek": 9,
     "pos": "RB",
@@ -7004,7 +7004,7 @@
   },
   "8125": {
     "name": "Calvin Austin III",
-    "team": "PIT",
+    "team": "NYG",
     "tankId": "4243389",
     "byeWeek": 5,
     "pos": "WR",
@@ -7103,7 +7103,7 @@
   },
   "5938": {
     "name": "Lil'Jordan Humphrey",
-    "team": "NYG",
+    "team": "DEN",
     "tankId": "4039057",
     "byeWeek": 14,
     "pos": "WR",
@@ -7481,7 +7481,7 @@
   },
   "11260": {
     "name": "Robert Burns",
-    "team": "ATL",
+    "team": "CHI",
     "tankId": "4240636",
     "byeWeek": 5,
     "pos": "RB",
@@ -7652,7 +7652,7 @@
   },
   "8159": {
     "name": "Desmond Ridder",
-    "team": "MIN",
+    "team": "GB",
     "tankId": "4239086",
     "byeWeek": 6,
     "pos": "QB",
@@ -7787,7 +7787,7 @@
   },
   "8225": {
     "name": "Daniel Bellinger",
-    "team": "NYG",
+    "team": "TEN",
     "tankId": "4361516",
     "byeWeek": 14,
     "pos": "TE",
@@ -7814,7 +7814,7 @@
   },
   "7106": {
     "name": "Lawrence Cager",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3917849",
     "byeWeek": 12,
     "pos": "WR",
@@ -7949,7 +7949,7 @@
   },
   "12389": {
     "name": "Hayden Rucci",
-    "team": "MIA",
+    "team": "SF",
     "tankId": "4428396",
     "byeWeek": 12,
     "pos": "TE",
@@ -7976,7 +7976,7 @@
   },
   "7496": {
     "name": "Nick Westbrook-Ikhine",
-    "team": "MIA",
+    "team": "IND",
     "tankId": "3929785",
     "byeWeek": 12,
     "pos": "WR",
@@ -8174,7 +8174,7 @@
   },
   "6768": {
     "name": "Tua Tagovailoa",
-    "team": "MIA",
+    "team": "ATL",
     "tankId": "4241479",
     "byeWeek": 12,
     "pos": "QB",
@@ -8246,7 +8246,7 @@
   },
   "12868": {
     "name": "Montrell Johnson Jr.",
-    "team": "PHI",
+    "team": "CAR",
     "tankId": "4684625",
     "byeWeek": 9,
     "pos": "RB",
@@ -8282,7 +8282,7 @@
   },
   "8205": {
     "name": "Isiah Pacheco",
-    "team": "KC",
+    "team": "DET",
     "tankId": "4361529",
     "byeWeek": 10,
     "pos": "RB",
@@ -8363,7 +8363,7 @@
   },
   "4950": {
     "name": "Christian Kirk",
-    "team": "HOU",
+    "team": "SF",
     "tankId": "3895856",
     "byeWeek": 6,
     "pos": "WR",
@@ -8390,7 +8390,7 @@
   },
   "11596": {
     "name": "Ben Sinnott",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4690923",
     "byeWeek": 12,
     "pos": "TE",
@@ -8570,7 +8570,7 @@
   },
   "8143": {
     "name": "Jerome Ford",
-    "team": "CLE",
+    "team": "WAS",
     "tankId": "4372019",
     "byeWeek": 9,
     "pos": "RB",
@@ -8696,7 +8696,7 @@
   },
   "12863": {
     "name": "Andrew Armstrong",
-    "team": "MIA",
+    "team": "KC",
     "tankId": "5093923",
     "byeWeek": 12,
     "pos": "WR",
@@ -8732,7 +8732,7 @@
   },
   "829": {
     "name": "Andy Dalton",
-    "team": "CAR",
+    "team": "PHI",
     "tankId": "14012",
     "byeWeek": 14,
     "pos": "QB",
@@ -9101,7 +9101,7 @@
   },
   "8117": {
     "name": "Jalen Tolbert",
-    "team": "DAL",
+    "team": "MIA",
     "tankId": "4249417",
     "byeWeek": 10,
     "pos": "WR",
@@ -9110,7 +9110,7 @@
   },
   "11598": {
     "name": "Tanner McLachlan",
-    "team": "CIN",
+    "team": "LAC",
     "tankId": "4384171",
     "byeWeek": 10,
     "pos": "TE",
@@ -9155,7 +9155,7 @@
   },
   "4454": {
     "name": "Kendrick Bourne",
-    "team": "SF",
+    "team": "ARI",
     "tankId": "3045523",
     "byeWeek": 14,
     "pos": "WR",
@@ -9191,7 +9191,7 @@
   },
   "6819": {
     "name": "Michael Pittman Jr.",
-    "team": "IND",
+    "team": "PIT",
     "tankId": "4035687",
     "byeWeek": 11,
     "pos": "WR",
@@ -9281,7 +9281,7 @@
   },
   "11566": {
     "name": "Jayden Daniels",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4426348",
     "byeWeek": 12,
     "pos": "QB",
@@ -9542,7 +9542,7 @@
   },
   "9511": {
     "name": "Keaton Mitchell",
-    "team": "BAL",
+    "team": "LAC",
     "tankId": "4596334",
     "byeWeek": 7,
     "pos": "RB",
@@ -9632,7 +9632,7 @@
   },
   "8849": {
     "name": "Tanner Conner",
-    "team": "MIA",
+    "team": "NYG",
     "tankId": "4047422",
     "byeWeek": 12,
     "pos": "TE",
@@ -9686,7 +9686,7 @@
   },
   "7946": {
     "name": "Jack Stoll",
-    "team": "NO",
+    "team": "CLE",
     "tankId": "4034862",
     "byeWeek": 11,
     "pos": "TE",
@@ -9920,7 +9920,7 @@
   },
   "7562": {
     "name": "Tutu Atwell",
-    "team": "LAR",
+    "team": "MIA",
     "tankId": "4360797",
     "byeWeek": 8,
     "pos": "WR",
@@ -9956,7 +9956,7 @@
   },
   "3634": {
     "name": "Kalif Raymond",
-    "team": "DET",
+    "team": "CHI",
     "tankId": "2973405",
     "byeWeek": 8,
     "pos": "WR",
@@ -10226,7 +10226,7 @@
   },
   "12971": {
     "name": "Ke'Shawn Williams",
-    "team": "PIT",
+    "team": "CIN",
     "tankId": "4570738",
     "byeWeek": 5,
     "pos": "WR",
@@ -10280,7 +10280,7 @@
   },
   "7021": {
     "name": "Rico Dowdle",
-    "team": "CAR",
+    "team": "PIT",
     "tankId": "4038815",
     "byeWeek": 14,
     "pos": "RB",
@@ -10595,7 +10595,7 @@
   },
   "12491": {
     "name": "Corey Kiner",
-    "team": "MIN",
+    "team": "ARI",
     "tankId": "4431431",
     "byeWeek": 6,
     "pos": "RB",
@@ -10604,7 +10604,7 @@
   },
   "13145": {
     "name": "ShunDerrick Powell",
-    "team": "PHI",
+    "team": "KC",
     "tankId": "4876907",
     "byeWeek": 9,
     "pos": "RB",
@@ -10793,7 +10793,7 @@
   },
   "5985": {
     "name": "Foster Moreau",
-    "team": "NO",
+    "team": "HOU",
     "tankId": "3843945",
     "byeWeek": 11,
     "pos": "TE",
@@ -10838,7 +10838,7 @@
   },
   "8235": {
     "name": "Samori Toure",
-    "team": "DEN",
+    "team": "NO",
     "tankId": "4027873",
     "byeWeek": 12,
     "pos": "WR",
@@ -10847,7 +10847,7 @@
   },
   "3976": {
     "name": "Mitchell Trubisky",
-    "team": "BUF",
+    "team": "TEN",
     "tankId": "3039707",
     "byeWeek": 7,
     "pos": "QB",
@@ -10892,7 +10892,7 @@
   },
   "5848": {
     "name": "Hollywood Brown",
-    "team": "KC",
+    "team": "PHI",
     "tankId": "4241372",
     "byeWeek": 10,
     "pos": "WR",
@@ -11099,7 +11099,7 @@
   },
   "8126": {
     "name": "Wan'Dale Robinson",
-    "team": "NYG",
+    "team": "TEN",
     "tankId": "4569587",
     "byeWeek": 14,
     "pos": "WR",
@@ -11270,7 +11270,7 @@
   },
   "4983": {
     "name": "DJ Moore",
-    "team": "CHI",
+    "team": "BUF",
     "tankId": "3915416",
     "byeWeek": 5,
     "pos": "WR",
@@ -11450,7 +11450,7 @@
   },
   "260": {
     "name": "Josh Johnson",
-    "team": "WSH",
+    "team": "CIN",
     "tankId": "11394",
     "byeWeek": 12,
     "pos": "QB",
@@ -11558,7 +11558,7 @@
   },
   "7567": {
     "name": "Kenneth Gainwell",
-    "team": "PIT",
+    "team": "TB",
     "tankId": "4371733",
     "byeWeek": 5,
     "pos": "RB",
@@ -11873,7 +11873,7 @@
   },
   "8161": {
     "name": "Malik Willis",
-    "team": "GB",
+    "team": "MIA",
     "tankId": "4242512",
     "byeWeek": 5,
     "pos": "QB",
@@ -11909,7 +11909,7 @@
   },
   "4314": {
     "name": "Johnny Mundt",
-    "team": "JAX",
+    "team": "PHI",
     "tankId": "3052096",
     "byeWeek": 8,
     "pos": "TE",
@@ -12278,7 +12278,7 @@
   },
   "7561": {
     "name": "Elijah Mitchell",
-    "team": "KC",
+    "team": "NE",
     "tankId": "4241555",
     "byeWeek": 10,
     "pos": "RB",
@@ -12566,7 +12566,7 @@
   },
   "8180": {
     "name": "Jalen Nailor",
-    "team": "MIN",
+    "team": "LV",
     "tankId": "4382466",
     "byeWeek": 6,
     "pos": "WR",
@@ -12674,7 +12674,7 @@
   },
   "6938": {
     "name": "Cam Akers",
-    "team": "MIN",
+    "team": "SEA",
     "tankId": "4240021",
     "byeWeek": 6,
     "pos": "RB",
@@ -12899,7 +12899,7 @@
   },
   "8210": {
     "name": "Chig Okonkwo",
-    "team": "TEN",
+    "team": "WAS",
     "tankId": "4360635",
     "byeWeek": 10,
     "pos": "TE",
@@ -13007,7 +13007,7 @@
   },
   "8230": {
     "name": "Ty Chandler",
-    "team": "MIN",
+    "team": "NO",
     "tankId": "4242431",
     "byeWeek": 6,
     "pos": "RB",
@@ -13034,7 +13034,7 @@
   },
   "8227": {
     "name": "Teagan Quitoriano",
-    "team": "ATL",
+    "team": "ARI",
     "tankId": "4374045",
     "byeWeek": 5,
     "pos": "TE",
@@ -13061,7 +13061,7 @@
   },
   "5849": {
     "name": "Kyler Murray",
-    "team": "ARI",
+    "team": "MIN",
     "tankId": "3917315",
     "byeWeek": 8,
     "pos": "QB",
@@ -13322,7 +13322,7 @@
   },
   "12462": {
     "name": "Damien Martinez",
-    "team": "SEA",
+    "team": "GB",
     "tankId": "4808830",
     "byeWeek": 8,
     "pos": "RB",
@@ -13682,7 +13682,7 @@
   },
   "8119": {
     "name": "Jahan Dotson",
-    "team": "PHI",
+    "team": "ATL",
     "tankId": "4361409",
     "byeWeek": 9,
     "pos": "WR",
@@ -13691,7 +13691,7 @@
   },
   "8160": {
     "name": "Kenny Pickett",
-    "team": "LV",
+    "team": "CAR",
     "tankId": "4240703",
     "byeWeek": 8,
     "pos": "QB",
@@ -13718,7 +13718,7 @@
   },
   "8121": {
     "name": "Romeo Doubs",
-    "team": "GB",
+    "team": "NE",
     "tankId": "4361432",
     "byeWeek": 5,
     "pos": "WR",
@@ -13772,7 +13772,7 @@
   },
   "12494": {
     "name": "Kyle McCord",
-    "team": "PHI",
+    "team": "GB",
     "tankId": "4433971",
     "byeWeek": 9,
     "pos": "QB",
@@ -13781,7 +13781,7 @@
   },
   "6853": {
     "name": "Van Jefferson",
-    "team": "TEN",
+    "team": "WAS",
     "tankId": "3930066",
     "byeWeek": 10,
     "pos": "WR",
@@ -14024,7 +14024,7 @@
   },
   "8132": {
     "name": "Tyler Allgeier",
-    "team": "ATL",
+    "team": "ARI",
     "tankId": "4373626",
     "byeWeek": 5,
     "pos": "RB",
@@ -14033,7 +14033,7 @@
   },
   "5892": {
     "name": "David Montgomery",
-    "team": "DET",
+    "team": "HOU",
     "tankId": "4035538",
     "byeWeek": 8,
     "pos": "RB",
@@ -14078,7 +14078,7 @@
   },
   "7526": {
     "name": "Jaylen Waddle",
-    "team": "MIA",
+    "team": "DEN",
     "tankId": "4372016",
     "byeWeek": 12,
     "pos": "WR",
@@ -14105,7 +14105,7 @@
   },
   "11421": {
     "name": "Ryan Miller",
-    "team": "TB",
+    "team": "NYG",
     "tankId": "4369466",
     "byeWeek": 9,
     "pos": "WR",
@@ -14339,7 +14339,7 @@
   },
   "8162": {
     "name": "Sam Howell",
-    "team": "PHI",
+    "team": "DAL",
     "tankId": "4426875",
     "byeWeek": 9,
     "pos": "QB",
@@ -14501,7 +14501,7 @@
   },
   "5857": {
     "name": "Noah Fant",
-    "team": "CIN",
+    "team": "NO",
     "tankId": "4036131",
     "byeWeek": 10,
     "pos": "TE",
@@ -14672,7 +14672,7 @@
   },
   "11942": {
     "name": "Colson Yankoff",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361088",
     "byeWeek": 12,
     "pos": "TE",
@@ -14681,7 +14681,7 @@
   },
   "6920": {
     "name": "Isaiah Hodgins",
-    "team": "PIT",
+    "team": "NYG",
     "tankId": "4242540",
     "byeWeek": 5,
     "pos": "WR",
@@ -14762,7 +14762,7 @@
   },
   "8157": {
     "name": "Bailey Zappe",
-    "team": "CLE",
+    "team": "NYJ",
     "tankId": "4250360",
     "byeWeek": 9,
     "pos": "QB",
@@ -14780,7 +14780,7 @@
   },
   "7865": {
     "name": "Brandon Smith",
-    "team": "NYJ",
+    "team": "PIT",
     "tankId": "4240577",
     "byeWeek": 9,
     "pos": "WR",
@@ -14807,7 +14807,7 @@
   },
   "11582": {
     "name": "Carson Steele",
-    "team": "KC",
+    "team": "PHI",
     "tankId": "4714365",
     "byeWeek": 10,
     "pos": "FB",
@@ -14852,7 +14852,7 @@
   },
   "3202": {
     "name": "Austin Hooper",
-    "team": "NE",
+    "team": "ATL",
     "tankId": "3043275",
     "byeWeek": 14,
     "pos": "TE",
@@ -14987,7 +14987,7 @@
   },
   "11199": {
     "name": "Emari Demercado",
-    "team": "ARI",
+    "team": "KC",
     "tankId": "4362478",
     "byeWeek": 8,
     "pos": "RB",
@@ -15230,7 +15230,7 @@
   },
   "11558": {
     "name": "Sam Hartman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361994",
     "byeWeek": 12,
     "pos": "QB",
@@ -15347,7 +15347,7 @@
   },
   "4219": {
     "name": "Jeremy McNichols",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3127586",
     "byeWeek": 12,
     "pos": "RB",
@@ -15401,7 +15401,7 @@
   },
   "7716": {
     "name": "John Bates",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4048228",
     "byeWeek": 12,
     "pos": "TE",
@@ -15464,7 +15464,7 @@
   },
   "6931": {
     "name": "DeeJay Dallas",
-    "team": "CAR",
+    "team": "JAX",
     "tankId": "4240631",
     "byeWeek": 14,
     "pos": "RB",
@@ -15491,7 +15491,7 @@
   },
   "7204": {
     "name": "Reggie Gilliam",
-    "team": "BUF",
+    "team": "NE",
     "tankId": "4039505",
     "byeWeek": 7,
     "pos": "FB",
@@ -15536,7 +15536,7 @@
   },
   "12898": {
     "name": "Seth Henigan",
-    "team": "JAX",
+    "team": "IND",
     "tankId": "4606194",
     "byeWeek": 8,
     "pos": "QB",
@@ -15698,7 +15698,7 @@
   },
   "12548": {
     "name": "Lenny Krieg",
-    "team": "ATL",
+    "team": "NYJ",
     "tankId": "5277116",
     "byeWeek": 5,
     "pos": "PK",
@@ -15725,7 +15725,7 @@
   },
   "11789": {
     "name": "Joshua Karty",
-    "team": "LAR",
+    "team": "ARI",
     "tankId": "4566192",
     "byeWeek": 8,
     "pos": "PK",
@@ -15770,7 +15770,7 @@
   },
   "11058": {
     "name": "Blake Grupe",
-    "team": "NO",
+    "team": "IND",
     "tankId": "4259619",
     "byeWeek": 11,
     "pos": "PK",
@@ -15833,7 +15833,7 @@
   },
   "5119": {
     "name": "Jason Sanders",
-    "team": "MIA",
+    "team": "NYG",
     "tankId": "3124679",
     "byeWeek": 12,
     "pos": "PK",
@@ -16013,7 +16013,7 @@
   },
   "6083": {
     "name": "Matt Gay",
-    "team": "SF",
+    "team": "LV",
     "tankId": "4249087",
     "byeWeek": 14,
     "pos": "PK",
@@ -16067,7 +16067,7 @@
   },
   "12824": {
     "name": "Maddux Trujillo",
-    "team": "IND",
+    "team": "BUF",
     "tankId": "4879326",
     "byeWeek": 11,
     "pos": "PK",
@@ -16184,7 +16184,7 @@
   },
   "4233": {
     "name": "Zane Gonzalez",
-    "team": "ATL",
+    "team": "MIA",
     "tankId": "3043234",
     "byeWeek": 5,
     "pos": "PK",
@@ -16274,7 +16274,7 @@
   },
   "8258": {
     "name": "Cade York",
-    "team": "CIN",
+    "team": "NYJ",
     "tankId": "4428963",
     "byeWeek": 10,
     "pos": "PK",
@@ -16301,7 +16301,7 @@
   },
   "650": {
     "name": "Nick Folk",
-    "team": "NYJ",
+    "team": "ATL",
     "tankId": "10621",
     "byeWeek": 9,
     "pos": "PK",

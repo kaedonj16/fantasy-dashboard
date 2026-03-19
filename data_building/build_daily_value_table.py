@@ -13,14 +13,19 @@ from data_building.value_model_training import rewrite_value_table_with_model
 
 
 def build_daily_data(season: int, week: int):
-    live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
-    build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
+    nfl_state = get_nfl_state() or {}
+    season_type = (nfl_state.get("season_type") or "").lower()
+    offseason_mode = season_type == "off"
+
+    if not offseason_mode and week >= 1:
+        live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
+        build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
     if load_fantasycalc_api_values() is None or load_dynastyprocess_values() is None:
         scrape_all_vendor_values()
 
     if load_usage_table() is None or load_engine_table() is None:
-        write_usage_table_snapshot(2025, weeks=range(1, 19))
+        write_usage_table_snapshot(season, weeks=range(1, 19))
         enrich_all_team_info(season)
         enrich_teams_index_with_rushing(Path(path_teams_index()))
         export_engine_values()

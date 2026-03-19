@@ -9,6 +9,7 @@ from dashboard_services.api import (
     get_matchups as sleeper_get_matchups,
     get_traded_picks as sleeper_get_traded_picks,
     get_bracket as sleeper_get_bracket,
+    get_drafts as sleeper_get_drafts,
 )
 from dashboard_services.providers.espn_api import (
     get_league as espn_get_league,
@@ -59,10 +60,15 @@ def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[st
 
 def get_bracket(platform: str, league_id: str, kind: str, season: int):
     if platform == "espn":
-        import os
         return espn_get_bracket_like(
             league_id=league_id,
             season=season,
             kind=kind,
         )
     return sleeper_get_bracket(league_id, kind)
+
+
+def get_drafts(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
+    if platform == "espn":
+        return espn_get_drafts(season, league_id)
+    return sleeper_get_drafts(league_id)

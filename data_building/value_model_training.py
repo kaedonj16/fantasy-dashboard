@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import json
-import math
 import numpy as np
-import os
 import pandas as pd
 import pickle
 import re
-import requests
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -20,18 +17,18 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
+from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.utils import load_teams_index, bucket_for_slot, normalize_name
+from data_building.paths import DATA_DIR
+from data_building.player_history import load_player_history_df, build_player_history_features
+from data_building.player_investment import load_player_investment_context
 
 # ------------------------------------------------
 # Paths / constants
 # ------------------------------------------------
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_PATH = DATA_DIR / "trade_value_model.pkl"
 DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
@@ -43,7 +40,7 @@ FANTASYCALC_URL = (
     "?isDynasty=true&numQbs=1&numTeams=10&ppr=1"
 )
 
-CURRENT_SEASON = 2025
+CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 
 # ------------------------------------------------
@@ -52,9 +49,6 @@ CURRENT_SEASON = 2025
 
 @dataclass
 class TrainedModelBundle:
-    """
-    What we store on disk in trade_value_model.pkl
-    """
     pipeline: Pipeline
     scale_min: float
     scale_max: float
@@ -62,40 +56,138 @@ class TrainedModelBundle:
 
 
 # ------------------------------------------------
+# Small helpers
+# ------------------------------------------------
+
+def _safe_float(x, default: float = 0.0) -> float:
+    try:
+        if x is None:
+            return float(default)
+        if isinstance(x, str) and not x.strip():
+            return float(default)
+        if pd.isna(x):
+            return float(default)
+        return float(x)
+    except Exception:
+        return float(default)
+
+
+def _safe_int(x, default: int = 0) -> int:
+    try:
+        if x is None:
+            return int(default)
+        if isinstance(x, str) and not x.strip():
+            return int(default)
+        if pd.isna(x):
+            return int(default)
+        return int(x)
+    except Exception:
+        return int(default)
+
+
+def _current_season_from_state() -> int:
+    state = get_nfl_state() or {}
+    season = state.get("season")
+    if season is None:
+        return date.today().year
+    return _safe_int(season, date.today().year)
+
+
+def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _ensure_columns(df: pd.DataFrame, cols: List[str], fill_value=0.0) -> pd.DataFrame:
+    df = df.copy()
+    for col in cols:
+        if col not in df.columns:
+            df[col] = fill_value
+    return df
+
+
+# ------------------------------------------------
+# Season helpers
+# ------------------------------------------------
+
+def get_training_seasons(current_season: int, num_past_seasons: int = 2) -> list[int]:
+    current_season = int(current_season)
+    start = current_season - num_past_seasons
+    return list(range(start, current_season + 1))
+
+
+# ------------------------------------------------
+# History feature loader
+# ------------------------------------------------
+
+def load_history_feature_df(current_season: int) -> pd.DataFrame:
+    seasons = get_training_seasons(current_season, 2)
+
+    frames = []
+    for season in seasons:
+        try:
+            season_df = load_player_history_df(season)
+            if season_df is not None and not season_df.empty:
+                frames.append(season_df)
+        except FileNotFoundError:
+            continue
+
+    if not frames:
+        return pd.DataFrame()
+
+    history_df = pd.concat(frames, ignore_index=True)
+    return build_player_history_features(history_df)
+
+
+def load_player_investment_df() -> pd.DataFrame:
+    df = load_player_investment_context()
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    keep_cols = [
+        "sleeper_id",
+        "draft_year",
+        "draft_round",
+        "draft_pick",
+        "draft_capital_score",
+        "draft_capital_pos_pct",
+        "contract_total_value",
+        "contract_apy",
+        "guaranteed_money",
+        "fully_guaranteed_money",
+        "guaranteed_pct",
+        "contract_score",
+        "team_investment_score",
+        "years_to_fa",
+        "contract_apy_pos_pct",
+        "guaranteed_money_pos_pct",
+        "guaranteed_pct_pos_pct",
+    ]
+    keep_cols = [c for c in keep_cols if c in df.columns]
+
+    out = df[keep_cols].copy()
+    if "sleeper_id" in out.columns:
+        out["sleeper_id"] = out["sleeper_id"].astype(str)
+    return out
+
+
+# ------------------------------------------------
 # Internal stats loader
 # ------------------------------------------------
 
 def load_internal_stats_df() -> pd.DataFrame:
-    """
-    Load your internal value table + usage + team context into a DataFrame.
-
-    Expects data/usage_table_{YYYY-MM-DD}.json to look like:
-      [
-        {
-          "id": "9488",
-          "name": "Jaxon Smith-Njigba",
-          "team": "SEA",
-          "position": "WR",
-          "age": null,
-          "value": 983.0,
-          "usage": { ... }
-        },
-        ...
-      ]
-    And teams_index to have pass/rush/snaps context.
-    """
     value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
 
     if not value_path.exists():
         raise FileNotFoundError(f"No internal value table found at {value_path}")
 
-    with value_path.open() as f:
-        players = json.load(f)  # list[dict]
+    with value_path.open("r", encoding="utf-8") as f:
+        players = json.load(f)
 
-    # Flatten players + usage
     df = pd.json_normalize(players)
 
-    # Normalize column names
     rename_map = {
         "id": "sleeper_id",
         "value": "internal_value_raw",
@@ -122,14 +214,18 @@ def load_internal_stats_df() -> pd.DataFrame:
         "usage.avg_pass_int": "avg_pass_int",
         "usage.target_share": "target_share",
         "usage.target_share_pct": "target_share_pct",
+        "usage.total_targets": "total_targets",
     }
-    df = df.rename(columns=rename_map)
-    df["sleeper_id"] = df["sleeper_id"].astype(str)
 
+    df = df.rename(columns=rename_map)
+
+    if "sleeper_id" not in df.columns:
+        raise ValueError("usage_table is missing 'id'/'sleeper_id'")
+
+    df["sleeper_id"] = df["sleeper_id"].astype(str)
     df["internal_value"] = df.get("internal_value_raw", np.nan)
 
-    # Attach team-level context from teams_index.json
-    teams_index = load_teams_index()  # { "ARI": {...}, ... }
+    teams_index = load_teams_index() or {}
 
     team_rows = []
     for abbr, meta in teams_index.items():
@@ -144,36 +240,18 @@ def load_internal_stats_df() -> pd.DataFrame:
                 "team_pass_yds_pg": meta.get("pass_yds_pg"),
             }
         )
-    team_df = pd.DataFrame(team_rows)
 
+    team_df = pd.DataFrame(team_rows)
     internal_df = df.merge(team_df, on="team", how="left")
 
     return internal_df
 
 
 # ------------------------------------------------
-# FantasyCalc API loader
+# FantasyCalc loader
 # ------------------------------------------------
 
-def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-
 def load_fantasycalc_df(path: Path = FANTASYCALC_VALUES_PATH) -> pd.DataFrame:
-    """
-    Load FantasyCalc dynasty values from a local CSV exported previously.
-
-    Expects a CSV that has at least:
-      - some kind of sleeper id column
-      - some kind of value column
-
-    We try to be robust about column names and normalize to:
-
-      sleeper_id, name, position, team, fc_value, fc_rank, fc_age
-    """
     if not path.exists():
         raise FileNotFoundError(
             f"Expected FantasyCalc CSV at {path}. "
@@ -225,8 +303,18 @@ def load_fantasycalc_df(path: Path = FANTASYCALC_VALUES_PATH) -> pd.DataFrame:
 
 
 # ------------------------------------------------
-# DynastyProcess CSV loader
+# DynastyProcess loader
 # ------------------------------------------------
+
+def _suffix(rnd: int) -> str:
+    if rnd == 1:
+        return "st"
+    if rnd == 2:
+        return "nd"
+    if rnd == 3:
+        return "rd"
+    return "th"
+
 
 def load_dynastyprocess_df(
         path: Path = DYNASTYPROCESS_VALUES_PATH,
@@ -234,55 +322,36 @@ def load_dynastyprocess_df(
         years=(2025, 2026, 2027, 2028),
         rounds=(1, 2, 3),
 ) -> pd.DataFrame:
-    """
-    Load DynastyProcess CSV AND insert synthetic draft picks.
-
-    pick_value_lookup should be something like:
-        {
-          "2026 Early 1st": 475,
-          "2026 Mid 1st": 440,
-          "2026 Late 1st": 410,
-          ...
-        }
-
-    Returns DataFrame with columns:
-        dp_name, dp_position, dp_team, dp_value_raw
-    """
-
     if not path.exists():
         raise FileNotFoundError(f"Missing DP CSV at {path}")
 
     df = pd.read_csv(path)
 
-    # ----- Detect value column -----
     dp_value_col = "value_1qb"
     if dp_value_col not in df.columns:
         numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        if not numeric_cols:
+            raise ValueError(f"No numeric value columns found in {path}")
         dp_value_col = "value" if "value" in numeric_cols else numeric_cols[0]
 
-    # ----- Detect name/pos/team columns -----
-    name_col = "player" if "player" in df.columns else \
+    name_col = "player" if "player" in df.columns else (
         "Player" if "Player" in df.columns else df.columns[0]
-
-    pos_col = "pos" if "pos" in df.columns else \
+    )
+    pos_col = "pos" if "pos" in df.columns else (
         "position" if "position" in df.columns else None
-
+    )
     team_col = "team" if "team" in df.columns else None
 
     names = df[name_col].astype(str)
     positions = df[pos_col].astype(str) if pos_col else pd.Series([""] * len(df))
 
-    # ----- Detect pick-like rows -----
     def looks_like_pick(name: str):
         s = name.lower().strip()
         return bool(re.match(r"^\d{4}\s+(early|mid|late)\s+\d+(st|nd|rd|th)$", s))
 
     pick_mask = names.apply(looks_like_pick)
-
-    # force pos="PICK" for all detected
     positions = positions.where(~pick_mask, other="PICK")
 
-    # ----- Build base frame -----
     out = pd.DataFrame({
         "dp_name": names,
         "dp_position": positions,
@@ -290,60 +359,41 @@ def load_dynastyprocess_df(
         "dp_value_raw": df[dp_value_col],
     })
 
-    # ============================================================
-    #                   ADD SYNTHETIC DRAFT PICKS
-    # ============================================================
-
     synthetic_rows = []
-
     if pick_value_lookup is None:
-        pick_value_lookup = {}  # empty fallback; user fills it later
+        pick_value_lookup = {}
 
     for yr in years:
         for rnd in rounds:
             for tier in ("Early", "Mid", "Late"):
                 pick_name = f"{yr} {tier} {rnd}{_suffix(rnd)}"
-
                 synthetic_rows.append({
                     "dp_name": pick_name,
                     "dp_position": "PICK",
                     "dp_team": None,
-                    "dp_value_raw": float(pick_value_lookup.get(pick_name, 0.0))
+                    "dp_value_raw": float(pick_value_lookup.get(pick_name, 0.0)),
                 })
 
     picks_df = pd.DataFrame(synthetic_rows)
-
-    # Append synthetic picks to the real DP data
     out = pd.concat([out, picks_df], ignore_index=True)
 
     return out
 
 
-def _suffix(rnd: int) -> str:
-    """Return st/nd/rd/th for round numbers."""
-    if rnd == 1: return "st"
-    if rnd == 2: return "nd"
-    if rnd == 3: return "rd"
-    return "th"
-
+# ------------------------------------------------
+# Engine loader
+# ------------------------------------------------
 
 def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
-    """
-    Load your engine's dynasty values from CSV.
-
-    Expects a CSV that has at least:
-      - a sleeper / player id column
-      - a numeric value column
-
-    Normalizes to:
-      sleeper_id, engine_value
-    """
     if not path.exists():
-        raise FileNotFoundError(
-            f"Expected engine values CSV at {path}."
-        )
+        print(f"[value_model] Engine CSV not found at {path}; continuing without engine values.")
+        return pd.DataFrame(columns=["sleeper_id", "engine_value"])
 
     df_raw = pd.read_csv(path)
+
+    if df_raw.empty:
+        print("[value_model] Engine CSV is empty; continuing without engine values.")
+        return pd.DataFrame(columns=["sleeper_id", "engine_value"])
 
     sid_col = _pick_col(df_raw, [
         "sleeper_id", "id", "player_id", "sleeperId"
@@ -358,81 +408,22 @@ def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
             f"Columns present: {list(df_raw.columns)}"
         )
 
-    out = pd.DataFrame(
-        {
-            "sleeper_id": df_raw[sid_col].astype(str),
-            "engine_value": df_raw[val_col].astype(float),
-        }
-    )
+    out = pd.DataFrame({
+        "sleeper_id": df_raw[sid_col].astype(str),
+        "engine_value": pd.to_numeric(df_raw[val_col], errors="coerce"),
+    })
 
+    out = out.dropna(subset=["sleeper_id", "engine_value"]).copy()
     print(f"[value_model] Engine rows: {len(out)}")
     return out
 
 
 # ------------------------------------------------
-# Training data builder
+# Draft values helpers
 # ------------------------------------------------
 
-def build_training_dataframe(
-) -> pd.DataFrame:
-    """
-    Combine:
-      - FantasyCalc values (by sleeper_id)
-      - DynastyProcess values (by fuzzy name)
-      - Engine values (by sleeper_id)
-      - Internal value_table_{date} (usage + team context) as features only
-    """
-    fc_df = load_fantasycalc_df()  # sleeper_id, name, position, team, fc_value, fc_rank, fc_age
-    dp_df = load_dynastyprocess_df()  # dp_name, dp_position, dp_team, dp_value_raw
-    engine_df = load_engine_df()  # sleeper_id, engine_value
-    internal_df = load_internal_stats_df()  # sleeper_id, usage + team stats + age, etc.
-    # --- 1) Merge FC + Engine + Internal on sleeper_id ---
-    df = fc_df.merge(
-        engine_df,
-        on="sleeper_id",
-        how="left",
-    )
-
-    df = df.merge(
-        internal_df,
-        on="sleeper_id",
-        how="left",
-        suffixes=("", "_int"),
-    )
-
-    # --- 2) Attach DP via name match (fuzzy-ish on lowercase name) ---
-    if "dp_name" in dp_df.columns:
-        df["name_lower"] = df["name"].astype(str).str.lower()
-        dp_df["dp_name_lower"] = dp_df["dp_name"].astype(str).str.lower()
-
-        df = df.merge(
-            dp_df[["dp_name_lower", "dp_position", "dp_value_raw"]],
-            left_on="name_lower",
-            right_on="dp_name_lower",
-            how="left",
-        ).drop(columns=["dp_name_lower"])
-
-        df.rename(columns={"dp_value_raw": "dp_value"}, inplace=True)
-    else:
-        df["dp_value"] = np.nan
-
-    # We DO NOT create internal_value anymore (no internal vendor)
-    # Keep players that have an FC value (base universe)
-    df = df[~df["fc_value"].isna()].copy()
-
-    return df
-
-
-# dashboard_services/draft_values.py
-
 def _load_fantasycalc(csv_path: str) -> pd.DataFrame:
-    """
-    Expected columns (tweak as needed):
-      year, round, bucket, value
-    Where bucket in {'early','mid','late'}.
-    """
     df = pd.read_csv(csv_path)
-    # normalize
     df["year"] = df["year"].astype(int)
     df["round"] = df["round"].astype(int)
     df["bucket"] = df["bucket"].str.lower().str.strip()
@@ -440,25 +431,12 @@ def _load_fantasycalc(csv_path: str) -> pd.DataFrame:
 
 
 def _load_dynastyprocess(csv_path: str, num_teams: int = 10) -> pd.DataFrame:
-    """
-    Expected something like:
-      year, round, pick, value
-    where 'pick' is 1..num_teams.
-    If your DP CSV uses a single pick column like 1.01/1.02/etc,
-    you can split that into (round, pick) before this step.
-    """
     df = pd.read_csv(csv_path)
-
-    # adjust these column names to your actual CSV
     df["year"] = df["year"].astype(int)
     df["round"] = df["round"].astype(int)
     df["pick"] = df["pick"].astype(int)
-
-    # derive bucket from pick within round
     df["bucket"] = df["pick"].apply(lambda s: bucket_for_slot(int(s), num_teams=num_teams))
 
-    # now group to early/mid/late per round/year
-    # e.g. average of all mid picks in that round for that class
     grouped = (
         df.groupby(["year", "round", "bucket"], as_index=False)["value"]
         .mean()
@@ -467,18 +445,64 @@ def _load_dynastyprocess(csv_path: str, num_teams: int = 10) -> pd.DataFrame:
 
 
 # ------------------------------------------------
+# Training data builder
+# ------------------------------------------------
+
+def build_training_dataframe() -> pd.DataFrame:
+    current_season = _current_season_from_state()
+
+    fc_df = load_fantasycalc_df()
+    dp_df = load_dynastyprocess_df()
+    engine_df = load_engine_df()
+    history_features_df = load_history_feature_df(current_season)
+    investment_df = load_player_investment_df()
+
+    df = fc_df.merge(engine_df, on="sleeper_id", how="left")
+
+    if history_features_df is not None and not history_features_df.empty:
+        history_features_df = history_features_df.copy()
+        history_features_df["sleeper_id"] = history_features_df["sleeper_id"].astype(str)
+        df = df.merge(history_features_df, on="sleeper_id", how="left", suffixes=("", "_hist"))
+
+    if investment_df is not None and not investment_df.empty:
+        df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    if "dp_name" in dp_df.columns:
+        df["name_lower"] = df["name"].astype(str).str.lower().str.strip()
+        dp_df["dp_name_lower"] = dp_df["dp_name"].astype(str).str.lower().str.strip()
+
+        df = df.merge(
+            dp_df[["dp_name_lower", "dp_position", "dp_value_raw"]],
+            left_on="name_lower",
+            right_on="dp_name_lower",
+            how="left",
+        ).drop(columns=["dp_name_lower"], errors="ignore")
+
+        df.rename(columns={"dp_value_raw": "dp_value"}, inplace=True)
+    else:
+        df["dp_value"] = np.nan
+
+    if "age" not in df.columns and "fc_age" in df.columns:
+        df["age"] = pd.to_numeric(df["fc_age"], errors="coerce")
+
+    df = df[~df["fc_value"].isna()].copy()
+    return df
+
+
+# ------------------------------------------------
 # Target normalization helper
 # ------------------------------------------------
 
 def _normalize_series_0_1(s: pd.Series) -> pd.Series:
-    """Normalize a series to [0,1], keeping NaNs as NaN."""
-    s = s.astype(float)
+    s = pd.to_numeric(s, errors="coerce")
     mask = s.notna()
+
     if not mask.any():
         return pd.Series(np.nan, index=s.index)
 
     vmin = s[mask].min()
     vmax = s[mask].max()
+
     if vmax <= vmin:
         out = pd.Series(0.5, index=s.index)
         out[~mask] = np.nan
@@ -494,50 +518,72 @@ def _normalize_series_0_1(s: pd.Series) -> pd.Series:
 # ------------------------------------------------
 
 def train_trade_value_model(
-        test_size: float = 0.2,
-        random_state: int = 42,
+    test_size: float = 0.2,
+    random_state: int = 42,
 ) -> TrainedModelBundle:
     print("[value_model] Building training dataframe…")
     df = build_training_dataframe()
 
-    # --- Build target from 3 vendors: FC, DP, ENGINE ---
+    if df.empty:
+        raise ValueError("[value_model] Training dataframe is empty.")
 
-    fc_val = df["fc_value"].astype(float)
-    dp_val = df.get("dp_value", pd.Series(np.nan, index=df.index)).astype(float)
-    engine_val = df.get("engine_value", pd.Series(np.nan, index=df.index)).astype(float)
+    # -----------------------------
+    # Target from consensus sources
+    # -----------------------------
+    fc_val = pd.to_numeric(df["fc_value"], errors="coerce")
+    dp_val = pd.to_numeric(
+        df.get("dp_value", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+    engine_val = pd.to_numeric(
+        df.get("engine_value", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
 
     fc_norm = _normalize_series_0_1(fc_val)
     dp_norm = _normalize_series_0_1(dp_val)
     engine_norm = _normalize_series_0_1(engine_val)
 
     weights = np.vstack([
-        np.where(~np.isnan(fc_norm.values), 0.4, 0.0),  # FC weight
-        np.where(~np.isnan(dp_norm.values), 0.4, 0.0),  # DP weight
-        np.where(~np.isnan(engine_norm.values), 0.2, 0.0),  # Engine weight
+        np.where(~np.isnan(fc_norm.values), 0.50, 0.0),
+        np.where(~np.isnan(dp_norm.values), 0.35, 0.0),
+        np.where(~np.isnan(engine_norm.values), 0.15, 0.0),
     ])
 
     vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
     numerator = np.nansum(vals * weights, axis=0)
     denominator = np.nansum(weights, axis=0)
-    y_norm = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator != 0)
+
+    y_norm = np.divide(
+        numerator,
+        denominator,
+        out=np.full_like(numerator, np.nan, dtype=float),
+        where=denominator != 0,
+    )
 
     df["target_vendor_norm"] = y_norm
     df["target_value"] = df["target_vendor_norm"] * 1000.0
-    df = df[~df["target_value"].isna()].copy()
+    df = df.dropna(subset=["target_value"]).copy()
 
-    # ------------------------------------------------
-    # Features
-    # ------------------------------------------------
+    if df.empty:
+        raise ValueError("[value_model] No rows remain after target construction.")
+
+    # -----------------------------
+    # Feature columns
+    # -----------------------------
     numeric_cols: List[str] = []
 
-    # Age from internal stats if present, else fc_age
     if "age" in df.columns:
-        df["age"] = df["age"].fillna(df.get("fc_age"))
+        df["age"] = pd.to_numeric(df["age"], errors="coerce")
+        if "fc_age" in df.columns:
+            df["age"] = df["age"].fillna(pd.to_numeric(df["fc_age"], errors="coerce"))
         numeric_cols.append("age")
     elif "fc_age" in df.columns:
+        df["fc_age"] = pd.to_numeric(df["fc_age"], errors="coerce")
         numeric_cols.append("fc_age")
 
     candidate_usage_cols = [
+        "games",
         "avg_off_snap_pct",
         "avg_off_snaps",
         "avg_targets",
@@ -559,7 +605,26 @@ def train_trade_value_model(
         "avg_pass_tds",
         "avg_pass_int",
         "target_share",
+        "target_share_pct",
         "total_targets",
+    ]
+
+    candidate_history_cols = [
+        "last_year_ppg",
+        "prev_year_ppg",
+        "three_year_weighted_ppg",
+        "career_best_ppg",
+        "career_avg_ppg",
+        "last_year_snap_pct",
+        "three_year_weighted_snap_pct",
+        "last_year_target_share",
+        "three_year_weighted_target_share",
+        "ppg_trend_1yr",
+        "ppg_trend_2yr",
+        "target_share_trend_1yr",
+        "games_last_year",
+        "games_last_3yr",
+        "seasons_played",
     ]
 
     team_feature_cols = [
@@ -571,67 +636,103 @@ def train_trade_value_model(
         "team_games_tracked",
     ]
 
-    for col in candidate_usage_cols + team_feature_cols:
+    candidate_investment_cols = [
+        "draft_capital_score",
+        "draft_capital_pos_pct",
+        "contract_apy",
+        "guaranteed_money",
+        "guaranteed_pct",
+        "contract_score",
+        "team_investment_score",
+        "years_to_fa",
+        "contract_apy_pos_pct",
+        "guaranteed_money_pos_pct",
+        "guaranteed_pct_pos_pct",
+    ]
+
+    for col in (
+        candidate_usage_cols
+        + candidate_history_cols
+        + team_feature_cols
+        + candidate_investment_cols
+    ):
         if col in df.columns:
             numeric_cols.append(col)
 
-    numeric_cols = list(dict.fromkeys([c for c in numeric_cols if c in df.columns]))
+    numeric_cols = list(dict.fromkeys(numeric_cols))
+    numeric_cols = [c for c in numeric_cols if c in df.columns]
+
     cat_cols = ["position"]
+    cat_cols = [c for c in cat_cols if c in df.columns]
 
-    df_model = df.dropna(subset=["target_value", "position"]).copy()
+    df_model = df.dropna(subset=["position"]).copy()
+    if df_model.empty:
+        raise ValueError("[value_model] No rows remain after requiring position.")
 
-    # Ensure numeric cols exist
     for col in numeric_cols:
-        if col not in df_model.columns:
-            df_model[col] = 0.0
-    df_model[numeric_cols] = df_model[numeric_cols].astype(float)
+        df_model[col] = pd.to_numeric(df_model[col], errors="coerce")
 
-    # Ensure categorical cols exist
     for col in cat_cols:
-        if col not in df_model.columns:
-            df_model[col] = "UNK"
-    df_model[cat_cols] = df_model[cat_cols].fillna("UNK")
+        df_model[col] = df_model[col].fillna("UNK").astype(str)
 
-    X = df_model[numeric_cols + cat_cols]
+    feature_columns = numeric_cols + cat_cols
+    if not feature_columns:
+        raise ValueError("[value_model] No usable feature columns found.")
+
+    X = df_model[feature_columns].copy()
     y = df_model["target_value"].values
 
-    # ------------------------------------------------
-    # Train / validation split
-    # ------------------------------------------------
+    if len(df_model) < 25:
+        raise ValueError(f"[value_model] Not enough training rows: {len(df_model)}")
+
+    # -----------------------------
+    # Split
+    # -----------------------------
     X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
     )
 
-    # ------------------------------------------------
+    # -----------------------------
     # Preprocessing
-    # ------------------------------------------------
-    numeric_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
-    )
+    # -----------------------------
+    transformers = []
 
-    categorical_transformer = OneHotEncoder(handle_unknown="ignore")
+    if numeric_cols:
+        numeric_transformer = Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+            ]
+        )
+        transformers.append(("num", numeric_transformer, numeric_cols))
+
+    if cat_cols:
+        categorical_transformer = Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+            ]
+        )
+        transformers.append(("cat", categorical_transformer, cat_cols))
 
     preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", numeric_transformer, numeric_cols),
-            ("cat", categorical_transformer, cat_cols),
-        ],
+        transformers=transformers,
         remainder="drop",
     )
 
-    # ------------------------------------------------
-    # Gradient Boosting model
-    # ------------------------------------------------
+    # -----------------------------
+    # Model
+    # -----------------------------
     gbr = GradientBoostingRegressor(
-        n_estimators=500,
-        learning_rate=0.04,
-        max_depth=3,
+        n_estimators=250,
+        learning_rate=0.03,
+        max_depth=2,
         random_state=random_state,
-        subsample=0.9,
-        min_samples_leaf=5,
+        subsample=0.85,
+        min_samples_leaf=8,
     )
 
     model = Pipeline(
@@ -643,26 +744,48 @@ def train_trade_value_model(
 
     model.fit(X_train, y_train)
 
+    # -----------------------------
+    # Validation
+    # -----------------------------
     y_val_pred = model.predict(X_val)
     mae = mean_absolute_error(y_val, y_val_pred)
-    print(f"[value_model] Validation MAE (3-vendor consensus): {mae:.2f} value points")
+    print(f"[value_model] Validation MAE: {mae:.2f} value points")
 
-    # ------------------------------------------------
-    # Capture prediction range for scaling in your app
-    # ------------------------------------------------
+    # -----------------------------
+    # Scaling range for inference
+    # -----------------------------
     y_pred_full = model.predict(X)
-    scale_min = float(y_pred_full.min())
-    scale_max = float(y_pred_full.max())
+    scale_min = float(np.nanmin(y_pred_full))
+    scale_max = float(np.nanmax(y_pred_full))
 
     bundle = TrainedModelBundle(
         pipeline=model,
         scale_min=scale_min,
         scale_max=scale_max,
-        feature_columns=numeric_cols + cat_cols,
+        feature_columns=feature_columns,
     )
 
     with MODEL_PATH.open("wb") as f:
         pickle.dump(bundle, f)
+
+    debug_cols = [
+        "name",
+        "position",
+        "draft_capital_score",
+        "draft_capital_pos_pct",
+        "contract_apy",
+        "contract_score",
+        "team_investment_score",
+    ]
+    debug_cols = [c for c in debug_cols if c in df_model.columns]
+    if debug_cols:
+        print(df_model[debug_cols].head(15).to_string())
+
+    print(
+        f"[value_model] Trained on {len(df_model)} rows | "
+        f"features={len(feature_columns)} | "
+        f"numeric={len(numeric_cols)} | categorical={len(cat_cols)}"
+    )
 
     return bundle
 
@@ -672,62 +795,51 @@ def train_trade_value_model(
 # ------------------------------------------------
 
 def load_trained_bundle(path: Path = MODEL_PATH) -> TrainedModelBundle:
-    """
-    Load the trained model bundle from disk.
-
-    If the existing pickle is incompatible with the current code
-    (e.g. AttributeError: Can't get attribute 'TrainedModelBundle' on __main__),
-    delete it and retrain.
-    """
     if not path.exists():
-        bundle = train_trade_value_model()
-
-        return bundle
+        return train_trade_value_model()
 
     try:
         with path.open("rb") as f:
             bundle: TrainedModelBundle = pickle.load(f)
     except (AttributeError, ModuleNotFoundError):
-        print(
-            "[value_model] Existing model pickle is incompatible with the "
-            "current code. Deleting and retraining…"
-        )
+        print("[value_model] Incompatible pickle found. Deleting and retraining…")
         try:
             path.unlink()
         except OSError:
             pass
-
-        bundle = train_trade_value_model()
-
-        return bundle
+        return train_trade_value_model()
 
     if not isinstance(bundle, TrainedModelBundle):
-        print(
-            "[value_model] Loaded object is not TrainedModelBundle. "
-            "Retraining model to refresh the pickle…"
-        )
+        print("[value_model] Invalid model bundle found. Retraining…")
         try:
             path.unlink()
         except OSError:
             pass
-
-        bundle = train_trade_value_model()
-
-        return bundle
+        return train_trade_value_model()
 
     return bundle
 
 
 def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) -> float:
-    """
-    Given a single player row (with same feature columns as training),
-    return the scaled trade value 0–999.9.
-    """
     model = bundle.pipeline
     scale_min = bundle.scale_min
     scale_max = bundle.scale_max
 
-    X_row = row[bundle.feature_columns].to_frame().T
+    row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
+
+    for col in bundle.feature_columns:
+        if col not in row_dict:
+            row_dict[col] = "UNK" if col == "position" else 0.0
+        else:
+            val = row_dict[col]
+            if col == "position":
+                if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
+                    row_dict[col] = "UNK"
+            else:
+                if val is None or (isinstance(val, float) and pd.isna(val)):
+                    row_dict[col] = 0.0
+
+    X_row = pd.DataFrame([{col: row_dict[col] for col in bundle.feature_columns}])
 
     raw_pred = model.predict(X_row)[0]
     if scale_max <= scale_min:
@@ -738,109 +850,116 @@ def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) ->
     return round(s01 * 999.9, 1)
 
 
+def build_inference_dataframe() -> pd.DataFrame:
+    current_season = _current_season_from_state()
+
+    internal_df = load_internal_stats_df()
+    history_features_df = load_history_feature_df(current_season)
+    investment_df = load_player_investment_df()
+
+    df = internal_df.copy()
+
+    if history_features_df is not None and not history_features_df.empty:
+        history_features_df = history_features_df.copy()
+        history_features_df["sleeper_id"] = history_features_df["sleeper_id"].astype(str)
+        df = df.merge(
+            history_features_df,
+            on="sleeper_id",
+            how="left",
+            suffixes=("", "_hist"),
+        )
+
+    if investment_df is not None and not investment_df.empty:
+        df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    if "age" not in df.columns:
+        if "fc_age" in df.columns:
+            df["age"] = pd.to_numeric(df["fc_age"], errors="coerce")
+        elif "age" in df.columns:
+            df["age"] = pd.to_numeric(df["age"], errors="coerce")
+
+    return df
+
+
 def build_ml_value_table() -> Dict[str, float]:
-    """
-    Use the trained model to build a {sleeper_id: value} table
-    for your trade calculator.
-    """
     bundle = load_trained_bundle()
 
-    df = load_internal_stats_df()
-    df = df[df["position"].isin(["QB", "RB", "WR", "TE"])].copy()
+    df = build_inference_dataframe()
+    if df.empty:
+        return {}
+
+    if "position" in df.columns:
+        df = df[df["position"].isin(list(CORE_POSITIONS))].copy()
+    else:
+        return {}
 
     for col in bundle.feature_columns:
         if col not in df.columns:
-            df[col] = 0.0
-
-    df[bundle.feature_columns] = df[bundle.feature_columns].fillna(0)
+            df[col] = "UNK" if col == "position" else 0.0
 
     values: Dict[str, float] = {}
     for _, row in df.iterrows():
         pid = str(row["sleeper_id"])
-        v = predict_scaled_value_from_row(bundle, row)
-        values[pid] = v
+        values[pid] = predict_scaled_value_from_row(bundle, row)
 
     return values
 
 
 # ------------------------------------------------
-# Rewrite value_table_{date}.json with model outputs
+# Rewrite usage table with model outputs
 # ------------------------------------------------
 
 def rewrite_value_table_with_model() -> Path:
-    """
-    Load value_table_{today}.json, recompute the model value for each player,
-    and write a NEW file:
-        model_values_{today}.json
-
-    Output schema per asset:
-      {
-        id,
-        name,
-        team,
-        position,
-        age,
-        value,
-        search_name,
-        pos_rank,        # int or None
-        pos_rank_label,  # e.g. "WR1" or None
-      }
-
-    Includes both:
-      - real players (QB/RB/WR/TE/etc.)
-      - draft picks (position='PICK', team='Pick')
-    """
     date_str = date.today().isoformat()
     source_path = DATA_DIR / f"usage_table_{date_str}.json"
     if not source_path.exists():
         raise FileNotFoundError(f"No usage table file at {source_path}")
 
     with source_path.open("r", encoding="utf-8") as f:
-        players = json.load(f)  # list[dict]
+        players = json.load(f)
 
     bundle = load_trained_bundle()
-    internal_df = load_internal_stats_df()
+    inference_df = build_inference_dataframe()
 
-    # Map sleeper_id -> row for quick lookup
-    df_by_id = {str(row["sleeper_id"]): row for _, row in internal_df.iterrows()}
+    df_by_id: dict[str, pd.Series] = {}
+    for _, row in inference_df.iterrows():
+        pid = str(row.get("sleeper_id"))
+        if pid:
+            df_by_id[pid] = row
 
     cleaned_assets: list[dict] = []
 
-    # ---------- 1) Players with model values ----------
     for player in players:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
         ml_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
-        # Prefer age from JSON; fall back to internal stats / fc if missing
         age = player.get("age")
         if age is None and row is not None:
-            if "age" in row:
+            if "age" in row and not pd.isna(row["age"]):
                 age = row["age"]
-            elif "fc_age" in row:
+            elif "fc_age" in row and not pd.isna(row["fc_age"]):
                 age = row["fc_age"]
 
+        name = player.get("name")
         cleaned_assets.append({
             "id": player.get("id"),
-            "name": player.get("name"),
+            "name": name,
             "team": player.get("team"),
             "position": player.get("position"),
             "age": age,
             "value": float(ml_value),
-            "search_name": normalize_name(player.get("name")),
-            # filled in later
+            "search_name": normalize_name(name) if name else "",
             "pos_rank": None,
             "pos_rank_label": None,
         })
 
-    # ---------- 2) Draft picks from pick value table ----------
-    pick_values = load_pick_value_table() or {}  # { "2026_1_early": value, "2026_1": value, ... }
+    pick_values = load_pick_value_table() or {}
 
     for key, val in pick_values.items():
         parts = key.split("_")
 
-        # Expect either "2026_1_early" or "2026_1"
         if len(parts) == 3:
             year_str, rnd_str, bucket = parts
             bucket = bucket.lower()
@@ -848,7 +967,6 @@ def rewrite_value_table_with_model() -> Path:
             year_str, rnd_str = parts
             bucket = None
         else:
-            # Weird key like "foo" – skip
             continue
 
         try:
@@ -860,55 +978,43 @@ def rewrite_value_table_with_model() -> Path:
         suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
 
         if bucket:
-            bucket_label = bucket.capitalize()  # early/mid/late -> Early/Mid/Late
+            bucket_label = bucket.capitalize()
             name = f"{year} {rnd}{suffix} ({bucket_label})"
         else:
             name = f"{year} {rnd}{suffix}"
 
         cleaned_assets.append({
-            "id": key,  # trade calculator uses this as pick id
-            "name": name,  # display string
-            "team": "Pick",  # keeps schema consistent
-            "position": "PICK",  # lets UI / logic distinguish picks
-            "age": None,  # no age for picks
+            "id": key,
+            "name": name,
+            "team": "Pick",
+            "position": "PICK",
+            "age": None,
             "value": float(val),
             "search_name": normalize_name(name),
             "pos_rank": None,
             "pos_rank_label": None,
         })
 
-    # ---------- 3) Compute per-position ranks (players only) ----------
-    # Group indexes by position
     pos_to_indices: dict[str, list[int]] = {}
 
     for idx, asset in enumerate(cleaned_assets):
         pos = str(asset.get("position") or "").upper()
         if not pos or pos == "PICK":
-            continue  # don't rank picks
+            continue
         pos_to_indices.setdefault(pos, []).append(idx)
 
-    # For each position, sort by value desc, assign rank
     for pos, indices in pos_to_indices.items():
-        # sort indices by value
         indices.sort(key=lambda i: float(cleaned_assets[i].get("value") or 0.0), reverse=True)
 
         rank = 1
         for i in indices:
-            # optional: if you want ties to share rank, uncomment this block
-            # if last_val is not None and val < last_val:
-            #     rank += 1
-            # last_val = val
-
-            # simpler: strict ordering (1,2,3,...)
             cleaned_assets[i]["pos_rank"] = rank
             cleaned_assets[i]["pos_rank_label"] = f"{pos}{rank}"
             rank += 1
 
     today = date.today()
     yesterday = today - timedelta(days=1)
-
-    pattern = f"model_values_{yesterday.isoformat()}.json"
-    yesterday_file = DATA_DIR / pattern
+    yesterday_file = DATA_DIR / f"model_values_{yesterday.isoformat()}.json"
 
     if yesterday_file.exists():
         print(f"[model_values] Removing yesterday's value file: {yesterday_file.name}")
@@ -917,11 +1023,9 @@ def rewrite_value_table_with_model() -> Path:
         except Exception as e:
             print(f"[model_values] Failed to remove yesterday's file: {e}")
 
-    # ---------- 4) Write combined table ----------
     out_path = DATA_DIR / f"model_values_{date_str}.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
 
     print(f"[value_model] Wrote model values (players + picks) → {out_path}")
-
     return out_path

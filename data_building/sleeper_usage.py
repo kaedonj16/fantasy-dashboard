@@ -256,7 +256,6 @@ def write_usage_table_snapshot(
     It uses the usage data from build_usage_map_for_season(season, weeks).
     """
     DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-    print(DATA_DIR)
     players_index: Dict[str, dict] = load_players_index()
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
 

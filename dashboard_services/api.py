@@ -255,6 +255,11 @@ def get_traded_picks(league_id: str) -> List[dict]:
 
 
 @ttl_cache(ttl=300)
+def get_drafts(league_id: str) -> List[dict]:
+    return fetch_json(f"/league/{league_id}/drafts")
+
+
+@ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
     url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}

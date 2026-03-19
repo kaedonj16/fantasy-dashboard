@@ -29,7 +29,8 @@ from dashboard_services.platform_api import (
     get_users,
     get_rosters,
     get_traded_picks,
-    get_bracket
+    get_bracket,
+    get_drafts
 )
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
@@ -348,7 +349,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     active (global pages): 'home','privacy','faq','contact','support'
     """
     nfl_state = get_nfl_state() or {}
-    offseason_mode = (nfl_state.get("season_type") or "").lower() == "off"
+    offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
+            int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
+    )
 
     if not league_id:
         def simple_pill(label: str, href: str, key: str) -> str:
@@ -482,15 +485,56 @@ def validate_league_id(platform: str, league_id: str) -> tuple[bool, Optional[st
     return False, f"Unsupported platform: {platform}"
 
 
+def _safe_int(value, default=None):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optional[dict]:
+    """
+    Pick the most recent draft from the provided list, using the best available
+    timestamp field. Return it only if it belongs to the viewed season.
+
+    If the newest draft is from an older season, return None so the caller
+    can keep TBD logic.
+    """
+    if not isinstance(drafts, list) or not drafts:
+        return None
+
+    def draft_sort_ts(d: dict) -> int:
+        if not isinstance(d, dict):
+            return -1
+        return max(
+            _safe_int(d.get("start_time"), -1),
+            _safe_int(d.get("created"), -1),
+            _safe_int(d.get("last_picked"), -1),
+            _safe_int(d.get("last_message_time"), -1),
+        )
+
+    valid_drafts = [d for d in drafts if isinstance(d, dict)]
+    if not valid_drafts:
+        return None
+
+    most_recent = max(valid_drafts, key=draft_sort_ts)
+    most_recent_season = _safe_int(most_recent.get("season"))
+
+    if most_recent_season != int(season):
+        return None
+
+    return most_recent
+
+
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
     Platform-agnostic. Cached at the route level.
 
     Offseason-safe behavior:
-    - If viewing a past season, use a full completed season window.
-    - If viewing the current season during the offseason, also use a full completed season window.
-    - If viewing the live season in progress, only build through the current live week.
+    - Offseason mode only applies to the CURRENT season while the NFL is in offseason.
+    - Past seasons still behave like completed historical seasons.
+    - In-season behavior is unchanged.
     """
 
     resolved_league_id = league_id
@@ -499,7 +543,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         f"resolved_league_id={resolved_league_id} platform={platform} season={season}"
     )
 
-    # Core league data (provider-backed)
+    # Core league data
     league = get_league(platform, resolved_league_id, season)
     users = get_users(platform, resolved_league_id, season)
     rosters = get_rosters(platform, resolved_league_id, season)
@@ -507,6 +551,14 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     traded = None
     if platform == "sleeper":
         traded = get_traded_picks(platform, resolved_league_id, season)
+
+    try:
+        drafts = get_drafts(platform, resolved_league_id, season) or []
+        latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
+    except Exception as e:
+        print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+        drafts = []
+        latest_draft = None
 
     # Global NFL state
     current = get_nfl_state() or {}
@@ -517,7 +569,10 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     FULL_SEASON_WEEKS = 18
 
-    offseason_mode = season_type == "off"
+    # IMPORTANT:
+    # Offseason mode should only apply to the current upcoming season,
+    # not to old historical seasons.
+    offseason_mode = (season == current_season and season_type == "off")
     mode = "offseason" if offseason_mode else "in_season"
 
     if offseason_mode:
@@ -549,9 +604,8 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     if offseason_mode:
         df_weekly = pd.DataFrame()
         team_stats = pd.DataFrame()
-        roster_map = {}
     else:
-        df_weekly, team_stats, roster_map = build_tables(
+        df_weekly, team_stats, _ = build_tables(
             league_id=resolved_league_id,
             max_week=max_week,
             players=players,
@@ -561,6 +615,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             platform=platform,
         )
 
+    # Always build roster_map from current rosters/users so offseason pages work
     user_fallback = {
         u["user_id"]: (
                 (u.get("metadata") or {}).get("team_name")
@@ -579,7 +634,6 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             owner_id, f"Roster {rid}"
         )
 
-    # Safe empty fallbacks
     if df_weekly.empty and not offseason_mode:
         print(
             f"[build_league_context] no weekly data for requested_league_id={league_id}, "
@@ -650,6 +704,8 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "total_rosters": total_rosters,
         "mode": mode,
         "offseason_mode": offseason_mode,
+        "drafts": drafts,
+        "latest_draft": latest_draft,
     }
 
 
@@ -1532,7 +1588,17 @@ def build_standings_body(ctx: dict) -> str:
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
     standings_html = render_standings(team_stats, num_teams)
-    table_html = render_team_stats(team_stats, df_weekly[df_weekly["finalized"] == True].copy())
+
+    if (
+            df_weekly is not None
+            and not df_weekly.empty
+            and "finalized" in df_weekly.columns
+    ):
+        detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
+    else:
+        detailed_df = pd.DataFrame()
+
+    table_html = render_team_stats(team_stats, detailed_df)
     power_playoffs_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -1555,7 +1621,7 @@ def build_standings_body(ctx: dict) -> str:
                   {standings_html}
                 </div>
                 <div class="tab-panel" data-tab="details">
-                  {table_html}   <!-- your FULL sortable stats table -->
+                  {table_html}
                   <div class="footer">
                     Default sort: Win% ↓ then PF ↓. Click headers to sort.
                   </div>
@@ -1590,17 +1656,28 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     players_map = ctx["players_map"]
     model_value_table = ctx.get("model_value_table") or []
 
-    draft_day = league.get("draft_day")
-    draft_text = "Draft date not available"
+    latest_draft = ctx.get("latest_draft")
+    draft_text = "Draft date not set"
     countdown_text = "TBD"
+    draft_subtext = "Set once your league schedules the draft."
 
-    if draft_day:
+    draft_ts_ms = None
+
+    if isinstance(latest_draft, dict):
+        draft_ts_ms = _safe_int(latest_draft.get("start_time"))
+
+    if draft_ts_ms is None:
+        draft_ts_ms = _safe_int(league.get("draft_day"))
+
+    if draft_ts_ms:
         try:
-            draft_dt = datetime.fromtimestamp(int(draft_day) / 1000, tz=EASTERN)
+            draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
             now_dt = datetime.now(EASTERN)
-            delta = draft_dt.date() - now_dt.date()
+            delta_days = (draft_dt.date() - now_dt.date()).days
+
             draft_text = draft_dt.strftime("%b %d, %Y at %I:%M %p %Z")
-            countdown_text = f"{delta.days} days" if delta.days >= 0 else "Draft passed"
+            countdown_text = f"{delta_days} days" if delta_days >= 0 else "Draft passed"
+            draft_subtext = "Countdown to your next league draft."
         except Exception:
             pass
 
@@ -1615,7 +1692,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
-    # Very simple roster-value style leaderboard using your model values
     values_by_id = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
@@ -1624,115 +1700,209 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
-    top_assets = []
-    for row in model_value_table:
-        if not isinstance(row, dict):
-            continue
-        try:
-            val = float(row.get("value") or 0.0)
-        except Exception:
-            val = 0.0
-        if val <= 0:
-            continue
-        top_assets.append({
-            "name": row.get("name", "Unknown"),
-            "position": row.get("position") or row.get("pos") or "",
-            "team": row.get("team") or "",
-            "value": val,
-        })
-
-    top_assets.sort(key=lambda x: x["value"], reverse=True)
-    top_assets_html = "".join(
-        f"""
-        <div class="player-activity">
-          <div style="display:flex;justify-content:space-between;width:100%">
-            <div>
-              <div style="font-weight:600">{p['name']}</div>
-              <div style="color:#64748b;font-size:12px">{p['position']} • {p['team']}</div>
-            </div>
-            <div class="player-trade-value">{p['value']:.0f}</div>
-          </div>
-        </div>
-        """
-        for p in top_assets[:10]
-    )
-
     roster_cards = []
+    total_future_picks = 0
+
     for r in rosters:
         rid = str(r.get("roster_id"))
         team_name = roster_map.get(rid, f"Roster {rid}")
         player_ids = [str(pid) for pid in (r.get("players") or [])]
         roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
-        pick_count = len(picks_by_roster.get(rid, [])) if isinstance(picks_by_roster, dict) else 0
+        team_picks = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
+        pick_count = len(team_picks)
+        total_future_picks += pick_count
+
+        first_round_count = 0
+        for pk in team_picks:
+            try:
+                if int(pk.get("round") or 0) == 1:
+                    first_round_count += 1
+            except Exception:
+                pass
+
+        badge_bits = []
+        if first_round_count > 0:
+            badge_bits.append(f"{first_round_count} first{'s' if first_round_count != 1 else ''}")
+        if pick_count > 0:
+            badge_bits.append(f"{pick_count} future picks")
+
+        badge_html = ""
+        if badge_bits:
+            badge_html = "".join(
+                f"<span class='os-snapshot-chip'>{bit}</span>" for bit in badge_bits[:2]
+            )
 
         roster_cards.append({
             "team_name": team_name,
             "roster_value": roster_value,
             "pick_count": pick_count,
             "html": f"""
-            <div class="card small">
-              <div class="card-header">
-                <h3>{team_name}</h3>
-                <h3>{roster_value:.0f}</h3>
+            <div class="os-snapshot-card">
+              <div class="os-snapshot-top">
+                <div class="os-snapshot-rank-block">
+                  <div class="os-snapshot-team">{team_name}</div>
+                  <div class="os-snapshot-meta">Roster value</div>
+                </div>
+                <div class="os-snapshot-value">{roster_value:.0f}</div>
               </div>
-              <div class="card-body">
-                <div class="mini-label">Roster Value</div>
-                <div class="mini-label" style="margin-top:6px;">Future Picks: {pick_count}</div>
+              <div class="os-snapshot-bottom">
+                <div class="os-snapshot-chip-row">
+                  {badge_html}
+                </div>
               </div>
             </div>
             """
         })
 
-
     roster_cards.sort(key=lambda x: x["roster_value"], reverse=True)
-    roster_cards_html = "".join(card["html"] for card in roster_cards)
+
+    ranked_snapshot_html = []
+    for idx, card in enumerate(roster_cards, start=1):
+        ranked_snapshot_html.append(
+            f"""
+            <div class="os-snapshot-rank-wrap">
+              <div class="os-snapshot-rank">#{idx}</div>
+              <div class="os-snapshot-rank-card">
+                {card["html"]}
+              </div>
+            </div>
+            """
+        )
+
+    roster_cards_html = "".join(ranked_snapshot_html)
+
+    roster_leader = roster_cards[0]["team_name"] if roster_cards else "N/A"
+    highest_roster_value = f"{roster_cards[0]['roster_value']:.0f}" if roster_cards else "0"
+
+    rostered_ids = {
+        str(pid)
+        for r in rosters
+        for pid in (r.get("players") or [])
+    }
+
+    top_waiver_assets = []
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+
+        pid = str(row.get("id") or "")
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+
+        if not pid or pid in rostered_ids:
+            continue
+        if pos not in {"QB", "RB", "WR", "TE"}:
+            continue
+
+        try:
+            val = float(row.get("value") or 0.0)
+        except Exception:
+            val = 0.0
+
+        if val <= 0:
+            continue
+
+        top_waiver_assets.append({
+            "name": row.get("name", "Unknown"),
+            "position": pos,
+            "team": row.get("team") or "",
+            "value": val,
+            "age": row.get("age"),
+            "pos_rank_label": row.get("pos_rank_label") or "",
+        })
+
+    top_waiver_assets.sort(key=lambda x: x["value"], reverse=True)
+
+    waiver_html = []
+    for p in top_waiver_assets[:10]:
+        sub_bits = [p["position"]]
+        if p["team"]:
+            sub_bits.append(p["team"])
+        if p["pos_rank_label"]:
+            sub_bits.append(p["pos_rank_label"])
+
+        subline = " • ".join(sub_bits)
+
+        waiver_html.append(
+            f"""
+            <div class="os-waiver-row">
+              <div class="os-waiver-main">
+                <div class="os-waiver-name">{p['name']}</div>
+                <div class="os-waiver-sub">{subline}</div>
+              </div>
+              <div class="os-waiver-value">{p['value']:.0f}</div>
+            </div>
+            """
+        )
+
+    top_waiver_assets_html = "".join(waiver_html)
 
     body = f"""
-    <aside class="overview-sidebar-left">
-      <div class="card central">
-        <h2>Offseason Team Snapshot</h2>
-        <div class="teams-grid">
-          {roster_cards_html or "<p>No offseason roster data available yet.</p>"}
-        </div>
-      </div>
-      <div class="card central">
-        <h2>Top Trade Assets</h2>
-        <div class="card-body">
-          {top_assets_html or "<p>No player values available yet.</p>"}
-        </div>
-      </div>
-    </aside>
-    
-    <div class="overview-main">
-      <div class="card">
-        <div class="card-header">
-          <h2>Offseason Mode</h2>
-        </div>
-        <div class="card-body">
-          <div class="mini-label">Viewing {season} offseason league data</div>
-          <p style="margin-top:10px;">
-            Weekly matchups and live game views are paused. Focus is on roster building,
-            draft prep, values, picks, and trade opportunities.
-          </p>
-        </div>
-      </div>
+    <div class="os-layout">
+      <aside class="os-left-col">
+        <section class="os-card os-card-soft">
+          <div class="os-section-head">
+            <h2 class="os-section-title">Offseason Team Snapshot</h2>
+            <div class="os-section-subtitle">Roster value and future capital across the league</div>
+          </div>
+          <div class="os-snapshot-list">
+            {roster_cards_html or "<p>No offseason roster data available yet.</p>"}
+          </div>
+        </section>
+      </aside>
 
-      <div class="card">
-        <div class="card-header">
-          <h2>Draft Countdown</h2>
+      <main class="os-main-col">
+        <section class="os-hero-card">
+          <div class="os-hero-top">
+            <div>
+              <div class="os-hero-kicker">Viewing {season} offseason league data</div>
+              <h1 class="os-hero-title">Offseason Hub</h1>
+              <p class="os-hero-copy">
+                Focus on roster building, draft prep, waiver value, and trade opportunities.
+              </p>
+            </div>
+            <div class="os-hero-badge">Offseason</div>
+          </div>
+
+          <div class="os-hero-stats">
+            <div class="os-stat-card">
+              <div class="os-stat-label">Draft countdown</div>
+              <div class="os-stat-value">{countdown_text}</div>
+              <div class="os-stat-sub">{draft_text}</div>
+            </div>
+            <div class="os-stat-card">
+              <div class="os-stat-label">League leader</div>
+              <div class="os-stat-value">{highest_roster_value}</div>
+              <div class="os-stat-sub">{roster_leader}</div>
+            </div>
+            <div class="os-stat-card">
+              <div class="os-stat-label">Future picks tracked</div>
+              <div class="os-stat-value">{total_future_picks}</div>
+              <div class="os-stat-sub">{len(rosters)} teams in league</div>
+            </div>
+          </div>
+
+          <div class="os-hero-footer">
+            {draft_subtext}
+          </div>
+        </section>
+
+        <section class="os-card">
+          <div class="os-section-head">
+            <h2 class="os-section-title">Top Waiver Assets</h2>
+            <div class="os-section-subtitle">Best currently unrostered players by BR value</div>
+          </div>
+          <div class="os-waiver-list">
+            {top_waiver_assets_html or "<p>No waiver values available yet.</p>"}
+          </div>
+        </section>
+      </main>
+
+      <aside class="os-right-col">
+        <div class="os-sidebar-shell">
+          {teams_sidebar_html}
         </div>
-        <div class="card-body">
-          <div class="mini-label">Draft Date</div>
-          <p>{draft_text}</p>
-          <div class="mini-label" style="margin-top:10px;">Time Remaining</div>
-          <p>{countdown_text}</p>
-        </div>
-      </div>
+      </aside>
     </div>
-
-    <aside class="overview-sidebar">
-      {teams_sidebar_html}
-    </aside>
     """
     return body
 
@@ -2357,7 +2527,6 @@ def build_activity_body(ctx: dict) -> str:
     players_values_raw = ctx.get("model_value_table") or []
     player_val_by_key: dict[tuple[str, str, str], float] = {}
     player_val_by_key_np: dict[tuple[str, str], float] = {}
-
     rank_label_by_name: dict[str, str] = {}
 
     if isinstance(players_values_raw, list):
@@ -2376,8 +2545,9 @@ def build_activity_body(ctx: dict) -> str:
                 val = float(row.get("value") or 0.0)
             except Exception:
                 val = 0.0
+
             player_val_by_key[(name_lower, pos, team)] = val
-            player_val_by_key_np[(raw_name, pos)] = val
+            player_val_by_key_np[(name_lower, pos)] = val
 
             lbl = row.get("pos_rank_label") or pos
             rank_label_by_name[name_lower] = str(lbl)
@@ -2385,7 +2555,7 @@ def build_activity_body(ctx: dict) -> str:
     def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip()
         name_lower = name.lower()
-        pos = str(p.get("pos") or "").strip().upper()
+        pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
             return 0.0, ""
@@ -2396,10 +2566,20 @@ def build_activity_body(ctx: dict) -> str:
         )
 
         rank_label = rank_label_by_name.get(name_lower, pos)
-
         return val, rank_label
 
     pick_values = load_pick_value_table() or {}
+
+    def pick_bucket_from_seed(seed: Optional[int], num_teams: int = 10) -> Optional[str]:
+        if seed is None:
+            return None
+        if 1 <= seed <= 3:
+            return "early"
+        if 4 <= seed <= 7:
+            return "mid"
+        if 8 <= seed <= num_teams:
+            return "late"
+        return None
 
     def pick_value(pick: dict, standings_map: dict[int, int], num_teams: int = 10) -> float:
         try:
@@ -2418,14 +2598,7 @@ def build_activity_body(ctx: dict) -> str:
         except Exception:
             seed = None
 
-        bucket: str | None = None
-        if seed is not None:
-            if 1 <= seed <= 3:
-                bucket = "early"
-            elif 4 <= seed <= 7:
-                bucket = "mid"
-            elif 8 <= seed <= num_teams:
-                bucket = "late"
+        bucket = pick_bucket_from_seed(seed, num_teams=num_teams)
 
         if bucket:
             key_bucket = f"{year}_{rnd}_{bucket}"
@@ -2446,11 +2619,56 @@ def build_activity_body(ctx: dict) -> str:
 
         return 0.0
 
-    # ---------- ACTIVITY CARD HTML ----------
+    def pick_subline(pick: dict, rid_to_name: dict, users: list, num_teams: int = 10) -> str:
+        prev_owner = pick.get("previous_owner_id")
+        seed = None
+        try:
+            if prev_owner is not None:
+                seed = standings_map.get(int(prev_owner))
+        except Exception:
+            seed = None
+
+        bucket = pick_bucket_from_seed(seed, num_teams=num_teams)
+        bucket_label = bucket.capitalize() if bucket else None
+
+        orig_rid = pick.get("roster_id")
+        orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
+        orig_name = next(
+            (
+                u.get("display_name")
+                for u in users
+                if u.get("metadata", {}).get("team_name") == orig_team
+            ),
+            None
+        )
+
+        owner_txt = f"from {orig_name}" if orig_name else "Traded Pick"
+        return f"{bucket_label} • {owner_txt}" if bucket_label else owner_txt
+
+    def verdict_from_net(net_total: float) -> tuple[str, str]:
+        if net_total >= 20:
+            return "bract-verdict-win", "Strong win"
+        if net_total >= 8:
+            return "bract-verdict-win", "Slight win"
+        if net_total <= -20:
+            return "bract-verdict-loss", "Strong loss"
+        if net_total <= -8:
+            return "bract-verdict-loss", "Slight loss"
+        return "bract-verdict-even", "Fair"
+
+    trade_count = 0
+    waiver_count = 0
+    most_active_counts: dict[str, int] = {}
+    traded_asset_counts: dict[str, int] = {}
+    biggest_trade_label = "No trade data"
+    biggest_trade_delta = 0.0
+
     activity_html = ""
     if activity_df is not None and not activity_df.empty:
 
         def html_trade(txrow):
+            nonlocal trade_count, biggest_trade_label, biggest_trade_delta
+
             data = txrow["data"]
             teams = data["teams"]
             users = get_users(platform, resolved_league_id, season)
@@ -2460,8 +2678,16 @@ def build_activity_body(ctx: dict) -> str:
                 rid = tm.get("roster_id")
                 if rid is not None:
                     rid_to_name[rid] = tm.get("name") or f"Team {rid}"
+                team_name = tm.get("name") or f"Team {rid}"
+                most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+
+            trade_count += 1
 
             def render_player_row(p, io_class):
+                name = str(p.get("name") or "").strip()
+                if name:
+                    traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
@@ -2478,20 +2704,12 @@ def build_activity_body(ctx: dict) -> str:
                 )
 
             def render_pick_row(pick, io_class):
+                traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
+
                 rnd_suffix = {1: "st", 2: "nd", 3: "rd"}.get(pick.get("round"), "th")
                 round_label = f"{pick.get('round')}" + rnd_suffix
-                season = str(pick.get("season") or "")
-                orig_rid = pick.get("roster_id")
-                orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
-                orig_name = next(
-                    (
-                        u.get("display_name")
-                        for u in users
-                        if u.get("metadata", {}).get("team_name") == orig_team
-                    ),
-                    None
-                )
-                subline = f"{orig_name}'s Pick" if orig_name else "Traded Pick"
+                pick_season = str(pick.get("season") or "")
+                subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
@@ -2501,7 +2719,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
-                    f"  <div style='font-weight:600'>{season} {round_label}</div>"
+                    f"  <div style='font-weight:600'>{pick_season} {round_label}</div>"
                     f"  <div style='color:#64748b;font-size:12px'>{subline}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
@@ -2518,7 +2736,6 @@ def build_activity_body(ctx: dict) -> str:
                 if send is not None:
                     picks_by_sender.setdefault(send, []).append(dp)
 
-            # -------- build sides for multi-for-one (2-team trades) --------
             side_map: dict[int, dict] = {}
             for tm in teams:
                 rid = tm.get("roster_id")
@@ -2527,12 +2744,8 @@ def build_activity_body(ctx: dict) -> str:
                 in_players = tm.get("gets") or []
                 in_picks = picks_by_receiver.get(rid, []) or []
 
-                # player_value returns (value, pos_rank_label)
                 in_player_pairs = [player_value(p) for p in in_players]
-
-                # just the numeric values for totals
                 in_player_vals = [v for (v, _label) in in_player_pairs]
-
                 in_pick_vals = [pick_value(pk, standings_map) for pk in in_picks]
 
                 raw_players_total = sum(in_player_vals)
@@ -2553,13 +2766,14 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                # this mutates side_a / side_b in-place
                 apply_multi_for_one_adjustment(side_a, side_b)
+
+            net_values = []
 
             cols = []
             for tm in teams:
                 roster_id = tm.get("roster_id")
-                # incoming
+
                 gets_parts = []
                 for p in (tm.get("gets") or []):
                     gets_parts.append(render_player_row(p, "add"))
@@ -2572,9 +2786,8 @@ def build_activity_body(ctx: dict) -> str:
                 gets_picks = "".join(gets_pick_parts)
                 gets = gets_players + gets_picks
                 if not gets:
-                    gets = "<div style='color:#64748b;font-size:13px'>No players</div>"
+                    gets = "<div class='bract-empty-mini'>No incoming assets</div>"
 
-                # outgoing
                 sends_parts = []
                 for p in (tm.get("sends") or []):
                     sends_parts.append(render_player_row(p, "drop"))
@@ -2587,12 +2800,9 @@ def build_activity_body(ctx: dict) -> str:
                 sends_picks = "".join(sends_pick_parts)
                 sends = sends_players + sends_picks
 
-                # totals
-                # effective "in" total (after multi-for-one)
                 side_info = side_map.get(roster_id)
                 eff_in = side_info["effective_total"] if side_info else 0.0
 
-                # raw "out" total
                 out_total = 0.0
                 for p in (tm.get("sends") or []):
                     out_total += player_value(p)[0]
@@ -2601,14 +2811,23 @@ def build_activity_body(ctx: dict) -> str:
                         out_total += pick_value(pick, standings_map)
 
                 net_total = eff_in - out_total
+                net_values.append((tm.get("name", ""), net_total))
+
+                verdict_cls, verdict_txt = verdict_from_net(net_total)
+                net_num_cls = (
+                    "bract-net-pos" if net_total > 0 else
+                    "bract-net-neg" if net_total < 0 else
+                    "bract-net-even"
+                )
 
                 total_html = (
-                    "<div class='trade-total-row'>"
-                    "<hr style='margin-top:8px;margin-bottom:4px;border:none;border-top:1px solid #e2e8f0;'>"
-                    "<div style='display:flex;justify-content:space-between;font-size:14px;font-weight:600;'>"
+                    "<div class='trade-total-row bract-total-row'>"
+                    "<hr style='margin-top:8px;margin-bottom:8px;border:none;border-top:1px solid #e2e8f0;'>"
+                    "<div class='bract-total-head'>"
                     "<span>Total Value</span>"
-                    f"<span>{net_total:.0f}</span>"
+                    f"<span class='{net_num_cls}'>{net_total:.0f}</span>"
                     "</div>"
+                    f"<div class='bract-verdict {verdict_cls}'>{verdict_txt}</div>"
                     "</div>"
                 )
 
@@ -2625,6 +2844,12 @@ def build_activity_body(ctx: dict) -> str:
                     "</div>"
                 )
 
+            if len(net_values) == 2:
+                delta = abs(net_values[0][1] - net_values[1][1])
+                if delta > biggest_trade_delta:
+                    biggest_trade_delta = delta
+                    biggest_trade_label = f"{net_values[0][0]} vs {net_values[1][0]}"
+
             when = (
                 txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
                 if pd.notna(txrow["ts"])
@@ -2638,16 +2863,25 @@ def build_activity_body(ctx: dict) -> str:
             )
 
         def html_waiver(txrow):
+            nonlocal waiver_count
+
             d = txrow["data"]
+            team_name = d.get("name") or "Unknown Team"
+            most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+            waiver_count += 1
+
             avatar = d.get("avatar") or ""
             img = (
                 f"<img class='avatar' src='{avatar}' "
                 "onerror=\"this.style.display='none'\">"
-                if avatar
-                else ""
+                if avatar else ""
             )
             adds_parts = []
             for p in d.get("adds", []):
+                name = str(p.get("name") or "").strip()
+                if name:
+                    traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
@@ -2661,7 +2895,7 @@ def build_activity_body(ctx: dict) -> str:
                     "</div></div>"
                     f"{val_html}</div>"
                 )
-            adds = "".join(adds_parts)
+            adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
 
             when = (
                 txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
@@ -2672,7 +2906,7 @@ def build_activity_body(ctx: dict) -> str:
                 "<div class='tx activity-item' data-kind='waiver'>"
                 f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
                 "  <div class='team-col'>"
-                f"    <header>{img}<div class='team-name'>{d['name']}</div></header>"
+                f"    <header>{img}<div class='team-name'>{team_name}</div></header>"
                 f"    <div class='plist'>{adds}</div>"
                 "  </div>"
                 "</div>"
@@ -2682,11 +2916,33 @@ def build_activity_body(ctx: dict) -> str:
         for _, row in activity_df.iterrows():
             cards.append(html_trade(row) if row["kind"] == "trade" else html_waiver(row))
 
+        most_active_team = max(most_active_counts.items(), key=lambda x: x[1])[0] if most_active_counts else "None"
+        most_moved_asset = max(traded_asset_counts.items(), key=lambda x: x[1])[0] if traded_asset_counts else "None"
+
+        summary_html = (
+            "<div class='bract-summary-grid'>"
+            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Trades</div><div class='bract-summary-value'>{trade_count}</div></div>"
+            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Waivers</div><div class='bract-summary-value'>{waiver_count}</div></div>"
+            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Most Active</div><div class='bract-summary-value bract-summary-text'>{most_active_team}</div></div>"
+            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Most Moved Asset</div><div class='bract-summary-value bract-summary-text'>{most_moved_asset}</div></div>"
+            "</div>"
+        )
+
+        trade_spotlight = (
+            "<div class='bract-spotlight'>"
+            "  <div class='bract-spotlight-title'>Recent activity snapshot</div>"
+            f"  <div class='bract-spotlight-copy'>Biggest recent trade: <strong>{biggest_trade_label}</strong>"
+            f"  {'(' + str(round(biggest_trade_delta, 1)) + ' value swing)' if biggest_trade_delta > 0 else ''}</div>"
+            "</div>"
+        )
+
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
             "    <h2>Trades & Waiver Claims</h2>"
             "  </div>"
+            f"  {summary_html}"
+            f"  {trade_spotlight}"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
             f"      {''.join(cards)}"
@@ -2695,20 +2951,41 @@ def build_activity_body(ctx: dict) -> str:
             "</div>"
         )
 
-    # ---------- EXISTING INJURY ACCORDION ----------
     injury_html = ""
     if injury_df is not None and not injury_df.empty:
         injury_html = render_injury_accordion(injury_df)
+    else:
+        injury_html = (
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-title'>No injury data right now</div>"
+            "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
+            "    </div>"
+            "  </div>"
+            "</div>"
+        )
 
-    # ---------- PAGE LAYOUT WITH TWO COLUMNS + SIDEBAR ----------
+    if not activity_html:
+        activity_html = (
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-title'>No recent activity yet</div>"
+            "      <div class='bract-empty-copy'>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
+            "    </div>"
+            "  </div>"
+            "</div>"
+        )
+
     return f"""
     <div class="page-layout activity-page">
       <main class="page-main activity-main">
         <div class="activity-col">
-          {activity_html or "<div class='card'><div class='card-body'><p>No activity yet.</p></div></div>"}
+          {activity_html}
         </div>
         <div class="injury-col">
-          {injury_html or "<div class='card'><div class='card-body'><p>No injury data.</p></div></div>"}
+          {injury_html}
         </div>
       </main>
 
@@ -2736,14 +3013,150 @@ def build_activity_body(ctx: dict) -> str:
       </aside>
     </div>
 
+    <style>
+      .bract-summary-grid {{
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin: 0 0 12px 0;
+      }}
+
+      .bract-summary-card {{
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 12px 14px;
+      }}
+
+      .bract-summary-label {{
+        font-size: 11px;
+        line-height: 1.2;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 6px;
+        font-weight: 700;
+      }}
+
+      .bract-summary-value {{
+        font-size: 24px;
+        line-height: 1.1;
+        font-weight: 800;
+        color: #0f172a;
+      }}
+
+      .bract-summary-text {{
+        font-size: 16px;
+        line-height: 1.3;
+      }}
+
+      .bract-spotlight {{
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+      }}
+
+      .bract-spotlight-title {{
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #1d4ed8;
+        margin-bottom: 4px;
+      }}
+
+      .bract-spotlight-copy {{
+        font-size: 14px;
+        color: #1e293b;
+      }}
+
+      .bract-total-row {{
+        padding-bottom: 2px;
+      }}
+
+      .bract-total-head {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #0f172a;
+      }}
+
+      .bract-net-pos {{
+        color: #15803d;
+      }}
+
+      .bract-net-neg {{
+        color: #b91c1c;
+      }}
+
+      .bract-net-even {{
+        color: #475569;
+      }}
+
+      .bract-verdict {{
+        display: inline-flex;
+        align-items: center;
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }}
+
+      .bract-verdict-win {{
+        background: #dcfce7;
+        color: #166534;
+      }}
+
+      .bract-verdict-loss {{
+        background: #fee2e2;
+        color: #991b1b;
+      }}
+
+      .bract-verdict-even {{
+        background: #e2e8f0;
+        color: #334155;
+      }}
+
+      .bract-empty-state {{
+        padding: 10px 4px;
+      }}
+
+      .bract-empty-title {{
+        font-size: 18px;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 6px;
+      }}
+
+      .bract-empty-copy {{
+        font-size: 14px;
+        line-height: 1.5;
+        color: #64748b;
+      }}
+
+      .bract-empty-mini {{
+        color: #64748b;
+        font-size: 13px;
+      }}
+
+      @media (max-width: 900px) {{
+        .bract-summary-grid {{
+          grid-template-columns: 1fr;
+        }}
+      }}
+    </style>
+
     <script>
     (function() {{
-      // Activity filter (sidebar pills)
       document.querySelectorAll('.act-toggle').forEach(function(btn) {{
         btn.addEventListener('click', function() {{
-          const kind = this.getAttribute('data-kind');
-          const isActive = this.classList.toggle('active');
-
+          this.classList.toggle('active');
           const activeKinds = Array.from(document.querySelectorAll('.act-toggle.active'))
             .map(b => b.getAttribute('data-kind'));
 
@@ -3632,14 +4045,7 @@ def maybe_run_daily():
                 state = get_nfl_state() or {}
                 season_type = (state.get("season_type") or "").lower()
                 season = int(state.get("season") or datetime.now().year)
-                previous_season = int(state.get("previous_season") or (season - 1))
                 week = int(state.get("week") or 0)
-
-                # Do not run live weekly build for offseason / week 0
-                if season_type == "off" or week < 1:
-                    print(f"[daily] Skipping live weekly build in offseason (season={season}, week={week}).")
-                    daily_completed = today_et
-                    return
 
                 run_daily_data_async(season, week)
                 daily_completed = today_et
@@ -3724,13 +4130,6 @@ def index():
 
 @app.route("/api/weekly-week")
 def api_weekly_week():
-    """
-    Return HTML snippets for Weekly Hub:
-      - top scorers (left main card)
-      - highlights (sidebar)
-      - matchups carousel (right main column)
-    for a specific week.
-    """
     platform = (request.args.get("platform") or "").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
     season = int(request.args.get("season") or 0)
@@ -3744,7 +4143,14 @@ def api_weekly_week():
         return jsonify({"ok": False, "error": "Missing league_id or week"}), 400
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    ensure_weekly_bits(ctx)  # make sure proj_by_week / statuses / matchups_by_week exist
+
+    if ctx.get("offseason_mode"):
+        return jsonify({
+            "ok": False,
+            "error": "Weekly Hub is unavailable during the offseason."
+        }), 400
+
+    ensure_weekly_bits(ctx)
 
     df_weekly = ctx["df_weekly"]
     roster_map = ctx["roster_map"]
@@ -3762,18 +4168,24 @@ def api_weekly_week():
     current_week = ctx["current_week"]
     max_weeks = ctx["weeks"]
 
-    # guard against invalid weeks
     if week < 1 or week > max_weeks:
         return jsonify({"ok": False, "error": f"Week {week} out of range"}), 400
 
-    # --- last finalized week for proper matchup slide behavior ---
-    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if (
+            df_weekly is not None
+            and not df_weekly.empty
+            and "finalized" in df_weekly.columns
+            and "week" in df_weekly.columns
+    ):
+        finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    else:
+        finalized_df = pd.DataFrame()
+
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
         last_final_week = max(1, min(int(current_week or 1), int(max_weeks or 1)))
 
-    # --- top scorers / highlights for this week ---
     resolved_league_id = ctx.get("resolved_league_id", league_id)
 
     top_html = render_weekly_top_scorers_for_week(
@@ -3790,10 +4202,7 @@ def api_weekly_week():
     )
     highlights_html = _render_weekly_highlights(df_weekly, week)
 
-    # --- matchups carousel HTML for this week only ---
     matchups = matchups_by_week.get(week, []) or []
-
-    # use .get(...) to avoid KeyError if statuses[week] missing
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
 
     slides = [
@@ -3811,14 +4220,9 @@ def api_weekly_week():
         for m in matchups
     ]
 
-    if slides:
-        slides_html = "".join(slides)
-    else:
-        slides_html = "<div class='m-empty'>No matchups</div>"
-
+    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
     slides_by_week = {week: slides_html}
 
-    # this version returns pure HTML (no <script>), matching app.js’ carousel logic
     matchups_html = render_matchup_carousel_weeks(
         slides_by_week,
         dashboard=False,
@@ -3844,26 +4248,38 @@ def api_refresh_page():
     if not league_id or not page:
         return jsonify({"ok": False, "error": "Missing league_id or page"}), 400
 
-    valid_pages = {"activity", "standings", "teams", "weekly", "dashboard"}
+    valid_pages = {"activity", "standings", "teams", "weekly", "dashboard", "graphs", "trade"}
     if page not in valid_pages:
         return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
 
     try:
-        # Refresh the ctx for this league + page
         ctx = refresh_league_ctx_section(platform, league_id, page, season)
-        # Re-render just the page body for this page
+
         if page == "dashboard":
             if ctx.get("offseason_mode"):
                 body_html = build_offseason_dashboard_body(ctx)
             else:
                 ensure_weekly_bits(ctx)
                 body_html = build_dashboard_body(ctx)
+
         elif page == "standings":
-            body_html = build_standings_body(ctx)
+            if ctx.get("offseason_mode"):
+                body_html = """
+                <div class="card central">
+                  <div class="card-header"><h2>Standings Unavailable</h2></div>
+                  <div class="card-body">
+                    <p>Standings will appear once the season begins.</p>
+                    <p>During the offseason, use Teams, Activity, and Trade Calc for roster planning.</p>
+                  </div>
+                </div>
+                """
+            else:
+                body_html = build_standings_body(ctx)
+
         elif page == "weekly":
             if ctx.get("offseason_mode"):
                 body_html = """
-                <div class="card">
+                <div class="card central">
                   <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
                   <div class="card-body">
                     <p>The Weekly Hub becomes active once the season begins.</p>
@@ -3874,12 +4290,33 @@ def api_refresh_page():
             else:
                 ensure_weekly_bits(ctx)
                 body_html = build_weekly_hub_body(ctx)
+
+        elif page == "graphs":
+            if ctx.get("offseason_mode"):
+                body_html = """
+                <div class="card central">
+                  <div class="card-header"><h2>Graphs Unavailable</h2></div>
+                  <div class="card-body">
+                    <p>Weekly scoring graphs will appear once the season begins.</p>
+                    <p>During the offseason, use Dashboard, Teams, Activity, and Trade Calc for roster planning.</p>
+                  </div>
+                </div>
+                """
+            else:
+                body_html = build_graphs_body(ctx)
+                store_page_html(platform, season, league_id, "graphs", body_html)
+
         elif page == "activity":
             body_html = build_activity_body(ctx)
             store_page_html(platform, season, league_id, "activity", body_html)
+
         elif page == "teams":
             body_html = build_teams_body(ctx)
             store_page_html(platform, season, league_id, "teams", body_html)
+
+        elif page == "trade":
+            body_html = build_trade_calculator_body(ctx["league_id"], ctx["season"])
+
         else:
             body_html = ""
 

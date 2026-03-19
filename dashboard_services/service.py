@@ -1523,7 +1523,6 @@ def pill(s):
 
 
 def build_standings_map(team_stats, roster_map) -> dict[int, int]:
-    print(team_stats.columns)
     ordered = (
         team_stats.sort_values(["Wins", "PF"], ascending=[False, False]).reset_index(drop=True)
     )

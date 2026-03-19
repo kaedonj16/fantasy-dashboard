@@ -10,7 +10,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Dict, Tuple
 
-from data_building.value_model_training import DATA_DIR
+from data_building.paths import DATA_DIR
 
 FOOTBALLGUYS_TEAM_TARGETS_URL = (
     "https://www.footballguys.com/stats/targets/teams?team={team}&year={year}"
