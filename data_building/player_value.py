@@ -784,18 +784,19 @@ def build_value_table_for_usage() -> Dict[str, float]:
             "share": 0.06,
             "snap": 0.03,
         },
-        "WR": {
-            "blended_prod": 0.27,
+        "TE": {
+            "blended_prod": 0.24,
             "current_prod": 0.07,
-            "ceiling": 0.12,
-            "floor": 0.11,
+            "ceiling": 0.08,
+            "floor": 0.10,
             "age": 0.09,
-            "role": 0.12,
+            "role": 0.10,
             "trend": 0.03,
-            "invest": 0.06,
-            "rz": 0.04,
-            "share": 0.06,
-            "snap": 0.03,
+            "invest": 0.05,
+            "rz": 0.07,
+            "share": 0.10,
+            "snap": 0.07,
+            "elite_bonus": 0.04,
         },
     }
 
