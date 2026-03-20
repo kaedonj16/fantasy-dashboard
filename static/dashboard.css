@@ -2835,8 +2835,8 @@ tbody tr:nth-child(even) {
 
 .otc-side-panel {
   padding: 16px;
-  position: sticky;
-  top: 16px;
+  position: static !important;
+  top: auto !important;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
@@ -3419,8 +3419,9 @@ tbody tr:nth-child(even) {
 }
 
 .home-card input[type="text"],
-.home-card input[type="number"],
-.home-card input[type="email"] {
+.home-card input[type="number"] ,
+.home-card input[type="email"],
+.home-card select {
   width: 100%;
 }
 
@@ -5479,5 +5480,96 @@ table {
   .os-waiver-value {
     min-width: 44px;
     font-size: 12px;
+  }
+}
+
+.otc-movers-panel {
+  padding: 12px 14px;
+}
+
+.otc-mini-head {
+  margin-bottom: 10px;
+}
+
+.otc-mini-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #16365d;
+  line-height: 1.15;
+}
+
+.otc-mini-sub {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b95a7;
+  line-height: 1.3;
+}
+
+.otc-mini-section + .otc-mini-section {
+  margin-top: 14px;
+}
+
+.otc-mini-section-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b95a7;
+}
+
+.otc-mini-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #dce3ed;
+}
+
+.otc-mini-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #dce3ed;
+}
+
+.otc-mini-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #334a73;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.otc-mini-delta {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.otc-mini-row.up .otc-mini-delta {
+  color: #1faa3e;
+}
+
+.otc-mini-row.down .otc-mini-delta {
+  color: #ef4444;
+}
+
+.otc-movers-empty {
+  padding: 8px 0;
+  font-size: 12px;
+  color: #8c98aa;
+}
+
+@media (max-width: 1200px) {
+  .otc-side-stack {
+    gap: 14px;
   }
 }

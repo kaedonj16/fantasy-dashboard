@@ -20,3 +20,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+
+databases:
+  - name: brfantasy-db
+    databaseName: brfantasy
+    user: brfantasy_user
+    plan: basic-1gb

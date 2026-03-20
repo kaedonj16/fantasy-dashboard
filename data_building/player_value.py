@@ -8,7 +8,6 @@ from dashboard_services.utils import load_usage_table
 from data_building.player_history import load_player_history_df, build_player_history_features
 from data_building.player_investment import load_player_investment_context
 
-
 CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 # 10-team, 1QB defaults. If you later make this league-aware,
@@ -152,13 +151,13 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         rush_td_rate = _clip(rush_tds / 0.5)
 
         score = (
-            0.22 * _clip(pass_yds / 300.0) +
-            0.24 * _clip(pass_tds / 2.5) +
-            0.24 * _clip(rush_yds / 40.0) +
-            0.18 * rush_td_rate +
-            0.06 * volume +
-            0.16 * rush_floor -
-            0.08 * _clip(pass_int / 1.5)
+                0.22 * _clip(pass_yds / 300.0) +
+                0.24 * _clip(pass_tds / 2.5) +
+                0.24 * _clip(rush_yds / 40.0) +
+                0.18 * rush_td_rate +
+                0.06 * volume +
+                0.16 * rush_floor -
+                0.08 * _clip(pass_int / 1.5)
         )
         return _clip(score)
 
@@ -171,12 +170,12 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         rec_tds = _safe_float(u.get("avg_rec_tds"))
 
         score = (
-            0.28 * _clip(ppg / 21.5) +
-            0.18 * _clip(carries / 17.5) +
-            0.16 * _clip(rush_yds / 85.0) +
-            0.18 * _clip(recs / 4.2) +
-            0.10 * _clip(tgts / 5.2) +
-            0.10 * _clip((rush_tds + rec_tds) / 0.9)
+                0.28 * _clip(ppg / 21.5) +
+                0.18 * _clip(carries / 17.5) +
+                0.16 * _clip(rush_yds / 85.0) +
+                0.18 * _clip(recs / 4.2) +
+                0.10 * _clip(tgts / 5.2) +
+                0.10 * _clip((rush_tds + rec_tds) / 0.9)
         )
         return _clip(score)
 
@@ -188,12 +187,12 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         target_share = _safe_float(u.get("target_share"))
 
         score = (
-            0.28 * _clip(ppg / 20.0) +
-            0.22 * _clip(tgts / 10.5) +
-            0.15 * _clip(recs / 6.8) +
-            0.18 * _clip(rec_yds / 88.0) +
-            0.07 * _clip(rec_tds / 0.65) +
-            0.10 * _clip(target_share / 0.28)
+                0.28 * _clip(ppg / 20.0) +
+                0.22 * _clip(tgts / 10.5) +
+                0.15 * _clip(recs / 6.8) +
+                0.18 * _clip(rec_yds / 88.0) +
+                0.07 * _clip(rec_tds / 0.65) +
+                0.10 * _clip(target_share / 0.28)
         )
         return _clip(score)
 
@@ -205,12 +204,12 @@ def _production_component_fixed(u: dict, pos: str) -> float:
         target_share = _safe_float(u.get("target_share"))
 
         score = (
-            0.30 * _clip(ppg / 16.5) +
-            0.20 * _clip(tgts / 8.0) +
-            0.12 * _clip(recs / 5.5) +
-            0.16 * _clip(rec_yds / 65.0) +
-            0.08 * _clip(rec_tds / 0.55) +
-            0.14 * _clip(target_share / 0.24)
+                0.30 * _clip(ppg / 16.5) +
+                0.20 * _clip(tgts / 8.0) +
+                0.12 * _clip(recs / 5.5) +
+                0.16 * _clip(rec_yds / 65.0) +
+                0.08 * _clip(rec_tds / 0.55) +
+                0.14 * _clip(target_share / 0.24)
         )
         return _clip(score)
 
@@ -273,11 +272,11 @@ def _usage_role_security(u: dict, hist: dict, pos: str) -> float:
     if pos == "QB":
         starter_signal = _clip(_safe_float(u.get("avg_pass_att")) / 32.0)
         security = (
-            0.22 * _clip(snap_now) +
-            0.18 * _clip(snap_hist) +
-            0.32 * starter_signal +
-            0.10 * _clip((trend_ppg + 4.0) / 8.0) +
-            0.18 * _clip(_safe_float(hist.get("career_best_ppg")) / 24.0)
+                0.22 * _clip(snap_now) +
+                0.18 * _clip(snap_hist) +
+                0.32 * starter_signal +
+                0.10 * _clip((trend_ppg + 4.0) / 8.0) +
+                0.18 * _clip(_safe_float(hist.get("career_best_ppg")) / 24.0)
         )
         return _clip(security)
 
@@ -292,11 +291,11 @@ def _usage_role_security(u: dict, hist: dict, pos: str) -> float:
     trend_mix = 0.70 * _clip((trend_ppg + 4.0) / 8.0) + 0.30 * _clip((trend_tgt + 0.06) / 0.12)
 
     security = (
-        0.25 * _clip(snap_now) +
-        0.20 * _clip(snap_hist) +
-        0.25 * opp_norm +
-        0.18 * share_norm +
-        0.12 * trend_mix
+            0.25 * _clip(snap_now) +
+            0.20 * _clip(snap_hist) +
+            0.25 * opp_norm +
+            0.18 * share_norm +
+            0.12 * trend_mix
     )
     return _clip(security)
 
@@ -319,13 +318,13 @@ def _investment_score(invest: dict, pos: str, age: Optional[float]) -> float:
 
     years_score = _clip(years_to_fa / {"QB": 4.0, "RB": 3.0, "WR": 4.0, "TE": 4.0}.get(pos, 4.0))
     raw = (
-        0.22 * _clip(draft_capital / 1000.0) +
-        0.18 * _clip(draft_capital_pct) +
-        0.18 * _clip(contract_score / 1000.0) +
-        0.18 * _clip(team_investment / 1000.0) +
-        0.12 * years_score +
-        0.07 * _clip(apy_pct) +
-        0.05 * _clip(guaranteed_pct)
+            0.22 * _clip(draft_capital / 1000.0) +
+            0.18 * _clip(draft_capital_pct) +
+            0.18 * _clip(contract_score / 1000.0) +
+            0.18 * _clip(team_investment / 1000.0) +
+            0.12 * years_score +
+            0.07 * _clip(apy_pct) +
+            0.05 * _clip(guaranteed_pct)
     )
 
     if age is not None and age <= {"QB": 27, "RB": 24, "WR": 26, "TE": 26}.get(pos, 26):
@@ -357,13 +356,13 @@ def _trend_score(hist: dict, pos: str) -> float:
 
 
 def _risk_penalty(
-    pos: str,
-    age: Optional[float],
-    avail: float,
-    current_conf: float,
-    hist_conf: float,
-    role_security: float,
-    seasons_played: float,
+        pos: str,
+        age: Optional[float],
+        avail: float,
+        current_conf: float,
+        hist_conf: float,
+        role_security: float,
+        seasons_played: float,
 ) -> float:
     age_risk = 1.0 - _age_factor(pos, age)
     sample_risk = 1.0 - _clip(0.60 * current_conf + 0.40 * hist_conf)
@@ -373,27 +372,27 @@ def _risk_penalty(
 
     if pos == "RB":
         penalty = (
-            0.28 * age_risk +
-            0.24 * injury_risk +
-            0.20 * role_risk +
-            0.18 * sample_risk +
-            0.10 * exp_risk
+                0.28 * age_risk +
+                0.24 * injury_risk +
+                0.20 * role_risk +
+                0.18 * sample_risk +
+                0.10 * exp_risk
         )
     elif pos == "QB":
         penalty = (
-            0.18 * age_risk +
-            0.14 * injury_risk +
-            0.30 * role_risk +
-            0.22 * sample_risk +
-            0.16 * exp_risk
+                0.18 * age_risk +
+                0.14 * injury_risk +
+                0.30 * role_risk +
+                0.22 * sample_risk +
+                0.16 * exp_risk
         )
     else:
         penalty = (
-            0.22 * age_risk +
-            0.20 * injury_risk +
-            0.22 * role_risk +
-            0.22 * sample_risk +
-            0.14 * exp_risk
+                0.22 * age_risk +
+                0.20 * injury_risk +
+                0.22 * role_risk +
+                0.22 * sample_risk +
+                0.14 * exp_risk
         )
 
     return _clip(penalty)
@@ -482,11 +481,11 @@ def _proven_elite_bonus(pos: str, career_best_ppg: float, weighted_ppg_3yr: floa
 
 
 def _apply_qb_market_compression(
-    final_scores: Dict[str, float],
-    pos_by_pid: Dict[str, str],
-    elite_norm: Dict[str, float],
-    ceiling_norm: Dict[str, float],
-    per_pid: Dict[str, dict],
+        final_scores: Dict[str, float],
+        pos_by_pid: Dict[str, str],
+        elite_norm: Dict[str, float],
+        ceiling_norm: Dict[str, float],
+        per_pid: Dict[str, dict],
 ) -> Dict[str, float]:
     for pid, score in list(final_scores.items()):
         if pos_by_pid.get(pid) != "QB":
@@ -517,10 +516,10 @@ def _apply_qb_market_compression(
 
 
 def _apply_te_market_compression(
-    final_scores: Dict[str, float],
-    pos_by_pid: Dict[str, str],
-    elite_norm: Dict[str, float],
-    ceiling_norm: Dict[str, float],
+        final_scores: Dict[str, float],
+        pos_by_pid: Dict[str, str],
+        elite_norm: Dict[str, float],
+        ceiling_norm: Dict[str, float],
 ) -> Dict[str, float]:
     for pid, score in list(final_scores.items()):
         if pos_by_pid.get(pid) != "TE":
@@ -530,9 +529,9 @@ def _apply_te_market_compression(
         ceiling = ceiling_norm.get(pid, 0.0)
 
         keep = (
-            0.79
-            + 0.09 * (elite ** 0.90)
-            + 0.03 * (ceiling ** 0.95)
+                0.79
+                + 0.09 * (elite ** 0.90)
+                + 0.03 * (ceiling ** 0.95)
         )
         keep = min(keep, 0.89)
         final_scores[pid] = _clip(score * keep)
@@ -565,7 +564,8 @@ def build_value_table_for_usage() -> Dict[str, float]:
     offseason_mode = season_type == "off"
 
     history_df = load_player_history_df()
-    history_features_df = build_player_history_features(history_df) if history_df is not None and not history_df.empty else None
+    history_features_df = build_player_history_features(
+        history_df) if history_df is not None and not history_df.empty else None
 
     history_by_pid: Dict[str, dict] = {}
     if history_features_df is not None and not history_features_df.empty:
@@ -666,7 +666,8 @@ def build_value_table_for_usage() -> Dict[str, float]:
         career_avg_ppg = _safe_float(hist.get("career_avg_ppg"), weighted_ppg_3yr)
 
         snap_hist = _safe_float(hist.get("three_year_weighted_snap_pct"))
-        target_share_hist = _safe_float(hist.get("three_year_weighted_target_share"), _safe_float(usage.get("target_share")))
+        target_share_hist = _safe_float(hist.get("three_year_weighted_target_share"),
+                                        _safe_float(usage.get("target_share")))
         seasons_played = _safe_float(hist.get("seasons_played"), 1.0)
 
         current_conf = _current_confidence(usage, pos)
@@ -681,9 +682,9 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         denom = max(current_weight + hist_weight, 1e-9)
         blended_prod = (
-            current_weight * current_ppg +
-            hist_weight * weighted_ppg_3yr
-        ) / denom
+                               current_weight * current_ppg +
+                               hist_weight * weighted_ppg_3yr
+                       ) / denom
 
         ceiling_proxy = 0.65 * career_best_ppg + 0.35 * max(current_ppg, last_year_ppg)
         floor_proxy = 0.70 * career_avg_ppg + 0.30 * last_year_ppg
@@ -819,17 +820,17 @@ def build_value_table_for_usage() -> Dict[str, float]:
         w = POS_WEIGHTS[pos]
 
         base = (
-            w["blended_prod"] * blended_prod_norm.get(pid, 0.0) +
-            w["current_prod"] * prod_now_norm.get(pid, 0.0) +
-            w["ceiling"] * ceiling_norm.get(pid, 0.0) +
-            w["floor"] * floor_norm.get(pid, 0.0) +
-            w["age"] * p["age_curve"] +
-            w["role"] * p["role_security"] +
-            w["trend"] * p["trend_score"] +
-            w["invest"] * p["invest_score"] +
-            w["rz"] * rz_norm.get(pid, 0.0) +
-            w["share"] * target_share_norm.get(pid, 0.0) +
-            w["snap"] * snap_norm.get(pid, 0.0)
+                w["blended_prod"] * blended_prod_norm.get(pid, 0.0) +
+                w["current_prod"] * prod_now_norm.get(pid, 0.0) +
+                w["ceiling"] * ceiling_norm.get(pid, 0.0) +
+                w["floor"] * floor_norm.get(pid, 0.0) +
+                w["age"] * p["age_curve"] +
+                w["role"] * p["role_security"] +
+                w["trend"] * p["trend_score"] +
+                w["invest"] * p["invest_score"] +
+                w["rz"] * rz_norm.get(pid, 0.0) +
+                w["share"] * target_share_norm.get(pid, 0.0) +
+                w["snap"] * snap_norm.get(pid, 0.0)
         )
 
         if pos == "QB":
@@ -869,12 +870,12 @@ def build_value_table_for_usage() -> Dict[str, float]:
             rush_bonus = 1.0
 
         dynasty_strength = (
-            0.46 * p["blended_prod"] +
-            0.22 * p["ceiling_proxy"] +
-            0.14 * p["floor_proxy"] +
-            0.10 * p["role_security"] * max(p["blended_prod"], 1.0) +
-            0.08 * p["invest_score"] * max(p["blended_prod"], 1.0)
-        ) * p["age_curve"] * p["avail"] * rush_bonus
+                                   0.46 * p["blended_prod"] +
+                                   0.22 * p["ceiling_proxy"] +
+                                   0.14 * p["floor_proxy"] +
+                                   0.10 * p["role_security"] * max(p["blended_prod"], 1.0) +
+                                   0.08 * p["invest_score"] * max(p["blended_prod"], 1.0)
+                           ) * p["age_curve"] * p["avail"] * rush_bonus
 
         dynasty_strength_by_pos.setdefault(pos, []).append((pid, dynasty_strength))
 
@@ -936,9 +937,9 @@ def build_value_table_for_usage() -> Dict[str, float]:
     for pid, base_score in pos_scores.items():
         pos = pos_by_pid[pid]
         scarcity = (
-            0.42 * replacement_norm.get(pid, 0.0) +
-            0.33 * starter_norm.get(pid, 0.0) +
-            0.25 * elite_norm.get(pid, 0.0)
+                0.42 * replacement_norm.get(pid, 0.0) +
+                0.33 * starter_norm.get(pid, 0.0) +
+                0.25 * elite_norm.get(pid, 0.0)
         )
         alpha = SCARCITY_ALPHA[pos]
         final_scores[pid] = _clip((1.0 - alpha) * base_score + alpha * scarcity)

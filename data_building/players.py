@@ -1,7 +1,7 @@
 import json
+import requests
 from pathlib import Path
 from typing import Dict, Any, Union
-import requests
 
 from dashboard_services.utils import path_players_index
 
@@ -15,10 +15,10 @@ def fetch_sleeper_players() -> dict:
 
 
 def update_player_teams_from_sleeper(
-    player_index_path: Union[str, Path],
-    *,
-    write: bool = True,
-    keep_missing_team: bool = True,
+        player_index_path: Union[str, Path],
+        *,
+        write: bool = True,
+        keep_missing_team: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """
     Update the `team` field in your existing player index using fresh Sleeper data.
@@ -96,6 +96,7 @@ def update_player_teams_from_sleeper(
         "unchanged_count": unchanged_count,
         "changed_count": len(changed_players),
     }
+
 
 if __name__ == "__main__":
     update_player_teams_from_sleeper(path_players_index())

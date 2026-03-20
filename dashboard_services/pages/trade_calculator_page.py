@@ -9,7 +9,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
     <div class="otc-layout">
       <main class="otc-main">
 
-        <!-- Hidden fields used by JS to load players -->
         <input type="hidden" id="leagueIdInput" value="{league_val}">
         <input type="hidden" id="seasonInput" value="{season_val}">
 
@@ -26,7 +25,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
           </div>
 
           <div class="otc-builder-grid">
-            <!-- Side 1 -->
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <h2 class="otc-team-title">Team 1 gets...</h2>
@@ -56,7 +54,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               </div>
             </section>
 
-            <!-- Side 2 -->
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <h2 class="otc-team-title">Team 2 gets...</h2>
@@ -128,22 +125,45 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
       </main>
 
       <aside class="otc-side">
-        <div class="otc-side-panel">
-          <div class="otc-side-head">
-            <h2 class="otc-side-title">Player Values</h2>
-            <div class="otc-side-sub">Filter by position</div>
-          </div>
+        <div class="otc-side-stack">
+            <div class="otc-side-panel otc-movers-panel">
+              <div class="otc-mini-head">
+                <h3 class="otc-mini-title">Top Movers</h3>
+                <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
+              </div>
+            
+              <div class="otc-mini-section">
+                <div class="otc-mini-section-title">Top Risers</div>
+                <div id="otcRisersList" class="otc-mini-list">
+                  <div class="otc-movers-empty">Loading movers...</div>
+                </div>
+              </div>
+            
+              <div class="otc-mini-section">
+                <div class="otc-mini-section-title">Top Fallers</div>
+                <div id="otcFallersList" class="otc-mini-list">
+                  <div class="otc-movers-empty">Loading movers...</div>
+                </div>
+              </div>
+            </div>
 
-          <div class="otc-filter-row" id="posFilterRow">
-            <button class="otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
-            <button class="otc-filter-chip pos-filter" data-pos="QB">QB</button>
-            <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
-            <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
-            <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
-          </div>
+          <div class="otc-side-panel">
+            <div class="otc-side-head">
+              <h2 class="otc-side-title">Player Values</h2>
+              <div class="otc-side-sub">Filter by position</div>
+            </div>
 
-          <div id="allPlayersList" class="otc-values-list">
-            <!-- Filled by JS -->
+            <div class="otc-filter-row" id="posFilterRow">
+              <button class="otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
+              <button class="otc-filter-chip pos-filter" data-pos="QB">QB</button>
+              <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
+              <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
+              <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
+            </div>
+
+            <div id="allPlayersList" class="otc-values-list">
+              <!-- Filled by JS -->
+            </div>
           </div>
         </div>
       </aside>
@@ -160,6 +180,11 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
       function formatValue(v) {{
         const num = Number(v) || 0;
         return num.toFixed(1);
+      }}
+
+      function formatDelta(v) {{
+        const num = Number(v) || 0;
+        return (num > 0 ? "+" : "") + num.toFixed(1);
       }}
 
       function buildOverallRankMap(players) {{
@@ -182,6 +207,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         const metaBits = [];
         if (p.position && String(p.position).toUpperCase() !== "PICK") {{
           if (p.pos_rank_label) metaBits.push(String(p.pos_rank_label).toUpperCase());
+          else if (p.position) metaBits.push(String(p.position).toUpperCase());
         }}
         if (p.team) metaBits.push(p.team);
         if (p.age != null) metaBits.push(p.age + " yrs");
@@ -227,46 +253,112 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
       }}
 
       function buildDropdownItem(p, overallRank) {{
-  const item =
-    document.createElement("div");
-    item.className = "dropdown-item otc-dropdown-item";
+        const item = document.createElement("div");
+        item.className = "dropdown-item otc-dropdown-item";
 
-    const
-    left = document.createElement("div");
-    left.className = "otc-dropdown-left";
+        const left = document.createElement("div");
+        left.className = "otc-dropdown-left";
 
-    const
-    top = document.createElement("div");
-    top.className = "otc-dropdown-top";
+        const top = document.createElement("div");
+        top.className = "otc-dropdown-top";
 
-    const
-    rank = document.createElement("span");
-    rank.className = "otc-dropdown-rank-inline";
-    rank.textContent = overallRank ? "#" + overallRank : "";
+        const rank = document.createElement("span");
+        rank.className = "otc-dropdown-rank-inline";
+        rank.textContent = overallRank ? "#" + overallRank : "";
 
-  const name = document.createElement("span");
-  name.className = "otc-dropdown-name";
-  name.textContent = p.name || "Unknown";
+        const name = document.createElement("span");
+        name.className = "otc-dropdown-name";
+        name.textContent = p.name || "Unknown";
 
-  top.appendChild(rank);
-  top.appendChild(name);
+        top.appendChild(rank);
+        top.appendChild(name);
 
-  const sub = document.createElement("div");
-  sub.className = "otc-dropdown-sub";
-  sub.textContent = buildMetaBits(p).join(" • ");
+        const sub = document.createElement("div");
+        sub.className = "otc-dropdown-sub";
+        sub.textContent = buildMetaBits(p).join(" • ");
 
-  left.appendChild(top);
-  left.appendChild(sub);
+        left.appendChild(top);
+        left.appendChild(sub);
 
-  const value = document.createElement("div");
-  value.className = "otc-dropdown-value";
-  value.textContent = formatValue(p.value);
+        const value = document.createElement("div");
+        value.className = "otc-dropdown-value";
+        value.textContent = formatValue(p.value);
 
-  item.appendChild(left);
-  item.appendChild(value);
+        item.appendChild(left);
+        item.appendChild(value);
 
-  return item;
-}}
+        return item;
+      }}
+
+    function buildMoverRow(p, directionClass) {{
+      const row = document.createElement("div");
+      row.className = "otc-mini-row " + directionClass;
+    
+      const name = document.createElement("div");
+      name.className = "otc-mini-name";
+      name.textContent = p.name || "Unknown";
+    
+      const delta = document.createElement("div");
+      delta.className = "otc-mini-delta";
+      delta.textContent = formatDelta(p.delta);
+    
+      row.appendChild(name);
+      row.appendChild(delta);
+    
+      return row;
+    }}
+
+      function renderMovers(data) {{
+        const risersEl = document.getElementById("otcRisersList");
+        const fallersEl = document.getElementById("otcFallersList");
+        if (!risersEl || !fallersEl) return;
+
+        risersEl.innerHTML = "";
+        fallersEl.innerHTML = "";
+
+        const risers = Array.isArray(data?.risers) ? data.risers : [];
+        const fallers = Array.isArray(data?.fallers) ? data.fallers : [];
+
+        if (!risers.length) {{
+          risersEl.innerHTML = '<div class="otc-movers-empty">No risers yet.</div>';
+        }} else {{
+          risers.forEach(p => risersEl.appendChild(buildMoverRow(p, "up")));
+        }}
+
+        if (!fallers.length) {{
+          fallersEl.innerHTML = '<div class="otc-movers-empty">No fallers yet.</div>';
+        }} else {{
+          fallers.forEach(p => fallersEl.appendChild(buildMoverRow(p, "down")));
+        }}
+      }}
+
+  async function loadTopMovers() {{
+      try {{
+        const res = await fetch("/api/value-movers?days=7&limit=5");
+        if (!res.ok) throw new Error("Failed to load movers.");
+    
+        const data = await res.json();
+    
+        // 🔥 update subtitle based on fallback window
+        const usedDays = data?.used_days;
+        console.log("value movers payload:", data);
+        const sub = document.getElementById("moversSub");
+        if (sub && usedDays) {{
+          sub.textContent = `Biggest ${{usedDays}}-day changes in BR value`;
+        }}
+    
+        renderMovers(data);
+    
+      }} catch (err) {{
+        console.error("[trade] movers error:", err);
+    
+        const risersEl = document.getElementById("otcRisersList");
+        const fallersEl = document.getElementById("otcFallersList");
+    
+        if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty">Unable to load risers.</div>';
+        if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty">Unable to load fallers.</div>';
+      }}
+    }}
 
       function renderAllPlayersList() {{
         const container = document.getElementById("allPlayersList");
@@ -322,7 +414,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
 
         const leagueId = leagueInput ? (leagueInput.value || "").trim() : "";
         const season = (seasonInput && seasonInput.value) ? seasonInput.value.trim() : "";
-
         const effectiveLeagueId = leagueId || "global";
 
         const params = new URLSearchParams({{ league_id: effectiveLeagueId }});
@@ -549,7 +640,11 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
       }}
 
       async function initTradeCalculator() {{
-        await ensurePlayersLoaded();
+        await Promise.allSettled([
+          ensurePlayersLoaded(),
+          loadTopMovers()
+        ]);
+
         setupSearch("A");
         setupSearch("B");
 

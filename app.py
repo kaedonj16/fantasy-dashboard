@@ -16,7 +16,8 @@ from zoneinfo import ZoneInfo
 
 from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
     get_nfl_scores_for_date, build_team_game_lookup, \
-    get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters
+    get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters, \
+    get_sleeper_user_by_username, get_sleeper_user_leagues
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
@@ -34,8 +35,7 @@ from dashboard_services.platform_api import (
 )
 from dashboard_services.player_value_history import (
     init_value_history_db,
-    get_top_movers,
-    get_player_value_history,
+    get_top_movers
 )
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
@@ -80,76 +80,70 @@ app = Flask(
 
 app.secret_key = os.urandom(32)
 plotly_js = get_plotlyjs()
-init_value_history_db()
+try:
+    init_value_history_db()
+except Exception as e:
+    print(f"[value-history] init skipped: {e}")
 
 FORM_BODY = """
 <div class="home-page">
-    <section class="home-hero">
-        <div class="home-hero-left">
-            <h1 class="home-title">BR Fantasy Dashboard</h1>
-            <p class="home-subtitle">
-                Turn your Fantasy league into a real front office: live
-                projections, matchup previews, power rankings, and more—all in
-                one place.
-            </p>
-            <ul class="home-bullets">
-                <li>League-wide dashboard with weekly storylines and stats</li>
-                <li>Matchup hub with projections and live scoring context</li>
-                <li>Trade calculator powered by custom value models</li>
-            </ul>
+  <section class="home-hero">
+    <div class="home-hero-left">
+      <h1 class="home-title">BR Fantasy Dashboard</h1>
+      <p class="home-subtitle">
+        Turn your Sleeper league into a real front office:
+        live projections, matchup previews, power rankings, and more—all in one place.
+      </p>
+
+      <ul class="home-bullets">
+        <li>League-wide dashboard with weekly storylines and stats</li>
+        <li>Matchup hub with projections and live scoring context</li>
+        <li>Trade calculator powered by custom value models</li>
+      </ul>
+    </div>
+
+    <div class="home-hero-right">
+      <div class="home-card">
+        <h2 class="home-card-title">Get started</h2>
+
+        <div class="row">
+          <label for="username">Sleeper Username</label>
+          <input type="text" id="username" name="username" value="{{ username or '' }}">
         </div>
-        <div class="home-hero-right">
-            <div class="home-card">
-                <h2 class="home-card-title">Get started</h2>
-                <form method="post">
-                    <!-- Platform toggle -->
-                    <div class="platform-toggle">
-                        <input
-                            type="radio"
-                            id="platform-sleeper"
-                            name="platform"
-                            value="sleeper"
-                            checked
-                        />
-                        <label
-                            for="platform-sleeper"
-                            class="platform-btn sleeper"
-                        >
-                            <img src="/static/sleeper-logo.png" alt="Sleeper" />
-                        </label>
-                        <input
-                            type="radio"
-                            id="platform-espn"
-                            name="platform"
-                            value="espn"
-                        />
-                        <label for="platform-espn" class="platform-btn espn">
-                            <img src="/static/espn-logo.png" alt="ESPN" />
-                        </label>
-                    </div>
-                    <div class="row">
-                        <label for="league">League ID</label>
-                        <input
-                            type="text"
-                            id="league"
-                            name="league"
-                            required
-                            value="{{ league or '' }}"
-                        />
-                    </div>
-                    <button type="submit">Generate Dashboard</button> {% if
-                    error %}
-                    <div class="error-message">{{ error }}</div>
-                    {% endif %}
-                    <p class="hint">
-                        Paste your league ID, hit generate, and we'll build the
-                        dashboard.
-                    </p>
-                </form>
-            </div>
+
+        <div class="row">
+          <button type="button" id="lookupBtn">Find My Leagues</button>
         </div>
-    </section>
-    <section class="home-feature-grid">
+
+        <form method="post" id="leagueSelectForm">
+          <input type="hidden" name="platform" value="sleeper">
+          <input type="hidden" name="season" value="{{ viewed_season }}">
+
+          <div class="row" id="leagueSelectWrap" style="display:none;">
+            <label for="league">Choose League</label>
+            <select id="league" name="league" required>
+              <option value="">Select a league</option>
+            </select>
+          </div>
+
+          <div class="row" id="generateWrap" style="display:none;">
+            <button type="submit">Generate Dashboard</button>
+          </div>
+
+          <div id="lookupError" class="error-message" style="display:none;"></div>
+
+          {% if error %}
+          <div class="error-message">{{ error }}</div>
+          {% endif %}
+        </form>
+
+        <p class="hint">
+          Enter your Sleeper username, choose one of your leagues, and generate the dashboard.
+        </p>
+      </div>
+    </div>
+  </section>
+   <section class="home-feature-grid">
         <div class="home-feature-card">
             <h3>Weekly Hub</h3>
             <p>
@@ -226,6 +220,23 @@ BASE_HTML = """
   </body>
 </html>
 """
+
+
+def format_sleeper_league_option(league: dict) -> dict:
+    settings = league.get("settings") or {}
+
+    return {
+        "league_id": str(league.get("league_id", "")),
+        "name": league.get("name") or "Unnamed League",
+        "season": str(league.get("season") or ""),
+        "total_rosters": league.get("total_rosters") or settings.get("num_teams") or "",
+        "avatar": league.get("avatar") or "",
+        "label": (
+            f"{league.get('name') or 'Unnamed League'} "
+            f"({league.get('season') or ''}) • "
+            f"{league.get('total_rosters') or settings.get('num_teams') or '?'} teams"
+        ),
+    }
 
 
 def _cache_key(platform: str, season: int, league_id: str):
@@ -444,7 +455,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     pills.append("<a class='nav-pill logout-pill' href='/logout'>Logout</a>")
 
-
     return (
         "<nav class='top-nav'>"
         "  <div style='display:flex;align-items:center;gap:10px;'>"
@@ -458,14 +468,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
 
 def render_page(
-    title: str,
-    league_id: Optional[str],
-    active: str,
-    body_html: str,
-    platform: Optional[str] = None,
-    season: Optional[int] = None,
-    *args,
-    **kwargs,
+        title: str,
+        league_id: Optional[str],
+        active: str,
+        body_html: str,
+        platform: Optional[str] = None,
+        season: Optional[int] = None,
+        *args,
+        **kwargs,
 ) -> str:
     nav_html = build_nav(league_id, active, platform, season)
 
@@ -1071,70 +1081,6 @@ def render_standings(team_stats, length) -> str:
         </table>
     """
 
-def render_value_trends_card() -> str:
-    weekly = get_top_movers(days=7, limit=8)
-    monthly = get_top_movers(days=30, limit=8)
-
-    def render_rows(rows, empty_label: str) -> str:
-        if not rows:
-            return f"<div class='trend-empty'>{empty_label}</div>"
-
-        html = []
-        for row in rows:
-            delta = float(row.get("delta") or 0.0)
-            delta_cls = "delta-up" if delta > 0 else "delta-down" if delta < 0 else "delta-flat"
-            sign = "+" if delta > 0 else ""
-            html.append(
-                "<div class='trend-row'>"
-                f"  <div class='trend-player'>"
-                f"    <div class='trend-name'>{row.get('name') or 'Unknown'}</div>"
-                f"    <div class='trend-meta'>{row.get('position') or ''} • {row.get('team') or ''}</div>"
-                f"  </div>"
-                f"  <div class='trend-values'>"
-                f"    <div class='trend-new'>{row.get('new_value', 0):.1f}</div>"
-                f"    <div class='trend-delta {delta_cls}'>{sign}{delta:.1f}</div>"
-                f"  </div>"
-                "</div>"
-            )
-        return "".join(html)
-
-    weekly_range = ""
-    if weekly.get("comparison_date") and weekly.get("latest_date"):
-        weekly_range = f"{weekly['comparison_date']} → {weekly['latest_date']}"
-
-    monthly_range = ""
-    if monthly.get("comparison_date") and monthly.get("latest_date"):
-        monthly_range = f"{monthly['comparison_date']} → {monthly['latest_date']}"
-
-    return f"""
-    <div class="card trends-card">
-      <div class="trends-card-header">
-        <div>
-          <h2>Player Value Trends</h2>
-          <div class="trends-subtitle">Biggest movers from the model value history database</div>
-        </div>
-      </div>
-
-      <div class="trends-grid">
-        <section class="trend-panel">
-          <div class="trend-panel-header">
-            <h3>7-Day Risers</h3>
-            <span>{weekly_range}</span>
-          </div>
-          {render_rows(weekly.get("risers", []), "No 7-day data yet.")}
-        </section>
-
-        <section class="trend-panel">
-          <div class="trend-panel-header">
-            <h3>30-Day Fallers</h3>
-            <span>{monthly_range}</span>
-          </div>
-          {render_rows(monthly.get("fallers", []), "No 30-day data yet.")}
-        </section>
-      </div>
-    </div>
-    """
-
 
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
@@ -1220,7 +1166,6 @@ def build_dashboard_body(ctx: dict) -> str:
         rosters,
     )
     awards_html = render_awards_section(awards)
-    trends_html = render_value_trends_card()
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -1252,7 +1197,6 @@ def build_dashboard_body(ctx: dict) -> str:
         {season_note}
         {standings_html}
       </div>
-      {trends_html}
       {matchup_html}
     </div>
     <aside class="overview-sidebar">
@@ -4127,7 +4071,6 @@ def maybe_run_daily():
                 print(f"[daily] Running daily data process for {today_et} (ET)...")
 
                 state = get_nfl_state() or {}
-                season_type = (state.get("season_type") or "").lower()
                 season = int(state.get("season") or datetime.now().year)
                 week = int(state.get("week") or 0)
 
@@ -4140,74 +4083,53 @@ def maybe_run_daily():
 @app.route("/", methods=["GET", "POST"])
 def index():
     nfl_state = get_nfl_state() or {}
-
-    season_type = (nfl_state.get("season_type") or "").lower()
     current_season = int(nfl_state.get("season") or datetime.now().year)
-
-    offseason_mode = season_type == "off"
     viewed_season = current_season
 
     if request.method == "POST":
-        league_id = (request.form.get("league") or "").strip()
         platform = (request.form.get("platform") or "sleeper").strip().lower()
+        league_id = (request.form.get("league") or "").strip()
+        season = int(request.form.get("season") or viewed_season)
 
         ok, err = validate_league_id(platform, league_id)
         if not ok:
             body_html = render_template_string(
                 FORM_BODY,
-                league=league_id,
+                username="",
+                viewed_season=viewed_season,
                 error=err,
-                offseason_mode=offseason_mode,
-                viewed_season=viewed_season,
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
-        key = _cache_key(platform, viewed_season, league_id)
+        key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
-
         if entry and (time.time() - entry["ts"] < CACHE_TTL):
-            return redirect(
-                url_for(
-                    "page_dashboard",
-                    platform=platform,
-                    season=viewed_season,
-                    league_id=league_id,
-                )
-            )
-
-        try:
-            ctx = build_league_context(
-                platform=platform,
-                league_id=league_id,
-                season=viewed_season,
-            )
-        except Exception as e:
-            body_html = render_template_string(
-                FORM_BODY,
-                league=league_id,
-                error=str(e),
-                offseason_mode=offseason_mode,
-                viewed_season=viewed_season,
-            )
-            return render_page("BR Fantasy Dashboard", None, "home", body_html)
-
-        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
-
-        return redirect(
-            url_for(
+            return redirect(url_for(
                 "page_dashboard",
                 platform=platform,
-                season=viewed_season,
+                season=season,
                 league_id=league_id,
-            )
+            ))
+
+        ctx = build_league_context(
+            platform=platform,
+            league_id=league_id,
+            season=season,
         )
+        DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
+
+        return redirect(url_for(
+            "page_dashboard",
+            platform=platform,
+            season=season,
+            league_id=league_id,
+        ))
 
     body_html = render_template_string(
         FORM_BODY,
-        league="",
-        error=None,
-        offseason_mode=offseason_mode,
+        username="",
         viewed_season=viewed_season,
+        error=None,
     )
     return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
@@ -4625,6 +4547,7 @@ def api_league_players():
     cleaned = _sanitize_for_json(model_value_table)
     return jsonify(cleaned)
 
+
 @app.route("/api/value-movers")
 def api_value_movers():
     try:
@@ -4649,11 +4572,54 @@ def api_player_value_history(player_id: str):
         days = 30
 
     history = get_player_value_history(player_id, days=max(days, 1))
-    return jsonify({
-        "player_id": str(player_id),
-        "days": max(days, 1),
-        "history": history,
-    })
+    return jsonify(
+        {
+            "player_id": str(player_id),
+            "days": max(days, 1),
+            "history": history,
+        }
+    )
+
+
+@app.route("/api/sleeper-user-leagues")
+def api_sleeper_user_leagues():
+    username = (request.args.get("username") or "").strip()
+    season = int(request.args.get("season") or get_nfl_state().get("season"))
+
+    if not username:
+        return jsonify({"ok": False, "error": "Missing username"}), 400
+
+    try:
+        user = get_sleeper_user_by_username(username)
+        if not user:
+            return jsonify({"ok": False, "error": "Sleeper username not found"}), 404
+
+        leagues = get_sleeper_user_leagues(user["user_id"], season)
+
+        # Optional: filter out leagues without usable ids
+        leagues = [lg for lg in leagues if lg.get("league_id")]
+
+        # Optional: sort nicer
+        leagues.sort(
+            key=lambda lg: (
+                str(lg.get("status") or "") != "in_season",
+                -(int(lg.get("total_rosters") or 0)),
+                str(lg.get("name") or "").lower(),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "user_id": user.get("user_id"),
+                "username": user.get("username"),
+                "display_name": user.get("display_name"),
+                "avatar": user.get("avatar"),
+            },
+            "leagues": [format_sleeper_league_option(lg) for lg in leagues],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":

@@ -3,16 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from dashboard_services.api import get_nfl_state
-from data_building.external_values_scraper import (
-    scrape_all_vendor_values,
-)
-from data_building.sleeper_usage import write_usage_table_snapshot
-from data_building.team_enrichment import (
-    enrich_all_team_info,
-    enrich_teams_index_with_rushing,
-)
-from data_building.value_exports import export_engine_values
-from data_building.value_model_training import rewrite_value_table_with_model
 from dashboard_services.player_value_history import record_model_value_snapshot
 from dashboard_services.utils import (
     path_teams_index,
@@ -22,19 +12,17 @@ from dashboard_services.utils import (
     load_week_schedule,
     build_and_save_week_stats_for_league,
 )
+from data_building.external_values_scraper import scrape_all_vendor_values
+from data_building.sleeper_usage import write_usage_table_snapshot
+from data_building.team_enrichment import (
+    enrich_all_team_info,
+    enrich_teams_index_with_rushing,
+)
+from data_building.value_exports import export_engine_values
+from data_building.value_model_training import rewrite_value_table_with_model
 
 
 def build_daily_data(season: int, week: int):
-    """
-    Daily pipeline:
-      1) refresh weekly stats
-      2) refresh vendor values
-      3) refresh usage snapshot
-      4) refresh team enrichment
-      5) refresh engine values
-      6) refresh model values
-      7) persist today's model snapshot into SQLite for trend analysis
-    """
     print(f"[daily] build_daily_data season={season} week={week}")
 
     live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))

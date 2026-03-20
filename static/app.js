@@ -419,3 +419,62 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
     }
   });
 })();
+
+document.addEventListener("DOMContentLoaded", () => {
+  const lookupBtn = document.getElementById("lookupBtn");
+  const usernameInput = document.getElementById("username");
+  const leagueSelect = document.getElementById("league");
+  const leagueSelectWrap = document.getElementById("leagueSelectWrap");
+  const generateWrap = document.getElementById("generateWrap");
+  const errorBox = document.getElementById("lookupError");
+
+  if (!lookupBtn || !usernameInput || !leagueSelect) return;
+
+  lookupBtn.addEventListener("click", async () => {
+    const username = usernameInput.value.trim();
+    if (!username) {
+      errorBox.textContent = "Enter a Sleeper username.";
+      errorBox.style.display = "block";
+      leagueSelectWrap.style.display = "none";
+      generateWrap.style.display = "none";
+      return;
+    }
+
+    errorBox.style.display = "none";
+    lookupBtn.disabled = true;
+    lookupBtn.textContent = "Loading...";
+
+    try {
+      const res = await fetch(`/api/sleeper-user-leagues?username=${encodeURIComponent(username)}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Unable to load leagues.");
+      }
+
+      leagueSelect.innerHTML = `<option value="">Select a league</option>`;
+
+      for (const league of data.leagues || []) {
+        const option = document.createElement("option");
+        option.value = league.league_id;
+        option.textContent = league.label;
+        leagueSelect.appendChild(option);
+      }
+
+      if (!data.leagues || !data.leagues.length) {
+        throw new Error("No leagues found for that user this season.");
+      }
+
+      leagueSelectWrap.style.display = "block";
+      generateWrap.style.display = "block";
+    } catch (err) {
+      errorBox.textContent = err.message || "Unable to load leagues.";
+      errorBox.style.display = "block";
+      leagueSelectWrap.style.display = "none";
+      generateWrap.style.display = "none";
+    } finally {
+      lookupBtn.disabled = false;
+      lookupBtn.textContent = "Find My Leagues";
+    }
+  });
+});

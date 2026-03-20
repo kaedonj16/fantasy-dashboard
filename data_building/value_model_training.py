@@ -518,8 +518,8 @@ def _normalize_series_0_1(s: pd.Series) -> pd.Series:
 # ------------------------------------------------
 
 def train_trade_value_model(
-    test_size: float = 0.2,
-    random_state: int = 42,
+        test_size: float = 0.2,
+        random_state: int = 42,
 ) -> TrainedModelBundle:
     print("[value_model] Building training dataframe…")
     df = build_training_dataframe()
@@ -651,10 +651,10 @@ def train_trade_value_model(
     ]
 
     for col in (
-        candidate_usage_cols
-        + candidate_history_cols
-        + team_feature_cols
-        + candidate_investment_cols
+            candidate_usage_cols
+            + candidate_history_cols
+            + team_feature_cols
+            + candidate_investment_cols
     ):
         if col in df.columns:
             numeric_cols.append(col)

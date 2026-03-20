@@ -275,6 +275,31 @@ def _avatar_url(avatar_id: str) -> Union[str, None]:
     return f"{avatar_id}"
 
 
+@ttl_cache(ttl=300)
+def get_sleeper_user_by_username(username: str) -> dict | None:
+    username = (username or "").strip()
+    if not username:
+        return None
+
+    resp = requests.get(f"{SLEEPER_BASE}/user/{username}", timeout=10)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, dict) and data.get("user_id") else None
+
+
+@ttl_cache(ttl=300)
+def get_sleeper_user_leagues(user_id: str, season: int, sport: str = "nfl") -> list[dict]:
+    resp = requests.get(
+        f"{SLEEPER_BASE}/user/{user_id}/leagues/{sport}/{season}",
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else []
+
+
 class Tank01Error(Exception):
     pass
 

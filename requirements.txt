@@ -36,6 +36,7 @@ pandas==1.5.3
 parse==1.20.2
 pillow==11.3.0
 plotly==6.5.0
+psycopg[binary]
 pyparsing==3.2.5
 pyquery==2.0.1
 python-dateutil==2.9.0.post0

@@ -162,8 +162,8 @@ def load_nflverse_players_draft_history() -> pd.DataFrame:
 
 
 def load_nflverse_draft_picks_history(
-    start_year: int = 2014,
-    end_year: int | None = None,
+        start_year: int = 2014,
+        end_year: int | None = None,
 ) -> pd.DataFrame:
     """
     Optional fallback / secondary source.
@@ -202,7 +202,7 @@ def load_nflverse_draft_picks_history(
         out["draft_year"].notna()
         & (out["draft_year"] >= start_year)
         & (out["draft_year"] <= end_year)
-    ].copy()
+        ].copy()
 
     out["draft_capital_score"] = out.apply(
         lambda r: _draft_capital_score(r.get("draft_round"), r.get("draft_pick")),
@@ -219,8 +219,8 @@ def load_nflverse_draft_picks_history(
 
 
 def load_draft_history(
-    start_year: int = 2014,
-    end_year: int | None = None,
+        start_year: int = 2014,
+        end_year: int | None = None,
 ) -> pd.DataFrame:
     """
     Main draft loader:
@@ -274,33 +274,33 @@ def finalize_contract_df(df: pd.DataFrame) -> pd.DataFrame:
     # Fallback 1:
     # If contract years missing but FA year exists, estimate years remaining.
     years_mask = (
-        (out["contract_years"] <= 0)
-        & out["free_agency_year"].notna()
+            (out["contract_years"] <= 0)
+            & out["free_agency_year"].notna()
     )
     out.loc[years_mask, "contract_years"] = (
-        out.loc[years_mask, "free_agency_year"] - current_year
+            out.loc[years_mask, "free_agency_year"] - current_year
     ).clip(lower=0)
 
     # Optional improvement:
     # count current season too so 2027 FA in 2026 implies ~2 contract seasons left
     inclusive_years_mask = (
-        (out["contract_years"] <= 1)
-        & out["free_agency_year"].notna()
-        & (out["contract_total_value"] > 0)
+            (out["contract_years"] <= 1)
+            & out["free_agency_year"].notna()
+            & (out["contract_total_value"] > 0)
     )
     out.loc[inclusive_years_mask, "contract_years"] = (
-        out.loc[inclusive_years_mask, "free_agency_year"] - current_year + 1
+            out.loc[inclusive_years_mask, "free_agency_year"] - current_year + 1
     ).clip(lower=1)
 
     # Fallback 2:
     # If APY missing but total + years exist, compute APY.
     apy_mask = (
-        (out["contract_apy"] <= 0)
-        & (out["contract_total_value"] > 0)
-        & (out["contract_years"] > 0)
+            (out["contract_apy"] <= 0)
+            & (out["contract_total_value"] > 0)
+            & (out["contract_years"] > 0)
     )
     out.loc[apy_mask, "contract_apy"] = (
-        out.loc[apy_mask, "contract_total_value"] / out.loc[apy_mask, "contract_years"]
+            out.loc[apy_mask, "contract_total_value"] / out.loc[apy_mask, "contract_years"]
     )
 
     out["guaranteed_pct"] = np.where(
@@ -356,31 +356,31 @@ def scrape_otc_contracts() -> pd.DataFrame:
                 normalized[c] = "age"
 
             elif (
-                "total value" in lc
-                or "contract value" in lc
-                or lc == "value"
+                    "total value" in lc
+                    or "contract value" in lc
+                    or lc == "value"
             ):
                 normalized[c] = "contract_total_value"
 
             elif (
-                lc == "apy"
-                or lc == "aav"
-                or "avg/year" in lc
-                or "avg / year" in lc
-                or "average per year" in lc
-                or "per year" in lc
-                or "annual value" in lc
-                or "apy/aav" in lc
+                    lc == "apy"
+                    or lc == "aav"
+                    or "avg/year" in lc
+                    or "avg / year" in lc
+                    or "average per year" in lc
+                    or "per year" in lc
+                    or "annual value" in lc
+                    or "apy/aav" in lc
             ):
                 normalized[c] = "contract_apy"
 
             elif (
-                lc == "years"
-                or lc == "year"
-                or "contract years" in lc
-                or "length" in lc
-                or "term" in lc
-                or "yrs" in lc
+                    lc == "years"
+                    or lc == "year"
+                    or "contract years" in lc
+                    or "length" in lc
+                    or "term" in lc
+                    or "yrs" in lc
             ):
                 normalized[c] = "contract_years"
 
@@ -445,22 +445,22 @@ def scrape_otc_contracts() -> pd.DataFrame:
         # Fallback 1: infer years from FA year
         current_year = date.today().year
         years_mask = (
-            (df["contract_years"] <= 0)
-            & df["free_agency_year"].notna()
-            & (df["contract_total_value"] > 0)
+                (df["contract_years"] <= 0)
+                & df["free_agency_year"].notna()
+                & (df["contract_total_value"] > 0)
         )
         df.loc[years_mask, "contract_years"] = (
-            df.loc[years_mask, "free_agency_year"] - current_year + 1
+                df.loc[years_mask, "free_agency_year"] - current_year + 1
         ).clip(lower=1)
 
         # Fallback 2: infer APY from total / years
         apy_mask = (
-            (df["contract_apy"] <= 0)
-            & (df["contract_total_value"] > 0)
-            & (df["contract_years"] > 0)
+                (df["contract_apy"] <= 0)
+                & (df["contract_total_value"] > 0)
+                & (df["contract_years"] > 0)
         )
         df.loc[apy_mask, "contract_apy"] = (
-            df.loc[apy_mask, "contract_total_value"] / df.loc[apy_mask, "contract_years"]
+                df.loc[apy_mask, "contract_total_value"] / df.loc[apy_mask, "contract_years"]
         )
 
         print(
@@ -479,9 +479,10 @@ def scrape_otc_contracts() -> pd.DataFrame:
     out = pd.DataFrame(rows).drop_duplicates(subset=["name_key", "position"], keep="first")
     return out
 
+
 def build_player_investment_context(
-    start_draft_season: int = 2014,
-    end_draft_season: Optional[int] = None,
+        start_draft_season: int = 2014,
+        end_draft_season: Optional[int] = None,
 ) -> pd.DataFrame:
     players_index = load_players_index() or {}
     relevant_rows = []
@@ -595,16 +596,16 @@ def build_player_investment_context(
 
     # Contract score stays contract-specific
     players_df["contract_score"] = (
-        0.45 * players_df["contract_apy_pos_pct"] +
-        0.35 * players_df["guaranteed_money_pos_pct"] +
-        0.20 * players_df["guaranteed_pct_pos_pct"]
+            0.45 * players_df["contract_apy_pos_pct"] +
+            0.35 * players_df["guaranteed_money_pos_pct"] +
+            0.20 * players_df["guaranteed_pct_pos_pct"]
     ).clip(0.0, 1.0)
 
     # New: investment score blends raw + positional draft context
     players_df["team_investment_score"] = (
-        0.35 * players_df["contract_score"] +
-        0.25 * players_df["draft_capital_score"] +
-        0.40 * players_df["draft_capital_pos_pct"]
+            0.35 * players_df["contract_score"] +
+            0.25 * players_df["draft_capital_score"] +
+            0.40 * players_df["draft_capital_pos_pct"]
     ).clip(0.0, 1.0)
 
     return players_df
@@ -645,8 +646,8 @@ def load_player_investment_context() -> pd.DataFrame:
 
 
 def rebuild_player_investment_context(
-    start_draft_season: int = 2014,
-    end_draft_season: Optional[int] = None,
+        start_draft_season: int = 2014,
+        end_draft_season: Optional[int] = None,
 ) -> pd.DataFrame:
     df = build_player_investment_context(
         start_draft_season=start_draft_season,
