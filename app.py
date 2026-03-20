@@ -3258,6 +3258,60 @@ def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     )
 
 
+def _weighted_pos_strength(vals: list[float], pos: str, slot_counts: dict[str, int]) -> float:
+    """
+    Emphasize top-end talent over pure depth.
+
+    Examples:
+      - QB: mostly QB1, tiny credit for QB2
+      - RB/WR: strong weight on top 2, smaller weight on next few
+      - TE: mostly TE1, tiny credit for TE2
+
+    This prevents 5 mid players from outscoring 2 elite starters.
+    """
+    if not vals:
+        return 0.0
+
+    vals = sorted((float(v or 0.0) for v in vals), reverse=True)
+
+    flex_slots = int(slot_counts.get("FLEX") or 0)
+
+    if pos == "QB":
+        weights = [1.0, 0.20]
+
+    elif pos == "RB":
+        # RB1/RB2 matter most, then some flex/depth credit
+        if flex_slots >= 2:
+            weights = [1.0, 0.85, 0.35, 0.20, 0.10]
+        elif flex_slots == 1:
+            weights = [1.0, 0.85, 0.30, 0.15]
+        else:
+            weights = [1.0, 0.85, 0.15]
+
+    elif pos == "WR":
+        # Same idea as RB
+        if flex_slots >= 2:
+            weights = [1.0, 0.85, 0.35, 0.20, 0.10]
+        elif flex_slots == 1:
+            weights = [1.0, 0.85, 0.30, 0.15]
+        else:
+            weights = [1.0, 0.85, 0.15]
+
+    elif pos == "TE":
+        # TE premium on starter, little on TE2 unless you want more
+        if flex_slots >= 1:
+            weights = [1.0, 0.20, 0.08]
+        else:
+            weights = [1.0, 0.15]
+
+    else:
+        weights = [1.0]
+
+    used = vals[:len(weights)]
+    denom = sum(weights[:len(used)]) or 1.0
+    return sum(v * w for v, w in zip(used, weights)) / denom
+
+
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -3367,21 +3421,19 @@ def build_teams_body(ctx: dict) -> str:
         for pos in POS_ORDER:
             team_pos_values[rid].setdefault(pos, [])
 
-    # ----------------- Compute per-team averages + league baselines -----------------
-    team_pos_avg: dict[int, dict[str, float]] = defaultdict(dict)
+    # ----------------- Compute per-team positional strength + league baselines -----------------
+    team_pos_strength: dict[int, dict[str, float]] = defaultdict(dict)
+    slot_counts = count_roster_positions(get_roster_positions())
 
     for rid, pos_map in team_pos_values.items():
         for pos, vals in pos_map.items():
-            if vals:
-                team_pos_avg[rid][pos] = float(sum(vals) / len(vals))
-            else:
-                team_pos_avg[rid][pos] = 0.0
+            team_pos_strength[rid][pos] = _weighted_pos_strength(vals, pos, slot_counts)
 
     league_pos_avg: dict[str, float] = {}
     league_pos_std: dict[str, float] = {}
 
     for pos in POS_ORDER:
-        series = [team_pos_avg[rid][pos] for rid in team_meta.keys()]
+        series = [team_pos_strength[rid][pos] for rid in team_meta.keys()]
         if not series:
             league_pos_avg[pos] = 0.0
             league_pos_std[pos] = 0.0
@@ -3395,7 +3447,6 @@ def build_teams_body(ctx: dict) -> str:
     # ----------------- Z-scores & positional index -----------------
     team_pos_z: dict[int, dict[str, float]] = defaultdict(dict)
     team_pos_index: dict[int, float] = {}
-    slot_counts = count_roster_positions(get_roster_positions())
 
     LINEUP_WEIGHTS = {
         "QB": slot_counts.get("QB") or 1,
@@ -3413,11 +3464,11 @@ def build_teams_body(ctx: dict) -> str:
         idx_num = 0.0
 
         for pos in POS_ORDER:
-            team_avg = team_pos_avg[rid][pos]
+            team_strength = team_pos_strength[rid][pos]
             mu = league_pos_avg[pos]
             sigma = league_pos_std[pos]
             if sigma > 0:
-                z = (team_avg - mu) / sigma
+                z = (team_strength - mu) / sigma
             else:
                 z = 0.0
             team_pos_z[rid][pos] = z
@@ -3510,7 +3561,7 @@ def build_teams_body(ctx: dict) -> str:
             vals = team_pos_values[rid][pos]
             count = len(vals)
             total = sum(vals)
-            avg = team_pos_avg[rid][pos]
+            strength_score = team_pos_strength[rid][pos]
             z = z_map[pos]
 
             # bar width scaled within this position across league
@@ -3538,7 +3589,7 @@ def build_teams_body(ctx: dict) -> str:
                 "  </td>"
                 "  <td class='pos-count'>{count}</td>"
                 "  <td class='pos-total'>{total:.1f}</td>"
-                "  <td class='pos-avg'>{avg:.1f}</td>"
+                "  <td class='pos-avg'>{strength_score:.1f}</td>"
                 "  <td class='pos-z'>{z:.2f}</td>"
                 "  <td class='pos-bar-cell'>"
                 "    <div class='pos-bar-outer'>"
@@ -3552,22 +3603,22 @@ def build_teams_body(ctx: dict) -> str:
                     pos=pos,
                     count=count,
                     total=total,
-                    avg=avg,
                     z=z,
                     pct=pct,
+                    strength_score=strength_score,
                 )
             )
 
             # detail row right under it (collapsed by default)
             detail_html = render_pos_players(rid, pos)
             detail_row = (
-                "<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
+                f"<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
                 "  <td colspan='7'>"
                 "    <div class='pos-detail-inner'>"
                 f"      {detail_html}"
                 "    </div>"
                 "  </td>"
-                "</tr>".format(pos=pos)
+                "</tr>"
             )
 
             table_rows.append(main_row)
@@ -3588,7 +3639,7 @@ def build_teams_body(ctx: dict) -> str:
             "          <th>Pos</th>"
             "          <th>#</th>"
             "          <th>Value</th>"
-            "          <th>Avg Value</th>"
+            "          <th>Starter Score</th>"
             "          <th>Z-Score</th>"
             "          <th>Strength</th>"
             "          <th>Rank</th>"
