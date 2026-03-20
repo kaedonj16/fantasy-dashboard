@@ -48,7 +48,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                            type="text"
                            autocomplete="off"
                            placeholder="Start typing a name..." />
-                    <div id="sideADropdown" class="dropdown" style="display:none;"></div>
+                    <div id="sideADropdown" class="dropdown otc-search-dropdown" style="display:none;"></div>
                   </div>
                 </div>
 
@@ -78,7 +78,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                            type="text"
                            autocomplete="off"
                            placeholder="Start typing a name..." />
-                    <div id="sideBDropdown" class="dropdown" style="display:none;"></div>
+                    <div id="sideBDropdown" class="dropdown otc-search-dropdown" style="display:none;"></div>
                   </div>
                 </div>
 
@@ -162,6 +162,112 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         return num.toFixed(1);
       }}
 
+      function buildOverallRankMap(players) {{
+        const sorted = [...players].sort((a, b) => {{
+          const va = typeof a.value === "number" ? a.value : 0;
+          const vb = typeof b.value === "number" ? b.value : 0;
+          return vb - va;
+        }});
+
+        const rankMap = new Map();
+        sorted.forEach((p, idx) => {{
+          if (p && p.id != null) {{
+            rankMap.set(String(p.id), idx + 1);
+          }}
+        }});
+        return rankMap;
+      }}
+
+      function buildMetaBits(p) {{
+        const metaBits = [];
+        if (p.position && String(p.position).toUpperCase() !== "PICK") {{
+          if (p.pos_rank_label) metaBits.push(String(p.pos_rank_label).toUpperCase());
+        }}
+        if (p.team) metaBits.push(p.team);
+        if (p.age != null) metaBits.push(p.age + " yrs");
+        return metaBits;
+      }}
+
+      function buildPlayerValueRow(p, overallRank) {{
+        const row = document.createElement("div");
+        row.className = "otc-value-row";
+
+        const rankWrap = document.createElement("div");
+        rankWrap.className = "otc-value-rank";
+        rankWrap.textContent = overallRank ? "#" + overallRank : "—";
+
+        const mainWrap = document.createElement("div");
+        mainWrap.className = "otc-value-main";
+
+        const topLine = document.createElement("div");
+        topLine.className = "otc-value-topline";
+
+        const nameSpan = document.createElement("div");
+        nameSpan.className = "otc-value-name";
+        nameSpan.textContent = p.name || "Unknown";
+
+        const valueSpan = document.createElement("div");
+        valueSpan.className = "otc-value-score";
+        valueSpan.textContent = formatValue(p.value);
+
+        topLine.appendChild(nameSpan);
+        topLine.appendChild(valueSpan);
+
+        const metaSpan = document.createElement("div");
+        metaSpan.className = "otc-value-sub";
+        metaSpan.textContent = buildMetaBits(p).join(" • ");
+
+        mainWrap.appendChild(topLine);
+        mainWrap.appendChild(metaSpan);
+
+        row.appendChild(rankWrap);
+        row.appendChild(mainWrap);
+
+        return row;
+      }}
+
+      function buildDropdownItem(p, overallRank) {{
+  const item =
+    document.createElement("div");
+    item.className = "dropdown-item otc-dropdown-item";
+
+    const
+    left = document.createElement("div");
+    left.className = "otc-dropdown-left";
+
+    const
+    top = document.createElement("div");
+    top.className = "otc-dropdown-top";
+
+    const
+    rank = document.createElement("span");
+    rank.className = "otc-dropdown-rank-inline";
+    rank.textContent = overallRank ? "#" + overallRank : "";
+
+  const name = document.createElement("span");
+  name.className = "otc-dropdown-name";
+  name.textContent = p.name || "Unknown";
+
+  top.appendChild(rank);
+  top.appendChild(name);
+
+  const sub = document.createElement("div");
+  sub.className = "otc-dropdown-sub";
+  sub.textContent = buildMetaBits(p).join(" • ");
+
+  left.appendChild(top);
+  left.appendChild(sub);
+
+  const value = document.createElement("div");
+  value.className = "otc-dropdown-value";
+  value.textContent = formatValue(p.value);
+
+  item.appendChild(left);
+  item.appendChild(value);
+
+  return item;
+}}
+
       function renderAllPlayersList() {{
         const container = document.getElementById("allPlayersList");
         if (!container) return;
@@ -174,6 +280,8 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
           container.appendChild(empty);
           return;
         }}
+
+        const overallRankMap = buildOverallRankMap(allPlayers);
 
         let items = allPlayers.filter(p => {{
           if (!p || typeof p !== "object") return false;
@@ -189,35 +297,8 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         }});
 
         items.forEach(p => {{
-          const row = document.createElement("div");
-          row.className = "otc-value-row";
-
-          const leftWrap = document.createElement("div");
-          leftWrap.className = "otc-value-main";
-
-          const nameSpan = document.createElement("div");
-          nameSpan.className = "otc-value-name";
-          nameSpan.textContent = p.name || "Unknown";
-          leftWrap.appendChild(nameSpan);
-
-          const metaSpan = document.createElement("div");
-          metaSpan.className = "otc-value-sub";
-          const metaBits = [];
-          if (p.position && p.position.toUpperCase() !== "PICK") {{
-            if (p.pos_rank_label) metaBits.push(String(p.pos_rank_label).toUpperCase());
-          }}
-          if (p.team) metaBits.push(p.team);
-          if (p.age != null) metaBits.push(p.age + " yrs");
-          metaSpan.textContent = metaBits.join(" · ");
-          leftWrap.appendChild(metaSpan);
-
-          const valueSpan = document.createElement("div");
-          valueSpan.className = "otc-value-score";
-          valueSpan.textContent = formatValue(p.value);
-
-          row.appendChild(leftWrap);
-          row.appendChild(valueSpan);
-          container.appendChild(row);
+          const overallRank = overallRankMap.get(String(p.id));
+          container.appendChild(buildPlayerValueRow(p, overallRank));
         }});
       }}
 
@@ -352,58 +433,58 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         }}
       }}
 
-    function renderChips(side) {{
-      const container = document.getElementById(side === "A" ? "sideAChips" : "sideBChips");
-      const selected  = side === "A" ? sideASelected : sideBSelected;
-      if (!container) return;
-    
-      container.innerHTML = "";
-      container.className = "otc-selected-list";
-    
-      selected.forEach((p, idx) => {{
-        const chip = document.createElement("div");
-        chip.className = "otc-chip";
-    
-        const nameEl = document.createElement("div");
-        nameEl.className = "otc-chip-name";
-        nameEl.textContent = p.name || "Unknown";
-    
-        const metaEl = document.createElement("div");
-        metaEl.className = "otc-chip-meta";
-        const metaBits = [];
-        if (p.pos_rank_label) metaBits.push(p.pos_rank_label);
-        if (p.team) metaBits.push(p.team);
-        if (p.age != null) metaBits.push(p.age + " yrs");
-        metaEl.textContent = metaBits.join(" · ");
-    
-        const rightWrap = document.createElement("div");
-        rightWrap.className = "otc-chip-value-wrap";
-    
-        const valueEl = document.createElement("span");
-        valueEl.className = "otc-chip-value";
-        valueEl.textContent = formatValue(p.value);
-    
-        const removeBtn = document.createElement("button");
-        removeBtn.type = "button";
-        removeBtn.className = "otc-chip-remove";
-        removeBtn.textContent = "×";
-        removeBtn.onclick = () => {{
-          selected.splice(idx, 1);
-          renderChips(side);
-        }};
-    
-        rightWrap.appendChild(valueEl);
-        rightWrap.appendChild(removeBtn);
-    
-        chip.appendChild(nameEl);
-        chip.appendChild(metaEl);
-        chip.appendChild(rightWrap);
-    
-        container.appendChild(chip);
-      }});
-    
-      recomputeTrade();
-    }}
+      function renderChips(side) {{
+        const container = document.getElementById(side === "A" ? "sideAChips" : "sideBChips");
+        const selected  = side === "A" ? sideASelected : sideBSelected;
+        if (!container) return;
+
+        container.innerHTML = "";
+        container.className = "otc-selected-list";
+
+        selected.forEach((p, idx) => {{
+          const chip = document.createElement("div");
+          chip.className = "otc-chip";
+
+          const nameEl = document.createElement("div");
+          nameEl.className = "otc-chip-name";
+          nameEl.textContent = p.name || "Unknown";
+
+          const metaEl = document.createElement("div");
+          metaEl.className = "otc-chip-meta";
+          const metaBits = [];
+          if (p.pos_rank_label) metaBits.push(p.pos_rank_label);
+          if (p.team) metaBits.push(p.team);
+          if (p.age != null) metaBits.push(p.age + " yrs");
+          metaEl.textContent = metaBits.join(" · ");
+
+          const rightWrap = document.createElement("div");
+          rightWrap.className = "otc-chip-value-wrap";
+
+          const valueEl = document.createElement("span");
+          valueEl.className = "otc-chip-value";
+          valueEl.textContent = formatValue(p.value);
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "otc-chip-remove";
+          removeBtn.textContent = "×";
+          removeBtn.onclick = () => {{
+            selected.splice(idx, 1);
+            renderChips(side);
+          }};
+
+          rightWrap.appendChild(valueEl);
+          rightWrap.appendChild(removeBtn);
+
+          chip.appendChild(nameEl);
+          chip.appendChild(metaEl);
+          chip.appendChild(rightWrap);
+
+          container.appendChild(chip);
+        }});
+
+        recomputeTrade();
+      }}
 
       function setupSearch(side) {{
         const input = document.getElementById(side === "A" ? "sideASearch" : "sideBSearch");
@@ -433,16 +514,14 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
             .filter(p => p.name && p.name.toLowerCase().includes(query))
             .slice(0, 20);
 
+          const overallRankMap = buildOverallRankMap(allPlayers);
+
           if (!matches.length) return;
 
           matches.forEach(p => {{
-            const item = document.createElement("div");
-            item.className = "dropdown-item";
-            const meta = [];
-            if (p.pos_rank_label) meta.push(p.pos_rank_label);
-            if (p.team) meta.push(p.team);
-            if (p.age != null) meta.push(p.age + " yrs");
-            item.textContent = p.name + (meta.length ? " — " + meta.join(" · ") : "");
+            const overallRank = overallRankMap.get(String(p.id));
+            const item = buildDropdownItem(p, overallRank);
+
             item.onclick = () => {{
               const selected = side === "A" ? sideASelected : sideBSelected;
               if (!selected.find(x => x.id === p.id)) {{
@@ -453,6 +532,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               dropdown.style.display = "none";
               dropdown.parentElement.classList.remove("dropdown-open");
             }};
+
             dropdown.appendChild(item);
           }});
 
