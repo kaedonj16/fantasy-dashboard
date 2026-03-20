@@ -135,7 +135,6 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
 
             data = resp.json()
             if not isinstance(data, dict):
-                print(f"[sleeper_redzone] Unexpected response for {pid}: {type(data)}")
                 return pid, None
 
             stats = data.get("stats") or {}

@@ -32,6 +32,11 @@ from dashboard_services.platform_api import (
     get_bracket,
     get_drafts
 )
+from dashboard_services.player_value_history import (
+    init_value_history_db,
+    get_top_movers,
+    get_player_value_history,
+)
 from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
@@ -75,6 +80,7 @@ app = Flask(
 
 app.secret_key = os.urandom(32)
 plotly_js = get_plotlyjs()
+init_value_history_db()
 
 FORM_BODY = """
 <div class="home-page">
@@ -173,10 +179,15 @@ BASE_HTML = """
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8" name="google-adsense-account" content="ca-pub-9164153092633845">
+    <meta charset="utf-8">
+    <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
+    
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845"
+            crossorigin="anonymous"></script>
+    
     <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
 
     <link rel="stylesheet" href="/static/dashboard.css">
@@ -370,7 +381,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return (
             "<nav class='top-nav'>"
             "  <div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div>"
-            "  <div>"
+            "  <div class='top-nav-links'>"
             f"    {''.join(pills)}"
             "  </div>"
             "</nav>"
@@ -433,15 +444,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     pills.append("<a class='nav-pill logout-pill' href='/logout'>Logout</a>")
 
-    offseason_badge = ""
-    if offseason_mode:
-        offseason_badge = "<span class='nav-pill' style='cursor:default;opacity:.85;'>Offseason</span>"
 
     return (
         "<nav class='top-nav'>"
         "  <div style='display:flex;align-items:center;gap:10px;'>"
         "    <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
-        f"    {offseason_badge}"
         "  </div>"
         "  <div>"
         f"    {''.join(pills)}"
@@ -450,18 +457,29 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
 
-def render_page(title: str, league_id: Optional[str], active: str, body_html: str,
-                platform: Optional[str] = None, season: Optional[int] = None) -> str:
-    nav_html = build_nav(league_id, active, platform, season) if platform and season else build_nav(None, active, "", 0)
+def render_page(
+    title: str,
+    league_id: Optional[str],
+    active: str,
+    body_html: str,
+    platform: Optional[str] = None,
+    season: Optional[int] = None,
+    *args,
+    **kwargs,
+) -> str:
+    nav_html = build_nav(league_id, active, platform, season)
+
+    wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
+
     return BASE_HTML.format(
         title=title,
         nav=nav_html,
-        body=body_html,
+        body=wrapped_body,
         plotly_js=plotly_js,
-        privacy_url="/privacy",
-        faq_url="/faq",
-        support_url="/support",
-        contact_url="/contact",
+        privacy_url=league_url("privacy", league_id),
+        faq_url=league_url("faq", league_id),
+        support_url=league_url("support", league_id),
+        contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
     )
 
@@ -1053,6 +1071,70 @@ def render_standings(team_stats, length) -> str:
         </table>
     """
 
+def render_value_trends_card() -> str:
+    weekly = get_top_movers(days=7, limit=8)
+    monthly = get_top_movers(days=30, limit=8)
+
+    def render_rows(rows, empty_label: str) -> str:
+        if not rows:
+            return f"<div class='trend-empty'>{empty_label}</div>"
+
+        html = []
+        for row in rows:
+            delta = float(row.get("delta") or 0.0)
+            delta_cls = "delta-up" if delta > 0 else "delta-down" if delta < 0 else "delta-flat"
+            sign = "+" if delta > 0 else ""
+            html.append(
+                "<div class='trend-row'>"
+                f"  <div class='trend-player'>"
+                f"    <div class='trend-name'>{row.get('name') or 'Unknown'}</div>"
+                f"    <div class='trend-meta'>{row.get('position') or ''} • {row.get('team') or ''}</div>"
+                f"  </div>"
+                f"  <div class='trend-values'>"
+                f"    <div class='trend-new'>{row.get('new_value', 0):.1f}</div>"
+                f"    <div class='trend-delta {delta_cls}'>{sign}{delta:.1f}</div>"
+                f"  </div>"
+                "</div>"
+            )
+        return "".join(html)
+
+    weekly_range = ""
+    if weekly.get("comparison_date") and weekly.get("latest_date"):
+        weekly_range = f"{weekly['comparison_date']} → {weekly['latest_date']}"
+
+    monthly_range = ""
+    if monthly.get("comparison_date") and monthly.get("latest_date"):
+        monthly_range = f"{monthly['comparison_date']} → {monthly['latest_date']}"
+
+    return f"""
+    <div class="card trends-card">
+      <div class="trends-card-header">
+        <div>
+          <h2>Player Value Trends</h2>
+          <div class="trends-subtitle">Biggest movers from the model value history database</div>
+        </div>
+      </div>
+
+      <div class="trends-grid">
+        <section class="trend-panel">
+          <div class="trend-panel-header">
+            <h3>7-Day Risers</h3>
+            <span>{weekly_range}</span>
+          </div>
+          {render_rows(weekly.get("risers", []), "No 7-day data yet.")}
+        </section>
+
+        <section class="trend-panel">
+          <div class="trend-panel-header">
+            <h3>30-Day Fallers</h3>
+            <span>{monthly_range}</span>
+          </div>
+          {render_rows(monthly.get("fallers", []), "No 30-day data yet.")}
+        </section>
+      </div>
+    </div>
+    """
+
 
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
@@ -1138,6 +1220,7 @@ def build_dashboard_body(ctx: dict) -> str:
         rosters,
     )
     awards_html = render_awards_section(awards)
+    trends_html = render_value_trends_card()
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -1169,6 +1252,7 @@ def build_dashboard_body(ctx: dict) -> str:
         {season_note}
         {standings_html}
       </div>
+      {trends_html}
       {matchup_html}
     </div>
     <aside class="overview-sidebar">
@@ -4540,6 +4624,36 @@ def api_league_players():
 
     cleaned = _sanitize_for_json(model_value_table)
     return jsonify(cleaned)
+
+@app.route("/api/value-movers")
+def api_value_movers():
+    try:
+        days = int(request.args.get("days", 7))
+    except (TypeError, ValueError):
+        days = 7
+
+    try:
+        limit = int(request.args.get("limit", 15))
+    except (TypeError, ValueError):
+        limit = 15
+
+    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1))
+    return jsonify(payload)
+
+
+@app.route("/api/player-value-history/<player_id>")
+def api_player_value_history(player_id: str):
+    try:
+        days = int(request.args.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+
+    history = get_player_value_history(player_id, days=max(days, 1))
+    return jsonify({
+        "player_id": str(player_id),
+        "days": max(days, 1),
+        "history": history,
+    })
 
 
 if __name__ == "__main__":

@@ -16,6 +16,9 @@ CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
 NUM_TEAMS = 10
 
+# 1QB replacement / scarcity assumptions
+REPLACEMENT_MULT = {"QB": 1.50, "RB": 1.20, "WR": 1.20, "TE": 1.25}
+
 
 def _safe_float(v, default: float = 0.0) -> float:
     try:
@@ -125,23 +128,37 @@ def horizon_age_factor(pos: str, age: Optional[float]) -> float:
 
 
 def _production_component_fixed(u: dict, pos: str) -> float:
-    """Current descriptive production / opportunity score in [0,1]."""
+    """
+    Current descriptive production / opportunity score in [0,1].
+
+    Important:
+    - QB intentionally does NOT use ppg directly here, because current PPG is
+      already incorporated elsewhere in the model and double-counting was
+      inflating efficient pocket passers.
+    """
     ppg = _safe_float(u.get("ppr_ppg"))
 
     if pos == "QB":
         pass_yds = _safe_float(u.get("avg_pass_yds"))
         pass_tds = _safe_float(u.get("avg_pass_tds"))
-        ints = _safe_float(u.get("avg_pass_int"))
+        pass_int = _safe_float(u.get("avg_pass_int"))
+        pass_att = _safe_float(u.get("avg_pass_att"))
+
         rush_yds = _safe_float(u.get("avg_rush_yards"))
         rush_tds = _safe_float(u.get("avg_rush_tds"))
 
+        volume = _clip(pass_att / 38.0)
+        rush_floor = _clip(rush_yds / 35.0)
+        rush_td_rate = _clip(rush_tds / 0.5)
+
         score = (
-            0.36 * _clip(ppg / 27.0) +
-            0.22 * _clip(pass_yds / 285.0) +
-            0.18 * _clip(pass_tds / 2.2) +
-            0.14 * _clip(rush_yds / 35.0) +
-            0.10 * _clip(rush_tds / 0.35) -
-            0.08 * _clip(ints / 1.3)
+            0.22 * _clip(pass_yds / 300.0) +
+            0.24 * _clip(pass_tds / 2.5) +
+            0.24 * _clip(rush_yds / 40.0) +
+            0.18 * rush_td_rate +
+            0.06 * volume +
+            0.16 * rush_floor -
+            0.08 * _clip(pass_int / 1.5)
         )
         return _clip(score)
 
@@ -471,14 +488,6 @@ def _apply_qb_market_compression(
     ceiling_norm: Dict[str, float],
     per_pid: Dict[str, dict],
 ) -> Dict[str, float]:
-    """
-    1QB-specific QB reshaping:
-    - strong baseline compression
-    - elite QBs retain some edge
-    - top QBs stay clustered tighter
-    - rushing QBs recover modestly
-    """
-
     for pid, score in list(final_scores.items()):
         if pos_by_pid.get(pid) != "QB":
             continue
@@ -489,20 +498,18 @@ def _apply_qb_market_compression(
 
         rush_yds = _safe_float(p.get("rush_yds_pg"))
         rush_tds = _safe_float(p.get("rush_tds_pg"))
-        rush_ppg_proxy = rush_yds / 10.0 + rush_tds * 6.0
-        rush_norm = _clip(rush_ppg_proxy / 9.0)
+        rush_norm = _clip((rush_yds / 35.0) + (rush_tds / 0.5), 0.0, 1.0)
 
-        # flatter elite treatment
-        elite_soft = elite ** 0.78
-        ceiling_soft = ceiling ** 0.85
+        elite_soft = elite ** 0.80
+        ceiling_soft = ceiling ** 0.90
 
-        base = 0.48
-        elite_boost = 0.24 * elite_soft
-        ceiling_boost = 0.06 * ceiling_soft
-        rushing_boost = 0.08 * rush_norm * max(elite_soft, 0.55)
+        base = 0.42
+        elite_boost = 0.22 * elite_soft
+        ceiling_boost = 0.05 * ceiling_soft
+        rushing_boost = 0.13 * rush_norm
 
         qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-        qb_keep = min(qb_keep, 0.76)
+        qb_keep = min(qb_keep, 0.74)
 
         final_scores[pid] = _clip(score * qb_keep)
 
@@ -687,6 +694,9 @@ def build_value_table_for_usage() -> Dict[str, float]:
         age_curve = horizon_age_factor(pos, age)
         invest_score = _investment_score(invest, pos, age)
 
+        rush_yds_pg = _safe_float(usage.get("avg_rush_yards"))
+        rush_tds_pg = _safe_float(usage.get("avg_rush_tds"))
+
         risk_penalty = _risk_penalty(
             pos=pos,
             age=age,
@@ -729,6 +739,8 @@ def build_value_table_for_usage() -> Dict[str, float]:
             "prev_year_ppg": prev_year_ppg,
             "seasons_played": seasons_played,
             "proven_elite": proven_elite,
+            "rush_yds_pg": rush_yds_pg,
+            "rush_tds_pg": rush_tds_pg,
         }
 
     if not per_pid:
@@ -738,6 +750,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
     blended_prod_norm = _normalize_by_pos({pid: p["blended_prod"] for pid, p in per_pid.items()}, pos_by_pid)
     current_ppg_norm = _normalize_by_pos({pid: p["current_ppg"] for pid, p in per_pid.items()}, pos_by_pid)
+    prod_now_norm = _normalize_by_pos({pid: p["prod_now"] for pid, p in per_pid.items()}, pos_by_pid)
     ceiling_norm = _normalize_by_pos({pid: p["ceiling_proxy"] for pid, p in per_pid.items()}, pos_by_pid)
     floor_norm = _normalize_by_pos({pid: p["floor_proxy"] for pid, p in per_pid.items()}, pos_by_pid)
     rz_norm = _normalize_by_pos({pid: p["rz_metric"] for pid, p in per_pid.items()}, pos_by_pid)
@@ -746,17 +759,17 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
     POS_WEIGHTS = {
         "QB": {
-            "blended_prod": 0.22,
-            "current_prod": 0.08,
-            "ceiling": 0.14,
-            "floor": 0.06,
-            "age": 0.11,
-            "role": 0.12,
-            "trend": 0.05,
-            "invest": 0.05,
+            "blended_prod": 0.16,
+            "current_prod": 0.20,
+            "ceiling": 0.16,
+            "floor": 0.03,
+            "age": 0.09,
+            "role": 0.11,
+            "trend": 0.07,
+            "invest": 0.04,
             "rz": 0.00,
             "share": 0.00,
-            "snap": 0.00,
+            "snap": 0.04,
         },
         "RB": {
             "blended_prod": 0.22,
@@ -796,7 +809,6 @@ def build_value_table_for_usage() -> Dict[str, float]:
             "rz": 0.07,
             "share": 0.10,
             "snap": 0.07,
-            "elite_bonus": 0.04,
         },
     }
 
@@ -808,7 +820,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         base = (
             w["blended_prod"] * blended_prod_norm.get(pid, 0.0) +
-            w["current_prod"] * current_ppg_norm.get(pid, 0.0) +
+            w["current_prod"] * prod_now_norm.get(pid, 0.0) +
             w["ceiling"] * ceiling_norm.get(pid, 0.0) +
             w["floor"] * floor_norm.get(pid, 0.0) +
             w["age"] * p["age_curve"] +
@@ -819,6 +831,24 @@ def build_value_table_for_usage() -> Dict[str, float]:
             w["share"] * target_share_norm.get(pid, 0.0) +
             w["snap"] * snap_norm.get(pid, 0.0)
         )
+
+        if pos == "QB":
+            ceiling_gap = max(
+                ceiling_norm.get(pid, 0.0) - floor_norm.get(pid, 0.0),
+                0.0
+            )
+            base *= (0.92 + 0.14 * ceiling_gap)
+
+            rush_yds_pg = p["rush_yds_pg"]
+            rush_tds_pg = p["rush_tds_pg"]
+            rush_profile = _clip((rush_yds_pg / 35.0) + (rush_tds_pg / 0.5), 0.0, 1.0)
+
+            if rush_yds_pg < 10 and rush_tds_pg < 0.20:
+                base *= 0.84
+            elif rush_yds_pg < 20 and rush_tds_pg < 0.30:
+                base *= 0.90
+            elif rush_profile < 0.55:
+                base *= 0.95
 
         confidence_multiplier = 0.82 + 0.10 * p["current_conf"] + 0.08 * p["hist_conf"]
         availability_multiplier = 0.84 + 0.16 * p["avail"]
@@ -832,13 +862,19 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
     for pid, p in per_pid.items():
         pos = p["pos"]
+
+        if pos == "QB":
+            rush_bonus = 1.0 + 0.12 * _clip((p["rush_yds_pg"] / 35.0) + (p["rush_tds_pg"] / 0.5), 0.0, 1.0)
+        else:
+            rush_bonus = 1.0
+
         dynasty_strength = (
-            0.52 * p["blended_prod"] +
-            0.20 * p["ceiling_proxy"] +
-            0.12 * p["floor_proxy"] +
-            0.08 * p["role_security"] * max(p["blended_prod"], 1.0) +
+            0.46 * p["blended_prod"] +
+            0.22 * p["ceiling_proxy"] +
+            0.14 * p["floor_proxy"] +
+            0.10 * p["role_security"] * max(p["blended_prod"], 1.0) +
             0.08 * p["invest_score"] * max(p["blended_prod"], 1.0)
-        ) * p["age_curve"] * p["avail"]
+        ) * p["age_curve"] * p["avail"] * rush_bonus
 
         dynasty_strength_by_pos.setdefault(pos, []).append((pid, dynasty_strength))
 
@@ -862,16 +898,11 @@ def build_value_table_for_usage() -> Dict[str, float]:
 
         lst_sorted = sorted(lst_pos, key=lambda x: x[1], reverse=True)
 
-        if pos == "QB":
-            replacement_idx = min(17, len(lst_sorted) - 1)
-            starter_idx = min(11, len(lst_sorted) - 1)
-            elite_idx = min(4, len(lst_sorted) - 1)
-        else:
-            starter_slots = STARTERS[pos] * NUM_TEAMS
-            replacement_idx = int(starter_slots * 1.20)
-            replacement_idx = max(0, min(replacement_idx, len(lst_sorted) - 1))
-            starter_idx = max(0, min(starter_slots - 1, len(lst_sorted) - 1))
-            elite_idx = max(0, min(elite_cutoffs[pos] - 1, len(lst_sorted) - 1))
+        starter_slots = STARTERS[pos] * NUM_TEAMS
+        replacement_idx = int(starter_slots * REPLACEMENT_MULT[pos])
+        replacement_idx = max(0, min(replacement_idx, len(lst_sorted) - 1))
+        starter_idx = max(0, min(starter_slots - 1, len(lst_sorted) - 1))
+        elite_idx = max(0, min(elite_cutoffs[pos] - 1, len(lst_sorted) - 1))
 
         replacement_map[pos] = lst_sorted[replacement_idx][1]
         starter_map[pos] = lst_sorted[starter_idx][1]
@@ -896,7 +927,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
     final_scores: Dict[str, float] = {}
 
     SCARCITY_ALPHA = {
-        "QB": 0.08,
+        "QB": 0.05,
         "RB": 0.32,
         "WR": 0.25,
         "TE": 0.30,

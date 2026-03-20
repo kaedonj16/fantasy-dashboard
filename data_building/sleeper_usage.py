@@ -98,6 +98,14 @@ def build_usage_map_for_season(
             pass_att = float(stats.get("pass_att", 0) or 0)
             pass_cmp = float(stats.get("pass_cmp", 0) or 0)
             pass_int = float(stats.get("pass_int", 0) or 0)
+            pass_yds = float(
+                stats.get("pass_yd", stats.get("passing_yd", 0))
+                or 0
+            )
+            pass_tds = float(
+                stats.get("pass_td", stats.get("passing_td", 0))
+                or 0
+            )
 
             acc = accum.setdefault(pid, {
                 "games": 0,
@@ -115,11 +123,11 @@ def build_usage_map_for_season(
                 "std_total": 0.0,
                 "rec_rz_tgt_pg": 0.0,
                 "rush_rz_att_pg": 0.0,
-                # QB aggregates
                 "pass_att": 0.0,
                 "pass_cmp": 0.0,
+                "pass_yds": 0.0,
+                "pass_tds": 0.0,
                 "pass_int": 0.0,
-                # NEW: Footballguys season-level numbers
                 "total_targets": 0.0,
                 "target_share": 0.0,
             })
@@ -158,6 +166,8 @@ def build_usage_map_for_season(
             # QB aggregates
             acc["pass_att"] += pass_att
             acc["pass_cmp"] += pass_cmp
+            acc["pass_yds"] += pass_yds
+            acc["pass_tds"] += pass_tds
             acc["pass_int"] += pass_int
 
             # NEW: Footballguys target share – season-level, so we just overwrite with same value each week
@@ -197,6 +207,8 @@ def build_usage_map_for_season(
                 "rush_rz_att_pg": 0.0,
                 "avg_pass_att": 0.0,
                 "avg_pass_cmp": 0.0,
+                "avg_pass_yds": 0.0,
+                "avg_pass_tds": 0.0,
                 "avg_pass_int": 0.0,
                 "total_targets": 0.0,
                 "target_share": 0.0,
@@ -224,6 +236,8 @@ def build_usage_map_for_season(
             # QB passing per-game
             "avg_pass_att": acc["pass_att"] / g,
             "avg_pass_cmp": acc["pass_cmp"] / g,
+            "avg_pass_yds": acc["pass_yds"] / g,
+            "avg_pass_tds": acc["pass_tds"] / g,
             "avg_pass_int": acc["pass_int"] / g,
 
             # Footballguys season-level (not per-game)
