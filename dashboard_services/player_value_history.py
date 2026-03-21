@@ -39,10 +39,10 @@ def init_value_history_db() -> None:
 
 
 def record_model_value_snapshot(
-    players: Iterable[dict],
-    *,
-    as_of: Optional[date] = None,
-    source: str = "model",
+        players: Iterable[dict],
+        *,
+        as_of: Optional[date] = None,
+        source: str = "model",
 ) -> int:
     """
     Expects rows shaped like:
@@ -123,10 +123,10 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
 
 
 def get_player_value_history(
-    player_id: str,
-    *,
-    days: int = 30,
-    source: str = "model",
+        player_id: str,
+        *,
+        days: int = 30,
+        source: str = "model",
 ) -> list[dict]:
     init_value_history_db()
 

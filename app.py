@@ -42,10 +42,13 @@ from dashboard_services.service import build_tables, playoff_bracket, matchup_ca
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
     seed_top6_from_team_stats, build_standings_map
 from dashboard_services.utils import (load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
-    load_players_index, load_week_projection, bucket_for_slot, clear_activity_cache_for_league, \
-    clear_weekly_cache_for_league, build_status_for_week, clear_teams_cache_for_league, get_week_projections_cached, \
-    fetch_week_from_tank01, count_roster_positions, load_idp_index, get_live_game_ids_for_today, \
-    build_and_save_week_stats_for_league, load_week_schedule)
+                                      load_players_index, load_week_projection, bucket_for_slot,
+                                      clear_activity_cache_for_league, \
+                                      clear_weekly_cache_for_league, build_status_for_week,
+                                      clear_teams_cache_for_league, get_week_projections_cached, \
+                                      fetch_week_from_tank01, count_roster_positions, load_idp_index,
+                                      get_live_game_ids_for_today, \
+                                      build_and_save_week_stats_for_league, load_week_schedule)
 from data_building.build_daily_value_table import build_daily_data
 
 daily_lock = threading.Lock()
@@ -878,10 +881,10 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- Rebuild roster_map every refresh ----------
     user_fallback = {
         u["user_id"]: (
-            (u.get("metadata") or {}).get("team_name")
-            or u.get("display_name")
-            or u.get("username")
-            or str(u["user_id"])
+                (u.get("metadata") or {}).get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or str(u["user_id"])
         )
         for u in users
     }
@@ -1006,11 +1009,11 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
             ctx["proj_by_roster"] = {}
         else:
             should_refresh_live_week = (
-                viewed_season == current_season
-                and not season_complete
-                and not offseason_mode
-                and current_week > 0
-                and season_type != "off"
+                    viewed_season == current_season
+                    and not season_complete
+                    and not offseason_mode
+                    and current_week > 0
+                    and season_type != "off"
             )
 
             if should_refresh_live_week:
@@ -4185,6 +4188,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         body = build_trade_calculator_body(None, current_season)
 
     return render_page("BR Fantasy Trade Calculator", league_id, "trade", body, platform, season)
+
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
 def page_activity(platform: str, season: int, league_id: str):

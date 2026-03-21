@@ -1,7 +1,7 @@
-from dashboard_services.data_building.daily import build_daily_data
 from datetime import date
 
 from dashboard_services.api import get_nfl_state
+from data_building.build_daily_value_table import build_daily_data
 
 
 def main():
