@@ -16,7 +16,7 @@ services:
     schedule: 0 8 * * *
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m dashboard_services.data_building.build_daily_value_table
+    startCommand: python -m data_building.build_daily_value_table
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
