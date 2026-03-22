@@ -1,5 +1,4 @@
 import hashlib
-import html
 import json
 import math
 import numpy as np
@@ -9,100 +8,49 @@ import threading
 import time
 from collections import defaultdict
 from datetime import date, datetime
-from flask import (
-    Flask,
-    request,
-    render_template_string,
-    redirect,
-    url_for,
-    jsonify,
-    render_template,
-    session,
-)
-from openai import OpenAI
+from flask import Flask, request, render_template_string, redirect, url_for, jsonify
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 
-from dashboard_services.ai.history_recap import get_history_ai_recap
-from dashboard_services.ai.renderer import get_team_gm_memo
-from dashboard_services.api import (
-    avatar_from_users,
-    build_league_history_map,
-    build_team_game_lookup,
-    get_effective_scoring_settings,
-    get_league_settings,
-    get_nfl_players,
-    get_nfl_scores_for_date,
-    get_nfl_state,
-    get_roster_positions,
-    get_sleeper_user_by_username,
-    get_sleeper_user_leagues,
-    get_total_rosters,
-    resolve_league_id_for_season,
-)
+from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
+    get_nfl_scores_for_date, build_team_game_lookup, \
+    get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters, \
+    get_sleeper_user_by_username, get_sleeper_user_leagues, resolve_league_id_for_season
 from dashboard_services.awards import compute_awards_season, render_awards_section
-from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
-from dashboard_services.matchups import (
-    compute_team_projections_for_weeks,
-    render_matchup_carousel_weeks,
-    render_matchup_slide,
-)
+from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
+    compute_team_projections_for_weeks
+from dashboard_services.pages.history_page import build_history_body
 from dashboard_services.pages.graphs_page import build_graphs_body
-from dashboard_services.pages.history_page import (
-    build_history_body,
-    build_regular_season_team_stats,
-    sort_team_stats,
-)
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.platform_api import (
-    get_bracket,
-    get_drafts,
     get_league,
+    get_users,
     get_rosters,
     get_traded_picks,
-    get_users,
+    get_bracket,
+    get_drafts
+)
+from dashboard_services.player_value_history import (
+    init_value_history_db,
+    get_top_movers
 )
 from dashboard_services.players import get_players_map
-from dashboard_services.providers.espn_api import safe_float
-from dashboard_services.service import (
-    build_matchups_by_week,
-    build_picks_by_roster,
-    build_standings_map,
-    build_tables,
-    build_week_activity,
-    matchup_cards_last_week,
-    pill,
-    playoff_bracket,
-    render_teams_sidebar,
-    render_top_three,
-    seed_top6_from_team_stats,
-)
+from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
+    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
+    seed_top6_from_team_stats, build_standings_map
+from dashboard_services.utils import (load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
+                                      load_players_index, load_week_projection, bucket_for_slot,
+                                      clear_activity_cache_for_league, \
+                                      clear_weekly_cache_for_league, build_status_for_week,
+                                      clear_teams_cache_for_league, get_week_projections_cached, \
+                                      fetch_week_from_tank01, count_roster_positions, load_idp_index,
+                                      get_live_game_ids_for_today, \
+                                      build_and_save_week_stats_for_league, load_week_schedule)
 from data_building.build_daily_value_table import build_daily_data
-from data_building.player_value_history import get_top_movers, init_value_history_db
-from utils.utils import (
-    bucket_for_slot,
-    build_and_save_week_stats_for_league,
-    build_status_for_week,
-    build_teams_overview,
-    clear_activity_cache_for_league,
-    clear_teams_cache_for_league,
-    clear_weekly_cache_for_league,
-    count_roster_positions,
-    fetch_week_from_tank01,
-    get_live_game_ids_for_today,
-    get_week_projections_cached,
-    load_idp_index,
-    load_model_value_table,
-    load_players_index,
-    load_teams_index,
-    load_week_projection,
-    load_week_schedule,
-    streak_class,
-)
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -146,14 +94,14 @@ FORM_BODY = """
     <div class="home-hero-left">
       <h1 class="home-title">BR Fantasy Dashboard</h1>
       <p class="home-subtitle">
-        Your dynasty league, upgraded. Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper and ESPN leagues.
+        Turn your Sleeper league into a real front office:
+        live projections, matchup previews, power rankings, and more—all in one place.
       </p>
 
       <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> — Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> — Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> — Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> — Season recaps, power rankings, and trend visualization</li>
+        <li>League-wide dashboard with weekly storylines and stats</li>
+        <li>Matchup hub with projections and live scoring context</li>
+        <li>Trade calculator powered by custom value models</li>
       </ul>
     </div>
 
@@ -162,30 +110,17 @@ FORM_BODY = """
         <h2 class="home-card-title">Get started</h2>
 
         <div class="row">
-          <label for="platformSelect">Platform</label>
-          <div class="platform-selector">
-            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn" disabled data-tooltip="ESPN integration coming soon!">ESPN (Coming Soon)</button>
-          </div>
+          <label for="username">Sleeper Username</label>
+          <input type="text" id="username" name="username" value="{{ username or '' }}">
         </div>
 
-        <!-- Sleeper Flow -->
-        <div id="sleeperFlow">
-          <div class="row">
-            <label for="username">Sleeper Username</label>
-            <input type="text" id="username" name="username" value="{{ username or '' }}">
-          </div>
-
-          <div class="row">
-            <button type="button" id="lookupBtn">Find My Leagues</button>
-          </div>
+        <div class="row">
+          <button type="button" id="lookupBtn">Find My Leagues</button>
         </div>
-
 
         <form method="post" id="leagueSelectForm">
-          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
+          <input type="hidden" name="platform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
-          <input type="hidden" name="username" id="formUsername" value="">
 
           <div class="row" id="leagueSelectWrap" style="display:none;">
             <label for="league">Choose League</label>
@@ -206,67 +141,34 @@ FORM_BODY = """
         </form>
 
         <p class="hint">
-          Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
+          Enter your Sleeper username, choose one of your leagues, and generate the dashboard.
         </p>
       </div>
     </div>
   </section>
-
-  <section class="home-feature-grid">
-    <div class="home-feature-card">
-      <div class="home-feature-icon">📊</div>
-      <h3>Trade Calculator</h3>
-      <p>
-        AI-powered trade analysis personalized to your roster. Get real-time value assessments,
-        balance indicators, and specific counter suggestions — not generic advice.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon">📈</div>
-      <h3>Dynasty Values</h3>
-      <p>
-        Hybrid valuation model blending market consensus with production metrics, age curves,
-        and positional scarcity. Updated daily for all players and picks.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon">⚡</div>
-      <h3>Weekly Hub</h3>
-      <p>
-        Live scoring context for every matchup. See projections, starters, and real-time updates
-        in one clean view — perfect for Sunday trash talk.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon">🎯</div>
-      <h3>Team Analytics</h3>
-      <p>
-        Position strength breakdowns, roster composition analysis, and competitive advantages
-        mapped across your league. Know where you stand.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon">📉</div>
-      <h3>Graphs & Trends</h3>
-      <p>
-        Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
-        Prove who's actually good and who just got lucky.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon">🏆</div>
-      <h3>Historical Insights</h3>
-      <p>
-        AI-generated season recaps personalized to your team. Track multi-year trends,
-        rivalry records, and championship runs across league history.
-      </p>
-    </div>
-  </section>
+   <section class="home-feature-grid">
+        <div class="home-feature-card">
+            <h3>Weekly Hub</h3>
+            <p>
+                See every starter, projection, and live score in one view.
+                Perfect for Sunday trash talk and recap videos.
+            </p>
+        </div>
+        <div class="home-feature-card">
+            <h3>Trade Calculator</h3>
+            <p>
+                Evaluate trades with BR’s custom value engine so you don’t get
+                fleeced by the league shark.
+            </p>
+        </div>
+        <div class="home-feature-card">
+            <h3>Graphs & Insights</h3>
+            <p>
+                Visualize PF, PA, luck, and schedule strength so you can prove
+                who’s actually good.
+            </p>
+        </div>
+    </section>
 </div>
 """
 
@@ -321,82 +223,6 @@ BASE_HTML = """
   </body>
 </html>
 """
-
-
-def normalize_sleeper_username(value: str) -> str:
-    return (value or "").strip().lower()
-
-
-def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str) -> Union[Dict, None]:
-    """
-    Resolve a Sleeper username to:
-      - user_id
-      - roster_id
-      - display_name / team name
-    """
-    wanted = normalize_sleeper_username(username)
-    if not wanted:
-        return None
-
-    matched_user = None
-    for u in users or []:
-        uname = normalize_sleeper_username(u.get("display_name") or u.get("username") or "")
-        if uname == wanted:
-            matched_user = u
-            break
-
-    if not matched_user:
-        return None
-
-    user_id = str(matched_user.get("user_id") or "")
-    if not user_id:
-        return None
-
-    matched_roster = None
-    for r in rosters or []:
-        owner_id = str(r.get("owner_id") or "")
-        if owner_id == user_id:
-            matched_roster = r
-            break
-
-    if not matched_roster:
-        return {
-            "viewer_username": username,
-            "viewer_user_id": user_id,
-            "viewer_roster_id": None,
-            "viewer_team_name": matched_user.get("display_name") or matched_user.get("username") or "Unknown Team",
-        }
-
-    metadata = matched_roster.get("metadata") or {}
-    team_name = (
-            metadata.get("team_name")
-            or matched_user.get("display_name")
-            or matched_user.get("username")
-            or f"Roster {matched_roster.get('roster_id')}"
-    )
-
-    return {
-        "viewer_username": username,
-        "viewer_user_id": user_id,
-        "viewer_roster_id": str(matched_roster.get("roster_id")),
-        "viewer_team_name": team_name,
-    }
-
-
-def save_viewer_session(viewer: dict) -> None:
-    session["viewer_username"] = viewer.get("viewer_username")
-    session["viewer_user_id"] = viewer.get("viewer_user_id")
-    session["viewer_roster_id"] = viewer.get("viewer_roster_id")
-    session["viewer_team_name"] = viewer.get("viewer_team_name")
-
-
-def get_viewer_session() -> dict:
-    return {
-        "viewer_username": session.get("viewer_username"),
-        "viewer_user_id": session.get("viewer_user_id"),
-        "viewer_roster_id": session.get("viewer_roster_id"),
-        "viewer_team_name": session.get("viewer_team_name"),
-    }
 
 
 def format_sleeper_league_option(league: dict) -> dict:
@@ -542,22 +368,48 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
-def get_available_history_seasons(platform: str, league_id: str, current_season: int) -> List[int]:
+def get_available_history_seasons(platform: str, league_id: str, season: int) -> list[int]:
     """
-    Returns completed seasons only (excludes current season).
+    Returns descending seasons for this league.
+
+    Sleeper:
+      Walk backward from the viewed/current league through previous_league_id.
+    ESPN / fallback:
+      Return just the requested season.
     """
-    seasons = sorted(
-        build_league_history_map(platform, league_id, current_season).keys(),
-        reverse=True,
-    )
+    if (platform or "").lower() != "sleeper":
+        return [int(season)]
 
-    # remove current season
-    seasons = [s for s in seasons if int(s) < int(current_season)]
+    seasons: list[int] = []
+    seen_league_ids: set[str] = set()
 
-    return seasons
+    season_cursor = int(season)
+    cursor_league_id = str(league_id).strip()
+
+    while cursor_league_id and cursor_league_id not in seen_league_ids:
+        seen_league_ids.add(cursor_league_id)
+
+        try:
+            lg = get_league("sleeper", cursor_league_id, season_cursor) or {}
+        except Exception:
+            break
+
+        league_season = _safe_int(lg.get("season"), season_cursor)
+        if league_season not in seasons:
+            seasons.append(league_season)
+
+        prev_id = str(lg.get("previous_league_id") or "").strip()
+        if not prev_id:
+            break
+
+        cursor_league_id = prev_id
+        season_cursor = league_season - 1
+
+    seasons = sorted({int(s) for s in seasons if s}, reverse=True)
+    return seasons or [int(season)]
 
 
-def get_default_history_season(available_seasons: List[int], current_season: int) -> int:
+def get_default_history_season(available_seasons: list[int], current_season: int) -> int:
     """
     Default to the most recent completed season, not the current season.
     If there is no prior season, fall back to the newest available season.
@@ -648,23 +500,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     pills = []
     if refresh_btn:
         pills.append(refresh_btn)
-
-    # Changelog bell (always visible)
-    changelog_bell = (
-        "<div class='changelog-bell-wrapper' style='position:relative;display:inline-flex;'>"
-        "  <button type='button' id='changelogBell' class='changelog-bell-btn' "
-        "          style='display:inline-flex;align-items:center;justify-content:center;"
-        "                 width:36px;height:36px;border-radius:50%;border:1px solid #ddd;"
-        "                 background:white;cursor:pointer;font-size:18px;color:#122d4b;'>"
-        "    🔔"
-        "  </button>"
-        "  <div class='changelog-dot changelog-dot-hidden' "
-        "       style='position:absolute;top:2px;right:2px;width:7px;height:7px;"
-        "              border-radius:50%;background:#E24B4A;border:1.5px solid white;'></div>"
-        "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
-        "</div>"
-    )
-    pills.append(changelog_bell)
 
     # Always available
     pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
@@ -960,424 +795,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "offseason_mode": offseason_mode,
         "drafts": drafts,
         "latest_draft": latest_draft,
-        "viewer": get_viewer_session(),
     }
-
-
-def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
-    rosters = ctx.get("rosters") or []
-    roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
-    if not roster:
-        return None
-
-    roster_map = ctx.get("roster_map") or {}
-    team_name = roster_map.get(str(viewer_roster_id)) or f"Roster {viewer_roster_id}"
-
-    players_index = ctx.get("players_index") or {}
-    players_map = ctx.get("players_map") or {}
-    standings_map = ctx.get("standings_map") or {}
-    picks_by_roster = ctx.get("picks_by_roster") or {}
-    model_value_table = ctx.get("model_value_table") or {}
-    roster_positions = ctx.get("roster_positions")
-    # Handle DataFrame case - convert to list if it's a DataFrame
-    if roster_positions is not None and hasattr(roster_positions, 'tolist'):
-        roster_positions = roster_positions.tolist()
-    elif roster_positions is None:
-        roster_positions = []
-    total_rosters = safe_float(ctx.get("total_rosters"), 10)
-    team_stats = ctx.get("team_stats")
-    # Handle DataFrame case - convert to list of dicts if it's a DataFrame
-    if team_stats is not None and hasattr(team_stats, 'to_dict'):
-        team_stats = team_stats.to_dict('records')
-    elif team_stats is None:
-        team_stats = []
-
-    values_by_id = {}
-    for row in model_value_table:
-        if isinstance(row, dict) and row.get("id") is not None:
-            values_by_id[str(row["id"])] = row
-
-    standings = standings_map.get(str(viewer_roster_id), {}) or {}
-
-    def pick_player_meta(pid: str) -> dict:
-        mv = values_by_id.get(pid) or {}
-        pmeta = players_index.get(pid) or players_map.get(pid) or {}
-
-        position = (
-                mv.get("position")
-                or mv.get("pos")
-                or pmeta.get("position")
-                or pmeta.get("pos")
-                or "?"
-        )
-        position = str(position).upper()
-
-        team = mv.get("team") or pmeta.get("team") or ""
-        age = mv.get("age")
-        if age in (None, ""):
-            age = pmeta.get("age")
-
-        value = safe_float(mv.get("value"))
-        name = (
-                mv.get("name")
-                or pmeta.get("full_name")
-                or pmeta.get("name")
-                or f"Player {pid}"
-        )
-
-        return {
-            "id": pid,
-            "name": name,
-            "position": position,
-            "team": team,
-            "age": age,
-            "value": value,
-            "pos_rank_label": mv.get("pos_rank_label") or "",
-        }
-
-    all_player_ids = [str(pid) for pid in (roster.get("players") or [])]
-    starter_ids = [str(pid) for pid in (roster.get("starters") or []) if str(pid) not in {"0", "", "None"}]
-
-    players = [pick_player_meta(pid) for pid in all_player_ids]
-    players.sort(key=lambda x: x["value"], reverse=True)
-
-    starter_set = set(starter_ids)
-    starters = [pick_player_meta(pid) for pid in starter_ids if pid in all_player_ids]
-    starters.sort(key=lambda x: x["value"], reverse=True)
-
-    bench = [p for p in players if p["id"] not in starter_set]
-    bench.sort(key=lambda x: x["value"], reverse=True)
-
-    pos_groups: dict[str, list[dict]] = {}
-    for p in players:
-        pos = p["position"]
-        pos_groups.setdefault(pos, []).append(p)
-
-    starter_pos_groups: dict[str, list[dict]] = {}
-    for p in starters:
-        pos = p["position"]
-        starter_pos_groups.setdefault(pos, []).append(p)
-
-    bench_pos_groups: dict[str, list[dict]] = {}
-    for p in bench:
-        pos = p["position"]
-        bench_pos_groups.setdefault(pos, []).append(p)
-
-    for group in pos_groups.values():
-        group.sort(key=lambda x: x["value"], reverse=True)
-    for group in starter_pos_groups.values():
-        group.sort(key=lambda x: x["value"], reverse=True)
-    for group in bench_pos_groups.values():
-        group.sort(key=lambda x: x["value"], reverse=True)
-
-    pos_summary = {}
-    for pos, vals in pos_groups.items():
-        numbers = [safe_float(p["value"]) for p in vals]
-        ages = [safe_float(p["age"]) for p in vals if p.get("age") not in (None, "")]
-        starter_vals = [safe_float(p["value"]) for p in starter_pos_groups.get(pos, [])]
-        bench_vals = [safe_float(p["value"]) for p in bench_pos_groups.get(pos, [])]
-
-        pos_summary[pos] = {
-            "count": len(vals),
-            "starter_count": len(starter_pos_groups.get(pos, [])),
-            "bench_count": len(bench_pos_groups.get(pos, [])),
-            "total_value": round(sum(numbers), 1),
-            "top_1": round(sum(numbers[:1]), 1),
-            "top_2": round(sum(numbers[:2]), 1),
-            "top_3_sum": round(sum(numbers[:3]), 1),
-            "top_5_sum": round(sum(numbers[:5]), 1),
-            "best": round(numbers[0], 1) if numbers else 0.0,
-            "starter_value": round(sum(starter_vals), 1),
-            "bench_value": round(sum(bench_vals), 1),
-            "avg_age": round(sum(ages) / len(ages), 1) if ages else None,
-            "top_players": vals[:3],
-        }
-
-    future_picks = picks_by_roster.get(str(viewer_roster_id), []) or []
-
-    pick_summary = {
-        "total": len(future_picks),
-        "firsts": 0,
-        "seconds": 0,
-        "thirds_plus": 0,
-        "by_year": {},
-    }
-
-    cleaned_picks = []
-    for pk in future_picks:
-        if not isinstance(pk, dict):
-            continue
-
-        year = str(pk.get("season") or pk.get("year") or "")
-        rnd = int(pk.get("round") or 0)
-
-        if rnd == 1:
-            pick_summary["firsts"] += 1
-        elif rnd == 2:
-            pick_summary["seconds"] += 1
-        elif rnd >= 3:
-            pick_summary["thirds_plus"] += 1
-
-        if year:
-            if year not in pick_summary["by_year"]:
-                pick_summary["by_year"][year] = {"firsts": 0, "seconds": 0, "thirds_plus": 0}
-            if rnd == 1:
-                pick_summary["by_year"][year]["firsts"] += 1
-            elif rnd == 2:
-                pick_summary["by_year"][year]["seconds"] += 1
-            elif rnd >= 3:
-                pick_summary["by_year"][year]["thirds_plus"] += 1
-
-        cleaned_picks.append({
-            "season": year,
-            "round": rnd,
-            "original_owner": pk.get("original_owner_id"),
-            "owner_id": pk.get("owner_id"),
-        })
-
-    ages = [safe_float(p.get("age")) for p in players if p.get("age") not in (None, "")]
-    avg_age = sum(ages) / len(ages) if ages else 0.0
-
-    total_value = round(sum(safe_float(p["value"]) for p in players), 1)
-    starter_value_total = round(sum(safe_float(p["value"]) for p in starters), 1)
-    bench_value_total = round(sum(safe_float(p["value"]) for p in bench), 1)
-
-    elite_assets = sum(1 for p in players if p["value"] >= 675)
-    strong_assets = sum(1 for p in players if p["value"] >= 500)
-    insulated_assets = sum(1 for p in players if safe_float(p["age"]) <= 25 and p["value"] >= 400)
-    aging_assets = [
-        p for p in players
-        if p.get("age") not in (None, "") and safe_float(p["age"]) >= 28 and p["value"] >= 250
-    ][:6]
-
-    premium_assets = [p for p in players if p["value"] >= 550][:8]
-    liquid_trade_chips = [
-        p for p in players
-        if 225 <= p["value"] <= 650
-    ][:8]
-
-    young_core = [
-        p for p in players
-        if p.get("age") not in (None, "") and safe_float(p["age"]) <= 25 and p["value"] >= 300
-    ][:8]
-
-    fragile_assets = [
-        p for p in players
-        if (
-                p.get("age") not in (None, "")
-                and safe_float(p["age"]) >= 28
-                and p["value"] >= 350
-        )
-    ][:6]
-
-    weak_positions = []
-    strong_positions = []
-    for pos, meta in pos_summary.items():
-        top3 = safe_float(meta.get("top_3_sum"))
-        bench_val = safe_float(meta.get("bench_value"))
-        starter_val = safe_float(meta.get("starter_value"))
-
-        if starter_val >= 900 or top3 >= 900:
-            strong_positions.append(pos)
-        if starter_val <= 350 or (meta.get("count", 0) <= 1 and top3 <= 250):
-            weak_positions.append(pos)
-        elif bench_val <= 80 and meta.get("count", 0) <= 2:
-            weak_positions.append(pos)
-
-    strong_positions = list(dict.fromkeys(strong_positions))
-    weak_positions = list(dict.fromkeys(weak_positions))
-
-    firsts = pick_summary["firsts"]
-
-    if elite_assets >= 3 and avg_age and avg_age <= 27.5 and starter_value_total >= 2600:
-        direction = "contender"
-    elif firsts >= 3 and elite_assets < 2 and avg_age >= 25.5:
-        direction = "rebuild"
-    elif firsts >= 2 or (len(young_core) >= 4 and elite_assets < 3):
-        direction = "retool"
-    else:
-        direction = "balanced"
-
-    roster_health = "stable"
-    if len(weak_positions) >= 2 and bench_value_total < 700:
-        roster_health = "fragile"
-    elif len(strong_positions) >= 2 and bench_value_total >= 850:
-        roster_health = "deep"
-    elif len(premium_assets) <= 2 and firsts >= 2:
-        roster_health = "transitioning"
-
-    record = standings.get("record") or standings.get("display_record") or ""
-    wins = safe_float(standings.get("wins"))
-    losses = safe_float(standings.get("losses"))
-    ties = safe_float(standings.get("ties"))
-    pf = round(safe_float(standings.get("PF")), 1)
-    pa = round(safe_float(standings.get("PA")), 1)
-
-    win_pct = 0.0
-    games_played = wins + losses + ties
-    if games_played > 0:
-        win_pct = round((wins + (0.5 * ties)) / games_played, 3)
-
-    place = None
-    if team_stats:
-        try:
-            sorted_stats = sorted(
-                team_stats,
-                key=lambda x: (
-                    -safe_float(x.get("win_pct")),
-                    -safe_float(x.get("avg")),
-                    -safe_float(x.get("pf")),
-                ),
-            )
-            for idx, row in enumerate(sorted_stats, start=1):
-                rid = str(row.get("roster_id") or "")
-                if rid == str(viewer_roster_id):
-                    place = idx
-                    break
-        except Exception:
-            place = None
-
-    lineup_requirements = {}
-    if roster_positions and isinstance(roster_positions, (list, tuple)):
-        for slot in roster_positions:
-            slot_str = str(slot).upper()
-            if slot_str in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX"}:
-                lineup_requirements[slot_str] = lineup_requirements.get(slot_str, 0) + 1
-
-    starter_profile = {
-        "count": len(starters),
-        "total_value": starter_value_total,
-        "avg_value": round(starter_value_total / len(starters), 1) if starters else 0.0,
-        "top_starters": starters[:6],
-    }
-
-    bench_profile = {
-        "count": len(bench),
-        "total_value": bench_value_total,
-        "avg_value": round(bench_value_total / len(bench), 1) if bench else 0.0,
-        "top_bench": bench[:6],
-    }
-
-    market_profile = {
-        "premium_assets": premium_assets,
-        "liquid_trade_chips": liquid_trade_chips,
-        "young_core": young_core,
-        "fragile_assets": fragile_assets,
-        "aging_assets": aging_assets,
-    }
-
-    summary_flags = []
-    if direction == "contender":
-        summary_flags.append("win-now build")
-    if direction == "rebuild":
-        summary_flags.append("future-oriented")
-    if firsts >= 2:
-        summary_flags.append("has first-round capital")
-    if len(weak_positions) >= 2:
-        summary_flags.append("multiple roster holes")
-    if len(strong_positions) >= 2:
-        summary_flags.append("clear strength pockets")
-    if roster_health == "fragile":
-        summary_flags.append("thin depth")
-    if roster_health == "deep":
-        summary_flags.append("strong depth")
-
-    return {
-        "league_id": ctx.get("league_id"),
-        "season": ctx.get("season") or ctx.get("current_season"),
-        "viewer_roster_id": str(viewer_roster_id),
-        "team_name": team_name,
-        "record": record,
-        "wins": wins,
-        "losses": losses,
-        "ties": ties,
-        "win_pct": win_pct,
-        "place": place,
-        "league_size": int(total_rosters) if total_rosters else None,
-        "points_for": pf,
-        "points_against": pa,
-        "avg_age": round(avg_age, 2) if avg_age else 0.0,
-        "direction": direction,
-        "roster_health": roster_health,
-        "summary_flags": summary_flags,
-        "total_roster_value": total_value,
-        "starter_value_total": starter_value_total,
-        "bench_value_total": bench_value_total,
-        "elite_assets_count": elite_assets,
-        "strong_assets_count": strong_assets,
-        "insulated_assets_count": insulated_assets,
-        "lineup_requirements": lineup_requirements,
-        "top_assets": players[:10],
-        "starters": starters[:10],
-        "bench": bench[:10],
-        "starter_profile": starter_profile,
-        "bench_profile": bench_profile,
-        "position_strength": pos_summary,
-        "strong_positions": strong_positions,
-        "weak_positions": weak_positions,
-        "future_picks": cleaned_picks[:12],
-        "pick_summary": pick_summary,
-        "market_profile": market_profile,
-    }
-
-
-def get_trade_ai_analysis(
-        ctx: dict,
-        viewer_roster_id: str,
-        viewer_side: str,
-        side_a: dict,
-        side_b: dict,
-) -> str:
-    """Get AI analysis for a trade using the new generator module"""
-    from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
-    return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
-
-
-@app.route("/api/history/ai-recap")
-def history_ai_recap():
-    """Generate AI-powered season recap for a specific team."""
-    league_id = request.args.get("league_id")
-    season = request.args.get("season")
-    roster_id = request.args.get("roster_id")
-
-    if not all([league_id, season, roster_id]):
-        return jsonify({"error": "Missing required parameters"}), 400
-
-    try:
-        # Get the same context that the history page uses
-        platform = "sleeper"
-        base_league_id = request.args.get("base_season", season)
-
-        # Resolve the correct league ID for the historical season
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform="sleeper",
-            league_id=league_id,
-            current_season=int(base_league_id),
-            target_season=int(season),
-        )
-
-        # Get the exact same context the history page uses
-        ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, int(season))
-        if not ctx:
-            return jsonify({"error": "League context not found"}), 404
-
-        # Generate recap
-        recap_html = get_history_ai_recap(ctx, roster_id)
-
-        return jsonify({"html": recap_html})
-
-    except Exception as e:
-        return jsonify({"error": "Failed to generate recap"}), 500
-
-
-def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
-    return f"""
-    <div class="ai-copy">
-      <p><strong>{html.escape(title)}</strong></p>
-      <p>{html.escape(subtitle)}</p>
-      <div>{html.escape(text)}</div>
-    </div>
-    """
 
 
 def ensure_weekly_bits(ctx: dict) -> None:
@@ -1854,10 +1272,12 @@ def render_standings(team_stats, length) -> str:
 
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
-    season = ctx["current_season"]
+    platform = ctx["platform"]
+    season = ctx["season"]  # viewed season, not live NFL season
     rosters = ctx["rosters"]
     users = ctx["users"]
-    current_week = ctx["current_week"]
+    current_week = int(ctx.get("current_week") or 0)
+    weeks = int(ctx.get("weeks") or 1)
     players_map = ctx["players_map"]
     df_weekly = ctx["df_weekly"]
     team_stats = ctx["team_stats"]
@@ -1868,54 +1288,71 @@ def build_dashboard_body(ctx: dict) -> str:
     matchups_by_week = ctx["matchups_by_week"]
     picks_by_roster = ctx["picks_by_roster"]
     team_game_lookup = ctx["team_game_lookup"]
+    season_complete = bool(ctx.get("season_complete", False))
+    offseason_mode = bool(ctx.get("offseason_mode", False))
 
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
-
-    gm_memo_html = ""
-    front_office_html = ""
-
-    if viewer_roster_id:
-        try:
-            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[dashboard] gm memo skipped: {e}")
-
-        try:
-            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[dashboard] front office briefing skipped: {e}")
-
+    # --- Standings snapshot ---
     standings_html = render_standings(team_stats, 5)
 
-    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
-    if not finalized_df.empty:
+    # --- Finalized games + last_final_week ---
+    if (
+            df_weekly is not None
+            and not df_weekly.empty
+            and "finalized" in df_weekly.columns
+            and "week" in df_weekly.columns
+    ):
+        finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    else:
+        finalized_df = pd.DataFrame()
+
+    if not finalized_df.empty and "week" in finalized_df.columns:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = current_week
+        last_final_week = max(1, min(current_week or 1, weeks))
+
+    # Offseason / completed season should default to the last finalized week
+    if season_complete or offseason_mode:
+        display_week = last_final_week
+    else:
+        display_week = max(1, min(current_week or 1, weeks))
+
+    week_statuses = (statuses.get(display_week) or {}).get("statuses", {}) or {}
+    week_matchups = matchups_by_week.get(display_week, []) or []
 
     slides = [
         render_matchup_slide(
             season,
             m,
-            current_week,
+            display_week,
             last_final_week,
-            status_by_pid=statuses[current_week].get("statuses", {}),
+            status_by_pid=week_statuses,
             projections=proj_by_week,
             players=players_index,
             teams=teams_index,
             team_game_lookup=team_game_lookup,
         )
-        for m in matchups_by_week.get(current_week, [])
+        for m in week_matchups
     ]
-    slides_by_week = {current_week: "".join(slides)}
+
+    slides_by_week = {
+        display_week: "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
+    }
+
     matchup_html = render_matchup_carousel_weeks(
         slides_by_week,
         dashboard=True,
-        active_week=current_week,
+        active_week=display_week,
     )
 
-    awards = compute_awards_season(finalized_df, players_map, league_id)
+    awards = compute_awards_season(
+        finalized_df,
+        players_map,
+        league_id,
+        platform,
+        season,
+        users,
+        rosters,
+    )
     awards_html = render_awards_section(awards)
 
     teams_ctx = build_teams_overview(
@@ -1925,46 +1362,27 @@ def build_dashboard_body(ctx: dict) -> str:
         players=players_map,
         players_index=players_index,
         teams_index=teams_index,
+        platform=platform
     )
+
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
-    gm_card_html = ""
-    if gm_memo_html:
-        gm_card_html = f"""
-        <div class="card gm-card">
-          <div class="card-header">
-            <h2>Your GM Memo</h2>
-            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
-          </div>
-          <div class="card-body">
-            {gm_memo_html}
-          </div>
-        </div>
-        """
-
-    front_office_card_html = ""
-    if front_office_html:
-        front_office_card_html = f"""
-        <div class="card fo-brief-card">
-          <div class="card-header">
-            <h2>Front Office Briefing</h2>
-            <div class="subtle-label">Daily plan</div>
-          </div>
-          <div class="card-body">
-            {front_office_html}
-          </div>
-        </div>
-        """
+    season_note = ""
+    if offseason_mode:
+        season_note = (
+            f"<div class='mini-label' style='margin-bottom:10px;'>"
+            f"Viewing {season} season data during the offseason."
+            f"</div>"
+        )
 
     body = f"""
     <aside class="overview-sidebar-left">
       {awards_html}
     </aside>
     <div class="overview-main">
-      {gm_card_html}
-      {front_office_card_html}
       <div class="card central">
         <h2>Standings</h2>
+        {season_note}
         {standings_html}
       </div>
       {matchup_html}
@@ -1977,7 +1395,7 @@ def build_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
+def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id: str, platform, season) -> str:
     """
     Single card that shows:
       - Power Rankings (by PowerScore if present)
@@ -2454,23 +1872,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     players_map = ctx["players_map"]
     model_value_table = ctx.get("model_value_table") or []
 
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
-
-    gm_memo_html = ""
-    front_office_html = ""
-
-    if viewer_roster_id:
-        try:
-            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[offseason-dashboard] gm memo skipped: {e}")
-
-        try:
-            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[offseason-dashboard] front office briefing skipped: {e}")
-
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
     countdown_text = "TBD"
@@ -2651,34 +2052,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     top_waiver_assets_html = "".join(waiver_html)
 
-    gm_card_html = ""
-    if gm_memo_html:
-        gm_card_html = f"""
-        <section class="os-card">
-          <div class="os-section-head">
-            <h2 class="os-section-title">Your GM Memo</h2>
-            <div class="os-section-subtitle">{viewer.get("viewer_team_name") or "Your Team"}</div>
-          </div>
-          <div class="os-ai-copy">
-            {gm_memo_html}
-          </div>
-        </section>
-        """
-
-    front_office_card_html = ""
-    if front_office_html:
-        front_office_card_html = f"""
-        <section class="os-card">
-          <div class="os-section-head">
-            <h2 class="os-section-title">Front Office Briefing</h2>
-            <div class="os-section-subtitle">Offseason priorities</div>
-          </div>
-          <div class="os-ai-copy">
-            {front_office_html}
-          </div>
-        </section>
-        """
-
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col">
@@ -2728,9 +2101,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             {draft_subtext}
           </div>
         </section>
-
-        {gm_card_html}
-        {front_office_card_html}
 
         <section class="os-card">
           <div class="os-section-head">
@@ -3349,7 +2719,7 @@ def build_projections_by_week(season: int, weeks: int):
     return bundles
 
 
-def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: Dict[str, Dict] = None):
+def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: dict[str, dict] = None):
     bundles = {}
     for w in range(1, weeks + 1):
         try:
@@ -3361,160 +2731,6 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
     return bundles
 
 
-HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
-
-
-def _safe_int(v, default=0):
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return default
-
-
-def build_historical_pick_slot_map(
-        platform: str,
-        root_league_id: str,
-        current_season: int,
-        source_season: int,
-) -> Dict[int, int]:
-    """
-    For a given source season, returns:
-      { roster_id: rookie_pick_slot }
-
-    Example:
-      source_season=2025 -> order used for 2026 rookie picks
-    """
-    cache_key = (str(platform).lower(), str(root_league_id), int(source_season))
-    cached = HISTORICAL_PICK_SLOT_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    resolved_league_id = resolve_league_id_for_season(
-        platform=platform,
-        league_id=root_league_id,
-        current_season=current_season,
-        target_season=source_season,
-    )
-
-    hist_ctx = get_league_ctx_from_cache(
-        platform,
-        resolved_league_id,
-        source_season,
-    )
-
-    df_weekly = hist_ctx.get("df_weekly", pd.DataFrame())
-    league = hist_ctx.get("league") or {}
-    roster_map = hist_ctx.get("roster_map") or {}
-
-    reg_team_stats = build_regular_season_team_stats(df_weekly, league)
-    reg_team_stats = sort_team_stats(reg_team_stats)
-
-    if reg_team_stats is None or reg_team_stats.empty:
-        HISTORICAL_PICK_SLOT_CACHE[cache_key] = {}
-        return {}
-
-    # roster_map is expected to look like {roster_id: owner/team_name}
-    name_to_roster_id: Dict[str, int] = {}
-    for rid, team_name in roster_map.items():
-        try:
-            name_to_roster_id[str(team_name)] = int(rid)
-        except Exception:
-            continue
-
-    total_teams = len(reg_team_stats)
-    slot_map: Dict[int, int] = {}
-
-    # Rank 1 = best team, so reverse for rookie draft slot:
-    # worst team -> 1, next worst -> 2, etc.
-    for _, row in reg_team_stats.iterrows():
-        owner = str(row.get("owner") or "")
-        rank = _safe_int(row.get("Rank"), 0)
-        roster_id = name_to_roster_id.get(owner)
-
-        if not owner or rank <= 0 or roster_id is None:
-            continue
-
-        slot = total_teams - rank + 1
-        slot_map[int(roster_id)] = int(slot)
-
-    HISTORICAL_PICK_SLOT_CACHE[cache_key] = slot_map
-    return slot_map
-
-
-def resolve_exact_pick_slot(
-        platform: str,
-        root_league_id: str,
-        current_season: int,
-        pick: dict,
-) -> Union[int, None]:
-    """
-    For a 2026 pick, look at 2025 standings of the previous owner.
-    """
-    pick_year = _safe_int(pick.get("season"), 0)
-    rnd = _safe_int(pick.get("round"), 0)
-
-    if not pick_year or not rnd:
-        return None
-
-    source_season = pick_year - 1
-    if source_season <= 0:
-        return None
-
-    prev_owner = pick.get("previous_owner_id")
-    if prev_owner is None:
-        prev_owner = pick.get("owner_id")
-
-    try:
-        prev_owner = int(prev_owner)
-    except Exception:
-        return None
-
-    slot_map = build_historical_pick_slot_map(
-        platform=platform,
-        root_league_id=root_league_id,
-        current_season=current_season,
-        source_season=source_season,
-    )
-
-    return slot_map.get(prev_owner)
-
-
-def format_pick_round_label(pick: dict) -> str:
-    rnd = _safe_int(pick.get("round"), 0)
-    slot = _safe_int(pick.get("slot"), 0)
-    if rnd <= 0:
-        return "Pick"
-    if slot > 0:
-        return f"{rnd}.{slot:02d}"
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-    return f"{rnd}{suffix}"
-
-
-def format_pick_display_label(
-        platform: str,
-        root_league_id: str,
-        current_season: int,
-        pick: dict,
-) -> str:
-    year = _safe_int(pick.get("season"), 0)
-    rnd = _safe_int(pick.get("round"), 0)
-
-    if not year or not rnd:
-        return "Pick"
-
-    exact_slot = resolve_exact_pick_slot(
-        platform=platform,
-        root_league_id=root_league_id,
-        current_season=current_season,
-        pick=pick,
-    )
-
-    if exact_slot is not None:
-        return f"{year} {rnd}.{exact_slot:02d}"
-
-    return f"{year} {format_pick_round_label(pick)}"
-
-
 def build_activity_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)
@@ -3522,12 +2738,12 @@ def build_activity_body(ctx: dict) -> str:
     injury_df = ctx["injury_df"]
     standings_map = ctx["standings_map"]
     platform = ctx["platform"]
-    season = _safe_int(ctx["season"], 0)
+    season = ctx["season"]
 
     players_values_raw = ctx.get("model_value_table") or []
-    player_val_by_key: Dict[Tuple[str, str, str], float] = {}
-    player_val_by_key_np: Dict[Tuple[str, str], float] = {}
-    rank_label_by_name: Dict[str, str] = {}
+    player_val_by_key: dict[tuple[str, str, str], float] = {}
+    player_val_by_key_np: dict[tuple[str, str], float] = {}
+    rank_label_by_name: dict[str, str] = {}
 
     if isinstance(players_values_raw, list):
         for row in players_values_raw:
@@ -3581,26 +2797,14 @@ def build_activity_body(ctx: dict) -> str:
             return "late"
         return None
 
-    def pick_value(pick: Dict, standings_map: Dict[int, int], num_teams: int = 10) -> float:
-        """
-        Prefer exact historical slot when available, then fall back to bucketed values.
-        """
-        year = _safe_int(pick.get("season"), 0)
-        rnd = _safe_int(pick.get("round"), 0)
+    def pick_value(pick: dict, standings_map: dict[int, int], num_teams: int = 10) -> float:
+        try:
+            year = int(pick.get("season") or 0)
+            rnd = int(pick.get("round") or 0)
+        except Exception:
+            return 0.0
         if not year or not rnd:
             return 0.0
-
-        exact_slot = resolve_exact_pick_slot(
-            platform=platform,
-            root_league_id=league_id,
-            current_season=season,
-            pick=pick,
-        )
-
-        if exact_slot is not None:
-            exact_key = f"{year}_{rnd}_{exact_slot:02d}"
-            if exact_key in pick_values:
-                return float(pick_values[exact_key])
 
         prev_owner = pick.get("previous_owner_id")
         seed = None
@@ -3616,7 +2820,6 @@ def build_activity_body(ctx: dict) -> str:
             key_bucket = f"{year}_{rnd}_{bucket}"
             if key_bucket in pick_values:
                 return float(pick_values[key_bucket])
-
             key_generic = f"{year}_{rnd}"
             if key_generic in pick_values:
                 return float(pick_values[key_generic])
@@ -3641,20 +2844,8 @@ def build_activity_body(ctx: dict) -> str:
         except Exception:
             seed = None
 
-        exact_slot = resolve_exact_pick_slot(
-            platform=platform,
-            root_league_id=league_id,
-            current_season=season,
-            pick=pick,
-        )
-
         bucket = pick_bucket_from_seed(seed, num_teams=num_teams)
-        bucket_label = None
-
-        if exact_slot is not None:
-            bucket_label = f"Pick {pick.get('round')}.{int(exact_slot):02d}"
-        elif bucket:
-            bucket_label = bucket.capitalize()
+        bucket_label = bucket.capitalize() if bucket else None
 
         orig_rid = pick.get("roster_id")
         orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
@@ -3683,8 +2874,8 @@ def build_activity_body(ctx: dict) -> str:
 
     trade_count = 0
     waiver_count = 0
-    most_active_counts: Dict[str, int] = {}
-    traded_asset_counts: Dict[str, int] = {}
+    most_active_counts: dict[str, int] = {}
+    traded_asset_counts: dict[str, int] = {}
     biggest_trade_label = "No trade data"
     biggest_trade_delta = 0.0
 
@@ -3731,12 +2922,9 @@ def build_activity_body(ctx: dict) -> str:
             def render_pick_row(pick, io_class):
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
-                pick_label = format_pick_display_label(
-                    platform=platform,
-                    root_league_id=league_id,
-                    current_season=season,
-                    pick=pick,
-                )
+                rnd_suffix = {1: "st", 2: "nd", 3: "rd"}.get(pick.get("round"), "th")
+                round_label = f"{pick.get('round')}" + rnd_suffix
+                pick_season = str(pick.get("season") or "")
                 subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
@@ -3747,7 +2935,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
-                    f"  <div style='font-weight:600'>{pick_label}</div>"
+                    f"  <div style='font-weight:600'>{pick_season} {round_label}</div>"
                     f"  <div style='color:#64748b;font-size:12px'>{subline}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
@@ -3764,7 +2952,7 @@ def build_activity_body(ctx: dict) -> str:
                 if send is not None:
                     picks_by_sender.setdefault(send, []).append(dp)
 
-            side_map: Dict[int, Dict] = {}
+            side_map: dict[int, dict] = {}
             for tm in teams:
                 rid = tm.get("roster_id")
                 if rid is None:
@@ -4258,7 +3446,7 @@ def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     )
 
 
-def _weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
+def _weighted_pos_strength(vals: list[float], pos: str, slot_counts: dict[str, int]) -> float:
     """
     Emphasize top-end talent over pure depth.
 
@@ -4330,8 +3518,8 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
-    name_to_rank_label: Dict[str, str] = {}
-    name_to_age: Dict[str, Union[float, None]] = {}
+    name_to_rank_label: dict[str, str] = {}
+    name_to_age: dict[str, float | None] = {}
 
     for obj in model_vals:
         if not isinstance(obj, dict):
@@ -4349,7 +3537,7 @@ def build_teams_body(ctx: dict) -> str:
                 name_to_age[safe_name] = None
 
     # map sleeper_id -> row
-    by_id: Dict[str, Dict] = {
+    by_id: dict[str, dict] = {
         str(p["id"]): p
         for p in model_vals
         if isinstance(p, dict) and p.get("id") is not None
@@ -4359,7 +3547,7 @@ def build_teams_body(ctx: dict) -> str:
     POS_ORDER = ["QB", "RB", "WR", "TE"]
 
     # ----------------- Roster → position → players (for dropdowns) -----------------
-    roster_pos_players: Dict[int, Dict[str, List[Dict]]] = defaultdict(lambda: defaultdict(list))
+    roster_pos_players: dict[int, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
 
     for r in rosters:
         rid = r.get("roster_id")
@@ -4388,8 +3576,8 @@ def build_teams_body(ctx: dict) -> str:
             plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
 
     # ----------------- Build per-team position value buckets (for strength table) -----------------
-    team_meta: Dict[int, Dict] = {}  # name, avatar
-    team_pos_values: Dict[int, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
+    team_meta: dict[int, dict] = {}  # name, avatar
+    team_pos_values: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
 
     for r in rosters:
         rid = r.get("roster_id")
@@ -4422,15 +3610,15 @@ def build_teams_body(ctx: dict) -> str:
             team_pos_values[rid].setdefault(pos, [])
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
-    team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
+    team_pos_strength: dict[int, dict[str, float]] = defaultdict(dict)
     slot_counts = count_roster_positions(get_roster_positions())
 
     for rid, pos_map in team_pos_values.items():
         for pos, vals in pos_map.items():
             team_pos_strength[rid][pos] = _weighted_pos_strength(vals, pos, slot_counts)
 
-    league_pos_avg: Dict[str, float] = {}
-    league_pos_std: Dict[str, float] = {}
+    league_pos_avg: dict[str, float] = {}
+    league_pos_std: dict[str, float] = {}
 
     for pos in POS_ORDER:
         series = [team_pos_strength[rid][pos] for rid in team_meta.keys()]
@@ -4445,8 +3633,8 @@ def build_teams_body(ctx: dict) -> str:
         league_pos_std[pos] = std
 
     # ----------------- Z-scores & positional index -----------------
-    team_pos_z: Dict[int, Dict[str, float]] = defaultdict(dict)
-    team_pos_index: Dict[int, float] = {}
+    team_pos_z: dict[int, dict[str, float]] = defaultdict(dict)
+    team_pos_index: dict[int, float] = {}
 
     LINEUP_WEIGHTS = {
         "QB": slot_counts.get("QB") or 1,
@@ -4457,8 +3645,8 @@ def build_teams_body(ctx: dict) -> str:
     }
     weight_sum = sum(LINEUP_WEIGHTS[pos] for pos in POS_ORDER if LINEUP_WEIGHTS.get(pos, 0) > 0) or 1.0
 
-    pos_z_min: Dict[str, float] = {pos: float("inf") for pos in POS_ORDER}
-    pos_z_max: Dict[str, float] = {pos: float("-inf") for pos in POS_ORDER}
+    pos_z_min: dict[str, float] = {pos: float("inf") for pos in POS_ORDER}
+    pos_z_max: dict[str, float] = {pos: float("-inf") for pos in POS_ORDER}
 
     for rid in team_meta.keys():
         idx_num = 0.0
@@ -4489,7 +3677,7 @@ def build_teams_body(ctx: dict) -> str:
 
     # ----------------- Positional ranks (per position) -----------------
     # pos_rank[pos][rid] = rank (1 = best at that position)
-    pos_rank: Dict[str, Dict[int, int]] = {pos: {} for pos in POS_ORDER}
+    pos_rank: dict[str, dict[int, int]] = {pos: {} for pos in POS_ORDER}
 
     for pos in POS_ORDER:
         # rank by z-score (strongest to weakest)
@@ -5113,37 +4301,40 @@ def page_teams(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/history")
 def page_history(platform: str, season: int, league_id: str):
     available_seasons = get_available_history_seasons(platform, league_id, season)
-    default_history_season = get_default_history_season(available_seasons, season)
 
-    selected_history_season = int(
-        request.args.get("history_season") or default_history_season
-    )
+    explicit = request.args.get("explicit") == "1"
+    target_season = int(season)
 
-    if selected_history_season not in available_seasons:
-        selected_history_season = default_history_season
+    if explicit:
+        if target_season not in available_seasons:
+            target_season = get_default_history_season(available_seasons, season)
+    else:
+        target_season = get_default_history_season(available_seasons, season)
 
-    resolved_history_league_id = resolve_league_id_for_season(
-        platform=platform,
-        league_id=league_id,
-        current_season=season,
-        target_season=selected_history_season,
-    )
-
-    history_ctx = get_league_ctx_from_cache(
+    print(target_season)
+    # cached = get_page_html_from_cache(platform, target_season, league_id, "history")
+    # if cached:
+    #     return render_page(
+    #         "League History",
+    #         league_id,
+    #         "history",
+    #         cached,
+    #         platform,
+    #         target_season,
+    #     )
+    resolved_league_id = resolve_league_id_for_season(
         platform,
-        resolved_history_league_id,
-        selected_history_season,
+        league_id,
+        current_season=season,
+        target_season=target_season,
     )
+    print("resolved")
+    print(resolved_league_id)
 
-    body_html = build_history_body(
-        history_ctx=history_ctx,
-        available_seasons=available_seasons,
-        base_platform=platform,
-        base_season=season,
-        base_league_id=league_id,
-        selected_history_season=selected_history_season,
-        resolved_history_league_id=resolved_history_league_id,
-    )
+    ctx = get_league_ctx_from_cache(platform, resolved_league_id, target_season)
+    print(ctx["standings_map"])
+    body_html = build_history_body(ctx,available_seasons)
+    store_page_html(platform, target_season, league_id, "history", body_html)
 
     return render_page(
         "League History",
@@ -5151,7 +4342,7 @@ def page_history(platform: str, season: int, league_id: str):
         "history",
         body_html,
         platform,
-        season,
+        target_season,
     )
 
 
@@ -5189,33 +4380,16 @@ def index():
         platform = (request.form.get("platform") or "sleeper").strip().lower()
         league_id = (request.form.get("league") or "").strip()
         season = int(request.form.get("season") or viewed_season)
-        username = (request.form.get("username") or "").strip()
 
         ok, err = validate_league_id(platform, league_id)
         if not ok:
             body_html = render_template_string(
                 FORM_BODY,
-                username=username,
+                username="",
                 viewed_season=viewed_season,
                 error=err,
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
-
-        # If username provided, set viewer session
-        if username:
-            ctx = get_league_ctx_from_cache(platform, league_id, season)
-            viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
-
-            if viewer:
-                save_viewer_session(viewer)
-            else:
-                body_html = render_template_string(
-                    FORM_BODY,
-                    username=username,
-                    viewed_season=viewed_season,
-                    error="Could not match that username to a team in this league.",
-                )
-                return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -5359,28 +4533,6 @@ def api_weekly_week():
     })
 
 
-@app.route("/set-viewer", methods=["POST"])
-def set_viewer():
-    league_id = (request.form.get("league_id") or "").strip()
-    username = (request.form.get("username") or "").strip()
-
-    if not league_id or not username:
-        return redirect(url_for("home"))
-
-    ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
-    viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
-
-    if not viewer:
-        return render_template_string(
-            FORM_BODY,
-            league=league_id,
-            error="Could not match that username to a team in this league.",
-        )
-
-    save_viewer_session(viewer)
-    return redirect(url_for("page_dashboard", league_id=league_id))
-
-
 @app.route("/api/refresh-page", methods=["POST"])
 def api_refresh_page():
     payload = request.get_json(silent=True) or {}
@@ -5509,60 +4661,72 @@ def get_model_value_table_cached():
 def api_trade_eval():
     payload = request.get_json(force=True)
 
-    league_id = str(payload.get("league_id") or "").strip()
-    season = int(payload.get("season") or datetime.now().year)
-    viewer_side = (payload.get("viewer_side") or "a").strip().lower()
-
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
     side_a_picks = payload.get("side_a_picks", []) or []
     side_b_picks = payload.get("side_b_picks", []) or []
 
+    # ---------- Load model player value table ----------
+    # This SHOULD return your list[dict] of players
     value_table = get_model_value_table_cached()
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    players_by_id = {
-        str(p["id"]): p
-        for p in value_table
-        if isinstance(p, dict) and "id" in p
-    }
+    # Index players by id for quick lookup
+    players_by_id = {str(p["id"]): p for p in value_table if isinstance(p, dict) and "id" in p}
+
+    # ---------- Helpers ----------
 
     def value_pick(pk: str) -> float:
+        """
+        pk is like '2026_1_04' -> year, round, slot (within round).
+        We bucket slot -> early/mid/late and look up a blended
+        value from PICK_VALUES built from FantasyCalc + DynastyProcess.
+        """
         try:
             yr_str, rnd_str, slot_str = pk.split("_")
             year = int(yr_str)
             rnd = int(rnd_str)
-
-            if slot_str in ['early', 'mid', 'late']:
-                bucket = bucket_for_slot(slot, num_teams=10)
-            else:
-                bucket = slot_str
-
+            slot = int(slot_str)
         except Exception:
             return 0.0
 
+        # convert slot to early/mid/late based on league size
+        bucket = bucket_for_slot(slot, num_teams=10)  # use 10 or 12 based on your league
         key = f"{year}_{rnd}_{bucket}"
-        pick_values = load_pick_value_table()
 
-        val = pick_values.get(key)
+        val = PICK_VALUES.get(key)
         if val is not None:
             return float(val)
 
+        # Optional: generic fallback like any-year blended value if you ever add that
         generic_key = f"any_{rnd}_{bucket}"
-        if generic_key in pick_values:
-            return float(pick_values[generic_key])
+        if generic_key in PICK_VALUES:
+            return float(PICK_VALUES[generic_key])
 
         return 0.0
 
     def build_side(players_ids, picks_ids):
+        """
+        Build the basic info for a side using value_table payload:
+
+          {
+            "id": "9509",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "age": 23.8,
+            "value": 968.0
+          }
+        """
+
         raw_players_total = 0.0
         raw_picks_total = 0.0
-        player_values = []
+        player_values: list[float] = []
         breakdown = []
-        assets = []
 
+        # Players
         for pid in players_ids:
             pid_str = str(pid)
             player = players_by_id.get(pid_str)
@@ -5576,21 +4740,12 @@ def api_trade_eval():
                     "position": None,
                     "team": None,
                 })
-                assets.append({
-                    "id": pid_str,
-                    "name": f"Player {pid_str}",
-                    "value": 0.0,
-                    "position": None,
-                    "team": None,
-                    "age": None,
-                })
                 continue
 
             val = float(player.get("value", 0.0) or 0.0)
             name = player.get("name")
             pos = player.get("position")
             team = player.get("team")
-            age = player.get("age")
 
             breakdown.append({
                 "type": "player",
@@ -5600,18 +4755,10 @@ def api_trade_eval():
                 "position": pos,
                 "team": team,
             })
-            assets.append({
-                "id": pid_str,
-                "name": name,
-                "value": val,
-                "position": pos,
-                "team": team,
-                "age": age,
-            })
-
             raw_players_total += val
             player_values.append(val)
 
+        # Picks
         for pk in picks_ids:
             pk_str = str(pk)
             val = float(value_pick(pk_str))
@@ -5621,15 +4768,6 @@ def api_trade_eval():
                 "value": val,
             })
             raw_picks_total += val
-            # Also add pick to assets array
-            assets.append({
-                "id": pk_str,
-                "name": pk_str,  # Will be cleaned up in renderer
-                "position": "PICK",
-                "team": "",
-                "age": None,
-                "value": val,
-            })
 
         raw_total = raw_players_total + raw_picks_total
 
@@ -5639,9 +4777,7 @@ def api_trade_eval():
             "raw_picks_total": raw_picks_total,
             "player_values": player_values,
             "breakdown": breakdown,
-            "assets": assets,
-            "pick_ids": [str(pk) for pk in picks_ids],
-            "effective_total": raw_total,
+            "effective_total": raw_total,  # will be adjusted later
             "adjustment": 0.0,
         }
 
@@ -5656,7 +4792,7 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    FAIR_PCT = 0.08
+    FAIR_PCT = 0.08  # 8% band; tweak as needed
     baseline = max(a_eff, b_eff, 1.0)
     fair_band = baseline * FAIR_PCT
 
@@ -5668,24 +4804,6 @@ def api_trade_eval():
     else:
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
-    analysis_html = ""
-    viewer_roster_id = payload.get("viewer_roster_id")
-    viewer_team_name = payload.get("viewer_team_name")
-
-    if league_id and viewer_roster_id:
-        try:
-            ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
-            analysis_html = get_trade_ai_analysis(
-                ctx=ctx,
-                viewer_roster_id=str(viewer_roster_id),
-                viewer_side=viewer_side,
-                side_a=side_a,
-                side_b=side_b,
-            )
-        except Exception as e:
-            print(f"[trade-ai] skipped: {e}")
-            analysis_html = ""
-
     return jsonify({
         "side_a": side_a,
         "side_b": side_b,
@@ -5694,7 +4812,6 @@ def api_trade_eval():
         "fair_threshold": fair_band,
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
-        "analysis_html": analysis_html,
     })
 
 
@@ -5720,53 +4837,8 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    cleaned_players = _sanitize_for_json(model_value_table)
-
-    return jsonify(cleaned_players)
-
-
-@app.route("/api/teams")
-def api_teams():
-    league_id = (request.args.get("league_id") or "").strip()
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    season = int(request.args.get("season") or datetime.now().year)
-
-    if not league_id:
-        return jsonify([])
-
-    try:
-        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
-        users = ctx.get("users", [])
-        rosters = ctx.get("rosters", [])
-
-        teams = []
-        for roster in rosters:
-            roster_id = str(roster.get("roster_id", ""))
-            user_id = roster.get("owner_id")
-
-            # Find the user for this roster
-            user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
-
-            teams.append({
-                "roster_id": roster_id,
-                "team_name": team_name,
-                "username": username,
-                "user_id": user_id
-            })
-
-        # Sort by team name for consistent ordering
-        teams.sort(key=lambda x: x["team_name"])
-        return jsonify(teams)
-
-    except Exception as e:
-        print(f"[api/teams] error: {e}")
-        return jsonify([])
+    cleaned = _sanitize_for_json(model_value_table)
+    return jsonify(cleaned)
 
 
 @app.route("/api/value-movers")
@@ -5862,12 +4934,6 @@ def api_sleeper_user_leagues():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/changelog")
-def api_changelog():
-    """Return the changelog entries."""
-    return jsonify(CHANGELOG)
 
 
 if __name__ == "__main__":
