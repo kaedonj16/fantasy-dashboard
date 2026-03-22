@@ -43,6 +43,8 @@ TANK01_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 BASE = f"https://{TANK01_HOST}"
 TANK01_API_KEY = os.getenv("TANK01_API_KEY")
 FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
+LEAGUE_HISTORY_CACHE: dict[str, dict] = {}
+LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
 
 if not TANK01_API_KEY:
     raise RuntimeError("TANK01_API_KEY is not set. Export it or hardcode it temporarily.")
@@ -415,42 +417,105 @@ def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
     return team_map
 
 
-def resolve_league_id_for_season(platform: str, league_id: str, season: int) -> str:
+def build_league_history_map(platform: str, league_id: str, season: int) -> dict[int, str]:
     """
-    For Sleeper, walk backward through previous_league_id until we find the
-    league whose `season` matches the requested season.
+    Returns:
+        {season_int: league_id}
 
-    For ESPN (or anything else), just return the given league_id.
+    Walks backward through previous_league_id for Sleeper.
     """
     platform = str(platform or "").strip().lower()
+
     if platform != "sleeper":
-        return str(league_id).strip()
+        return {int(season): str(league_id).strip()}
 
-    seen = set()
-    current_league_id = str(league_id).strip()
-    target_season = int(season)
+    cache_key = f"{platform}:{league_id}"
 
-    while current_league_id and current_league_id not in seen:
-        seen.add(current_league_id)
+    # check cache
+    # cached = LEAGUE_HISTORY_CACHE.get(cache_key)
+    # now = time.time()
+    # if cached and (now - cached["ts"] < LEAGUE_HISTORY_TTL):
+    #     return cached["map"]
 
-        league = get_league(current_league_id)
-        if not league:
+    season_map: dict[int, str] = {}
+    seen: set[str] = set()
+
+    cursor_league_id = str(league_id).strip()
+    season_cursor = int(season)
+    print(cursor_league_id)
+    print("season_cursor")
+    print(season_cursor)
+
+    while cursor_league_id and cursor_league_id not in seen:
+        seen.add(cursor_league_id)
+        try:
+            league = get_league(cursor_league_id) or {}
+            print("league")
+            print(league)
+        except Exception:
             break
 
+        league_season = None
         try:
             league_season = int(league.get("season"))
         except Exception:
-            league_season = None
+            pass
 
-        if league_season == target_season:
-            return current_league_id
+        resolved_league_id = str(league.get("league_id") or cursor_league_id).strip()
 
-        prev_id = league.get("previous_league_id")
+        if league_season:
+            season_map[league_season] = resolved_league_id
+
+        prev_id = str(league.get("previous_league_id") or "").strip()
         if not prev_id:
             break
 
-        current_league_id = str(prev_id).strip()
+        cursor_league_id = prev_id
+        season_cursor = (league_season - 1) if league_season else (season_cursor - 1)
 
+    # cache it
+    # LEAGUE_HISTORY_CACHE[cache_key] = {
+    #     "ts": now,
+    #     "map": season_map,
+    # }
+
+    return season_map
+
+
+def resolve_league_id_for_season(
+    platform: str,
+    league_id: str,
+    current_season: int,
+    target_season: int,
+) -> str:
+    """
+    Returns the correct league_id for a given season.
+
+    Uses cached season map instead of walking every time.
+    Falls back safely if not found.
+    """
+    platform = str(platform or "").strip().lower()
+
+    if platform != "sleeper":
+        return str(league_id).strip()
+
+    season_map = build_league_history_map(platform, league_id, current_season)
+
+    # exact match
+    if target_season in season_map:
+        return season_map[target_season]
+
+    # fallback: closest older season
+    older = [s for s in season_map if s <= target_season]
+    if older:
+        return season_map[max(older)]
+
+    # fallback: closest newer season
+    newer = [s for s in season_map if s >= target_season]
+    if newer:
+        return season_map[min(newer)]
+
+    # final fallback
     return str(league_id).strip()
 
 

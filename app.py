@@ -17,11 +17,12 @@ from zoneinfo import ZoneInfo
 from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
     get_nfl_scores_for_date, build_team_game_lookup, \
     get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters, \
-    get_sleeper_user_by_username, get_sleeper_user_leagues
+    get_sleeper_user_by_username, get_sleeper_user_leagues, resolve_league_id_for_season
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
+from dashboard_services.pages.history_page import build_history_body
 from dashboard_services.pages.graphs_page import build_graphs_body
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
@@ -367,6 +368,63 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
+def get_available_history_seasons(platform: str, league_id: str, season: int) -> list[int]:
+    """
+    Returns descending seasons for this league.
+
+    Sleeper:
+      Walk backward from the viewed/current league through previous_league_id.
+    ESPN / fallback:
+      Return just the requested season.
+    """
+    if (platform or "").lower() != "sleeper":
+        return [int(season)]
+
+    seasons: list[int] = []
+    seen_league_ids: set[str] = set()
+
+    season_cursor = int(season)
+    cursor_league_id = str(league_id).strip()
+
+    while cursor_league_id and cursor_league_id not in seen_league_ids:
+        seen_league_ids.add(cursor_league_id)
+
+        try:
+            lg = get_league("sleeper", cursor_league_id, season_cursor) or {}
+        except Exception:
+            break
+
+        league_season = _safe_int(lg.get("season"), season_cursor)
+        if league_season not in seasons:
+            seasons.append(league_season)
+
+        prev_id = str(lg.get("previous_league_id") or "").strip()
+        if not prev_id:
+            break
+
+        cursor_league_id = prev_id
+        season_cursor = league_season - 1
+
+    seasons = sorted({int(s) for s in seasons if s}, reverse=True)
+    return seasons or [int(season)]
+
+
+def get_default_history_season(available_seasons: list[int], current_season: int) -> int:
+    """
+    Default to the most recent completed season, not the current season.
+    If there is no prior season, fall back to the newest available season.
+    """
+    available = sorted({int(s) for s in available_seasons if s}, reverse=True)
+    if not available:
+        return int(current_season)
+
+    past = [s for s in available if s < int(current_season)]
+    if past:
+        return past[0]
+
+    return available[0]
+
+
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
     """
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
@@ -448,6 +506,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
     pills.append(nav_pill("Teams", "page_teams", "teams"))
     pills.append(nav_pill("Activity", "page_activity", "activity"))
+    pills.append(nav_pill("History", "page_history", "history"))
 
     # In-season only
     if not offseason_mode:
@@ -4237,6 +4296,54 @@ def page_teams(platform: str, season: int, league_id: str):
     body_html = build_teams_body(ctx)
     store_page_html(platform, season, league_id, "teams", body_html)
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/history")
+def page_history(platform: str, season: int, league_id: str):
+    available_seasons = get_available_history_seasons(platform, league_id, season)
+
+    explicit = request.args.get("explicit") == "1"
+    target_season = int(season)
+
+    if explicit:
+        if target_season not in available_seasons:
+            target_season = get_default_history_season(available_seasons, season)
+    else:
+        target_season = get_default_history_season(available_seasons, season)
+
+    print(target_season)
+    # cached = get_page_html_from_cache(platform, target_season, league_id, "history")
+    # if cached:
+    #     return render_page(
+    #         "League History",
+    #         league_id,
+    #         "history",
+    #         cached,
+    #         platform,
+    #         target_season,
+    #     )
+    resolved_league_id = resolve_league_id_for_season(
+        platform,
+        league_id,
+        current_season=season,
+        target_season=target_season,
+    )
+    print("resolved")
+    print(resolved_league_id)
+
+    ctx = get_league_ctx_from_cache(platform, resolved_league_id, target_season)
+    print(ctx["standings_map"])
+    body_html = build_history_body(ctx,available_seasons)
+    store_page_html(platform, target_season, league_id, "history", body_html)
+
+    return render_page(
+        "League History",
+        league_id,
+        "history",
+        body_html,
+        platform,
+        target_season,
+    )
 
 
 @app.before_request
