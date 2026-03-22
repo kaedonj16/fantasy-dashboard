@@ -442,12 +442,16 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
 
     cursor_league_id = str(league_id).strip()
     season_cursor = int(season)
+    print(cursor_league_id)
+    print("season_cursor")
+    print(season_cursor)
 
     while cursor_league_id and cursor_league_id not in seen:
         seen.add(cursor_league_id)
         try:
             league = get_league(cursor_league_id) or {}
-
+            print("league")
+            print(league)
         except Exception:
             break
 
