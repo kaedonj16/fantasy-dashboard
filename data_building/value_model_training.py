@@ -777,15 +777,6 @@ def train_trade_value_model(
         "contract_score",
         "team_investment_score",
     ]
-    debug_cols = [c for c in debug_cols if c in df_model.columns]
-    if debug_cols:
-        print(df_model[debug_cols].head(15).to_string())
-
-    print(
-        f"[value_model] Trained on {len(df_model)} rows | "
-        f"features={len(feature_columns)} | "
-        f"numeric={len(numeric_cols)} | categorical={len(cat_cols)}"
-    )
 
     return bundle
 
@@ -960,28 +951,56 @@ def rewrite_value_table_with_model() -> Path:
     for key, val in pick_values.items():
         parts = key.split("_")
 
-        if len(parts) == 3:
+        name = None
+
+        # Exact slotted pick format: YYYY_R_PPPOS  ->  2026 1.01
+        # Example keys:
+        #   2026_1_01
+        #   2026_2_04
+        if len(parts) == 3 and parts[2].isdigit():
+            year_str, rnd_str, pick_str = parts
+
+            try:
+                year = int(year_str)
+                rnd = int(rnd_str)
+                pick_in_round = int(pick_str)
+            except ValueError:
+                continue
+
+            name = f"{year} {rnd}.{pick_in_round:02d}"
+
+        # Bucketed future pick format: YYYY_R_bucket  ->  2027 1st (Early)
+        # Example keys:
+        #   2027_1_early
+        #   2027_2_mid
+        elif len(parts) == 3:
             year_str, rnd_str, bucket = parts
-            bucket = bucket.lower()
+
+            try:
+                year = int(year_str)
+                rnd = int(rnd_str)
+            except ValueError:
+                continue
+
+            suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+            bucket_label = bucket.lower().capitalize()
+            name = f"{year} {rnd}{suffix} ({bucket_label})"
+
+        # Plain round-only format: YYYY_R  ->  2027 1st
         elif len(parts) == 2:
             year_str, rnd_str = parts
-            bucket = None
-        else:
-            continue
 
-        try:
-            year = int(year_str)
-            rnd = int(rnd_str)
-        except ValueError:
-            continue
+            try:
+                year = int(year_str)
+                rnd = int(rnd_str)
+            except ValueError:
+                continue
 
-        suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-
-        if bucket:
-            bucket_label = bucket.capitalize()
-            name = f"{year} {rnd}{suffix} ({bucket_label})"
-        else:
+            suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix}"
+
+        else:
+            continue
 
         cleaned_assets.append({
             "id": key,

@@ -104,8 +104,8 @@ player_id,name,position,team,engine_value
 9506,Sean Tucker,RB,TB,260.6
 9511,Keaton Mitchell,RB,BAL,257.2
 4199,Aaron Jones Sr.,RB,MIN,256.4
-8205,Isiah Pacheco,RB,KC,252.4
 7607,Michael Carter,RB,ARI,252.2
+8205,Isiah Pacheco,RB,KC,249.8
 8408,Jordan Mason,RB,MIN,244.6
 10219,Chris Rodriguez Jr.,RB,WSH,242.8
 4098,Kareem Hunt,RB,KC,229.7
@@ -171,7 +171,7 @@ player_id,name,position,team,engine_value
 10229,Rashee Rice,WR,KC,748.0
 8112,Drake London,WR,ATL,725.0
 8137,George Pickens,WR,DAL,693.1
-6786,CeeDee Lamb,WR,DAL,649.3
+6786,CeeDee Lamb,WR,DAL,641.8
 8144,Chris Olave,WR,NO,627.0
 11632,Malik Nabers,WR,NYG,597.3
 7569,Nico Collins,WR,HOU,577.3
