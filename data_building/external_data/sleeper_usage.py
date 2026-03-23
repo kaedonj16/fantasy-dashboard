@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Dict, Any, Iterable
 
 from dashboard_services.service import age_from_bday
+from utils.utils import canon_team, load_players_index
 from data_building.external_data.nfl_target_share import fetch_league_target_share
 from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
-from utils.utils import canon_team, load_players_index
 
 
 def build_usage_map_for_season(
@@ -278,6 +278,9 @@ def write_usage_table_snapshot(
     today = date.today()
     yesterday = today - timedelta(days=1)
 
+    # Example file naming:
+    # values_2025-12-04.csv
+    # override if you use static file names
     pattern = f"usage_table_{yesterday.isoformat()}.json"
     yesterday_file = DATA_DIR / pattern
 

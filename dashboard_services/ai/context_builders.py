@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, List
+import math
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -32,10 +32,10 @@ def build_model_value_lookup(model_value_table: list[dict]) -> dict[str, dict]:
 
 
 def summarize_roster_players(
-        roster: dict,
-        players_index: dict,
-        players_map: dict,
-        model_value_lookup: dict[str, dict],
+    roster: dict,
+    players_index: dict,
+    players_map: dict,
+    model_value_lookup: dict[str, dict],
 ) -> list[dict]:
     out: list[dict] = []
     for pid in roster.get("players") or []:
@@ -101,7 +101,7 @@ def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
     return "balanced"
 
 
-def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]:
+def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> dict[str, Any] | None:
     rosters = ctx.get("rosters") or []
     roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
     if not roster:
@@ -149,159 +149,4 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         "future_picks": future_picks,
         "position_strength": position_strength,
         "roster_size": len(roster_players),
-    }
-
-
-def _safe_str(v, default: str = "") -> str:
-    if v is None:
-        return default
-    return str(v).strip() or default
-
-
-def _format_pick_display(pk: str) -> str:
-    """
-    Converts:
-      2026_1_04 -> 2026 1.04
-      2026_1_early -> 2026 Early 1st
-      fallback -> original string
-    """
-    raw = _safe_str(pk)
-    if not raw:
-        return ""
-
-    parts = raw.split("_")
-    if len(parts) == 3:
-        year, rnd, slot = parts
-        if slot.isdigit():
-            return f"{year} {rnd}.{slot.zfill(2)}"
-        bucket = slot.lower()
-        bucket_label = bucket.capitalize()
-        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(_safe_int(rnd), f"{rnd}th")
-        return f"{year} {bucket_label} {suffix}"
-
-    if len(parts) == 2:
-        year, rnd = parts
-        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(_safe_int(rnd), f"{rnd}th")
-        return f"{year} {suffix}"
-
-    return raw
-
-
-def _find_roster(ctx: dict, roster_id: str) -> Union[dict, None]:
-    for r in ctx.get("rosters") or []:
-        if str(r.get("roster_id")) == str(roster_id):
-            return r
-    return None
-
-
-def _top_position_edges(position_strength: dict[str, dict]) -> tuple[str, str]:
-    if not position_strength:
-        return "Unknown", "Unknown"
-
-    scored = []
-    for pos, meta in position_strength.items():
-        scored.append((pos, _safe_float(meta.get("top_3_sum")), _safe_float(meta.get("best"))))
-
-    scored.sort(key=lambda x: (x[1], x[2]), reverse=True)
-    best = scored[0][0]
-    worst = scored[-1][0]
-    return best, worst
-
-
-def build_front_office_brief_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
-    if not team_ctx:
-        return None
-
-    pos_strength = team_ctx.get("position_strength") or {}
-    best_pos, worst_pos = _top_position_edges(pos_strength)
-
-    top_assets = team_ctx.get("top_assets") or []
-    future_picks = team_ctx.get("future_picks") or []
-
-    return {
-        "league_id": team_ctx.get("league_id"),
-        "season": team_ctx.get("season"),
-        "week": team_ctx.get("week"),
-        "team_name": team_ctx.get("team_name"),
-        "record": team_ctx.get("record"),
-        "direction": team_ctx.get("direction"),
-        "points_for": team_ctx.get("points_for"),
-        "points_against": team_ctx.get("points_against"),
-        "best_position": best_pos,
-        "weakest_position": worst_pos,
-        "top_assets": top_assets[:6],
-        "aging_assets": (team_ctx.get("aging_assets") or [])[:4],
-        "future_picks": future_picks[:8],
-        "position_strength": pos_strength,
-    }
-
-
-def build_trade_ai_context(
-        ctx: dict,
-        viewer_roster_id: str,
-        viewer_side: str,
-        side_a: dict,
-        side_b: dict,
-) -> Union[dict, None]:
-    """
-    side_a / side_b are the objects your /api/trade-eval route already builds.
-    """
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
-    if not team_ctx:
-        return None
-
-    viewer_side = (viewer_side or "a").lower().strip()
-    viewer_gets = side_a if viewer_side == "a" else side_b
-    viewer_gives = side_b if viewer_side == "a" else side_a
-
-    def clean_asset(asset: dict) -> dict:
-        return {
-            "id": _safe_str(asset.get("id")),
-            "name": _safe_str(asset.get("name")),
-            "position": _safe_str(asset.get("position")),
-            "team": _safe_str(asset.get("team")),
-            "age": asset.get("age"),
-            "value": round(_safe_float(asset.get("value")), 1),
-        }
-
-    def clean_pick(pk: Any) -> dict:
-        raw = _safe_str(pk)
-        return {
-            "id": raw,
-            "display": _format_pick_display(raw),
-        }
-
-    return {
-        "viewer_team": {
-            "roster_id": str(viewer_roster_id),
-            "team_name": team_ctx.get("team_name"),
-            "direction": team_ctx.get("direction"),
-            "record": team_ctx.get("record"),
-            "points_for": team_ctx.get("points_for"),
-            "points_against": team_ctx.get("points_against"),
-            "top_assets": (team_ctx.get("top_assets") or [])[:6],
-            "aging_assets": (team_ctx.get("aging_assets") or [])[:4],
-            "future_picks": (team_ctx.get("future_picks") or [])[:8],
-            "position_strength": team_ctx.get("position_strength") or {},
-        },
-        "viewer_side": viewer_side,
-        "viewer_gets": {
-            "players": [clean_asset(a) for a in (viewer_gets.get("assets") or []) if str(a.get("position")) != "PICK"],
-            "picks": [clean_pick(pk) for pk in (viewer_gets.get("pick_ids") or [])],
-            "raw_total": round(_safe_float(viewer_gets.get("raw_total")), 1),
-            "effective_total": round(_safe_float(viewer_gets.get("effective_total")), 1),
-            "adjustment": round(_safe_float(viewer_gets.get("adjustment")), 1),
-        },
-        "viewer_gives": {
-            "players": [clean_asset(a) for a in (viewer_gives.get("assets") or []) if str(a.get("position")) != "PICK"],
-            "picks": [clean_pick(pk) for pk in (viewer_gives.get("pick_ids") or [])],
-            "raw_total": round(_safe_float(viewer_gives.get("raw_total")), 1),
-            "effective_total": round(_safe_float(viewer_gives.get("effective_total")), 1),
-            "adjustment": round(_safe_float(viewer_gives.get("adjustment")), 1),
-        },
-        "net_effective_delta": round(
-            _safe_float(viewer_gets.get("effective_total")) - _safe_float(viewer_gives.get("effective_total")),
-            1,
-        ),
     }
