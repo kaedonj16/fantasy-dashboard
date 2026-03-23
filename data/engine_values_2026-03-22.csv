@@ -113,7 +113,10 @@ player_id,name,position,team,engine_value
 8143,Jerome Ford,RB,CLE,215.6
 7528,Najee Harris,RB,LAC,198.8
 4663,Austin Ekeler,RB,WSH,198.0
+<<<<<<<< HEAD:data/engine_values_2026-03-23.csv
 6130,Devin Singletary,RB,NYG,196.8
+========
+>>>>>>>> d4b31c2 (updated):data/engine_values_2026-03-22.csv
 5995,Justice Hill,RB,BAL,195.5
 4988,Nick Chubb,RB,HOU,192.1
 6151,Miles Sanders,RB,DAL,190.0
@@ -150,7 +153,11 @@ player_id,name,position,team,engine_value
 8210,Chig Okonkwo,TE,TEN,251.9
 1339,Zach Ertz,TE,WSH,250.8
 4066,Evan Engram,TE,DEN,250.6
+<<<<<<<< HEAD:data/engine_values_2026-03-23.csv
 12517,Colston Loveland,TE,CHI,249.8
+========
+12517,Colston Loveland,TE,CHI,248.9
+>>>>>>>> d4b31c2 (updated):data/engine_values_2026-03-22.csv
 2505,Darren Waller,TE,MIA,245.7
 4144,Jonnu Smith,TE,PIT,236.6
 6826,Cole Kmet,TE,CHI,233.3
@@ -167,6 +174,7 @@ player_id,name,position,team,engine_value
 9493,Puka Nacua,WR,LAR,999.9
 9488,Jaxon Smith-Njigba,WR,SEA,879.7
 7564,Ja'Marr Chase,WR,CIN,878.9
+<<<<<<<< HEAD:data/engine_values_2026-03-23.csv
 7547,Amon-Ra St. Brown,WR,DET,791.7
 10229,Rashee Rice,WR,KC,748.4
 8112,Drake London,WR,ATL,725.4
@@ -188,6 +196,29 @@ player_id,name,position,team,engine_value
 2133,Davante Adams,WR,LAR,461.1
 9754,Quentin Johnston,WR,LAC,459.2
 9756,Jordan Addison,WR,MIN,450.7
+========
+7547,Amon-Ra St. Brown,WR,DET,791.6
+10229,Rashee Rice,WR,KC,748.3
+8112,Drake London,WR,ATL,725.3
+8137,George Pickens,WR,DAL,693.5
+6786,CeeDee Lamb,WR,DAL,642.3
+8144,Chris Olave,WR,NO,627.5
+11632,Malik Nabers,WR,NYG,603.0
+7569,Nico Collins,WR,HOU,577.9
+8146,Garrett Wilson,WR,NYJ,577.2
+9997,Zay Flowers,WR,BAL,558.5
+6794,Justin Jefferson,WR,MIN,552.8
+6801,Tee Higgins,WR,CIN,527.1
+8148,Jameson Williams,WR,DET,526.4
+8126,Wan'Dale Robinson,WR,NYG,516.1
+5859,A.J. Brown,WR,PHI,493.5
+11635,Ladd McConkey,WR,LAC,474.2
+3321,Tyreek Hill,WR,MIA,464.8
+11631,Brian Thomas Jr.,WR,JAX,461.8
+2133,Davante Adams,WR,LAR,461.1
+9754,Quentin Johnston,WR,LAC,459.2
+9756,Jordan Addison,WR,MIN,451.0
+>>>>>>>> d4b31c2 (updated):data/engine_values_2026-03-22.csv
 7525,DeVonta Smith,WR,PHI,448.8
 7526,Jaylen Waddle,WR,MIA,440.7
 10232,Michael Wilson,WR,ARI,437.7
