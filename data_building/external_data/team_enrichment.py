@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from dashboard_services.utils import load_teams_index, write_json, path_teams_index
+from utils.utils import load_teams_index, write_json, path_teams_index
 
 HTTP_SESSION = requests.Session()
 

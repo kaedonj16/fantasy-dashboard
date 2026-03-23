@@ -14,7 +14,7 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_bracket
 )
-from dashboard_services.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
+from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"

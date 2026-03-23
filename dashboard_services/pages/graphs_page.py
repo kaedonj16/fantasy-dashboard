@@ -4,7 +4,7 @@ import plotly.graph_objs as go
 from plotly.offline import plot as plotly_plot
 from typing import Dict
 
-from dashboard_services.utils import z_better_outward
+from utils.utils import z_better_outward
 
 
 def build_graphs_body(ctx: dict) -> str:

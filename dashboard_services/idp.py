@@ -2,7 +2,7 @@ import json
 import requests
 from pathlib import Path
 
-from dashboard_services.utils import load_teams_index, load_players_index, path_players_index, write_json
+from utils.utils import load_teams_index, load_players_index, path_players_index, write_json
 
 TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
 TANK01_HEADERS = {
@@ -106,7 +106,7 @@ import os
 import requests
 from pathlib import Path
 
-from data_building.sleeper_bulk_stats import CACHE_DIR
+from data_building.external_data.sleeper_bulk_stats import CACHE_DIR
 
 TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
 TANK01_HEADERS = {

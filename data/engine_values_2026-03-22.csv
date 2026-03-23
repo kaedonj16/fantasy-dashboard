@@ -72,7 +72,7 @@ player_id,name,position,team,engine_value
 4034,Christian McCaffrey,RB,SF,457.7
 7588,Javonte Williams,RB,DAL,447.2
 9753,Zach Charbonnet,RB,SEA,394.3
-7543,Travis Etienne Jr.,RB,JAX,376.5
+7543,Travis Etienne Jr.,RB,JAX,374.2
 5850,Josh Jacobs,RB,GB,368.3
 4866,Saquon Barkley,RB,PHI,367.6
 3198,Derrick Henry,RB,BAL,366.6
@@ -114,7 +114,7 @@ player_id,name,position,team,engine_value
 7528,Najee Harris,RB,LAC,198.8
 6130,Devin Singletary,RB,NYG,198.1
 4663,Austin Ekeler,RB,WSH,198.0
-5995,Justice Hill,RB,BAL,196.8
+5995,Justice Hill,RB,BAL,195.5
 4988,Nick Chubb,RB,HOU,192.1
 6151,Miles Sanders,RB,DAL,190.0
 4018,Joe Mixon,RB,HOU,185.1
@@ -148,8 +148,8 @@ player_id,name,position,team,engine_value
 6865,Colby Parkinson,TE,LAR,256.9
 11603,AJ Barner,TE,SEA,254.4
 8210,Chig Okonkwo,TE,TEN,251.9
-4066,Evan Engram,TE,DEN,251.4
 1339,Zach Ertz,TE,WSH,250.8
+4066,Evan Engram,TE,DEN,250.6
 12517,Colston Loveland,TE,CHI,248.9
 2505,Darren Waller,TE,MIA,245.7
 4144,Jonnu Smith,TE,PIT,236.6
@@ -165,36 +165,36 @@ player_id,name,position,team,engine_value
 12498,Mason Taylor,TE,NYJ,177.8
 5010,Will Dissly,TE,LAC,122.7
 9493,Puka Nacua,WR,LAR,999.9
-9488,Jaxon Smith-Njigba,WR,SEA,879.5
-7564,Ja'Marr Chase,WR,CIN,878.7
-7547,Amon-Ra St. Brown,WR,DET,791.3
-10229,Rashee Rice,WR,KC,748.0
-8112,Drake London,WR,ATL,725.0
-8137,George Pickens,WR,DAL,693.1
-6786,CeeDee Lamb,WR,DAL,641.8
-8144,Chris Olave,WR,NO,627.0
-11632,Malik Nabers,WR,NYG,597.3
-7569,Nico Collins,WR,HOU,577.3
-8146,Garrett Wilson,WR,NYJ,576.6
-9997,Zay Flowers,WR,BAL,557.9
-6794,Justin Jefferson,WR,MIN,552.2
-6801,Tee Higgins,WR,CIN,526.4
-8148,Jameson Williams,WR,DET,525.8
-8126,Wan'Dale Robinson,WR,NYG,515.4
+9488,Jaxon Smith-Njigba,WR,SEA,879.7
+7564,Ja'Marr Chase,WR,CIN,878.9
+7547,Amon-Ra St. Brown,WR,DET,791.6
+10229,Rashee Rice,WR,KC,748.3
+8112,Drake London,WR,ATL,725.3
+8137,George Pickens,WR,DAL,693.5
+6786,CeeDee Lamb,WR,DAL,642.3
+8144,Chris Olave,WR,NO,627.5
+11632,Malik Nabers,WR,NYG,603.0
+7569,Nico Collins,WR,HOU,577.9
+8146,Garrett Wilson,WR,NYJ,577.2
+9997,Zay Flowers,WR,BAL,558.5
+6794,Justin Jefferson,WR,MIN,552.8
+6801,Tee Higgins,WR,CIN,527.1
+8148,Jameson Williams,WR,DET,526.4
+8126,Wan'Dale Robinson,WR,NYG,516.1
 5859,A.J. Brown,WR,PHI,493.5
-11635,Ladd McConkey,WR,LAC,473.4
+11635,Ladd McConkey,WR,LAC,474.2
 3321,Tyreek Hill,WR,MIA,464.8
+11631,Brian Thomas Jr.,WR,JAX,461.8
 2133,Davante Adams,WR,LAR,461.1
-11631,Brian Thomas Jr.,WR,JAX,459.2
-9754,Quentin Johnston,WR,LAC,458.4
-9756,Jordan Addison,WR,MIN,450.2
-7525,DeVonta Smith,WR,PHI,449.8
+9754,Quentin Johnston,WR,LAC,459.2
+9756,Jordan Addison,WR,MIN,451.0
+7525,DeVonta Smith,WR,PHI,448.8
 7526,Jaylen Waddle,WR,MIA,440.7
 10232,Michael Wilson,WR,ARI,437.7
 5846,DK Metcalf,WR,PIT,436.6
 8167,Christian Watson,WR,GB,436.5
 8142,Alec Pierce,WR,IND,432.4
-11620,Rome Odunze,WR,CHI,431.3
+11620,Rome Odunze,WR,CHI,432.2
 6819,Michael Pittman Jr.,WR,IND,431.1
 5045,Courtland Sutton,WR,DEN,424.2
 4037,Chris Godwin Jr.,WR,TB,416.7
@@ -202,7 +202,7 @@ player_id,name,position,team,engine_value
 4983,DJ Moore,WR,CHI,411.0
 2449,Stefon Diggs,WR,NE,407.8
 5927,Terry McLaurin,WR,WSH,407.8
-11628,Marvin Harrison Jr.,WR,ARI,405.6
+11628,Marvin Harrison Jr.,WR,ARI,406.5
 8134,Khalil Shakir,WR,BUF,403.9
 8121,Romeo Doubs,WR,GB,402.9
 9487,Parker Washington,WR,JAX,402.8
@@ -210,7 +210,7 @@ player_id,name,position,team,engine_value
 1479,Keenan Allen,WR,LAC,398.3
 2216,Mike Evans,WR,TB,397.8
 7049,Jauan Jennings,WR,SF,396.1
-9500,Josh Downs,WR,IND,392.7
+9500,Josh Downs,WR,IND,393.6
 10222,Jayden Reed,WR,GB,383.8
 12526,Tetairoa McMillan,WR,CAR,382.6
 8676,Rashid Shaheed,WR,SEA,371.0
@@ -227,7 +227,7 @@ player_id,name,position,team,engine_value
 5848,Hollywood Brown,WR,KC,327.0
 4039,Cooper Kupp,WR,SEA,320.1
 12530,Travis Hunter,WR,JAX,315.0
-4981,Calvin Ridley,WR,TEN,309.9
+4981,Calvin Ridley,WR,TEN,308.8
 9494,Marvin Mims Jr.,WR,DEN,306.3
 9501,DeMario Douglas,WR,NE,303.3
 12519,Luther Burden III,WR,CHI,302.6

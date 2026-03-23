@@ -8,21 +8,31 @@ import threading
 import time
 from collections import defaultdict
 from datetime import date, datetime
-from flask import Flask, request, render_template_string, redirect, url_for, jsonify
+from flask import (
+    Flask,
+    request,
+    render_template_string,
+    redirect,
+    url_for,
+    jsonify,
+    render_template,
+    session,
+)
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
 
+from dashboard_services.ai.renderer import get_team_gm_memo
 from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
     get_nfl_scores_for_date, build_team_game_lookup, \
     get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters, \
-    get_sleeper_user_by_username, get_sleeper_user_leagues, resolve_league_id_for_season
+    get_sleeper_user_by_username, get_sleeper_user_leagues, resolve_league_id_for_season, build_league_history_map
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
     compute_team_projections_for_weeks
-from dashboard_services.pages.history_page import build_history_body
+from dashboard_services.pages.history_page import build_history_body, build_regular_season_team_stats, sort_team_stats
 from dashboard_services.pages.graphs_page import build_graphs_body
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
@@ -34,7 +44,7 @@ from dashboard_services.platform_api import (
     get_bracket,
     get_drafts
 )
-from dashboard_services.player_value_history import (
+from data_building.player_value_history import (
     init_value_history_db,
     get_top_movers
 )
@@ -42,14 +52,14 @@ from dashboard_services.players import get_players_map
 from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
     build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
     seed_top6_from_team_stats, build_standings_map
-from dashboard_services.utils import (load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
-                                      load_players_index, load_week_projection, bucket_for_slot,
-                                      clear_activity_cache_for_league, \
-                                      clear_weekly_cache_for_league, build_status_for_week,
-                                      clear_teams_cache_for_league, get_week_projections_cached, \
-                                      fetch_week_from_tank01, count_roster_positions, load_idp_index,
-                                      get_live_game_ids_for_today, \
-                                      build_and_save_week_stats_for_league, load_week_schedule)
+from utils.utils import (load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
+                         load_players_index, load_week_projection, bucket_for_slot,
+                         clear_activity_cache_for_league, \
+                         clear_weekly_cache_for_league, build_status_for_week,
+                         clear_teams_cache_for_league, get_week_projections_cached, \
+                         fetch_week_from_tank01, count_roster_positions, load_idp_index,
+                         get_live_game_ids_for_today, \
+                         build_and_save_week_stats_for_league, load_week_schedule)
 from data_building.build_daily_value_table import build_daily_data
 
 daily_lock = threading.Lock()
@@ -224,6 +234,81 @@ BASE_HTML = """
 </html>
 """
 
+def normalize_sleeper_username(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str) -> Union[Dict, None]:
+    """
+    Resolve a Sleeper username to:
+      - user_id
+      - roster_id
+      - display_name / team name
+    """
+    wanted = normalize_sleeper_username(username)
+    if not wanted:
+        return None
+
+    matched_user = None
+    for u in users or []:
+        uname = normalize_sleeper_username(u.get("display_name") or u.get("username") or "")
+        if uname == wanted:
+            matched_user = u
+            break
+
+    if not matched_user:
+        return None
+
+    user_id = str(matched_user.get("user_id") or "")
+    if not user_id:
+        return None
+
+    matched_roster = None
+    for r in rosters or []:
+        owner_id = str(r.get("owner_id") or "")
+        if owner_id == user_id:
+            matched_roster = r
+            break
+
+    if not matched_roster:
+        return {
+            "viewer_username": username,
+            "viewer_user_id": user_id,
+            "viewer_roster_id": None,
+            "viewer_team_name": matched_user.get("display_name") or matched_user.get("username") or "Unknown Team",
+        }
+
+    metadata = matched_roster.get("metadata") or {}
+    team_name = (
+        metadata.get("team_name")
+        or matched_user.get("display_name")
+        or matched_user.get("username")
+        or f"Roster {matched_roster.get('roster_id')}"
+    )
+
+    return {
+        "viewer_username": username,
+        "viewer_user_id": user_id,
+        "viewer_roster_id": str(matched_roster.get("roster_id")),
+        "viewer_team_name": team_name,
+    }
+
+
+def save_viewer_session(viewer: dict) -> None:
+    session["viewer_username"] = viewer.get("viewer_username")
+    session["viewer_user_id"] = viewer.get("viewer_user_id")
+    session["viewer_roster_id"] = viewer.get("viewer_roster_id")
+    session["viewer_team_name"] = viewer.get("viewer_team_name")
+
+
+def get_viewer_session() -> dict:
+    return {
+        "viewer_username": session.get("viewer_username"),
+        "viewer_user_id": session.get("viewer_user_id"),
+        "viewer_roster_id": session.get("viewer_roster_id"),
+        "viewer_team_name": session.get("viewer_team_name"),
+    }
+
 
 def format_sleeper_league_option(league: dict) -> dict:
     settings = league.get("settings") or {}
@@ -368,48 +453,22 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
-def get_available_history_seasons(platform: str, league_id: str, season: int) -> list[int]:
+def get_available_history_seasons(platform: str, league_id: str, current_season: int) -> List[int]:
     """
-    Returns descending seasons for this league.
-
-    Sleeper:
-      Walk backward from the viewed/current league through previous_league_id.
-    ESPN / fallback:
-      Return just the requested season.
+    Returns completed seasons only (excludes current season).
     """
-    if (platform or "").lower() != "sleeper":
-        return [int(season)]
+    seasons = sorted(
+        build_league_history_map(platform, league_id, current_season).keys(),
+        reverse=True,
+    )
 
-    seasons: list[int] = []
-    seen_league_ids: set[str] = set()
+    # remove current season
+    seasons = [s for s in seasons if int(s) < int(current_season)]
 
-    season_cursor = int(season)
-    cursor_league_id = str(league_id).strip()
-
-    while cursor_league_id and cursor_league_id not in seen_league_ids:
-        seen_league_ids.add(cursor_league_id)
-
-        try:
-            lg = get_league("sleeper", cursor_league_id, season_cursor) or {}
-        except Exception:
-            break
-
-        league_season = _safe_int(lg.get("season"), season_cursor)
-        if league_season not in seasons:
-            seasons.append(league_season)
-
-        prev_id = str(lg.get("previous_league_id") or "").strip()
-        if not prev_id:
-            break
-
-        cursor_league_id = prev_id
-        season_cursor = league_season - 1
-
-    seasons = sorted({int(s) for s in seasons if s}, reverse=True)
-    return seasons or [int(season)]
+    return seasons
 
 
-def get_default_history_season(available_seasons: list[int], current_season: int) -> int:
+def get_default_history_season(available_seasons: List[int], current_season: int) -> int:
     """
     Default to the most recent completed season, not the current season.
     If there is no prior season, fall back to the newest available season.
@@ -795,6 +854,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "offseason_mode": offseason_mode,
         "drafts": drafts,
         "latest_draft": latest_draft,
+        "viewer": get_viewer_session(),
     }
 
 
@@ -1271,6 +1331,8 @@ def render_standings(team_stats, length) -> str:
 
 
 def build_dashboard_body(ctx: dict) -> str:
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
     league_id = ctx["league_id"]
     platform = ctx["platform"]
     season = ctx["season"]  # viewed season, not live NFL season
@@ -1375,14 +1437,30 @@ def build_dashboard_body(ctx: dict) -> str:
             f"</div>"
         )
 
+
+    gm_html = ""
+    if viewer_roster_id:
+        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
+        gm_html = f"""
+        <div class="card gm-card">
+          <div class="card-header">
+            <h2>Your GM Brief</h2>
+            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
+          </div>
+          <div class="card-body">
+            {gm_memo_html}
+          </div>
+        </div>
+        """
+
     body = f"""
     <aside class="overview-sidebar-left">
       {awards_html}
     </aside>
     <div class="overview-main">
+      {gm_html}
       <div class="card central">
         <h2>Standings</h2>
-        {season_note}
         {standings_html}
       </div>
       {matchup_html}
@@ -1395,7 +1473,7 @@ def build_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def render_power_and_playoffs(team_stats, roster_map: dict[str, str], league_id: str, platform, season) -> str:
+def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
     """
     Single card that shows:
       - Power Rankings (by PowerScore if present)
@@ -2719,7 +2797,7 @@ def build_projections_by_week(season: int, weeks: int):
     return bundles
 
 
-def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: dict[str, dict] = None):
+def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: Dict[str, Dict] = None):
     bundles = {}
     for w in range(1, weeks + 1):
         try:
@@ -2731,6 +2809,160 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
     return bundles
 
 
+HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
+
+
+def _safe_int(v, default=0):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def build_historical_pick_slot_map(
+    platform: str,
+    root_league_id: str,
+    current_season: int,
+    source_season: int,
+) -> Dict[int, int]:
+    """
+    For a given source season, returns:
+      { roster_id: rookie_pick_slot }
+
+    Example:
+      source_season=2025 -> order used for 2026 rookie picks
+    """
+    cache_key = (str(platform).lower(), str(root_league_id), int(source_season))
+    cached = HISTORICAL_PICK_SLOT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    resolved_league_id = resolve_league_id_for_season(
+        platform=platform,
+        league_id=root_league_id,
+        current_season=current_season,
+        target_season=source_season,
+    )
+
+    hist_ctx = get_league_ctx_from_cache(
+        platform,
+        resolved_league_id,
+        source_season,
+    )
+
+    df_weekly = hist_ctx.get("df_weekly", pd.DataFrame())
+    league = hist_ctx.get("league") or {}
+    roster_map = hist_ctx.get("roster_map") or {}
+
+    reg_team_stats = build_regular_season_team_stats(df_weekly, league)
+    reg_team_stats = sort_team_stats(reg_team_stats)
+
+    if reg_team_stats is None or reg_team_stats.empty:
+        HISTORICAL_PICK_SLOT_CACHE[cache_key] = {}
+        return {}
+
+    # roster_map is expected to look like {roster_id: owner/team_name}
+    name_to_roster_id: Dict[str, int] = {}
+    for rid, team_name in roster_map.items():
+        try:
+            name_to_roster_id[str(team_name)] = int(rid)
+        except Exception:
+            continue
+
+    total_teams = len(reg_team_stats)
+    slot_map: Dict[int, int] = {}
+
+    # Rank 1 = best team, so reverse for rookie draft slot:
+    # worst team -> 1, next worst -> 2, etc.
+    for _, row in reg_team_stats.iterrows():
+        owner = str(row.get("owner") or "")
+        rank = _safe_int(row.get("Rank"), 0)
+        roster_id = name_to_roster_id.get(owner)
+
+        if not owner or rank <= 0 or roster_id is None:
+            continue
+
+        slot = total_teams - rank + 1
+        slot_map[int(roster_id)] = int(slot)
+
+    HISTORICAL_PICK_SLOT_CACHE[cache_key] = slot_map
+    return slot_map
+
+
+def resolve_exact_pick_slot(
+    platform: str,
+    root_league_id: str,
+    current_season: int,
+    pick: dict,
+) -> Union[int, None]:
+    """
+    For a 2026 pick, look at 2025 standings of the previous owner.
+    """
+    pick_year = _safe_int(pick.get("season"), 0)
+    rnd = _safe_int(pick.get("round"), 0)
+
+    if not pick_year or not rnd:
+        return None
+
+    source_season = pick_year - 1
+    if source_season <= 0:
+        return None
+
+    prev_owner = pick.get("previous_owner_id")
+    if prev_owner is None:
+        prev_owner = pick.get("owner_id")
+
+    try:
+        prev_owner = int(prev_owner)
+    except Exception:
+        return None
+
+    slot_map = build_historical_pick_slot_map(
+        platform=platform,
+        root_league_id=root_league_id,
+        current_season=current_season,
+        source_season=source_season,
+    )
+
+    return slot_map.get(prev_owner)
+
+
+def format_pick_round_label(pick: dict) -> str:
+    rnd = _safe_int(pick.get("round"), 0)
+    slot = _safe_int(pick.get("slot"), 0)
+    if rnd <= 0:
+        return "Pick"
+    if slot > 0:
+        return f"{rnd}.{slot:02d}"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{rnd}{suffix}"
+
+
+def format_pick_display_label(
+    platform: str,
+    root_league_id: str,
+    current_season: int,
+    pick: dict,
+) -> str:
+    year = _safe_int(pick.get("season"), 0)
+    rnd = _safe_int(pick.get("round"), 0)
+
+    if not year or not rnd:
+        return "Pick"
+
+    exact_slot = resolve_exact_pick_slot(
+        platform=platform,
+        root_league_id=root_league_id,
+        current_season=current_season,
+        pick=pick,
+    )
+
+    if exact_slot is not None:
+        return f"{year} {rnd}.{exact_slot:02d}"
+
+    return f"{year} {format_pick_round_label(pick)}"
+
+
 def build_activity_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)
@@ -2738,12 +2970,12 @@ def build_activity_body(ctx: dict) -> str:
     injury_df = ctx["injury_df"]
     standings_map = ctx["standings_map"]
     platform = ctx["platform"]
-    season = ctx["season"]
+    season = _safe_int(ctx["season"], 0)
 
     players_values_raw = ctx.get("model_value_table") or []
-    player_val_by_key: dict[tuple[str, str, str], float] = {}
-    player_val_by_key_np: dict[tuple[str, str], float] = {}
-    rank_label_by_name: dict[str, str] = {}
+    player_val_by_key: Dict[Tuple[str, str, str], float] = {}
+    player_val_by_key_np: Dict[Tuple[str, str], float] = {}
+    rank_label_by_name: Dict[str, str] = {}
 
     if isinstance(players_values_raw, list):
         for row in players_values_raw:
@@ -2797,14 +3029,26 @@ def build_activity_body(ctx: dict) -> str:
             return "late"
         return None
 
-    def pick_value(pick: dict, standings_map: dict[int, int], num_teams: int = 10) -> float:
-        try:
-            year = int(pick.get("season") or 0)
-            rnd = int(pick.get("round") or 0)
-        except Exception:
-            return 0.0
+    def pick_value(pick: Dict, standings_map: Dict[int, int], num_teams: int = 10) -> float:
+        """
+        Prefer exact historical slot when available, then fall back to bucketed values.
+        """
+        year = _safe_int(pick.get("season"), 0)
+        rnd = _safe_int(pick.get("round"), 0)
         if not year or not rnd:
             return 0.0
+
+        exact_slot = resolve_exact_pick_slot(
+            platform=platform,
+            root_league_id=league_id,
+            current_season=season,
+            pick=pick,
+        )
+
+        if exact_slot is not None:
+            exact_key = f"{year}_{rnd}_{exact_slot:02d}"
+            if exact_key in pick_values:
+                return float(pick_values[exact_key])
 
         prev_owner = pick.get("previous_owner_id")
         seed = None
@@ -2820,6 +3064,7 @@ def build_activity_body(ctx: dict) -> str:
             key_bucket = f"{year}_{rnd}_{bucket}"
             if key_bucket in pick_values:
                 return float(pick_values[key_bucket])
+
             key_generic = f"{year}_{rnd}"
             if key_generic in pick_values:
                 return float(pick_values[key_generic])
@@ -2844,8 +3089,20 @@ def build_activity_body(ctx: dict) -> str:
         except Exception:
             seed = None
 
+        exact_slot = resolve_exact_pick_slot(
+            platform=platform,
+            root_league_id=league_id,
+            current_season=season,
+            pick=pick,
+        )
+
         bucket = pick_bucket_from_seed(seed, num_teams=num_teams)
-        bucket_label = bucket.capitalize() if bucket else None
+        bucket_label = None
+
+        if exact_slot is not None:
+            bucket_label = f"Pick {pick.get('round')}.{int(exact_slot):02d}"
+        elif bucket:
+            bucket_label = bucket.capitalize()
 
         orig_rid = pick.get("roster_id")
         orig_team = rid_to_name.get(orig_rid, f"User {orig_rid}") if orig_rid is not None else "Unknown"
@@ -2874,8 +3131,8 @@ def build_activity_body(ctx: dict) -> str:
 
     trade_count = 0
     waiver_count = 0
-    most_active_counts: dict[str, int] = {}
-    traded_asset_counts: dict[str, int] = {}
+    most_active_counts: Dict[str, int] = {}
+    traded_asset_counts: Dict[str, int] = {}
     biggest_trade_label = "No trade data"
     biggest_trade_delta = 0.0
 
@@ -2922,9 +3179,12 @@ def build_activity_body(ctx: dict) -> str:
             def render_pick_row(pick, io_class):
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
-                rnd_suffix = {1: "st", 2: "nd", 3: "rd"}.get(pick.get("round"), "th")
-                round_label = f"{pick.get('round')}" + rnd_suffix
-                pick_season = str(pick.get("season") or "")
+                pick_label = format_pick_display_label(
+                    platform=platform,
+                    root_league_id=league_id,
+                    current_season=season,
+                    pick=pick,
+                )
                 subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
@@ -2935,7 +3195,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
-                    f"  <div style='font-weight:600'>{pick_season} {round_label}</div>"
+                    f"  <div style='font-weight:600'>{pick_label}</div>"
                     f"  <div style='color:#64748b;font-size:12px'>{subline}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
@@ -2952,7 +3212,7 @@ def build_activity_body(ctx: dict) -> str:
                 if send is not None:
                     picks_by_sender.setdefault(send, []).append(dp)
 
-            side_map: dict[int, dict] = {}
+            side_map: Dict[int, Dict] = {}
             for tm in teams:
                 rid = tm.get("roster_id")
                 if rid is None:
@@ -3413,7 +3673,6 @@ def build_activity_body(ctx: dict) -> str:
     </script>
     """
 
-
 def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     plist = roster_pos_players.get(rid, {}).get(pos_code, [])
     if not plist:
@@ -3446,7 +3705,7 @@ def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     )
 
 
-def _weighted_pos_strength(vals: list[float], pos: str, slot_counts: dict[str, int]) -> float:
+def _weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
     """
     Emphasize top-end talent over pure depth.
 
@@ -3518,8 +3777,8 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
-    name_to_rank_label: dict[str, str] = {}
-    name_to_age: dict[str, float | None] = {}
+    name_to_rank_label: Dict[str, str] = {}
+    name_to_age: Dict[str, Union[float, None]] = {}
 
     for obj in model_vals:
         if not isinstance(obj, dict):
@@ -3537,7 +3796,7 @@ def build_teams_body(ctx: dict) -> str:
                 name_to_age[safe_name] = None
 
     # map sleeper_id -> row
-    by_id: dict[str, dict] = {
+    by_id: Dict[str, Dict] = {
         str(p["id"]): p
         for p in model_vals
         if isinstance(p, dict) and p.get("id") is not None
@@ -3547,7 +3806,7 @@ def build_teams_body(ctx: dict) -> str:
     POS_ORDER = ["QB", "RB", "WR", "TE"]
 
     # ----------------- Roster → position → players (for dropdowns) -----------------
-    roster_pos_players: dict[int, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    roster_pos_players: Dict[int, Dict[str, List[Dict]]] = defaultdict(lambda: defaultdict(list))
 
     for r in rosters:
         rid = r.get("roster_id")
@@ -3576,8 +3835,8 @@ def build_teams_body(ctx: dict) -> str:
             plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
 
     # ----------------- Build per-team position value buckets (for strength table) -----------------
-    team_meta: dict[int, dict] = {}  # name, avatar
-    team_pos_values: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    team_meta: Dict[int, Dict] = {}  # name, avatar
+    team_pos_values: Dict[int, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
 
     for r in rosters:
         rid = r.get("roster_id")
@@ -3610,15 +3869,15 @@ def build_teams_body(ctx: dict) -> str:
             team_pos_values[rid].setdefault(pos, [])
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
-    team_pos_strength: dict[int, dict[str, float]] = defaultdict(dict)
+    team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
     slot_counts = count_roster_positions(get_roster_positions())
 
     for rid, pos_map in team_pos_values.items():
         for pos, vals in pos_map.items():
             team_pos_strength[rid][pos] = _weighted_pos_strength(vals, pos, slot_counts)
 
-    league_pos_avg: dict[str, float] = {}
-    league_pos_std: dict[str, float] = {}
+    league_pos_avg: Dict[str, float] = {}
+    league_pos_std: Dict[str, float] = {}
 
     for pos in POS_ORDER:
         series = [team_pos_strength[rid][pos] for rid in team_meta.keys()]
@@ -3633,8 +3892,8 @@ def build_teams_body(ctx: dict) -> str:
         league_pos_std[pos] = std
 
     # ----------------- Z-scores & positional index -----------------
-    team_pos_z: dict[int, dict[str, float]] = defaultdict(dict)
-    team_pos_index: dict[int, float] = {}
+    team_pos_z: Dict[int, Dict[str, float]] = defaultdict(dict)
+    team_pos_index: Dict[int, float] = {}
 
     LINEUP_WEIGHTS = {
         "QB": slot_counts.get("QB") or 1,
@@ -3645,8 +3904,8 @@ def build_teams_body(ctx: dict) -> str:
     }
     weight_sum = sum(LINEUP_WEIGHTS[pos] for pos in POS_ORDER if LINEUP_WEIGHTS.get(pos, 0) > 0) or 1.0
 
-    pos_z_min: dict[str, float] = {pos: float("inf") for pos in POS_ORDER}
-    pos_z_max: dict[str, float] = {pos: float("-inf") for pos in POS_ORDER}
+    pos_z_min: Dict[str, float] = {pos: float("inf") for pos in POS_ORDER}
+    pos_z_max: Dict[str, float] = {pos: float("-inf") for pos in POS_ORDER}
 
     for rid in team_meta.keys():
         idx_num = 0.0
@@ -3677,7 +3936,7 @@ def build_teams_body(ctx: dict) -> str:
 
     # ----------------- Positional ranks (per position) -----------------
     # pos_rank[pos][rid] = rank (1 = best at that position)
-    pos_rank: dict[str, dict[int, int]] = {pos: {} for pos in POS_ORDER}
+    pos_rank: Dict[str, Dict[int, int]] = {pos: {} for pos in POS_ORDER}
 
     for pos in POS_ORDER:
         # rank by z-score (strongest to weakest)
@@ -4301,40 +4560,36 @@ def page_teams(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/history")
 def page_history(platform: str, season: int, league_id: str):
     available_seasons = get_available_history_seasons(platform, league_id, season)
+    default_history_season = get_default_history_season(available_seasons, season)
 
-    explicit = request.args.get("explicit") == "1"
-    target_season = int(season)
-
-    if explicit:
-        if target_season not in available_seasons:
-            target_season = get_default_history_season(available_seasons, season)
-    else:
-        target_season = get_default_history_season(available_seasons, season)
-
-    print(target_season)
-    # cached = get_page_html_from_cache(platform, target_season, league_id, "history")
-    # if cached:
-    #     return render_page(
-    #         "League History",
-    #         league_id,
-    #         "history",
-    #         cached,
-    #         platform,
-    #         target_season,
-    #     )
-    resolved_league_id = resolve_league_id_for_season(
-        platform,
-        league_id,
-        current_season=season,
-        target_season=target_season,
+    selected_history_season = int(
+        request.args.get("history_season") or default_history_season
     )
-    print("resolved")
-    print(resolved_league_id)
 
-    ctx = get_league_ctx_from_cache(platform, resolved_league_id, target_season)
-    print(ctx["standings_map"])
-    body_html = build_history_body(ctx,available_seasons)
-    store_page_html(platform, target_season, league_id, "history", body_html)
+    if selected_history_season not in available_seasons:
+        selected_history_season = default_history_season
+
+    resolved_history_league_id = resolve_league_id_for_season(
+        platform=platform,
+        league_id=league_id,
+        current_season=season,
+        target_season=selected_history_season,
+    )
+
+    history_ctx = get_league_ctx_from_cache(
+        platform,
+        resolved_history_league_id,
+        selected_history_season,
+    )
+
+    body_html = build_history_body(
+        history_ctx=history_ctx,
+        available_seasons=available_seasons,
+        base_platform=platform,
+        base_season=season,
+        base_league_id=league_id,
+        selected_history_season=selected_history_season,
+    )
 
     return render_page(
         "League History",
@@ -4342,7 +4597,7 @@ def page_history(platform: str, season: int, league_id: str):
         "history",
         body_html,
         platform,
-        target_season,
+        season,
     )
 
 
@@ -4531,6 +4786,28 @@ def api_weekly_week():
         "highlights_html": highlights_html,
         "matchups_html": matchups_html,
     })
+
+
+@app.route("/set-viewer", methods=["POST"])
+def set_viewer():
+    league_id = (request.form.get("league_id") or "").strip()
+    username = (request.form.get("username") or "").strip()
+
+    if not league_id or not username:
+        return redirect(url_for("home"))
+
+    ctx = get_league_ctx_from_cache(league_id)
+    viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
+
+    if not viewer:
+        return render_template_string(
+            FORM_BODY,
+            league=league_id,
+            error="Could not match that username to a team in this league.",
+        )
+
+    save_viewer_session(viewer)
+    return redirect(url_for("page_dashboard", league_id=league_id))
 
 
 @app.route("/api/refresh-page", methods=["POST"])
@@ -4723,7 +5000,7 @@ def api_trade_eval():
 
         raw_players_total = 0.0
         raw_picks_total = 0.0
-        player_values: list[float] = []
+        player_values: List[float] = []
         breakdown = []
 
         # Players
