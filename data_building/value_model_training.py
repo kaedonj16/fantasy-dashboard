@@ -21,10 +21,10 @@ from typing import Dict, List, Optional
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
+from utils.utils import load_teams_index, bucket_for_slot, normalize_name
+from utils.paths import DATA_DIR
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
-from utils.paths import DATA_DIR
-from utils.utils import load_teams_index, bucket_for_slot, normalize_name
 
 # ------------------------------------------------
 # Paths / constants
