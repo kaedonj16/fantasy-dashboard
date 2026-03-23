@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 from requests.adapters import HTTPAdapter
 from typing import Literal, Optional, List, Dict
 
-from dashboard_services.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
+from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
 
 
 # ---------------------------

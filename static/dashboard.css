@@ -5635,12 +5635,6 @@ table {
   font: inherit;
 }
 
-.history-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
 .history-card,
 .history-section-card {
   border: 1px solid var(--border);
@@ -5721,8 +5715,8 @@ table {
 }
 
 @media (max-width: 1100px) {
-  .history-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .history-top-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -5739,11 +5733,414 @@ table {
     width: 100%;
   }
 
-  .history-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
   .history-title {
     font-size: 1.45rem;
   }
+}
+
+.history-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #2f80ed 0%, #7cb3ff 100%);
+  opacity: 0.95;
+}
+
+.history-card-label {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #707b8f;
+  margin-bottom: 8px;
+}
+
+.history-card-value {
+  font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.22;
+  color: #111827;
+}
+
+.history-card-sub {
+  margin-top: 5px;
+  color: #6b7280;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.history-page {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.history-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.history-section-card {
+  border: 1px solid rgba(205, 214, 226, 0.9);
+  border-radius: 24px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
+  padding: 18px;
+}
+
+.history-awards-panel {
+  padding: 20px;
+}
+
+.history-standings-panel {
+  padding: 18px;
+}
+
+.history-chart-panel {
+  padding: 18px;
+}
+
+.history-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.history-card {
+  position: relative;
+  border: 1px solid #dbe5f1;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 14px 14px 12px;
+  min-height: 88px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.history-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.history-card-label {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #748095;
+  margin-bottom: 8px;
+  padding-left: 10px;
+}
+
+.history-card-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #111827;
+  padding-left: 10px;
+}
+
+.history-card-sub {
+  margin-top: 5px;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: #667085;
+  padding-left: 10px;
+}
+
+.history-card.is-featured {
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+  border-color: #c7d8f5;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.08);
+}
+
+.history-card.is-featured .history-card-value {
+  font-size: 1.08rem;
+}
+
+.history-card.is-featured::before {
+  width: 5px;
+  background: linear-gradient(180deg, #1d4ed8 0%, #60a5fa 100%);
+}
+
+/* Standings table */
+.history-standings-shell {
+  border: 1px solid #e3ebf5;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 12px 12px 8px; /* smaller bottom padding */
+}
+
+.history-standings-title {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.history-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.history-table thead th {
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7b8798;
+  text-align: left;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid #e8eef6;
+  background: transparent;
+}
+
+.history-table tbody td {
+  padding: 11px 12px;
+  font-size: 0.94rem;
+  color: #1f2937;
+  border-bottom: 1px solid #edf2f7;
+  background: #ffffff;
+}
+
+.history-table tbody tr:hover td {
+  background: #f8fbff;
+}
+
+.history-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.history-table tbody tr.is-top-seed td {
+  background: #f5f9ff;
+  font-weight: 700;
+}
+
+.history-table td.rank-cell {
+  width: 52px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.history-table td.record-cell,
+.history-table td.num-cell {
+  white-space: nowrap;
+}
+
+/* Chart */
+.history-chart-wrap {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #ffffff;
+  padding: 6px;
+}
+
+/* Header polish */
+.history-header {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 26px 26px 22px;
+  border: 1px solid rgba(205, 214, 226, 0.9);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.10), transparent 34%),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+}
+
+.history-kicker {
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.history-title {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 3rem);
+  font-weight: 900;
+  line-height: 1.02;
+  color: #0f2747;
+  letter-spacing: -0.03em;
+}
+
+.history-title-accent {
+  display: inline-block;
+  position: relative;
+}
+
+.history-subtitle {
+  margin: 16px 0 0;
+  max-width: 900px;
+  font-size: 1.03rem;
+  line-height: 1.6;
+  color: #667085;
+}
+
+.history-season-picker {
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-season-picker label {
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.history-season-picker select {
+  height: 52px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid #d6dfeb;
+  background: rgba(255,255,255,0.95);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1f2937;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+@media (max-width: 1020px) {
+  .history-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .history-header {
+    flex-direction: column;
+    padding: 20px 18px;
+  }
+
+  .history-season-picker {
+    width: 100%;
+  }
+
+  .history-season-picker select {
+    width: 100%;
+  }
+
+  .history-section-card {
+    padding: 16px;
+    border-radius: 20px;
+  }
+}
+
+.history-standings-panel {
+  align-self: start;
+  height: auto;
+}
+
+.history-awards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* Featured cards span full width */
+.history-card.is-featured {
+  grid-column: span 2;
+}
+
+/* Base card tightening */
+.history-card {
+  padding: 10px 12px;          /* ↓ from ~16-20 */
+  border-radius: 10px;
+  line-height: 1.2;
+}
+
+/* Title (CHAMPION, etc) */
+.history-card .history-card-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+/* Team name */
+.history-card .history-card-value {
+  font-size: 14px;             /* ↓ from ~16-18 */
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* Subtext */
+.history-card .history-card-sub {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* Featured cards (Champion, Runner-Up, Scoring Leader) */
+.history-card.is-featured {
+  padding: 10px 12px;          /* same as regular cards */
+}
+
+/* Reduce gap between cards */
+.history-awards-grid {
+  gap: 8px;                    /* ↓ from 10px */
+}
+
+
+.gm-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(18,45,75,.04), rgba(255,255,255,1));
+  margin-bottom: 16px;
+}
+
+.gm-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.subtle-label {
+  font-size: 12px;
+  opacity: 0.75;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.gm-memo-text {
+  line-height: 1.55;
+  font-size: 0.97rem;
 }

@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from dashboard_services.api import get_nfl_state
-from dashboard_services.player_value_history import record_model_value_snapshot
-from dashboard_services.utils import (
+from data_building.player_value_history import record_model_value_snapshot
+from utils.utils import (
     path_teams_index,
     load_teams_index,
     load_model_value_table,
@@ -12,9 +12,9 @@ from dashboard_services.utils import (
     load_week_schedule,
     build_and_save_week_stats_for_league,
 )
-from data_building.external_values_scraper import scrape_all_vendor_values
-from data_building.sleeper_usage import write_usage_table_snapshot
-from data_building.team_enrichment import (
+from data_building.external_data.external_values_scraper import scrape_all_vendor_values
+from data_building.external_data.sleeper_usage import write_usage_table_snapshot
+from data_building.external_data.team_enrichment import (
     enrich_all_team_info,
     enrich_teams_index_with_rushing,
 )

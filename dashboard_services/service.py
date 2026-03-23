@@ -23,8 +23,7 @@ from dashboard_services.api import (
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups
 from dashboard_services.players import build_roster_display_maps
-from dashboard_services.styles import tickerCss
-from dashboard_services.utils import safe_owner_name
+from utils.utils import safe_owner_name
 
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
@@ -67,7 +66,6 @@ def render_weekly_highlight_ticker(high: dict, week: int) -> str:
       <div class="tick-viewport">
         <div class="tick-track">{track_html}</div>
       </div>
-      {tickerCss}
     </div>
     """
 

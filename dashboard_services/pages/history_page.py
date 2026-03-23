@@ -12,6 +12,214 @@ from plotly.offline import plot as plotly_plot
 from dashboard_services.platform_api import get_bracket
 
 
+def _playoff_start_week(league: dict) -> int:
+    settings = league.get("settings") or {}
+    try:
+        return int(settings.get("playoff_week_start") or 15)
+    except (TypeError, ValueError):
+        return 15
+
+
+def build_regular_season_team_stats(
+    df_weekly: pd.DataFrame,
+    league: dict,
+) -> pd.DataFrame:
+    """
+    Recompute standings/stats using only regular season weeks.
+    This avoids playoff results changing the year recap standings.
+    """
+    if df_weekly is None or df_weekly.empty:
+        return pd.DataFrame()
+
+    playoff_start = _playoff_start_week(league)
+
+    df = df_weekly.copy()
+
+    if "week" not in df.columns or "owner" not in df.columns or "points" not in df.columns:
+        return pd.DataFrame()
+
+    df["week"] = pd.to_numeric(df["week"], errors="coerce")
+    df["points"] = pd.to_numeric(df["points"], errors="coerce").fillna(0.0)
+
+    # regular season only
+    df = df[df["week"] < playoff_start]
+
+    # finalized only if available
+    if "finalized" in df.columns:
+        finalized_df = df[df["finalized"] == True].copy()
+        if not finalized_df.empty:
+            df = finalized_df
+
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+
+    for owner, team_df in df.groupby("owner"):
+        team_df = team_df.sort_values(["week", "matchup_id"] if "matchup_id" in team_df.columns else ["week"])
+
+        wins = 0
+        losses = 0
+        ties = 0
+        pf = float(team_df["points"].sum())
+        pa = 0.0
+
+        if "matchup_id" in team_df.columns:
+            for (week, matchup_id), grp in df[df["week"].isin(team_df["week"].unique())].groupby(["week", "matchup_id"]):
+                if len(grp) != 2:
+                    continue
+
+                grp = grp.copy()
+                grp["points"] = pd.to_numeric(grp["points"], errors="coerce").fillna(0.0)
+
+                owner_rows = grp[grp["owner"] == owner]
+                if owner_rows.empty:
+                    continue
+
+                my_row = owner_rows.iloc[0]
+                opp_row = grp[grp["owner"] != owner]
+                if opp_row.empty:
+                    continue
+                opp_row = opp_row.iloc[0]
+
+                my_pts = float(my_row["points"])
+                opp_pts = float(opp_row["points"])
+
+                pa += opp_pts
+
+                if my_pts > opp_pts:
+                    wins += 1
+                elif my_pts < opp_pts:
+                    losses += 1
+                else:
+                    ties += 1
+        else:
+            # fallback if matchup_id is unavailable
+            pa = 0.0
+
+        games = wins + losses + ties
+        avg = pf / games if games > 0 else 0.0
+        std = float(team_df["points"].std()) if len(team_df) > 1 else 0.0
+        best = float(team_df["points"].max()) if not team_df.empty else 0.0
+        worst = float(team_df["points"].min()) if not team_df.empty else 0.0
+        win_pct = wins / games if games > 0 else 0.0
+
+        rows.append(
+            {
+                "owner": owner,
+                "Wins": wins,
+                "Losses": losses,
+                "Ties": ties,
+                "Win%": win_pct,
+                "PF": pf,
+                "PA": pa,
+                "AVG": avg,
+                "STD": std,
+                "MAX": best,
+                "MIN": worst,
+                "Streak": "",
+            }
+        )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+
+    out = out.sort_values(
+        ["Wins", "Win%", "PF", "PA"],
+        ascending=[False, False, False, True],
+    ).reset_index(drop=True)
+
+    out["Rank"] = out.index + 1
+    return out
+
+def _team_stats_lookup(team_stats: pd.DataFrame, team_name: str) -> dict:
+    if team_stats is None or team_stats.empty or not team_name or team_name == "—":
+        return {}
+
+    df = team_stats.copy()
+    if "owner" not in df.columns:
+        return {}
+
+    match = df[df["owner"].astype(str) == str(team_name)]
+    if match.empty:
+        return {}
+
+    row = match.iloc[0]
+    return {
+        "Wins": _safe_int(row.get("Wins"), 0),
+        "Losses": _safe_int(row.get("Losses"), 0),
+        "Ties": _safe_int(row.get("Ties"), 0),
+        "PF": _safe_float(row.get("PF"), 0.0),
+        "PA": _safe_float(row.get("PA"), 0.0),
+        "AVG": _safe_float(row.get("AVG"), 0.0),
+    }
+
+
+def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
+    """
+    Pull champion and runner-up from the winners bracket.
+    Prefers the championship game (p == 1) when Sleeper provides it.
+    """
+    platform = ctx["platform"]
+    season = int(ctx["season"])
+    league_id = ctx.get("resolved_league_id") or ctx["league_id"]
+    roster_map = ctx.get("roster_map") or {}
+
+    try:
+        # Adjust this call if your wrapper signature differs in your current repo.
+        winners_bracket = get_bracket(platform, league_id, "winners", season) or []
+    except Exception:
+        winners_bracket = []
+
+    if not winners_bracket:
+        return "—", "—"
+
+    # Only consider completed matchups
+    completed = [
+        m for m in winners_bracket
+        if m.get("w") is not None and m.get("l") is not None
+    ]
+    if not completed:
+        return "—", "—"
+
+    # Best case: Sleeper marks the championship game with p == 1
+    championship = next(
+        (m for m in completed if _safe_int(m.get("p"), 0) == 1),
+        None,
+    )
+
+    if championship is None:
+        # Fallback: take the deepest round, then lowest placement number if present,
+        # then lowest match id.
+        completed = sorted(
+            completed,
+            key=lambda m: (
+                _safe_int(m.get("r"), 0),                          # deepest round
+                -(_safe_int(m.get("p"), 999) or 999),             # prefer p=1 over p=3, etc.
+                -_safe_int(m.get("m"), 0),                        # stable fallback
+            ),
+            reverse=True,
+        )
+        championship = completed[0]
+
+    winner_id = championship.get("w")
+    loser_id = championship.get("l")
+
+    champion = (
+        roster_map.get(str(winner_id))
+        or roster_map.get(winner_id)
+        or f"Roster {winner_id}"
+    )
+    runner_up = (
+        roster_map.get(str(loser_id))
+        or roster_map.get(loser_id)
+        or f"Roster {loser_id}"
+    )
+
+    return str(champion), str(runner_up)
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -40,7 +248,7 @@ def _record_str(row: pd.Series) -> str:
     return f"{wins}-{losses}"
 
 
-def _sort_team_stats(team_stats: pd.DataFrame) -> pd.DataFrame:
+def sort_team_stats(team_stats: pd.DataFrame) -> pd.DataFrame:
     if team_stats is None or team_stats.empty:
         return pd.DataFrame()
 
@@ -155,17 +363,26 @@ def _filtered_season_df(df_weekly: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _build_summary(ctx: dict) -> dict:
-    df_weekly = _filtered_season_df(ctx.get("df_weekly", pd.DataFrame()))
-    team_stats = _sort_team_stats(ctx.get("team_stats", pd.DataFrame()))
+def _build_summary(history_ctx: dict) -> dict:
+    league = history_ctx.get("league") or {}
+    df_weekly = _filtered_season_df(history_ctx.get("df_weekly", pd.DataFrame()))
 
-    champion, runner_up = _title_game_names(ctx)
+    # regular season standings only
+    team_stats = build_regular_season_team_stats(df_weekly, league)
+    team_stats = sort_team_stats(team_stats)
+
+    champion, runner_up = get_champion_and_runner_up(history_ctx)
+    champion_stats = _team_stats_lookup(team_stats, champion)
+    runner_up_stats = _team_stats_lookup(team_stats, runner_up)
 
     summary = {
         "champion": champion,
+        "champion_record": _record_str(pd.Series(champion_stats)) if champion_stats else "—",
         "runner_up": runner_up,
+        "runner_up_record": _record_str(pd.Series(runner_up_stats)) if runner_up_stats else "—",
         "top_scorer_team": "—",
         "top_scorer_value": 0.0,
+        "top_scorer_avg": 0.0,
         "best_defense_team": "—",
         "best_defense_value": 0.0,
         "highest_week_team": "—",
@@ -186,6 +403,7 @@ def _build_summary(ctx: dict) -> dict:
 
         summary["top_scorer_team"] = str(team_stats.loc[pf_idx, "owner"])
         summary["top_scorer_value"] = _safe_float(team_stats.loc[pf_idx, "PF"])
+        summary["top_scorer_avg"] = _safe_float(team_stats.loc[pf_idx, "AVG"])
 
         summary["best_defense_team"] = str(team_stats.loc[pa_idx, "owner"])
         summary["best_defense_value"] = _safe_float(team_stats.loc[pa_idx, "PA"])
@@ -212,7 +430,7 @@ def _build_summary(ctx: dict) -> dict:
             summary["unluckiest_team"] = str(unlucky["owner"])
             summary["unluckiest_delta"] = _safe_int(unlucky["delta"], 0)
 
-    if not df_weekly.empty and "owner" in df_weekly.columns and "points" in df_weekly.columns:
+    if not df_weekly.empty and {"owner", "points"}.issubset(df_weekly.columns):
         hi = df_weekly.loc[df_weekly["points"].idxmax()]
         lo = df_weekly.loc[df_weekly["points"].idxmin()]
 
@@ -222,18 +440,17 @@ def _build_summary(ctx: dict) -> dict:
         summary["lowest_week_team"] = str(lo.get("owner", "—"))
         summary["lowest_week_value"] = _safe_float(lo.get("points"))
 
-    if (
-        not df_weekly.empty
-        and {"week", "matchup_id", "owner", "points"}.issubset(df_weekly.columns)
-    ):
+    if not df_weekly.empty and {"week", "matchup_id", "owner", "points"}.issubset(df_weekly.columns):
         matchup_rows = []
-        for (_, matchup_id), grp in df_weekly.groupby(["week", "matchup_id"]):
+        for (_, _), grp in df_weekly.groupby(["week", "matchup_id"]):
             if len(grp) != 2:
                 continue
+
             ordered = grp.sort_values("points", ascending=False).reset_index(drop=True)
             winner = ordered.iloc[0]
             loser = ordered.iloc[1]
             margin = abs(_safe_float(winner["points"]) - _safe_float(loser["points"]))
+
             matchup_rows.append(
                 {
                     "week": _safe_int(winner["week"]),
@@ -247,18 +464,13 @@ def _build_summary(ctx: dict) -> dict:
             closest = min(matchup_rows, key=lambda x: x["margin"])
             blowout = max(matchup_rows, key=lambda x: x["margin"])
 
-            summary["closest_matchup"] = (
-                f"Week {closest['week']}: {closest['winner']} over {closest['loser']}"
-            )
+            summary["closest_matchup"] = f"Week {closest['week']}: {closest['winner']} over {closest['loser']}"
             summary["closest_margin"] = _safe_float(closest["margin"])
 
-            summary["biggest_blowout"] = (
-                f"Week {blowout['week']}: {blowout['winner']} over {blowout['loser']}"
-            )
+            summary["biggest_blowout"] = f"Week {blowout['week']}: {blowout['winner']} over {blowout['loser']}"
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
 
     return summary
-
 
 def _build_recap_line(summary: dict, season: int) -> str:
     champ = summary["champion"]
@@ -319,9 +531,10 @@ def _history_chart(df_weekly: pd.DataFrame) -> str:
     )
 
 
-def _summary_card(label: str, value: str, sub: str = "") -> str:
+def _summary_card(label: str, value: str, sub: str = "", featured: bool = False) -> str:
+    featured_cls = " is-featured" if featured else ""
     return f"""
-    <div class="history-card">
+    <div class="history-card{featured_cls}">
       <div class="history-card-label">{label}</div>
       <div class="history-card-value">{value}</div>
       {f'<div class="history-card-sub">{sub}</div>' if sub else ''}
@@ -330,11 +543,10 @@ def _summary_card(label: str, value: str, sub: str = "") -> str:
 
 
 def _standings_table(team_stats: pd.DataFrame) -> str:
-    df = _sort_team_stats(team_stats)
+    df = sort_team_stats(team_stats)
     if df.empty:
         return """
         <div class="history-section-card">
-          <div class="history-section-title">Final Standings</div>
           <div class="history-empty">No final standings found for this season.</div>
         </div>
         """
@@ -357,7 +569,6 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
 
     return f"""
     <div class="history-section-card">
-      <div class="history-section-title">Final Standings</div>
       <div class="history-table-wrap">
         <table class="history-table">
           <thead>
@@ -380,41 +591,63 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
     """
 
 
-def build_history_body(ctx: dict, available_seasons: List[int]) -> str:
-    league = ctx.get("league") or {}
-    platform = ctx["platform"]
-    season = int(ctx["season"])
-    league_id = ctx["league_id"]
-    df_weekly = ctx.get("df_weekly", pd.DataFrame())
-    team_stats = ctx.get("team_stats", pd.DataFrame())
+def build_history_body(
+    history_ctx: dict,
+    available_seasons: List[int],
+    base_platform: str,
+    base_season: int,
+    base_league_id: str,
+    selected_history_season: int,
+) -> str:
+    league = history_ctx.get("league") or {}
+    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
 
-    summary = _build_summary(ctx)
-    recap_line = _build_recap_line(summary, season)
+    summary = _build_summary(history_ctx)
+    recap_line = _build_recap_line(summary, selected_history_season)
     chart_html = _history_chart(df_weekly)
+
+    regular_season_team_stats = build_regular_season_team_stats(df_weekly, league)
+    standings_html = _standings_table(regular_season_team_stats)
 
     options_html = []
     for yr in available_seasons:
         href = url_for(
             "page_history",
-            platform=platform,
-            season=yr,
-            league_id=league_id,
-            explicit=1,
+            platform=base_platform,
+            season=base_season,
+            league_id=base_league_id,
+            history_season=yr,
         )
-        selected = "selected" if yr == season else ""
+        selected = "selected" if yr == selected_history_season else ""
         options_html.append(f"<option value='{href}' {selected}>{yr}</option>")
 
     league_name = league.get("name") or "League History"
 
-    cards_html = "".join(
+    featured_cards_html = "".join(
         [
-            _summary_card("Champion", summary["champion"]),
-            _summary_card("Runner-Up", summary["runner_up"]),
+            _summary_card(
+                "Champion",
+                summary["champion"],
+                f"Regular season record: {summary['champion_record']}",
+                featured=True,
+            ),
+            _summary_card(
+                "Runner-Up",
+                summary["runner_up"],
+                f"Regular season record: {summary['runner_up_record']}",
+                featured=True,
+            ),
             _summary_card(
                 "Scoring Leader",
                 summary["top_scorer_team"],
-                f"{summary['top_scorer_value']:.1f} PF",
+                f"{summary['top_scorer_value']:.1f} PF • {summary['top_scorer_avg']:.1f} avg pts",
+                featured=True,
             ),
+        ]
+    )
+
+    compact_cards_html = "".join(
+        [
             _summary_card(
                 "Best Defense",
                 summary["best_defense_team"],
@@ -452,14 +685,14 @@ def build_history_body(ctx: dict, available_seasons: List[int]) -> str:
         ]
     )
 
-    standings_html = _standings_table(team_stats)
-
     return f"""
     <div class="history-page">
       <div class="history-header">
         <div>
           <div class="history-kicker">League History</div>
-          <h1 class="history-title">{league_name} • {season}</h1>
+          <h1 class="history-title">
+            <span class="history-title-accent">{league_name}</span> • {selected_history_season}
+          </h1>
           <p class="history-subtitle">{recap_line}</p>
         </div>
 
@@ -474,17 +707,27 @@ def build_history_body(ctx: dict, available_seasons: List[int]) -> str:
         </div>
       </div>
 
-      <div class="history-summary-grid">
-        {cards_html}
+      <div class="history-top-grid">
+        <div class="history-section-card history-awards-panel">
+          <div class="history-section-title">Season Awards</div>
+
+          <div class="history-awards-grid">
+            {featured_cards_html}
+            {compact_cards_html}
+          </div>
+        </div>
+
+        <div class="history-section-card history-standings-panel">
+          <div class="history-section-title">Regular Season Standings</div>
+          {standings_html}
+        </div>
       </div>
 
-      <div class="history-section-card">
+      <div class="history-section-card history-chart-panel">
         <div class="history-section-title">Season Trend</div>
         <div class="history-chart-wrap">
           {chart_html}
         </div>
       </div>
-
-      {standings_html}
     </div>
     """

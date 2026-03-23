@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from cache.paths import PLAYER_INVESTMENT_DIR
-from dashboard_services.utils import normalize_name, load_players_index
+from utils.utils import normalize_name, load_players_index
 
 REQUEST_HEADERS = {
     "User-Agent": (

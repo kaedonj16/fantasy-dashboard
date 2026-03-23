@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
-from dashboard_services.utils import load_relevant_index, write_json, read_json
+from utils.utils import load_relevant_index, write_json, read_json
 
 SLEEPER_BASE = "https://api.sleeper.app"
 SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your system

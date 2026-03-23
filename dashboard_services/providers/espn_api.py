@@ -6,7 +6,7 @@ from espn_api.football import League
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
-from dashboard_services.utils import load_players_index
+from utils.utils import load_players_index
 
 
 # ============================================================
