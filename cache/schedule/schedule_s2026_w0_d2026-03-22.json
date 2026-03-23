@@ -1,0 +1,5 @@
+{
+  "statusCode": 200,
+  "body": [],
+  "error": "no games returned, check your parameters for syntax errors"
+}

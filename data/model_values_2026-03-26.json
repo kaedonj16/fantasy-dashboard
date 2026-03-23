@@ -667,8 +667,13 @@
     "age": 27.5,
     "value": 33.8,
     "search_name": "kade warner",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 443,
     "pos_rank_label": "WR443"
+========
+    "pos_rank": 491,
+    "pos_rank_label": "WR491"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8229",
@@ -775,7 +780,11 @@
     "team": "DEN",
     "position": "QB",
     "age": 28.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 10.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "jarrett guarantano",
     "pos_rank": 96,
     "pos_rank_label": "QB96"
@@ -810,8 +819,13 @@
     "age": 27.5,
     "value": 33.8,
     "search_name": "shae wyatt",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 445,
     "pos_rank_label": "WR445"
+========
+    "pos_rank": 492,
+    "pos_rank_label": "WR492"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12154",
@@ -1173,8 +1187,13 @@
     "age": 27.6,
     "value": 33.8,
     "search_name": "thomas hennigan",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 447,
     "pos_rank_label": "WR447"
+========
+    "pos_rank": 493,
+    "pos_rank_label": "WR493"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12126",
@@ -1426,8 +1445,13 @@
     "age": 28.0,
     "value": 33.8,
     "search_name": "tyreik mcallister",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 450,
     "pos_rank_label": "WR450"
+========
+    "pos_rank": 494,
+    "pos_rank_label": "WR494"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13013",
@@ -1556,7 +1580,11 @@
     "team": "DEN",
     "position": "TE",
     "age": 31.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 96.7,
+========
+    "value": 119.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "evan engram",
     "pos_rank": 26,
     "pos_rank_label": "TE26"
@@ -1699,7 +1727,11 @@
     "team": "MIN",
     "position": "TE",
     "age": 29.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 14.7,
+========
+    "value": 40.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "ben ellefson",
     "pos_rank": 270,
     "pos_rank_label": "TE270"
@@ -1822,8 +1854,13 @@
     "age": 28.0,
     "value": 33.8,
     "search_name": "cade johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 452,
     "pos_rank_label": "WR452"
+========
+    "pos_rank": 495,
+    "pos_rank_label": "WR495"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8219",
@@ -1842,7 +1879,11 @@
     "team": "NO",
     "position": "WR",
     "age": 33.1,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 8.3,
+========
+    "value": 32.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "michael thomas",
     "pos_rank": 714,
     "pos_rank_label": "WR714"
@@ -2128,7 +2169,11 @@
     "team": "IND",
     "position": "WR",
     "age": 26.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 33.4,
+========
+    "value": 61.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "landon parker",
     "pos_rank": 546,
     "pos_rank_label": "WR546"
@@ -2416,8 +2461,13 @@
     "age": 27.3,
     "value": 33.8,
     "search_name": "kalil pimpleton",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 457,
     "pos_rank_label": "WR457"
+========
+    "pos_rank": 496,
+    "pos_rank_label": "WR496"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13088",
@@ -2438,8 +2488,13 @@
     "age": 27.4,
     "value": 33.8,
     "search_name": "dai'jean dixon",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 458,
     "pos_rank_label": "WR458"
+========
+    "pos_rank": 497,
+    "pos_rank_label": "WR497"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "5828",
@@ -2601,7 +2656,11 @@
     "team": "LAR",
     "position": "RB",
     "age": 32.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 25.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "malcolm brown",
     "pos_rank": 375,
     "pos_rank_label": "RB375"
@@ -2975,7 +3034,11 @@
     "team": "PHI",
     "position": "WR",
     "age": 27.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 424.9,
+========
+    "value": 431.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "devonta smith",
     "pos_rank": 17,
     "pos_rank_label": "WR17"
@@ -2997,7 +3060,11 @@
     "team": "LV",
     "position": "RB",
     "age": 36.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 25.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "brandon bolden",
     "pos_rank": 376,
     "pos_rank_label": "RB376"
@@ -3008,7 +3075,11 @@
     "team": "CAR",
     "position": "QB",
     "age": 29.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 4.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "bryce perkins",
     "pos_rank": 104,
     "pos_rank_label": "QB104"
@@ -3087,8 +3158,13 @@
     "age": 27.6,
     "value": 43.7,
     "search_name": "tyler johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 233,
     "pos_rank_label": "WR233"
+========
+    "pos_rank": 480,
+    "pos_rank_label": "WR480"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12760",
@@ -3175,8 +3251,13 @@
     "age": 27.6,
     "value": 35.1,
     "search_name": "mason kinsey",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 426,
     "pos_rank_label": "WR426"
+========
+    "pos_rank": 484,
+    "pos_rank_label": "WR484"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12715",
@@ -3470,7 +3551,11 @@
     "team": "NE",
     "position": "WR",
     "age": 28.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 36.1,
+========
+    "value": 54.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "tre nixon",
     "pos_rank": 403,
     "pos_rank_label": "WR403"
@@ -3725,8 +3810,13 @@
     "age": 29.3,
     "value": 35.1,
     "search_name": "andy isabella",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 427,
     "pos_rank_label": "WR427"
+========
+    "pos_rank": 475,
+    "pos_rank_label": "WR475"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11210",
@@ -3789,7 +3879,11 @@
     "team": "DEN",
     "position": "WR",
     "age": 25.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 42.3,
+========
+    "value": 65.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "kyrese rowan",
     "pos_rank": 294,
     "pos_rank_label": "WR294"
@@ -3868,8 +3962,13 @@
     "age": 29.5,
     "value": 34.0,
     "search_name": "dj chark",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 440,
     "pos_rank_label": "WR440"
+========
+    "pos_rank": 476,
+    "pos_rank_label": "WR476"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8581",
@@ -4022,8 +4121,13 @@
     "age": 28.5,
     "value": 41.8,
     "search_name": "devin duvernay",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 330,
     "pos_rank_label": "WR330"
+========
+    "pos_rank": 474,
+    "pos_rank_label": "WR474"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11505",
@@ -4033,8 +4137,13 @@
     "age": 27.2,
     "value": 33.8,
     "search_name": "david durden",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 463,
     "pos_rank_label": "WR463"
+========
+    "pos_rank": 498,
+    "pos_rank_label": "WR498"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7543",
@@ -4042,10 +4151,17 @@
     "team": "NO",
     "position": "RB",
     "age": 27.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 298.8,
     "search_name": "travis etienne",
     "pos_rank": 23,
     "pos_rank_label": "RB23"
+========
+    "value": 349.9,
+    "search_name": "travis etienne",
+    "pos_rank": 22,
+    "pos_rank_label": "RB22"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "4992",
@@ -4440,8 +4556,13 @@
     "age": 27.7,
     "value": 33.8,
     "search_name": "juwan green",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 464,
     "pos_rank_label": "WR464"
+========
+    "pos_rank": 499,
+    "pos_rank_label": "WR499"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11270",
@@ -4517,8 +4638,13 @@
     "age": 27.3,
     "value": 33.8,
     "search_name": "travell harris",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 465,
     "pos_rank_label": "WR465"
+========
+    "pos_rank": 500,
+    "pos_rank_label": "WR500"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "5872",
@@ -4858,8 +4984,13 @@
     "age": 27.4,
     "value": 33.8,
     "search_name": "elijah cooks",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 467,
     "pos_rank_label": "WR467"
+========
+    "pos_rank": 501,
+    "pos_rank_label": "WR501"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12773",
@@ -4911,7 +5042,11 @@
     "team": "MIA",
     "position": "QB",
     "age": 27.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 11.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "james blackman",
     "pos_rank": 112,
     "pos_rank_label": "QB112"
@@ -4924,8 +5059,13 @@
     "age": 28.4,
     "value": 35.5,
     "search_name": "trayveon williams",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 220,
     "pos_rank_label": "RB220"
+========
+    "pos_rank": 306,
+    "pos_rank_label": "RB306"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11046",
@@ -5276,8 +5416,13 @@
     "age": 31.5,
     "value": 34.9,
     "search_name": "demarcus robinson",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 434,
     "pos_rank_label": "WR434"
+========
+    "pos_rank": 485,
+    "pos_rank_label": "WR485"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "4881",
@@ -5760,8 +5905,13 @@
     "age": 27.6,
     "value": 41.6,
     "search_name": "jake bobo",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 336,
     "pos_rank_label": "WR336"
+========
+    "pos_rank": 486,
+    "pos_rank_label": "WR486"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "6427",
@@ -5769,7 +5919,11 @@
     "team": "IND",
     "position": "WR",
     "age": 28.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 40.2,
+========
+    "value": 51.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "ashton dulin",
     "pos_rank": 357,
     "pos_rank_label": "WR357"
@@ -5892,8 +6046,13 @@
     "age": 27.5,
     "value": 33.8,
     "search_name": "javonta payton",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 470,
     "pos_rank_label": "WR470"
+========
+    "pos_rank": 502,
+    "pos_rank_label": "WR502"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7593",
@@ -5925,8 +6084,13 @@
     "age": 27.2,
     "value": 37.4,
     "search_name": "jaelon darden",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 389,
     "pos_rank_label": "WR389"
+========
+    "pos_rank": 503,
+    "pos_rank_label": "WR503"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8249",
@@ -5967,7 +6131,11 @@
     "team": "CAR",
     "position": "RB",
     "age": 28.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 29.3,
+========
+    "value": 50.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "darius bradwell",
     "pos_rank": 309,
     "pos_rank_label": "RB309"
@@ -6156,8 +6324,13 @@
     "age": 27.2,
     "value": 33.8,
     "search_name": "latreal jones",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 471,
     "pos_rank_label": "WR471"
+========
+    "pos_rank": 504,
+    "pos_rank_label": "WR504"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13120",
@@ -6211,8 +6384,13 @@
     "age": 27.8,
     "value": 33.8,
     "search_name": "aaron parker",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 472,
     "pos_rank_label": "WR472"
+========
+    "pos_rank": 505,
+    "pos_rank_label": "WR505"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7107",
@@ -6231,7 +6409,11 @@
     "team": "IND",
     "position": "TE",
     "age": 25.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 35.5,
+========
+    "value": 59.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "jalen wydermyer",
     "pos_rank": 110,
     "pos_rank_label": "TE110"
@@ -6255,8 +6437,13 @@
     "age": 27.7,
     "value": 33.8,
     "search_name": "demichael harris",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 473,
     "pos_rank_label": "WR473"
+========
+    "pos_rank": 506,
+    "pos_rank_label": "WR506"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7092",
@@ -6530,8 +6717,13 @@
     "age": 27.2,
     "value": 275.4,
     "search_name": "d'andre swift",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 24,
     "pos_rank_label": "RB24"
+========
+    "pos_rank": 20,
+    "pos_rank_label": "RB20"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "2378",
@@ -6761,8 +6953,13 @@
     "age": 27.7,
     "value": 33.8,
     "search_name": "austin trammell",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 474,
     "pos_rank_label": "WR474"
+========
+    "pos_rank": 483,
+    "pos_rank_label": "WR483"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8938",
@@ -6849,8 +7046,13 @@
     "age": 28.0,
     "value": 33.8,
     "search_name": "cody chrest",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 475,
     "pos_rank_label": "WR475"
+========
+    "pos_rank": 507,
+    "pos_rank_label": "WR507"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7771",
@@ -6913,10 +7115,17 @@
     "team": "ATL",
     "position": "WR",
     "age": 27.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 33.8,
     "search_name": "slade bolden",
     "pos_rank": 476,
     "pos_rank_label": "WR476"
+========
+    "value": 55.9,
+    "search_name": "slade bolden",
+    "pos_rank": 508,
+    "pos_rank_label": "WR508"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11610",
@@ -7102,8 +7311,13 @@
     "age": 27.1,
     "value": 33.8,
     "search_name": "lance mccutcheon",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 477,
     "pos_rank_label": "WR477"
+========
+    "pos_rank": 460,
+    "pos_rank_label": "WR460"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7670",
@@ -7155,7 +7369,11 @@
     "team": "DET",
     "position": "WR",
     "age": 30.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 21.5,
+========
+    "value": 49.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "malik taylor",
     "pos_rank": 672,
     "pos_rank_label": "WR672"
@@ -7353,7 +7571,11 @@
     "team": "MIA",
     "position": "WR",
     "age": 31.0,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 9.3,
+========
+    "value": 27.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "isaiah mckenzie",
     "pos_rank": 707,
     "pos_rank_label": "WR707"
@@ -8035,7 +8257,11 @@
     "team": "GB",
     "position": "RB",
     "age": 27.0,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 31.8,
+========
+    "value": 57.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "nate mccrary",
     "pos_rank": 275,
     "pos_rank_label": "RB275"
@@ -8233,7 +8459,11 @@
     "team": "BAL",
     "position": "WR",
     "age": 25.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 42.3,
+========
+    "value": 65.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "jelani baker",
     "pos_rank": 300,
     "pos_rank_label": "WR300"
@@ -8532,8 +8762,13 @@
     "age": 27.9,
     "value": 36.7,
     "search_name": "lil'jordan humphrey",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 400,
     "pos_rank_label": "WR400"
+========
+    "pos_rank": 481,
+    "pos_rank_label": "WR481"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "4863",
@@ -8851,8 +9086,13 @@
     "age": 27.1,
     "value": 33.8,
     "search_name": "keshunn abram",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 489,
     "pos_rank_label": "WR489"
+========
+    "pos_rank": 461,
+    "pos_rank_label": "WR461"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "10221",
@@ -8928,8 +9168,13 @@
     "age": 32.5,
     "value": 38.1,
     "search_name": "brandin cooks",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 383,
     "pos_rank_label": "WR383"
+========
+    "pos_rank": 477,
+    "pos_rank_label": "WR477"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "6843",
@@ -9027,8 +9272,13 @@
     "age": 27.0,
     "value": 36.1,
     "search_name": "cam johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 406,
     "pos_rank_label": "WR406"
+========
+    "pos_rank": 462,
+    "pos_rank_label": "WR462"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "5235",
@@ -9049,8 +9299,13 @@
     "age": 27.0,
     "value": 33.8,
     "search_name": "jerome kapp",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 490,
     "pos_rank_label": "WR490"
+========
+    "pos_rank": 463,
+    "pos_rank_label": "WR463"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7159",
@@ -9124,10 +9379,17 @@
     "team": "ATL",
     "position": "WR",
     "age": 27.1,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 33.8,
     "search_name": "josh ali",
     "pos_rank": 491,
     "pos_rank_label": "WR491"
+========
+    "value": 58.2,
+    "search_name": "josh ali",
+    "pos_rank": 464,
+    "pos_rank_label": "WR464"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11292",
@@ -9368,8 +9630,13 @@
     "age": 28.5,
     "value": 24.4,
     "search_name": "brittain brown",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 331,
     "pos_rank_label": "RB331"
+========
+    "pos_rank": 304,
+    "pos_rank_label": "RB304"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7106",
@@ -9885,8 +10152,13 @@
     "age": 29.4,
     "value": 32.9,
     "search_name": "nyheim hines",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 229,
     "pos_rank_label": "RB229"
+========
+    "pos_rank": 305,
+    "pos_rank_label": "RB305"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12868",
@@ -10127,8 +10399,13 @@
     "age": 27.0,
     "value": 33.8,
     "search_name": "chris coleman",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 499,
     "pos_rank_label": "WR499"
+========
+    "pos_rank": 465,
+    "pos_rank_label": "WR465"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12518",
@@ -10301,7 +10578,11 @@
     "team": "DET",
     "position": "TE",
     "age": 31.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 19.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "ross dwelley",
     "pos_rank": 319,
     "pos_rank_label": "TE319"
@@ -10314,8 +10595,13 @@
     "age": 27.3,
     "value": 34.9,
     "search_name": "cody white",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 435,
     "pos_rank_label": "WR435"
+========
+    "pos_rank": 487,
+    "pos_rank_label": "WR487"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13241",
@@ -10743,8 +11029,13 @@
     "age": 29.9,
     "value": 28.3,
     "search_name": "d'onta foreman",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 314,
     "pos_rank_label": "RB314"
+========
+    "pos_rank": 301,
+    "pos_rank_label": "RB301"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12144",
@@ -10996,8 +11287,13 @@
     "age": 30.6,
     "value": 37.0,
     "search_name": "kendrick bourne",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 396,
     "pos_rank_label": "WR396"
+========
+    "pos_rank": 482,
+    "pos_rank_label": "WR482"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13190",
@@ -11170,10 +11466,17 @@
     "team": "JAX",
     "position": "WR",
     "age": 27.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 36.0,
     "search_name": "tim jones",
     "pos_rank": 415,
     "pos_rank_label": "WR415"
+========
+    "value": 56.2,
+    "search_name": "tim jones",
+    "pos_rank": 488,
+    "pos_rank_label": "WR488"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12884",
@@ -11359,8 +11662,13 @@
     "age": 30.2,
     "value": 28.4,
     "search_name": "jalen hurd",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 648,
     "pos_rank_label": "WR648"
+========
+    "pos_rank": 490,
+    "pos_rank_label": "WR490"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "8809",
@@ -11445,7 +11753,11 @@
     "team": "GB",
     "position": "RB",
     "age": 32.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 5.1,
+========
+    "value": 27.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "kenyan drake",
     "pos_rank": 352,
     "pos_rank_label": "RB352"
@@ -11535,8 +11847,13 @@
     "age": 31.0,
     "value": 36.2,
     "search_name": "gus edwards",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 216,
     "pos_rank_label": "RB216"
+========
+    "pos_rank": 307,
+    "pos_rank_label": "RB307"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11815",
@@ -11898,8 +12215,13 @@
     "age": 27.1,
     "value": 36.1,
     "search_name": "donovan peoples-jones",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 408,
     "pos_rank_label": "WR408"
+========
+    "pos_rank": 466,
+    "pos_rank_label": "WR466"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "9508",
@@ -12215,7 +12537,11 @@
     "team": "CIN",
     "position": "WR",
     "age": 26.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 33.4,
+========
+    "value": 61.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "jaivon heiligh",
     "pos_rank": 570,
     "pos_rank_label": "WR570"
@@ -12283,8 +12609,13 @@
     "age": 25.9,
     "value": 340.5,
     "search_name": "javonte williams",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 20,
     "pos_rank_label": "RB20"
+========
+    "pos_rank": 21,
+    "pos_rank_label": "RB21"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12971",
@@ -12655,7 +12986,11 @@
     "team": "MIA",
     "position": "QB",
     "age": 23.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 2.5,
+========
+    "value": 25.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "gavin hardison",
     "pos_rank": 70,
     "pos_rank_label": "QB70"
@@ -12831,7 +13166,11 @@
     "team": "PHI",
     "position": "QB",
     "age": 26.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 17.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "dorian thompson-robinson",
     "pos_rank": 167,
     "pos_rank_label": "QB167"
@@ -13482,8 +13821,13 @@
     "age": 30.0,
     "value": 28.4,
     "search_name": "james washington",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 649,
     "pos_rank_label": "WR649"
+========
+    "pos_rank": 478,
+    "pos_rank_label": "WR478"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "4983",
@@ -13779,8 +14123,13 @@
     "age": 26.9,
     "value": 33.8,
     "search_name": "marcus riley",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 515,
     "pos_rank_label": "WR515"
+========
+    "pos_rank": 467,
+    "pos_rank_label": "WR467"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "3225",
@@ -14516,8 +14865,13 @@
     "age": 26.9,
     "value": 33.8,
     "search_name": "jalen wayne",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 519,
     "pos_rank_label": "WR519"
+========
+    "pos_rank": 468,
+    "pos_rank_label": "WR468"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11256",
@@ -14549,8 +14903,13 @@
     "age": 28.1,
     "value": 37.9,
     "search_name": "kene nwangwu",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 193,
     "pos_rank_label": "RB193"
+========
+    "pos_rank": 302,
+    "pos_rank_label": "RB302"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7050",
@@ -14613,7 +14972,11 @@
     "team": "BUF",
     "position": "QB",
     "age": 27.7,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 0.0,
+========
+    "value": 11.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "anthony brown",
     "pos_rank": 182,
     "pos_rank_label": "QB182"
@@ -15000,8 +15363,13 @@
     "age": 27.1,
     "value": 33.8,
     "search_name": "pooka williams",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 523,
     "pos_rank_label": "WR523"
+========
+    "pos_rank": 469,
+    "pos_rank_label": "WR469"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11540",
@@ -15075,7 +15443,11 @@
     "team": "DAL",
     "position": "WR",
     "age": 36.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 8.3,
+========
+    "value": 28.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "t.y. hilton",
     "pos_rank": 720,
     "pos_rank_label": "WR720"
@@ -15548,7 +15920,11 @@
     "team": "PHI",
     "position": "RB",
     "age": 27.5,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 31.8,
+========
+    "value": 53.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "kennedy brooks",
     "pos_rank": 297,
     "pos_rank_label": "RB297"
@@ -15603,7 +15979,11 @@
     "team": "JAX",
     "position": "RB",
     "age": 28.5,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 29.3,
+========
+    "value": 50.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "mekhi sargent",
     "pos_rank": 311,
     "pos_rank_label": "RB311"
@@ -15671,8 +16051,13 @@
     "age": 27.9,
     "value": 32.4,
     "search_name": "patrick taylor",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 250,
     "pos_rank_label": "RB250"
+========
+    "pos_rank": 299,
+    "pos_rank_label": "RB299"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11626",
@@ -15713,7 +16098,11 @@
     "team": "TEN",
     "position": "WR",
     "age": 25.9,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 46.4,
+========
+    "value": 64.2,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "jha'quan jackson",
     "pos_rank": 183,
     "pos_rank_label": "WR183"
@@ -15878,7 +16267,11 @@
     "team": "TEN",
     "position": "WR",
     "age": 31.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 76.2,
+========
+    "value": 109.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "calvin ridley",
     "pos_rank": 93,
     "pos_rank_label": "WR93"
@@ -15924,8 +16317,13 @@
     "age": 27.2,
     "value": 33.8,
     "search_name": "justin hall",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 526,
     "pos_rank_label": "WR526"
+========
+    "pos_rank": 470,
+    "pos_rank_label": "WR470"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "6001",
@@ -16210,8 +16608,13 @@
     "age": 29.1,
     "value": 34.4,
     "search_name": "damien harris",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 222,
     "pos_rank_label": "RB222"
+========
+    "pos_rank": 303,
+    "pos_rank_label": "RB303"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "6451",
@@ -16243,8 +16646,13 @@
     "age": 29.2,
     "value": 36.3,
     "search_name": "j.j. arcega-whiteside",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 401,
     "pos_rank_label": "WR401"
+========
+    "pos_rank": 479,
+    "pos_rank_label": "WR479"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "12341",
@@ -16307,7 +16715,11 @@
     "team": "NYJ",
     "position": "WR",
     "age": 23.5,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 87.4,
+========
+    "value": 113.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "adonai mitchell",
     "pos_rank": 82,
     "pos_rank_label": "WR82"
@@ -16659,7 +17071,11 @@
     "team": "LV",
     "position": "TE",
     "age": 27.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 20.2,
+========
+    "value": 47.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "john samuel shenker",
     "pos_rank": 234,
     "pos_rank_label": "TE234"
@@ -17022,7 +17438,11 @@
     "team": "CAR",
     "position": "TE",
     "age": 25.2,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 37.4,
+========
+    "value": 59.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "bryce pierre",
     "pos_rank": 104,
     "pos_rank_label": "TE104"
@@ -17121,7 +17541,11 @@
     "team": "CHI",
     "position": "TE",
     "age": 28.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 20.2,
+========
+    "value": 46.2,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "rysen john",
     "pos_rank": 238,
     "pos_rank_label": "TE238"
@@ -17607,8 +18031,13 @@
     "age": 27.4,
     "value": 36.1,
     "search_name": "isaiah hodgins",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 413,
     "pos_rank_label": "WR413"
+========
+    "pos_rank": 489,
+    "pos_rank_label": "WR489"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "11632",
@@ -17616,7 +18045,11 @@
     "team": "NYG",
     "position": "WR",
     "age": 22.7,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 639.8,
+========
+    "value": 746.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "malik nabers",
     "pos_rank": 7,
     "pos_rank_label": "WR7"
@@ -17673,8 +18106,13 @@
     "age": 27.1,
     "value": 33.8,
     "search_name": "michael young",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 531,
     "pos_rank_label": "WR531"
+========
+    "pos_rank": 471,
+    "pos_rank_label": "WR471"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7605",
@@ -17792,7 +18230,11 @@
     "team": "JAX",
     "position": "WR",
     "age": 23.5,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 395.7,
+========
+    "value": 408.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "brian thomas",
     "pos_rank": 21,
     "pos_rank_label": "WR21"
@@ -17902,7 +18344,11 @@
     "team": "CAR",
     "position": "WR",
     "age": 30.3,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 42.7,
+========
+    "value": 78.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "hunter renfrow",
     "pos_rank": 251,
     "pos_rank_label": "WR251"
@@ -18234,8 +18680,13 @@
     "age": 27.0,
     "value": 33.8,
     "search_name": "ryan mcdaniel",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 534,
     "pos_rank_label": "WR534"
+========
+    "pos_rank": 472,
+    "pos_rank_label": "WR472"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "13256",
@@ -18320,7 +18771,11 @@
     "team": "SEA",
     "position": "RB",
     "age": 26.1,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 40.7,
+========
+    "value": 61.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "kenny mcintosh",
     "pos_rank": 186,
     "pos_rank_label": "RB186"
@@ -18520,8 +18975,13 @@
     "age": 27.5,
     "value": 37.5,
     "search_name": "deejay dallas",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 209,
     "pos_rank_label": "RB209"
+========
+    "pos_rank": 300,
+    "pos_rank_label": "RB300"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "9491",
@@ -18531,8 +18991,13 @@
     "age": 27.0,
     "value": 33.8,
     "search_name": "ty scott",
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "pos_rank": 536,
     "pos_rank_label": "WR536"
+========
+    "pos_rank": 473,
+    "pos_rank_label": "WR473"
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
   },
   {
     "id": "7549",
@@ -18584,7 +19049,11 @@
     "team": "BAL",
     "position": "RB",
     "age": 28.4,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 78.7,
+========
+    "value": 111.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "justice hill",
     "pos_rank": 62,
     "pos_rank_label": "RB62"
@@ -18617,7 +19086,11 @@
     "team": "ARI",
     "position": "WR",
     "age": 27.6,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 33.8,
+========
+    "value": 55.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "daniel arias",
     "pos_rank": 537,
     "pos_rank_label": "WR537"
@@ -18694,7 +19167,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 513.4,
+========
+    "value": 512.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.01",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18705,7 +19182,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 375.3,
+========
+    "value": 374.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.02",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18716,7 +19197,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 343.4,
+========
+    "value": 342.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.03",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18727,7 +19212,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 301.7,
+========
+    "value": 301.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.04",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18749,7 +19238,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 255.7,
+========
+    "value": 254.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.06",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18760,7 +19253,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 233.8,
+========
+    "value": 232.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.07",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18771,7 +19268,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 215.0,
+========
+    "value": 214.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.08",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18782,7 +19283,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 198.6,
+========
+    "value": 197.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.09",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18793,7 +19298,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 184.2,
+========
+    "value": 183.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 1.10",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18804,7 +19313,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 171.5,
+========
+    "value": 170.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.01",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18815,7 +19328,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 160.2,
+========
+    "value": 159.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.02",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18826,7 +19343,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 150.2,
+========
+    "value": 149.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.03",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18837,7 +19358,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 141.2,
+========
+    "value": 140.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.04",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18848,7 +19373,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 133.2,
+========
+    "value": 132.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.05",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18859,7 +19388,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 125.9,
+========
+    "value": 125.2,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.06",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18870,7 +19403,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 119.3,
+========
+    "value": 118.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.07",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18881,7 +19418,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 113.3,
+========
+    "value": 112.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.08",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18892,7 +19433,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 107.9,
+========
+    "value": 107.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.09",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18903,7 +19448,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 102.9,
+========
+    "value": 102.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 2.10",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18914,7 +19463,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 98.6,
+========
+    "value": 98.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.01",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18925,7 +19478,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 94.5,
+========
+    "value": 94.0,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.02",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18936,7 +19493,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 90.7,
+========
+    "value": 90.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.03",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18947,7 +19508,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 87.1,
+========
+    "value": 86.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.04",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18958,7 +19523,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 84.0,
+========
+    "value": 83.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.05",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18969,7 +19538,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 81.1,
+========
+    "value": 80.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.06",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18980,7 +19553,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 78.4,
+========
+    "value": 77.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.07",
     "pos_rank": null,
     "pos_rank_label": null
@@ -18991,7 +19568,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 75.6,
+========
+    "value": 75.1,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.08",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19002,7 +19583,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 72.8,
+========
+    "value": 72.4,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.09",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19013,7 +19598,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 70.3,
+========
+    "value": 69.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 3.10",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19024,7 +19613,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 67.9,
+========
+    "value": 67.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 4.01",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19035,7 +19628,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 65.6,
+========
+    "value": 65.2,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 4.02",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19046,7 +19643,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 63.3,
+========
+    "value": 62.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 4.03",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19057,7 +19658,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 61.1,
+========
+    "value": 60.7,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 4.04",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19068,7 +19673,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 58.8,
+========
+    "value": 58.5,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2026 4.05",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19090,7 +19699,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 254.9,
+========
+    "value": 252.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2027 1st (early)",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19123,7 +19736,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 116.9,
+========
+    "value": 116.6,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2027 2nd (early)",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19156,7 +19773,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 73.6,
+========
+    "value": 72.9,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2027 3rd (early)",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19189,7 +19810,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 175.6,
+========
+    "value": 174.3,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2028 1st (early)",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19200,7 +19825,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 93.7,
+========
+    "value": 92.8,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2028 2nd (early)",
     "pos_rank": null,
     "pos_rank_label": null
@@ -19211,7 +19840,11 @@
     "team": "Pick",
     "position": "PICK",
     "age": null,
+<<<<<<<< HEAD:data/model_values_2026-03-26.json
     "value": 62.4,
+========
+    "value": 62.2,
+>>>>>>>> d98b61a (updated):data/model_values_2026-03-22.json
     "search_name": "2028 3rd (early)",
     "pos_rank": null,
     "pos_rank_label": null
