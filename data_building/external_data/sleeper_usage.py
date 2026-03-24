@@ -269,7 +269,7 @@ def write_usage_table_snapshot(
 
     It uses the usage data from build_usage_map_for_season(season, weeks).
     """
-    DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+    DATA_DIR = Path(__file__).resolve().parents[2] / "data"
     players_index: Dict[str, dict] = load_players_index()
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
 
@@ -278,9 +278,6 @@ def write_usage_table_snapshot(
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    # Example file naming:
-    # values_2025-12-04.csv
-    # override if you use static file names
     pattern = f"usage_table_{yesterday.isoformat()}.json"
     yesterday_file = DATA_DIR / pattern
 
