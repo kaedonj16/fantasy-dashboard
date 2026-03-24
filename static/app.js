@@ -350,9 +350,14 @@ window.initTradePage = function initTradePage(root = document) {
   host.__tradeInitDone = true;
 
   let allPlayers = [];
-  let sideASelected = [];
-  let sideBSelected = [];
   let activePosFilter = "ALL";
+
+  const state = {
+    sideAPlayers: [],
+    sideBPlayers: [],
+    sideAPicks: [],
+    sideBPicks: [],
+  };
 
   function formatValue(v) {
     const num = Number(v) || 0;
@@ -366,8 +371,8 @@ window.initTradePage = function initTradePage(root = document) {
 
   function buildOverallRankMap(players) {
     const sorted = [...players].sort((a, b) => {
-      const va = typeof a.value === "number" ? a.value : Number(a.value || 0);
-      const vb = typeof b.value === "number" ? b.value : Number(b.value || 0);
+      const va = Number(a?.value || 0);
+      const vb = Number(b?.value || 0);
       return vb - va;
     });
 
@@ -380,13 +385,38 @@ window.initTradePage = function initTradePage(root = document) {
 
   function buildMetaBits(p) {
     const metaBits = [];
-    if (p.position && String(p.position).toUpperCase() !== "PICK") {
+    const pos = String(p.position || p.pos || "").toUpperCase();
+
+    if (pos && pos !== "PICK") {
       if (p.pos_rank_label) metaBits.push(String(p.pos_rank_label).toUpperCase());
-      else if (p.position) metaBits.push(String(p.position).toUpperCase());
+      else metaBits.push(pos);
     }
+
     if (p.team) metaBits.push(p.team);
-    if (p.age != null) metaBits.push(p.age + " yrs");
+    if (p.age != null && p.age !== "") metaBits.push(`${p.age} yrs`);
+
     return metaBits;
+  }
+
+  function getSidePlayers(side) {
+    return side === "A" ? state.sideAPlayers : state.sideBPlayers;
+  }
+
+  function getSidePicks(side) {
+    return side === "A" ? state.sideAPicks : state.sideBPicks;
+  }
+
+  function getSideEmptyState(side) {
+    return root.querySelector(side === "A" ? "#sideAEmptyState" : "#sideBEmptyState");
+  }
+
+  function syncEmptyState(side) {
+    const emptyEl = getSideEmptyState(side);
+    if (!emptyEl) return;
+
+    const players = getSidePlayers(side);
+    const picks = getSidePicks(side);
+    emptyEl.style.display = players.length || picks.length ? "none" : "";
   }
 
   function buildPlayerValueRow(p, overallRank) {
@@ -516,8 +546,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
-
       const usedDays = data?.used_days;
+
       const sub = root.querySelector("#moversSub");
       if (sub && usedDays) {
         sub.textContent = `Biggest ${usedDays}-day changes in BR value`;
@@ -531,12 +561,57 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  function normalizePlayerRow(p) {
+    const pos = String(p.position || p.pos || "").toUpperCase();
+    return {
+      id: String(p.id),
+      name: p.name || p.full_name || "Unknown",
+      team: p.team || "",
+      position: pos,
+      age: p.age ?? null,
+      value: Number(p.value || 0),
+      pos_rank_label: p.pos_rank_label || "",
+    };
+  }
+
+  async function ensurePlayersLoaded() {
+    if (allPlayers.length > 0) return;
+
+    const errorBox = root.querySelector("#errorBox");
+    const res = await fetch("/api/league-players", { cache: "no-store" });
+
+    if (!res.ok) {
+      throw new Error("Failed to load players (" + res.status + ").");
+    }
+
+    const data = await res.json();
+    const rawPlayers = Array.isArray(data) ? data : [];
+
+    allPlayers = rawPlayers
+      .filter(p => p && typeof p === "object" && p.id != null)
+      .map(normalizePlayerRow)
+      .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position))
+      .sort((a, b) => {
+        const vb = Number(b.value || 0);
+        const va = Number(a.value || 0);
+        if (vb !== va) return vb - va;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+
+    if (errorBox) {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
+    }
+
+    renderAllPlayersList();
+  }
+
   function renderAllPlayersList() {
     const container = root.querySelector("#allPlayersList");
     if (!container) return;
     container.innerHTML = "";
 
-    if (!allPlayers || allPlayers.length === 0) {
+    if (!allPlayers.length) {
       const empty = document.createElement("p");
       empty.className = "hint";
       empty.textContent = "Players will appear here once loaded.";
@@ -546,18 +621,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     const overallRankMap = buildOverallRankMap(allPlayers);
 
-    let items = allPlayers.filter(p => {
-      if (!p || typeof p !== "object") return false;
-      const pos = String(p.position || "").toUpperCase();
-      if (activePosFilter === "ALL") return true;
-      return pos === activePosFilter;
-    });
-
-    items.sort((a, b) => {
-      const va = typeof a.value === "number" ? a.value : Number(a.value || 0);
-      const vb = typeof b.value === "number" ? b.value : Number(b.value || 0);
-      return vb - va;
-    });
+    const items = allPlayers
+      .filter(p => {
+        const pos = String(p.position || "").toUpperCase();
+        return activePosFilter === "ALL" ? true : pos === activePosFilter;
+      })
+      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 
     items.forEach(p => {
       const overallRank = overallRankMap.get(String(p.id));
@@ -576,33 +645,140 @@ window.initTradePage = function initTradePage(root = document) {
     renderAllPlayersList();
   }
 
-  async function ensurePlayersLoaded() {
-    if (allPlayers.length > 0) return;
+  function syncViewerSideLabels() {
+    const viewerSide =
+      root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
 
-    const errorBox = root.querySelector("#errorBox");
-    const leagueId = (root.querySelector("#leagueIdInput")?.value || "").trim();
-    const season = (root.querySelector("#seasonInput")?.value || "").trim();
+    const aTag = root.querySelector("#sideAOwnerTag");
+    const bTag = root.querySelector("#sideBOwnerTag");
+    const hidden = root.querySelector("#viewerSideInput");
 
-    const params = new URLSearchParams();
-    if (leagueId) params.set("league_id", leagueId);
-    if (season) params.set("season", season);
+    if (hidden) hidden.value = viewerSide;
+    if (!aTag || !bTag) return;
 
-    const url = "/api/league-players" + (params.toString() ? `?${params.toString()}` : "");
-    const res = await fetch(url, { cache: "no-store" });
-
-    if (!res.ok) {
-      throw new Error("Failed to load players (" + res.status + ").");
+    if (viewerSide === "a") {
+      aTag.textContent = "Your side";
+      aTag.classList.remove("otc-team-owner-tag-muted");
+      bTag.textContent = "Other side";
+      bTag.classList.add("otc-team-owner-tag-muted");
+    } else {
+      aTag.textContent = "Other side";
+      aTag.classList.add("otc-team-owner-tag-muted");
+      bTag.textContent = "Your side";
+      bTag.classList.remove("otc-team-owner-tag-muted");
     }
+  }
 
-    const data = await res.json();
-    allPlayers = Array.isArray(data) ? data : [];
+  function renderChips(side) {
+    const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
+    const players = getSidePlayers(side);
+    const picks = getSidePicks(side);
+    if (!container) return;
 
-    if (errorBox) {
-      errorBox.style.display = "none";
-      errorBox.textContent = "";
-    }
+    container.innerHTML = "";
+    container.className = "otc-selected-list";
 
-    renderAllPlayersList();
+    players.forEach((p, idx) => {
+      const chip = document.createElement("div");
+      chip.className = "otc-chip";
+
+      const leftWrap = document.createElement("div");
+      leftWrap.className = "otc-chip-main";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "otc-chip-name";
+      nameEl.textContent = p.name || "Unknown";
+
+      const metaEl = document.createElement("div");
+      metaEl.className = "otc-chip-meta";
+      metaEl.textContent = buildMetaBits(p).join(" · ");
+
+      leftWrap.appendChild(nameEl);
+      leftWrap.appendChild(metaEl);
+
+      const rightWrap = document.createElement("div");
+      rightWrap.className = "otc-chip-value-wrap";
+
+      const valueEl = document.createElement("span");
+      valueEl.className = "otc-chip-value";
+      valueEl.textContent = formatValue(p.value);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "otc-chip-remove";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => {
+        players.splice(idx, 1);
+        renderChips(side);
+      });
+
+      rightWrap.appendChild(valueEl);
+      rightWrap.appendChild(removeBtn);
+
+      chip.appendChild(leftWrap);
+      chip.appendChild(rightWrap);
+      container.appendChild(chip);
+    });
+
+    picks.forEach((pk, idx) => {
+      const chip = document.createElement("div");
+      chip.className = "otc-chip otc-chip-pick";
+
+      const leftWrap = document.createElement("div");
+      leftWrap.className = "otc-chip-main";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "otc-chip-name";
+      nameEl.textContent = pk.display || pk.id || "Pick";
+
+      const metaEl = document.createElement("div");
+      metaEl.className = "otc-chip-meta";
+      metaEl.textContent = "Rookie pick";
+
+      leftWrap.appendChild(nameEl);
+      leftWrap.appendChild(metaEl);
+
+      const rightWrap = document.createElement("div");
+      rightWrap.className = "otc-chip-value-wrap";
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "otc-chip-remove";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => {
+        picks.splice(idx, 1);
+        renderChips(side);
+      });
+
+      rightWrap.appendChild(removeBtn);
+
+      chip.appendChild(leftWrap);
+      chip.appendChild(rightWrap);
+      container.appendChild(chip);
+    });
+
+    syncEmptyState(side);
+    recomputeTrade();
+  }
+
+  function openPickPrompt(side) {
+    const raw = window.prompt(
+      "Enter a pick in this format:\n2026_1_04\nor\n2026_1_early"
+    );
+    if (!raw) return;
+
+    const cleaned = String(raw).trim();
+    if (!cleaned) return;
+
+    const picks = getSidePicks(side);
+    if (picks.find(p => p.id === cleaned)) return;
+
+    picks.push({
+      id: cleaned,
+      display: cleaned.replaceAll("_", " "),
+    });
+
+    renderChips(side);
   }
 
   async function recomputeTrade() {
@@ -612,14 +788,19 @@ window.initTradePage = function initTradePage(root = document) {
     const verdictEl = root.querySelector("#tradeVerdict");
     const barIndicator = root.querySelector("#tradeBarIndicator");
     const errorBox = root.querySelector("#errorBox");
+    const tradeAiBody = root.querySelector("#tradeAiBody");
 
-    const leagueId = (root.querySelector("#leagueIdInput")?.value || "").trim();
-    const season = (root.querySelector("#seasonInput")?.value || "").trim();
+    const sideAIds = state.sideAPlayers.map(p => String(p.id));
+    const sideBIds = state.sideBPlayers.map(p => String(p.id));
+    const sideAPickIds = state.sideAPicks.map(p => String(p.id));
+    const sideBPickIds = state.sideBPicks.map(p => String(p.id));
 
-    const sideAIds = sideASelected.map(p => p.id);
-    const sideBIds = sideBSelected.map(p => p.id);
-
-    if (sideAIds.length === 0 && sideBIds.length === 0) {
+    if (
+      sideAIds.length === 0 &&
+      sideBIds.length === 0 &&
+      sideAPickIds.length === 0 &&
+      sideBPickIds.length === 0
+    ) {
       if (sideATotalEl) sideATotalEl.textContent = "0.0";
       if (sideBTotalEl) sideBTotalEl.textContent = "0.0";
       if (tradeDiffEl) tradeDiffEl.textContent = "0.0";
@@ -628,6 +809,16 @@ window.initTradePage = function initTradePage(root = document) {
         verdictEl.textContent = "Add players to both sides to see the trade balance.";
         verdictEl.className = "otc-verdict";
       }
+      if (tradeAiBody) {
+        tradeAiBody.innerHTML = `
+          <div class="otc-ai-empty">
+            <div class="otc-ai-empty-title">Waiting on a deal</div>
+            <div class="otc-ai-empty-sub">
+              Once both sides have assets, this panel can explain whether the trade fits your team build.
+            </div>
+          </div>
+        `;
+      }
       if (errorBox) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
@@ -635,20 +826,24 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
+    const viewerSide =
+      root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+
     const payload = {
-      league_id: leagueId || "global",
-      season: season ? Number(season) : undefined,
+      league_id: root.querySelector("#leagueIdInput")?.value || "",
+      season: root.querySelector("#seasonInput")?.value || "",
+      viewer_side: viewerSide,
       side_a_players: sideAIds,
       side_b_players: sideBIds,
-      side_a_picks: [],
-      side_b_picks: []
+      side_a_picks: sideAPickIds,
+      side_b_picks: sideBPickIds,
     };
 
     try {
       const res = await fetch("/api/trade-eval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -667,8 +862,7 @@ window.initTradePage = function initTradePage(root = document) {
       const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
       let normalizedDiff = diff / maxSideTotal;
       normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
-      let pct = (normalizedDiff + 1) / 2;
-      const leftPct = pct * 100;
+      const leftPct = ((normalizedDiff + 1) / 2) * 100;
 
       if (barIndicator) {
         barIndicator.style.left = leftPct + "%";
@@ -677,6 +871,15 @@ window.initTradePage = function initTradePage(root = document) {
       if (verdictEl) {
         verdictEl.textContent = data.verdict || "";
         verdictEl.className = "otc-verdict";
+      }
+
+      if (tradeAiBody) {
+        tradeAiBody.innerHTML =
+          data.analysis_html ||
+          `<div class="otc-ai-empty">
+             <div class="otc-ai-empty-title">No AI take yet</div>
+             <div class="otc-ai-empty-sub">Add assets on both sides to generate a front-office opinion.</div>
+           </div>`;
       }
 
       if (errorBox) {
@@ -690,59 +893,6 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = err.message || "Failed to evaluate trade.";
       }
     }
-  }
-
-  function renderChips(side) {
-    const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
-    const selected = side === "A" ? sideASelected : sideBSelected;
-    if (!container) return;
-
-    container.innerHTML = "";
-    container.className = "otc-selected-list";
-
-    selected.forEach((p, idx) => {
-      const chip = document.createElement("div");
-      chip.className = "otc-chip";
-
-      const nameEl = document.createElement("div");
-      nameEl.className = "otc-chip-name";
-      nameEl.textContent = p.name || "Unknown";
-
-      const metaEl = document.createElement("div");
-      metaEl.className = "otc-chip-meta";
-      const metaBits = [];
-      if (p.pos_rank_label) metaBits.push(p.pos_rank_label);
-      if (p.team) metaBits.push(p.team);
-      if (p.age != null) metaBits.push(p.age + " yrs");
-      metaEl.textContent = metaBits.join(" · ");
-
-      const rightWrap = document.createElement("div");
-      rightWrap.className = "otc-chip-value-wrap";
-
-      const valueEl = document.createElement("span");
-      valueEl.className = "otc-chip-value";
-      valueEl.textContent = formatValue(p.value);
-
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "otc-chip-remove";
-      removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
-        selected.splice(idx, 1);
-        renderChips(side);
-      });
-
-      rightWrap.appendChild(valueEl);
-      rightWrap.appendChild(removeBtn);
-
-      chip.appendChild(nameEl);
-      chip.appendChild(metaEl);
-      chip.appendChild(rightWrap);
-
-      container.appendChild(chip);
-    });
-
-    recomputeTrade();
   }
 
   function setupSearch(side) {
@@ -771,12 +921,13 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
+      const selected = getSidePlayers(side);
       const matches = allPlayers
         .filter(p => p.name && p.name.toLowerCase().includes(query))
+        .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .slice(0, 20);
 
       const overallRankMap = buildOverallRankMap(allPlayers);
-
       if (!matches.length) return;
 
       matches.forEach(p => {
@@ -784,8 +935,7 @@ window.initTradePage = function initTradePage(root = document) {
         const item = buildDropdownItem(p, overallRank);
 
         item.addEventListener("click", () => {
-          const selected = side === "A" ? sideASelected : sideBSelected;
-          if (!selected.find(x => x.id === p.id)) {
+          if (!selected.find(x => String(x.id) === String(p.id))) {
             selected.push(p);
             renderChips(side);
           }
@@ -809,6 +959,40 @@ window.initTradePage = function initTradePage(root = document) {
     });
   }
 
+  function bindPickButtons() {
+    root.querySelectorAll(".otc-add-pick-btn").forEach(btn => {
+      bindOnce(btn, "tradeAddPick", "click", () => {
+        const side = String(btn.getAttribute("data-side") || "").toUpperCase() === "B" ? "B" : "A";
+        openPickPrompt(side);
+      });
+    });
+  }
+
+  function bindViewerSideControls() {
+    root.querySelectorAll('input[name="viewerSide"]').forEach(el => {
+      bindOnce(el, "tradeViewerSideChange", "change", () => {
+        syncViewerSideLabels();
+        recomputeTrade();
+      });
+    });
+
+    syncViewerSideLabels();
+  }
+
+  function bindClearTrade() {
+    const btn = root.querySelector("#clearTradeBtn");
+    if (!btn) return;
+
+    bindOnce(btn, "tradeClearBtn", "click", () => {
+      state.sideAPlayers = [];
+      state.sideBPlayers = [];
+      state.sideAPicks = [];
+      state.sideBPicks = [];
+      renderChips("A");
+      renderChips("B");
+    });
+  }
+
   root.querySelectorAll(".pos-filter").forEach(btn => {
     bindOnce(btn, "tradePosFilterClick", "click", () => {
       const pos = btn.getAttribute("data-pos") || "ALL";
@@ -822,10 +1006,14 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
+    bindPickButtons();
+    bindViewerSideControls();
+    bindClearTrade();
+    syncEmptyState("A");
+    syncEmptyState("B");
     recomputeTrade();
   });
 };
-
 // ------------------------------------------------------------
 // Master Initializer
 // ------------------------------------------------------------
@@ -920,6 +1108,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorBox = document.getElementById("lookupError");
 
   if (!lookupBtn || !usernameInput || !leagueSelect) return;
+
+  // Sync username to hidden form field
+  usernameInput.addEventListener('input', () => {
+    const formUsername = document.getElementById('formUsername');
+    if (formUsername) {
+      formUsername.value = usernameInput.value.trim();
+    }
+  });
 
   lookupBtn.addEventListener("click", async () => {
     const username = usernameInput.value.trim();

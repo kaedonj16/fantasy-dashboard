@@ -35,7 +35,7 @@ def _normalize_swid(swid: str) -> str:
     return swid
 
 
-def _safe_float(x: Any, default: float = 0.0) -> float:
+def safe_float(x: Any, default: float = 0.0) -> float:
     try:
         return default if x is None else float(x)
     except Exception:
@@ -50,7 +50,7 @@ def _safe_int(x: Any, default: int = 0) -> int:
 
 
 def _split_points(val: Any) -> tuple[int, int]:
-    f = _safe_float(val, 0.0)
+    f = safe_float(val, 0.0)
     whole = int(f)
     dec = int(round((f - whole) * 100))
     return whole, dec
@@ -359,7 +359,7 @@ def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]
                 if not cp:
                     continue
 
-                pts = _safe_float(getattr(bp, "points", None))
+                pts = safe_float(getattr(bp, "points", None))
                 slot = getattr(bp, "slot_position", None) or getattr(bp, "slotPosition", None) or getattr(bp,
                                                                                                           "lineupSlot",
                                                                                                           None)
@@ -376,7 +376,7 @@ def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]
             starters_points = [pts for _, _, _, pts in starter_entries]
 
             return {
-                "points": _safe_float(score),
+                "points": safe_float(score),
                 "players": players,
                 "roster_id": _safe_int(getattr(team, "team_id", None) or getattr(team, "id", None)),
                 "custom_points": None,
