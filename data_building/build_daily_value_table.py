@@ -23,30 +23,29 @@ from data_building.value_model_training import rewrite_value_table_with_model
 
 
 def build_daily_data(season: int, week: int):
-    print(f"[daily] build_daily_data season={season} week={week}")
+    nfl_state = get_nfl_state() or {}
+    season_type = (nfl_state.get("season_type") or "").lower()
+    offseason_mode = season_type == "off"
 
-    live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
-    build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
+    if not offseason_mode and week >= 1:
+        live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
+        build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
-    print("[daily] scraping vendor values...")
-    scrape_all_vendor_values()
+    if load_fantasycalc_api_values() is None or load_dynastyprocess_values() is None:
+        scrape_all_vendor_values()
 
-    print("[daily] writing usage snapshot...")
-    write_usage_table_snapshot(season, weeks=range(1, 19))
+    if load_usage_table() is None or load_engine_table() is None:
+        write_usage_table_snapshot(season, weeks=range(1, 19))
+        enrich_all_team_info(season)
+        enrich_teams_index_with_rushing(Path(path_teams_index()))
+        export_engine_values()
 
-    print("[daily] enriching team info...")
-    enrich_all_team_info(season)
-    enrich_teams_index_with_rushing(Path(path_teams_index()))
+    if load_model_value_table() is None:
+        rewrite_value_table_with_model()
+        model_value_table = load_model_value_table() or []
+        inserted = record_model_value_snapshot(model_value_table)
+        print(f"[daily] stored value-history snapshot rows={inserted}")
 
-    print("[daily] exporting engine values...")
-    export_engine_values()
-
-    print("[daily] rebuilding model values...")
-    rewrite_value_table_with_model()
-
-    model_value_table = load_model_value_table() or []
-    inserted = record_model_value_snapshot(model_value_table)
-    print(f"[daily] stored value-history snapshot rows={inserted}")
 
 
 if __name__ == "__main__":
