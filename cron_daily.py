@@ -13,6 +13,10 @@ def main():
 
     # run your existing function
     build_daily_data(season, week)
+    try:
+        build_daily_market_pulse()
+    except Exception as e:
+        print(f"[daily] market pulse skipped: {e}")
 
 
 if __name__ == "__main__":

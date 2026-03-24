@@ -23,6 +23,7 @@ from plotly.offline import plot as plotly_plot, get_plotlyjs
 from typing import List, Dict, Any, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
 
+from dashboard_services.ai.cache import build_ai_cache_key, save_cached_ai_text, load_cached_ai_text
 from dashboard_services.ai.renderer import get_team_gm_memo
 from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
     get_nfl_scores_for_date, build_team_game_lookup, \
@@ -44,6 +45,7 @@ from dashboard_services.platform_api import (
     get_bracket,
     get_drafts
 )
+from dashboard_services.providers.espn_api import safe_float
 from data_building.player_value_history import (
     init_value_history_db,
     get_top_movers
@@ -131,6 +133,7 @@ FORM_BODY = """
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
+          <input type="hidden" name="username" id="formUsername" value="">
 
           <div class="row" id="leagueSelectWrap" style="display:none;">
             <label for="league">Choose League</label>
@@ -858,6 +861,745 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     }
 
 
+def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
+    rosters = ctx.get("rosters") or []
+    roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+    if not roster:
+        return None
+
+    roster_map = ctx.get("roster_map") or {}
+    team_name = roster_map.get(str(viewer_roster_id)) or f"Roster {viewer_roster_id}"
+
+    players_index = ctx.get("players_index") or {}
+    players_map = ctx.get("players_map") or {}
+    standings_map = ctx.get("standings_map") or {}
+    picks_by_roster = ctx.get("picks_by_roster") or {}
+    model_value_table = ctx.get("model_value_table") or {}
+    roster_positions = ctx.get("roster_positions")
+    # Handle DataFrame case - convert to list if it's a DataFrame
+    if roster_positions is not None and hasattr(roster_positions, 'tolist'):
+        roster_positions = roster_positions.tolist()
+    elif roster_positions is None:
+        roster_positions = []
+    total_rosters = safe_float(ctx.get("total_rosters"), 10)
+    team_stats = ctx.get("team_stats")
+    # Handle DataFrame case - convert to list of dicts if it's a DataFrame
+    if team_stats is not None and hasattr(team_stats, 'to_dict'):
+        team_stats = team_stats.to_dict('records')
+    elif team_stats is None:
+        team_stats = []
+
+    values_by_id = {}
+    for row in model_value_table:
+        if isinstance(row, dict) and row.get("id") is not None:
+            values_by_id[str(row["id"])] = row
+
+    standings = standings_map.get(str(viewer_roster_id), {}) or {}
+
+    def pick_player_meta(pid: str) -> dict:
+        mv = values_by_id.get(pid) or {}
+        pmeta = players_index.get(pid) or players_map.get(pid) or {}
+
+        position = (
+            mv.get("position")
+            or mv.get("pos")
+            or pmeta.get("position")
+            or pmeta.get("pos")
+            or "?"
+        )
+        position = str(position).upper()
+
+        team = mv.get("team") or pmeta.get("team") or ""
+        age = mv.get("age")
+        if age in (None, ""):
+            age = pmeta.get("age")
+
+        value = safe_float(mv.get("value"))
+        name = (
+            mv.get("name")
+            or pmeta.get("full_name")
+            or pmeta.get("name")
+            or f"Player {pid}"
+        )
+
+        return {
+            "id": pid,
+            "name": name,
+            "position": position,
+            "team": team,
+            "age": age,
+            "value": value,
+            "pos_rank_label": mv.get("pos_rank_label") or "",
+        }
+
+    all_player_ids = [str(pid) for pid in (roster.get("players") or [])]
+    starter_ids = [str(pid) for pid in (roster.get("starters") or []) if str(pid) not in {"0", "", "None"}]
+
+    players = [pick_player_meta(pid) for pid in all_player_ids]
+    players.sort(key=lambda x: x["value"], reverse=True)
+
+    starter_set = set(starter_ids)
+    starters = [pick_player_meta(pid) for pid in starter_ids if pid in all_player_ids]
+    starters.sort(key=lambda x: x["value"], reverse=True)
+
+    bench = [p for p in players if p["id"] not in starter_set]
+    bench.sort(key=lambda x: x["value"], reverse=True)
+
+    pos_groups: dict[str, list[dict]] = {}
+    for p in players:
+        pos = p["position"]
+        pos_groups.setdefault(pos, []).append(p)
+
+    starter_pos_groups: dict[str, list[dict]] = {}
+    for p in starters:
+        pos = p["position"]
+        starter_pos_groups.setdefault(pos, []).append(p)
+
+    bench_pos_groups: dict[str, list[dict]] = {}
+    for p in bench:
+        pos = p["position"]
+        bench_pos_groups.setdefault(pos, []).append(p)
+
+    for group in pos_groups.values():
+        group.sort(key=lambda x: x["value"], reverse=True)
+    for group in starter_pos_groups.values():
+        group.sort(key=lambda x: x["value"], reverse=True)
+    for group in bench_pos_groups.values():
+        group.sort(key=lambda x: x["value"], reverse=True)
+
+    pos_summary = {}
+    for pos, vals in pos_groups.items():
+        numbers = [safe_float(p["value"]) for p in vals]
+        ages = [safe_float(p["age"]) for p in vals if p.get("age") not in (None, "")]
+        starter_vals = [safe_float(p["value"]) for p in starter_pos_groups.get(pos, [])]
+        bench_vals = [safe_float(p["value"]) for p in bench_pos_groups.get(pos, [])]
+
+        pos_summary[pos] = {
+            "count": len(vals),
+            "starter_count": len(starter_pos_groups.get(pos, [])),
+            "bench_count": len(bench_pos_groups.get(pos, [])),
+            "total_value": round(sum(numbers), 1),
+            "top_1": round(sum(numbers[:1]), 1),
+            "top_2": round(sum(numbers[:2]), 1),
+            "top_3_sum": round(sum(numbers[:3]), 1),
+            "top_5_sum": round(sum(numbers[:5]), 1),
+            "best": round(numbers[0], 1) if numbers else 0.0,
+            "starter_value": round(sum(starter_vals), 1),
+            "bench_value": round(sum(bench_vals), 1),
+            "avg_age": round(sum(ages) / len(ages), 1) if ages else None,
+            "top_players": vals[:3],
+        }
+
+    future_picks = picks_by_roster.get(str(viewer_roster_id), []) or []
+
+    pick_summary = {
+        "total": len(future_picks),
+        "firsts": 0,
+        "seconds": 0,
+        "thirds_plus": 0,
+        "by_year": {},
+    }
+
+    cleaned_picks = []
+    for pk in future_picks:
+        if not isinstance(pk, dict):
+            continue
+
+        year = str(pk.get("season") or pk.get("year") or "")
+        rnd = int(pk.get("round") or 0)
+
+        if rnd == 1:
+            pick_summary["firsts"] += 1
+        elif rnd == 2:
+            pick_summary["seconds"] += 1
+        elif rnd >= 3:
+            pick_summary["thirds_plus"] += 1
+
+        if year:
+            if year not in pick_summary["by_year"]:
+                pick_summary["by_year"][year] = {"firsts": 0, "seconds": 0, "thirds_plus": 0}
+            if rnd == 1:
+                pick_summary["by_year"][year]["firsts"] += 1
+            elif rnd == 2:
+                pick_summary["by_year"][year]["seconds"] += 1
+            elif rnd >= 3:
+                pick_summary["by_year"][year]["thirds_plus"] += 1
+
+        cleaned_picks.append({
+            "season": year,
+            "round": rnd,
+            "original_owner": pk.get("original_owner_id"),
+            "owner_id": pk.get("owner_id"),
+        })
+
+    ages = [safe_float(p.get("age")) for p in players if p.get("age") not in (None, "")]
+    avg_age = sum(ages) / len(ages) if ages else 0.0
+
+    total_value = round(sum(safe_float(p["value"]) for p in players), 1)
+    starter_value_total = round(sum(safe_float(p["value"]) for p in starters), 1)
+    bench_value_total = round(sum(safe_float(p["value"]) for p in bench), 1)
+
+    elite_assets = sum(1 for p in players if p["value"] >= 675)
+    strong_assets = sum(1 for p in players if p["value"] >= 500)
+    insulated_assets = sum(1 for p in players if safe_float(p["age"]) <= 25 and p["value"] >= 400)
+    aging_assets = [
+        p for p in players
+        if p.get("age") not in (None, "") and safe_float(p["age"]) >= 28 and p["value"] >= 250
+    ][:6]
+
+    premium_assets = [p for p in players if p["value"] >= 550][:8]
+    liquid_trade_chips = [
+        p for p in players
+        if 225 <= p["value"] <= 650
+    ][:8]
+
+    young_core = [
+        p for p in players
+        if p.get("age") not in (None, "") and safe_float(p["age"]) <= 25 and p["value"] >= 300
+    ][:8]
+
+    fragile_assets = [
+        p for p in players
+        if (
+            p.get("age") not in (None, "")
+            and safe_float(p["age"]) >= 28
+            and p["value"] >= 350
+        )
+    ][:6]
+
+    weak_positions = []
+    strong_positions = []
+    for pos, meta in pos_summary.items():
+        top3 = safe_float(meta.get("top_3_sum"))
+        bench_val = safe_float(meta.get("bench_value"))
+        starter_val = safe_float(meta.get("starter_value"))
+
+        if starter_val >= 900 or top3 >= 900:
+            strong_positions.append(pos)
+        if starter_val <= 350 or (meta.get("count", 0) <= 1 and top3 <= 250):
+            weak_positions.append(pos)
+        elif bench_val <= 80 and meta.get("count", 0) <= 2:
+            weak_positions.append(pos)
+
+    strong_positions = list(dict.fromkeys(strong_positions))
+    weak_positions = list(dict.fromkeys(weak_positions))
+
+    firsts = pick_summary["firsts"]
+
+    if elite_assets >= 3 and avg_age and avg_age <= 27.5 and starter_value_total >= 2600:
+        direction = "contender"
+    elif firsts >= 3 and elite_assets < 2 and avg_age >= 25.5:
+        direction = "rebuild"
+    elif firsts >= 2 or (len(young_core) >= 4 and elite_assets < 3):
+        direction = "retool"
+    else:
+        direction = "balanced"
+
+    roster_health = "stable"
+    if len(weak_positions) >= 2 and bench_value_total < 700:
+        roster_health = "fragile"
+    elif len(strong_positions) >= 2 and bench_value_total >= 850:
+        roster_health = "deep"
+    elif len(premium_assets) <= 2 and firsts >= 2:
+        roster_health = "transitioning"
+
+    record = standings.get("record") or standings.get("display_record") or ""
+    wins = safe_float(standings.get("wins"))
+    losses = safe_float(standings.get("losses"))
+    ties = safe_float(standings.get("ties"))
+    pf = round(safe_float(standings.get("PF")), 1)
+    pa = round(safe_float(standings.get("PA")), 1)
+
+    win_pct = 0.0
+    games_played = wins + losses + ties
+    if games_played > 0:
+        win_pct = round((wins + (0.5 * ties)) / games_played, 3)
+
+    place = None
+    if team_stats:
+        try:
+            sorted_stats = sorted(
+                team_stats,
+                key=lambda x: (
+                    -safe_float(x.get("win_pct")),
+                    -safe_float(x.get("avg")),
+                    -safe_float(x.get("pf")),
+                ),
+            )
+            for idx, row in enumerate(sorted_stats, start=1):
+                rid = str(row.get("roster_id") or "")
+                if rid == str(viewer_roster_id):
+                    place = idx
+                    break
+        except Exception:
+            place = None
+
+    lineup_requirements = {}
+    if roster_positions and isinstance(roster_positions, (list, tuple)):
+        for slot in roster_positions:
+            slot_str = str(slot).upper()
+            if slot_str in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX"}:
+                lineup_requirements[slot_str] = lineup_requirements.get(slot_str, 0) + 1
+
+    starter_profile = {
+        "count": len(starters),
+        "total_value": starter_value_total,
+        "avg_value": round(starter_value_total / len(starters), 1) if starters else 0.0,
+        "top_starters": starters[:6],
+    }
+
+    bench_profile = {
+        "count": len(bench),
+        "total_value": bench_value_total,
+        "avg_value": round(bench_value_total / len(bench), 1) if bench else 0.0,
+        "top_bench": bench[:6],
+    }
+
+    market_profile = {
+        "premium_assets": premium_assets,
+        "liquid_trade_chips": liquid_trade_chips,
+        "young_core": young_core,
+        "fragile_assets": fragile_assets,
+        "aging_assets": aging_assets,
+    }
+
+    summary_flags = []
+    if direction == "contender":
+        summary_flags.append("win-now build")
+    if direction == "rebuild":
+        summary_flags.append("future-oriented")
+    if firsts >= 2:
+        summary_flags.append("has first-round capital")
+    if len(weak_positions) >= 2:
+        summary_flags.append("multiple roster holes")
+    if len(strong_positions) >= 2:
+        summary_flags.append("clear strength pockets")
+    if roster_health == "fragile":
+        summary_flags.append("thin depth")
+    if roster_health == "deep":
+        summary_flags.append("strong depth")
+
+    return {
+        "league_id": ctx.get("league_id"),
+        "season": ctx.get("season") or ctx.get("current_season"),
+        "viewer_roster_id": str(viewer_roster_id),
+        "team_name": team_name,
+        "record": record,
+        "wins": wins,
+        "losses": losses,
+        "ties": ties,
+        "win_pct": win_pct,
+        "place": place,
+        "league_size": int(total_rosters) if total_rosters else None,
+        "points_for": pf,
+        "points_against": pa,
+        "avg_age": round(avg_age, 2) if avg_age else 0.0,
+        "direction": direction,
+        "roster_health": roster_health,
+        "summary_flags": summary_flags,
+        "total_roster_value": total_value,
+        "starter_value_total": starter_value_total,
+        "bench_value_total": bench_value_total,
+        "elite_assets_count": elite_assets,
+        "strong_assets_count": strong_assets,
+        "insulated_assets_count": insulated_assets,
+        "lineup_requirements": lineup_requirements,
+        "top_assets": players[:10],
+        "starters": starters[:10],
+        "bench": bench[:10],
+        "starter_profile": starter_profile,
+        "bench_profile": bench_profile,
+        "position_strength": pos_summary,
+        "strong_positions": strong_positions,
+        "weak_positions": weak_positions,
+        "future_picks": cleaned_picks[:12],
+        "pick_summary": pick_summary,
+        "market_profile": market_profile,
+    }
+
+def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
+    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    if not team_ctx:
+        return ""
+
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v1")
+    cached = load_cached_ai_text(cache_key)
+    if cached:
+        return cached
+
+    top_assets = ", ".join(p["name"] for p in team_ctx["top_assets"][:4]) or "None"
+    html = f"""
+    <div class="ai-copy">
+      <p><strong>{team_ctx['team_name']}</strong> profiles as a <strong>{team_ctx['direction']}</strong> team.</p>
+      <p>Top assets: {top_assets}.</p>
+      <p>Record: {team_ctx['record'] or 'N/A'} | PF: {team_ctx['points_for']:.1f} | PA: {team_ctx['points_against']:.1f}</p>
+    </div>
+    """
+    save_cached_ai_text(cache_key, html)
+    return html
+
+
+def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
+    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    if not team_ctx:
+        return ""
+
+    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v1")
+    cached = load_cached_ai_text(cache_key)
+    if cached:
+        return cached
+
+    pos_strength = team_ctx.get("position_strength") or {}
+    if pos_strength:
+        ranked = sorted(
+            pos_strength.items(),
+            key=lambda kv: (safe_float(kv[1].get("top_3_sum")), safe_float(kv[1].get("best"))),
+            reverse=True,
+        )
+        best_pos = ranked[0][0]
+        weak_pos = ranked[-1][0]
+    else:
+        best_pos = "Unknown"
+        weak_pos = "Unknown"
+
+    move_line = {
+        "contender": "Look to consolidate depth into starting lineup upgrades.",
+        "rebuild": "Shop aging production for future firsts or younger insulated value.",
+        "retool": "Balance short-term production with long-term flexibility.",
+        "balanced": "Wait for leverage spots and avoid forcing a move.",
+    }.get(team_ctx["direction"], "Stay flexible and opportunistic.")
+
+    html = f"""
+    <div class="ai-copy">
+      <p><strong>Strongest room:</strong> {best_pos}</p>
+      <p><strong>Weakest room:</strong> {weak_pos}</p>
+      <p><strong>Best next move:</strong> {move_line}</p>
+    </div>
+    """
+    save_cached_ai_text(cache_key, html)
+    return html
+
+
+def get_trade_ai_analysis(
+    ctx: dict,
+    viewer_roster_id: str,
+    viewer_side: str,
+    side_a: dict,
+    side_b: dict,
+) -> str:
+    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    if not team_ctx:
+        return ""
+
+    viewer_side = (viewer_side or "a").lower().strip()
+    viewer_gets = side_a if viewer_side == "a" else side_b
+    viewer_gives = side_b if viewer_side == "a" else side_a
+
+    def clean_asset(a: dict) -> dict:
+        if not isinstance(a, dict):
+            return {
+                "id": "",
+                "name": "Unknown",
+                "position": "?",
+                "team": "",
+                "age": None,
+                "value": 0.0,
+            }
+        return {
+            "id": str(a.get("id") or ""),
+            "name": a.get("name") or "Unknown",
+            "position": str(a.get("position") or a.get("pos") or "?").upper(),
+            "team": a.get("team") or "",
+            "age": a.get("age"),
+            "value": safe_float(a.get("value")),
+        }
+
+    def summarize_pick_ids(pick_ids: list) -> dict:
+        summary = {
+            "count": 0,
+            "firsts": 0,
+            "seconds": 0,
+            "thirds_plus": 0,
+            "display": [],
+        }
+        for raw in pick_ids or []:
+            pk = str(raw or "").strip()
+            if not pk:
+                continue
+            summary["count"] += 1
+            summary["display"].append(pk.replace("_", " "))
+            try:
+                parts = pk.split("_")
+                if len(parts) >= 2:
+                    rnd = int(parts[1])
+                    if rnd == 1:
+                        summary["firsts"] += 1
+                    elif rnd == 2:
+                        summary["seconds"] += 1
+                    elif rnd >= 3:
+                        summary["thirds_plus"] += 1
+            except Exception:
+                pass
+        return summary
+
+    def pos_totals(assets: list[dict]) -> dict[str, float]:
+        out: dict[str, float] = {}
+        for a in assets:
+            pos = str(a.get("position") or "?").upper()
+            out[pos] = out.get(pos, 0.0) + safe_float(a.get("value"))
+        return {k: round(v, 1) for k, v in out.items()}
+
+    gets_assets = [clean_asset(a) for a in (viewer_gets.get("assets") or [])]
+    gives_assets = [clean_asset(a) for a in (viewer_gives.get("assets") or [])]
+
+    gets_pick_summary = summarize_pick_ids(viewer_gets.get("pick_ids") or [])
+    gives_pick_summary = summarize_pick_ids(viewer_gives.get("pick_ids") or [])
+
+    gets_pos = pos_totals(gets_assets)
+    gives_pos = pos_totals(gives_assets)
+
+    delta = safe_float(viewer_gets.get("effective_total")) - safe_float(viewer_gives.get("effective_total"))
+
+    strong_positions = set(team_ctx.get("strong_positions") or [])
+    weak_positions = set(team_ctx.get("weak_positions") or [])
+    direction = team_ctx.get("direction") or "balanced"
+    roster_health = team_ctx.get("roster_health") or "stable"
+
+    # positional fit scoring
+    fit_score = 0.0
+    fit_notes: list[str] = []
+    gains: list[str] = []
+    risks: list[str] = []
+
+    # getting value at weak positions is more helpful
+    for pos, val in gets_pos.items():
+        if pos in weak_positions and val > 0:
+            fit_score += min(val * 0.20, 120.0)
+            gains.append(f"adds value to a weak {pos} room")
+        elif pos in strong_positions and val > 0:
+            fit_score += min(val * 0.07, 45.0)
+
+    # giving away strength positions hurts less than giving away weak positions
+    for pos, val in gives_pos.items():
+        if pos in weak_positions and val > 0:
+            fit_score -= min(val * 0.18, 120.0)
+            risks.append(f"gives away value from an already thin {pos} room")
+        elif pos in strong_positions and val > 0:
+            fit_score -= min(val * 0.05, 35.0)
+
+    # pick fit by team direction
+    if direction == "contender":
+        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
+            fit_score -= 45
+            risks.append("leans more toward future insulation than immediate lineup help")
+        if gives_pick_summary["firsts"] > gets_pick_summary["firsts"]:
+            fit_score += 25
+            gains.append("uses future capital in a win-now window")
+    elif direction == "rebuild":
+        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
+            fit_score += 75
+            gains.append("adds first-round capital for a rebuilding roster")
+        if gives_pick_summary["firsts"] > gets_pick_summary["firsts"]:
+            fit_score -= 95
+            risks.append("moves away premium future capital during a rebuild")
+    elif direction == "retool":
+        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
+            fit_score += 35
+            gains.append("improves flexibility with added draft capital")
+
+    # age / insulation fit
+    gets_old = sum(1 for a in gets_assets if safe_float(a.get("age")) >= 28 and safe_float(a.get("value")) >= 250)
+    gives_old = sum(1 for a in gives_assets if safe_float(a.get("age")) >= 28 and safe_float(a.get("value")) >= 250)
+
+    gets_young = sum(1 for a in gets_assets if 0 < safe_float(a.get("age")) <= 25 and safe_float(a.get("value")) >= 250)
+    gives_young = sum(1 for a in gives_assets if 0 < safe_float(a.get("age")) <= 25 and safe_float(a.get("value")) >= 250)
+
+    if direction == "rebuild":
+        fit_score += (gets_young - gives_young) * 28
+        fit_score -= (gets_old - gives_old) * 24
+        if gets_young > gives_young:
+            gains.append("gets younger and more insulated")
+        if gets_old > gives_old:
+            risks.append("adds older production that may not match the timeline")
+    elif direction == "contender":
+        fit_score += (gets_old - gives_old) * 10
+        fit_score += (gets_assets and not gets_pick_summary["count"]) * 8
+    elif direction == "retool":
+        fit_score += (gets_young - gives_young) * 16
+
+    # roster fragility / depth considerations
+    asset_count_delta = len(gets_assets) - len(gives_assets)
+    if roster_health == "fragile":
+        if asset_count_delta < 0:
+            fit_score -= 35
+            risks.append("reduces depth on a fragile roster")
+        elif asset_count_delta > 0:
+            fit_score += 18
+            gains.append("adds depth to a fragile roster")
+    elif roster_health == "deep":
+        if asset_count_delta < 0 and delta >= -25:
+            fit_score += 18
+            gains.append("consolidates depth without badly hurting the roster")
+
+    # combine raw market delta with fit
+    total_score = delta + fit_score
+
+    if total_score >= 90:
+        verdict = "ACCEPT"
+    elif total_score <= -90:
+        verdict = "DECLINE"
+    else:
+        verdict = "COUNTER"
+
+    # build suggestion / explanation
+    biggest_get = gets_assets[0]["name"] if gets_assets else None
+    biggest_give = gives_assets[0]["name"] if gives_assets else None
+
+    if verdict == "ACCEPT":
+        gm_take = "The overall package lines up with your roster direction and the price is workable."
+    elif verdict == "DECLINE":
+        gm_take = "The deal either misses your team’s timeline or weakens the wrong part of the roster."
+    else:
+        gm_take = "The structure is workable, but the price or asset mix should be adjusted before accepting."
+
+    counter_idea = ""
+    if verdict == "COUNTER":
+        if direction == "rebuild":
+            counter_idea = "Ask for an added future 1st or a younger insulated piece."
+        elif direction == "contender":
+            counter_idea = "Push for a more immediate starter or reduce the outgoing lineup value."
+        elif weak_positions:
+            weak_pos = list(weak_positions)[0]
+            counter_idea = f"Try to turn part of the return into help at {weak_pos}."
+        else:
+            counter_idea = "Try to improve the pick side or remove one secondary outgoing asset."
+
+    payload = {
+        "team_name": team_ctx.get("team_name"),
+        "direction": direction,
+        "roster_health": roster_health,
+        "strong_positions": sorted(list(strong_positions)),
+        "weak_positions": sorted(list(weak_positions)),
+        "summary_flags": team_ctx.get("summary_flags") or [],
+        "viewer_gets": {
+            "assets": gets_assets,
+            "pick_ids": viewer_gets.get("pick_ids") or [],
+            "effective_total": safe_float(viewer_gets.get("effective_total")),
+            "position_totals": gets_pos,
+            "pick_summary": gets_pick_summary,
+        },
+        "viewer_gives": {
+            "assets": gives_assets,
+            "pick_ids": viewer_gives.get("pick_ids") or [],
+            "effective_total": safe_float(viewer_gives.get("effective_total")),
+            "position_totals": gives_pos,
+            "pick_summary": gives_pick_summary,
+        },
+        "market_delta": round(delta, 1),
+        "fit_score": round(fit_score, 1),
+        "total_score": round(total_score, 1),
+        "verdict": verdict,
+    }
+
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v2")
+    cached = load_cached_ai_text(cache_key)
+    if cached:
+        return cached
+
+    gets_line = []
+    if biggest_get:
+        gets_line.append(f"main incoming piece: {biggest_get}")
+    if gets_pick_summary["firsts"]:
+        gets_line.append(f"+{gets_pick_summary['firsts']} first-round pick{'s' if gets_pick_summary['firsts'] != 1 else ''}")
+
+    gives_line = []
+    if biggest_give:
+        gives_line.append(f"main outgoing piece: {biggest_give}")
+    if gives_pick_summary["firsts"]:
+        gives_line.append(f"-{gives_pick_summary['firsts']} first-round pick{'s' if gives_pick_summary['firsts'] != 1 else ''}")
+
+    gains = list(dict.fromkeys(gains))[:3]
+    risks = list(dict.fromkeys(risks))[:3]
+
+    gains_html = "".join(f"<li>{g}</li>" for g in gains) or "<li>No major structural edge beyond raw value.</li>"
+    risks_html = "".join(f"<li>{r}</li>" for r in risks) or "<li>No major structural red flag beyond price.</li>"
+
+    counter_html = ""
+    if counter_idea:
+        counter_html = f"""
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">Best counter</div>
+          <div class="trade-ai-copy-line">{counter_idea}</div>
+        </div>
+        """
+
+    html = f"""
+    <div class="ai-copy trade-ai-wrap">
+      <div class="trade-ai-top">
+        <div class="trade-ai-verdict trade-ai-verdict-{verdict.lower()}">{verdict}</div>
+        <div class="trade-ai-score">Net score: {total_score:.1f}</div>
+      </div>
+
+      <div class="trade-ai-block">
+        <div class="trade-ai-label">GM Take</div>
+        <div class="trade-ai-copy-line">
+          {gm_take}
+          This is being judged for a <strong>{direction}</strong> team with a
+          <strong>{roster_health}</strong> roster profile.
+        </div>
+      </div>
+
+      <div class="trade-ai-grid">
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">You get</div>
+          <div class="trade-ai-copy-line">
+            {"; ".join(gets_line) if gets_line else "No incoming assets."}
+          </div>
+        </div>
+
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">You give</div>
+          <div class="trade-ai-copy-line">
+            {"; ".join(gives_line) if gives_line else "No outgoing assets."}
+          </div>
+        </div>
+      </div>
+
+      <div class="trade-ai-grid">
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">What helps</div>
+          <ul class="trade-ai-list">
+            {gains_html}
+          </ul>
+        </div>
+
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">What risks it</div>
+          <ul class="trade-ai-list">
+            {risks_html}
+          </ul>
+        </div>
+      </div>
+
+      <div class="trade-ai-grid">
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">Market delta</div>
+          <div class="trade-ai-copy-line">{delta:.1f}</div>
+        </div>
+
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">Fit adjustment</div>
+          <div class="trade-ai-copy-line">{fit_score:.1f}</div>
+        </div>
+      </div>
+
+      {counter_html}
+    </div>
+    """
+
+    save_cached_ai_text(cache_key, html)
+    return html
+
 def ensure_weekly_bits(ctx: dict) -> None:
     """
     Lazily populate projections, statuses, matchups, and df_weekly['proj']
@@ -1331,15 +2073,11 @@ def render_standings(team_stats, length) -> str:
 
 
 def build_dashboard_body(ctx: dict) -> str:
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
     league_id = ctx["league_id"]
-    platform = ctx["platform"]
-    season = ctx["season"]  # viewed season, not live NFL season
+    season = ctx["current_season"]
     rosters = ctx["rosters"]
     users = ctx["users"]
-    current_week = int(ctx.get("current_week") or 0)
-    weeks = int(ctx.get("weeks") or 1)
+    current_week = ctx["current_week"]
     players_map = ctx["players_map"]
     df_weekly = ctx["df_weekly"]
     team_stats = ctx["team_stats"]
@@ -1350,71 +2088,54 @@ def build_dashboard_body(ctx: dict) -> str:
     matchups_by_week = ctx["matchups_by_week"]
     picks_by_roster = ctx["picks_by_roster"]
     team_game_lookup = ctx["team_game_lookup"]
-    season_complete = bool(ctx.get("season_complete", False))
-    offseason_mode = bool(ctx.get("offseason_mode", False))
 
-    # --- Standings snapshot ---
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+
+    gm_memo_html = ""
+    front_office_html = ""
+
+    if viewer_roster_id:
+        try:
+            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+        except Exception as e:
+            print(f"[dashboard] gm memo skipped: {e}")
+
+        try:
+            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
+        except Exception as e:
+            print(f"[dashboard] front office briefing skipped: {e}")
+
     standings_html = render_standings(team_stats, 5)
 
-    # --- Finalized games + last_final_week ---
-    if (
-            df_weekly is not None
-            and not df_weekly.empty
-            and "finalized" in df_weekly.columns
-            and "week" in df_weekly.columns
-    ):
-        finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
-    else:
-        finalized_df = pd.DataFrame()
-
-    if not finalized_df.empty and "week" in finalized_df.columns:
+    finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = max(1, min(current_week or 1, weeks))
-
-    # Offseason / completed season should default to the last finalized week
-    if season_complete or offseason_mode:
-        display_week = last_final_week
-    else:
-        display_week = max(1, min(current_week or 1, weeks))
-
-    week_statuses = (statuses.get(display_week) or {}).get("statuses", {}) or {}
-    week_matchups = matchups_by_week.get(display_week, []) or []
+        last_final_week = current_week
 
     slides = [
         render_matchup_slide(
             season,
             m,
-            display_week,
+            current_week,
             last_final_week,
-            status_by_pid=week_statuses,
+            status_by_pid=statuses[current_week].get("statuses", {}),
             projections=proj_by_week,
             players=players_index,
             teams=teams_index,
             team_game_lookup=team_game_lookup,
         )
-        for m in week_matchups
+        for m in matchups_by_week.get(current_week, [])
     ]
-
-    slides_by_week = {
-        display_week: "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
-    }
-
+    slides_by_week = {current_week: "".join(slides)}
     matchup_html = render_matchup_carousel_weeks(
         slides_by_week,
         dashboard=True,
-        active_week=display_week,
+        active_week=current_week,
     )
 
-    awards = compute_awards_season(
-        finalized_df,
-        players_map,
-        league_id,
-        platform,
-        season,
-        users,
-        rosters,
-    )
+    awards = compute_awards_season(finalized_df, players_map, league_id)
     awards_html = render_awards_section(awards)
 
     teams_ctx = build_teams_overview(
@@ -1424,31 +2145,33 @@ def build_dashboard_body(ctx: dict) -> str:
         players=players_map,
         players_index=players_index,
         teams_index=teams_index,
-        platform=platform
     )
-
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
-    season_note = ""
-    if offseason_mode:
-        season_note = (
-            f"<div class='mini-label' style='margin-bottom:10px;'>"
-            f"Viewing {season} season data during the offseason."
-            f"</div>"
-        )
-
-
-    gm_html = ""
-    if viewer_roster_id:
-        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
-        gm_html = f"""
+    gm_card_html = ""
+    if gm_memo_html:
+        gm_card_html = f"""
         <div class="card gm-card">
           <div class="card-header">
-            <h2>Your GM Brief</h2>
+            <h2>Your GM Memo</h2>
             <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
           </div>
           <div class="card-body">
             {gm_memo_html}
+          </div>
+        </div>
+        """
+
+    front_office_card_html = ""
+    if front_office_html:
+        front_office_card_html = f"""
+        <div class="card fo-brief-card">
+          <div class="card-header">
+            <h2>Front Office Briefing</h2>
+            <div class="subtle-label">Daily plan</div>
+          </div>
+          <div class="card-body">
+            {front_office_html}
           </div>
         </div>
         """
@@ -1458,7 +2181,8 @@ def build_dashboard_body(ctx: dict) -> str:
       {awards_html}
     </aside>
     <div class="overview-main">
-      {gm_html}
+      {gm_card_html}
+      {front_office_card_html}
       <div class="card central">
         <h2>Standings</h2>
         {standings_html}
@@ -1471,7 +2195,6 @@ def build_dashboard_body(ctx: dict) -> str:
     """
 
     return body
-
 
 def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
     """
@@ -1950,6 +2673,23 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     players_map = ctx["players_map"]
     model_value_table = ctx.get("model_value_table") or []
 
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+
+    gm_memo_html = ""
+    front_office_html = ""
+
+    if viewer_roster_id:
+        try:
+            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+        except Exception as e:
+            print(f"[offseason-dashboard] gm memo skipped: {e}")
+
+        try:
+            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
+        except Exception as e:
+            print(f"[offseason-dashboard] front office briefing skipped: {e}")
+
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
     countdown_text = "TBD"
@@ -2130,6 +2870,34 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     top_waiver_assets_html = "".join(waiver_html)
 
+    gm_card_html = ""
+    if gm_memo_html:
+        gm_card_html = f"""
+        <section class="os-card">
+          <div class="os-section-head">
+            <h2 class="os-section-title">Your GM Memo</h2>
+            <div class="os-section-subtitle">{viewer.get("viewer_team_name") or "Your Team"}</div>
+          </div>
+          <div class="os-ai-copy">
+            {gm_memo_html}
+          </div>
+        </section>
+        """
+
+    front_office_card_html = ""
+    if front_office_html:
+        front_office_card_html = f"""
+        <section class="os-card">
+          <div class="os-section-head">
+            <h2 class="os-section-title">Front Office Briefing</h2>
+            <div class="os-section-subtitle">Offseason priorities</div>
+          </div>
+          <div class="os-ai-copy">
+            {front_office_html}
+          </div>
+        </section>
+        """
+
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col">
@@ -2180,6 +2948,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        {gm_card_html}
+        {front_office_card_html}
+
         <section class="os-card">
           <div class="os-section-head">
             <h2 class="os-section-title">Top Waiver Assets</h2>
@@ -2199,7 +2970,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     </div>
     """
     return body
-
 
 def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
     """
@@ -4635,16 +5405,33 @@ def index():
         platform = (request.form.get("platform") or "sleeper").strip().lower()
         league_id = (request.form.get("league") or "").strip()
         season = int(request.form.get("season") or viewed_season)
+        username = (request.form.get("username") or "").strip()
 
         ok, err = validate_league_id(platform, league_id)
         if not ok:
             body_html = render_template_string(
                 FORM_BODY,
-                username="",
+                username=username,
                 viewed_season=viewed_season,
                 error=err,
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
+
+        # If username provided, set viewer session
+        if username:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
+            
+            if viewer:
+                save_viewer_session(viewer)
+            else:
+                body_html = render_template_string(
+                    FORM_BODY,
+                    username=username,
+                    viewed_season=viewed_season,
+                    error="Could not match that username to a team in this league.",
+                )
+                return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -4938,29 +5725,28 @@ def get_model_value_table_cached():
 def api_trade_eval():
     payload = request.get_json(force=True)
 
+    platform = (payload.get("platform") or "sleeper").strip().lower()
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    viewer_side = (payload.get("viewer_side") or "a").strip().lower()
+
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
     side_a_picks = payload.get("side_a_picks", []) or []
     side_b_picks = payload.get("side_b_picks", []) or []
 
-    # ---------- Load model player value table ----------
-    # This SHOULD return your list[dict] of players
     value_table = get_model_value_table_cached()
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Index players by id for quick lookup
-    players_by_id = {str(p["id"]): p for p in value_table if isinstance(p, dict) and "id" in p}
-
-    # ---------- Helpers ----------
+    players_by_id = {
+        str(p["id"]): p
+        for p in value_table
+        if isinstance(p, dict) and "id" in p
+    }
 
     def value_pick(pk: str) -> float:
-        """
-        pk is like '2026_1_04' -> year, round, slot (within round).
-        We bucket slot -> early/mid/late and look up a blended
-        value from PICK_VALUES built from FantasyCalc + DynastyProcess.
-        """
         try:
             yr_str, rnd_str, slot_str = pk.split("_")
             year = int(yr_str)
@@ -4969,15 +5755,13 @@ def api_trade_eval():
         except Exception:
             return 0.0
 
-        # convert slot to early/mid/late based on league size
-        bucket = bucket_for_slot(slot, num_teams=10)  # use 10 or 12 based on your league
+        bucket = bucket_for_slot(slot, num_teams=10)
         key = f"{year}_{rnd}_{bucket}"
 
         val = PICK_VALUES.get(key)
         if val is not None:
             return float(val)
 
-        # Optional: generic fallback like any-year blended value if you ever add that
         generic_key = f"any_{rnd}_{bucket}"
         if generic_key in PICK_VALUES:
             return float(PICK_VALUES[generic_key])
@@ -4985,25 +5769,12 @@ def api_trade_eval():
         return 0.0
 
     def build_side(players_ids, picks_ids):
-        """
-        Build the basic info for a side using value_table payload:
-
-          {
-            "id": "9509",
-            "name": "Bijan Robinson",
-            "team": "ATL",
-            "position": "RB",
-            "age": 23.8,
-            "value": 968.0
-          }
-        """
-
         raw_players_total = 0.0
         raw_picks_total = 0.0
-        player_values: List[float] = []
+        player_values = []
         breakdown = []
+        assets = []
 
-        # Players
         for pid in players_ids:
             pid_str = str(pid)
             player = players_by_id.get(pid_str)
@@ -5017,12 +5788,21 @@ def api_trade_eval():
                     "position": None,
                     "team": None,
                 })
+                assets.append({
+                    "id": pid_str,
+                    "name": f"Player {pid_str}",
+                    "value": 0.0,
+                    "position": None,
+                    "team": None,
+                    "age": None,
+                })
                 continue
 
             val = float(player.get("value", 0.0) or 0.0)
             name = player.get("name")
             pos = player.get("position")
             team = player.get("team")
+            age = player.get("age")
 
             breakdown.append({
                 "type": "player",
@@ -5032,10 +5812,18 @@ def api_trade_eval():
                 "position": pos,
                 "team": team,
             })
+            assets.append({
+                "id": pid_str,
+                "name": name,
+                "value": val,
+                "position": pos,
+                "team": team,
+                "age": age,
+            })
+
             raw_players_total += val
             player_values.append(val)
 
-        # Picks
         for pk in picks_ids:
             pk_str = str(pk)
             val = float(value_pick(pk_str))
@@ -5054,7 +5842,9 @@ def api_trade_eval():
             "raw_picks_total": raw_picks_total,
             "player_values": player_values,
             "breakdown": breakdown,
-            "effective_total": raw_total,  # will be adjusted later
+            "assets": assets,
+            "pick_ids": [str(pk) for pk in picks_ids],
+            "effective_total": raw_total,
             "adjustment": 0.0,
         }
 
@@ -5069,7 +5859,7 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    FAIR_PCT = 0.08  # 8% band; tweak as needed
+    FAIR_PCT = 0.08
     baseline = max(a_eff, b_eff, 1.0)
     fair_band = baseline * FAIR_PCT
 
@@ -5081,6 +5871,23 @@ def api_trade_eval():
     else:
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
+    analysis_html = ""
+    viewer_roster_id = session.get("viewer_roster_id")
+
+    if league_id and viewer_roster_id:
+        try:
+            ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
+            analysis_html = get_trade_ai_analysis(
+                ctx=ctx,
+                viewer_roster_id=str(viewer_roster_id),
+                viewer_side=viewer_side,
+                side_a=side_a,
+                side_b=side_b,
+            )
+        except Exception as e:
+            print(f"[trade-ai] skipped: {e}")
+            analysis_html = ""
+
     return jsonify({
         "side_a": side_a,
         "side_b": side_b,
@@ -5089,6 +5896,7 @@ def api_trade_eval():
         "fair_threshold": fair_band,
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
+        "analysis_html": analysis_html,
     })
 
 
