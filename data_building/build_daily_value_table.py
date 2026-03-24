@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
 from dashboard_services.api import get_nfl_state
 from data_building.player_value_history import record_model_value_snapshot
 from utils.utils import (
@@ -46,6 +47,33 @@ def build_daily_data(season: int, week: int):
         inserted = record_model_value_snapshot(model_value_table)
         print(f"[daily] stored value-history snapshot rows={inserted}")
 
+
+def build_daily_market_pulse():
+    value_table = load_model_value_table() or []
+    top_assets = sorted(
+        [
+            {
+                "name": p.get("name"),
+                "position": p.get("position"),
+                "team": p.get("team"),
+                "value": _safe_float(p.get("value")),
+            }
+            for p in value_table
+            if isinstance(p, dict) and str(p.get("position") or "").upper() in {"QB", "RB", "WR", "TE"}
+        ],
+        key=lambda x: x["value"],
+        reverse=True,
+    )[:15]
+
+    payload = {"top_assets": top_assets}
+    cache_key = build_ai_cache_key("daily_market_pulse", payload, "v1")
+    cached = load_cached_ai_text(cache_key)
+    if cached:
+        return cached
+
+    html = "<div class='ai-copy'><p><strong>Daily market pulse:</strong> Elite value remains concentrated at the top of the board. Monitor shifting tiers around your weakest position group before forcing trades.</p></div>"
+    save_cached_ai_text(cache_key, html)
+    return html
 
 
 if __name__ == "__main__":

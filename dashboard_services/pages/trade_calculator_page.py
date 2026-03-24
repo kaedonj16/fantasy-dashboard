@@ -4,38 +4,6 @@ from typing import Optional
 def build_trade_calculator_body(league_id: Optional[str], season: Optional[int]) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
-    is_guest = not league_id
-
-    # ----------------------------------------------------------------
-    # Pre-compute all conditional HTML blocks outside the f-string
-    # to avoid nested triple-quote SyntaxErrors
-    # ----------------------------------------------------------------
-
-    # Show owner tags for all users (updated by viewer side selection)
-    side_a_owner_tag = '<div class="otc-team-owner-tag" id="sideAOwnerTag">Your side</div>'
-    side_b_owner_tag = '<div class="otc-team-owner-tag otc-team-owner-tag-muted" id="sideBOwnerTag">Other side</div>'
-
-    analyze_btn_disabled = 'disabled' if is_guest else ''
-    analyze_btn_label = 'Log In to Analyze' if is_guest else 'Analyze Trade'
-
-    ai_sub_text = 'AI-powered trade analysis for dynasty leagues' if is_guest else 'Personalized to your team direction and roster lens'
-
-    team_select_block = '' if is_guest else """
-                <div class="otc-summary-team-select">
-                  <select id="teamSelect" class="otc-team-select-dropdown" required>
-                    <option value="">Select your team...</option>
-                  </select>
-                </div>
-    """
-
-    ai_empty_title = 'Log In for AI Analysis' if is_guest else 'Waiting on a deal'
-    ai_empty_sub = (
-        'Connect your league to get personalized trade analysis powered by AI.'
-        if is_guest else
-        'Once both sides have assets, this panel can explain whether the trade fits your team build.'
-    )
-
-    is_guest_str = 'true' if is_guest else 'false'
 
     return f"""
     <div class="otc-layout">
@@ -43,49 +11,48 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         <input type="hidden" id="leagueIdInput" value="{league_val}">
         <input type="hidden" id="seasonInput" value="{season_val}">
         <input type="hidden" id="viewerSideInput" value="a">
-        <input type="hidden" id="isGuestMode" value="{is_guest_str}">
 
         <div class="otc-shell">
           <div class="otc-page-head">
             <div class="otc-page-title-wrap">
+              <div class="otc-page-kicker">Offseason tool</div>
               <h1 class="otc-page-title">Trade Calculator</h1>
               <p class="otc-page-copy">
                 Compare both sides of a deal using BR values, balance, and roster-building context.
               </p>
             </div>
-            <div class="otc-page-head-controls">
-              <div class="otc-viewer-toggles">
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="viewerSide" value="a" checked>
-                  <span>Team 1 is mine</span>
-                </label>
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="viewerSide" value="b">
-                  <span>Team 2 is mine</span>
-                </label>
-              </div>
-              <div class="otc-info-tooltip-wrapper">
-                <button type="button" class="otc-info-btn" id="otcInfoBtn">ⓘ</button>
-                <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">
-                  <div class="otc-info-tooltip-header">BR Value Model</div>
-                  <div class="otc-info-tooltip-body">
-                    <p>Player values derive from a hybrid approach combining production metrics, age-adjusted projections, and market consensus data.</p>
-                    <p>The model incorporates positional scarcity adjustments, role stability indicators, and capital investment signals to generate normalized valuations on a standardized scale.</p>
-                    <p>Values represent long-term dynasty asset worth rather than weekly fantasy output.</p>
-                  </div>
-                </div>
+            <div class="otc-page-badge">Dynasty Trade Tool</div>
+          </div>
+
+          <section class="otc-insight-banner">
+            <div class="otc-insight-banner-copy">
+              <div class="otc-insight-banner-title">GM Lens</div>
+              <div class="otc-insight-banner-sub">
+                Pick which side is yours and the calculator will evaluate the deal from your roster’s perspective.
               </div>
             </div>
-          </div>
+            <div class="otc-insight-banner-actions">
+              <label class="otc-viewer-toggle">
+                <input type="radio" name="viewerSide" value="a" checked>
+                <span>Team 1 is mine</span>
+              </label>
+              <label class="otc-viewer-toggle">
+                <input type="radio" name="viewerSide" value="b">
+                <span>Team 2 is mine</span>
+              </label>
+            </div>
+          </section>
 
           <div class="otc-builder-grid">
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <div>
                   <h2 class="otc-team-title">Team 1 gets...</h2>
+                  <div class="otc-team-sub">Assets being added to Side A</div>
                 </div>
                 <div class="otc-team-head-right">
-                  {side_a_owner_tag}
+                  <div class="otc-team-pill">Side A</div>
+                  <div class="otc-team-owner-tag" id="sideAOwnerTag">Your side</div>
                 </div>
               </div>
 
@@ -117,9 +84,11 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               <div class="otc-team-head">
                 <div>
                   <h2 class="otc-team-title">Team 2 gets...</h2>
+                  <div class="otc-team-sub">Assets being added to Side B</div>
                 </div>
                 <div class="otc-team-head-right">
-                  {side_b_owner_tag}
+                  <div class="otc-team-pill">Side B</div>
+                  <div class="otc-team-owner-tag otc-team-owner-tag-muted" id="sideBOwnerTag">Other side</div>
                 </div>
               </div>
 
@@ -155,10 +124,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                   <h2 class="otc-summary-title">Trade Summary</h2>
                   <div class="otc-summary-sub">Live balance as you add assets</div>
                 </div>
-                <div class="otc-summary-actions">
-                  {team_select_block}
-                  <button type="button" id="clearTradeBtn" class="otc-clear-btn" {analyze_btn_disabled}>{analyze_btn_label}</button>
-                </div>
+                <button type="button" id="clearTradeBtn" class="otc-clear-btn">Clear trade</button>
               </div>
 
               <div class="otc-summary-stats">
@@ -198,23 +164,19 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
             <section class="otc-ai-card" id="tradeAiPanel">
               <div class="otc-ai-head">
                 <div>
-                  <h2 class="otc-ai-title">BR Trade Analyst</h2>
-                  <div class="otc-ai-sub">{ai_sub_text}</div>
+                  <h2 class="otc-ai-title">Assistant GM BRoski</h2>
+                  <div class="otc-ai-sub">Personalized to your team direction and roster lens</div>
                 </div>
+                <div class="otc-ai-badge">Front Office</div>
               </div>
 
               <div id="tradeAiBody" class="otc-ai-body">
-                <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
-                  <div class="otc-ai-empty-title">Analyzing Trade...</div>
+                <div class="otc-ai-empty">
+                  <div class="otc-ai-empty-title">Waiting on a deal</div>
                   <div class="otc-ai-empty-sub">
-                    <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                    Once both sides have assets, this panel can explain whether the trade fits your team build.
                   </div>
                 </div>
-                <div class="otc-ai-empty" id="aiEmptyState">
-                  <div class="otc-ai-empty-title">{ai_empty_title}</div>
-                  <div class="otc-ai-empty-sub">{ai_empty_sub}</div>
-                </div>
-                <div id="aiAnalysisResult" style="display:none;"></div>
               </div>
             </section>
           </div>
@@ -244,8 +206,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
             </div>
           </div>
 
-          <div class="otc-spacer" style="height: 16px; width: 100%;"></div>
-
           <div class="otc-side-panel">
             <div class="otc-side-head">
               <h2 class="otc-side-title">Player Values</h2>
@@ -258,7 +218,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
               <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
               <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
-              <button class="otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
             </div>
 
             <div id="allPlayersList" class="otc-values-list">
@@ -267,38 +226,5 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
           </div>
         </div>
       </aside>
-
-      <div id="tradeLoginModal" class="trade-login-modal" style="display:none;">
-        <div class="trade-login-overlay"></div>
-        <div class="trade-login-content">
-          <button type="button" class="trade-login-close" id="closeLoginModal">&times;</button>
-          <h2 class="trade-login-title">Log In to Analyze Trade</h2>
-          <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis</p>
-
-          <div class="trade-login-form">
-            <div class="trade-login-row">
-              <label for="tradeUsername">Sleeper Username</label>
-              <input type="text" id="tradeUsername" placeholder="Enter your username">
-            </div>
-
-            <div class="trade-login-row">
-              <button type="button" id="tradeLookupBtn" class="otc-btn otc-btn-primary">Find My Leagues</button>
-            </div>
-
-            <div class="trade-login-row" id="tradeLeagueSelectWrap" style="display:none;">
-              <label for="tradeLeagueSelect">Choose League</label>
-              <select id="tradeLeagueSelect">
-                <option value="">Select a league</option>
-              </select>
-            </div>
-
-            <div class="trade-login-row" id="tradeGoWrap" style="display:none;">
-              <button type="button" id="tradeGoBtn" class="otc-btn otc-btn-primary">Open Trade Calculator</button>
-            </div>
-
-            <div id="tradeLookupError" class="trade-login-error" style="display:none;"></div>
-          </div>
-        </div>
-      </div>
     </div>
     """
