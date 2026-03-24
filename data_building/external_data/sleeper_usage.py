@@ -278,9 +278,6 @@ def write_usage_table_snapshot(
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    # Example file naming:
-    # values_2025-12-04.csv
-    # override if you use static file names
     pattern = f"usage_table_{yesterday.isoformat()}.json"
     yesterday_file = DATA_DIR / pattern
 
