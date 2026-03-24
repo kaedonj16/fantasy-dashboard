@@ -119,9 +119,13 @@ player_id,name,position,team,engine_value
 7528,Najee Harris,RB,LAC,198.8
 4663,Austin Ekeler,RB,WSH,198.0
 <<<<<<<< HEAD:data/engine_values_2026-03-26.csv
+<<<<<<<< HEAD:data/engine_values_2026-03-26.csv
 6130,Devin Singletary,RB,NYG,196.8
 ========
 >>>>>>>> d98b61a (updated):data/engine_values_2026-03-22.csv
+========
+6130,Devin Singletary,RB,NYG,196.8
+>>>>>>>> 0d14065 (updated daily job):data/engine_values_2026-03-23.csv
 5995,Justice Hill,RB,BAL,195.5
 4988,Nick Chubb,RB,HOU,192.1
 6151,Miles Sanders,RB,DAL,190.0
@@ -159,10 +163,14 @@ player_id,name,position,team,engine_value
 1339,Zach Ertz,TE,WSH,250.8
 4066,Evan Engram,TE,DEN,250.6
 <<<<<<<< HEAD:data/engine_values_2026-03-26.csv
+<<<<<<<< HEAD:data/engine_values_2026-03-26.csv
 12517,Colston Loveland,TE,CHI,249.8
 ========
 12517,Colston Loveland,TE,CHI,248.9
 >>>>>>>> d98b61a (updated):data/engine_values_2026-03-22.csv
+========
+12517,Colston Loveland,TE,CHI,249.8
+>>>>>>>> 0d14065 (updated daily job):data/engine_values_2026-03-23.csv
 2505,Darren Waller,TE,MIA,245.7
 4144,Jonnu Smith,TE,PIT,236.6
 6826,Cole Kmet,TE,CHI,233.3
@@ -180,6 +188,9 @@ player_id,name,position,team,engine_value
 9488,Jaxon Smith-Njigba,WR,SEA,879.7
 7564,Ja'Marr Chase,WR,CIN,878.9
 <<<<<<<< HEAD:data/engine_values_2026-03-26.csv
+<<<<<<<< HEAD:data/engine_values_2026-03-26.csv
+========
+>>>>>>>> 0d14065 (updated daily job):data/engine_values_2026-03-23.csv
 7547,Amon-Ra St. Brown,WR,DET,791.7
 10229,Rashee Rice,WR,KC,748.4
 8112,Drake London,WR,ATL,725.4
@@ -194,6 +205,7 @@ player_id,name,position,team,engine_value
 6801,Tee Higgins,WR,CIN,527.3
 8148,Jameson Williams,WR,DET,526.6
 8126,Wan'Dale Robinson,WR,NYG,516.3
+<<<<<<<< HEAD:data/engine_values_2026-03-26.csv
 5859,A.J. Brown,WR,PHI,493.5
 11635,Ladd McConkey,WR,LAC,474.4
 3321,Tyreek Hill,WR,MIA,464.8
@@ -216,14 +228,20 @@ player_id,name,position,team,engine_value
 6801,Tee Higgins,WR,CIN,527.1
 8148,Jameson Williams,WR,DET,526.4
 8126,Wan'Dale Robinson,WR,NYG,516.1
+========
+>>>>>>>> 0d14065 (updated daily job):data/engine_values_2026-03-23.csv
 5859,A.J. Brown,WR,PHI,493.5
-11635,Ladd McConkey,WR,LAC,474.2
+11635,Ladd McConkey,WR,LAC,474.4
 3321,Tyreek Hill,WR,MIA,464.8
-11631,Brian Thomas Jr.,WR,JAX,461.8
+11631,Brian Thomas Jr.,WR,JAX,462.0
 2133,Davante Adams,WR,LAR,461.1
 9754,Quentin Johnston,WR,LAC,459.2
+<<<<<<<< HEAD:data/engine_values_2026-03-26.csv
 9756,Jordan Addison,WR,MIN,451.0
 >>>>>>>> d98b61a (updated):data/engine_values_2026-03-22.csv
+========
+9756,Jordan Addison,WR,MIN,450.7
+>>>>>>>> 0d14065 (updated daily job):data/engine_values_2026-03-23.csv
 7525,DeVonta Smith,WR,PHI,448.8
 7526,Jaylen Waddle,WR,MIA,440.7
 10232,Michael Wilson,WR,ARI,437.7
