@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from flask import url_for
 from plotly.offline import plot as plotly_plot
+from typing import Any, Dict, List
 
+from dashboard_services.ai.history_recap import get_league_season_summary
 from dashboard_services.platform_api import get_bracket
 
 
@@ -21,8 +21,8 @@ def _playoff_start_week(league: dict) -> int:
 
 
 def build_regular_season_team_stats(
-    df_weekly: pd.DataFrame,
-    league: dict,
+        df_weekly: pd.DataFrame,
+        league: dict,
 ) -> pd.DataFrame:
     """
     Recompute standings/stats using only regular season weeks.
@@ -65,7 +65,8 @@ def build_regular_season_team_stats(
         pa = 0.0
 
         if "matchup_id" in team_df.columns:
-            for (week, matchup_id), grp in df[df["week"].isin(team_df["week"].unique())].groupby(["week", "matchup_id"]):
+            for (week, matchup_id), grp in df[df["week"].isin(team_df["week"].unique())].groupby(
+                    ["week", "matchup_id"]):
                 if len(grp) != 2:
                     continue
 
@@ -133,6 +134,120 @@ def build_regular_season_team_stats(
     out["Rank"] = out.index + 1
     return out
 
+
+def _build_full_season_stats(
+        df_weekly: pd.DataFrame,
+        league: dict,
+) -> pd.DataFrame:
+    """
+    Build stats for the entire season including playoffs.
+    Similar to build_regular_season_team_stats but includes all weeks.
+    """
+    if df_weekly is None or df_weekly.empty:
+        return pd.DataFrame()
+
+    df = df_weekly.copy()
+
+    if "week" not in df.columns or "owner" not in df.columns or "points" not in df.columns:
+        return pd.DataFrame()
+
+    df["week"] = pd.to_numeric(df["week"], errors="coerce")
+    df["points"] = pd.to_numeric(df["points"], errors="coerce").fillna(0.0)
+
+    # Include ALL weeks (regular season + playoffs)
+    # No filtering by playoff_start_week
+
+    # finalized only if available
+    if "finalized" in df.columns:
+        finalized_df = df[df["finalized"] == True].copy()
+        if not finalized_df.empty:
+            df = finalized_df
+
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+
+    for owner, team_df in df.groupby("owner"):
+        team_df = team_df.sort_values(["week", "matchup_id"] if "matchup_id" in team_df.columns else ["week"])
+
+        wins = 0
+        losses = 0
+        ties = 0
+        pf = float(team_df["points"].sum())
+        pa = 0.0
+
+        if "matchup_id" in team_df.columns:
+            for (week, matchup_id), grp in df[df["week"].isin(team_df["week"].unique())].groupby(
+                    ["week", "matchup_id"]):
+                if len(grp) != 2:
+                    continue
+
+                grp = grp.copy()
+                grp["points"] = pd.to_numeric(grp["points"], errors="coerce").fillna(0.0)
+
+                owner_rows = grp[grp["owner"] == owner]
+                if owner_rows.empty:
+                    continue
+
+                my_row = owner_rows.iloc[0]
+                opp_row = grp[grp["owner"] != owner]
+                if opp_row.empty:
+                    continue
+                opp_row = opp_row.iloc[0]
+
+                my_pts = float(my_row["points"])
+                opp_pts = float(opp_row["points"])
+
+                pa += opp_pts
+
+                if my_pts > opp_pts:
+                    wins += 1
+                elif my_pts < opp_pts:
+                    losses += 1
+                else:
+                    ties += 1
+        else:
+            # fallback if matchup_id is unavailable
+            pa = 0.0
+
+        games = wins + losses + ties
+        avg = pf / games if games > 0 else 0.0
+        std = float(team_df["points"].std()) if len(team_df) > 1 else 0.0
+        best = float(team_df["points"].max()) if not team_df.empty else 0.0
+        worst = float(team_df["points"].min()) if not team_df.empty else 0.0
+        win_pct = wins / games if games > 0 else 0.0
+
+        rows.append(
+            {
+                "owner": owner,
+                "Wins": wins,
+                "Losses": losses,
+                "Ties": ties,
+                "Win%": win_pct,
+                "PF": pf,
+                "PA": pa,
+                "AVG": avg,
+                "STD": std,
+                "MAX": best,
+                "MIN": worst,
+                "Streak": "",
+            }
+        )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+
+    out = out.sort_values(
+        ["Wins", "Win%", "PF", "PA"],
+        ascending=[False, False, False, True],
+    ).reset_index(drop=True)
+
+    out["Rank"] = out.index + 1
+    return out
+
+
 def _team_stats_lookup(team_stats: pd.DataFrame, team_name: str) -> dict:
     if team_stats is None or team_stats.empty or not team_name or team_name == "—":
         return {}
@@ -195,9 +310,9 @@ def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
         completed = sorted(
             completed,
             key=lambda m: (
-                _safe_int(m.get("r"), 0),                          # deepest round
-                -(_safe_int(m.get("p"), 999) or 999),             # prefer p=1 over p=3, etc.
-                -_safe_int(m.get("m"), 0),                        # stable fallback
+                _safe_int(m.get("r"), 0),  # deepest round
+                -(_safe_int(m.get("p"), 999) or 999),  # prefer p=1 over p=3, etc.
+                -_safe_int(m.get("m"), 0),  # stable fallback
             ),
             reverse=True,
         )
@@ -207,14 +322,14 @@ def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
     loser_id = championship.get("l")
 
     champion = (
-        roster_map.get(str(winner_id))
-        or roster_map.get(winner_id)
-        or f"Roster {winner_id}"
+            roster_map.get(str(winner_id))
+            or roster_map.get(winner_id)
+            or f"Roster {winner_id}"
     )
     runner_up = (
-        roster_map.get(str(loser_id))
-        or roster_map.get(loser_id)
-        or f"Roster {loser_id}"
+            roster_map.get(str(loser_id))
+            or roster_map.get(loser_id)
+            or f"Roster {loser_id}"
     )
 
     return str(champion), str(runner_up)
@@ -304,9 +419,9 @@ def _team_name_from_roster_id(roster_map: Dict[str, str], roster_id: Any) -> str
     if roster_id is None:
         return "—"
     return (
-        roster_map.get(str(roster_id))
-        or roster_map.get(roster_id)
-        or f"Roster {roster_id}"
+            roster_map.get(str(roster_id))
+            or roster_map.get(roster_id)
+            or f"Roster {roster_id}"
     )
 
 
@@ -371,9 +486,13 @@ def _build_summary(history_ctx: dict) -> dict:
     team_stats = build_regular_season_team_stats(df_weekly, league)
     team_stats = sort_team_stats(team_stats)
 
+    # Build full season stats for champion/runner-up records (including playoffs)
+    full_season_stats = _build_full_season_stats(df_weekly, league)
+
     champion, runner_up = get_champion_and_runner_up(history_ctx)
-    champion_stats = _team_stats_lookup(team_stats, champion)
-    runner_up_stats = _team_stats_lookup(team_stats, runner_up)
+    # Use full season stats for champion/runner-up records
+    champion_stats = _team_stats_lookup(full_season_stats, champion)
+    runner_up_stats = _team_stats_lookup(full_season_stats, runner_up)
 
     summary = {
         "champion": champion,
@@ -471,6 +590,7 @@ def _build_summary(history_ctx: dict) -> dict:
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
 
     return summary
+
 
 def _build_recap_line(summary: dict, season: int) -> str:
     champ = summary["champion"]
@@ -592,18 +712,24 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
 
 
 def build_history_body(
-    history_ctx: dict,
-    available_seasons: List[int],
-    base_platform: str,
-    base_season: int,
-    base_league_id: str,
-    selected_history_season: int,
+        history_ctx: dict,
+        available_seasons: List[int],
+        base_platform: str,
+        base_season: int,
+        base_league_id: str,
+        selected_history_season: int,
+        resolved_history_league_id: str,
 ) -> str:
     league = history_ctx.get("league") or {}
     df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
 
     summary = _build_summary(history_ctx)
-    recap_line = _build_recap_line(summary, selected_history_season)
+
+    # Add summary to history_ctx for AI generation
+    history_ctx["summary"] = summary
+
+    # Use AI to generate league season summary
+    recap_line = get_league_season_summary(history_ctx, selected_history_season)
     chart_html = _history_chart(df_weekly)
 
     regular_season_team_stats = build_regular_season_team_stats(df_weekly, league)
@@ -687,6 +813,11 @@ def build_history_body(
 
     return f"""
     <div class="history-page">
+      <!-- Hidden inputs for JavaScript -->
+      <input type="hidden" id="leagueIdInput" value="{base_league_id}">
+      <input type="hidden" id="seasonInput" value="{base_season}">
+      <input type="hidden" id="resolvedLeagueIdInput" value="{resolved_history_league_id}">
+      
       <div class="history-header">
         <div>
           <div class="history-kicker">League History</div>
@@ -723,10 +854,41 @@ def build_history_body(
         </div>
       </div>
 
-      <div class="history-section-card history-chart-panel">
-        <div class="history-section-title">Season Trend</div>
-        <div class="history-chart-wrap">
-          {chart_html}
+      <div class="history-top-grid">
+        <div class="history-section-card history-chart-panel">
+          <div class="history-section-title">Season Trend</div>
+          <div class="history-chart-wrap">
+            {chart_html}
+          </div>
+        </div>
+
+        <div class="history-section-card history-recap-panel">
+          <div class="history-recap-header">
+            <div class="history-section-title">Season Recap</div>
+            <div class="history-recap-controls">
+              <select id="recapTeamDropdown" class="recap-team-dropdown">
+                <option value="">Select your team...</option>
+              </select>
+              <button id="generateRecapBtn" class="recap-generate-btn" disabled>add
+                Generate AI Recap
+              </button>
+            </div>
+          </div>
+          <div class="history-recap-content">
+            <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
+              <div class="otc-ai-empty-title">Analyzing Season...</div>
+              <div class="otc-ai-empty-sub">
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+              </div>
+            </div>
+            <div id="aiAnalysisResult" class="recap-result" style="display:none;"></div>
+            <div id="aiEmptyState" class="recap-empty">
+              <div class="recap-empty-title">AI Season Recap</div>
+              <div class="recap-empty-sub">
+                Select your team above to generate a personalized season recap with AI analysis.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

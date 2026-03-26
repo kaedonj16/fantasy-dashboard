@@ -4,9 +4,9 @@ import math
 from typing import Dict, Optional
 
 from dashboard_services.api import get_nfl_state
-from utils.utils import load_usage_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
+from utils.utils import load_usage_table
 
 CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 

@@ -479,10 +479,10 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
 
 
 def resolve_league_id_for_season(
-    platform: str,
-    league_id: str,
-    current_season: int,
-    target_season: int,
+        platform: str,
+        league_id: str,
+        current_season: int,
+        target_season: int,
 ) -> str:
     """
     Returns the correct league_id for a given season.

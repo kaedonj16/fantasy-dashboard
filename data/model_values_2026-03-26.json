@@ -51,8 +51,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "ethan fernea",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 556,
     "pos_rank_label": "WR556"
+========
+    "pos_rank": 441,
+    "pos_rank_label": "WR441"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12013",
@@ -95,8 +100,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "kyric mcgowan",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 376,
     "pos_rank_label": "WR376"
+========
+    "pos_rank": 542,
+    "pos_rank_label": "WR542"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7591",
@@ -260,8 +270,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "austin watkins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 557,
     "pos_rank_label": "WR557"
+========
+    "pos_rank": 442,
+    "pos_rank_label": "WR442"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4455",
@@ -590,8 +605,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "johnny johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 449,
     "pos_rank_label": "WR449"
+========
+    "pos_rank": 386,
+    "pos_rank_label": "WR386"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12063",
@@ -667,8 +687,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "kade warner",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 491,
     "pos_rank_label": "WR491"
+========
+    "pos_rank": 443,
+    "pos_rank_label": "WR443"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8229",
@@ -678,8 +703,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "isaiah weston",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 558,
     "pos_rank_label": "WR558"
+========
+    "pos_rank": 444,
+    "pos_rank_label": "WR444"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2463",
@@ -744,8 +774,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "ihmir smith-marsette",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 377,
     "pos_rank_label": "WR377"
+========
+    "pos_rank": 395,
+    "pos_rank_label": "WR395"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12933",
@@ -788,8 +823,13 @@
     "age": 24.1,
     "value": 66.3,
     "search_name": "ricky white",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 189,
     "pos_rank_label": "WR189"
+========
+    "pos_rank": 176,
+    "pos_rank_label": "WR176"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7568",
@@ -810,8 +850,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "shae wyatt",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 492,
     "pos_rank_label": "WR492"
+========
+    "pos_rank": 445,
+    "pos_rank_label": "WR445"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12154",
@@ -821,8 +866,13 @@
     "age": 25.9,
     "value": 59.1,
     "search_name": "messiah swinson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 122,
     "pos_rank_label": "TE122"
+========
+    "pos_rank": 133,
+    "pos_rank_label": "TE133"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8146",
@@ -851,8 +901,13 @@
     "name": "Tejhaun Palmer",
     "team": "ARI",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.8,
     "value": 64.2,
+========
+    "age": 25.9,
+    "value": 43.1,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "tejhaun palmer",
     "pos_rank": 312,
     "pos_rank_label": "WR312"
@@ -873,11 +928,19 @@
     "name": "Ronnie Brown",
     "team": "TB",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.9,
     "value": 109.7,
     "search_name": "ronnie brown",
     "pos_rank": 61,
     "pos_rank_label": "RB61"
+========
+    "age": 26.0,
+    "value": 69.0,
+    "search_name": "ronnie brown",
+    "pos_rank": 68,
+    "pos_rank_label": "RB68"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4177",
@@ -917,11 +980,19 @@
     "name": "Pharoh Cooper",
     "team": "ARI",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 31.0,
     "value": 27.8,
     "search_name": "pharoh cooper",
     "pos_rank": 720,
     "pos_rank_label": "WR720"
+========
+    "age": 31.1,
+    "value": 9.7,
+    "search_name": "pharoh cooper",
+    "pos_rank": 705,
+    "pos_rank_label": "WR705"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12061",
@@ -972,8 +1043,13 @@
     "name": "La'Mical Perine",
     "team": "PIT",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 28.1,
     "value": 52.5,
+========
+    "age": 28.2,
+    "value": 37.2,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "la'mical perine",
     "pos_rank": 285,
     "pos_rank_label": "RB285"
@@ -1008,8 +1084,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "mathew sexton",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 559,
     "pos_rank_label": "WR559"
+========
+    "pos_rank": 446,
+    "pos_rank_label": "WR446"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11624",
@@ -1173,8 +1254,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "thomas hennigan",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 493,
     "pos_rank_label": "WR493"
+========
+    "pos_rank": 447,
+    "pos_rank_label": "WR447"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12126",
@@ -1206,8 +1292,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "deonte harty",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 560,
     "pos_rank_label": "WR560"
+========
+    "pos_rank": 448,
+    "pos_rank_label": "WR448"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12151",
@@ -1217,8 +1308,13 @@
     "age": 26.5,
     "value": 61.6,
     "search_name": "julian hicks",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 378,
     "pos_rank_label": "WR378"
+========
+    "pos_rank": 543,
+    "pos_rank_label": "WR543"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6806",
@@ -1261,8 +1357,8 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "bryan thompson",
-    "pos_rank": 450,
-    "pos_rank_label": "WR450"
+    "pos_rank": 449,
+    "pos_rank_label": "WR449"
   },
   {
     "id": "11650",
@@ -1327,8 +1423,13 @@
     "age": 26.7,
     "value": 61.6,
     "search_name": "dax milne",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 379,
     "pos_rank_label": "WR379"
+========
+    "pos_rank": 544,
+    "pos_rank_label": "WR544"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10210",
@@ -1371,8 +1472,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "jesse matthews",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 380,
     "pos_rank_label": "WR380"
+========
+    "pos_rank": 545,
+    "pos_rank_label": "WR545"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12969",
@@ -1426,8 +1532,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "tyreik mcallister",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 494,
     "pos_rank_label": "WR494"
+========
+    "pos_rank": 450,
+    "pos_rank_label": "WR450"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13013",
@@ -1492,8 +1603,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "maurice ffrench",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 561,
     "pos_rank_label": "WR561"
+========
+    "pos_rank": 451,
+    "pos_rank_label": "WR451"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5850",
@@ -1514,8 +1630,13 @@
     "age": 29.2,
     "value": 49.1,
     "search_name": "antonio callaway",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 635,
     "pos_rank_label": "WR635"
+========
+    "pos_rank": 430,
+    "pos_rank_label": "WR430"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5032",
@@ -1602,8 +1723,13 @@
     "age": 32.8,
     "value": 72.2,
     "search_name": "sammy watkins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 153,
     "pos_rank_label": "WR153"
+========
+    "pos_rank": 417,
+    "pos_rank_label": "WR417"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11524",
@@ -1646,8 +1772,13 @@
     "age": 26.2,
     "value": 61.6,
     "search_name": "deven thompkins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 381,
     "pos_rank_label": "WR381"
+========
+    "pos_rank": 538,
+    "pos_rank_label": "WR538"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7594",
@@ -1778,8 +1909,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "dazz newsome",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 451,
     "pos_rank_label": "WR451"
+========
+    "pos_rank": 402,
+    "pos_rank_label": "WR402"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11564",
@@ -1811,8 +1947,13 @@
     "age": 28.9,
     "value": 52.7,
     "search_name": "jacob harris",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 594,
     "pos_rank_label": "WR594"
+========
+    "pos_rank": 431,
+    "pos_rank_label": "WR431"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7956",
@@ -1822,8 +1963,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "cade johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 495,
     "pos_rank_label": "WR495"
+========
+    "pos_rank": 452,
+    "pos_rank_label": "WR452"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8219",
@@ -1976,8 +2122,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "griffin hebert",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 452,
     "pos_rank_label": "WR452"
+========
+    "pos_rank": 453,
+    "pos_rank_label": "WR453"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8207",
@@ -2017,11 +2168,19 @@
     "name": "Thomas Gordon",
     "team": "DET",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.5,
     "value": 59.1,
     "search_name": "thomas gordon",
     "pos_rank": 124,
     "pos_rank_label": "TE124"
+========
+    "age": 25.6,
+    "value": 30.0,
+    "search_name": "thomas gordon",
+    "pos_rank": 134,
+    "pos_rank_label": "TE134"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11606",
@@ -2130,8 +2289,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "landon parker",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 382,
     "pos_rank_label": "WR382"
+========
+    "pos_rank": 546,
+    "pos_rank_label": "WR546"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13063",
@@ -2160,8 +2324,13 @@
     "name": "Jacob Hollister",
     "team": "CAR",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 32.3,
     "value": 19.3,
+========
+    "age": 32.4,
+    "value": 0.0,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "jacob hollister",
     "pos_rank": 317,
     "pos_rank_label": "TE317"
@@ -2207,8 +2376,13 @@
     "age": 25.2,
     "value": 59.9,
     "search_name": "pat conroy",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 90,
     "pos_rank_label": "TE90"
+========
+    "pos_rank": 96,
+    "pos_rank_label": "TE96"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8167",
@@ -2229,8 +2403,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "tyshaun james",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 383,
     "pos_rank_label": "WR383"
+========
+    "pos_rank": 547,
+    "pos_rank_label": "WR547"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7541",
@@ -2240,8 +2419,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "cornell powell",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 562,
     "pos_rank_label": "WR562"
+========
+    "pos_rank": 387,
+    "pos_rank_label": "WR387"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "1071",
@@ -2273,8 +2457,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "dillon stoner",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 563,
     "pos_rank_label": "WR563"
+========
+    "pos_rank": 454,
+    "pos_rank_label": "WR454"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8928",
@@ -2284,8 +2473,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "daylen baldwin",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 384,
     "pos_rank_label": "WR384"
+========
+    "pos_rank": 548,
+    "pos_rank_label": "WR548"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8908",
@@ -2295,8 +2489,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "brandon lewis",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 453,
     "pos_rank_label": "WR453"
+========
+    "pos_rank": 455,
+    "pos_rank_label": "WR455"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5253",
@@ -2394,8 +2593,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "sy barnett",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 564,
     "pos_rank_label": "WR564"
+========
+    "pos_rank": 456,
+    "pos_rank_label": "WR456"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7547",
@@ -2416,8 +2620,13 @@
     "age": 27.3,
     "value": 55.9,
     "search_name": "kalil pimpleton",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 496,
     "pos_rank_label": "WR496"
+========
+    "pos_rank": 457,
+    "pos_rank_label": "WR457"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13088",
@@ -2438,8 +2647,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "dai'jean dixon",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 497,
     "pos_rank_label": "WR497"
+========
+    "pos_rank": 458,
+    "pos_rank_label": "WR458"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5828",
@@ -2482,8 +2696,13 @@
     "age": 32.8,
     "value": 28.1,
     "search_name": "chris moore",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 718,
     "pos_rank_label": "WR718"
+========
+    "pos_rank": 703,
+    "pos_rank_label": "WR703"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2410",
@@ -2504,8 +2723,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "justyn ross",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 385,
     "pos_rank_label": "WR385"
+========
+    "pos_rank": 549,
+    "pos_rank_label": "WR549"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11306",
@@ -2592,8 +2816,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "jalen sample",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 454,
     "pos_rank_label": "WR454"
+========
+    "pos_rank": 459,
+    "pos_rank_label": "WR459"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2588",
@@ -2702,8 +2931,13 @@
     "age": 25.5,
     "value": 58.0,
     "search_name": "erick all",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 134,
     "pos_rank_label": "TE134"
+========
+    "pos_rank": 95,
+    "pos_rank_label": "TE95"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13217",
@@ -2768,8 +3002,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "dimitri stanley",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 386,
     "pos_rank_label": "WR386"
+========
+    "pos_rank": 550,
+    "pos_rank_label": "WR550"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10859",
@@ -2922,8 +3161,13 @@
     "age": 24.0,
     "value": 66.3,
     "search_name": "brenden rice",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 194,
     "pos_rank_label": "WR194"
+========
+    "pos_rank": 177,
+    "pos_rank_label": "WR177"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4035",
@@ -3120,8 +3364,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "jeshaun jones",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 387,
     "pos_rank_label": "WR387"
+========
+    "pos_rank": 551,
+    "pos_rank_label": "WR551"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12018",
@@ -3131,8 +3380,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "sam pinckney",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 388,
     "pos_rank_label": "WR388"
+========
+    "pos_rank": 552,
+    "pos_rank_label": "WR552"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2161",
@@ -3175,8 +3429,13 @@
     "age": 27.6,
     "value": 56.2,
     "search_name": "mason kinsey",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 484,
     "pos_rank_label": "WR484"
+========
+    "pos_rank": 426,
+    "pos_rank_label": "WR426"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12715",
@@ -3241,8 +3500,13 @@
     "age": 37.1,
     "value": 73.6,
     "search_name": "julio jones",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 144,
     "pos_rank_label": "WR144"
+========
+    "pos_rank": 418,
+    "pos_rank_label": "WR418"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12699",
@@ -3274,8 +3538,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "xavier johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 455,
     "pos_rank_label": "WR455"
+========
+    "pos_rank": 460,
+    "pos_rank_label": "WR460"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7992",
@@ -3296,8 +3565,13 @@
     "age": 31.0,
     "value": 26.8,
     "search_name": "cedrick wilson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 769,
     "pos_rank_label": "WR769"
+========
+    "pos_rank": 704,
+    "pos_rank_label": "WR704"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9501",
@@ -3406,8 +3680,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "antoine green",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 389,
     "pos_rank_label": "WR389"
+========
+    "pos_rank": 422,
+    "pos_rank_label": "WR422"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6007",
@@ -3439,8 +3718,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "ty fryfogle",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 456,
     "pos_rank_label": "WR456"
+========
+    "pos_rank": 461,
+    "pos_rank_label": "WR461"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4160",
@@ -3472,8 +3756,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "tre nixon",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 565,
     "pos_rank_label": "WR565"
+========
+    "pos_rank": 403,
+    "pos_rank_label": "WR403"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12777",
@@ -3579,8 +3868,13 @@
     "name": "Marlon Mack",
     "team": "ARI",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 30.0,
     "value": 46.9,
+========
+    "age": 30.1,
+    "value": 23.2,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "marlon mack",
     "pos_rank": 317,
     "pos_rank_label": "RB317"
@@ -3725,8 +4019,13 @@
     "age": 29.3,
     "value": 57.6,
     "search_name": "andy isabella",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 475,
     "pos_rank_label": "WR475"
+========
+    "pos_rank": 427,
+    "pos_rank_label": "WR427"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11210",
@@ -3868,8 +4167,13 @@
     "age": 29.5,
     "value": 57.6,
     "search_name": "dj chark",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 476,
     "pos_rank_label": "WR476"
+========
+    "pos_rank": 440,
+    "pos_rank_label": "WR440"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8581",
@@ -3879,8 +4183,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "trevon bradford",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 566,
     "pos_rank_label": "WR566"
+========
+    "pos_rank": 462,
+    "pos_rank_label": "WR462"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3177",
@@ -3931,8 +4240,13 @@
     "name": "Cody Hollister",
     "team": "TEN",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 32.3,
     "value": 27.8,
+========
+    "age": 32.4,
+    "value": 1.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "cody hollister",
     "pos_rank": 729,
     "pos_rank_label": "WR729"
@@ -3945,8 +4259,13 @@
     "age": 26.2,
     "value": 61.6,
     "search_name": "jeff foreman",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 390,
     "pos_rank_label": "WR390"
+========
+    "pos_rank": 553,
+    "pos_rank_label": "WR553"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12210",
@@ -3978,8 +4297,13 @@
     "age": 29.5,
     "value": 59.2,
     "search_name": "stanley morgan",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 446,
     "pos_rank_label": "WR446"
+========
+    "pos_rank": 428,
+    "pos_rank_label": "WR428"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12670",
@@ -4033,8 +4357,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "david durden",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 498,
     "pos_rank_label": "WR498"
+========
+    "pos_rank": 463,
+    "pos_rank_label": "WR463"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7543",
@@ -4407,8 +4736,13 @@
     "age": 29.2,
     "value": 49.1,
     "search_name": "maurice alexander",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 639,
     "pos_rank_label": "WR639"
+========
+    "pos_rank": 432,
+    "pos_rank_label": "WR432"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13119",
@@ -4440,8 +4774,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "juwan green",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 499,
     "pos_rank_label": "WR499"
+========
+    "pos_rank": 464,
+    "pos_rank_label": "WR464"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11270",
@@ -4481,11 +4820,19 @@
     "name": "Gary Jennings",
     "team": "CAR",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 29.0,
     "value": 52.7,
     "search_name": "gary jennings",
     "pos_rank": 597,
     "pos_rank_label": "WR597"
+========
+    "age": 29.1,
+    "value": 34.9,
+    "search_name": "gary jennings",
+    "pos_rank": 433,
+    "pos_rank_label": "WR433"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12062",
@@ -4517,8 +4864,13 @@
     "age": 27.3,
     "value": 55.9,
     "search_name": "travell harris",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 500,
     "pos_rank_label": "WR500"
+========
+    "pos_rank": 465,
+    "pos_rank_label": "WR465"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5872",
@@ -4602,11 +4954,19 @@
     "name": "Jason Brownlee",
     "team": "KC",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 27.1,
     "value": 58.2,
     "search_name": "jason brownlee",
     "pos_rank": 457,
     "pos_rank_label": "WR457"
+========
+    "age": 27.2,
+    "value": 33.8,
+    "search_name": "jason brownlee",
+    "pos_rank": 466,
+    "pos_rank_label": "WR466"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2391",
@@ -4704,8 +5064,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "racey mcmath",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 391,
     "pos_rank_label": "WR391"
+========
+    "pos_rank": 423,
+    "pos_rank_label": "WR423"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8154",
@@ -4715,8 +5080,13 @@
     "age": 27.0,
     "value": 92.7,
     "search_name": "brian robinson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 72,
     "pos_rank_label": "RB72"
+========
+    "pos_rank": 66,
+    "pos_rank_label": "RB66"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12544",
@@ -4811,11 +5181,19 @@
     "name": "Tyler Scott",
     "team": "LAR",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.4,
     "value": 65.3,
     "search_name": "tyler scott",
     "pos_rank": 233,
     "pos_rank_label": "WR233"
+========
+    "age": 24.5,
+    "value": 46.5,
+    "search_name": "tyler scott",
+    "pos_rank": 180,
+    "pos_rank_label": "WR180"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13258",
@@ -4825,8 +5203,13 @@
     "age": null,
     "value": 74.1,
     "search_name": "phil lutz",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 138,
     "pos_rank_label": "WR138"
+========
+    "pos_rank": 171,
+    "pos_rank_label": "WR171"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5111",
@@ -4858,8 +5241,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "elijah cooks",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 501,
     "pos_rank_label": "WR501"
+========
+    "pos_rank": 467,
+    "pos_rank_label": "WR467"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12773",
@@ -4935,8 +5323,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "colton dowell",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 458,
     "pos_rank_label": "WR458"
+========
+    "pos_rank": 404,
+    "pos_rank_label": "WR404"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12514",
@@ -4990,8 +5383,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "warren jackson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 392,
     "pos_rank_label": "WR392"
+========
+    "pos_rank": 554,
+    "pos_rank_label": "WR554"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8131",
@@ -5045,8 +5443,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "montrell washington",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 459,
     "pos_rank_label": "WR459"
+========
+    "pos_rank": 388,
+    "pos_rank_label": "WR388"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9483",
@@ -5166,8 +5569,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "john jackson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 393,
     "pos_rank_label": "WR393"
+========
+    "pos_rank": 424,
+    "pos_rank_label": "WR424"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13212",
@@ -5254,8 +5662,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "a.t. perry",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 394,
     "pos_rank_label": "WR394"
+========
+    "pos_rank": 425,
+    "pos_rank_label": "WR425"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9506",
@@ -5276,8 +5689,13 @@
     "age": 31.5,
     "value": 56.2,
     "search_name": "demarcus robinson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 485,
     "pos_rank_label": "WR485"
+========
+    "pos_rank": 434,
+    "pos_rank_label": "WR434"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4881",
@@ -5386,8 +5804,13 @@
     "age": 35.6,
     "value": 61.5,
     "search_name": "adam thielen",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 435,
     "pos_rank_label": "WR435"
+========
+    "pos_rank": 399,
+    "pos_rank_label": "WR399"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2822",
@@ -5474,8 +5897,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "jadakis bonds",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 395,
     "pos_rank_label": "WR395"
+========
+    "pos_rank": 555,
+    "pos_rank_label": "WR555"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6834",
@@ -5518,8 +5946,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "marcus simms",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 568,
     "pos_rank_label": "WR568"
+========
+    "pos_rank": 468,
+    "pos_rank_label": "WR468"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12743",
@@ -5529,8 +5962,13 @@
     "age": 23.4,
     "value": 66.3,
     "search_name": "junior bergen",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 201,
     "pos_rank_label": "WR201"
+========
+    "pos_rank": 178,
+    "pos_rank_label": "WR178"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12526",
@@ -5617,8 +6055,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "kwamie lassiter",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 569,
     "pos_rank_label": "WR569"
+========
+    "pos_rank": 469,
+    "pos_rank_label": "WR469"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11159",
@@ -5628,8 +6071,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "zion bowens",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 396,
     "pos_rank_label": "WR396"
+========
+    "pos_rank": 556,
+    "pos_rank_label": "WR556"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11082",
@@ -5683,8 +6131,13 @@
     "age": 31.0,
     "value": 27.8,
     "search_name": "daesean hamilton",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 733,
     "pos_rank_label": "WR733"
+========
+    "pos_rank": 698,
+    "pos_rank_label": "WR698"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12772",
@@ -5804,8 +6257,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "tanner knue",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 397,
     "pos_rank_label": "WR397"
+========
+    "pos_rank": 557,
+    "pos_rank_label": "WR557"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2360",
@@ -5867,11 +6325,19 @@
     "name": "Anthony Schwartz",
     "team": "MIA",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.5,
     "value": 69.2,
     "search_name": "anthony schwartz",
     "pos_rank": 177,
     "pos_rank_label": "WR177"
+========
+    "age": 25.6,
+    "value": 50.0,
+    "search_name": "anthony schwartz",
+    "pos_rank": 157,
+    "pos_rank_label": "WR157"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5038",
@@ -5892,16 +6358,26 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "javonta payton",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 502,
     "pos_rank_label": "WR502"
+========
+    "pos_rank": 470,
+    "pos_rank_label": "WR470"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7593",
     "name": "Trey Sermon",
     "team": "PIT",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 27.1,
     "value": 61.3,
+========
+    "age": 27.2,
+    "value": 42.4,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "trey sermon",
     "pos_rank": 229,
     "pos_rank_label": "RB229"
@@ -5925,8 +6401,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "jaelon darden",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 503,
     "pos_rank_label": "WR503"
+========
+    "pos_rank": 389,
+    "pos_rank_label": "WR389"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8249",
@@ -6109,11 +6590,19 @@
     "name": "Josh Gordon",
     "team": "TEN",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 34.9,
     "value": 72.2,
     "search_name": "josh gordon",
     "pos_rank": 158,
     "pos_rank_label": "WR158"
+========
+    "age": 35.0,
+    "value": 35.9,
+    "search_name": "josh gordon",
+    "pos_rank": 419,
+    "pos_rank_label": "WR419"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4179",
@@ -6156,8 +6645,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "latreal jones",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 504,
     "pos_rank_label": "WR504"
+========
+    "pos_rank": 471,
+    "pos_rank_label": "WR471"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13120",
@@ -6186,11 +6680,19 @@
     "name": "Caleb Williams",
     "team": "CHI",
     "position": "QB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.3,
     "value": 344.2,
     "search_name": "caleb williams",
     "pos_rank": 9,
     "pos_rank_label": "QB9"
+========
+    "age": 24.4,
+    "value": 312.9,
+    "search_name": "caleb williams",
+    "pos_rank": 11,
+    "pos_rank_label": "QB11"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5927",
@@ -6211,8 +6713,13 @@
     "age": 27.8,
     "value": 55.9,
     "search_name": "aaron parker",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 505,
     "pos_rank_label": "WR505"
+========
+    "pos_rank": 472,
+    "pos_rank_label": "WR472"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7107",
@@ -6255,8 +6762,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "demichael harris",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 506,
     "pos_rank_label": "WR506"
+========
+    "pos_rank": 473,
+    "pos_rank_label": "WR473"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7092",
@@ -6296,8 +6808,13 @@
     "name": "Bryce Oliver",
     "team": "TEN",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.8,
     "value": 64.5,
+========
+    "age": 25.9,
+    "value": 42.8,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "bryce oliver",
     "pos_rank": 307,
     "pos_rank_label": "WR307"
@@ -6563,8 +7080,13 @@
     "age": 26.7,
     "value": 61.6,
     "search_name": "nick nash",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 398,
     "pos_rank_label": "WR398"
+========
+    "pos_rank": 558,
+    "pos_rank_label": "WR558"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11102",
@@ -6607,8 +7129,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "lawrence keys",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 399,
     "pos_rank_label": "WR399"
+========
+    "pos_rank": 559,
+    "pos_rank_label": "WR559"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10651",
@@ -6629,8 +7156,13 @@
     "age": 26.2,
     "value": 63.5,
     "search_name": "brevyn spann-ford",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 71,
     "pos_rank_label": "TE71"
+========
+    "pos_rank": 132,
+    "pos_rank_label": "TE132"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "627",
@@ -6673,8 +7205,13 @@
     "age": null,
     "value": 74.1,
     "search_name": "lincoln victor",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 139,
     "pos_rank_label": "WR139"
+========
+    "pos_rank": 172,
+    "pos_rank_label": "WR172"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8707",
@@ -6728,8 +7265,13 @@
     "age": 25.1,
     "value": 59.9,
     "search_name": "tyler neville",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 95,
     "pos_rank_label": "TE95"
+========
+    "pos_rank": 97,
+    "pos_rank_label": "TE97"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5880",
@@ -6761,8 +7303,13 @@
     "age": 27.7,
     "value": 56.5,
     "search_name": "austin trammell",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 483,
     "pos_rank_label": "WR483"
+========
+    "pos_rank": 474,
+    "pos_rank_label": "WR474"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8938",
@@ -6849,8 +7396,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "cody chrest",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 507,
     "pos_rank_label": "WR507"
+========
+    "pos_rank": 475,
+    "pos_rank_label": "WR475"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7771",
@@ -6882,16 +7434,26 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "brian cobbs",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 400,
     "pos_rank_label": "WR400"
+========
+    "pos_rank": 560,
+    "pos_rank_label": "WR560"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12501",
     "name": "Matthew Golden",
     "team": "GB",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 22.6,
     "value": 196.3,
+========
+    "age": 22.7,
+    "value": 173.1,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "matthew golden",
     "pos_rank": 51,
     "pos_rank_label": "WR51"
@@ -6901,8 +7463,13 @@
     "name": "Theo Wease Jr.",
     "team": "MIA",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.7,
     "value": 138.5,
+========
+    "age": 24.8,
+    "value": 110.2,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "theo wease",
     "pos_rank": 72,
     "pos_rank_label": "WR72"
@@ -6915,8 +7482,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "slade bolden",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 508,
     "pos_rank_label": "WR508"
+========
+    "pos_rank": 476,
+    "pos_rank_label": "WR476"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11610",
@@ -6981,8 +7553,13 @@
     "age": 26.8,
     "value": 60.3,
     "search_name": "dareke young",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 440,
     "pos_rank_label": "WR440"
+========
+    "pos_rank": 385,
+    "pos_rank_label": "WR385"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11574",
@@ -7102,8 +7679,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "lance mccutcheon",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 460,
     "pos_rank_label": "WR460"
+========
+    "pos_rank": 477,
+    "pos_rank_label": "WR477"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7670",
@@ -7176,8 +7758,13 @@
     "name": "Master Teague",
     "team": "PIT",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.8,
     "value": 65.3,
+========
+    "age": 25.9,
+    "value": 41.6,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "master teague",
     "pos_rank": 171,
     "pos_rank_label": "RB171"
@@ -7201,8 +7788,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "gavin holmes",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 509,
     "pos_rank_label": "WR509"
+========
+    "pos_rank": 478,
+    "pos_rank_label": "WR478"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11474",
@@ -7223,8 +7815,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "daewood davis",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 510,
     "pos_rank_label": "WR510"
+========
+    "pos_rank": 479,
+    "pos_rank_label": "WR479"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11900",
@@ -7256,8 +7853,13 @@
     "age": 27.2,
     "value": 55.0,
     "search_name": "connor heyward",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 175,
     "pos_rank_label": "TE175"
+========
+    "pos_rank": 127,
+    "pos_rank_label": "TE127"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11998",
@@ -7520,8 +8122,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "ra'shaun henry",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 570,
     "pos_rank_label": "WR570"
+========
+    "pos_rank": 480,
+    "pos_rank_label": "WR480"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7032",
@@ -7531,8 +8138,13 @@
     "age": 28.5,
     "value": 52.7,
     "search_name": "tyrie cleveland",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 601,
     "pos_rank_label": "WR601"
+========
+    "pos_rank": 539,
+    "pos_rank_label": "WR539"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7439",
@@ -7586,8 +8198,13 @@
     "age": 26.7,
     "value": 61.6,
     "search_name": "malik flowers",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 402,
     "pos_rank_label": "WR402"
+========
+    "pos_rank": 561,
+    "pos_rank_label": "WR561"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11583",
@@ -7652,8 +8269,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "t.j. vasher",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 511,
     "pos_rank_label": "WR511"
+========
+    "pos_rank": 481,
+    "pos_rank_label": "WR481"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6311",
@@ -7707,8 +8329,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "jalen virgil",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 512,
     "pos_rank_label": "WR512"
+========
+    "pos_rank": 482,
+    "pos_rank_label": "WR482"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9231",
@@ -7817,8 +8444,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "samson nacua",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 571,
     "pos_rank_label": "WR571"
+========
+    "pos_rank": 483,
+    "pos_rank_label": "WR483"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7595",
@@ -7891,8 +8523,13 @@
     "name": "Quentin Skinner",
     "team": "NYJ",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.2,
     "value": 66.3,
+========
+    "age": 24.3,
+    "value": 42.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "quentin skinner",
     "pos_rank": 204,
     "pos_rank_label": "WR204"
@@ -7971,8 +8608,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "freddie swain",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 513,
     "pos_rank_label": "WR513"
+========
+    "pos_rank": 405,
+    "pos_rank_label": "WR405"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8147",
@@ -8103,8 +8745,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "trishton jackson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 514,
     "pos_rank_label": "WR514"
+========
+    "pos_rank": 484,
+    "pos_rank_label": "WR484"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11573",
@@ -8180,8 +8827,13 @@
     "age": 27.8,
     "value": 55.9,
     "search_name": "thayer thomas",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 515,
     "pos_rank_label": "WR515"
+========
+    "pos_rank": 485,
+    "pos_rank_label": "WR485"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9495",
@@ -8213,8 +8865,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "oliver martin",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 516,
     "pos_rank_label": "WR516"
+========
+    "pos_rank": 486,
+    "pos_rank_label": "WR486"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7828",
@@ -8268,8 +8925,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "kody case",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 517,
     "pos_rank_label": "WR517"
+========
+    "pos_rank": 487,
+    "pos_rank_label": "WR487"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7531",
@@ -8532,8 +9194,13 @@
     "age": 27.9,
     "value": 56.8,
     "search_name": "lil'jordan humphrey",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 481,
     "pos_rank_label": "WR481"
+========
+    "pos_rank": 400,
+    "pos_rank_label": "WR400"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4863",
@@ -8686,8 +9353,13 @@
     "age": 28.8,
     "value": 52.7,
     "search_name": "k.j. osborn",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 602,
     "pos_rank_label": "WR602"
+========
+    "pos_rank": 414,
+    "pos_rank_label": "WR414"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11620",
@@ -8741,8 +9413,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "kaden davis",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 518,
     "pos_rank_label": "WR518"
+========
+    "pos_rank": 488,
+    "pos_rank_label": "WR488"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2381",
@@ -8851,8 +9528,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "keshunn abram",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 461,
     "pos_rank_label": "WR461"
+========
+    "pos_rank": 489,
+    "pos_rank_label": "WR489"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10221",
@@ -8884,8 +9566,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "chase cota",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 403,
     "pos_rank_label": "WR403"
+========
+    "pos_rank": 562,
+    "pos_rank_label": "WR562"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8184",
@@ -8928,8 +9615,13 @@
     "age": 32.5,
     "value": 57.6,
     "search_name": "brandin cooks",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 477,
     "pos_rank_label": "WR477"
+========
+    "pos_rank": 383,
+    "pos_rank_label": "WR383"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6843",
@@ -9027,8 +9719,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "cam johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 462,
     "pos_rank_label": "WR462"
+========
+    "pos_rank": 406,
+    "pos_rank_label": "WR406"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5235",
@@ -9049,8 +9746,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "jerome kapp",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 463,
     "pos_rank_label": "WR463"
+========
+    "pos_rank": 490,
+    "pos_rank_label": "WR490"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7159",
@@ -9115,8 +9817,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "sam james",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 404,
     "pos_rank_label": "WR404"
+========
+    "pos_rank": 563,
+    "pos_rank_label": "WR563"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8931",
@@ -9126,8 +9833,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "josh ali",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 464,
     "pos_rank_label": "WR464"
+========
+    "pos_rank": 491,
+    "pos_rank_label": "WR491"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11292",
@@ -9192,8 +9904,13 @@
     "age": 27.3,
     "value": 53.9,
     "search_name": "grant calcaterra",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 178,
     "pos_rank_label": "TE178"
+========
+    "pos_rank": 129,
+    "pos_rank_label": "TE129"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5937",
@@ -9222,19 +9939,32 @@
     "name": "A.J. Green",
     "team": "ARI",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 37.6,
     "value": 72.2,
     "search_name": "a.j. green",
     "pos_rank": 159,
     "pos_rank_label": "WR159"
+========
+    "age": 37.7,
+    "value": 35.9,
+    "search_name": "a.j. green",
+    "pos_rank": 420,
+    "pos_rank_label": "WR420"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12487",
     "name": "Terrance Ferguson",
     "team": "LAR",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 23.0,
     "value": 98.4,
+========
+    "age": 23.1,
+    "value": 78.0,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "terrance ferguson",
     "pos_rank": 41,
     "pos_rank_label": "TE41"
@@ -9258,8 +9988,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "kevin shaa",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 572,
     "pos_rank_label": "WR572"
+========
+    "pos_rank": 492,
+    "pos_rank_label": "WR492"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10233",
@@ -9335,8 +10070,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "danny davis",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 573,
     "pos_rank_label": "WR573"
+========
+    "pos_rank": 493,
+    "pos_rank_label": "WR493"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8225",
@@ -9412,8 +10152,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "kekoa crawford",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 574,
     "pos_rank_label": "WR574"
+========
+    "pos_rank": 494,
+    "pos_rank_label": "WR494"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7552",
@@ -9423,8 +10168,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "blake proehl",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 519,
     "pos_rank_label": "WR519"
+========
+    "pos_rank": 495,
+    "pos_rank_label": "WR495"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3164",
@@ -9511,8 +10261,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "xavier white",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 405,
     "pos_rank_label": "WR405"
+========
+    "pos_rank": 564,
+    "pos_rank_label": "WR564"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7216",
@@ -9533,8 +10288,13 @@
     "age": 26.2,
     "value": 61.6,
     "search_name": "jaray jenkins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 406,
     "pos_rank_label": "WR406"
+========
+    "pos_rank": 565,
+    "pos_rank_label": "WR565"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12389",
@@ -9544,8 +10304,8 @@
     "age": 25.1,
     "value": 59.9,
     "search_name": "hayden rucci",
-    "pos_rank": 100,
-    "pos_rank_label": "TE100"
+    "pos_rank": 99,
+    "pos_rank_label": "TE99"
   },
   {
     "id": "12028",
@@ -9599,8 +10359,13 @@
     "age": 27.9,
     "value": 55.9,
     "search_name": "travis toivonen",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 520,
     "pos_rank_label": "WR520"
+========
+    "pos_rank": 496,
+    "pos_rank_label": "WR496"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12507",
@@ -9654,8 +10419,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "dezmon patmon",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 521,
     "pos_rank_label": "WR521"
+========
+    "pos_rank": 407,
+    "pos_rank_label": "WR407"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11654",
@@ -9728,8 +10498,13 @@
     "name": "Oronde Gadsden II",
     "team": "LAC",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 22.7,
     "value": 172.7,
+========
+    "age": 22.8,
+    "value": 147.0,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "oronde gadsden",
     "pos_rank": 17,
     "pos_rank_label": "TE17"
@@ -9742,8 +10517,8 @@
     "age": 25.1,
     "value": 59.9,
     "search_name": "luke deal",
-    "pos_rank": 101,
-    "pos_rank_label": "TE101"
+    "pos_rank": 100,
+    "pos_rank_label": "TE100"
   },
   {
     "id": "2431",
@@ -9874,8 +10649,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "derek wright",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 522,
     "pos_rank_label": "WR522"
+========
+    "pos_rank": 497,
+    "pos_rank_label": "WR497"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5347",
@@ -9973,8 +10753,13 @@
     "age": 31.5,
     "value": 32.5,
     "search_name": "anthony miller",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 702,
     "pos_rank_label": "WR702"
+========
+    "pos_rank": 699,
+    "pos_rank_label": "WR699"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11387",
@@ -9984,8 +10769,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "sean ryan",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 523,
     "pos_rank_label": "WR523"
+========
+    "pos_rank": 390,
+    "pos_rank_label": "WR390"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8111",
@@ -10017,8 +10807,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "keytaon thompson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 524,
     "pos_rank_label": "WR524"
+========
+    "pos_rank": 498,
+    "pos_rank_label": "WR498"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12852",
@@ -10105,8 +10900,13 @@
     "age": 33.5,
     "value": 59.9,
     "search_name": "tyler lockett",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 441,
     "pos_rank_label": "WR441"
+========
+    "pos_rank": 439,
+    "pos_rank_label": "WR439"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4866",
@@ -10127,8 +10927,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "chris coleman",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 465,
     "pos_rank_label": "WR465"
+========
+    "pos_rank": 499,
+    "pos_rank_label": "WR499"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12518",
@@ -10193,8 +10998,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "josh hammond",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 525,
     "pos_rank_label": "WR525"
+========
+    "pos_rank": 500,
+    "pos_rank_label": "WR500"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4435",
@@ -10314,8 +11124,13 @@
     "age": 27.3,
     "value": 56.2,
     "search_name": "cody white",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 487,
     "pos_rank_label": "WR487"
+========
+    "pos_rank": 435,
+    "pos_rank_label": "WR435"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13241",
@@ -10380,8 +11195,13 @@
     "age": 27.8,
     "value": 55.9,
     "search_name": "myron mitchell",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 526,
     "pos_rank_label": "WR526"
+========
+    "pos_rank": 501,
+    "pos_rank_label": "WR501"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "1338",
@@ -10622,8 +11442,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "kearis jackson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 407,
     "pos_rank_label": "WR407"
+========
+    "pos_rank": 566,
+    "pos_rank_label": "WR566"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6178",
@@ -10688,8 +11513,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "antoine wesley",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 575,
     "pos_rank_label": "WR575"
+========
+    "pos_rank": 502,
+    "pos_rank_label": "WR502"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12981",
@@ -10699,8 +11529,8 @@
     "age": 25.2,
     "value": 59.9,
     "search_name": "gee scott",
-    "pos_rank": 102,
-    "pos_rank_label": "TE102"
+    "pos_rank": 101,
+    "pos_rank_label": "TE101"
   },
   {
     "id": "12485",
@@ -10776,8 +11606,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "quintez cephus",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 527,
     "pos_rank_label": "WR527"
+========
+    "pos_rank": 391,
+    "pos_rank_label": "WR391"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7358",
@@ -10831,8 +11666,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "raleigh webb",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 576,
     "pos_rank_label": "WR576"
+========
+    "pos_rank": 503,
+    "pos_rank_label": "WR503"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6826",
@@ -10894,8 +11734,13 @@
     "name": "Marcedes Lewis",
     "team": "DEN",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 41.8,
     "value": 24.3,
+========
+    "age": 41.9,
+    "value": 0.0,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "marcedes lewis",
     "pos_rank": 296,
     "pos_rank_label": "TE296"
@@ -10996,8 +11841,13 @@
     "age": 30.6,
     "value": 56.6,
     "search_name": "kendrick bourne",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 482,
     "pos_rank_label": "WR482"
+========
+    "pos_rank": 396,
+    "pos_rank_label": "WR396"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13190",
@@ -11073,8 +11923,13 @@
     "age": 26.9,
     "value": 60.5,
     "search_name": "dennis houston",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 439,
     "pos_rank_label": "WR439"
+========
+    "pos_rank": 504,
+    "pos_rank_label": "WR504"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6155",
@@ -11172,8 +12027,13 @@
     "age": 27.9,
     "value": 56.2,
     "search_name": "tim jones",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 488,
     "pos_rank_label": "WR488"
+========
+    "pos_rank": 415,
+    "pos_rank_label": "WR415"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12884",
@@ -11216,8 +12076,13 @@
     "age": null,
     "value": 74.1,
     "search_name": "rory starkey",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 140,
     "pos_rank_label": "WR140"
+========
+    "pos_rank": 173,
+    "pos_rank_label": "WR173"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3852",
@@ -11238,8 +12103,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "joe reed",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 577,
     "pos_rank_label": "WR577"
+========
+    "pos_rank": 392,
+    "pos_rank_label": "WR392"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13047",
@@ -11304,8 +12174,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "marquez callaway",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 528,
     "pos_rank_label": "WR528"
+========
+    "pos_rank": 505,
+    "pos_rank_label": "WR505"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7458",
@@ -11436,8 +12311,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "avery davis",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 529,
     "pos_rank_label": "WR529"
+========
+    "pos_rank": 506,
+    "pos_rank_label": "WR506"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3242",
@@ -11480,8 +12360,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "isaiah coulter",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 530,
     "pos_rank_label": "WR530"
+========
+    "pos_rank": 393,
+    "pos_rank_label": "WR393"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12953",
@@ -11521,8 +12406,13 @@
     "name": "Quentin Johnston",
     "team": "LAC",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.5,
     "value": 351.3,
+========
+    "age": 24.6,
+    "value": 322.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "quentin johnston",
     "pos_rank": 28,
     "pos_rank_label": "WR28"
@@ -11532,8 +12422,13 @@
     "name": "Gus Edwards",
     "team": "LAC",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 30.9,
     "value": 50.5,
+========
+    "age": 31.0,
+    "value": 36.2,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "gus edwards",
     "pos_rank": 307,
     "pos_rank_label": "RB307"
@@ -11623,8 +12518,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "jontre kirklin",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 531,
     "pos_rank_label": "WR531"
+========
+    "pos_rank": 507,
+    "pos_rank_label": "WR507"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7946",
@@ -11634,8 +12534,13 @@
     "age": 28.1,
     "value": 51.4,
     "search_name": "jack stoll",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 186,
     "pos_rank_label": "TE186"
+========
+    "pos_rank": 130,
+    "pos_rank_label": "TE130"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7064",
@@ -11678,8 +12583,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "ontaria wilson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 408,
     "pos_rank_label": "WR408"
+========
+    "pos_rank": 567,
+    "pos_rank_label": "WR567"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10983",
@@ -11766,8 +12676,13 @@
     "age": 24.7,
     "value": 94.5,
     "search_name": "michael mayer",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 42,
     "pos_rank_label": "TE42"
+========
+    "pos_rank": 36,
+    "pos_rank_label": "TE36"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12762",
@@ -11898,8 +12813,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "donovan peoples-jones",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 466,
     "pos_rank_label": "WR466"
+========
+    "pos_rank": 408,
+    "pos_rank_label": "WR408"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9508",
@@ -12052,8 +12972,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "jalen camp",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 532,
     "pos_rank_label": "WR532"
+========
+    "pos_rank": 409,
+    "pos_rank_label": "WR409"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12134",
@@ -12063,8 +12988,13 @@
     "age": 26.7,
     "value": 61.6,
     "search_name": "sam wiglusz",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 409,
     "pos_rank_label": "WR409"
+========
+    "pos_rank": 568,
+    "pos_rank_label": "WR568"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8198",
@@ -12074,8 +13004,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "charleston rambo",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 410,
     "pos_rank_label": "WR410"
+========
+    "pos_rank": 569,
+    "pos_rank_label": "WR569"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10444",
@@ -12107,8 +13042,13 @@
     "age": 27.8,
     "value": 55.9,
     "search_name": "stanley berryhill",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 533,
     "pos_rank_label": "WR533"
+========
+    "pos_rank": 508,
+    "pos_rank_label": "WR508"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4187",
@@ -12129,8 +13069,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "malik cunningham",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 534,
     "pos_rank_label": "WR534"
+========
+    "pos_rank": 509,
+    "pos_rank_label": "WR509"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "5967",
@@ -12170,7 +13115,7 @@
     "name": "Brandon Allen",
     "team": "TEN",
     "position": "QB",
-    "age": 33.5,
+    "age": 33.6,
     "value": 0.0,
     "search_name": "brandon allen",
     "pos_rank": 189,
@@ -12217,16 +13162,26 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "jaivon heiligh",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 411,
     "pos_rank_label": "WR411"
+========
+    "pos_rank": 570,
+    "pos_rank_label": "WR570"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6453",
     "name": "D.J. Montgomery",
     "team": "IND",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 29.3,
     "value": 49.1,
+========
+    "age": 29.4,
+    "value": 28.3,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "d.j. montgomery",
     "pos_rank": 660,
     "pos_rank_label": "WR660"
@@ -12327,8 +13282,13 @@
     "age": 26.4,
     "value": 61.9,
     "search_name": "nikko remigio",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 373,
     "pos_rank_label": "WR373"
+========
+    "pos_rank": 438,
+    "pos_rank_label": "WR438"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11410",
@@ -12338,8 +13298,13 @@
     "age": 27.5,
     "value": 55.9,
     "search_name": "braxton burmeister",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 535,
     "pos_rank_label": "WR535"
+========
+    "pos_rank": 510,
+    "pos_rank_label": "WR510"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12356",
@@ -12393,8 +13358,13 @@
     "age": 28.1,
     "value": 54.7,
     "search_name": "tarik black",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 578,
     "pos_rank_label": "WR578"
+========
+    "pos_rank": 511,
+    "pos_rank_label": "WR511"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7551",
@@ -12459,8 +13429,13 @@
     "age": 26.5,
     "value": 61.6,
     "search_name": "johnny king",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 412,
     "pos_rank_label": "WR412"
+========
+    "pos_rank": 571,
+    "pos_rank_label": "WR571"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6171",
@@ -12481,8 +13456,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "drake stoops",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 413,
     "pos_rank_label": "WR413"
+========
+    "pos_rank": 572,
+    "pos_rank_label": "WR572"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7944",
@@ -12503,8 +13483,13 @@
     "age": 29.2,
     "value": 49.6,
     "search_name": "keke coutee",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 627,
     "pos_rank_label": "WR627"
+========
+    "pos_rank": 436,
+    "pos_rank_label": "WR436"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8783",
@@ -12514,8 +13499,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "kendric pryor",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 579,
     "pos_rank_label": "WR579"
+========
+    "pos_rank": 512,
+    "pos_rank_label": "WR512"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4039",
@@ -12577,11 +13567,19 @@
     "name": "Mark Andrews",
     "team": "BAL",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 30.5,
     "value": 139.6,
     "search_name": "mark andrews",
     "pos_rank": 24,
     "pos_rank_label": "TE24"
+========
+    "age": 30.6,
+    "value": 70.7,
+    "search_name": "mark andrews",
+    "pos_rank": 37,
+    "pos_rank_label": "TE37"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8218",
@@ -12987,8 +13985,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "marquez stevenson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 536,
     "pos_rank_label": "WR536"
+========
+    "pos_rank": 410,
+    "pos_rank_label": "WR410"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8235",
@@ -13039,8 +14042,13 @@
     "name": "Kevin Harris",
     "team": "JAX",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.3,
     "value": 66.1,
+========
+    "age": 25.4,
+    "value": 45.9,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "kevin harris",
     "pos_rank": 159,
     "pos_rank_label": "RB159"
@@ -13086,8 +14094,13 @@
     "age": 26.7,
     "value": 61.6,
     "search_name": "jacob copeland",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 414,
     "pos_rank_label": "WR414"
+========
+    "pos_rank": 573,
+    "pos_rank_label": "WR573"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12880",
@@ -13130,16 +14143,26 @@
     "age": 27.7,
     "value": 53.9,
     "search_name": "drew ogletree",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 179,
     "pos_rank_label": "TE179"
+========
+    "pos_rank": 131,
+    "pos_rank_label": "TE131"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4089",
     "name": "Gerald Everett",
     "team": "CHI",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 31.7,
     "value": 28.5,
+========
+    "age": 31.8,
+    "value": 1.1,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "gerald everett",
     "pos_rank": 284,
     "pos_rank_label": "TE284"
@@ -13160,8 +14183,13 @@
     "name": "Eno Benjamin",
     "team": "NO",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 26.9,
     "value": 57.1,
+========
+    "age": 27.0,
+    "value": 31.8,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "eno benjamin",
     "pos_rank": 250,
     "pos_rank_label": "RB250"
@@ -13339,16 +14367,21 @@
     "age": 25.5,
     "value": 59.1,
     "search_name": "michael ezeike",
-    "pos_rank": 129,
-    "pos_rank_label": "TE129"
+    "pos_rank": 128,
+    "pos_rank_label": "TE128"
   },
   {
     "id": "6290",
     "name": "Scotty Miller",
     "team": "PIT",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 28.6,
     "value": 54.0,
+========
+    "age": 28.7,
+    "value": 39.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "scotty miller",
     "pos_rank": 588,
     "pos_rank_label": "WR588"
@@ -13435,11 +14468,19 @@
     "name": "Xavier Weaver",
     "team": "ARI",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.4,
     "value": 63.3,
     "search_name": "xavier weaver",
     "pos_rank": 352,
     "pos_rank_label": "WR352"
+========
+    "age": 25.5,
+    "value": 44.8,
+    "search_name": "xavier weaver",
+    "pos_rank": 202,
+    "pos_rank_label": "WR202"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10223",
@@ -13570,19 +14611,32 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "shi smith",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 538,
     "pos_rank_label": "WR538"
+========
+    "pos_rank": 411,
+    "pos_rank_label": "WR411"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12215",
     "name": "Kevin Foelsch",
     "team": "PIT",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.9,
     "value": 59.9,
     "search_name": "kevin foelsch",
     "pos_rank": 107,
     "pos_rank_label": "TE107"
+========
+    "age": 25.0,
+    "value": 37.4,
+    "search_name": "kevin foelsch",
+    "pos_rank": 102,
+    "pos_rank_label": "TE102"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11862",
@@ -13669,8 +14723,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "braylon sanders",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 539,
     "pos_rank_label": "WR539"
+========
+    "pos_rank": 513,
+    "pos_rank_label": "WR513"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13129",
@@ -13702,8 +14761,13 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "lujuan winningham",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 540,
     "pos_rank_label": "WR540"
+========
+    "pos_rank": 514,
+    "pos_rank_label": "WR514"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "260",
@@ -13779,8 +14843,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "marcus riley",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 467,
     "pos_rank_label": "WR467"
+========
+    "pos_rank": 515,
+    "pos_rank_label": "WR515"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3225",
@@ -13790,8 +14859,13 @@
     "age": 31.4,
     "value": 65.1,
     "search_name": "tyler boyd",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 237,
     "pos_rank_label": "WR237"
+========
+    "pos_rank": 156,
+    "pos_rank_label": "WR156"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3294",
@@ -13867,8 +14941,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "emeka emezie",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 415,
     "pos_rank_label": "WR415"
+========
+    "pos_rank": 516,
+    "pos_rank_label": "WR516"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11357",
@@ -13878,8 +14957,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "tyler adams",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 541,
     "pos_rank_label": "WR541"
+========
+    "pos_rank": 517,
+    "pos_rank_label": "WR517"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12212",
@@ -13911,8 +14995,13 @@
     "age": 28.4,
     "value": 54.7,
     "search_name": "kaylon geiger",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 580,
     "pos_rank_label": "WR580"
+========
+    "pos_rank": 518,
+    "pos_rank_label": "WR518"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "1833",
@@ -13955,8 +15044,13 @@
     "age": 26.5,
     "value": 61.6,
     "search_name": "phillip brooks",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 416,
     "pos_rank_label": "WR416"
+========
+    "pos_rank": 574,
+    "pos_rank_label": "WR574"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11388",
@@ -14095,8 +15189,13 @@
     "name": "British Brooks",
     "team": "HOU",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 26.3,
     "value": 61.5,
+========
+    "age": 26.4,
+    "value": 40.7,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "british brooks",
     "pos_rank": 228,
     "pos_rank_label": "RB228"
@@ -14153,8 +15252,13 @@
     "age": 32.6,
     "value": 31.3,
     "search_name": "allen robinson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 706,
     "pos_rank_label": "WR706"
+========
+    "pos_rank": 701,
+    "pos_rank_label": "WR701"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4040",
@@ -14186,8 +15290,13 @@
     "age": 26.5,
     "value": 61.6,
     "search_name": "cephus johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 417,
     "pos_rank_label": "WR417"
+========
+    "pos_rank": 575,
+    "pos_rank_label": "WR575"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12498",
@@ -14197,8 +15306,13 @@
     "age": 21.9,
     "value": 170.0,
     "search_name": "mason taylor",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 19,
     "pos_rank_label": "TE19"
+========
+    "pos_rank": 16,
+    "pos_rank_label": "TE16"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8161",
@@ -14241,8 +15355,13 @@
     "age": 30.5,
     "value": 35.1,
     "search_name": "braxton berrios",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 692,
     "pos_rank_label": "WR692"
+========
+    "pos_rank": 702,
+    "pos_rank_label": "WR702"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4314",
@@ -14373,8 +15492,13 @@
     "age": 26.3,
     "value": 61.6,
     "search_name": "jaelen gill",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 418,
     "pos_rank_label": "WR418"
+========
+    "pos_rank": 576,
+    "pos_rank_label": "WR576"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13161",
@@ -14403,8 +15527,13 @@
     "name": "Irvin Charles",
     "team": "NYJ",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 28.9,
     "value": 52.7,
+========
+    "age": 29.0,
+    "value": 31.3,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "irvin charles",
     "pos_rank": 613,
     "pos_rank_label": "WR613"
@@ -14417,8 +15546,13 @@
     "age": 28.5,
     "value": 53.0,
     "search_name": "xavier smith",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 591,
     "pos_rank_label": "WR591"
+========
+    "pos_rank": 382,
+    "pos_rank_label": "WR382"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11351",
@@ -14461,8 +15595,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "jadon janke",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 419,
     "pos_rank_label": "WR419"
+========
+    "pos_rank": 577,
+    "pos_rank_label": "WR577"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12775",
@@ -14491,8 +15630,13 @@
     "name": "Davante Adams",
     "team": "LAR",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 33.2,
     "value": 346.2,
+========
+    "age": 33.3,
+    "value": 288.9,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "davante adams",
     "pos_rank": 29,
     "pos_rank_label": "WR29"
@@ -14516,8 +15660,13 @@
     "age": 26.9,
     "value": 58.2,
     "search_name": "jalen wayne",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 468,
     "pos_rank_label": "WR468"
+========
+    "pos_rank": 519,
+    "pos_rank_label": "WR519"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11256",
@@ -14645,8 +15794,13 @@
     "name": "Kaden Prather",
     "team": "BUF",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 23.5,
     "value": 66.3,
+========
+    "age": 23.6,
+    "value": 44.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "kaden prather",
     "pos_rank": 211,
     "pos_rank_label": "WR211"
@@ -14681,8 +15835,13 @@
     "age": 24.7,
     "value": 59.9,
     "search_name": "oscar cardenas",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 109,
     "pos_rank_label": "TE109"
+========
+    "pos_rank": 91,
+    "pos_rank_label": "TE91"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9502",
@@ -14725,8 +15884,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "mike harley",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 581,
     "pos_rank_label": "WR581"
+========
+    "pos_rank": 520,
+    "pos_rank_label": "WR520"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8166",
@@ -14758,8 +15922,13 @@
     "age": 26.4,
     "value": 61.6,
     "search_name": "hamze el-zayat",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 420,
     "pos_rank_label": "WR420"
+========
+    "pos_rank": 578,
+    "pos_rank_label": "WR578"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11597",
@@ -14835,8 +16004,13 @@
     "age": 28.0,
     "value": 55.9,
     "search_name": "braxton westfield",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 542,
     "pos_rank_label": "WR542"
+========
+    "pos_rank": 521,
+    "pos_rank_label": "WR521"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11068",
@@ -14854,7 +16028,7 @@
     "name": "Austin Aune",
     "team": "ATL",
     "position": "QB",
-    "age": 32.5,
+    "age": 32.6,
     "value": 0.0,
     "search_name": "austin aune",
     "pos_rank": 196,
@@ -14868,8 +16042,13 @@
     "age": 27.8,
     "value": 55.9,
     "search_name": "quez watkins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 543,
     "pos_rank_label": "WR543"
+========
+    "pos_rank": 412,
+    "pos_rank_label": "WR412"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8232",
@@ -14879,8 +16058,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "jaquarii roberson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 544,
     "pos_rank_label": "WR544"
+========
+    "pos_rank": 522,
+    "pos_rank_label": "WR522"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7863",
@@ -14920,11 +16104,19 @@
     "name": "JaQuae Jackson",
     "team": "LAC",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 26.1,
     "value": 62.6,
     "search_name": "jaquae jackson",
     "pos_rank": 370,
     "pos_rank_label": "WR370"
+========
+    "age": 26.2,
+    "value": 33.4,
+    "search_name": "jaquae jackson",
+    "pos_rank": 579,
+    "pos_rank_label": "WR579"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "9228",
@@ -15000,8 +16192,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "pooka williams",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 469,
     "pos_rank_label": "WR469"
+========
+    "pos_rank": 523,
+    "pos_rank_label": "WR523"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11540",
@@ -15088,8 +16285,13 @@
     "age": 31.6,
     "value": 32.5,
     "search_name": "marcus johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 705,
     "pos_rank_label": "WR705"
+========
+    "pos_rank": 700,
+    "pos_rank_label": "WR700"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7611",
@@ -15187,8 +16389,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "terrell bynum",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 545,
     "pos_rank_label": "WR545"
+========
+    "pos_rank": 524,
+    "pos_rank_label": "WR524"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6108",
@@ -15231,8 +16438,13 @@
     "age": 28.5,
     "value": 52.7,
     "search_name": "collin johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 615,
     "pos_rank_label": "WR615"
+========
+    "pos_rank": 416,
+    "pos_rank_label": "WR416"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13026",
@@ -15286,8 +16498,13 @@
     "age": 30.2,
     "value": 72.4,
     "search_name": "noah brown",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 152,
     "pos_rank_label": "WR152"
+========
+    "pos_rank": 201,
+    "pos_rank_label": "WR201"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "2750",
@@ -15352,8 +16569,13 @@
     "age": 26.6,
     "value": 61.6,
     "search_name": "josh johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 423,
     "pos_rank_label": "WR423"
+========
+    "pos_rank": 397,
+    "pos_rank_label": "WR397"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11565",
@@ -15374,8 +16596,13 @@
     "age": 28.5,
     "value": 52.7,
     "search_name": "frank darby",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 616,
     "pos_rank_label": "WR616"
+========
+    "pos_rank": 540,
+    "pos_rank_label": "WR540"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12383",
@@ -15415,11 +16642,16 @@
     "name": "Brycen Tremayne",
     "team": "CAR",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 26.3,
     "value": 68.2,
+========
+    "age": 26.4,
+    "value": 46.6,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "brycen tremayne",
-    "pos_rank": 180,
-    "pos_rank_label": "WR180"
+    "pos_rank": 179,
+    "pos_rank_label": "WR179"
   },
   {
     "id": "8145",
@@ -15451,8 +16683,13 @@
     "age": 26.5,
     "value": 118.4,
     "search_name": "chig okonkwo",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 33,
     "pos_rank_label": "TE33"
+========
+    "pos_rank": 34,
+    "pos_rank_label": "TE34"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12250",
@@ -15495,8 +16732,13 @@
     "age": 28.2,
     "value": 54.7,
     "search_name": "shemar bridges",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 582,
     "pos_rank_label": "WR582"
+========
+    "pos_rank": 525,
+    "pos_rank_label": "WR525"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12121",
@@ -15660,8 +16902,13 @@
     "age": 24.7,
     "value": 59.9,
     "search_name": "mike rigerman",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 110,
     "pos_rank_label": "TE110"
+========
+    "pos_rank": 92,
+    "pos_rank_label": "TE92"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6963",
@@ -15679,8 +16926,13 @@
     "name": "Xavier Legette",
     "team": "CAR",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.1,
     "value": 176.0,
+========
+    "age": 25.2,
+    "value": 150.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "xavier legette",
     "pos_rank": 58,
     "pos_rank_label": "WR58"
@@ -15726,8 +16978,13 @@
     "age": 23.3,
     "value": 70.6,
     "search_name": "beaux collins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 173,
     "pos_rank_label": "WR173"
+========
+    "pos_rank": 170,
+    "pos_rank_label": "WR170"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12866",
@@ -15737,8 +16994,13 @@
     "age": 24.7,
     "value": 59.9,
     "search_name": "jalin conyers",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 111,
     "pos_rank_label": "TE111"
+========
+    "pos_rank": 93,
+    "pos_rank_label": "TE93"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4080",
@@ -15847,8 +17109,13 @@
     "age": 26.0,
     "value": 62.6,
     "search_name": "jordan byrd",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 371,
     "pos_rank_label": "WR371"
+========
+    "pos_rank": 380,
+    "pos_rank_label": "WR380"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4147",
@@ -15924,8 +17191,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "justin hall",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 470,
     "pos_rank_label": "WR470"
+========
+    "pos_rank": 526,
+    "pos_rank_label": "WR526"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6001",
@@ -15957,8 +17229,13 @@
     "age": 26.8,
     "value": 61.6,
     "search_name": "kyle philips",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 425,
     "pos_rank_label": "WR425"
+========
+    "pos_rank": 398,
+    "pos_rank_label": "WR398"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12462",
@@ -15987,8 +17264,13 @@
     "name": "Isaiah Williams",
     "team": "NYJ",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 25.1,
     "value": 79.6,
+========
+    "age": 25.2,
+    "value": 60.1,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "isaiah williams",
     "pos_rank": 125,
     "pos_rank_label": "WR125"
@@ -16097,8 +17379,13 @@
     "name": "Melvin Gordon III",
     "team": "BAL",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 32.9,
     "value": 70.7,
+========
+    "age": 33.0,
+    "value": 29.4,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "melvin gordon",
     "pos_rank": 110,
     "pos_rank_label": "RB110"
@@ -16243,8 +17530,13 @@
     "age": 29.2,
     "value": 57.6,
     "search_name": "j.j. arcega-whiteside",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 479,
     "pos_rank_label": "WR479"
+========
+    "pos_rank": 401,
+    "pos_rank_label": "WR401"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12341",
@@ -16287,8 +17579,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "kawaan baker",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 546,
     "pos_rank_label": "WR546"
+========
+    "pos_rank": 527,
+    "pos_rank_label": "WR527"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11571",
@@ -16581,8 +17878,13 @@
     "name": "Audric Estime",
     "team": "NO",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 22.5,
     "value": 141.2,
+========
+    "age": 22.6,
+    "value": 91.8,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "audric estime",
     "pos_rank": 49,
     "pos_rank_label": "RB49"
@@ -16669,8 +17971,13 @@
     "name": "Jase McClellan",
     "team": "TB",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 23.7,
     "value": 68.0,
+========
+    "age": 23.8,
+    "value": 44.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "jase mcclellan",
     "pos_rank": 134,
     "pos_rank_label": "RB134"
@@ -16713,11 +18020,19 @@
     "name": "Miles Boykin",
     "team": "CHI",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 29.4,
     "value": 53.8,
     "search_name": "miles boykin",
     "pos_rank": 590,
     "pos_rank_label": "WR590"
+========
+    "age": 29.5,
+    "value": 35.1,
+    "search_name": "miles boykin",
+    "pos_rank": 429,
+    "pos_rank_label": "WR429"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8408",
@@ -16922,8 +18237,13 @@
     "name": "Sage Surratt",
     "team": "ARI",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 27.9,
     "value": 47.4,
+========
+    "age": 28.0,
+    "value": 20.2,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "sage surratt",
     "pos_rank": 223,
     "pos_rank_label": "TE223"
@@ -16991,8 +18311,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "reggie roberson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 547,
     "pos_rank_label": "WR547"
+========
+    "pos_rank": 528,
+    "pos_rank_label": "WR528"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3894",
@@ -17079,8 +18404,13 @@
     "age": 27.7,
     "value": 55.9,
     "search_name": "brandon johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 548,
     "pos_rank_label": "WR548"
+========
+    "pos_rank": 394,
+    "pos_rank_label": "WR394"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6181",
@@ -17101,8 +18431,13 @@
     "age": 27.4,
     "value": 55.9,
     "search_name": "mac hippenhammer",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 549,
     "pos_rank_label": "WR549"
+========
+    "pos_rank": 529,
+    "pos_rank_label": "WR529"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "3652",
@@ -17156,8 +18491,13 @@
     "age": 24.6,
     "value": 59.9,
     "search_name": "trey knox",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 113,
     "pos_rank_label": "TE113"
+========
+    "pos_rank": 94,
+    "pos_rank_label": "TE94"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6126",
@@ -17197,8 +18537,13 @@
     "name": "Bijan Robinson",
     "team": "ATL",
     "position": "RB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.1,
     "value": 994.6,
+========
+    "age": 24.2,
+    "value": 987.0,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "bijan robinson",
     "pos_rank": 2,
     "pos_rank_label": "RB2"
@@ -17219,8 +18564,13 @@
     "name": "Tre Watson",
     "team": "KC",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 23.4,
     "value": 62.5,
+========
+    "age": 23.5,
+    "value": 39.6,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "tre watson",
     "pos_rank": 84,
     "pos_rank_label": "TE84"
@@ -17277,8 +18627,13 @@
     "age": 33.7,
     "value": 73.6,
     "search_name": "kevin white",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 146,
     "pos_rank_label": "WR146"
+========
+    "pos_rank": 421,
+    "pos_rank_label": "WR421"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "4218",
@@ -17332,8 +18687,13 @@
     "age": 28.3,
     "value": 54.7,
     "search_name": "john hall",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 583,
     "pos_rank_label": "WR583"
+========
+    "pos_rank": 530,
+    "pos_rank_label": "WR530"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10861",
@@ -17362,8 +18722,13 @@
     "name": "Malik Turner",
     "team": "SF",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 30.1,
     "value": 49.1,
+========
+    "age": 30.2,
+    "value": 21.5,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "malik turner",
     "pos_rank": 675,
     "pos_rank_label": "WR675"
@@ -17387,8 +18752,13 @@
     "age": 28.3,
     "value": 123.8,
     "search_name": "noah fant",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 28,
     "pos_rank_label": "TE28"
+========
+    "pos_rank": 35,
+    "pos_rank_label": "TE35"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6885",
@@ -17420,8 +18790,13 @@
     "age": 28.7,
     "value": 52.7,
     "search_name": "jaylon moore",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 621,
     "pos_rank_label": "WR621"
+========
+    "pos_rank": 437,
+    "pos_rank_label": "WR437"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6957",
@@ -17497,8 +18872,13 @@
     "age": null,
     "value": 74.1,
     "search_name": "winston wright",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 142,
     "pos_rank_label": "WR142"
+========
+    "pos_rank": 174,
+    "pos_rank_label": "WR174"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8924",
@@ -17607,8 +18987,13 @@
     "age": 27.4,
     "value": 56.2,
     "search_name": "isaiah hodgins",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 489,
     "pos_rank_label": "WR489"
+========
+    "pos_rank": 413,
+    "pos_rank_label": "WR413"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11632",
@@ -17673,8 +19058,13 @@
     "age": 27.1,
     "value": 58.2,
     "search_name": "michael young",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 471,
     "pos_rank_label": "WR471"
+========
+    "pos_rank": 531,
+    "pos_rank_label": "WR531"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7605",
@@ -17750,16 +19140,26 @@
     "age": 27.2,
     "value": 55.9,
     "search_name": "tyjon lindsey",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 551,
     "pos_rank_label": "WR551"
+========
+    "pos_rank": 532,
+    "pos_rank_label": "WR532"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12538",
     "name": "Brady Cook",
     "team": "NYJ",
     "position": "QB",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.4,
     "value": 67.3,
+========
+    "age": 24.5,
+    "value": 34.9,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "brady cook",
     "pos_rank": 48,
     "pos_rank_label": "QB48"
@@ -18168,8 +19568,13 @@
     "age": 27.3,
     "value": 55.9,
     "search_name": "braydon johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 552,
     "pos_rank_label": "WR552"
+========
+    "pos_rank": 533,
+    "pos_rank_label": "WR533"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "1567",
@@ -18190,8 +19595,13 @@
     "age": null,
     "value": 74.1,
     "search_name": "deangelo hardy",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 143,
     "pos_rank_label": "WR143"
+========
+    "pos_rank": 175,
+    "pos_rank_label": "WR175"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "6088",
@@ -18201,8 +19611,13 @@
     "age": 29.0,
     "value": 52.7,
     "search_name": "bisi johnson",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 623,
     "pos_rank_label": "WR623"
+========
+    "pos_rank": 541,
+    "pos_rank_label": "WR541"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8436",
@@ -18234,8 +19649,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "ryan mcdaniel",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 472,
     "pos_rank_label": "WR472"
+========
+    "pos_rank": 534,
+    "pos_rank_label": "WR534"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "13256",
@@ -18311,8 +19731,13 @@
     "age": 27.9,
     "value": 55.9,
     "search_name": "dre miller",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 553,
     "pos_rank_label": "WR553"
+========
+    "pos_rank": 535,
+    "pos_rank_label": "WR535"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "10216",
@@ -18451,8 +19876,13 @@
     "name": "Jerjuan Newton",
     "team": "DEN",
     "position": "WR",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 24.8,
     "value": 65.0,
+========
+    "age": 24.9,
+    "value": 42.6,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "jerjuan newton",
     "pos_rank": 303,
     "pos_rank_label": "WR303"
@@ -18531,8 +19961,13 @@
     "age": 27.0,
     "value": 58.2,
     "search_name": "ty scott",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 473,
     "pos_rank_label": "WR473"
+========
+    "pos_rank": 536,
+    "pos_rank_label": "WR536"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "7549",
@@ -18564,16 +19999,26 @@
     "age": 26.1,
     "value": 62.6,
     "search_name": "joseph scates",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 372,
     "pos_rank_label": "WR372"
+========
+    "pos_rank": 381,
+    "pos_rank_label": "WR381"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "12502",
     "name": "Gunnar Helm",
     "team": "TEN",
     "position": "TE",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "age": 23.5,
     "value": 118.9,
+========
+    "age": 23.6,
+    "value": 93.7,
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
     "search_name": "gunnar helm",
     "pos_rank": 32,
     "pos_rank_label": "TE32"
@@ -18619,8 +20064,13 @@
     "age": 27.6,
     "value": 55.9,
     "search_name": "daniel arias",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 554,
     "pos_rank_label": "WR554"
+========
+    "pos_rank": 537,
+    "pos_rank_label": "WR537"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "8193",
@@ -18663,8 +20113,13 @@
     "age": 29.2,
     "value": 58.5,
     "search_name": "dj turner",
+<<<<<<<< HEAD:data/model_values_2026-03-23.json
     "pos_rank": 448,
     "pos_rank_label": "WR448"
+========
+    "pos_rank": 384,
+    "pos_rank_label": "WR384"
+>>>>>>>> 6c61851 (big changes, implemented ai, notifications, session saves, login from trade calc):data/model_values_2026-03-26.json
   },
   {
     "id": "11257",
