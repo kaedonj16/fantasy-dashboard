@@ -2703,7 +2703,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                 Focus on roster building, draft prep, waiver value, and trade opportunities.
               </p>
             </div>
-            <div class="os-hero-badge">Offseason</div>
           </div>
 
           <div class="os-hero-stats">

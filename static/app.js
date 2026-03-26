@@ -8,6 +8,57 @@
 // ============================================================
 
 // ------------------------------------------------------------
+// Prevent scroll restoration on navigation (mobile fix)
+// ------------------------------------------------------------
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual';
+}
+
+// Immediately scroll to top on any page load
+window.scrollTo(0, 0);
+document.documentElement.scrollTop = 0;
+document.body.scrollTop = 0;
+
+// Prevent scroll during page load
+window.addEventListener('beforeunload', function() {
+  window.scrollTo(0, 0);
+});
+
+// Prevent any programmatic scrolls during initial page load
+let scrollBlocked = true;
+window.addEventListener('scroll', function(e) {
+  if (scrollBlocked) {
+    window.scrollTo(0, 0);
+  }
+}, { passive: false });
+
+// Unblock scrolling after page is fully loaded and initialized
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    scrollBlocked = false;
+  }, 300);
+});
+
+// Force scroll to top after a short delay to catch any delayed scrolls
+setTimeout(function() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}, 0);
+
+setTimeout(function() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}, 50);
+
+setTimeout(function() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}, 100);
+
+// ------------------------------------------------------------
 // One-time guards (prevents listener stacking across swaps)
 // ------------------------------------------------------------
 window.__BR_INIT_FLAGS__ = window.__BR_INIT_FLAGS__ || {
@@ -1763,7 +1814,16 @@ window.initPageRoot = function initPageRoot(root = document) {
 };
 
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
+  // Force scroll to top
+  window.scrollTo(0, 0);
+
+  // Initialize page
   window.initPageRoot(document);
+
+  // Force scroll to top again after initialization
+  requestAnimationFrame(() => {
+    window.scrollTo(0, 0);
+  });
 });
 
 // ------------------------------------------------------------

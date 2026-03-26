@@ -171,11 +171,29 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html {
+  scroll-behavior: auto;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
 html, body {
   height: 100%;
   margin: 0;
   max-width: 100%;
   overflow-x: hidden;
+}
+
+@media (max-width: 1180px) {
+  html, body {
+    scroll-padding-top: 0;
+    scroll-margin-top: 0;
+  }
+
+  * {
+    scroll-margin-top: 0 !important;
+    scroll-padding-top: 0 !important;
+  }
 }
 
 img {
@@ -3190,6 +3208,8 @@ thead th {
   max-width: 900px;
   font-size: 1.03rem;
   line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .history-title {
@@ -3199,6 +3219,8 @@ thead th {
   font-weight: 900;
   color: #0f2747;
   letter-spacing: -0.03em;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .history-title-accent {
@@ -3245,6 +3267,9 @@ thead th {
   background: linear-gradient(135deg, #0f2747 0%, #183a63 100%);
   color: #ffffff;
   margin-bottom: 18px;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .os-hero-copy {
@@ -3253,6 +3278,8 @@ thead th {
   line-height: 1.5;
   color: rgba(255,255,255,0.92);
   max-width: 760px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .os-hero-footer {
@@ -3283,6 +3310,8 @@ thead th {
   line-height: 1.05;
   font-weight: 800;
   color: #ffffff;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .os-hero-top {
@@ -5824,6 +5853,28 @@ img, svg, canvas {
 @media (max-width: 1180px) {
   .os-layout {
     grid-template-columns: 1fr;
+    scroll-margin: 0;
+    scroll-padding: 0;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .os-left-col {
+    order: 2;
+    scroll-margin: 0;
+    max-width: 100%;
+  }
+
+  .os-main-col {
+    order: 1;
+    scroll-margin: 0;
+    max-width: 100%;
+  }
+
+  .os-right-col {
+    order: 3;
+    scroll-margin: 0;
+    max-width: 100%;
   }
 
   .os-hero-stats {
@@ -5837,6 +5888,18 @@ img, svg, canvas {
 
   .os-hero-badge {
     align-self: flex-start;
+  }
+
+  .os-hero-card {
+    scroll-margin: 0;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .os-hero-card * {
+    max-width: 100%;
+    box-sizing: border-box;
   }
 }
 
@@ -6991,7 +7054,14 @@ img, svg, canvas {
 @media (max-width: 720px) {
   .history-header {
     flex-direction: column;
-    padding: 20px 18px;
+    padding: 18px 16px;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .history-header > div {
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .history-season-picker {
@@ -7005,6 +7075,114 @@ img, svg, canvas {
   .history-section-card {
     padding: 16px;
     border-radius: 20px;
+  }
+
+  .history-awards-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .history-card.is-featured {
+    grid-column: span 1;
+  }
+
+  .history-page {
+    padding: 0;
+    max-width: 100vw;
+    width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+
+  .history-page * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .history-top-grid {
+    gap: 14px;
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .history-chart-panel {
+    order: 1;
+  }
+
+  .history-recap-panel {
+    order: 2;
+  }
+
+  .history-chart-wrap {
+    overflow-x: auto;
+    margin: 0 -16px;
+    padding: 0 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .history-table-wrap {
+    overflow-x: auto;
+    margin: 0 -16px;
+    padding: 0 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .history-table {
+    min-width: 600px;
+  }
+
+  .history-recap-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .history-recap-controls {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .history-recap-controls select,
+  .history-recap-controls button {
+    width: 100%;
+  }
+
+  .history-recap-content {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .recap-result {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #aiAnalysisResult {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .history-title {
+    font-size: 1.35rem;
+    line-height: 1.15;
+  }
+
+  .history-subtitle {
+    font-size: 0.92rem;
+    line-height: 1.5;
+    max-height: 72px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
   }
 }
 
@@ -7061,6 +7239,168 @@ img, svg, canvas {
 
   .otc-clear-btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .os-hero-stats {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .os-stat-card {
+    padding: 14px;
+  }
+
+  .os-hero-title {
+    font-size: 24px;
+    max-width: 100%;
+  }
+
+  .os-hero-card {
+    padding: 18px;
+    max-width: 100%;
+  }
+
+  .os-hero-copy {
+    max-width: 100%;
+  }
+
+  .os-card, .os-card-soft {
+    padding: 14px;
+    max-width: 100%;
+  }
+
+  .history-header {
+    padding: 16px 14px;
+    max-width: 100%;
+  }
+
+  .history-header > div {
+    max-width: 100%;
+  }
+
+  .history-section-card {
+    padding: 12px;
+    border-radius: 16px;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .history-card {
+    padding: 8px 10px;
+  }
+
+  .history-awards-panel {
+    padding: 14px;
+  }
+
+  .history-section-title {
+    font-size: 15px;
+  }
+
+  .history-recap-panel {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .recap-result {
+    max-height: 350px;
+    padding: 14px;
+  }
+
+  #aiAnalysisResult {
+    max-height: 350px;
+  }
+
+  .history-title {
+    font-size: 1.25rem;
+  }
+
+  .history-subtitle {
+    font-size: 0.88rem;
+    max-height: 66px;
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+}
+
+@media (max-width: 480px) {
+  .history-header {
+    padding: 14px 12px;
+    max-width: 100%;
+  }
+
+  .history-header > div {
+    max-width: 100%;
+  }
+
+  .history-title {
+    font-size: 1.15rem;
+    line-height: 1.1;
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .history-kicker {
+    font-size: 0.7rem;
+  }
+
+  .history-subtitle {
+    font-size: 0.82rem;
+    line-height: 1.4;
+    max-height: 58px;
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .history-card-value {
+    font-size: 0.88rem;
+  }
+
+  .history-card-sub {
+    font-size: 0.76rem;
+  }
+
+  .history-card-label {
+    font-size: 0.62rem;
+  }
+
+  .os-hero-title {
+    font-size: 20px;
+    max-width: 100%;
+  }
+
+  .os-hero-kicker {
+    font-size: 11px;
+    max-width: 100%;
+  }
+
+  .os-hero-copy {
+    font-size: 14px;
+    max-width: 100%;
+  }
+
+  .os-hero-card {
+    padding: 16px;
+  }
+
+  .os-stat-label,
+  .os-stat-value,
+  .os-stat-sub {
+    font-size: 13px;
+  }
+
+  .os-section-title {
+    font-size: 14px;
+  }
+
+  .os-snapshot-team,
+  .os-waiver-name {
+    font-size: 13px;
   }
 }
 
