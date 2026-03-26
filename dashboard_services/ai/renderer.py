@@ -1,20 +1,21 @@
 from __future__ import annotations
 
+import html
 import os
 
 from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
 from dashboard_services.ai.context_builders import (
     build_team_gm_context,
 )
-import html
-
 from dashboard_services.ai.prompts import generate_trade_ai_result
 from dashboard_services.providers.espn_api import safe_float
 
 AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
 
+
 def ai_available() -> bool:
     return AI_ENABLED and bool(os.getenv("OPENAI_API_KEY"))
+
 
 def _wrap_text_html(text: str) -> str:
     return (
@@ -105,19 +106,20 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     save_cached_ai_text(cache_key, html_out)
     return html_out
 
+
 def get_trade_ai_analysis(
-    ctx: dict,
-    viewer_roster_id: str,
-    viewer_side: str,
-    side_a: dict,
-    side_b: dict,
+        ctx: dict,
+        viewer_roster_id: str,
+        viewer_side: str,
+        side_a: dict,
+        side_b: dict,
 ) -> str:
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
         return ""
 
     viewer_side = (viewer_side or "a").lower().strip()
-    
+
     viewer_gets = side_a if viewer_side == "a" else side_b
     viewer_gives = side_b if viewer_side == "a" else side_a
 
@@ -226,6 +228,13 @@ def get_trade_ai_analysis(
         },
     }
 
+    # Build cache key for trade analysis
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v2")
+
+    # Try to get from cache first
+    cached = load_cached_ai_text(cache_key)
+    if cached:
+        return cached
 
     if not ai_available():
         verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
@@ -238,12 +247,13 @@ def get_trade_ai_analysis(
             "confidence": "low",
         }
         html_out = render_trade_ai_html(fallback)
-        # save_cached_ai_text(cache_key, html_out)
+        save_cached_ai_text(cache_key, html_out)
         return html_out
 
     try:
         result = generate_trade_ai_result(payload)
         html_out = render_trade_ai_html(result)
+        save_cached_ai_text(cache_key, html_out)
         return html_out
     except Exception as e:
         print(f"[trade-ai] fallback: {e}")
@@ -257,9 +267,9 @@ def get_trade_ai_analysis(
             "confidence": "low",
         }
         html_out = render_trade_ai_html(fallback)
+        save_cached_ai_text(cache_key, html_out)
+        return html_out
 
-    # save_cached_ai_text(cache_key, html_out)
-    return html_out
 
 def render_trade_ai_html(result: dict) -> str:
     verdict = html.escape(str(result.get("verdict") or "COUNTER").upper())
@@ -269,8 +279,10 @@ def render_trade_ai_html(result: dict) -> str:
     counter = html.escape(str(result.get("counter") or ""))
     confidence = html.escape(str(result.get("confidence") or ""))
 
-    helps_html = "".join(f"<li>{html.escape(str(x))}</li>" for x in helps[:4]) or "<li>No specific edge identified.</li>"
-    risks_html = "".join(f"<li>{html.escape(str(x))}</li>" for x in risks[:4]) or "<li>No specific risk identified.</li>"
+    helps_html = "".join(
+        f"<li>{html.escape(str(x))}</li>" for x in helps[:4]) or "<li>No specific edge identified.</li>"
+    risks_html = "".join(
+        f"<li>{html.escape(str(x))}</li>" for x in risks[:4]) or "<li>No specific risk identified.</li>"
 
     counter_html = ""
     if counter:

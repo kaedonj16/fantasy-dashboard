@@ -5,7 +5,7 @@ import json
 import time
 from pathlib import Path
 
-AI_CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "ai_cache"
+AI_CACHE_DIR = Path(__file__).resolve().parents[2] / "cache" / "ai_cache"
 AI_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 AI_CACHE_TTL = 60 * 60 * 12  # 12 hours

@@ -355,6 +355,64 @@ window.initTradePage = function initTradePage(root = document) {
     sideBPicks: [],
   };
 
+  function getStorageKey() {
+    const leagueId = leagueInput?.value || "";
+    const season = root.querySelector("#seasonInput")?.value || "";
+    return `tradeCalc_${leagueId}_${season}`;
+  }
+
+  function saveState() {
+    try {
+      const storageKey = getStorageKey();
+      const stateToSave = {
+        sideAPlayers: state.sideAPlayers.map(p => ({
+          id: p.id,
+          name: p.name,
+          position: p.position,
+          team: p.team,
+          value: p.value
+        })),
+        sideBPlayers: state.sideBPlayers.map(p => ({
+          id: p.id,
+          name: p.name,
+          position: p.position,
+          team: p.team,
+          value: p.value
+        })),
+        sideAPicks: state.sideAPicks.map(p => ({
+          id: p.id,
+          display: p.display
+        })),
+        sideBPicks: state.sideBPicks.map(p => ({
+          id: p.id,
+          display: p.display
+        }))
+      };
+      localStorage.setItem(storageKey, JSON.stringify(stateToSave));
+    } catch (err) {
+      console.error("[Trade Calc] Failed to save state:", err);
+    }
+  }
+
+  function loadState() {
+    try {
+      const storageKey = getStorageKey();
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return;
+
+      const parsed = JSON.parse(saved);
+      if (parsed.sideAPlayers) state.sideAPlayers = parsed.sideAPlayers;
+      if (parsed.sideBPlayers) state.sideBPlayers = parsed.sideBPlayers;
+      if (parsed.sideAPicks) state.sideAPicks = parsed.sideAPicks;
+      if (parsed.sideBPicks) state.sideBPicks = parsed.sideBPicks;
+
+      renderChips("A");
+      renderChips("B");
+    } catch (err) {
+      console.error("[Trade Calc] Failed to load state:", err);
+    }
+  }
+
   function formatValue(v) {
     const num = Number(v) || 0;
     return num.toFixed(1);
@@ -589,8 +647,6 @@ window.initTradePage = function initTradePage(root = document) {
       const players = rawData.filter(p => p.position !== "PICK");
       const picks = rawData.filter(p => p.position === "PICK");
 
-      console.log("Loaded players:", players.length, "Loaded picks:", picks.length);
-
       allPlayers = [
         ...players
           .filter(p => p && typeof p === "object" && p.id != null)
@@ -618,6 +674,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     renderAllPlayersList();
+    loadState();
   }
 
   function renderAllPlayersList() {
@@ -725,6 +782,7 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.textContent = "×";
       removeBtn.addEventListener("click", () => {
         players.splice(idx, 1);
+        saveState();
         renderChips(side);
       });
 
@@ -768,6 +826,7 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.textContent = "×";
       removeBtn.addEventListener("click", () => {
         picks.splice(idx, 1);
+        saveState();
         renderChips(side);
       });
 
@@ -800,6 +859,7 @@ window.initTradePage = function initTradePage(root = document) {
       display: cleaned.replaceAll("_", " "),
     });
 
+    saveState();
     renderChips(side);
   }
 
@@ -902,7 +962,12 @@ window.initTradePage = function initTradePage(root = document) {
   // Never call tradeAiBody.innerHTML directly from outside this fn
   // ------------------------------------------------------------
   async function analyzeTrade() {
-    console.log("[DEBUG] analyzeTrade called");
+    // Don't run analysis in guest mode
+    const isGuest = root.querySelector("#isGuestMode")?.value === "true";
+    if (isGuest) {
+      console.log("[trade] Skipping analyzeTrade in guest mode");
+      return;
+    }
 
     const tradeAiBody = root.querySelector("#tradeAiBody");
     const errorBox = root.querySelector("#errorBox");
@@ -1069,6 +1134,7 @@ window.initTradePage = function initTradePage(root = document) {
             } else {
               selected.push(p);
             }
+            saveState();
             renderChips(side);
           }
           input.value = "";
@@ -1118,8 +1184,45 @@ window.initTradePage = function initTradePage(root = document) {
   function bindClearTradeButton() {
     const btn = root.querySelector("#clearTradeBtn");
     if (!btn) return;
+    // Only bind analyzeTrade if NOT in guest mode
+    // (guest mode has its own handler to show login modal)
+    const isGuest = root.querySelector("#isGuestMode")?.value === "true";
+    if (isGuest) return;
+
     bindOnce(btn, "clearTradeBtn", "click", () => {
+      const teamSelector = root.querySelector("#teamSelect");
+      const teamSelectWrap = root.querySelector(".otc-summary-team-select");
+
+      // Check if team is selected
+      if (!teamSelector?.value) {
+        // Shake the dropdown to indicate it needs to be filled
+        if (teamSelectWrap) {
+          teamSelectWrap.classList.add("shake");
+          // Remove shake class after animation completes
+          setTimeout(() => {
+            teamSelectWrap.classList.remove("shake");
+          }, 500);
+        }
+        // Focus the dropdown
+        if (teamSelector) {
+          teamSelector.focus();
+        }
+        return;
+      }
+
       analyzeTrade();
+
+      // Scroll to BR Trade Analyst section after triggering analysis
+      const aiPanel = root.querySelector("#tradeAiPanel");
+      if (aiPanel) {
+        setTimeout(() => {
+          aiPanel.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+          });
+        }, 100);
+      }
     });
   }
 
@@ -1395,19 +1498,27 @@ window.initTradePage = function initTradePage(root = document) {
     }
   });
 
-  function getCurrentUsername() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return (
-      urlParams.get("username") ||
-      sessionStorage.getItem("trade_username") ||
-      localStorage.getItem("trade_username") ||
-      ""
-    );
-  }
+  // Info tooltip handler
+  const infoBtn = root.querySelector("#otcInfoBtn");
+  const infoTooltip = root.querySelector("#otcInfoTooltip");
+  const infoWrapper = root.querySelector(".otc-info-tooltip-wrapper");
 
-  function getCurrentRosterId() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get("viewer_roster_id") || root.querySelector("#teamSelect")?.value || "";
+  if (infoBtn && infoTooltip && infoWrapper) {
+    let isInfoOpen = false;
+
+    bindOnce(infoBtn, "otcInfoClick", "click", (e) => {
+      e.stopPropagation();
+      isInfoOpen = !isInfoOpen;
+      infoTooltip.style.display = isInfoOpen ? "block" : "none";
+    });
+
+    // Close on click outside
+    document.addEventListener("click", (e) => {
+      if (infoWrapper && !infoWrapper.contains(e.target) && isInfoOpen) {
+        isInfoOpen = false;
+        infoTooltip.style.display = "none";
+      }
+    });
   }
 
   root.querySelectorAll(".pos-filter").forEach(btn => {
@@ -1435,6 +1546,198 @@ window.initTradePage = function initTradePage(root = document) {
   });
 };
 
+// Global utility functions
+function getCurrentUsername() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return (
+    urlParams.get("username") ||
+    sessionStorage.getItem("trade_username") ||
+    localStorage.getItem("trade_username") ||
+    ""
+  );
+}
+
+function getCurrentRosterId() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get("viewer_roster_id") || document.querySelector("#teamSelect")?.value || "";
+}
+
+// ------------------------------------------------------------
+// History Page Season Recap
+// ------------------------------------------------------------
+async function generateSeasonRecap() {
+  const root = document;
+  const errorBox = root.querySelector("#errorBox");
+  const loadingState = root.querySelector("#aiLoadingState");
+  const emptyState = root.querySelector("#aiEmptyState");
+  const resultState = root.querySelector("#aiAnalysisResult");
+  const teamDropdown = root.querySelector("#recapTeamDropdown");
+  const generateBtn = root.querySelector("#generateRecapBtn");
+  
+  const selectedTeam = teamDropdown?.value;
+  if (!selectedTeam) {
+    alert("Please select a team first");
+    return;
+  }
+  
+  // Show loading, hide everything else
+  if (loadingState) loadingState.style.display = "block";
+  if (emptyState) emptyState.style.display = "none";
+  if (resultState) resultState.style.display = "none";
+
+  // Yield to browser so the loading state actually paints before fetch starts
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  
+  try {
+    const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+    const season = root.querySelector("#seasonInput")?.value || "";
+    const resolvedLeagueId = root.querySelector("#resolvedLeagueIdInput")?.value || leagueId;
+    const historySeasonSelect = root.querySelector("#history-season-select");
+    let historySeason = season;
+    
+    // Extract season number from the selected option value (which might be a URL)
+    if (historySeasonSelect && historySeasonSelect.value) {
+      const seasonMatch = historySeasonSelect.value.match(/history_season=(\d+)/);
+      if (seasonMatch) {
+        historySeason = seasonMatch[1];
+      }
+    }
+    
+    const url = `/api/history/ai-recap?league_id=${encodeURIComponent(resolvedLeagueId)}&season=${encodeURIComponent(historySeason)}&roster_id=${encodeURIComponent(selectedTeam)}&base_season=${encodeURIComponent(season)}`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    
+    if (!res.ok) {
+      throw new Error(`Failed to generate recap (${res.status})`);
+    }
+    
+    const data = await res.json();
+    
+    // Hide loading, show result panel
+    if (loadingState) loadingState.style.display = "none";
+    if (emptyState) emptyState.style.display = "none";
+    if (resultState) {
+      resultState.style.display = "block";
+      if (data.html) {
+        resultState.innerHTML = data.html;
+      } else {
+        resultState.innerHTML = `
+          <div class="otc-ai-empty">
+            <div class="otc-ai-empty-title">No AI take yet</div>
+            <div class="otc-ai-empty-sub">Unable to generate season analysis.</div>
+          </div>`;
+      }
+    }
+
+    if (errorBox) {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
+    }
+    
+  } catch (err) {
+    console.error("[recap] Error:", err);
+    
+    // Show error state
+    if (loadingState) loadingState.style.display = "none";
+    if (emptyState) emptyState.style.display = "none";
+    if (resultState) {
+      resultState.style.display = "block";
+      resultState.innerHTML = `
+        <div class="otc-ai-empty">
+          <div class="otc-ai-empty-title">Analysis failed</div>
+          <div class="otc-ai-empty-sub">There was an error generating the AI analysis.</div>
+        </div>`;
+    }
+
+    if (errorBox) {
+      errorBox.style.display = "block";
+      errorBox.textContent = err.message || "Failed to analyze season.";
+    }
+  } finally {
+    // Reset button
+    if (generateBtn) generateBtn.disabled = false;
+    if (generateBtn) generateBtn.textContent = "Generate Recap";
+  }
+}
+
+function bindRecapTeamSelector() {
+  const root = document;
+  const teamDropdown = root.querySelector("#recapTeamDropdown");
+  const generateBtn = root.querySelector("#generateRecapBtn");
+  
+  if (!teamDropdown || !generateBtn) return;
+  
+  const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+  const season = root.querySelector("#seasonInput")?.value || "";
+  const resolvedLeagueId = root.querySelector("#resolvedLeagueIdInput")?.value || leagueId;
+  const historySeasonSelect = root.querySelector("#history-season-select");
+  let historySeason = season;
+  
+  // Extract season number from the selected option value (which might be a URL)
+  if (historySeasonSelect && historySeasonSelect.value) {
+    const seasonMatch = historySeasonSelect.value.match(/history_season=(\d+)/);
+    if (seasonMatch) {
+      historySeason = seasonMatch[1];
+    }
+  }
+  
+  if (resolvedLeagueId) {
+    const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=sleeper&season=${encodeURIComponent(historySeason)}`;
+
+    fetch(teamsUrl)
+      .then(res => res.json())
+      .then(teams => {
+        teamDropdown.innerHTML = '<option value="">Choose a team for recap...</option>';
+        
+        teams.forEach(team => {
+          const option = document.createElement("option");
+          option.value = team.roster_id;
+          option.textContent = team.team_name;
+          teamDropdown.appendChild(option);
+        });
+        
+        // Auto-select current user's team if available
+        const currentUsername = getCurrentUsername();
+        if (currentUsername) {
+          const userTeam = teams.find(
+            team =>
+              team.username === currentUsername ||
+              team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
+          );
+          if (userTeam) {
+            teamDropdown.value = userTeam.roster_id;
+            generateBtn.disabled = false;
+          }
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load recap teams:", err);
+        teamDropdown.innerHTML = '<option value="">Error loading teams</option>';
+      });
+  }
+  
+  // Enable/disable button based on selection
+  teamDropdown.addEventListener("change", () => {
+    generateBtn.disabled = !teamDropdown.value;
+  });
+  
+  // Bind generate button
+  generateBtn.addEventListener("click", generateSeasonRecap);
+}
+
+function recapPageExists(root = document) {
+  return !!root.querySelector("#recapTeamDropdown");
+}
+
+function initRecapPage(root = document) {
+  if (!recapPageExists(root)) return;
+  
+  bindRecapTeamSelector();
+}
+
 // ------------------------------------------------------------
 // Master Initializer
 // ------------------------------------------------------------
@@ -1453,6 +1756,9 @@ window.initPageRoot = function initPageRoot(root = document) {
   }
   if (tradePageExists(root)) {
     window.initTradePage?.(root);
+  }
+  if (recapPageExists(root)) {
+    initRecapPage(root);
   }
 };
 
@@ -1521,29 +1827,150 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
+  const platformBtns = document.querySelectorAll(".platform-btn");
+  const sleeperFlow = document.getElementById("sleeperFlow");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
   const leagueSelect = document.getElementById("league");
   const leagueSelectWrap = document.getElementById("leagueSelectWrap");
   const generateWrap = document.getElementById("generateWrap");
   const errorBox = document.getElementById("lookupError");
+  const formPlatform = document.getElementById("formPlatform");
 
-  if (!lookupBtn || !usernameInput || !leagueSelect) return;
+  if (!platformBtns.length) return;
 
-  usernameInput.addEventListener("input", () => {
-    const formUsername = document.getElementById("formUsername");
-    if (formUsername) {
-      formUsername.value = usernameInput.value.trim();
-    }
+  let currentPlatform = "sleeper";
+
+  // Platform switching (ESPN coming soon, only Sleeper active)
+  platformBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const platform = btn.dataset.platform;
+
+      // Only handle Sleeper for now
+      if (platform !== "sleeper") return;
+
+      currentPlatform = platform;
+
+      // Update active state
+      platformBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      // Update form platform
+      if (formPlatform) formPlatform.value = platform;
+
+      // Reset state
+      if (leagueSelectWrap) leagueSelectWrap.style.display = "none";
+      if (generateWrap) generateWrap.style.display = "none";
+      if (errorBox) errorBox.style.display = "none";
+    });
   });
 
-  lookupBtn.addEventListener("click", async () => {
-    const username = usernameInput.value.trim();
+  // Sleeper username input
+  if (usernameInput) {
+    usernameInput.addEventListener("input", () => {
+      const formUsername = document.getElementById("formUsername");
+      if (formUsername) {
+        formUsername.value = usernameInput.value.trim();
+      }
+    });
+  }
+
+  // Sleeper lookup
+  if (lookupBtn) {
+    lookupBtn.addEventListener("click", async () => {
+      const username = usernameInput?.value.trim();
+      if (!username) {
+        errorBox.textContent = "Enter a Sleeper username.";
+        errorBox.style.display = "block";
+        leagueSelectWrap.style.display = "none";
+        generateWrap.style.display = "none";
+        return;
+      }
+
+      errorBox.style.display = "none";
+      lookupBtn.disabled = true;
+      lookupBtn.textContent = "Loading...";
+
+      try {
+        const res = await fetch(`/api/sleeper-user-leagues?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Unable to load leagues.");
+        }
+
+        leagueSelect.innerHTML = `<option value="">Select a league</option>`;
+
+        for (const league of data.leagues || []) {
+          const option = document.createElement("option");
+          option.value = league.league_id;
+          option.textContent = league.label;
+          leagueSelect.appendChild(option);
+        }
+
+        if (!data.leagues || !data.leagues.length) {
+          throw new Error("No leagues found for that user this season.");
+        }
+
+        leagueSelectWrap.style.display = "block";
+        generateWrap.style.display = "block";
+      } catch (err) {
+        errorBox.textContent = err.message || "Unable to load leagues.";
+        errorBox.style.display = "block";
+        leagueSelectWrap.style.display = "none";
+        generateWrap.style.display = "none";
+      } finally {
+        lookupBtn.disabled = false;
+        lookupBtn.textContent = "Find My Leagues";
+      }
+    });
+  }
+
+});
+
+// Trade Calculator Login Modal
+document.addEventListener("DOMContentLoaded", () => {
+  const isGuestMode = document.getElementById("isGuestMode")?.value === "true";
+  if (!isGuestMode) return;
+
+  const analyzeBtn = document.getElementById("clearTradeBtn");
+  const modal = document.getElementById("tradeLoginModal");
+  const closeBtn = document.getElementById("closeLoginModal");
+  const overlay = modal?.querySelector(".trade-login-overlay");
+  const usernameInput = document.getElementById("tradeUsername");
+  const lookupBtn = document.getElementById("tradeLookupBtn");
+  const leagueSelect = document.getElementById("tradeLeagueSelect");
+  const leagueWrap = document.getElementById("tradeLeagueSelectWrap");
+  const goWrap = document.getElementById("tradeGoWrap");
+  const goBtn = document.getElementById("tradeGoBtn");
+  const errorBox = document.getElementById("tradeLookupError");
+  const seasonInput = document.getElementById("seasonInput");
+
+  if (!analyzeBtn || !modal) return;
+
+  function openModal() {
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeModal() {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }
+
+  analyzeBtn.addEventListener("click", (e) => {
+    openModal();
+  });
+  closeBtn?.addEventListener("click", closeModal);
+  overlay?.addEventListener("click", closeModal);
+
+  lookupBtn?.addEventListener("click", async () => {
+    const username = usernameInput?.value.trim();
     if (!username) {
       errorBox.textContent = "Enter a Sleeper username.";
       errorBox.style.display = "block";
-      leagueSelectWrap.style.display = "none";
-      generateWrap.style.display = "none";
+      leagueWrap.style.display = "none";
+      goWrap.style.display = "none";
       return;
     }
 
@@ -1572,16 +1999,170 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No leagues found for that user this season.");
       }
 
-      leagueSelectWrap.style.display = "block";
-      generateWrap.style.display = "block";
+      leagueWrap.style.display = "block";
+      goWrap.style.display = "block";
     } catch (err) {
       errorBox.textContent = err.message || "Unable to load leagues.";
       errorBox.style.display = "block";
-      leagueSelectWrap.style.display = "none";
-      generateWrap.style.display = "none";
+      leagueWrap.style.display = "none";
+      goWrap.style.display = "none";
     } finally {
       lookupBtn.disabled = false;
       lookupBtn.textContent = "Find My Leagues";
     }
   });
+
+  goBtn?.addEventListener("click", () => {
+    const leagueId = leagueSelect?.value;
+    const season = seasonInput?.value || new Date().getFullYear();
+
+    if (!leagueId) {
+      errorBox.textContent = "Please select a league.";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    window.location.href = `/sleeper/${season}/${leagueId}/trade`;
+  });
+
+  leagueSelect?.addEventListener("change", () => {
+    if (leagueSelect.value) {
+      errorBox.style.display = "none";
+    }
+  });
+});
+
+// ------------------------------------------------------------
+// Changelog Bell
+// ------------------------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+  const bellWrapper = document.querySelector(".changelog-bell-wrapper");
+  const bellBtn = document.getElementById("changelogBell");
+  const dropdown = document.getElementById("changelogDropdown");
+  const dot = document.querySelector(".changelog-dot");
+
+  if (!bellBtn || !dropdown || !dot) return;
+
+  let changelogData = [];
+  let isDropdownOpen = false;
+
+  // Fetch changelog and initialize
+  async function initChangelog() {
+    try {
+      const res = await fetch("/api/changelog");
+      if (!res.ok) throw new Error("Failed to load changelog");
+
+      changelogData = await res.json();
+
+      if (!changelogData || changelogData.length === 0) return;
+
+      // Detect if user is logged in (check for league context in URL)
+      const pathParts = window.location.pathname.split('/').filter(p => p);
+      const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+
+      // Filter out history page entries if not logged in
+      if (!isLoggedIn) {
+        changelogData = changelogData.filter(entry => !entry.link?.includes('/history'));
+      }
+
+      if (changelogData.length === 0) return;
+
+      // Check if we should show the red dot
+      const latestDate = changelogData[0].date;
+      const lastSeen = localStorage.getItem("changelog_last_seen");
+
+      if (!lastSeen || latestDate > lastSeen) {
+        dot.classList.remove("changelog-dot-hidden");
+      }
+
+      // Build dropdown HTML
+      buildDropdown();
+    } catch (err) {
+      console.error("[changelog] Failed to load:", err);
+    }
+  }
+
+  // Build the dropdown HTML
+  function buildDropdown() {
+    // Detect league context from URL
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+    const leaguePrefix = isLoggedIn ? `/${pathParts[0]}/${pathParts[1]}/${pathParts[2]}` : '';
+
+    const entries = changelogData.slice(0, 5).map(entry => {
+      const tagClass = `changelog-tag changelog-tag-${entry.tag}`;
+      const formattedDate = formatDate(entry.date);
+      let link = entry.link || "#";
+
+      // If logged in and link starts with /, prepend league context
+      if (isLoggedIn && link.startsWith('/')) {
+        link = leaguePrefix + link;
+      }
+
+      return `
+        <a href="${link}" class="changelog-entry" data-link="${link}">
+          <div class="changelog-entry-top">
+            <span class="${tagClass}">${entry.tag}</span>
+            <span class="changelog-entry-date">${formattedDate}</span>
+          </div>
+          <div class="changelog-entry-text">${entry.text}</div>
+        </a>
+      `;
+    }).join("");
+
+    dropdown.innerHTML = `
+      <div class="changelog-dropdown-header">Recent Updates</div>
+      ${entries}
+    `;
+  }
+
+  // Format date (e.g., "2026-03-26" -> "Mar 26")
+  function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+  }
+
+  // Toggle dropdown
+  function toggleDropdown() {
+    isDropdownOpen = !isDropdownOpen;
+
+    if (isDropdownOpen) {
+      dropdown.style.display = "block";
+
+      // Mark as seen
+      if (changelogData && changelogData.length > 0) {
+        const latestDate = changelogData[0].date;
+        localStorage.setItem("changelog_last_seen", latestDate);
+        dot.classList.add("changelog-dot-hidden");
+      }
+    } else {
+      dropdown.style.display = "none";
+    }
+  }
+
+  // Close dropdown
+  function closeDropdown() {
+    if (isDropdownOpen) {
+      isDropdownOpen = false;
+      dropdown.style.display = "none";
+    }
+  }
+
+  // Bind bell click
+  bindOnce(bellBtn, "changelogBellClick", "click", (e) => {
+    e.stopPropagation();
+    toggleDropdown();
+  });
+
+  // Close on click outside
+  document.addEventListener("click", (e) => {
+    if (bellWrapper && !bellWrapper.contains(e.target)) {
+      closeDropdown();
+    }
+  });
+
+  // Initialize
+  initChangelog();
 });

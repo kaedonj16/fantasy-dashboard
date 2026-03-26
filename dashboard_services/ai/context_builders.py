@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
 import math
+from typing import Any, Dict, List
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -32,10 +32,10 @@ def build_model_value_lookup(model_value_table: list[dict]) -> dict[str, dict]:
 
 
 def summarize_roster_players(
-    roster: dict,
-    players_index: dict,
-    players_map: dict,
-    model_value_lookup: dict[str, dict],
+        roster: dict,
+        players_index: dict,
+        players_map: dict,
+        model_value_lookup: dict[str, dict],
 ) -> list[dict]:
     out: list[dict] = []
     for pid in roster.get("players") or []:
@@ -151,6 +151,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         "roster_size": len(roster_players),
     }
 
+
 def _safe_str(v, default: str = "") -> str:
     if v is None:
         return default
@@ -237,11 +238,11 @@ def build_front_office_brief_context(ctx: dict, viewer_roster_id: str) -> Union[
 
 
 def build_trade_ai_context(
-    ctx: dict,
-    viewer_roster_id: str,
-    viewer_side: str,
-    side_a: dict,
-    side_b: dict,
+        ctx: dict,
+        viewer_roster_id: str,
+        viewer_side: str,
+        side_a: dict,
+        side_b: dict,
 ) -> Union[dict, None]:
     """
     side_a / side_b are the objects your /api/trade-eval route already builds.
