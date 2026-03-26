@@ -260,6 +260,10 @@ window.resetMatchupCarousels = function (root) {
 // Plotly Fixes (hover offset + axis title placement)
 // ------------------------------------------------------------
 
+// Stronger than just Plotly.Plots.resize:
+// 1) resize
+// 2) relayout automargins + title standoff + bottom margin
+// 3) redraw
 function _fixOnePlotly(gd) {
   const P = window.Plotly;
   if (!P || !gd) return;
@@ -268,6 +272,8 @@ function _fixOnePlotly(gd) {
     P.Plots.resize(gd);
   } catch (e) {}
 
+  // If margins are too small, Plotly can shove axis titles into plot area.
+  // Also helps after zoom/layout shifts.
   try {
     const relayoutPatch = {
       "xaxis.automargin": true,
@@ -291,6 +297,7 @@ window.resizeAllPlotly = function resizeAllPlotly(root = document) {
   const P = window.Plotly;
   if (!P) return;
 
+  // Run multiple passes because CSS zoom / font rendering / grid sizing can settle late.
   const run = () => {
     root.querySelectorAll(".js-plotly-plot").forEach(gd => _fixOnePlotly(gd));
   };
@@ -305,6 +312,7 @@ window.resizeAllPlotly = function resizeAllPlotly(root = document) {
   });
 };
 
+// viewport/zoom-ish hooks
 (function bindPlotlyViewportHooksOnce() {
   if (window.__BR_INIT_FLAGS__.plotlyViewportBound) return;
   window.__BR_INIT_FLAGS__.plotlyViewportBound = true;
@@ -324,15 +332,11 @@ window.resizeAllPlotly = function resizeAllPlotly(root = document) {
     window.visualViewport.addEventListener("scroll", handler);
   }
 
+  // When page becomes visible again, Plotly often needs a resize to fix hover mapping
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") handler();
   });
 })();
-
-// ------------------------------------------------------------
-// Trade Page
-// ------------------------------------------------------------
-
 function tradePageExists(root = document) {
   return !!root.querySelector("#leagueIdInput");
 }
@@ -577,8 +581,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (allPlayers.length > 0) return;
 
     const errorBox = root.querySelector("#errorBox");
-
+    
     try {
+      // Load players and picks (picks are already in the model value table)
       const res = await fetch("/api/league-players", { cache: "no-store" });
       if (!res.ok) {
         throw new Error("Failed to load players (" + res.status + ").");
@@ -586,23 +591,26 @@ window.initTradePage = function initTradePage(root = document) {
       const data = await res.json();
       const rawData = Array.isArray(data) ? data : [];
 
-      const players = rawData.filter(p => p.position !== "PICK");
-      const picks = rawData.filter(p => p.position === "PICK");
+      // Separate players and picks from the combined data
+      const players = rawData.filter(p => p.position !== 'PICK');
+      const picks = rawData.filter(p => p.position === 'PICK');
 
       console.log("Loaded players:", players.length, "Loaded picks:", picks.length);
 
+      // Combine players and picks
       allPlayers = [
         ...players
           .filter(p => p && typeof p === "object" && p.id != null)
           .map(normalizePlayerRow)
           .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position)),
-        ...picks,
+        ...picks
       ].sort((a, b) => {
         const vb = Number(b.value || 0);
         const va = Number(a.value || 0);
         if (vb !== va) return vb - va;
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
+
     } catch (err) {
       console.error("Error loading data:", err);
       if (errorBox) {
@@ -638,9 +646,13 @@ window.initTradePage = function initTradePage(root = document) {
     const items = allPlayers
       .filter(p => {
         const pos = String(p.position || "").toUpperCase();
-        if (activePosFilter === "ALL") return true;
-        if (activePosFilter === "PICK") return pos === "PICK";
-        return pos === activePosFilter;
+        if (activePosFilter === "ALL") {
+          return true;
+        } else if (activePosFilter === "PICK") {
+          return pos === "PICK";
+        } else {
+          return pos === activePosFilter;
+        }
       })
       .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 
@@ -759,7 +771,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       const valueEl = document.createElement("span");
       valueEl.className = "otc-chip-value";
-      const pickData = allPlayers.find(p => p.id === pk.id && p.position === "PICK");
+      // Get the pick value from the allPlayers array
+      const pickData = allPlayers.find(p => p.id === pk.id && p.position === 'PICK');
       valueEl.textContent = formatValue(pickData ? pickData.value : 0);
 
       const removeBtn = document.createElement("button");
@@ -897,51 +910,52 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
-  // ------------------------------------------------------------
-  // analyzeTrade — owns ALL loading/result/empty state transitions
-  // Never call tradeAiBody.innerHTML directly from outside this fn
-  // ------------------------------------------------------------
   async function analyzeTrade() {
-    console.log("[DEBUG] analyzeTrade called");
-
+    console.log("[DEBUG] analyzeTrade function called");
     const tradeAiBody = root.querySelector("#tradeAiBody");
     const errorBox = root.querySelector("#errorBox");
-    const loadingState = root.querySelector("#aiLoadingState");
-    const emptyState = root.querySelector("#aiEmptyState");
-    const resultState = root.querySelector("#aiAnalysisResult");
 
     const sideAIds = state.sideAPlayers.map(p => String(p.id));
     const sideBIds = state.sideBPlayers.map(p => String(p.id));
     const sideAPickIds = state.sideAPicks.map(p => String(p.id));
     const sideBPickIds = state.sideBPicks.map(p => String(p.id));
 
-    // Nothing on either side — show empty state and bail
+    // Always show loading state when analyze is clicked
+    const loadingState = root.querySelector("#aiLoadingState");
+    const emptyState = root.querySelector("#aiEmptyState");
+    const resultState = root.querySelector("#aiAnalysisResult");
+    
     if (
       sideAIds.length === 0 &&
       sideBIds.length === 0 &&
       sideAPickIds.length === 0 &&
       sideBPickIds.length === 0
     ) {
-      if (loadingState) loadingState.style.display = "none";
-      if (resultState) resultState.style.display = "none";
-      if (emptyState) emptyState.style.display = "block";
+      if (tradeAiBody) {
+        tradeAiBody.innerHTML = `
+          <div class="otc-ai-empty">
+            <div class="otc-ai-empty-title">Waiting on a deal</div>
+            <div class="otc-ai-empty-sub">
+              Once both sides have assets, this panel can explain whether the trade fits your team build.
+            </div>
+          </div>
+        `;
+      }
       return;
     }
 
-    // Show loading, hide everything else
+    // Reset states to ensure loading shows every time when API call is made
     if (loadingState) loadingState.style.display = "block";
     if (emptyState) emptyState.style.display = "none";
     if (resultState) resultState.style.display = "none";
 
-    // Yield to browser so the loading state actually paints before fetch starts
-    await new Promise(resolve => requestAnimationFrame(resolve));
-
     const viewerSide =
       root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+
+    // Get selected team information
     const teamSelector = root.querySelector("#teamSelect");
     const selectedTeamRosterId = teamSelector?.value || "";
-    const selectedTeamName =
-      teamSelector?.options[teamSelector?.selectedIndex]?.text || "";
+    const selectedTeamName = teamSelector?.options[teamSelector.selectedIndex]?.text || "";
 
     const payload = {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
@@ -962,35 +976,38 @@ window.initTradePage = function initTradePage(root = document) {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Trade eval failed (" + res.status + ").");
+      if (!res.ok) {
+        throw new Error("Trade eval failed (" + res.status + ").");
+      }
 
       const data = await res.json();
-
-      // Hide loading, show result panel
+      
+      // Hide loading state and show results
       if (loadingState) loadingState.style.display = "none";
       if (emptyState) emptyState.style.display = "none";
-      if (resultState) {
-        resultState.style.display = "block";
-        // Write into resultState only — never clobber tradeAiBody directly
-        // so that sibling state nodes (loading/empty) survive intact
-        if (data.analysis_html) {
-          resultState.innerHTML = data.analysis_html;
-        } else if (data.error && data.error.includes("No user context")) {
-          resultState.innerHTML = `
-            <div class="otc-ai-empty">
-              <div class="otc-ai-empty-title">Select Your Team</div>
-              <div class="otc-ai-empty-sub">
-                Please select your username/team from the league settings so the AI
-                can analyze trades from your perspective.
-              </div>
-            </div>`;
-        } else {
-          resultState.innerHTML = `
-            <div class="otc-ai-empty">
-              <div class="otc-ai-empty-title">No AI take yet</div>
-              <div class="otc-ai-empty-sub">Add assets on both sides to generate a front-office opinion.</div>
-            </div>`;
-        }
+      if (resultState) resultState.style.display = "block";
+
+      if (data.analysis_html) {
+        if (resultState) resultState.innerHTML = data.analysis_html;
+        tradeAiBody.innerHTML = data.analysis_html;
+      } else if (data.error && data.error.includes("No user context")) {
+        // Show username selection prompt when no user context is available
+        tradeAiBody.innerHTML = `
+          <div class="otc-ai-empty">
+            <div class="otc-ai-empty-title">Select Your Team</div>
+            <div class="otc-ai-empty-sub">
+              Please select your username/team from the league settings so the AI can analyze trades from your perspective.
+            </div>
+          </div>
+        `;
+      } else {
+        // Fallback for other cases
+        tradeAiBody.innerHTML =
+          data.analysis_html ||
+          `<div class="otc-ai-empty">
+             <div class="otc-ai-empty-title">No AI take yet</div>
+             <div class="otc-ai-empty-sub">Add assets on both sides to generate a front-office opinion.</div>
+           </div>`;
       }
 
       if (errorBox) {
@@ -999,18 +1016,14 @@ window.initTradePage = function initTradePage(root = document) {
       }
     } catch (err) {
       console.error("[trade] error in analyzeTrade:", err);
-
-      if (loadingState) loadingState.style.display = "none";
-      if (emptyState) emptyState.style.display = "none";
-      if (resultState) {
-        resultState.style.display = "block";
-        resultState.innerHTML = `
+      if (tradeAiBody) {
+        tradeAiBody.innerHTML = `
           <div class="otc-ai-empty">
             <div class="otc-ai-empty-title">Analysis failed</div>
             <div class="otc-ai-empty-sub">There was an error generating the AI analysis.</div>
-          </div>`;
+          </div>
+        `;
       }
-
       if (errorBox) {
         errorBox.style.display = "block";
         errorBox.textContent = err.message || "Failed to analyze trade.";
@@ -1061,10 +1074,14 @@ window.initTradePage = function initTradePage(root = document) {
 
         item.addEventListener("click", () => {
           if (!selected.find(x => String(x.id) === String(p.id))) {
-            if (p.position === "PICK") {
+            // Handle picks differently - add to picks array
+            if (p.position === 'PICK') {
               const picks = getSidePicks(side);
               if (!picks.find(x => String(x.id) === String(p.id))) {
-                picks.push({ id: p.id, display: p.name });
+                picks.push({
+                  id: p.id,
+                  display: p.name,
+                });
               }
             } else {
               selected.push(p);
@@ -1111,14 +1128,21 @@ window.initTradePage = function initTradePage(root = document) {
     syncViewerSideLabels();
   }
 
-  // ------------------------------------------------------------
-  // Button handlers — lean; analyzeTrade() owns all state logic
-  // ------------------------------------------------------------
-
   function bindClearTradeButton() {
     const btn = root.querySelector("#clearTradeBtn");
     if (!btn) return;
+
     bindOnce(btn, "clearTradeBtn", "click", () => {
+      console.log("[DEBUG] clearTradeBtn clicked - showing loading state");
+      // Show loading state immediately when button is clicked
+      const loadingState = root.querySelector("#aiLoadingState");
+      const emptyState = root.querySelector("#aiEmptyState");
+      const resultState = root.querySelector("#aiAnalysisResult");
+      
+      if (loadingState) loadingState.style.display = "block";
+      if (emptyState) emptyState.style.display = "none";
+      if (resultState) resultState.style.display = "none";
+      
       analyzeTrade();
     });
   }
@@ -1129,17 +1153,37 @@ window.initTradePage = function initTradePage(root = document) {
     if (!btn) return;
 
     bindOnce(btn, "tradeAnalyzeBtn", "click", () => {
+      console.log("[DEBUG] tradeAnalyzeBtn clicked - showing loading state");
+      // Show loading state immediately when button is clicked
+      const loadingState = root.querySelector("#aiLoadingState");
+      const emptyState = root.querySelector("#aiEmptyState");
+      const resultState = root.querySelector("#aiAnalysisResult");
+      
+      if (loadingState) loadingState.style.display = "block";
+      if (emptyState) emptyState.style.display = "none";
+      if (resultState) resultState.style.display = "none";
+      
+      const selectedTeam = teamSelector?.value;
       const hasLeague = root.querySelector("#leagueIdInput")?.value;
-      if (hasLeague && !teamSelector?.value) {
+      
+      // Allow analysis if no league context (basic analysis)
+      // But require team if league context exists
+      if (hasLeague && !selectedTeam) {
         showTeamSelectionPopup();
         return;
       }
+      
       analyzeTrade();
     });
 
+    // Also show popup on hover for disabled button (only when league exists)
     btn.addEventListener("mouseenter", () => {
+      const selectedTeam = teamSelector?.value;
       const hasLeague = root.querySelector("#leagueIdInput")?.value;
-      if (hasLeague && !teamSelector?.value) showTeamSelectionPopup();
+      
+      if (hasLeague && !selectedTeam) {
+        showTeamSelectionPopup();
+      }
     });
   }
 
@@ -1149,19 +1193,22 @@ window.initTradePage = function initTradePage(root = document) {
     const leagueSelect = root.querySelector("#league");
     if (!setupBtn) return;
 
+    // Add username input listener to fetch leagues
     if (usernameInput) {
       usernameInput.addEventListener("input", debounce(async () => {
         const username = usernameInput.value.trim();
-        if (username.length >= 3) {
+        if (username.length >= 3) { // Only fetch if username is substantial
           try {
             const response = await fetch(`/api/sleeper-user-leagues?username=${encodeURIComponent(username)}`);
             const data = await response.json();
-
+            
+            // Clear existing options
             leagueSelect.innerHTML = '<option value="">Choose your league...</option>';
-
+            
+            // Add leagues to dropdown
             if (data.ok && data.leagues) {
               data.leagues.forEach(league => {
-                const option = document.createElement("option");
+                const option = document.createElement('option');
                 option.value = league.league_id;
                 option.textContent = league.name;
                 leagueSelect.appendChild(option);
@@ -1171,44 +1218,49 @@ window.initTradePage = function initTradePage(root = document) {
             console.error("Failed to fetch leagues:", err);
           }
         }
-      }, 500));
+      }, 500)); // Debounce to avoid excessive API calls
     }
-
+    
+    // Add league select listener to update setup button
     if (leagueSelect) {
       leagueSelect.addEventListener("change", updateSetupButtonState);
     }
-
+    
     function updateSetupButtonState() {
       const username = usernameInput?.value?.trim() || "";
       const leagueId = leagueSelect?.value || "";
-      const btn = root.querySelector("#setupTradeBtn");
-      if (btn) {
-        btn.disabled = !username || !leagueId;
-        btn.style.cursor = username && leagueId ? "pointer" : "not-allowed";
+      const setupBtn = root.querySelector("#setupTradeBtn");
+      
+      if (setupBtn) {
+        setupBtn.disabled = !username || !leagueId;
+        setupBtn.style.cursor = (username && leagueId) ? "pointer" : "not-allowed";
       }
     }
 
     bindOnce(setupBtn, "setupTradeBtn", "click", async () => {
       const username = usernameInput?.value;
       const leagueId = leagueSelect?.value;
-
+      
       if (!username || !leagueId) {
         alert("Please enter both username and select a league");
         return;
       }
-
+      
       try {
+        // Disable button and show loading
         setupBtn.disabled = true;
         setupBtn.textContent = "Setting up...";
         setupBtn.style.cursor = "not-allowed";
-
+        
+        // Set up session like home page login
         const response = await fetch("/api/setup-trade-context", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, league_id: leagueId }),
         });
-
+        
         if (response.ok) {
+          // Redirect to trade calculator route with league context (like home page does)
           const platform = "sleeper";
           const season = new Date().getFullYear();
           window.location.href = `/${platform}/${season}/${leagueId}/trade`;
@@ -1219,6 +1271,7 @@ window.initTradePage = function initTradePage(root = document) {
         console.error("Setup failed:", err);
         alert("Failed to setup trade context. Please try again.");
       } finally {
+        // Re-enable button
         setupBtn.disabled = false;
         setupBtn.textContent = "Setup Trade Calculator";
         setupBtn.style.cursor = "pointer";
@@ -1240,38 +1293,46 @@ window.initTradePage = function initTradePage(root = document) {
 
   function bindTeamSelector() {
     const selector = root.querySelector("#teamSelect");
-    if (!selector) return;
+    const analyzeBtn = root.querySelector("#clearTradeBtn");
+    if (!selector) return; // Only bind if team selector exists (i.e., when league context exists)
 
+    // Load teams and populate dropdown
     const leagueId = root.querySelector("#leagueIdInput")?.value || "";
     if (leagueId) {
       fetch(`/api/teams?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`)
         .then(res => res.json())
         .then(teams => {
+          // Clear existing options
           selector.innerHTML = '<option value="">Select your team...</option>';
-
+          
+          // Add teams to dropdown
           teams.forEach(team => {
-            const option = document.createElement("option");
+            const option = document.createElement('option');
             option.value = team.roster_id;
             option.textContent = team.team_name;
-            option.setAttribute("data-username", team.username || "");
+            option.setAttribute('data-username', team.username || '');
             selector.appendChild(option);
           });
-
+          
+          // Try to find and auto-select the current user's team
           const currentUsername = getCurrentUsername();
           if (currentUsername) {
-            const userTeam = teams.find(
-              team =>
-                team.username === currentUsername ||
-                team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
+            const userTeam = teams.find(team => 
+              team.username === currentUsername || 
+              team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
             );
-            if (userTeam) selector.value = userTeam.roster_id;
+            if (userTeam) {
+              selector.value = userTeam.roster_id;
+            }
           }
-
+          
+          // Fallback to current roster ID if no username match found
           const currentRosterId = getCurrentRosterId();
           if (!selector.value && currentRosterId) {
             selector.value = currentRosterId;
           }
-
+          
+          // Update button state
           updateAnalyzeButtonState();
         })
         .catch(err => {
@@ -1282,31 +1343,30 @@ window.initTradePage = function initTradePage(root = document) {
     bindOnce(selector, "teamSelectorChange", "change", () => {
       const selectedRosterId = selector.value;
       if (selectedRosterId) {
+        // Store in session for future requests
         fetch("/api/set-viewer-roster", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roster_id: selectedRosterId }),
         }).then(res => {
           if (res.ok) {
-            // Team changed — reset to empty state so user re-triggers analysis
-            const loadingState = root.querySelector("#aiLoadingState");
-            const emptyState = root.querySelector("#aiEmptyState");
-            const resultState = root.querySelector("#aiAnalysisResult");
-            if (loadingState) loadingState.style.display = "none";
-            if (resultState) resultState.style.display = "none";
-            if (emptyState) {
-              emptyState.style.display = "block";
-              emptyState.innerHTML = `
-                <div class="otc-ai-empty-title">Team Selected</div>
-                <div class="otc-ai-empty-sub">
-                  Now click Analyze Trade to generate analysis for
-                  ${selector.options[selector.selectedIndex].text}.
-                </div>`;
+            // Clear AI analysis to force re-analysis with new team
+            const tradeAiBody = root.querySelector("#tradeAiBody");
+            if (tradeAiBody) {
+              tradeAiBody.innerHTML = `
+                <div class="otc-ai-empty">
+                  <div class="otc-ai-empty-title">Team Selected</div>
+                  <div class="otc-ai-empty-sub">
+                    Now analyzing trades for ${selector.options[selector.selectedIndex].text}...
+                  </div>
+                </div>
+              `;
             }
           }
         });
       }
-
+      
+      // Update button state
       updateAnalyzeButtonState();
     });
   }
@@ -1315,45 +1375,50 @@ window.initTradePage = function initTradePage(root = document) {
     const selector = root.querySelector("#teamSelect");
     const analyzeBtn = root.querySelector("#clearTradeBtn");
     const hasLeague = root.querySelector("#leagueIdInput")?.value;
-
-    if (!analyzeBtn) return;
-
-    if (!hasLeague) {
-      analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
-      analyzeBtn.classList.remove("otc-btn-disabled");
-      analyzeBtn.removeAttribute("data-tooltip");
-      return;
-    }
-
-    if (!selector) {
-      analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
-      analyzeBtn.classList.add("otc-btn-disabled");
-      analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
-      return;
-    }
-
-    const hasSelection = selector.value && selector.value !== "";
-    if (hasSelection) {
-      analyzeBtn.disabled = false;
-      analyzeBtn.textContent = "Analyze Trade";
-      analyzeBtn.classList.remove("otc-btn-disabled");
-      analyzeBtn.removeAttribute("data-tooltip");
-    } else {
-      analyzeBtn.disabled = true;
-      analyzeBtn.textContent = "Analyze Trade";
-      analyzeBtn.classList.add("otc-btn-disabled");
-      analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
+    
+    if (analyzeBtn) {
+      // If no league context, button is always enabled (basic analysis)
+      if (!hasLeague) {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "Analyze Trade";
+        analyzeBtn.classList.remove("otc-btn-disabled");
+        analyzeBtn.removeAttribute("data-tooltip");
+        return;
+      }
+      
+      // If league context exists but no team selector, button is disabled
+      if (!selector) {
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = "Analyze Trade";
+        analyzeBtn.classList.add("otc-btn-disabled");
+        analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
+        return;
+      }
+      
+      // If league context exists, require team selection
+      const hasSelection = selector.value && selector.value !== "";
+      
+      if (hasSelection) {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "Analyze Trade";
+        analyzeBtn.classList.remove("otc-btn-disabled");
+        analyzeBtn.removeAttribute("data-tooltip");
+      } else {
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = "Analyze Trade";
+        analyzeBtn.classList.add("otc-btn-disabled");
+        analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
+      }
     }
   }
 
   function showTeamSelectionPopup() {
+    // Remove existing popup if any
     hideTeamSelectionPopup();
-
-    const popup = document.createElement("div");
-    popup.id = "team-selection-popup";
-    popup.className = "otc-team-popup";
+    
+    const popup = document.createElement('div');
+    popup.id = 'team-selection-popup';
+    popup.className = 'otc-team-popup';
     popup.innerHTML = `
       <div class="otc-popup-content">
         <div class="otc-popup-header">
@@ -1364,50 +1429,53 @@ window.initTradePage = function initTradePage(root = document) {
           <p>Please select your team from the dropdown above to enable personalized AI analysis.</p>
           <div class="otc-popup-arrow"></div>
         </div>
-      </div>`;
-
+      </div>
+    `;
+    
     document.body.appendChild(popup);
-
+    
+    // Position popup near the analyze button
     const analyzeBtn = root.querySelector("#analyzeTradeBtn");
-    if (analyzeBtn) {
-      const btnRect = analyzeBtn.getBoundingClientRect();
-      const popupRect = popup.getBoundingClientRect();
-      popup.style.position = "fixed";
-      popup.style.top = btnRect.top - popupRect.height - 10 + "px";
-      popup.style.left = btnRect.left + btnRect.width / 2 - popupRect.width / 2 + "px";
-      popup.style.zIndex = "1000";
-    }
-
+    const btnRect = analyzeBtn.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    
+    popup.style.position = 'fixed';
+    popup.style.top = (btnRect.top - popupRect.height - 10) + 'px';
+    popup.style.left = (btnRect.left + (btnRect.width / 2) - (popupRect.width / 2)) + 'px';
+    popup.style.zIndex = '1000';
+    
+    // Auto-hide after 3 seconds
     setTimeout(hideTeamSelectionPopup, 3000);
   }
 
   function hideTeamSelectionPopup() {
-    const popup = document.getElementById("team-selection-popup");
-    if (popup) popup.remove();
+    const popup = document.getElementById('team-selection-popup');
+    if (popup) {
+      popup.remove();
+    }
   }
 
-  window.hideTeamSelectionPopup = hideTeamSelectionPopup;
-
-  document.addEventListener("click", function (event) {
-    const popup = document.getElementById("team-selection-popup");
-    if (popup && !popup.contains(event.target) && !event.target.closest("#clearTradeBtn")) {
+  // Close popup when clicking outside
+  document.addEventListener('click', function(event) {
+    const popup = document.getElementById('team-selection-popup');
+    if (popup && !popup.contains(event.target) && !event.target.closest('#clearTradeBtn')) {
       hideTeamSelectionPopup();
     }
   });
 
   function getCurrentUsername() {
+    // Try to get username from URL params or stored session
     const urlParams = new URLSearchParams(window.location.search);
-    return (
-      urlParams.get("username") ||
-      sessionStorage.getItem("trade_username") ||
-      localStorage.getItem("trade_username") ||
-      ""
-    );
+    return urlParams.get('username') || 
+           sessionStorage.getItem('trade_username') || 
+           localStorage.getItem('trade_username') || '';
   }
 
   function getCurrentRosterId() {
+    // Try to get from session first, then fallback to stored value
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get("viewer_roster_id") || root.querySelector("#teamSelect")?.value || "";
+    return urlParams.get('viewer_roster_id') || 
+           root.querySelector("#teamSelect")?.value || "";
   }
 
   root.querySelectorAll(".pos-filter").forEach(btn => {
@@ -1434,7 +1502,6 @@ window.initTradePage = function initTradePage(root = document) {
     recomputeTrade();
   });
 };
-
 // ------------------------------------------------------------
 // Master Initializer
 // ------------------------------------------------------------
@@ -1530,8 +1597,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!lookupBtn || !usernameInput || !leagueSelect) return;
 
-  usernameInput.addEventListener("input", () => {
-    const formUsername = document.getElementById("formUsername");
+  // Sync username to hidden form field
+  usernameInput.addEventListener('input', () => {
+    const formUsername = document.getElementById('formUsername');
     if (formUsername) {
       formUsername.value = usernameInput.value.trim();
     }
@@ -1585,3 +1653,4 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
