@@ -105,10 +105,10 @@ def _use_exact_slots_for_year(year: int, current_year: int, draft_done: bool) ->
 
 
 def _remap_pick_to_league_size(
-    rnd: int,
-    pos_in_round: int,
-    source_picks_per_round: int,
-    league_teams: int,
+        rnd: int,
+        pos_in_round: int,
+        source_picks_per_round: int,
+        league_teams: int,
 ) -> Tuple[int, int]:
     """
     Convert a market/source draft slot into the equivalent slot for this league size
@@ -130,14 +130,14 @@ def _remap_pick_to_league_size(
 
 
 def _build_pick_key(
-    *,
-    year: int,
-    rnd: int,
-    current_year: int,
-    draft_done: bool,
-    pos_in_round: int | None = None,
-    bucket: str = "",
-    bucket_round_size: int = 10,
+        *,
+        year: int,
+        rnd: int,
+        current_year: int,
+        draft_done: bool,
+        pos_in_round: int | None = None,
+        bucket: str = "",
+        bucket_round_size: int = 10,
 ) -> PickKey | None:
     """
     Rules:
@@ -180,13 +180,13 @@ def _pick_key_to_output_string(key: PickKey) -> str:
 
 
 def load_pick_value_table(
-    fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
-    dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
-    league_teams: int = 10,
-    source_picks_per_round: int = 12,
-    w_fc: float = 0.55,
-    w_dp: float = 0.45,
-    current_year: int | None = None,
+        fantasycalc_csv: Path = FANTASYCALC_VALUES_PATH,
+        dynastyprocess_csv: Path = DYNASTYPROCESS_VALUES_PATH,
+        league_teams: int = 10,
+        source_picks_per_round: int = 12,
+        w_fc: float = 0.55,
+        w_dp: float = 0.45,
+        current_year: int | None = None,
 ) -> Dict[str, float]:
     """
     Build a draft pick value table by merging FantasyCalc + DynastyProcess.

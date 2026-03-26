@@ -1,10 +1,9 @@
 import hashlib
+import html
 import json
 import math
 import numpy as np
 import os
-import html
-from openai import OpenAI
 import pandas as pd
 import threading
 import time
@@ -20,50 +19,90 @@ from flask import (
     render_template,
     session,
 )
+from openai import OpenAI
 from pathlib import Path
 from plotly.offline import plot as plotly_plot, get_plotlyjs
 from typing import List, Dict, Any, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
 
+from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import get_team_gm_memo
-from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
-    get_nfl_scores_for_date, build_team_game_lookup, \
-    get_effective_scoring_settings, get_roster_positions, get_league_settings, get_total_rosters, \
-    get_sleeper_user_by_username, get_sleeper_user_leagues, resolve_league_id_for_season, build_league_history_map
+from dashboard_services.api import (
+    avatar_from_users,
+    build_league_history_map,
+    build_team_game_lookup,
+    get_effective_scoring_settings,
+    get_league_settings,
+    get_nfl_players,
+    get_nfl_scores_for_date,
+    get_nfl_state,
+    get_roster_positions,
+    get_sleeper_user_by_username,
+    get_sleeper_user_leagues,
+    get_total_rosters,
+    resolve_league_id_for_season,
+)
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
-from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks, \
-    compute_team_projections_for_weeks
-from dashboard_services.pages.history_page import build_history_body, build_regular_season_team_stats, sort_team_stats
+from dashboard_services.matchups import (
+    compute_team_projections_for_weeks,
+    render_matchup_carousel_weeks,
+    render_matchup_slide,
+)
 from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.history_page import (
+    build_history_body,
+    build_regular_season_team_stats,
+    sort_team_stats,
+)
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.platform_api import (
+    get_bracket,
+    get_drafts,
     get_league,
-    get_users,
     get_rosters,
     get_traded_picks,
-    get_bracket,
-    get_drafts
-)
-from dashboard_services.providers.espn_api import safe_float
-from data_building.player_value_history import (
-    init_value_history_db,
-    get_top_movers
+    get_users,
 )
 from dashboard_services.players import get_players_map
-from dashboard_services.service import build_tables, playoff_bracket, matchup_cards_last_week, render_top_three, \
-    build_matchups_by_week, build_picks_by_roster, render_teams_sidebar, build_week_activity, pill, \
-    seed_top6_from_team_stats, build_standings_map
-from utils.utils import (load_teams_index, streak_class, build_teams_overview, load_model_value_table, \
-                         load_players_index, load_week_projection, bucket_for_slot,
-                         clear_activity_cache_for_league, \
-                         clear_weekly_cache_for_league, build_status_for_week,
-                         clear_teams_cache_for_league, get_week_projections_cached, \
-                         fetch_week_from_tank01, count_roster_positions, load_idp_index,
-                         get_live_game_ids_for_today, \
-                         build_and_save_week_stats_for_league, load_week_schedule)
+from dashboard_services.providers.espn_api import safe_float
+from dashboard_services.service import (
+    build_matchups_by_week,
+    build_picks_by_roster,
+    build_standings_map,
+    build_tables,
+    build_week_activity,
+    matchup_cards_last_week,
+    pill,
+    playoff_bracket,
+    render_teams_sidebar,
+    render_top_three,
+    seed_top6_from_team_stats,
+)
 from data_building.build_daily_value_table import build_daily_data
+from data_building.player_value_history import get_top_movers, init_value_history_db
+from utils.utils import (
+    bucket_for_slot,
+    build_and_save_week_stats_for_league,
+    build_status_for_week,
+    build_teams_overview,
+    clear_activity_cache_for_league,
+    clear_teams_cache_for_league,
+    clear_weekly_cache_for_league,
+    count_roster_positions,
+    fetch_week_from_tank01,
+    get_live_game_ids_for_today,
+    get_week_projections_cached,
+    load_idp_index,
+    load_model_value_table,
+    load_players_index,
+    load_teams_index,
+    load_week_projection,
+    load_week_schedule,
+    streak_class,
+)
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -107,14 +146,14 @@ FORM_BODY = """
     <div class="home-hero-left">
       <h1 class="home-title">BR Fantasy Dashboard</h1>
       <p class="home-subtitle">
-        Turn your Sleeper league into a real front office:
-        live projections, matchup previews, power rankings, and more—all in one place.
+        Your dynasty league, upgraded. Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper and ESPN leagues.
       </p>
 
       <ul class="home-bullets">
-        <li>League-wide dashboard with weekly storylines and stats</li>
-        <li>Matchup hub with projections and live scoring context</li>
-        <li>Trade calculator powered by custom value models</li>
+        <li><strong>AI Trade Analyst</strong> — Personalized deal evaluation with counter suggestions</li>
+        <li><strong>Dynasty Value Engine</strong> — Hybrid model combining consensus data and advanced metrics</li>
+        <li><strong>Weekly Projections</strong> — Live scoring, matchup previews, and storyline tracking</li>
+        <li><strong>Historical Analysis</strong> — Season recaps, power rankings, and trend visualization</li>
       </ul>
     </div>
 
@@ -123,16 +162,28 @@ FORM_BODY = """
         <h2 class="home-card-title">Get started</h2>
 
         <div class="row">
-          <label for="username">Sleeper Username</label>
-          <input type="text" id="username" name="username" value="{{ username or '' }}">
+          <label for="platformSelect">Platform</label>
+          <div class="platform-selector">
+            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
+            <button type="button" class="platform-btn" data-platform="espn" disabled data-tooltip="ESPN integration coming soon!">ESPN (Coming Soon)</button>
+          </div>
         </div>
 
-        <div class="row">
-          <button type="button" id="lookupBtn">Find My Leagues</button>
+        <!-- Sleeper Flow -->
+        <div id="sleeperFlow">
+          <div class="row">
+            <label for="username">Sleeper Username</label>
+            <input type="text" id="username" name="username" value="{{ username or '' }}">
+          </div>
+
+          <div class="row">
+            <button type="button" id="lookupBtn">Find My Leagues</button>
+          </div>
         </div>
+
 
         <form method="post" id="leagueSelectForm">
-          <input type="hidden" name="platform" value="sleeper">
+          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
 
@@ -155,34 +206,67 @@ FORM_BODY = """
         </form>
 
         <p class="hint">
-          Enter your Sleeper username, choose one of your leagues, and generate the dashboard.
+          Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
         </p>
       </div>
     </div>
   </section>
-   <section class="home-feature-grid">
-        <div class="home-feature-card">
-            <h3>Weekly Hub</h3>
-            <p>
-                See every starter, projection, and live score in one view.
-                Perfect for Sunday trash talk and recap videos.
-            </p>
-        </div>
-        <div class="home-feature-card">
-            <h3>Trade Calculator</h3>
-            <p>
-                Evaluate trades with BR’s custom value engine so you don’t get
-                fleeced by the league shark.
-            </p>
-        </div>
-        <div class="home-feature-card">
-            <h3>Graphs & Insights</h3>
-            <p>
-                Visualize PF, PA, luck, and schedule strength so you can prove
-                who’s actually good.
-            </p>
-        </div>
-    </section>
+
+  <section class="home-feature-grid">
+    <div class="home-feature-card">
+      <div class="home-feature-icon">📊</div>
+      <h3>Trade Calculator</h3>
+      <p>
+        AI-powered trade analysis personalized to your roster. Get real-time value assessments,
+        balance indicators, and specific counter suggestions — not generic advice.
+      </p>
+    </div>
+
+    <div class="home-feature-card">
+      <div class="home-feature-icon">📈</div>
+      <h3>Dynasty Values</h3>
+      <p>
+        Hybrid valuation model blending market consensus with production metrics, age curves,
+        and positional scarcity. Updated daily for all players and picks.
+      </p>
+    </div>
+
+    <div class="home-feature-card">
+      <div class="home-feature-icon">⚡</div>
+      <h3>Weekly Hub</h3>
+      <p>
+        Live scoring context for every matchup. See projections, starters, and real-time updates
+        in one clean view — perfect for Sunday trash talk.
+      </p>
+    </div>
+
+    <div class="home-feature-card">
+      <div class="home-feature-icon">🎯</div>
+      <h3>Team Analytics</h3>
+      <p>
+        Position strength breakdowns, roster composition analysis, and competitive advantages
+        mapped across your league. Know where you stand.
+      </p>
+    </div>
+
+    <div class="home-feature-card">
+      <div class="home-feature-icon">📉</div>
+      <h3>Graphs & Trends</h3>
+      <p>
+        Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
+        Prove who's actually good and who just got lucky.
+      </p>
+    </div>
+
+    <div class="home-feature-card">
+      <div class="home-feature-icon">🏆</div>
+      <h3>Historical Insights</h3>
+      <p>
+        AI-generated season recaps personalized to your team. Track multi-year trends,
+        rivalry records, and championship runs across league history.
+      </p>
+    </div>
+  </section>
 </div>
 """
 
@@ -238,6 +322,7 @@ BASE_HTML = """
 </html>
 """
 
+
 def normalize_sleeper_username(value: str) -> str:
     return (value or "").strip().lower()
 
@@ -284,10 +369,10 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
 
     metadata = matched_roster.get("metadata") or {}
     team_name = (
-        metadata.get("team_name")
-        or matched_user.get("display_name")
-        or matched_user.get("username")
-        or f"Roster {matched_roster.get('roster_id')}"
+            metadata.get("team_name")
+            or matched_user.get("display_name")
+            or matched_user.get("username")
+            or f"Roster {matched_roster.get('roster_id')}"
     )
 
     return {
@@ -563,6 +648,23 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     pills = []
     if refresh_btn:
         pills.append(refresh_btn)
+
+    # Changelog bell (always visible)
+    changelog_bell = (
+        "<div class='changelog-bell-wrapper' style='position:relative;display:inline-flex;'>"
+        "  <button type='button' id='changelogBell' class='changelog-bell-btn' "
+        "          style='display:inline-flex;align-items:center;justify-content:center;"
+        "                 width:36px;height:36px;border-radius:50%;border:1px solid #ddd;"
+        "                 background:white;cursor:pointer;font-size:18px;color:#122d4b;'>"
+        "    🔔"
+        "  </button>"
+        "  <div class='changelog-dot changelog-dot-hidden' "
+        "       style='position:absolute;top:2px;right:2px;width:7px;height:7px;"
+        "              border-radius:50%;background:#E24B4A;border:1.5px solid white;'></div>"
+        "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
+        "</div>"
+    )
+    pills.append(changelog_bell)
 
     # Always available
     pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
@@ -902,11 +1004,11 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         pmeta = players_index.get(pid) or players_map.get(pid) or {}
 
         position = (
-            mv.get("position")
-            or mv.get("pos")
-            or pmeta.get("position")
-            or pmeta.get("pos")
-            or "?"
+                mv.get("position")
+                or mv.get("pos")
+                or pmeta.get("position")
+                or pmeta.get("pos")
+                or "?"
         )
         position = str(position).upper()
 
@@ -917,10 +1019,10 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
 
         value = safe_float(mv.get("value"))
         name = (
-            mv.get("name")
-            or pmeta.get("full_name")
-            or pmeta.get("name")
-            or f"Player {pid}"
+                mv.get("name")
+                or pmeta.get("full_name")
+                or pmeta.get("name")
+                or f"Player {pid}"
         )
 
         return {
@@ -1062,9 +1164,9 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
     fragile_assets = [
         p for p in players
         if (
-            p.get("age") not in (None, "")
-            and safe_float(p["age"]) >= 28
-            and p["value"] >= 350
+                p.get("age") not in (None, "")
+                and safe_float(p["age"]) >= 28
+                and p["value"] >= 350
         )
     ][:6]
 
@@ -1220,15 +1322,52 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
 
 
 def get_trade_ai_analysis(
-    ctx: dict,
-    viewer_roster_id: str,
-    viewer_side: str,
-    side_a: dict,
-    side_b: dict,
+        ctx: dict,
+        viewer_roster_id: str,
+        viewer_side: str,
+        side_a: dict,
+        side_b: dict,
 ) -> str:
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
+
+
+@app.route("/api/history/ai-recap")
+def history_ai_recap():
+    """Generate AI-powered season recap for a specific team."""
+    league_id = request.args.get("league_id")
+    season = request.args.get("season")
+    roster_id = request.args.get("roster_id")
+
+    if not all([league_id, season, roster_id]):
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        # Get the same context that the history page uses
+        platform = "sleeper"
+        base_league_id = request.args.get("base_season", season)
+
+        # Resolve the correct league ID for the historical season
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform="sleeper",
+            league_id=league_id,
+            current_season=int(base_league_id),
+            target_season=int(season),
+        )
+
+        # Get the exact same context the history page uses
+        ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, int(season))
+        if not ctx:
+            return jsonify({"error": "League context not found"}), 404
+
+        # Generate recap
+        recap_html = get_history_ai_recap(ctx, roster_id)
+
+        return jsonify({"html": recap_html})
+
+    except Exception as e:
+        return jsonify({"error": "Failed to generate recap"}), 500
 
 
 def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
@@ -1836,6 +1975,7 @@ def build_dashboard_body(ctx: dict) -> str:
     """
 
     return body
+
 
 def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
     """
@@ -2612,6 +2752,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     """
     return body
 
+
 def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
     """
     Multi-for-one adjustment:
@@ -3231,10 +3372,10 @@ def _safe_int(v, default=0):
 
 
 def build_historical_pick_slot_map(
-    platform: str,
-    root_league_id: str,
-    current_season: int,
-    source_season: int,
+        platform: str,
+        root_league_id: str,
+        current_season: int,
+        source_season: int,
 ) -> Dict[int, int]:
     """
     For a given source season, returns:
@@ -3301,10 +3442,10 @@ def build_historical_pick_slot_map(
 
 
 def resolve_exact_pick_slot(
-    platform: str,
-    root_league_id: str,
-    current_season: int,
-    pick: dict,
+        platform: str,
+        root_league_id: str,
+        current_season: int,
+        pick: dict,
 ) -> Union[int, None]:
     """
     For a 2026 pick, look at 2025 standings of the previous owner.
@@ -3350,10 +3491,10 @@ def format_pick_round_label(pick: dict) -> str:
 
 
 def format_pick_display_label(
-    platform: str,
-    root_league_id: str,
-    current_season: int,
-    pick: dict,
+        platform: str,
+        root_league_id: str,
+        current_season: int,
+        pick: dict,
 ) -> str:
     year = _safe_int(pick.get("season"), 0)
     rnd = _safe_int(pick.get("round"), 0)
@@ -4083,6 +4224,7 @@ def build_activity_body(ctx: dict) -> str:
     }})();
     </script>
     """
+
 
 def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
     plist = roster_pos_players.get(rid, {}).get(pos_code, [])
@@ -5000,6 +5142,7 @@ def page_history(platform: str, season: int, league_id: str):
         base_season=season,
         base_league_id=league_id,
         selected_history_season=selected_history_season,
+        resolved_history_league_id=resolved_history_league_id,
     )
 
     return render_page(
@@ -5062,7 +5205,7 @@ def index():
         if username:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
             viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
-            
+
             if viewer:
                 save_viewer_session(viewer)
             else:
@@ -5391,7 +5534,7 @@ def api_trade_eval():
             yr_str, rnd_str, slot_str = pk.split("_")
             year = int(yr_str)
             rnd = int(rnd_str)
-            
+
             if slot_str in ['early', 'mid', 'late']:
                 bucket = bucket_for_slot(slot, num_teams=10)
             else:
@@ -5571,7 +5714,6 @@ def _sanitize_for_json(obj):
     return obj
 
 
-
 @app.route("/api/league-players")
 def api_league_players():
     model_value_table = load_model_value_table()
@@ -5579,7 +5721,7 @@ def api_league_players():
         raise ValueError("model_value_table must be a list of player objects")
 
     cleaned_players = _sanitize_for_json(model_value_table)
-    
+
     return jsonify(cleaned_players)
 
 
@@ -5588,20 +5730,20 @@ def api_teams():
     league_id = (request.args.get("league_id") or "").strip()
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     season = int(request.args.get("season") or datetime.now().year)
-    
+
     if not league_id:
         return jsonify([])
-    
+
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
         users = ctx.get("users", [])
         rosters = ctx.get("rosters", [])
-        
+
         teams = []
         for roster in rosters:
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
-            
+
             # Find the user for this roster
             user = next((u for u in users if u.get("user_id") == user_id), None)
             if user:
@@ -5610,18 +5752,18 @@ def api_teams():
             else:
                 team_name = f"Team {roster_id}"
                 username = ""
-            
+
             teams.append({
                 "roster_id": roster_id,
                 "team_name": team_name,
                 "username": username,
                 "user_id": user_id
             })
-        
+
         # Sort by team name for consistent ordering
         teams.sort(key=lambda x: x["team_name"])
         return jsonify(teams)
-        
+
     except Exception as e:
         print(f"[api/teams] error: {e}")
         return jsonify([])
@@ -5720,6 +5862,12 @@ def api_sleeper_user_leagues():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/changelog")
+def api_changelog():
+    """Return the changelog entries."""
+    return jsonify(CHANGELOG)
 
 
 if __name__ == "__main__":

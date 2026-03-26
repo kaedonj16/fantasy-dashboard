@@ -36,6 +36,7 @@ Use only this JSON:
 {team_ctx}
 """.strip()
 
+
 FRONT_OFFICE_BRIEF_SYSTEM = """
 You are a premium dynasty fantasy football front-office assistant.
 Be crisp, grounded, and actionable.

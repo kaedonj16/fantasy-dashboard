@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from cache.paths import PLAYER_HISTORY_DIR
-from utils.utils import load_players_index, canon_team, normalize_name
 from data_building.external_data.nfl_target_share import fetch_league_target_share
 from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
+from utils.utils import load_players_index, canon_team, normalize_name
 
 
 def _history_path(season: int) -> Path:
