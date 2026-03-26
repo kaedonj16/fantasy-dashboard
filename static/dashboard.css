@@ -2,6 +2,25 @@
    BR FANTASY — CLEANED DROP-IN CSS
    ============================================ */
 
+/* Loading Spinner Animation */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+    border-top-color: #3498db;
+    border-right-color: transparent;
+  }
+  50% {
+    transform: rotate(180deg);
+    border-top-color: #3498db;
+    border-right-color: transparent;
+  }
+  100% {
+    transform: rotate(360deg);
+    border-top-color: #3498db;
+    border-right-color: transparent;
+  }
+}
+
 /* ============================================
    SCALE
    ============================================ */
@@ -677,6 +696,248 @@ input[type="email"]:focus {
 
 .card .tab-panel.active {
   display: block;
+}
+
+/* ============================================
+   TEAM SELECTOR
+   ============================================ */
+
+.otc-team-selector {
+  padding: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+}
+
+.otc-team-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 6px;
+}
+
+.otc-team-dropdown {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  color: #495057;
+}
+
+.otc-team-dropdown:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.otc-team-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  color: #495057;
+}
+
+.otc-team-input:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.otc-setup-btn {
+  width: 100%;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.otc-setup-btn:hover {
+  background: #0056b3;
+}
+
+.otc-btn-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: #6c757d !important;
+  border-color: #6c757d !important;
+}
+
+.otc-btn-disabled:hover {
+  background-color: #6c757d !important;
+  border-color: #6c757d !important;
+  transform: none !important;
+}
+
+/* ============================================
+   TEAM SELECTION POPUP
+   ============================================ */
+
+.otc-team-popup {
+  position: fixed;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-width: 280px;
+}
+
+.otc-popup-content {
+  padding: 0;
+}
+
+.otc-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e9ecef;
+  background: #f8f9fa;
+  border-radius: 8px 8px 0 0;
+}
+
+.otc-popup-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.otc-popup-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.otc-popup-close:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.otc-popup-body {
+  padding: 16px;
+  position: relative;
+}
+
+.otc-popup-body p {
+  margin: 0;
+  font-size: 13px;
+  color: #495057;
+  line-height: 1.4;
+}
+
+.otc-popup-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid white;
+}
+
+/* ============================================
+   TRADE CALCULATOR SETUP FORM
+   ============================================ */
+
+.otc-setup-form {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.otc-setup-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.otc-setup-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #212529;
+  margin: 0 0 8px 0;
+}
+
+.otc-setup-sub {
+  font-size: 14px;
+  color: #6c757d;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.otc-setup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.otc-setup-fields .row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.otc-setup-fields label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.otc-setup-fields input {
+  padding: 10px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.otc-setup-fields input:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.otc-setup-fields button {
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.otc-setup-fields button:hover {
+  background: #0056b3;
 }
 
 /* ============================================
@@ -3020,6 +3281,15 @@ tbody tr:nth-child(even) {
   background: #f4f8fd;
 }
 
+.otc-dropdown-item[data-position="PICK"] {
+  background: linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%);
+  border-left: 3px solid #4a90e2;
+}
+
+.otc-dropdown-item[data-position="PICK"]:hover {
+  background: linear-gradient(135deg, #e8f0ff 0%, #d4e4ff 100%);
+}
+
 .otc-dropdown-left {
   min-width: 0;
   display: flex;
@@ -3269,7 +3539,7 @@ tbody tr:nth-child(even) {
   row-gap: 4px;
   padding: 10px 14px;
   border: 1px solid #d7dfeb;
-  border-radius: 999px;
+  border-radius: 10px;
   background: #f8fbff;
   max-width: 100%;
 }
@@ -6269,7 +6539,6 @@ table {
 
 .otc-lower-grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
   gap: 16px;
   margin-top: 16px;
 }
@@ -6294,6 +6563,100 @@ table {
   color: var(--muted);
   font-size: 0.92rem;
   margin-top: 4px;
+}
+
+.otc-ai-team-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.otc-team-select-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.otc-team-select-dropdown {
+  padding: 8px 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  min-width: 200px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.otc-team-select-dropdown:hover {
+  border-color: var(--primary, #007bff);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.otc-team-select-dropdown:focus {
+  outline: none;
+  border-color: var(--primary, #007bff);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+.otc-team-select-dropdown option {
+  padding: 8px 12px;
+  font-weight: 400;
+}
+
+.otc-btn-disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  position: relative;
+}
+
+.otc-btn-disabled:hover {
+  transform: none !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Custom tooltip for disabled button */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  margin-bottom: 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+[data-tooltip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #333;
+  z-index: 1000;
+  pointer-events: none;
+  margin-bottom: -1px;
 }
 
 .otc-ai-badge {
@@ -6349,4 +6712,97 @@ table {
     flex-direction: column;
     align-items: flex-start;
   }
-}s
+}
+
+.trade-ai-wrap {
+  display: grid;
+  gap: 12px;
+}
+
+.trade-ai-top,
+.trade-ai-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.trade-ai-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.trade-ai-block {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,.55);
+}
+
+.trade-ai-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .7;
+  margin-bottom: 6px;
+}
+
+.trade-ai-copy-line {
+  line-height: 1.5;
+}
+
+.trade-ai-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.trade-ai-verdict {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.trade-ai-verdict-accept {
+  background: rgba(34,197,94,.14);
+}
+
+.trade-ai-verdict-decline {
+  background: rgba(239,68,68,.14);
+}
+
+.trade-ai-verdict-counter {
+  background: rgba(245,158,11,.14);
+}
+
+.trade-ai-score {
+  font-size: 13px;
+  opacity: .75;
+}
+
+@media (max-width: 900px) {
+  .trade-ai-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.otc-pick-actions {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.otc-add-pick-btn {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.otc-add-pick-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+}

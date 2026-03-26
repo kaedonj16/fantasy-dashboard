@@ -3,6 +3,8 @@ import json
 import math
 import numpy as np
 import os
+import html
+from openai import OpenAI
 import pandas as pd
 import threading
 import time
@@ -23,7 +25,6 @@ from plotly.offline import plot as plotly_plot, get_plotlyjs
 from typing import List, Dict, Any, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
 
-from dashboard_services.ai.cache import build_ai_cache_key, save_cached_ai_text, load_cached_ai_text
 from dashboard_services.ai.renderer import get_team_gm_memo
 from dashboard_services.api import get_nfl_players, get_nfl_state, avatar_from_users, \
     get_nfl_scores_for_date, build_team_game_lookup, \
@@ -1217,68 +1218,6 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         "market_profile": market_profile,
     }
 
-def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
-    if not team_ctx:
-        return ""
-
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v1")
-    cached = load_cached_ai_text(cache_key)
-    if cached:
-        return cached
-
-    top_assets = ", ".join(p["name"] for p in team_ctx["top_assets"][:4]) or "None"
-    html = f"""
-    <div class="ai-copy">
-      <p><strong>{team_ctx['team_name']}</strong> profiles as a <strong>{team_ctx['direction']}</strong> team.</p>
-      <p>Top assets: {top_assets}.</p>
-      <p>Record: {team_ctx['record'] or 'N/A'} | PF: {team_ctx['points_for']:.1f} | PA: {team_ctx['points_against']:.1f}</p>
-    </div>
-    """
-    save_cached_ai_text(cache_key, html)
-    return html
-
-
-def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
-    if not team_ctx:
-        return ""
-
-    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v1")
-    cached = load_cached_ai_text(cache_key)
-    if cached:
-        return cached
-
-    pos_strength = team_ctx.get("position_strength") or {}
-    if pos_strength:
-        ranked = sorted(
-            pos_strength.items(),
-            key=lambda kv: (safe_float(kv[1].get("top_3_sum")), safe_float(kv[1].get("best"))),
-            reverse=True,
-        )
-        best_pos = ranked[0][0]
-        weak_pos = ranked[-1][0]
-    else:
-        best_pos = "Unknown"
-        weak_pos = "Unknown"
-
-    move_line = {
-        "contender": "Look to consolidate depth into starting lineup upgrades.",
-        "rebuild": "Shop aging production for future firsts or younger insulated value.",
-        "retool": "Balance short-term production with long-term flexibility.",
-        "balanced": "Wait for leverage spots and avoid forcing a move.",
-    }.get(team_ctx["direction"], "Stay flexible and opportunistic.")
-
-    html = f"""
-    <div class="ai-copy">
-      <p><strong>Strongest room:</strong> {best_pos}</p>
-      <p><strong>Weakest room:</strong> {weak_pos}</p>
-      <p><strong>Best next move:</strong> {move_line}</p>
-    </div>
-    """
-    save_cached_ai_text(cache_key, html)
-    return html
-
 
 def get_trade_ai_analysis(
     ctx: dict,
@@ -1287,318 +1226,20 @@ def get_trade_ai_analysis(
     side_a: dict,
     side_b: dict,
 ) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
-    if not team_ctx:
-        return ""
+    """Get AI analysis for a trade using the new generator module"""
+    from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
+    return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
 
-    viewer_side = (viewer_side or "a").lower().strip()
-    viewer_gets = side_a if viewer_side == "a" else side_b
-    viewer_gives = side_b if viewer_side == "a" else side_a
 
-    def clean_asset(a: dict) -> dict:
-        if not isinstance(a, dict):
-            return {
-                "id": "",
-                "name": "Unknown",
-                "position": "?",
-                "team": "",
-                "age": None,
-                "value": 0.0,
-            }
-        return {
-            "id": str(a.get("id") or ""),
-            "name": a.get("name") or "Unknown",
-            "position": str(a.get("position") or a.get("pos") or "?").upper(),
-            "team": a.get("team") or "",
-            "age": a.get("age"),
-            "value": safe_float(a.get("value")),
-        }
-
-    def summarize_pick_ids(pick_ids: list) -> dict:
-        summary = {
-            "count": 0,
-            "firsts": 0,
-            "seconds": 0,
-            "thirds_plus": 0,
-            "display": [],
-        }
-        for raw in pick_ids or []:
-            pk = str(raw or "").strip()
-            if not pk:
-                continue
-            summary["count"] += 1
-            summary["display"].append(pk.replace("_", " "))
-            try:
-                parts = pk.split("_")
-                if len(parts) >= 2:
-                    rnd = int(parts[1])
-                    if rnd == 1:
-                        summary["firsts"] += 1
-                    elif rnd == 2:
-                        summary["seconds"] += 1
-                    elif rnd >= 3:
-                        summary["thirds_plus"] += 1
-            except Exception:
-                pass
-        return summary
-
-    def pos_totals(assets: list[dict]) -> dict[str, float]:
-        out: dict[str, float] = {}
-        for a in assets:
-            pos = str(a.get("position") or "?").upper()
-            out[pos] = out.get(pos, 0.0) + safe_float(a.get("value"))
-        return {k: round(v, 1) for k, v in out.items()}
-
-    gets_assets = [clean_asset(a) for a in (viewer_gets.get("assets") or [])]
-    gives_assets = [clean_asset(a) for a in (viewer_gives.get("assets") or [])]
-
-    gets_pick_summary = summarize_pick_ids(viewer_gets.get("pick_ids") or [])
-    gives_pick_summary = summarize_pick_ids(viewer_gives.get("pick_ids") or [])
-
-    gets_pos = pos_totals(gets_assets)
-    gives_pos = pos_totals(gives_assets)
-
-    delta = safe_float(viewer_gets.get("effective_total")) - safe_float(viewer_gives.get("effective_total"))
-
-    strong_positions = set(team_ctx.get("strong_positions") or [])
-    weak_positions = set(team_ctx.get("weak_positions") or [])
-    direction = team_ctx.get("direction") or "balanced"
-    roster_health = team_ctx.get("roster_health") or "stable"
-
-    # positional fit scoring
-    fit_score = 0.0
-    fit_notes: list[str] = []
-    gains: list[str] = []
-    risks: list[str] = []
-
-    # getting value at weak positions is more helpful
-    for pos, val in gets_pos.items():
-        if pos in weak_positions and val > 0:
-            fit_score += min(val * 0.20, 120.0)
-            gains.append(f"adds value to a weak {pos} room")
-        elif pos in strong_positions and val > 0:
-            fit_score += min(val * 0.07, 45.0)
-
-    # giving away strength positions hurts less than giving away weak positions
-    for pos, val in gives_pos.items():
-        if pos in weak_positions and val > 0:
-            fit_score -= min(val * 0.18, 120.0)
-            risks.append(f"gives away value from an already thin {pos} room")
-        elif pos in strong_positions and val > 0:
-            fit_score -= min(val * 0.05, 35.0)
-
-    # pick fit by team direction
-    if direction == "contender":
-        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
-            fit_score -= 45
-            risks.append("leans more toward future insulation than immediate lineup help")
-        if gives_pick_summary["firsts"] > gets_pick_summary["firsts"]:
-            fit_score += 25
-            gains.append("uses future capital in a win-now window")
-    elif direction == "rebuild":
-        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
-            fit_score += 75
-            gains.append("adds first-round capital for a rebuilding roster")
-        if gives_pick_summary["firsts"] > gets_pick_summary["firsts"]:
-            fit_score -= 95
-            risks.append("moves away premium future capital during a rebuild")
-    elif direction == "retool":
-        if gets_pick_summary["firsts"] > gives_pick_summary["firsts"]:
-            fit_score += 35
-            gains.append("improves flexibility with added draft capital")
-
-    # age / insulation fit
-    gets_old = sum(1 for a in gets_assets if safe_float(a.get("age")) >= 28 and safe_float(a.get("value")) >= 250)
-    gives_old = sum(1 for a in gives_assets if safe_float(a.get("age")) >= 28 and safe_float(a.get("value")) >= 250)
-
-    gets_young = sum(1 for a in gets_assets if 0 < safe_float(a.get("age")) <= 25 and safe_float(a.get("value")) >= 250)
-    gives_young = sum(1 for a in gives_assets if 0 < safe_float(a.get("age")) <= 25 and safe_float(a.get("value")) >= 250)
-
-    if direction == "rebuild":
-        fit_score += (gets_young - gives_young) * 28
-        fit_score -= (gets_old - gives_old) * 24
-        if gets_young > gives_young:
-            gains.append("gets younger and more insulated")
-        if gets_old > gives_old:
-            risks.append("adds older production that may not match the timeline")
-    elif direction == "contender":
-        fit_score += (gets_old - gives_old) * 10
-        fit_score += (gets_assets and not gets_pick_summary["count"]) * 8
-    elif direction == "retool":
-        fit_score += (gets_young - gives_young) * 16
-
-    # roster fragility / depth considerations
-    asset_count_delta = len(gets_assets) - len(gives_assets)
-    if roster_health == "fragile":
-        if asset_count_delta < 0:
-            fit_score -= 35
-            risks.append("reduces depth on a fragile roster")
-        elif asset_count_delta > 0:
-            fit_score += 18
-            gains.append("adds depth to a fragile roster")
-    elif roster_health == "deep":
-        if asset_count_delta < 0 and delta >= -25:
-            fit_score += 18
-            gains.append("consolidates depth without badly hurting the roster")
-
-    # combine raw market delta with fit
-    total_score = delta + fit_score
-
-    if total_score >= 90:
-        verdict = "ACCEPT"
-    elif total_score <= -90:
-        verdict = "DECLINE"
-    else:
-        verdict = "COUNTER"
-
-    # build suggestion / explanation
-    biggest_get = gets_assets[0]["name"] if gets_assets else None
-    biggest_give = gives_assets[0]["name"] if gives_assets else None
-
-    if verdict == "ACCEPT":
-        gm_take = "The overall package lines up with your roster direction and the price is workable."
-    elif verdict == "DECLINE":
-        gm_take = "The deal either misses your team’s timeline or weakens the wrong part of the roster."
-    else:
-        gm_take = "The structure is workable, but the price or asset mix should be adjusted before accepting."
-
-    counter_idea = ""
-    if verdict == "COUNTER":
-        if direction == "rebuild":
-            counter_idea = "Ask for an added future 1st or a younger insulated piece."
-        elif direction == "contender":
-            counter_idea = "Push for a more immediate starter or reduce the outgoing lineup value."
-        elif weak_positions:
-            weak_pos = list(weak_positions)[0]
-            counter_idea = f"Try to turn part of the return into help at {weak_pos}."
-        else:
-            counter_idea = "Try to improve the pick side or remove one secondary outgoing asset."
-
-    payload = {
-        "team_name": team_ctx.get("team_name"),
-        "direction": direction,
-        "roster_health": roster_health,
-        "strong_positions": sorted(list(strong_positions)),
-        "weak_positions": sorted(list(weak_positions)),
-        "summary_flags": team_ctx.get("summary_flags") or [],
-        "viewer_gets": {
-            "assets": gets_assets,
-            "pick_ids": viewer_gets.get("pick_ids") or [],
-            "effective_total": safe_float(viewer_gets.get("effective_total")),
-            "position_totals": gets_pos,
-            "pick_summary": gets_pick_summary,
-        },
-        "viewer_gives": {
-            "assets": gives_assets,
-            "pick_ids": viewer_gives.get("pick_ids") or [],
-            "effective_total": safe_float(viewer_gives.get("effective_total")),
-            "position_totals": gives_pos,
-            "pick_summary": gives_pick_summary,
-        },
-        "market_delta": round(delta, 1),
-        "fit_score": round(fit_score, 1),
-        "total_score": round(total_score, 1),
-        "verdict": verdict,
-    }
-
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v2")
-    cached = load_cached_ai_text(cache_key)
-    if cached:
-        return cached
-
-    gets_line = []
-    if biggest_get:
-        gets_line.append(f"main incoming piece: {biggest_get}")
-    if gets_pick_summary["firsts"]:
-        gets_line.append(f"+{gets_pick_summary['firsts']} first-round pick{'s' if gets_pick_summary['firsts'] != 1 else ''}")
-
-    gives_line = []
-    if biggest_give:
-        gives_line.append(f"main outgoing piece: {biggest_give}")
-    if gives_pick_summary["firsts"]:
-        gives_line.append(f"-{gives_pick_summary['firsts']} first-round pick{'s' if gives_pick_summary['firsts'] != 1 else ''}")
-
-    gains = list(dict.fromkeys(gains))[:3]
-    risks = list(dict.fromkeys(risks))[:3]
-
-    gains_html = "".join(f"<li>{g}</li>" for g in gains) or "<li>No major structural edge beyond raw value.</li>"
-    risks_html = "".join(f"<li>{r}</li>" for r in risks) or "<li>No major structural red flag beyond price.</li>"
-
-    counter_html = ""
-    if counter_idea:
-        counter_html = f"""
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">Best counter</div>
-          <div class="trade-ai-copy-line">{counter_idea}</div>
-        </div>
-        """
-
-    html = f"""
-    <div class="ai-copy trade-ai-wrap">
-      <div class="trade-ai-top">
-        <div class="trade-ai-verdict trade-ai-verdict-{verdict.lower()}">{verdict}</div>
-        <div class="trade-ai-score">Net score: {total_score:.1f}</div>
-      </div>
-
-      <div class="trade-ai-block">
-        <div class="trade-ai-label">GM Take</div>
-        <div class="trade-ai-copy-line">
-          {gm_take}
-          This is being judged for a <strong>{direction}</strong> team with a
-          <strong>{roster_health}</strong> roster profile.
-        </div>
-      </div>
-
-      <div class="trade-ai-grid">
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">You get</div>
-          <div class="trade-ai-copy-line">
-            {"; ".join(gets_line) if gets_line else "No incoming assets."}
-          </div>
-        </div>
-
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">You give</div>
-          <div class="trade-ai-copy-line">
-            {"; ".join(gives_line) if gives_line else "No outgoing assets."}
-          </div>
-        </div>
-      </div>
-
-      <div class="trade-ai-grid">
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">What helps</div>
-          <ul class="trade-ai-list">
-            {gains_html}
-          </ul>
-        </div>
-
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">What risks it</div>
-          <ul class="trade-ai-list">
-            {risks_html}
-          </ul>
-        </div>
-      </div>
-
-      <div class="trade-ai-grid">
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">Market delta</div>
-          <div class="trade-ai-copy-line">{delta:.1f}</div>
-        </div>
-
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">Fit adjustment</div>
-          <div class="trade-ai-copy-line">{fit_score:.1f}</div>
-        </div>
-      </div>
-
-      {counter_html}
+def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
+    return f"""
+    <div class="ai-copy">
+      <p><strong>{html.escape(title)}</strong></p>
+      <p>{html.escape(subtitle)}</p>
+      <div>{html.escape(text)}</div>
     </div>
     """
 
-    save_cached_ai_text(cache_key, html)
-    return html
 
 def ensure_weekly_bits(ctx: dict) -> None:
     """
@@ -5583,7 +5224,7 @@ def set_viewer():
     if not league_id or not username:
         return redirect(url_for("home"))
 
-    ctx = get_league_ctx_from_cache(league_id)
+    ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
     viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
 
     if not viewer:
@@ -5725,7 +5366,6 @@ def get_model_value_table_cached():
 def api_trade_eval():
     payload = request.get_json(force=True)
 
-    platform = (payload.get("platform") or "sleeper").strip().lower()
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
@@ -5751,20 +5391,25 @@ def api_trade_eval():
             yr_str, rnd_str, slot_str = pk.split("_")
             year = int(yr_str)
             rnd = int(rnd_str)
-            slot = int(slot_str)
+            
+            if slot_str in ['early', 'mid', 'late']:
+                bucket = bucket_for_slot(slot, num_teams=10)
+            else:
+                bucket = slot_str
+
         except Exception:
             return 0.0
 
-        bucket = bucket_for_slot(slot, num_teams=10)
         key = f"{year}_{rnd}_{bucket}"
+        pick_values = load_pick_value_table()
 
-        val = PICK_VALUES.get(key)
+        val = pick_values.get(key)
         if val is not None:
             return float(val)
 
         generic_key = f"any_{rnd}_{bucket}"
-        if generic_key in PICK_VALUES:
-            return float(PICK_VALUES[generic_key])
+        if generic_key in pick_values:
+            return float(pick_values[generic_key])
 
         return 0.0
 
@@ -5833,6 +5478,15 @@ def api_trade_eval():
                 "value": val,
             })
             raw_picks_total += val
+            # Also add pick to assets array
+            assets.append({
+                "id": pk_str,
+                "name": pk_str,  # Will be cleaned up in renderer
+                "position": "PICK",
+                "team": "",
+                "age": None,
+                "value": val,
+            })
 
         raw_total = raw_players_total + raw_picks_total
 
@@ -5872,7 +5526,8 @@ def api_trade_eval():
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
     analysis_html = ""
-    viewer_roster_id = session.get("viewer_roster_id")
+    viewer_roster_id = payload.get("viewer_roster_id")
+    viewer_team_name = payload.get("viewer_team_name")
 
     if league_id and viewer_roster_id:
         try:
@@ -5916,14 +5571,60 @@ def _sanitize_for_json(obj):
     return obj
 
 
+
 @app.route("/api/league-players")
 def api_league_players():
     model_value_table = load_model_value_table()
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    cleaned = _sanitize_for_json(model_value_table)
-    return jsonify(cleaned)
+    cleaned_players = _sanitize_for_json(model_value_table)
+    
+    return jsonify(cleaned_players)
+
+
+@app.route("/api/teams")
+def api_teams():
+    league_id = (request.args.get("league_id") or "").strip()
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    season = int(request.args.get("season") or datetime.now().year)
+    
+    if not league_id:
+        return jsonify([])
+    
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        users = ctx.get("users", [])
+        rosters = ctx.get("rosters", [])
+        
+        teams = []
+        for roster in rosters:
+            roster_id = str(roster.get("roster_id", ""))
+            user_id = roster.get("owner_id")
+            
+            # Find the user for this roster
+            user = next((u for u in users if u.get("user_id") == user_id), None)
+            if user:
+                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
+                username = user.get("username") or user.get("display_name") or ""
+            else:
+                team_name = f"Team {roster_id}"
+                username = ""
+            
+            teams.append({
+                "roster_id": roster_id,
+                "team_name": team_name,
+                "username": username,
+                "user_id": user_id
+            })
+        
+        # Sort by team name for consistent ordering
+        teams.sort(key=lambda x: x["team_name"])
+        return jsonify(teams)
+        
+    except Exception as e:
+        print(f"[api/teams] error: {e}")
+        return jsonify([])
 
 
 @app.route("/api/value-movers")

@@ -124,7 +124,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                   <h2 class="otc-summary-title">Trade Summary</h2>
                   <div class="otc-summary-sub">Live balance as you add assets</div>
                 </div>
-                <button type="button" id="clearTradeBtn" class="otc-clear-btn">Clear trade</button>
+                <button type="button" id="clearTradeBtn" class="otc-clear-btn" disabled>Analyze Trade</button>
               </div>
 
               <div class="otc-summary-stats">
@@ -164,19 +164,31 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
             <section class="otc-ai-card" id="tradeAiPanel">
               <div class="otc-ai-head">
                 <div>
-                  <h2 class="otc-ai-title">Assistant GM BRoski</h2>
+                  <h2 class="otc-ai-title">BR Trade Analyst</h2>
                   <div class="otc-ai-sub">Personalized to your team direction and roster lens</div>
                 </div>
-                <div class="otc-ai-badge">Front Office</div>
+                <div class="otc-ai-team-select">
+                  <label for="teamSelect" class="otc-team-select-label">Your Team:</label>
+                  <select id="teamSelect" class="otc-team-select-dropdown" required>
+                    <option value="">Select your team...</option>
+                  </select>
+                </div>
               </div>
 
               <div id="tradeAiBody" class="otc-ai-body">
-                <div class="otc-ai-empty">
+                <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
+                  <div class="otc-ai-empty-title">Analyzing Trade...</div>
+                  <div class="otc-ai-empty-sub">
+                    <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                  </div>
+                </div>
+                <div class="otc-ai-empty" id="aiEmptyState">
                   <div class="otc-ai-empty-title">Waiting on a deal</div>
                   <div class="otc-ai-empty-sub">
                     Once both sides have assets, this panel can explain whether the trade fits your team build.
                   </div>
                 </div>
+                <div id="aiAnalysisResult" style="display:none;"></div>
               </div>
             </section>
           </div>
@@ -205,6 +217,8 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               </div>
             </div>
           </div>
+          
+          <div class="otc-spacer" style="height: 16px; width: 100%;"></div>
 
           <div class="otc-side-panel">
             <div class="otc-side-head">
@@ -218,6 +232,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
               <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
               <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
+              <button class="otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
             </div>
 
             <div id="allPlayersList" class="otc-values-list">
