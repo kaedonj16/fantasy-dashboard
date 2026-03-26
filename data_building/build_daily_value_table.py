@@ -11,9 +11,8 @@ from utils.utils import (
     load_model_value_table,
     get_live_game_ids_for_today,
     load_week_schedule,
-    build_and_save_week_stats_for_league,
+    build_and_save_week_stats_for_league, load_usage_table, load_engine_table,
 )
-from data_building.external_data.external_values_scraper import scrape_all_vendor_values
 from data_building.external_data.sleeper_usage import write_usage_table_snapshot
 from data_building.external_data.team_enrichment import (
     enrich_all_team_info,
@@ -24,6 +23,11 @@ from data_building.value_model_training import rewrite_value_table_with_model
 
 
 def build_daily_data(season: int, week: int):
+    from data_building.external_data.external_values_scraper import (
+        scrape_all_vendor_values,
+        load_fantasycalc_api_values,
+        load_dynastyprocess_values,
+    )
     nfl_state = get_nfl_state() or {}
     season_type = (nfl_state.get("season_type") or "").lower()
     offseason_mode = season_type == "off"
@@ -45,7 +49,6 @@ def build_daily_data(season: int, week: int):
         rewrite_value_table_with_model()
         model_value_table = load_model_value_table() or []
         inserted = record_model_value_snapshot(model_value_table)
-        print(f"[daily] stored value-history snapshot rows={inserted}")
 
 
 def build_daily_market_pulse():
