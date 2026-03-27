@@ -22,6 +22,14 @@ from data_building.value_exports import export_engine_values
 from data_building.value_model_training import rewrite_value_table_with_model
 
 
+def _safe_float(value):
+    """Safely convert a value to float, returning 0.0 for None or invalid values."""
+    try:
+        return float(value) if value is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def build_daily_data(season: int, week: int):
     from data_building.external_data.external_values_scraper import (
         scrape_all_vendor_values,
@@ -51,32 +59,80 @@ def build_daily_data(season: int, week: int):
         inserted = record_model_value_snapshot(model_value_table)
 
 
-def build_daily_market_pulse():
-    value_table = load_model_value_table() or []
-    top_assets = sorted(
-        [
-            {
-                "name": p.get("name"),
-                "position": p.get("position"),
-                "team": p.get("team"),
-                "value": _safe_float(p.get("value")),
-            }
-            for p in value_table
-            if isinstance(p, dict) and str(p.get("position") or "").upper() in {"QB", "RB", "WR", "TE"}
-        ],
-        key=lambda x: x["value"],
-        reverse=True,
-    )[:15]
+def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):
+    """
+    Build market pulse for a specific league type.
 
-    payload = {"top_assets": top_assets}
-    cache_key = build_ai_cache_key("daily_market_pulse", payload, "v1")
+    Args:
+        league_type: "1qb" or "sf" (superflex)
+
+    Returns:
+        HTML string with market pulse for the specified league type
+    """
+    value_table = load_model_value_table() or []
+
+    if league_type == "sf":
+        # Build top assets for Superflex
+        top_assets = sorted(
+            [
+                {
+                    "name": p.get("name"),
+                    "position": p.get("position"),
+                    "team": p.get("team"),
+                    "value": _safe_float(p.get("sf_value")),
+                }
+                for p in value_table
+                if isinstance(p, dict) and str(p.get("position") or "").upper() in {"QB", "RB", "WR", "TE"}
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )[:15]
+
+        html = "<div class='ai-copy'><p><strong>Daily market pulse (Superflex):</strong> Elite QBs dominate the top of the market. Build around a QB1 or acquire multiple QB2s to remain competitive.</p></div>"
+        payload = {"top_assets": top_assets, "league_type": "superflex"}
+        cache_key = build_ai_cache_key("daily_market_pulse_sf", payload, "v1")
+    else:
+        # Build top assets for 1QB
+        top_assets = sorted(
+            [
+                {
+                    "name": p.get("name"),
+                    "position": p.get("position"),
+                    "team": p.get("team"),
+                    "value": _safe_float(p.get("value")),
+                }
+                for p in value_table
+                if isinstance(p, dict) and str(p.get("position") or "").upper() in {"QB", "RB", "WR", "TE"}
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )[:15]
+
+        html = "<div class='ai-copy'><p><strong>Daily market pulse (1QB):</strong> Elite value remains concentrated at the top of the board. Monitor shifting tiers around your weakest position group before forcing trades.</p></div>"
+        payload = {"top_assets": top_assets, "league_type": "1qb"}
+        cache_key = build_ai_cache_key("daily_market_pulse_1qb", payload, "v1")
+
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
-    html = "<div class='ai-copy'><p><strong>Daily market pulse:</strong> Elite value remains concentrated at the top of the board. Monitor shifting tiers around your weakest position group before forcing trades.</p></div>"
     save_cached_ai_text(cache_key, html)
     return html
+
+
+def build_daily_market_pulse():
+    """
+    Build market pulse for both 1QB and Superflex league types.
+    This is called by the daily cron job to cache both versions.
+    """
+    # Build and cache 1QB market pulse
+    build_daily_market_pulse_for_league_type("1qb")
+
+    # Build and cache Superflex market pulse
+    build_daily_market_pulse_for_league_type("sf")
+
+    # Return 1QB for backwards compatibility
+    return build_daily_market_pulse_for_league_type("1qb")
 
 
 if __name__ == "__main__":

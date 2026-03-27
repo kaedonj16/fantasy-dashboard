@@ -486,7 +486,16 @@ def _apply_qb_market_compression(
         elite_norm: Dict[str, float],
         ceiling_norm: Dict[str, float],
         per_pid: Dict[str, dict],
+        league_type: str = "1QB",
 ) -> Dict[str, float]:
+    """
+    CRITICAL FIX: Adjust QB values based on league type.
+
+    league_type options:
+      - "1QB": Heavy compression (keep 42-74% of value) - standard 10-team 1QB
+      - "Superflex": Minimal compression (keep 90-98%) - QB values remain high
+      - "2QB": Boost QBs (keep 110-130%) - QB scarcity is extreme
+    """
     for pid, score in list(final_scores.items()):
         if pos_by_pid.get(pid) != "QB":
             continue
@@ -502,15 +511,39 @@ def _apply_qb_market_compression(
         elite_soft = elite ** 0.80
         ceiling_soft = ceiling ** 0.90
 
-        base = 0.42
-        elite_boost = 0.22 * elite_soft
-        ceiling_boost = 0.05 * ceiling_soft
-        rushing_boost = 0.13 * rush_norm
+        # Adjust compression based on league type
+        if league_type == "1QB":
+            # Standard 1QB compression (heavy)
+            base = 0.42
+            elite_boost = 0.22 * elite_soft
+            ceiling_boost = 0.05 * ceiling_soft
+            rushing_boost = 0.13 * rush_norm
+            qb_keep = base + elite_boost + ceiling_boost + rushing_boost
+            qb_keep = min(qb_keep, 0.74)
+        elif league_type == "Superflex":
+            # Minimal compression for Superflex
+            base = 0.90
+            elite_boost = 0.06 * elite_soft
+            rushing_boost = 0.04 * rush_norm
+            qb_keep = base + elite_boost + rushing_boost
+            qb_keep = min(qb_keep, 0.98)
+        elif league_type == "2QB":
+            # Boost QBs for 2QB leagues
+            base = 1.10
+            elite_boost = 0.12 * elite_soft
+            rushing_boost = 0.10 * rush_norm
+            qb_keep = base + elite_boost + rushing_boost
+            qb_keep = min(qb_keep, 1.30)
+        else:
+            # Default to 1QB
+            base = 0.42
+            elite_boost = 0.22 * elite_soft
+            ceiling_boost = 0.05 * ceiling_soft
+            rushing_boost = 0.13 * rush_norm
+            qb_keep = base + elite_boost + ceiling_boost + rushing_boost
+            qb_keep = min(qb_keep, 0.74)
 
-        qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-        qb_keep = min(qb_keep, 0.74)
-
-        final_scores[pid] = _clip(score * qb_keep)
+        final_scores[pid] = _clip(score * qb_keep, 0.0, 2.0)  # Allow >1.0 for 2QB
 
     return final_scores
 
@@ -539,7 +572,7 @@ def _apply_te_market_compression(
     return final_scores
 
 
-def build_value_table_for_usage() -> Dict[str, float]:
+def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
     """
     Dynasty value formula using:
       - smooth age curve
@@ -550,7 +583,10 @@ def build_value_table_for_usage() -> Dict[str, float]:
       - trend
       - risk penalty
       - scarcity based on replacement / starter / elite edge
-      - 1QB QB compression
+      - QB compression (varies by league_type)
+
+    Args:
+      league_type: "1QB" (default), "Superflex", or "2QB"
 
     Returns:
       Dict[player_id, value_0_to_999_9]
@@ -950,6 +986,7 @@ def build_value_table_for_usage() -> Dict[str, float]:
         elite_norm,
         ceiling_norm,
         per_pid,
+        league_type=league_type,  # CRITICAL FIX: Pass league type for Superflex support
     )
 
     final_scores = _apply_te_market_compression(

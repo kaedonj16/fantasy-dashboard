@@ -78,6 +78,26 @@ def _bucket_for_pick_in_round(pos_in_round: int, picks_per_round: int = 10) -> s
         return "late"
 
 
+def _apply_time_discount(pick_value: float, pick_year: int, current_year: int) -> float:
+    """
+    Apply exponential time discount to future picks.
+
+    CRITICAL FIX: Ensures future picks are systematically discounted even if vendor values misprice them.
+    Uses 10% annual discount rate (0.90^years_away).
+
+    Example:
+      - 2026 pick (current year): no discount
+      - 2027 pick: 0.90x value (10% discount)
+      - 2028 pick: 0.81x value (19% discount)
+    """
+    years_away = pick_year - current_year
+    if years_away <= 0:
+        return pick_value
+
+    discount_rate = 0.90  # 10% annual discount
+    return pick_value * (discount_rate ** years_away)
+
+
 def _is_current_year_draft_complete(current_year: int) -> bool:
     """
     Approximation:
@@ -397,13 +417,11 @@ def load_pick_value_table(
         else:
             continue
 
+        # CRITICAL FIX: Apply explicit time discount to future picks
+        _, pick_year, _, _ = key  # Extract year from key tuple (kind, year, rnd, detail)
+        val = _apply_time_discount(val, pick_year, current_year)
+
         key_str = _pick_key_to_output_string(key)
         final[key_str] = round(float(val), 1)
-
-    print(
-        f"[load_pick_value_table] built {len(final)} pick values "
-        f"(current_year={current_year}, draft_done={draft_done}, "
-        f"league_teams={league_teams}, source_picks_per_round={source_picks_per_round})"
-    )
 
     return final

@@ -421,14 +421,20 @@ window.initTradePage = function initTradePage(root = document) {
           name: p.name,
           position: p.position,
           team: p.team,
-          value: p.value
+          value: p.value,
+          sf_value: p.sf_value,
+          pos_rank_label: p.pos_rank_label,
+          sf_pos_rank_label: p.sf_pos_rank_label
         })),
         sideBPlayers: state.sideBPlayers.map(p => ({
           id: p.id,
           name: p.name,
           position: p.position,
           team: p.team,
-          value: p.value
+          value: p.value,
+          sf_value: p.sf_value,
+          pos_rank_label: p.pos_rank_label,
+          sf_pos_rank_label: p.sf_pos_rank_label
         })),
         sideAPicks: state.sideAPicks.map(p => ({
           id: p.id,
@@ -476,9 +482,7 @@ window.initTradePage = function initTradePage(root = document) {
 
   function buildOverallRankMap(players) {
     const sorted = [...players].sort((a, b) => {
-      const va = Number(a?.value || 0);
-      const vb = Number(b?.value || 0);
-      return vb - va;
+      return getPlayerValue(b) - getPlayerValue(a);
     });
 
     const rankMap = new Map();
@@ -491,12 +495,19 @@ window.initTradePage = function initTradePage(root = document) {
   function buildMetaBits(p) {
     const metaBits = [];
     const pos = String(p.position || p.pos || "").toUpperCase();
+    const leagueType = getLeagueType();
 
     if (pos === "PICK") {
       metaBits.push("PICK");
     } else if (pos) {
-      if (p.pos_rank_label) metaBits.push(String(p.pos_rank_label).toUpperCase());
-      else metaBits.push(pos);
+      // Use SF position rank when Superflex is selected
+      if (leagueType === "sf" && p.sf_pos_rank_label) {
+        metaBits.push(String(p.sf_pos_rank_label).toUpperCase());
+      } else if (p.pos_rank_label) {
+        metaBits.push(String(p.pos_rank_label).toUpperCase());
+      } else {
+        metaBits.push(pos);
+      }
     }
 
     if (p.team) metaBits.push(p.team);
@@ -546,7 +557,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const valueSpan = document.createElement("div");
     valueSpan.className = "otc-value-score";
-    valueSpan.textContent = formatValue(p.value);
+    valueSpan.textContent = formatValue(getPlayerValue(p));
 
     topLine.appendChild(nameSpan);
     topLine.appendChild(valueSpan);
@@ -595,7 +606,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const value = document.createElement("div");
     value.className = "otc-dropdown-value";
-    value.textContent = formatValue(p.value);
+    value.textContent = formatValue(getPlayerValue(p));
 
     item.appendChild(left);
     item.appendChild(value);
@@ -650,7 +661,8 @@ window.initTradePage = function initTradePage(root = document) {
     const fallersEl = root.querySelector("#otcFallersList");
 
     try {
-      const res = await fetch("/api/value-movers?days=7&limit=5", { cache: "no-store" });
+      const leagueType = getLeagueType();
+      const res = await fetch(`/api/value-movers?days=7&limit=5&league_type=${leagueType}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
@@ -658,7 +670,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       const sub = root.querySelector("#moversSub");
       if (sub && usedDays) {
-        sub.textContent = `Biggest ${usedDays}-day changes in BR value`;
+        const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
+        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel} BR value`;
       }
 
       renderMovers(data);
@@ -678,7 +691,9 @@ window.initTradePage = function initTradePage(root = document) {
       position: pos,
       age: p.age ?? null,
       value: Number(p.value || 0),
+      sf_value: Number(p.sf_value || p.value || 0),
       pos_rank_label: p.pos_rank_label || "",
+      sf_pos_rank_label: p.sf_pos_rank_label || "",
     };
   }
 
@@ -750,7 +765,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (activePosFilter === "PICK") return pos === "PICK";
         return pos === activePosFilter;
       })
-      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+      .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 
     items.forEach(p => {
       const overallRank = overallRankMap.get(String(p.id));
@@ -766,6 +781,26 @@ window.initTradePage = function initTradePage(root = document) {
       btn.classList.toggle("is-active", p === activePosFilter);
     });
 
+    renderAllPlayersList();
+  }
+
+  function getLeagueType() {
+    return root.querySelector('input[name="leagueType"]:checked')?.value || "1qb";
+  }
+
+  function getPlayerValue(player) {
+    const leagueType = getLeagueType();
+    if (leagueType === "sf") {
+      return Number(player.sf_value || player.value || 0);
+    }
+    return Number(player.value || 0);
+  }
+
+  function onLeagueTypeChange() {
+    // Refresh all value displays
+    renderChips("A");
+    renderChips("B");
+    recomputeTrade();
     renderAllPlayersList();
   }
 
@@ -825,7 +860,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const valueEl = document.createElement("span");
       valueEl.className = "otc-chip-value";
-      valueEl.textContent = formatValue(p.value);
+      valueEl.textContent = formatValue(getPlayerValue(p));
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
@@ -869,7 +904,7 @@ window.initTradePage = function initTradePage(root = document) {
       const valueEl = document.createElement("span");
       valueEl.className = "otc-chip-value";
       const pickData = allPlayers.find(p => p.id === pk.id && p.position === "PICK");
-      valueEl.textContent = formatValue(pickData ? pickData.value : 0);
+      valueEl.textContent = formatValue(pickData ? getPlayerValue(pickData) : 0);
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
@@ -948,13 +983,10 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    const viewerSide =
-      root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
-
     const payload = {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
-      viewer_side: viewerSide,
+      league_type: getLeagueType(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
       side_a_picks: sideAPickIds,
@@ -1062,6 +1094,7 @@ window.initTradePage = function initTradePage(root = document) {
     const payload = {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
+      league_type: getLeagueType(),
       viewer_side: viewerSide,
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -1213,6 +1246,14 @@ window.initTradePage = function initTradePage(root = document) {
       bindOnce(btn, "tradeAddPick", "click", () => {
         const side = String(btn.getAttribute("data-side") || "").toUpperCase() === "B" ? "B" : "A";
         openPickPrompt(side);
+      });
+    });
+  }
+
+  function bindLeagueTypeControls() {
+    root.querySelectorAll('input[name="leagueType"]').forEach(el => {
+      bindOnce(el, "tradeLeagueTypeChange", "change", () => {
+        onLeagueTypeChange();
       });
     });
   }
@@ -1585,6 +1626,7 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
+    bindLeagueTypeControls();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();
@@ -2225,4 +2267,171 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize
   initChangelog();
+});
+
+// League switcher functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const leagueSwitcher = document.getElementById('leagueSwitcher');
+
+  if (leagueSwitcher) {
+    const currentLeagueId = leagueSwitcher.getAttribute('data-current-league');
+    const currentPlatform = leagueSwitcher.getAttribute('data-current-platform');
+    const currentSeason = leagueSwitcher.getAttribute('data-current-season');
+
+    // Fetch user leagues
+    fetch('/api/sleeper-user-leagues?season=' + currentSeason)
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok && data.leagues) {
+          leagueSwitcher.innerHTML = '';
+
+          data.leagues.forEach(league => {
+            const option = document.createElement('option');
+            option.value = league.league_id;
+            option.textContent = league.label;
+            if (league.league_id === currentLeagueId) {
+              option.selected = true;
+            }
+            leagueSwitcher.appendChild(option);
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load leagues:', err);
+        leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
+      });
+
+    // Handle league change
+    leagueSwitcher.addEventListener('change', function() {
+      const selectedLeagueId = this.value;
+      if (selectedLeagueId && selectedLeagueId !== currentLeagueId) {
+        // Get current page from URL
+        const pathParts = window.location.pathname.split('/');
+        const currentPage = pathParts[pathParts.length - 1] || 'dashboard';
+
+        // Redirect to new league with same page
+        window.location.href = `/${currentPlatform}/${currentSeason}/${selectedLeagueId}/${currentPage}`;
+      }
+    });
+  }
+});
+
+// Mobile nav toggle functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const navToggle = document.getElementById('navToggle');
+  const navLinksWrapper = document.querySelector('.nav-links-wrapper');
+
+  if (navToggle && navLinksWrapper) {
+    navToggle.addEventListener('click', function() {
+      navLinksWrapper.classList.toggle('nav-open');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!navToggle.contains(e.target) && !navLinksWrapper.contains(e.target)) {
+        navLinksWrapper.classList.remove('nav-open');
+      }
+    });
+
+    // Close menu when clicking a link
+    navLinksWrapper.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', function() {
+        navLinksWrapper.classList.remove('nav-open');
+      });
+    });
+  }
+});
+
+// Card collapse toggle functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const collapseToggles = document.querySelectorAll('.card-collapse-toggle');
+
+  collapseToggles.forEach(toggle => {
+    toggle.addEventListener('click', function() {
+      const targetId = this.getAttribute('data-target');
+      const targetBody = document.getElementById(targetId);
+
+      if (targetBody) {
+        const isCollapsed = targetBody.classList.contains('collapsed');
+
+        if (isCollapsed) {
+          // Expand
+          targetBody.classList.remove('collapsed');
+          this.classList.remove('collapsed');
+          this.textContent = '▼';
+        } else {
+          // Collapse
+          targetBody.classList.add('collapsed');
+          this.classList.add('collapsed');
+          this.textContent = '▶';
+        }
+      }
+    });
+  });
+
+  // GM Memo generation functionality
+  const generateGmMemoBtn = document.getElementById('generateGmMemoBtn');
+  if (generateGmMemoBtn) {
+    generateGmMemoBtn.addEventListener('click', async function() {
+      const leagueId = this.dataset.leagueId;
+      const season = this.dataset.season;
+      const platform = this.dataset.platform;
+      const viewerRosterId = this.dataset.viewerRosterId;
+
+      const emptyState = document.getElementById('gm-memo-empty');
+      const loadingState = document.getElementById('gm-memo-loading');
+      const resultState = document.getElementById('gm-memo-result');
+
+      // Show loading, hide empty state
+      if (emptyState) emptyState.style.display = 'none';
+      if (loadingState) loadingState.style.display = 'block';
+      if (resultState) resultState.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/gm-memo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            league_id: leagueId,
+            season: parseInt(season),
+            platform: platform,
+            viewer_roster_id: viewerRosterId
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Hide loading, show result
+          if (loadingState) loadingState.style.display = 'none';
+          if (resultState) {
+            resultState.style.display = 'block';
+            resultState.innerHTML = data.gm_memo_html;
+          }
+        } else {
+          // Show error
+          if (loadingState) loadingState.style.display = 'none';
+          if (emptyState) {
+            emptyState.style.display = 'block';
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'gm-memo-error';
+            errorDiv.textContent = data.error || 'Failed to generate GM memo. Please try again.';
+            emptyState.appendChild(errorDiv);
+          }
+        }
+      } catch (error) {
+        console.error('Error generating GM memo:', error);
+        if (loadingState) loadingState.style.display = 'none';
+        if (emptyState) {
+          emptyState.style.display = 'block';
+          const errorDiv = document.createElement('div');
+          errorDiv.className = 'gm-memo-error';
+          errorDiv.textContent = 'Network error. Please try again.';
+          emptyState.appendChild(errorDiv);
+        }
+      }
+    });
+  }
 });

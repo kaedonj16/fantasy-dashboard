@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
 
 from dashboard_services.ai.history_recap import get_history_ai_recap
-from dashboard_services.ai.renderer import get_team_gm_memo
+from dashboard_services.ai.renderer import get_team_gm_memo, get_front_office_briefing
 from dashboard_services.api import (
     avatar_from_users,
     build_league_history_map,
@@ -133,7 +133,7 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
-app.secret_key = os.urandom(32)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 plotly_js = get_plotlyjs()
 try:
     init_value_history_db()
@@ -390,13 +390,33 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_team_name"] = viewer.get("viewer_team_name")
 
 
+def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dict:
+    """Get viewer session resolved for the current league instead of stale session data."""
+    session_viewer = get_viewer_session()
+    username = session_viewer.get("viewer_username")
+    
+    if not username:
+        return session_viewer
+    
+    # Resolve the viewer for this specific league
+    league_viewer = resolve_viewer_for_league(users, rosters, username)
+    
+    if league_viewer:
+        save_viewer_session(league_viewer)
+        return league_viewer
+    else:
+        print(f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
+        return session_viewer
+
+
 def get_viewer_session() -> dict:
-    return {
+    viewer_data = {
         "viewer_username": session.get("viewer_username"),
         "viewer_user_id": session.get("viewer_user_id"),
         "viewer_roster_id": session.get("viewer_roster_id"),
         "viewer_team_name": session.get("viewer_team_name"),
     }
+    return viewer_data
 
 
 def format_sleeper_league_option(league: dict) -> dict:
@@ -600,7 +620,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return (
             "<nav class='top-nav'>"
             "  <div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div>"
-            "  <div class='top-nav-links'>"
+            "  <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
+            "  <div class='nav-links-wrapper'>"
             f"    {''.join(pills)}"
             "  </div>"
             "</nav>"
@@ -666,28 +687,64 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
     pills.append(changelog_bell)
 
-    # Always available
-    pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
-    pills.append(nav_pill("Teams", "page_teams", "teams"))
-    pills.append(nav_pill("Activity", "page_activity", "activity"))
-    pills.append(nav_pill("History", "page_history", "history"))
+    # Navigation pills
+    nav_pills = []
+    nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
+    nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
+    nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
+    nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
+    nav_pills.append(nav_pill("History", "page_history", "history"))
 
     # In-season only
     if not offseason_mode:
-        pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-        pills.append(nav_pill("Standings", "page_standings", "standings"))
-        pills.append(nav_pill("Graphs", "page_graphs", "graphs"))
+        nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
+        nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
+        nav_pills.append(nav_pill("Graphs", "page_graphs", "graphs"))
 
-    pills.append("<a class='nav-pill logout-pill' href='/logout'>Logout</a>")
+    nav_pills.append("<a class='nav-pill logout-pill' href='/logout'>Logout</a>")
+
+    # Create utility row for refresh button and notifications (if applicable)
+    utility_row = ""
+    utility_items = []
+    
+    if refresh_btn:
+        utility_items.append(refresh_btn)
+    
+    # Always add changelog bell
+    utility_items.append(changelog_bell)
+    
+    if utility_items:
+        utility_row = f"<div class='utility-row'>{''.join(utility_items)}</div>"
+
+    # Combine pills and utility row
+    all_nav_items = ''.join(nav_pills)
+    if utility_row:
+        all_nav_items = f"{all_nav_items}{utility_row}"
+    
+    # League switcher dropdown (if user is logged in)
+    league_switcher_html = ""
+    viewer_username = session.get("viewer_username")
+    if viewer_username:
+        league_switcher_html = f"""
+        <div class="league-switcher">
+          <select id="leagueSwitcher" class="league-switcher-dropdown" data-current-league="{league_id}" data-current-platform="{platform}" data-current-season="{season}">
+            <option value="">Loading leagues...</option>
+          </select>
+        </div>
+        """
+
+    # Add league switcher to mobile menu
+    if league_switcher_html:
+        all_nav_items = f"{league_switcher_html}{all_nav_items}"
 
     return (
         "<nav class='top-nav'>"
-        "  <div style='display:flex;align-items:center;gap:10px;'>"
+        "  <div class='nav-header-main'>"
         "    <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+        "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
         "  </div>"
-        "  <div>"
-        f"    {''.join(pills)}"
+        "  <div class='nav-links-wrapper'>"
+        f"    {all_nav_items}"
         "  </div>"
         "</nav>"
     )
@@ -960,7 +1017,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "offseason_mode": offseason_mode,
         "drafts": drafts,
         "latest_draft": latest_draft,
-        "viewer": get_viewer_session(),
+        "viewer": get_viewer_session_for_league(users, rosters),
     }
 
 
@@ -1872,14 +1929,24 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
+    print(f"[dashboard] Building dashboard body")
+    print(f"[dashboard] Viewer data: {viewer}")
+    print(f"[dashboard] Viewer roster ID: {viewer_roster_id}")
+
     gm_memo_html = ""
     front_office_html = ""
 
     if viewer_roster_id:
+        print(f"[dashboard] Attempting to get GM memo for roster {viewer_roster_id}")
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+            print(f"[dashboard] GM memo result: {len(gm_memo_html)} chars")
         except Exception as e:
-            print(f"[dashboard] gm memo skipped: {e}")
+            print(f"[dashboard] gm memo exception: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"[dashboard] No viewer_roster_id, skipping GM memo")
 
         try:
             front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
@@ -2460,16 +2527,19 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     gm_memo_html = ""
     front_office_html = ""
 
-    if viewer_roster_id:
-        try:
-            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[offseason-dashboard] gm memo skipped: {e}")
-
-        try:
-            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[offseason-dashboard] front office briefing skipped: {e}")
+    # Don't auto-generate GM memo - wait for button click
+    # if viewer_roster_id:
+    #     try:
+    #         gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+    #     except Exception as e:
+    #         print(f"[offseason-dashboard] gm memo exception: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    # else:
+    #     try:
+    #         front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
+    #     except Exception as e:
+    #         print(f"[offseason-dashboard] front office briefing skipped: {e}")
 
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
@@ -2515,8 +2585,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
+    # Calculate Draft Capital Index from pick value table
+    pick_value_table = load_pick_value_table() or {}
+    total_draft_capital = sum(pick_value_table.values())
+
     roster_cards = []
-    total_future_picks = 0
 
     for r in rosters:
         rid = str(r.get("roster_id"))
@@ -2525,7 +2598,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
         team_picks = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
         pick_count = len(team_picks)
-        total_future_picks += pick_count
 
         first_round_count = 0
         for pk in team_picks:
@@ -2652,15 +2724,40 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     top_waiver_assets_html = "".join(waiver_html)
 
     gm_card_html = ""
-    if gm_memo_html:
+    if viewer_roster_id:
+        # Show button to generate GM memo instead of auto-generating
         gm_card_html = f"""
         <section class="os-card">
           <div class="os-section-head">
-            <h2 class="os-section-title">Your GM Memo</h2>
-            <div class="os-section-subtitle">{viewer.get("viewer_team_name") or "Your Team"}</div>
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">BR Front Office Report</h2>
+              <div class="os-section-subtitle">@{viewer.get("viewer_team_name") or "Your Team"}</div>
+            </div>
+            <div class="os-section-head-actions">
+              <button type="button" id="generateGmMemoBtn" class="recap-generate-btn" 
+                      data-league-id="{ctx.get('league_id')}" 
+                      data-season="{ctx.get('season')}" 
+                      data-platform="{ctx.get('platform')}" 
+                      data-viewer-roster-id="{viewer_roster_id}">
+                Generate Report
+              </button>
+              <button type="button" class="card-collapse-toggle" data-target="gm-memo-body">▼</button>
+            </div>
           </div>
-          <div class="os-ai-copy">
-            {gm_memo_html}
+          <div class="os-ai-copy card-collapsible-body" id="gm-memo-body">
+            <div class="otc-ai-empty" id="gm-memo-empty">
+              <div class="otc-ai-empty-title">Generate Your GM Memo</div>
+              <div class="otc-ai-empty-sub">
+                Get personalized analysis on your roster, trade targets, and offseason strategy.
+              </div>
+            </div>
+            <div class="otc-ai-empty" id="gm-memo-loading" style="display:none;">
+              <div class="otc-ai-empty-title">Analyzing Your Roster...</div>
+              <div class="otc-ai-empty-sub">
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+              </div>
+            </div>
+            <div id="gm-memo-result" style="display:none;"></div>
           </div>
         </section>
         """
@@ -2670,10 +2767,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         front_office_card_html = f"""
         <section class="os-card">
           <div class="os-section-head">
-            <h2 class="os-section-title">Front Office Briefing</h2>
-            <div class="os-section-subtitle">Offseason priorities</div>
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Front Office Briefing</h2>
+              <div class="os-section-subtitle">Offseason priorities</div>
+            </div>
+            <button type="button" class="card-collapse-toggle" data-target="front-office-body">▼</button>
           </div>
-          <div class="os-ai-copy">
+          <div class="os-ai-copy card-collapsible-body" id="front-office-body">
             {front_office_html}
           </div>
         </section>
@@ -2684,10 +2784,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
       <aside class="os-left-col">
         <section class="os-card os-card-soft">
           <div class="os-section-head">
-            <h2 class="os-section-title">Offseason Team Snapshot</h2>
-            <div class="os-section-subtitle">Roster value and future capital across the league</div>
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Offseason Team Snapshot</h2>
+              <div class="os-section-subtitle">Roster value and future capital across the league</div>
+            </div>
+            <button type="button" class="card-collapse-toggle" data-target="team-snapshot-body">▼</button>
           </div>
-          <div class="os-snapshot-list">
+          <div class="os-snapshot-list card-collapsible-body" id="team-snapshot-body">
             {roster_cards_html or "<p>No offseason roster data available yet.</p>"}
           </div>
         </section>
@@ -2717,9 +2820,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-sub">{roster_leader}</div>
             </div>
             <div class="os-stat-card">
-              <div class="os-stat-label">Future picks tracked</div>
-              <div class="os-stat-value">{total_future_picks}</div>
-              <div class="os-stat-sub">{len(rosters)} teams in league</div>
+              <div class="os-stat-label">Draft Capital Index</div>
+              <div class="os-stat-value">{total_draft_capital:.0f}</div>
+              <div class="os-stat-sub">Based on modeled pick values</div>
             </div>
           </div>
 
@@ -2733,10 +2836,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         <section class="os-card">
           <div class="os-section-head">
-            <h2 class="os-section-title">Top Waiver Assets</h2>
-            <div class="os-section-subtitle">Best currently unrostered players by BR value</div>
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Top Waiver Assets</h2>
+              <div class="os-section-subtitle">Best currently unrostered players by BR value</div>
+            </div>
+            <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
-          <div class="os-waiver-list">
+          <div class="os-waiver-list card-collapsible-body" id="waiver-assets-body">
             {top_waiver_assets_html or "<p>No waiver values available yet.</p>"}
           </div>
         </section>
@@ -4986,7 +5092,10 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         ctx = build_league_context(platform, league_id, season)
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
         return ctx
-    return entry["ctx"]
+    # Update viewer session with fresh data even for cached contexts
+    ctx = entry["ctx"]
+    ctx["viewer"] = get_viewer_session()
+    return ctx
 
 
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
@@ -5504,12 +5613,43 @@ def get_model_value_table_cached():
     return tbl
 
 
+@app.route("/api/gm-memo", methods=["POST"])
+def api_gm_memo():
+    payload = request.get_json(force=True)
+    
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+    
+    if not league_id or not season or not viewer_roster_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+    
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
+        
+        return jsonify({
+            "success": True,
+            "gm_memo_html": gm_memo_html
+        })
+    except Exception as e:
+        print(f"[api-gm-memo] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @app.route("/api/trade-eval", methods=["POST"])
 def api_trade_eval():
     payload = request.get_json(force=True)
 
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
+    league_type = str(payload.get("league_type") or "1qb").strip().lower()
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
@@ -5585,7 +5725,12 @@ def api_trade_eval():
                 })
                 continue
 
-            val = float(player.get("value", 0.0) or 0.0)
+            # Use sf_value for Superflex leagues, otherwise use regular value
+            if league_type == "sf":
+                val = float(player.get("sf_value", player.get("value", 0.0)) or 0.0)
+            else:
+                val = float(player.get("value", 0.0) or 0.0)
+
             name = player.get("name")
             pos = player.get("position")
             team = player.get("team")
@@ -5780,7 +5925,9 @@ def api_value_movers():
     except (TypeError, ValueError):
         limit = 5
 
-    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1)) or {}
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -5825,10 +5972,15 @@ def api_player_value_history(player_id: str):
 @app.route("/api/sleeper-user-leagues")
 def api_sleeper_user_leagues():
     username = (request.args.get("username") or "").strip()
-    season = int(request.args.get("season") or get_nfl_state().get("season"))
+
+    # If no username provided, try to get from session
+    if not username:
+        username = session.get("viewer_username")
 
     if not username:
         return jsonify({"ok": False, "error": "Missing username"}), 400
+
+    season = int(request.args.get("season") or get_nfl_state().get("season"))
 
     try:
         user = get_sleeper_user_by_username(username)

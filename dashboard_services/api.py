@@ -46,8 +46,8 @@ FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
 LEAGUE_HISTORY_CACHE: dict[str, dict] = {}
 LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
 
-if not TANK01_API_KEY:
-    raise RuntimeError("TANK01_API_KEY is not set. Export it or hardcode it temporarily.")
+# NOTE: Don't check TANK01_API_KEY at import time - only when actually calling Tank01 API
+# This allows model training and other scripts to import this module without requiring the key
 
 # Reuse a single Session and a single headers dict for all Tank01 calls
 SESSION = requests.Session()
@@ -134,7 +134,7 @@ def _headers(rapidapi_key: str) -> Dict[str, str]:
     }
 
 
-TANK01_HEADERS = _headers(TANK01_API_KEY)
+TANK01_HEADERS = _headers(TANK01_API_KEY) if TANK01_API_KEY else {}
 
 
 @ttl_cache(ttl=300)

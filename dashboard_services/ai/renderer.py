@@ -7,7 +7,7 @@ from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text,
 from dashboard_services.ai.context_builders import (
     build_team_gm_context,
 )
-from dashboard_services.ai.prompts import generate_trade_ai_result
+from dashboard_services.ai.prompts import generate_trade_ai_result, generate_team_ai_result
 from dashboard_services.providers.espn_api import safe_float
 
 AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
@@ -23,6 +23,54 @@ def _wrap_text_html(text: str) -> str:
         f"<pre style='white-space:pre-wrap;font:inherit;margin:0'>{text}</pre>"
         "</div>"
     )
+
+
+def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
+    """
+    Render the AI-generated team analysis result as HTML.
+    mode: 'gm_memo' or 'front_office_briefing'
+    """
+    if mode == "gm_memo":
+        team_identity = html.escape(str(result.get("team_identity") or ""))
+        outlook = html.escape(str(result.get("outlook") or ""))
+        strength = html.escape(str(result.get("strength") or ""))
+        weakness = html.escape(str(result.get("weakness") or ""))
+        next_move = html.escape(str(result.get("next_move") or ""))
+        trade_posture = html.escape(str(result.get("trade_posture") or ""))
+        verdict = html.escape(str(result.get("verdict") or "HOLD").upper())
+
+        return f"""
+        <div class="ai-copy">
+          <p><strong>{team_identity}</strong></p>
+          <p>{outlook}</p>
+          <ul>
+            <li><strong>Biggest strength:</strong> {strength}</li>
+            <li><strong>Biggest weakness:</strong> {weakness}</li>
+            <li><strong>Best next move:</strong> {next_move}</li>
+          </ul>
+          <p>{trade_posture}</p>
+        </div>
+        """
+    else:  # front_office_briefing
+        headline = html.escape(str(result.get("headline") or ""))
+        posture = html.escape(str(result.get("posture") or ""))
+        strongest_room = html.escape(str(result.get("strongest_room") or ""))
+        weakest_room = html.escape(str(result.get("weakest_room") or ""))
+        next_move = html.escape(str(result.get("next_move") or ""))
+        gm_alert = html.escape(str(result.get("gm_alert") or ""))
+
+        return f"""
+        <div class="ai-copy">
+          <p><strong>{headline}</strong></p>
+          <p>{posture}</p>
+          <ul>
+            <li><strong>Strongest room:</strong> {strongest_room}</li>
+            <li><strong>Weakest room:</strong> {weakest_room}</li>
+            <li><strong>Most important next move:</strong> {next_move}</li>
+          </ul>
+          <p><strong>GM Alert:</strong> {gm_alert}</p>
+        </div>
+        """
 
 
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
@@ -49,9 +97,10 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
 
     try:
         result = generate_team_ai_result(team_ctx, mode="gm_memo")
-        html_out = render_team_ai_result(result)
+        html_out = render_team_ai_result(result, mode="gm_memo")
     except Exception as e:
-        print(f"[ai gm memo] fallback: {e}")
+        import traceback
+        traceback.print_exc()
         top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
         html_out = f"""
         <div class="ai-copy">
@@ -89,8 +138,8 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
         return html_out
 
     try:
-        result = generate_team_ai_result(team_ctx, mode="front_office")
-        html_out = render_team_ai_result(result)
+        result = generate_team_ai_result(team_ctx, mode="front_office_briefing")
+        html_out = render_team_ai_result(result, mode="front_office_briefing")
     except Exception as e:
         print(f"[ai front office] fallback: {e}")
         strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"

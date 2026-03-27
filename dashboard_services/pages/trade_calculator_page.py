@@ -64,6 +64,16 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                   <span>Team 2 is mine</span>
                 </label>
               </div>
+              <div class="otc-viewer-toggles" style="margin-left: 16px;">
+                <label class="otc-viewer-toggle">
+                  <input type="radio" name="leagueType" value="1qb" checked>
+                  <span>1QB</span>
+                </label>
+                <label class="otc-viewer-toggle">
+                  <input type="radio" name="leagueType" value="sf">
+                  <span>Superflex</span>
+                </label>
+              </div>
               <div class="otc-info-tooltip-wrapper">
                 <button type="button" class="otc-info-btn" id="otcInfoBtn">ⓘ</button>
                 <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">

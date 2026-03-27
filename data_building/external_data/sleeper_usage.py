@@ -248,6 +248,66 @@ def build_usage_map_for_season(
     return usage
 
 
+def _validate_usage_table(players_out: List[dict], usage_by_pid: Dict[str, dict], season: int) -> None:
+    """
+    CRITICAL FIX: Validate usage table completeness to catch data failures early.
+
+    Raises ValueError if critical issues detected.
+
+    Args:
+        players_out: List of player dicts with usage data
+        usage_by_pid: Raw usage dict (not currently used, kept for future validation)
+        season: Season year for context
+    """
+    from dashboard_services.api import get_nfl_state
+
+    total_players = len(players_out)
+
+    # Basic size check (always applies)
+    if total_players < 400:
+        raise ValueError(
+            f"[VALIDATION ERROR] Usage table too small: {total_players} players "
+            f"(expected 500+). Sleeper API may have failed."
+        )
+
+    # Check if we're in offseason - if so, 0 games is expected
+    nfl_state = get_nfl_state() or {}
+    season_type = str(nfl_state.get("season_type", "")).lower().strip()
+    offseason_mode = season_type == "off"
+
+    # Check for players with zero games
+    zero_games = sum(1 for p in players_out if p.get("usage", {}).get("games", 0) == 0)
+    zero_games_pct = zero_games / total_players if total_players > 0 else 0
+
+    # Check for players with usage data
+    with_usage = sum(1 for p in players_out if p.get("usage", {}).get("ppr_ppg", 0) > 0)
+
+    if offseason_mode:
+        # OFFSEASON: Expect everyone to have 0 games/production (no current season yet)
+        print(f"[VALIDATION OK] Offseason mode - usage table validated:")
+        print(f"  - Total players: {total_players}")
+        print(f"  - Players with 0 games: {zero_games} ({zero_games_pct:.1%}) [EXPECTED in offseason]")
+        print(f"  - Players with production: {with_usage} [Most should be 0 in offseason]")
+    else:
+        # IN-SEASON: Apply strict validation
+        if zero_games_pct > 0.6:
+            raise ValueError(
+                f"[VALIDATION ERROR] Too many players with 0 games: {zero_games}/{total_players} "
+                f"({zero_games_pct:.1%}). Data fetch likely incomplete. (Season type: {season_type})"
+            )
+
+        if with_usage < 200:
+            raise ValueError(
+                f"[VALIDATION ERROR] Too few players with production: {with_usage} "
+                f"(expected 300+). Usage data may be missing. (Season type: {season_type})"
+            )
+
+        print(f"[VALIDATION OK] In-season usage table validated:")
+        print(f"  - Total players: {total_players}")
+        print(f"  - Players with 0 games: {zero_games} ({zero_games_pct:.1%})")
+        print(f"  - Players with production: {with_usage}")
+
+
 def write_usage_table_snapshot(
         season: int,
         weeks: Iterable[int],
@@ -321,11 +381,14 @@ def write_usage_table_snapshot(
                 "usage": usage,
             }
         )
+
+    # CRITICAL FIX: Validate before writing to catch data failures
+    _validate_usage_table(players_out, usage_by_pid, season)
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(players_out, f, ensure_ascii=False, indent=2)
 
-    print(f"[value_model] Wrote usage snapshot → {out_path}")
     return out_path
 
 

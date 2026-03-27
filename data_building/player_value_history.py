@@ -18,10 +18,26 @@ def init_value_history_db() -> None:
                     position TEXT,
                     team TEXT,
                     value NUMERIC NOT NULL,
+                    sf_value NUMERIC,
                     source TEXT NOT NULL DEFAULT 'model',
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     PRIMARY KEY (as_of_date, player_id, source)
                 )
+                """
+            )
+            # Add sf_value column if it doesn't exist (migration)
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'player_value_history'
+                        AND column_name = 'sf_value'
+                    ) THEN
+                        ALTER TABLE player_value_history ADD COLUMN sf_value NUMERIC;
+                    END IF;
+                END $$;
                 """
             )
             cur.execute(
@@ -73,6 +89,12 @@ def record_model_value_snapshot(
         except (TypeError, ValueError):
             value = 0.0
 
+        raw_sf_val = p.get("sf_value", raw_val)
+        try:
+            sf_value = float(raw_sf_val or 0.0)
+        except (TypeError, ValueError):
+            sf_value = 0.0
+
         rows_to_insert.append(
             (
                 snapshot_date,
@@ -81,6 +103,7 @@ def record_model_value_snapshot(
                 p.get("position"),
                 p.get("team"),
                 value,
+                sf_value,
                 source,
             )
         )
@@ -93,14 +116,15 @@ def record_model_value_snapshot(
             cur.executemany(
                 """
                 INSERT INTO player_value_history
-                    (as_of_date, player_id, name, position, team, value, source)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (as_of_date, player_id, name, position, team, value, sf_value, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(as_of_date, player_id, source)
                 DO UPDATE SET
                     name = excluded.name,
                     position = excluded.position,
                     team = excluded.team,
-                    value = excluded.value
+                    value = excluded.value,
+                    sf_value = excluded.sf_value
                 """,
                 rows_to_insert,
             )
@@ -183,10 +207,17 @@ def get_top_movers(
         days: int = 7,
         limit: int = 15,
         source: str = "model",
+        league_type: str = "1qb",
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
     If no baseline exists, fall back to 6, then 5, ... down to 1.
+
+    Args:
+        days: Number of days to look back for comparison
+        limit: Max number of risers/fallers to return
+        source: Source of values ('model', etc.)
+        league_type: "1qb" or "sf" (superflex) to determine which value field to use
     """
     init_value_history_db()
 
@@ -238,15 +269,20 @@ def get_top_movers(
                     "fallers": [],
                 }
 
+            # Determine which value field to use based on league type
+            value_field = "sf_value" if league_type == "sf" else "value"
+            # For Superflex, fall back to value if sf_value is NULL
+            value_expr = f"COALESCE({value_field}, value)" if league_type == "sf" else value_field
+
             cur.execute(
-                """
+                f"""
                 WITH latest_rows AS (
                     SELECT DISTINCT ON (player_id)
                         player_id,
                         name,
                         position,
                         team,
-                        value,
+                        {value_expr} as value,
                         as_of_date
                     FROM player_value_history
                     WHERE source = %s
@@ -256,7 +292,7 @@ def get_top_movers(
                 baseline_rows AS (
                     SELECT DISTINCT ON (player_id)
                         player_id,
-                        value,
+                        {value_expr} as value,
                         as_of_date
                     FROM player_value_history
                     WHERE source = %s

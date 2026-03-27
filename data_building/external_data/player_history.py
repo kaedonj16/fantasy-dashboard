@@ -39,7 +39,6 @@ def save_usage_rows_for_season(rows: list[dict[str, Any]], season: int) -> Path:
     path = usage_rows_json_path_for_season(season)
     with path.open("w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
-    print(f"[player_history] saved {len(rows)} usage rows -> {path}")
     return path
 
 
@@ -53,12 +52,10 @@ def save_player_history_df(df: pd.DataFrame, season: int) -> Path:
 
     try:
         df.to_parquet(parquet_path, index=False)
-        print(f"[player_history] saved {len(df)} rows -> {parquet_path}")
         return parquet_path
     except Exception as e:
         print(f"[player_history] parquet save failed for {season}: {e}")
         df.to_csv(csv_path, index=False)
-        print(f"[player_history] saved {len(df)} rows -> {csv_path}")
         return csv_path
 
 
@@ -71,12 +68,10 @@ def save_combined_player_history_df(df: pd.DataFrame) -> Path:
 
     try:
         df.to_parquet(parquet_path, index=False)
-        print(f"[player_history] saved combined {len(df)} rows -> {parquet_path}")
         return parquet_path
     except Exception as e:
         print(f"[player_history] combined parquet save failed: {e}")
         df.to_csv(csv_path, index=False)
-        print(f"[player_history] saved combined {len(df)} rows -> {csv_path}")
         return csv_path
 
 
@@ -276,6 +271,45 @@ def build_player_history_features(history_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _calculate_rolling_windows(weekly_stats: list[dict], window_size: int = 4) -> dict:
+    """
+    CRITICAL FIX: Calculate rolling window features to capture recent performance and trends.
+
+    Returns dict with:
+      - last_4_weeks_ppg: Average PPR points in last 4 weeks
+      - last_4_weeks_snap_pct: Average snap % in last 4 weeks
+      - ppg_acceleration: Recent (last 4) vs previous (weeks 5-8) PPG difference
+    """
+    if not weekly_stats or len(weekly_stats) < 1:
+        return {
+            "last_4_weeks_ppg": 0.0,
+            "last_4_weeks_snap_pct": 0.0,
+            "ppg_acceleration": 0.0,
+        }
+
+    # Sort by week
+    weekly_stats = sorted(weekly_stats, key=lambda x: x.get("week", 0))
+
+    # Last 4 weeks
+    recent_weeks = weekly_stats[-window_size:] if len(weekly_stats) >= window_size else weekly_stats
+    recent_ppg = sum(w.get("ppr", 0.0) for w in recent_weeks) / len(recent_weeks) if recent_weeks else 0.0
+    recent_snap_pct = sum(w.get("off_snap_pct", 0.0) for w in recent_weeks) / len(recent_weeks) if recent_weeks else 0.0
+
+    # Previous 4 weeks (for acceleration calculation)
+    if len(weekly_stats) >= window_size * 2:
+        previous_weeks = weekly_stats[-(window_size * 2):-window_size]
+        previous_ppg = sum(w.get("ppr", 0.0) for w in previous_weeks) / len(previous_weeks)
+        acceleration = recent_ppg - previous_ppg
+    else:
+        acceleration = 0.0
+
+    return {
+        "last_4_weeks_ppg": recent_ppg,
+        "last_4_weeks_snap_pct": recent_snap_pct,
+        "ppg_acceleration": acceleration,
+    }
+
+
 def build_usage_rows_for_season(
         season: int,
         weeks: Optional[list[int]] = None,
@@ -289,6 +323,7 @@ def build_usage_rows_for_season(
     players_index = load_players_index() or {}
 
     accum: dict[str, dict[str, float]] = {}
+    weekly_tracking: dict[str, list[dict[str, float]]] = {}  # Track week-by-week for rolling windows
 
     for week, players in season_stats.items():
         if not isinstance(players, dict):
@@ -383,6 +418,17 @@ def build_usage_rows_for_season(
             acc["pass_tds"] += pass_tds
             acc["pass_int"] += pass_int
 
+            # CRITICAL FIX: Track weekly stats for rolling window features
+            if pid not in weekly_tracking:
+                weekly_tracking[pid] = []
+            weekly_tracking[pid].append({
+                "week": week,
+                "ppr": ppr,
+                "off_snap_pct": off_snap_pct,
+                "targets": targets,
+                "carries": carries,
+            })
+
             rz_info = rz_map.get(pid, {}) or {}
             acc["rec_rz_tgt_pg"] = float(rz_info.get("rec_rz_tgt_pg", 0.0) or 0.0)
             acc["rush_rz_att_pg"] = float(rz_info.get("rush_rz_att_pg", 0.0) or 0.0)
@@ -432,6 +478,9 @@ def build_usage_rows_for_season(
                 "target_share": 0.0,
             }
         else:
+            # CRITICAL FIX: Calculate rolling window features
+            rolling_windows = _calculate_rolling_windows(weekly_tracking.get(pid, []))
+
             usage = {
                 "games": g,
                 "avg_off_snap_pct": acc["off_snap_pct"] / g,
@@ -456,6 +505,10 @@ def build_usage_rows_for_season(
                 "avg_pass_int": acc["pass_int"] / g,
                 "total_targets": acc.get("total_targets", 0.0),
                 "target_share": acc.get("target_share", 0.0),
+                # Rolling window features
+                "last_4_weeks_ppg": rolling_windows["last_4_weeks_ppg"],
+                "last_4_weeks_snap_pct": rolling_windows["last_4_weeks_snap_pct"],
+                "ppg_acceleration": rolling_windows["ppg_acceleration"],
             }
 
         usage_rows.append({
@@ -502,7 +555,6 @@ def find_player(rows: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
 def print_player(rows: list[dict[str, Any]], name: str) -> None:
     matches = find_player(rows, name)
     if not matches:
-        print(f"[player_history] no player found for '{name}'")
         return
 
     for p in matches:
@@ -521,11 +573,9 @@ if __name__ == "__main__":
     usage_by_season: dict[int, list[dict[str, Any]]] = {}
 
     for season in seasons_to_build:
-        print(f"\n[player_history] building usage rows for {season}...")
         rows = build_usage_rows_for_season(season)
         usage_by_season[season] = rows
 
-        print(f"[player_history] built {len(rows)} rows for {season}")
         print_player(rows, "CeeDee Lamb")
 
         save_usage_rows_for_season(rows, season)
@@ -541,7 +591,6 @@ if __name__ == "__main__":
 
     if not combined_df.empty:
         features_df = build_player_history_features(combined_df)
-        print("\n[player_history] feature preview:")
         preview = features_df[features_df["name"].astype(str).str.lower() == "ceedee lamb"]
         if not preview.empty:
             print(preview.T)

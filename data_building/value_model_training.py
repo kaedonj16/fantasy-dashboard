@@ -24,7 +24,7 @@ from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
 from utils.paths import DATA_DIR
-from utils.utils import load_teams_index, bucket_for_slot, normalize_name
+from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index
 
 # ------------------------------------------------
 # Paths / constants
@@ -298,7 +298,6 @@ def load_fantasycalc_df(path: Path = FANTASYCALC_VALUES_PATH) -> pd.DataFrame:
         )
 
     df = pd.DataFrame(rows)
-    print(f"[value_model] FantasyCalc rows (from CSV): {len(df)}")
     return df
 
 
@@ -408,13 +407,18 @@ def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
             f"Columns present: {list(df_raw.columns)}"
         )
 
+    # CRITICAL FIX: Also load sf_engine_value if present
     out = pd.DataFrame({
         "sleeper_id": df_raw[sid_col].astype(str),
         "engine_value": pd.to_numeric(df_raw[val_col], errors="coerce"),
     })
 
+    if "sf_engine_value" in df_raw.columns:
+        out["sf_engine_value"] = pd.to_numeric(df_raw["sf_engine_value"], errors="coerce")
+    else:
+        out["sf_engine_value"] = None
+
     out = out.dropna(subset=["sleeper_id", "engine_value"]).copy()
-    print(f"[value_model] Engine rows: {len(out)}")
     return out
 
 
@@ -521,7 +525,6 @@ def train_trade_value_model(
         test_size: float = 0.2,
         random_state: int = 42,
 ) -> TrainedModelBundle:
-    print("[value_model] Building training dataframe…")
     df = build_training_dataframe()
 
     if df.empty:
@@ -543,6 +546,9 @@ def train_trade_value_model(
     fc_norm = _normalize_series_0_1(fc_val)
     dp_norm = _normalize_series_0_1(dp_val)
     engine_norm = _normalize_series_0_1(engine_val)
+
+    # NOTE: Vendor values used for TARGET only, not as features
+    # (They're not available during inference from usage_table.json)
 
     weights = np.vstack([
         np.where(~np.isnan(fc_norm.values), 0.50, 0.0),
@@ -572,6 +578,9 @@ def train_trade_value_model(
     # Feature columns
     # -----------------------------
     numeric_cols: List[str] = []
+
+    # NOTE: Vendor values NOT used as features (only for target calculation)
+    # They're not available during inference
 
     if "age" in df.columns:
         df["age"] = pd.to_numeric(df["age"], errors="coerce")
@@ -607,6 +616,10 @@ def train_trade_value_model(
         "target_share",
         "target_share_pct",
         "total_targets",
+        # CRITICAL FIX: Rolling window features (captures breakouts, role changes)
+        "last_4_weeks_ppg",
+        "last_4_weeks_snap_pct",
+        "ppg_acceleration",
     ]
 
     candidate_history_cols = [
@@ -749,14 +762,14 @@ def train_trade_value_model(
     # -----------------------------
     y_val_pred = model.predict(X_val)
     mae = mean_absolute_error(y_val, y_val_pred)
-    print(f"[value_model] Validation MAE: {mae:.2f} value points")
 
     # -----------------------------
     # Scaling range for inference
     # -----------------------------
-    y_pred_full = model.predict(X)
-    scale_min = float(np.nanmin(y_pred_full))
-    scale_max = float(np.nanmax(y_pred_full))
+    # CRITICAL FIX: Use fixed scale (0-1000) since target_value is constructed in that range
+    # This ensures outputs reach full 999.9 scale even if model regresses to mean
+    scale_min = 0.0
+    scale_max = 1000.0
 
     bundle = TrainedModelBundle(
         pipeline=model,
@@ -833,6 +846,9 @@ def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) ->
     X_row = pd.DataFrame([{col: row_dict[col] for col in bundle.feature_columns}])
 
     raw_pred = model.predict(X_row)[0]
+
+    # CRITICAL FIX: Model trained on 0-1000 scale, normalize to 0-1 then scale to 999.9
+    # Using fixed scale (0-1000) ensures predictions reach full range
     if scale_max <= scale_min:
         return 0.0
 
@@ -912,6 +928,88 @@ def rewrite_value_table_with_model() -> Path:
     bundle = load_trained_bundle()
     inference_df = build_inference_dataframe()
 
+    # CRITICAL FIX: Load vendor values to use directly when available
+    fc_df = load_fantasycalc_df()
+    dp_df = load_dynastyprocess_df()
+
+    # Build vendor value lookup for 1QB
+    vendor_values: dict[str, float] = {}
+
+    # Get FC values normalized to 999.9 scale
+    if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
+        fc_max = fc_df["fc_value"].max()
+        for _, row in fc_df.iterrows():
+            pid = str(row.get("sleeper_id"))
+            fc_val = row.get("fc_value")
+            if pid and pd.notna(fc_val):
+                vendor_values[pid] = float(fc_val) / fc_max * 999.9
+
+    # Build Superflex vendor value lookup using sf_engine_value + value_2qb
+    sf_vendor_values: dict[str, float] = {}
+
+    # Load sf_engine_values from engine_values CSV
+    engine_values_path = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+    sf_engine_map: dict[str, float] = {}
+    if engine_values_path.exists():
+        try:
+            engine_df = pd.read_csv(engine_values_path)
+            if "player_id" in engine_df.columns and "sf_engine_value" in engine_df.columns:
+                for _, row in engine_df.iterrows():
+                    pid = str(row.get("player_id"))
+                    sf_eng_val = row.get("sf_engine_value")
+                    if pid and pd.notna(sf_eng_val):
+                        sf_engine_map[pid] = float(sf_eng_val)
+        except Exception as e:
+            print(f"[ERROR] Failed to load sf_engine_values: {e}")
+
+    # Load value_2qb from dynastyprocess (need to match by name+team)
+    dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
+    if not dp_df.empty:
+        try:
+            dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+            if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
+                for _, row in dp_raw.iterrows():
+                    name = str(row.get("player", "")).strip()
+                    team = str(row.get("team", "")).strip()
+                    val_2qb = row.get("value_2qb")
+                    if name and pd.notna(val_2qb):
+                        dp_2qb_map[(name, team)] = float(val_2qb)
+        except Exception as e:
+            print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
+
+    # Calculate Superflex vendor values: blend FC (50%), DP 2QB (35%), SF Engine (15%)
+    # First, normalize DP 2QB values to 999.9 scale
+    dp_2qb_max = max(dp_2qb_map.values()) if dp_2qb_map else 1.0
+
+    # Build sf_vendor_values for each player
+    players_index = load_players_index() or {}
+    for pid_key, meta in players_index.items():
+        pid = str(pid_key)
+        name = meta.get("name", "").strip()
+        team = meta.get("team", "").strip()
+
+        # Get FC value (same for 1QB and SF)
+        fc_val_norm = vendor_values.get(pid, 0.0)
+
+        # Get SF engine value
+        sf_eng_val = sf_engine_map.get(pid, 0.0)
+
+        # Get DP 2QB value (normalized)
+        dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
+        dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
+
+        # Blend: 50% FC, 35% DP 2QB, 15% SF Engine
+        if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
+            sf_value = (0.50 * fc_val_norm) + (0.35 * dp_2qb_norm) + (0.15 * sf_eng_val)
+
+            # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
+            # In Superflex, elite QBs should be valued like elite RBs/WRs
+            pos = meta.get("pos", "").upper()
+            if pos == "QB":
+                sf_value = sf_value * 1.5  # 50% boost for QBs
+
+            sf_vendor_values[pid] = sf_value
+
     df_by_id: dict[str, pd.Series] = {}
     for _, row in inference_df.iterrows():
         pid = str(row.get("sleeper_id"))
@@ -924,7 +1022,25 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        ml_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+        # CRITICAL FIX: Use vendor value directly if available, else ML model
+        if pid in vendor_values:
+            final_value = vendor_values[pid]
+        else:
+            final_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+
+        # Calculate Superflex value
+        if pid in sf_vendor_values:
+            sf_value = sf_vendor_values[pid]
+        else:
+            # Fallback to ML model for SF (same as 1QB for now)
+            sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+
+        # Position-specific adjustments: TEs capped at ~800
+        position = player.get("position")
+        if position == "TE":
+            # Apply 1.35x multiplier to TEs (allows top TEs to reach ~800), then cap
+            final_value = min(final_value * 1.35, 800.0)
+            sf_value = min(sf_value * 1.35, 800.0)
 
         age = player.get("age")
         if age is None and row is not None:
@@ -940,10 +1056,13 @@ def rewrite_value_table_with_model() -> Path:
             "team": player.get("team"),
             "position": player.get("position"),
             "age": age,
-            "value": float(ml_value),
+            "value": float(final_value),
+            "sf_value": float(sf_value),
             "search_name": normalize_name(name) if name else "",
             "pos_rank": None,
             "pos_rank_label": None,
+            "sf_pos_rank": None,
+            "sf_pos_rank_label": None,
         })
 
     pick_values = load_pick_value_table() or {}
@@ -1009,9 +1128,12 @@ def rewrite_value_table_with_model() -> Path:
             "position": "PICK",
             "age": None,
             "value": float(val),
+            "sf_value": float(val),  # Picks have same value in 1QB and Superflex
             "search_name": normalize_name(name),
             "pos_rank": None,
             "pos_rank_label": None,
+            "sf_pos_rank": None,
+            "sf_pos_rank_label": None,
         })
 
     pos_to_indices: dict[str, list[int]] = {}
@@ -1031,6 +1153,24 @@ def rewrite_value_table_with_model() -> Path:
             cleaned_assets[i]["pos_rank_label"] = f"{pos}{rank}"
             rank += 1
 
+    # Calculate Superflex position ranks based on sf_value
+    sf_pos_to_indices: dict[str, list[int]] = {}
+
+    for idx, asset in enumerate(cleaned_assets):
+        pos = str(asset.get("position") or "").upper()
+        if not pos or pos == "PICK":
+            continue
+        sf_pos_to_indices.setdefault(pos, []).append(idx)
+
+    for pos, indices in sf_pos_to_indices.items():
+        indices.sort(key=lambda i: float(cleaned_assets[i].get("sf_value") or 0.0), reverse=True)
+
+        rank = 1
+        for i in indices:
+            cleaned_assets[i]["sf_pos_rank"] = rank
+            cleaned_assets[i]["sf_pos_rank_label"] = f"{pos}{rank}"
+            rank += 1
+
     today = date.today()
     yesterday = today - timedelta(days=1)
     yesterday_file = DATA_DIR / f"model_values_{yesterday.isoformat()}.json"
@@ -1046,5 +1186,4 @@ def rewrite_value_table_with_model() -> Path:
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
 
-    print(f"[value_model] Wrote model values (players + picks) → {out_path}")
     return out_path

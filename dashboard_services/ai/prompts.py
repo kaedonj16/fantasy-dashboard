@@ -301,3 +301,71 @@ Trade context:
         raise ValueError("LLM trade analysis did not return an object")
 
     return data
+
+
+def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
+    """
+    LLM-backed team analysis with structured JSON output.
+    mode: 'gm_memo' or 'front_office_briefing'
+    """
+    client = get_ai_client()
+
+    if mode == "gm_memo":
+        schema = {
+            "type": "object",
+            "properties": {
+                "team_identity": {"type": "string"},
+                "outlook": {"type": "string"},
+                "strength": {"type": "string"},
+                "weakness": {"type": "string"},
+                "next_move": {"type": "string"},
+                "trade_posture": {"type": "string"},
+                "verdict": {
+                    "type": "string",
+                    "enum": ["BUY", "HOLD", "SELL VETERANS", "REBUILD AGGRESSIVELY"],
+                },
+            },
+            "required": ["team_identity", "outlook", "strength", "weakness", "next_move", "trade_posture", "verdict"],
+            "additionalProperties": False,
+        }
+        system_prompt = GM_MEMO_SYSTEM
+        user_prompt = build_gm_memo_prompt(json_dumps_safe(team_ctx))
+    else:  # front_office_briefing
+        schema = {
+            "type": "object",
+            "properties": {
+                "headline": {"type": "string"},
+                "posture": {"type": "string"},
+                "strongest_room": {"type": "string"},
+                "weakest_room": {"type": "string"},
+                "next_move": {"type": "string"},
+                "gm_alert": {"type": "string"},
+            },
+            "required": ["headline", "posture", "strongest_room", "weakest_room", "next_move", "gm_alert"],
+            "additionalProperties": False,
+        }
+        system_prompt = FRONT_OFFICE_BRIEF_SYSTEM
+        user_prompt = build_front_office_brief_prompt(json_dumps_safe(team_ctx))
+
+    resp = client.responses.create(
+        model=OPENAI_MODEL,
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": f"team_{mode}",
+                "schema": schema,
+            }
+        },
+    )
+
+    raw = resp.output_text.strip()
+    data = json.loads(raw)
+
+    if not isinstance(data, dict):
+        raise ValueError(f"LLM {mode} did not return an object")
+
+    return data

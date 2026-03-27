@@ -869,7 +869,7 @@ def build_history_body(
               <select id="recapTeamDropdown" class="recap-team-dropdown">
                 <option value="">Select your team...</option>
               </select>
-              <button id="generateRecapBtn" class="recap-generate-btn" disabled>add
+              <button id="generateRecapBtn" class="recap-generate-btn" disabled>
                 Generate AI Recap
               </button>
             </div>

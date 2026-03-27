@@ -115,8 +115,6 @@ def enrich_teams_index_with_offense(season: int):
         teams_index[team] = entry
 
     _save_teams_index_raw(teams_index)
-    print(f"[enrich] Updated teams index at {path_teams_index()}")
-
 
 def _to_float(value) -> float:
     """Helper: safely convert Tank01 string/None -> float."""
@@ -231,7 +229,6 @@ def _fetch_teamrankings_table(
     """
     sess = session or HTTP_SESSION
 
-    print(f"[teamrankings] Fetching {url}")
     resp = sess.get(url, headers=HEADERS, timeout=30)
     resp.raise_for_status()
 
@@ -277,7 +274,6 @@ def _fetch_teamrankings_table(
 
         out[abbr] = value
 
-    print(f"[teamrankings] Parsed {len(out)} teams from {url}")
     return out
 
 
@@ -366,5 +362,4 @@ def enrich_teams_index_with_rushing(
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(teams_index, f, indent=2)
 
-    print(f"[teamrankings] Enriched teams_index and wrote to {out_path}")
     return teams_index

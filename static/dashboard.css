@@ -646,7 +646,81 @@ ul {
   flex-wrap: wrap;
 }
 
-.top-nav > div:last-child {
+/* Header structure for mobile */
+.nav-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-header-main .site-logo {
+  width: 180px;
+  height: auto;
+}
+
+.nav-header-main .nav-toggle {
+  display: block;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #16365d;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.nav-header-secondary {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.league-switcher {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.league-switcher-dropdown {
+  padding: 6px 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+  color: #16365d;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  max-width: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.league-switcher-dropdown:hover {
+  border-color: #a8b3c1;
+}
+
+.league-switcher-dropdown:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #16365d;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.nav-links-wrapper {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1027,6 +1101,26 @@ label {
    ============================================ */
 .badge, .chip, .trade-player-chip, .pill-toggle, .manager-pill, .link-pill {
   border-radius: 999px;
+}
+
+.otc-btn {
+  border-radius: 10px;
+  border: none;
+  background: #38bdf8;
+  color: #ffffff;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.otc-btn:active {
+  transform: translateY(1px);
+}
+
+.otc-btn:hover {
+  background: #0ea5e9;
 }
 
 .chip button {
@@ -3243,6 +3337,7 @@ thead th {
   width: 100%;
   border: 1px solid #d8dee8;
   border-radius: 20px;
+  margin-bottom: 18px;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
@@ -3323,6 +3418,46 @@ thead th {
 
 .os-section-head {
   margin-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.os-section-head-content {
+  flex: 1;
+}
+
+.card-collapse-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.card-collapse-toggle:hover {
+  color: #374151;
+}
+
+.card-collapse-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+.card-collapsible-body {
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.card-collapsible-body.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .os-section-subtitle {
@@ -5842,6 +5977,26 @@ img, svg, canvas {
   .home-hero {
     grid-template-columns: 1fr;
   }
+
+  .card-collapse-toggle {
+    display: block;
+  }
+
+  .otc-shell {
+    padding: 14px;
+  }
+
+  .otc-page-head-controls {
+    gap: 8px;
+  }
+
+  .otc-side-panel {
+    padding: 14px;
+  }
+
+  .otc-movers-panel .otc-mini-section {
+    margin-bottom: 12px;
+  }
 }
 
 @media (max-width: 1450px) {
@@ -5925,27 +6080,100 @@ img, svg, canvas {
   }
 
   .top-nav {
-    align-items: flex-start;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+
+  .top-nav > div:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .league-switcher-dropdown {
+    min-width: 120px;
+    max-width: 180px;
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
+  .nav-toggle {
+    display: block;
+  }
+
+  .nav-links-wrapper {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
     flex-direction: column;
+    align-items: stretch;
+    padding: 8px;
+    gap: 4px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border-radius: 0 0 12px 12px;
+    max-height: 70vh;
+    overflow-y: auto;
   }
 
-  .top-nav > div:last-child {
-    justify-content: flex-start;
+  .nav-links-wrapper.nav-open {
+    display: flex;
   }
 
-  .history-recap-header {
-    flex-direction: column;
-    align-items: flex-start;
+  .nav-links-wrapper .nav-pill,
+  .nav-links-wrapper .logout-pill {
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
   }
 
-  .history-recap-controls {
+  .nav-links-wrapper .nav-pill:hover,
+  .nav-links-wrapper .logout-pill:hover {
+    background: var(--accent);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  }
+
+  /* League switcher in mobile menu */
+  .nav-links-wrapper .league-switcher {
     width: 100%;
-    flex-direction: column;
+    padding: 0 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
   }
 
-  .recap-team-dropdown,
-  .recap-generate-btn {
+  .nav-links-wrapper .league-switcher-dropdown {
     width: 100%;
+    max-width: none;
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 36px;
+  }
+
+  /* Utility row for refresh + notifications */
+  .nav-links-wrapper .utility-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+
+  .nav-links-wrapper .utility-row button,
+  .nav-links-wrapper .utility-row .changelog-bell-wrapper {
+    min-height: 32px;
   }
 }
 
@@ -5989,6 +6217,118 @@ img, svg, canvas {
   .adsbygoogle {
     margin: 10px auto;
   }
+
+  .otc-shell {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .otc-page-title {
+    font-size: 20px;
+  }
+
+  .otc-page-copy {
+    font-size: 12px;
+  }
+
+  .otc-viewer-toggle {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+
+  .otc-info-btn {
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .otc-team-card {
+    padding: 10px;
+  }
+
+  .otc-team-title {
+    font-size: 15px;
+  }
+
+  .otc-search-input {
+    font-size: 13px;
+    padding: 7px 9px;
+  }
+
+  .otc-side-panel {
+    padding: 10px;
+  }
+
+  .otc-side-title {
+    font-size: 14px;
+  }
+
+  .otc-mini-title {
+    font-size: 13px;
+  }
+
+  .otc-values-item {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .otc-summary-card, .otc-ai-card {
+    padding: 10px;
+  }
+
+  .otc-summary-title, .otc-ai-title {
+    font-size: 15px;
+  }
+
+  .otc-stat-label {
+    font-size: 10px;
+  }
+
+  .otc-stat-value {
+    font-size: 16px;
+  }
+
+  .chip {
+    padding: 3px 7px;
+    font-size: 11px;
+  }
+
+  .chip-remove {
+    width: 14px;
+    height: 14px;
+    font-size: 11px;
+  }
+
+  .otc-filter-chip {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  .otc-search-dropdown {
+    max-height: 280px;
+    font-size: 13px;
+  }
+
+  .otc-dropdown-item {
+    padding: 8px 10px;
+  }
+
+  .otc-balance-bar {
+    height: 8px;
+  }
+
+  .trade-bar-indicator {
+    width: 8px;
+    height: 20px;
+  }
+
+  .otc-ai-empty-title {
+    font-size: 14px;
+  }
+
+  .otc-ai-empty-sub {
+    font-size: 12px;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -6013,20 +6353,6 @@ img, svg, canvas {
 @media (max-width: 900px) {
   .top-nav {
     padding: 12px 14px;
-  }
-
-  .top-nav > div:first-child {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-  }
-
-  .top-nav > div:last-child {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    -webkit-overflow-scrolling: touch;
   }
 
   .site-logo {
@@ -6199,8 +6525,8 @@ img, svg, canvas {
 
   .card.teams-card {
     padding: 12px;
-    max-width: 280px;
-    width: 280px !important;
+    max-width: 100%;
+    width: 100% !important;
   }
 
   .team-header {
@@ -6575,8 +6901,8 @@ img, svg, canvas {
 
   .card.teams-card {
     padding: 12px;
-    max-width: 280px;
-    width: 280px !important;
+    max-width: 100%;
+    width: 100% !important;
   }
 
   .team-header {
@@ -6750,8 +7076,8 @@ img, svg, canvas {
 
   .card.teams-card {
     padding: 8px;
-    max-width: 260px;
-    width: 260px !important;
+    max-width: 100%;
+    width: 100% !important;
   }
 
   .team-header {
@@ -7199,9 +7525,27 @@ img, svg, canvas {
 }
 
 @media (max-width: 640px) {
+  .otc-shell {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
   .otc-page-head {
     flex-direction: column;
     align-items: flex-start;
+    gap: 12px;
+  }
+
+  .otc-page-title-wrap {
+    width: 100%;
+  }
+
+  .otc-page-title {
+    font-size: 22px;
+  }
+
+  .otc-page-copy {
+    font-size: 13px;
   }
 
   .otc-page-head-controls {
@@ -7213,18 +7557,76 @@ img, svg, canvas {
 
   .otc-viewer-toggles {
     width: 100%;
-    flex-direction: column;
     gap: 6px;
   }
 
   .otc-viewer-toggle {
-    width: 100%;
+    flex: 1;
     justify-content: center;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .otc-info-tooltip-wrapper {
+    position: static;
+  }
+
+  .otc-info-tooltip {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 90vw;
+    z-index: 9999;
+  }
+
+  .otc-side-panel {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .otc-side-title {
+    font-size: 15px;
+  }
+
+  .otc-mini-title {
+    font-size: 14px;
+  }
+
+  .otc-mini-sub {
+    font-size: 11px;
+  }
+
+  .otc-values-list {
+    gap: 6px;
+  }
+
+  .otc-values-item {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .otc-lower-grid {
+    gap: 12px;
+  }
+
+  .otc-summary-card, .otc-ai-card {
+    padding: 12px;
+    border-radius: 16px;
   }
 
   .otc-summary-head {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
+  }
+
+  .otc-summary-title, .otc-ai-title {
+    font-size: 16px;
+  }
+
+  .otc-summary-sub, .otc-ai-sub {
+    font-size: 11px;
   }
 
   .otc-summary-actions {
@@ -7237,8 +7639,29 @@ img, svg, canvas {
     min-width: 100%;
   }
 
-  .otc-clear-btn {
+  .otc-clear-btn, .otc-add-pick-btn {
     width: 100%;
+    font-size: 14px;
+    padding: 10px 16px;
+  }
+
+  .otc-balance-labels {
+    font-size: 10px;
+  }
+
+  .otc-verdict {
+    font-size: 13px;
+  }
+
+  .chip {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .chip-remove {
+    width: 16px;
+    height: 16px;
+    font-size: 12px;
   }
 }
 
@@ -7537,4 +7960,23 @@ img, svg, canvas {
   color: #ef4444;
   font-size: 13px;
   display: none;
+}
+
+/* ============================================
+   GM MEMO STYLES (using otc-ai classes to match trade analyzer)
+   ============================================ */
+.os-section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gm-memo-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #ef4444;
+  font-size: 13px;
+  padding: 12px;
+  margin-top: 15px;
 }

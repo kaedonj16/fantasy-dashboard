@@ -21,10 +21,10 @@ def _is_blank(v: Any) -> bool:
 
 def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
     players_index = load_relevant_index() or {}
-    value_table = build_value_table_for_usage() or {}
 
-    print(f"[engine_values] relevant index size: {len(players_index)}")
-    print(f"[engine_values] value table size: {len(value_table)}")
+    # CRITICAL FIX: Generate both 1QB and Superflex engine values
+    value_table_1qb = build_value_table_for_usage(league_type="1QB") or {}
+    value_table_sf = build_value_table_for_usage(league_type="Superflex") or {}
 
     rows = []
     skipped = {
@@ -35,7 +35,10 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
         "blank_value": 0,
     }
 
-    for pid, val in value_table.items():
+    # Combine both value tables
+    all_pids = set(value_table_1qb.keys()) | set(value_table_sf.keys())
+
+    for pid in all_pids:
         meta = players_index.get(str(pid), {}) or {}
         if not meta:
             skipped["missing_meta"] += 1
@@ -54,12 +57,17 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
         if _is_blank(team):
             skipped["blank_team"] += 1
             continue
-        if val is None:
+
+        val_1qb = value_table_1qb.get(pid)
+        val_sf = value_table_sf.get(pid)
+
+        if val_1qb is None and val_sf is None:
             skipped["blank_value"] += 1
             continue
 
         try:
-            engine_value = float(val)
+            engine_value_1qb = float(val_1qb) if val_1qb is not None else 0.0
+            engine_value_sf = float(val_sf) if val_sf is not None else 0.0
         except Exception:
             skipped["blank_value"] += 1
             continue
@@ -70,7 +78,8 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
                 "name": str(name).strip(),
                 "position": str(position).strip(),
                 "team": str(team).strip(),
-                "engine_value": round(engine_value, 1),
+                "engine_value": round(engine_value_1qb, 1),
+                "sf_engine_value": round(engine_value_sf, 1),  # CRITICAL FIX: Separate Superflex column
             }
         )
 
@@ -104,13 +113,10 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
     with out_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["player_id", "name", "position", "team", "engine_value"],
+            fieldnames=["player_id", "name", "position", "team", "engine_value", "sf_engine_value"],
         )
         writer.writeheader()
         writer.writerows(rows)
-
-    print(f"[engine_values] skipped={skipped}")
-    print(f"[engine_values] Wrote {len(rows)} rows -> {out_csv}")
 
 
 if __name__ == "__main__":
