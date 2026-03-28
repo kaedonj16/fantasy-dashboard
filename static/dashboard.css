@@ -530,8 +530,9 @@ ul {
 .changelog-dropdown {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
+  right: 0;
   width: 320px;
+  max-width: calc(100vw - 32px);
   background: var(--card);
   border: 0.5px solid var(--border);
   border-radius: 10px;
@@ -662,7 +663,7 @@ ul {
 }
 
 .nav-header-main .nav-toggle {
-  display: block;
+  display: none;
   background: none;
   border: none;
   font-size: 28px;
@@ -6097,7 +6098,8 @@ img, svg, canvas {
     padding: 5px 8px;
   }
 
-  .nav-toggle {
+  .nav-toggle,
+  .nav-header-main .nav-toggle {
     display: block;
   }
 
@@ -6425,10 +6427,22 @@ img, svg, canvas {
   }
 
   .changelog-dropdown {
-    left: auto;
-    right: 0;
+    position: fixed;
+    top: auto;
+    bottom: 16px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
     max-width: calc(100vw - 32px);
     width: 300px;
+    max-height: 60vh;
+    overflow-y: auto;
+    z-index: 10001;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .changelog-bell-wrapper {
+    position: static;
   }
 
   .otc-info-tooltip {

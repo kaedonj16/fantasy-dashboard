@@ -684,8 +684,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         return (
             "<nav class='top-nav'>"
-            "  <div><img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/></div>"
-            "  <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
+            "  <div class='nav-header-main'>"
+            "    <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+            "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
+            "  </div>"
             "  <div class='nav-links-wrapper'>"
             f"    {''.join(pills)}"
             "  </div>"
