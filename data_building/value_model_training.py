@@ -1050,8 +1050,13 @@ def rewrite_value_table_with_model() -> Path:
             # Fallback to ML model for SF (same as 1QB for now)
             sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
-        # Position-specific adjustments: TEs capped at ~800
+        # Non-QB players are not less valuable in SF — QBs go up, everyone else stays the same.
+        # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
         position = player.get("position")
+        if position != "QB":
+            sf_value = max(sf_value, final_value)
+
+        # Position-specific adjustments: TEs capped at ~800
         if position == "TE":
             # Apply 1.35x multiplier to TEs (allows top TEs to reach ~800), then cap
             final_value = min(final_value * 1.35, 800.0)
