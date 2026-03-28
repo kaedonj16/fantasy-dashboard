@@ -18,10 +18,9 @@ from dashboard_services.api import (
     _avatar_url,
     get_nfl_state,
     avatar_from_users,
-    get_transactions,
 )
 from dashboard_services.matchups import build_matchup_preview
-from dashboard_services.platform_api import get_matchups
+from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
 from dashboard_services.players import build_roster_display_maps
 from utils.utils import safe_owner_name
 
@@ -623,11 +622,16 @@ def compute_streaks(df_weekly: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def get_transactions_by_week(league_id: str, season_weeks: list[int]) -> dict[int, list[dict]]:
+def get_transactions_by_week(
+    league_id: str,
+    season_weeks: list[int],
+    platform: str = "sleeper",
+    season: int = 0,
+) -> dict[int, list[dict]]:
     results: dict[int, list[dict]] = {}
     for w in season_weeks:
         try:
-            tx = get_transactions(league_id=league_id, week=w)
+            tx = platform_get_transactions(platform=platform, league_id=league_id, week=w, season=season)
             results[w] = tx if isinstance(tx, list) else []
         except Exception as e:
             print(f"[transactions] Week {w} failed → {e}")
@@ -654,7 +658,7 @@ def build_week_activity(
     season_weeks = list(range(1, 19))
 
     roster_name, roster_avatar = build_roster_display_maps(league_id, platform, season)
-    tx_by_week = get_transactions_by_week(league_id, season_weeks) or {}
+    tx_by_week = get_transactions_by_week(league_id, season_weeks, platform=platform, season=int(season)) or {}
     rows: list[dict] = []
 
     # Fast path: no transactions at all

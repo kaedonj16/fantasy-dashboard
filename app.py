@@ -65,6 +65,7 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_traded_picks,
     get_users,
+    sync_league_globals,
 )
 from dashboard_services.players import get_players_map
 from dashboard_services.providers.espn_api import safe_float
@@ -165,7 +166,7 @@ FORM_BODY = """
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn" disabled data-tooltip="ESPN integration coming soon!">ESPN (Coming Soon)</button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
           </div>
         </div>
 
@@ -181,6 +182,23 @@ FORM_BODY = """
           </div>
         </div>
 
+        <!-- ESPN Flow -->
+        <div id="espnFlow" style="display:none;">
+          <div class="row">
+            <label for="espnLeagueIdInput">ESPN League ID</label>
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 123456789" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional, to track your team)</span></label>
+            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row">
+            <button type="button" id="espnSubmitBtn">Go to Dashboard</button>
+          </div>
+          <p class="hint" style="margin-top:6px;">
+            ESPN private leagues require <code>ESPN_S2</code> and <code>ESPN_SWID</code> environment variables set on the server.
+          </p>
+        </div>
 
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -205,7 +223,7 @@ FORM_BODY = """
           {% endif %}
         </form>
 
-        <p class="hint">
+        <p class="hint" id="sleeperHint">
           Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
         </p>
       </div>
@@ -394,10 +412,13 @@ def normalize_sleeper_username(value: str) -> str:
 
 def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str) -> Union[Dict, None]:
     """
-    Resolve a Sleeper username to:
+    Resolve a Sleeper username (or ESPN team/owner name) to:
       - user_id
       - roster_id
       - display_name / team name
+
+    For ESPN leagues the `username` field holds the owner's display_name or team_name
+    because ESPN doesn't use Sleeper-style usernames.
     """
     wanted = normalize_sleeper_username(username)
     if not wanted:
@@ -405,8 +426,14 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
 
     matched_user = None
     for u in users or []:
-        uname = normalize_sleeper_username(u.get("display_name") or u.get("username") or "")
-        if uname == wanted:
+        # Check display_name, username, and ESPN team_name (in metadata)
+        meta = u.get("metadata") or {}
+        candidates = [
+            normalize_sleeper_username(u.get("display_name") or ""),
+            normalize_sleeper_username(u.get("username") or ""),
+            normalize_sleeper_username(meta.get("team_name") or ""),
+        ]
+        if wanted in candidates:
             matched_user = u
             break
 
@@ -424,17 +451,24 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
             matched_roster = r
             break
 
+    meta_u = matched_user.get("metadata") or {}
     if not matched_roster:
         return {
             "viewer_username": username,
             "viewer_user_id": user_id,
             "viewer_roster_id": None,
-            "viewer_team_name": matched_user.get("display_name") or matched_user.get("username") or "Unknown Team",
+            "viewer_team_name": (
+                meta_u.get("team_name")
+                or matched_user.get("display_name")
+                or matched_user.get("username")
+                or "Unknown Team"
+            ),
         }
 
     metadata = matched_roster.get("metadata") or {}
     team_name = (
             metadata.get("team_name")
+            or meta_u.get("team_name")
             or matched_user.get("display_name")
             or matched_user.get("username")
             or f"Roster {matched_roster.get('roster_id')}"
@@ -977,6 +1011,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     players_index = load_players_index()
     teams_index = load_teams_index()
     players_map = get_players_map(players)
+
+    # Populate league-wide globals (scoring, roster positions, etc.)
+    # For Sleeper these were already populated by get_league() above.
+    # For ESPN we need an explicit sync step.
+    sync_league_globals(platform, resolved_league_id, season)
 
     # League settings
     scoring_settings = get_effective_scoring_settings()
@@ -1672,6 +1711,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     ctx["roster_map"] = roster_map
 
     # ---------- League settings / refs that can matter to multiple pages ----------
+    sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
         ctx["scoring_settings"] = get_effective_scoring_settings()
     except Exception:
@@ -5419,7 +5459,8 @@ def index():
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
-        # If username provided, set viewer session
+        # If username/team-name provided, set viewer session
+        # For ESPN leagues the "username" field holds the team owner's name or team name
         if username:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
             viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
@@ -5427,13 +5468,15 @@ def index():
             if viewer:
                 save_viewer_session(viewer)
             else:
-                body_html = render_template_string(
-                    FORM_BODY,
-                    username=username,
-                    viewed_season=viewed_season,
-                    error="Could not match that username to a team in this league.",
-                )
-                return render_page("BR Fantasy Dashboard", None, "home", body_html)
+                # For ESPN, skip the hard error — viewer matching is optional
+                if platform != "espn":
+                    body_html = render_template_string(
+                        FORM_BODY,
+                        username=username,
+                        viewed_season=viewed_season,
+                        error="Could not match that username to a team in this league.",
+                    )
+                    return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -6129,6 +6172,37 @@ def api_sleeper_user_leagues():
 def api_changelog():
     """Return the changelog entries."""
     return jsonify(CHANGELOG)
+
+
+@app.route("/api/espn-validate-league")
+def api_espn_validate_league():
+    """
+    Validate an ESPN league ID and return basic league info.
+    Used by the landing page ESPN flow.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id or not league_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid ESPN league ID. Must be a number."}), 400
+
+    nfl_state = get_nfl_state() or {}
+    season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+
+    try:
+        from dashboard_services.providers.espn_api import get_league as espn_get_league
+        info = espn_get_league(season, league_id)
+        return jsonify({
+            "ok": True,
+            "league": {
+                "league_id": info.get("league_id"),
+                "name": info.get("name") or f"ESPN League {league_id}",
+                "season": info.get("season"),
+            },
+        })
+    except Exception as e:
+        msg = str(e)
+        if "Missing required env var" in msg:
+            return jsonify({"ok": False, "error": "Server not configured for ESPN (missing ESPN_S2/ESPN_SWID)."}), 503
+        return jsonify({"ok": False, "error": f"Could not load ESPN league: {msg}"}), 500
 
 
 if __name__ == "__main__":
