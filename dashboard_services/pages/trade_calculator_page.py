@@ -48,7 +48,20 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         <div class="otc-shell">
           <div class="otc-page-head">
             <div class="otc-page-title-wrap">
-              <h1 class="otc-page-title">Trade Calculator</h1>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h1 class="otc-page-title">Trade Calculator</h1>
+                <div class="otc-info-tooltip-wrapper">
+                  <button type="button" class="otc-info-btn" id="otcInfoBtn">ⓘ</button>
+                  <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">
+                    <div class="otc-info-tooltip-header">BR Value Model</div>
+                    <div class="otc-info-tooltip-body">
+                      <p>Player values derive from a hybrid approach combining production metrics, age-adjusted projections, and market consensus data.</p>
+                      <p>The model incorporates positional scarcity adjustments, role stability indicators, and capital investment signals to generate normalized valuations on a standardized scale.</p>
+                      <p>Values represent long-term dynasty asset worth rather than weekly fantasy output.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <p class="otc-page-copy">
                 Compare both sides of a deal using BR values, balance, and roster-building context.
               </p>
@@ -73,17 +86,6 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                   <input type="radio" name="leagueType" value="sf">
                   <span>Superflex</span>
                 </label>
-              </div>
-              <div class="otc-info-tooltip-wrapper">
-                <button type="button" class="otc-info-btn" id="otcInfoBtn">ⓘ</button>
-                <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">
-                  <div class="otc-info-tooltip-header">BR Value Model</div>
-                  <div class="otc-info-tooltip-body">
-                    <p>Player values derive from a hybrid approach combining production metrics, age-adjusted projections, and market consensus data.</p>
-                    <p>The model incorporates positional scarcity adjustments, role stability indicators, and capital investment signals to generate normalized valuations on a standardized scale.</p>
-                    <p>Values represent long-term dynasty asset worth rather than weekly fantasy output.</p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

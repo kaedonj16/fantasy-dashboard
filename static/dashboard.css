@@ -7540,8 +7540,17 @@ img, svg, canvas {
     width: 100%;
   }
 
+  .otc-page-title-wrap > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .otc-page-title {
     font-size: 22px;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .otc-page-copy {
@@ -7551,24 +7560,38 @@ img, svg, canvas {
   .otc-page-head-controls {
     width: 100%;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: stretch;
+    gap: 6px;
   }
 
   .otc-viewer-toggles {
     width: 100%;
     gap: 6px;
+    margin-left: 0 !important;
   }
 
   .otc-viewer-toggle {
     flex: 1;
     justify-content: center;
-    font-size: 13px;
-    padding: 8px 12px;
+    font-size: 11px;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .otc-viewer-toggle input[type="radio"] {
+    width: 14px;
+    height: 14px;
   }
 
   .otc-info-tooltip-wrapper {
     position: static;
+  }
+
+  .otc-info-btn {
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
   }
 
   .otc-info-tooltip {
