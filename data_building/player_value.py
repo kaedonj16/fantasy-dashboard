@@ -577,39 +577,45 @@ def _apply_qb_market_compression(
         elite_soft = elite ** 0.80
         ceiling_soft = ceiling ** 0.90
 
-        # Adjust compression based on league type
+        youth_upside = (per_pid.get(pid, {}) or {}).get("youth_upside", 0.0)
+
+        # Adjust compression based on league type.
+        # Rushing is a meaningful signal in all formats — mobile QBs get explicit
+        # credit because rushing production and rushing floor are dynasty differentiators.
         if league_type == "1QB":
-            # Standard 1QB compression (heavy)
+            # Heavy compression; rushing opens the cap for mobile QBs
             base = 0.42
             elite_boost = 0.22 * elite_soft
             ceiling_boost = 0.05 * ceiling_soft
-            rushing_boost = 0.13 * rush_norm
+            rushing_boost = 0.20 * rush_norm      # raised: rushing matters more
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.74)
+            qb_keep = min(qb_keep, 0.82)          # raised cap to reward top mobile QBs
         elif league_type == "Superflex":
-            # Minimal compression for Superflex
-            base = 0.90
-            elite_boost = 0.06 * elite_soft
-            rushing_boost = 0.04 * rush_norm
-            qb_keep = base + elite_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.98)
+            # QBs must be BOOSTED above their base score to top the SF board.
+            # Elite QBs rise via elite_boost, young QBs via youth_boost,
+            # mobile QBs via rushing_boost — all three axes matter independently.
+            base = 1.75
+            elite_boost = 0.55 * elite_soft       # +0.55 for Allen/Mahomes tier
+            youth_boost = 0.40 * youth_upside      # +0.40 for Maye/Daniels tier
+            rushing_boost = 0.18 * rush_norm       # +0.18 for Lamar/Allen rushing
+            qb_keep = base + elite_boost + youth_boost + rushing_boost
+            qb_keep = min(qb_keep, 2.50)
         elif league_type == "2QB":
-            # Boost QBs for 2QB leagues
             base = 1.10
             elite_boost = 0.12 * elite_soft
-            rushing_boost = 0.10 * rush_norm
+            rushing_boost = 0.18 * rush_norm      # raised to match importance
             qb_keep = base + elite_boost + rushing_boost
-            qb_keep = min(qb_keep, 1.30)
+            qb_keep = min(qb_keep, 1.38)
         else:
             # Default to 1QB
             base = 0.42
             elite_boost = 0.22 * elite_soft
             ceiling_boost = 0.05 * ceiling_soft
-            rushing_boost = 0.13 * rush_norm
+            rushing_boost = 0.20 * rush_norm
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.74)
+            qb_keep = min(qb_keep, 0.82)
 
-        final_scores[pid] = _clip(score * qb_keep, 0.0, 2.0)  # Allow >1.0 for 2QB
+        final_scores[pid] = _clip(score * qb_keep, 0.0, 3.0)  # Allow >1.0 for SF/2QB
 
     return final_scores
 
