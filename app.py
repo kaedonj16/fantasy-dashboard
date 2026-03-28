@@ -293,9 +293,30 @@ BASE_HTML = """
   <body>
     <div id="app-scale">
       {nav}
+
+      <!-- Top Banner Ad -->
+      <div class="ad-container ad-top-banner">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-9164153092633845"
+             data-ad-slot="YOUR_AD_SLOT_ID_1"
+             data-ad-format="horizontal"
+             data-full-width-responsive="true"></ins>
+      </div>
+
       <main id="page-root" class="overview-layout">
         {body}
       </main>
+
+      <!-- Bottom Content Ad -->
+      <div class="ad-container ad-bottom-content">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-9164153092633845"
+             data-ad-slot="YOUR_AD_SLOT_ID_2"
+             data-ad-format="horizontal"
+             data-full-width-responsive="true"></ins>
+      </div>
     </div>
 
     <footer class="site-footer">
@@ -317,7 +338,51 @@ BASE_HTML = """
       </div>
     </footer>
 
+    <!-- Cookie Consent Banner -->
+    <div id="cookieConsent" class="cookie-consent" style="display: none;">
+      <div class="cookie-consent-content">
+        <p>
+          We use cookies to improve your experience and show relevant ads. By continuing to use this site, you consent to our use of cookies.
+          <a href="{privacy_url}" target="_blank">Learn more</a>
+        </p>
+        <div class="cookie-consent-buttons">
+          <button id="acceptCookies" class="cookie-btn cookie-btn-accept">Accept</button>
+          <button id="declineCookies" class="cookie-btn cookie-btn-decline">Decline</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/static/app.js"></script>
+    <script>
+      // Initialize AdSense ads
+      (adsbygoogle = window.adsbygoogle || []).push({{}});
+      (adsbygoogle = window.adsbygoogle || []).push({{}});
+
+      // Cookie consent handling
+      (function() {{
+        const consentKey = 'brfantasy_cookie_consent';
+        const consentBanner = document.getElementById('cookieConsent');
+        const acceptBtn = document.getElementById('acceptCookies');
+        const declineBtn = document.getElementById('declineCookies');
+
+        // Check if user has already made a choice
+        const consent = localStorage.getItem(consentKey);
+        if (!consent) {{
+          consentBanner.style.display = 'block';
+        }}
+
+        acceptBtn.addEventListener('click', function() {{
+          localStorage.setItem(consentKey, 'accepted');
+          consentBanner.style.display = 'none';
+        }});
+
+        declineBtn.addEventListener('click', function() {{
+          localStorage.setItem(consentKey, 'declined');
+          consentBanner.style.display = 'none';
+          // Optionally disable ads for users who decline
+        }});
+      }})();
+    </script>
   </body>
 </html>
 """
@@ -4850,8 +4915,45 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, l
               </p>
             </div>
 
+            <div class="static-section">
+              <div class="static-section-title">Advertising</div>
+              <p>
+                This site displays advertisements through Google AdSense. Google uses cookies
+                to serve ads based on your prior visits to this site or other websites.
+                Google's use of advertising cookies enables it and its partners to serve ads
+                based on your visit to this site and/or other sites on the Internet.
+              </p>
+              <p style="margin-top:8px;">
+                You may opt out of personalized advertising by visiting
+                <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">
+                  Google's Ads Settings
+                </a> or
+                <a href="http://www.aboutads.info/choices/" target="_blank" rel="noopener">
+                  www.aboutads.info
+                </a>.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Cookies</div>
+              <p>
+                We use cookies to maintain your login session and improve your experience.
+                Third-party vendors, including Google, also use cookies to serve ads based
+                on your browsing activity. By using this site, you consent to the use of
+                cookies as described in this policy.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Third-Party Links</div>
+              <p>
+                Our site may contain links to external websites. We are not responsible
+                for the privacy practices or content of these third-party sites.
+              </p>
+            </div>
+
             <div class="highlight-box">
-              Have questions or want your league data removed?  
+              Have questions or want your league data removed?
               Reach out using the Contact page.
             </div>
 

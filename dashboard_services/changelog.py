@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-03-27",
+        "tag": "new",
+        "text": "Team Reports: AI-powered Front Office Briefings analyze your roster, trade opportunities, and league standings",
+        "link": "/dashboard"
+    },
+    {
         "date": "2026-03-26",
         "tag": "new",
         "text": "Trade Calculator: AI analysis now personalizes to your roster and team direction",
