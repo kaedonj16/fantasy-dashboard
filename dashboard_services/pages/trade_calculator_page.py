@@ -1,10 +1,23 @@
 from typing import Optional
 
+SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
-def build_trade_calculator_body(league_id: Optional[str], season: Optional[int]) -> str:
+
+def build_trade_calculator_body(
+    league_id: Optional[str],
+    season: Optional[int],
+    num_teams: Optional[int] = None,
+) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
     is_guest = not league_id
+
+    # Clamp logged-in league size to nearest supported value
+    if num_teams and not is_guest:
+        closest = min(SUPPORTED_LEAGUE_SIZES, key=lambda s: abs(s - int(num_teams)))
+        num_teams_val = closest
+    else:
+        num_teams_val = 10  # default for guest
 
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
@@ -37,6 +50,21 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
 
     is_guest_str = 'true' if is_guest else 'false'
 
+    # League size control: selector in guest mode, hidden input when logged in
+    if is_guest:
+        size_options = ""
+        for s in SUPPORTED_LEAGUE_SIZES:
+            checked = 'checked' if s == num_teams_val else ''
+            size_options += f'<label class="otc-viewer-toggle"><input type="radio" name="leagueSize" value="{s}" {checked}><span>{s}-team</span></label>\n'
+        league_size_block = f"""
+              <div class="otc-viewer-toggles" id="leagueSizeControl" style="margin-left: 16px;">
+                {size_options}
+              </div>"""
+        league_size_hidden = ""
+    else:
+        league_size_block = ""
+        league_size_hidden = f'<input type="hidden" id="leagueSizeInput" value="{num_teams_val}">'
+
     return f"""
     <div class="otc-layout">
       <main class="otc-main">
@@ -44,6 +72,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         <input type="hidden" id="seasonInput" value="{season_val}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
+        {league_size_hidden}
 
         <div class="otc-shell">
           <div class="otc-page-head">
@@ -87,6 +116,7 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                   <span>Superflex</span>
                 </label>
               </div>
+              {league_size_block}
             </div>
           </div>
 

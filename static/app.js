@@ -788,12 +788,24 @@ window.initTradePage = function initTradePage(root = document) {
     return root.querySelector('input[name="leagueType"]:checked')?.value || "1qb";
   }
 
+  function getLeagueSize() {
+    // Logged-in leagues: use the hidden input injected by the server
+    const hidden = root.querySelector("#leagueSizeInput");
+    if (hidden && hidden.value) return parseInt(hidden.value, 10) || 10;
+    // Guest mode: read from the size radio group
+    const checked = root.querySelector('input[name="leagueSize"]:checked');
+    return parseInt(checked?.value || "10", 10);
+  }
+
   function getPlayerValue(player) {
     const leagueType = getLeagueType();
+    const size = getLeagueSize();
     if (leagueType === "sf") {
-      return Number(player.sf_value || player.value || 0);
+      const key = size === 10 ? "sf_value" : `sf_value_${size}`;
+      return Number(player[key] ?? player.sf_value ?? player.value ?? 0);
     }
-    return Number(player.value || 0);
+    const key = size === 10 ? "value" : `value_${size}`;
+    return Number(player[key] ?? player.value ?? 0);
   }
 
   function onLeagueTypeChange() {
@@ -1258,6 +1270,18 @@ window.initTradePage = function initTradePage(root = document) {
     });
   }
 
+  function bindLeagueSizeControls() {
+    root.querySelectorAll('input[name="leagueSize"]').forEach(el => {
+      bindOnce(el, "tradeLeagueSizeChange", "change", () => {
+        // Same refresh as league type change — all values need recalculating
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+      });
+    });
+  }
+
   function bindViewerSideControls() {
     root.querySelectorAll('input[name="viewerSide"]').forEach(el => {
       bindOnce(el, "tradeViewerSideChange", "change", () => {
@@ -1627,6 +1651,7 @@ window.initTradePage = function initTradePage(root = document) {
     setupSearch("A");
     setupSearch("B");
     bindLeagueTypeControls();
+    bindLeagueSizeControls();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();

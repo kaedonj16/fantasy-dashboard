@@ -5310,7 +5310,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         league_id_safe = ctx.get("league_id") or league_id
         season_safe = int(ctx.get("season") or season or datetime.now().year)
-        body = build_trade_calculator_body(league_id_safe, season_safe)
+        num_teams = ctx.get("total_rosters") or None
+        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
@@ -5722,7 +5723,8 @@ def api_refresh_page():
         elif page == "trade":
             league_id_safe = ctx.get("league_id") or league_id
             season_safe = int(ctx.get("season") or season or datetime.now().year)
-            body_html = build_trade_calculator_body(league_id_safe, season_safe)
+            num_teams = ctx.get("total_rosters") or None
+            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams)
 
         else:
             body_html = ""
