@@ -693,6 +693,7 @@ def _apply_te_market_compression(
 def build_value_table_for_usage(
         league_type: str = "1QB",
         include_confidence: bool = False,
+        num_teams: int = NUM_TEAMS,
 ):
     """
     Dynasty value formula using:
@@ -1127,7 +1128,7 @@ def build_value_table_for_usage(
 
         lst_sorted = sorted(lst_pos, key=lambda x: x[1], reverse=True)
 
-        starter_slots = STARTERS[pos] * NUM_TEAMS
+        starter_slots = STARTERS[pos] * num_teams
         replacement_idx = int(starter_slots * REPLACEMENT_MULT[pos])
         replacement_idx = max(0, min(replacement_idx, len(lst_sorted) - 1))
         starter_idx = max(0, min(starter_slots - 1, len(lst_sorted) - 1))

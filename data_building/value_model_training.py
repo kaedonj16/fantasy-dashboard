@@ -947,20 +947,35 @@ def rewrite_value_table_with_model() -> Path:
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
 
-    # Load sf_engine_values from engine_values CSV
+    # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
     engine_values_path = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
     sf_engine_map: dict[str, float] = {}
+    # Per-league-size engine maps: {size: {pid: value}}
+    engine_size_map: dict[int, dict[str, float]] = {}
+    sf_engine_size_map: dict[int, dict[str, float]] = {}
+    LEAGUE_SIZES = [8, 10, 12, 14]
+    for n in LEAGUE_SIZES:
+        engine_size_map[n] = {}
+        sf_engine_size_map[n] = {}
     if engine_values_path.exists():
         try:
             engine_df = pd.read_csv(engine_values_path)
-            if "player_id" in engine_df.columns and "sf_engine_value" in engine_df.columns:
-                for _, row in engine_df.iterrows():
-                    pid = str(row.get("player_id"))
-                    sf_eng_val = row.get("sf_engine_value")
-                    if pid and pd.notna(sf_eng_val):
-                        sf_engine_map[pid] = float(sf_eng_val)
+            for _, row in engine_df.iterrows():
+                pid = str(row.get("player_id"))
+                if not pid:
+                    continue
+                sf_eng_val = row.get("sf_engine_value")
+                if pd.notna(sf_eng_val):
+                    sf_engine_map[pid] = float(sf_eng_val)
+                for n in LEAGUE_SIZES:
+                    col_1qb = f"engine_value_{n}"
+                    col_sf = f"sf_engine_value_{n}"
+                    if col_1qb in engine_df.columns and pd.notna(row.get(col_1qb)):
+                        engine_size_map[n][pid] = float(row[col_1qb])
+                    if col_sf in engine_df.columns and pd.notna(row.get(col_sf)):
+                        sf_engine_size_map[n][pid] = float(row[col_sf])
         except Exception as e:
-            print(f"[ERROR] Failed to load sf_engine_values: {e}")
+            print(f"[ERROR] Failed to load engine_values: {e}")
 
     # Load value_2qb from dynastyprocess (need to match by name+team)
     dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
@@ -1050,7 +1065,25 @@ def rewrite_value_table_with_model() -> Path:
                 age = row["fc_age"]
 
         name = player.get("name")
-        cleaned_assets.append({
+
+        # Per-league-size values: scale the blended model value by the ratio
+        # of engine values between the target size and the default 10-team size.
+        # This preserves vendor-consensus anchoring while adjusting for scarcity.
+        eng_base = engine_size_map[10].get(pid) or 0.0
+        sf_eng_base = sf_engine_size_map[10].get(pid) or 0.0
+        size_values: dict[str, float] = {}
+        sf_size_values: dict[str, float] = {}
+        for n in LEAGUE_SIZES:
+            if n == 10:
+                continue
+            eng_n = engine_size_map[n].get(pid) or 0.0
+            sf_eng_n = sf_engine_size_map[n].get(pid) or 0.0
+            ratio = (eng_n / eng_base) if eng_base > 0 else 1.0
+            sf_ratio = (sf_eng_n / sf_eng_base) if sf_eng_base > 0 else 1.0
+            size_values[f"value_{n}"] = round(min(float(final_value) * ratio, 999.9), 1)
+            sf_size_values[f"sf_value_{n}"] = round(min(float(sf_value) * sf_ratio, 999.9), 1)
+
+        asset = {
             "id": player.get("id"),
             "name": name,
             "team": player.get("team"),
@@ -1063,7 +1096,10 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
-        })
+        }
+        asset.update(size_values)
+        asset.update(sf_size_values)
+        cleaned_assets.append(asset)
 
     pick_values = load_pick_value_table() or {}
 
@@ -1121,7 +1157,7 @@ def rewrite_value_table_with_model() -> Path:
         else:
             continue
 
-        cleaned_assets.append({
+        pick_asset = {
             "id": key,
             "name": name,
             "team": "Pick",
@@ -1134,7 +1170,13 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
-        })
+        }
+        # Draft picks are not scarcity-sensitive to league size — same value in all sizes
+        for n in LEAGUE_SIZES:
+            if n != 10:
+                pick_asset[f"value_{n}"] = float(val)
+                pick_asset[f"sf_value_{n}"] = float(val)
+        cleaned_assets.append(pick_asset)
 
     pos_to_indices: dict[str, list[int]] = {}
 
