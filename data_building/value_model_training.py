@@ -551,9 +551,9 @@ def train_trade_value_model(
     # (They're not available during inference from usage_table.json)
 
     weights = np.vstack([
-        np.where(~np.isnan(fc_norm.values), 0.50, 0.0),
-        np.where(~np.isnan(dp_norm.values), 0.35, 0.0),
-        np.where(~np.isnan(engine_norm.values), 0.15, 0.0),
+        np.where(~np.isnan(fc_norm.values), 0.35, 0.0),
+        np.where(~np.isnan(dp_norm.values), 0.25, 0.0),
+        np.where(~np.isnan(engine_norm.values), 0.40, 0.0),
     ])
 
     vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
@@ -742,10 +742,10 @@ def train_trade_value_model(
     gbr = GradientBoostingRegressor(
         n_estimators=250,
         learning_rate=0.03,
-        max_depth=2,
+        max_depth=3,
         random_state=random_state,
         subsample=0.85,
-        min_samples_leaf=8,
+        min_samples_leaf=6,
     )
 
     model = Pipeline(

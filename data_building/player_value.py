@@ -6,7 +6,7 @@ from typing import Dict, Optional
 from dashboard_services.api import get_nfl_state
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
-from utils.utils import load_usage_table
+from utils.utils import load_usage_table, load_teams_index
 
 CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 
@@ -120,7 +120,7 @@ def horizon_age_factor(pos: str, age: Optional[float]) -> float:
     if age is None:
         age = 26.0
 
-    weights = [0.45, 0.35, 0.20]
+    weights = [0.20, 0.35, 0.45]
     vals = [_age_factor(pos, float(age) + i) for i in range(len(weights))]
     base = sum(w * v for w, v in zip(weights, vals)) / sum(weights)
     return base ** 1.10
@@ -317,20 +317,69 @@ def _investment_score(invest: dict, pos: str, age: Optional[float]) -> float:
         guaranteed_pct /= 100.0
 
     years_score = _clip(years_to_fa / {"QB": 4.0, "RB": 3.0, "WR": 4.0, "TE": 4.0}.get(pos, 4.0))
+    # apy_pct and guaranteed_pct are already position-normalized percentiles,
+    # making them more meaningful signals than raw absolute contract values.
+    # Shift weight from absolute contract_score/team_investment toward these.
     raw = (
             0.22 * _clip(draft_capital / 1000.0) +
             0.18 * _clip(draft_capital_pct) +
-            0.18 * _clip(contract_score / 1000.0) +
-            0.18 * _clip(team_investment / 1000.0) +
+            0.13 * _clip(contract_score / 1000.0) +
+            0.13 * _clip(team_investment / 1000.0) +
             0.12 * years_score +
-            0.07 * _clip(apy_pct) +
-            0.05 * _clip(guaranteed_pct)
+            0.12 * _clip(apy_pct) +
+            0.10 * _clip(guaranteed_pct)
     )
 
     if age is not None and age <= {"QB": 27, "RB": 24, "WR": 26, "TE": 26}.get(pos, 26):
         raw *= 1.06
 
     return _clip(raw)
+
+
+def _value_confidence(p: dict, games: float) -> float:
+    """
+    Confidence in a player's value estimate [0, 1].
+    Combines sample size, historical availability, and role clarity.
+    Low confidence = small sample, injury-prone, or unclear role.
+    """
+    sample_conf = _smoothstep01(games / 14.0)
+    avail_conf = p.get("avail", 0.75)
+    role_conf = p.get("role_security", 0.5)
+    return _clip(0.35 * sample_conf + 0.35 * avail_conf + 0.30 * role_conf)
+
+
+def _youth_opportunity_boost(pos: str, age: Optional[float], hist: dict, usage: dict, invest: dict) -> float:
+    """
+    Upside signal for young players with a clear growing role.
+    Highest for rookies/sophomores on a strong trajectory with draft capital backing.
+    Returns 0 for players past their positional peak.
+    """
+    if age is None:
+        age = 26.0
+
+    peak_ages = {"QB": 28.5, "RB": 23.5, "WR": 25.0, "TE": 26.5}
+    peak = peak_ages.get(pos, 25.0)
+
+    # No upside credit for players more than 1.5 years past peak
+    if age > peak + 1.5:
+        return 0.0
+
+    seasons = _safe_float(hist.get("seasons_played"), 0.0)
+    youth_factor = _clip(1.0 - (seasons / 4.0))
+
+    trend_tgt = _safe_float(hist.get("target_share_trend_1yr"), 0.0)
+    trend_ppg = _safe_float(hist.get("ppg_trend_1yr"), 0.0)
+    trend_factor = _clip(
+        0.5 * _clip((trend_tgt / 0.08 + 1.0) / 2.0) +
+        0.5 * _clip((trend_ppg / 4.0 + 1.0) / 2.0)
+    )
+
+    draft_cap_pct = _safe_float(invest.get("draft_capital_pos_pct"), 0.0)
+    if draft_cap_pct > 1.5:
+        draft_cap_pct /= 100.0
+    draft_factor = _clip(draft_cap_pct)
+
+    return _clip(0.35 * youth_factor + 0.35 * trend_factor + 0.30 * draft_factor)
 
 
 def _trend_score(hist: dict, pos: str) -> float:
@@ -363,12 +412,29 @@ def _risk_penalty(
         hist_conf: float,
         role_security: float,
         seasons_played: float,
+        games_last_3yr: float = 0.0,
 ) -> float:
     age_risk = 1.0 - _age_factor(pos, age)
     sample_risk = 1.0 - _clip(0.60 * current_conf + 0.40 * hist_conf)
     role_risk = 1.0 - role_security
-    injury_risk = 1.0 - avail
     exp_risk = 1.0 - _clip(seasons_played / 3.0)
+
+    # Distinguish chronic injury patterns from one-time events.
+    # Chronic: player misses games consistently across multiple seasons.
+    # One-time: current availability is low but historical record is clean.
+    base_injury_risk = 1.0 - avail
+    if games_last_3yr > 0 and seasons_played >= 2:
+        chronic_rate = _clip(games_last_3yr / 51.0)  # 17 games * 3 seasons = 51
+        if chronic_rate < 0.70:
+            # Pattern of missing games across seasons — treat as chronic
+            injury_risk = max(base_injury_risk, 0.35)
+        elif chronic_rate > 0.88 and base_injury_risk > 0.20:
+            # Good multi-year history but hurt this season — likely one-time event
+            injury_risk = base_injury_risk * 0.65
+        else:
+            injury_risk = base_injury_risk
+    else:
+        injury_risk = base_injury_risk
 
     if pos == "RB":
         penalty = (
@@ -572,24 +638,29 @@ def _apply_te_market_compression(
     return final_scores
 
 
-def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
+def build_value_table_for_usage(
+        league_type: str = "1QB",
+        include_confidence: bool = False,
+):
     """
     Dynasty value formula using:
       - smooth age curve
-      - current + historical production blend
+      - current + historical production blend (opponent-adjusted)
       - role security
       - draft capital / contract / team investment
       - availability
       - trend
-      - risk penalty
-      - scarcity based on replacement / starter / elite edge
+      - risk penalty (chronic vs. one-time injury differentiation)
+      - scarcity based on replacement / starter / elite edge (position-specific)
       - QB compression (varies by league_type)
+      - youth opportunity boost
 
     Args:
       league_type: "1QB" (default), "Superflex", or "2QB"
+      include_confidence: if True, returns (value_table, confidence_table) instead of just value_table
 
     Returns:
-      Dict[player_id, value_0_to_999_9]
+      Dict[player_id, value_0_to_999_9], or tuple of (values, confidences) when include_confidence=True
     """
     lst = load_usage_table()
     if not isinstance(lst, list):
@@ -609,6 +680,8 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             sleeper_id = _safe_str(row.get("sleeper_id"))
             if sleeper_id:
                 history_by_pid[sleeper_id] = row.to_dict()
+
+    teams_index: Dict[str, dict] = load_teams_index() or {}
 
     investment_df = load_player_investment_context()
     investment_by_pid: Dict[str, dict] = {}
@@ -717,10 +790,27 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             hist_weight = 0.48 + 0.20 * hist_conf
 
         denom = max(current_weight + hist_weight, 1e-9)
-        blended_prod = (
+        blended_prod_raw = (
                                current_weight * current_ppg +
                                hist_weight * weighted_ppg_3yr
-                       ) / denom
+                           ) / denom
+
+        # Opponent-adjusted production: discount stats accumulated against soft defenses,
+        # boost stats from players who produced against tough ones.
+        # Uses opp_pass_yds_pg (yards allowed by opponents = schedule defense quality).
+        # High opp_pass_yds_pg → schedule's defenses were soft → discount slightly.
+        team_abbr = _safe_str(meta.get("team"))
+        team_data = teams_index.get(team_abbr, {}) if team_abbr else {}
+        if pos in ("WR", "TE", "QB"):
+            _league_avg_opp_pass = 225.0
+            opp_yds = _safe_float(team_data.get("opp_pass_yds_pg"), _league_avg_opp_pass)
+            defense_factor = _clip(_league_avg_opp_pass / max(opp_yds, 1.0), 0.90, 1.10)
+        else:  # RB
+            _league_avg_opp_rush = 113.0
+            opp_yds = _safe_float(team_data.get("opp_rush_yds_pg"), _league_avg_opp_rush)
+            defense_factor = _clip(_league_avg_opp_rush / max(opp_yds, 1.0), 0.90, 1.10)
+
+        blended_prod = blended_prod_raw * defense_factor
 
         ceiling_proxy = 0.65 * career_best_ppg + 0.35 * max(current_ppg, last_year_ppg)
         floor_proxy = 0.70 * career_avg_ppg + 0.30 * last_year_ppg
@@ -734,6 +824,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
         rush_yds_pg = _safe_float(usage.get("avg_rush_yards"))
         rush_tds_pg = _safe_float(usage.get("avg_rush_tds"))
 
+        games_last_3yr = _safe_float(hist.get("games_last_3yr"), 0.0)
         risk_penalty = _risk_penalty(
             pos=pos,
             age=age,
@@ -742,6 +833,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             hist_conf=hist_conf,
             role_security=role_security,
             seasons_played=seasons_played,
+            games_last_3yr=games_last_3yr,
         )
         proven_elite = _proven_elite_bonus(
             pos,
@@ -749,6 +841,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             weighted_ppg_3yr,
             seasons_played,
         )
+        youth_upside = _youth_opportunity_boost(pos, age, hist, usage, invest)
 
         per_pid[pid] = {
             "pos": pos,
@@ -778,6 +871,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             "proven_elite": proven_elite,
             "rush_yds_pg": rush_yds_pg,
             "rush_tds_pg": rush_tds_pg,
+            "youth_upside": youth_upside,
         }
 
     if not per_pid:
@@ -796,7 +890,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
 
     POS_WEIGHTS = {
         "QB": {
-            "blended_prod": 0.16,
+            "blended_prod": 0.10,
             "current_prod": 0.20,
             "ceiling": 0.16,
             "floor": 0.03,
@@ -807,9 +901,10 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             "rz": 0.00,
             "share": 0.00,
             "snap": 0.04,
+            "upside": 0.06,
         },
         "RB": {
-            "blended_prod": 0.22,
+            "blended_prod": 0.16,
             "current_prod": 0.10,
             "ceiling": 0.08,
             "floor": 0.06,
@@ -820,9 +915,10 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             "rz": 0.08,
             "share": 0.00,
             "snap": 0.06,
+            "upside": 0.06,
         },
         "WR": {
-            "blended_prod": 0.27,
+            "blended_prod": 0.21,
             "current_prod": 0.07,
             "ceiling": 0.12,
             "floor": 0.11,
@@ -833,9 +929,10 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             "rz": 0.04,
             "share": 0.06,
             "snap": 0.03,
+            "upside": 0.06,
         },
         "TE": {
-            "blended_prod": 0.24,
+            "blended_prod": 0.18,
             "current_prod": 0.07,
             "ceiling": 0.08,
             "floor": 0.10,
@@ -846,6 +943,7 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
             "rz": 0.07,
             "share": 0.10,
             "snap": 0.07,
+            "upside": 0.06,
         },
     }
 
@@ -866,7 +964,8 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
                 w["invest"] * p["invest_score"] +
                 w["rz"] * rz_norm.get(pid, 0.0) +
                 w["share"] * target_share_norm.get(pid, 0.0) +
-                w["snap"] * snap_norm.get(pid, 0.0)
+                w["snap"] * snap_norm.get(pid, 0.0) +
+                w["upside"] * p["youth_upside"]
         )
 
         if pos == "QB":
@@ -970,12 +1069,24 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
         "TE": 0.30,
     }
 
+    # Per-position scarcity edge weights.
+    # TE: elite-tier gap dominates (top 2-3 TEs are uniquely scarce).
+    # RB: replacement-level gap dominates (workhorse separation drives value).
+    # WR: balanced; QB: minimal (compressed by league type separately).
+    SCARCITY_EDGE_WEIGHTS = {
+        "QB": (0.42, 0.33, 0.25),
+        "RB": (0.52, 0.32, 0.16),
+        "WR": (0.40, 0.35, 0.25),
+        "TE": (0.20, 0.28, 0.52),
+    }
+
     for pid, base_score in pos_scores.items():
         pos = pos_by_pid[pid]
+        w_rep, w_start, w_elite = SCARCITY_EDGE_WEIGHTS[pos]
         scarcity = (
-                0.42 * replacement_norm.get(pid, 0.0) +
-                0.33 * starter_norm.get(pid, 0.0) +
-                0.25 * elite_norm.get(pid, 0.0)
+                w_rep * replacement_norm.get(pid, 0.0) +
+                w_start * starter_norm.get(pid, 0.0) +
+                w_elite * elite_norm.get(pid, 0.0)
         )
         alpha = SCARCITY_ALPHA[pos]
         final_scores[pid] = _clip((1.0 - alpha) * base_score + alpha * scarcity)
@@ -1017,4 +1128,12 @@ def build_value_table_for_usage(league_type: str = "1QB") -> Dict[str, float]:
         s_mix = FLOOR + (1.0 - FLOOR) * _clip(s_curve + elite_bonus)
         value_table[pid] = round(s_mix * 999.9, 1)
 
-    return value_table
+    if not include_confidence:
+        return value_table
+
+    confidence_table: Dict[str, float] = {}
+    for pid, p in per_pid.items():
+        games = _safe_float(usage_table.get(pid, {}).get("games"))
+        confidence_table[pid] = round(_value_confidence(p, games), 3)
+
+    return value_table, confidence_table

@@ -22,8 +22,10 @@ def _is_blank(v: Any) -> bool:
 def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
     players_index = load_relevant_index() or {}
 
-    # CRITICAL FIX: Generate both 1QB and Superflex engine values
-    value_table_1qb = build_value_table_for_usage(league_type="1QB") or {}
+    # Generate both 1QB and Superflex engine values, with confidence scores from the 1QB run
+    value_table_1qb, confidence_table = build_value_table_for_usage(league_type="1QB", include_confidence=True)
+    value_table_1qb = value_table_1qb or {}
+    confidence_table = confidence_table or {}
     value_table_sf = build_value_table_for_usage(league_type="Superflex") or {}
 
     rows = []
@@ -79,7 +81,8 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
                 "position": str(position).strip(),
                 "team": str(team).strip(),
                 "engine_value": round(engine_value_1qb, 1),
-                "sf_engine_value": round(engine_value_sf, 1),  # CRITICAL FIX: Separate Superflex column
+                "sf_engine_value": round(engine_value_sf, 1),
+                "value_confidence": confidence_table.get(str(pid), confidence_table.get(pid, "")),
             }
         )
 
@@ -113,7 +116,7 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
     with out_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["player_id", "name", "position", "team", "engine_value", "sf_engine_value"],
+            fieldnames=["player_id", "name", "position", "team", "engine_value", "sf_engine_value", "value_confidence"],
         )
         writer.writeheader()
         writer.writerows(rows)
