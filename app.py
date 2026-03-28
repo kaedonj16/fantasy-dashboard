@@ -2820,7 +2820,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           </div>
           <div class="os-ai-copy card-collapsible-body" id="gm-memo-body">
             <div class="otc-ai-empty" id="gm-memo-empty">
-              <div class="otc-ai-empty-title">Generate Your GM Memo</div>
               <div class="otc-ai-empty-sub">
                 Get personalized analysis on your roster, trade targets, and offseason strategy.
               </div>
