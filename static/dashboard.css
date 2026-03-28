@@ -662,6 +662,19 @@ ul {
   height: auto;
 }
 
+.nav-header-main > a {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  line-height: 0;
+}
+
+.nav-header-main > a:hover {
+  opacity: 0.85;
+}
+
 .nav-header-main .nav-toggle {
   display: none;
   background: none;

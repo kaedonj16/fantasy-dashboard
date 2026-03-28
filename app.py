@@ -685,7 +685,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return (
             "<nav class='top-nav'>"
             "  <div class='nav-header-main'>"
-            "    <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+            "    <a href='/'>"
+            "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+            "    </a>"
             "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
             "  </div>"
             "  <div class='nav-links-wrapper'>"
@@ -804,10 +806,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if league_switcher_html:
         all_nav_items = f"{league_switcher_html}{all_nav_items}"
 
+    # Generate dashboard URL for logo link
+    dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
+
     return (
         "<nav class='top-nav'>"
         "  <div class='nav-header-main'>"
-        "    <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+        f"    <a href='{dashboard_url}'>"
+        "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+        "    </a>"
         "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
         "  </div>"
         "  <div class='nav-links-wrapper'>"
