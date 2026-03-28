@@ -619,6 +619,7 @@ def _apply_te_market_compression(
         pos_by_pid: Dict[str, str],
         elite_norm: Dict[str, float],
         ceiling_norm: Dict[str, float],
+        per_pid: Optional[Dict[str, dict]] = None,
 ) -> Dict[str, float]:
     for pid, score in list(final_scores.items()):
         if pos_by_pid.get(pid) != "TE":
@@ -632,7 +633,23 @@ def _apply_te_market_compression(
                 + 0.06 * (elite ** 0.90)
                 + 0.02 * (ceiling ** 0.95)
         )
-        keep = min(keep, 0.70)
+
+        # Young TEs with high upside get less compression — their dynasty value
+        # is driven by future potential that the current-season scarcity model
+        # doesn't fully capture (Bowers-type profile).
+        if per_pid is not None:
+            p = per_pid.get(pid, {})
+            age = p.get("age")
+            youth_upside = p.get("youth_upside", 0.0)
+            if age is not None and age < 26.0:
+                age_proximity = _clip((26.0 - age) / 6.0)
+                youth_relief = 0.18 * age_proximity + 0.14 * youth_upside
+                keep = min(keep + youth_relief, 0.84)
+            else:
+                keep = min(keep, 0.70)
+        else:
+            keep = min(keep, 0.70)
+
         final_scores[pid] = _clip(score * keep)
 
     return final_scores
@@ -1105,6 +1122,7 @@ def build_value_table_for_usage(
         pos_by_pid,
         elite_norm,
         ceiling_norm,
+        per_pid=per_pid,
     )
 
     vals = list(final_scores.values())
