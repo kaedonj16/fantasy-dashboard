@@ -628,11 +628,11 @@ def _apply_te_market_compression(
         ceiling = ceiling_norm.get(pid, 0.0)
 
         keep = (
-                0.79
-                + 0.09 * (elite ** 0.90)
-                + 0.03 * (ceiling ** 0.95)
+                0.60
+                + 0.06 * (elite ** 0.90)
+                + 0.02 * (ceiling ** 0.95)
         )
-        keep = min(keep, 0.89)
+        keep = min(keep, 0.70)
         final_scores[pid] = _clip(score * keep)
 
     return final_scores
