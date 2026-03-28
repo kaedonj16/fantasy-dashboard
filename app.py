@@ -945,6 +945,27 @@ def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optiona
     return most_recent
 
 
+def _build_roster_map(users: list, rosters: list) -> dict:
+    """Map roster_id → display name, using metadata.team_name with user fallback."""
+    user_fallback = {
+        u["user_id"]: (
+            (u.get("metadata") or {}).get("team_name")
+            or u.get("display_name")
+            or u.get("username")
+            or str(u["user_id"])
+        )
+        for u in users
+    }
+    roster_map = {}
+    for r in rosters:
+        rid = str(r["roster_id"])
+        owner_id = r.get("owner_id")
+        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
+            owner_id, f"Roster {rid}"
+        )
+    return roster_map
+
+
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
@@ -1040,23 +1061,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         )
 
     # Always build roster_map from current rosters/users so offseason pages work
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
+    roster_map = _build_roster_map(users, rosters)
 
     if df_weekly.empty and not offseason_mode:
         print(
@@ -1515,12 +1520,12 @@ def history_ai_recap():
 
     try:
         # Get the same context that the history page uses
-        platform = "sleeper"
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
         base_league_id = request.args.get("base_season", season)
 
         # Resolve the correct league ID for the historical season
         resolved_history_league_id = resolve_league_id_for_season(
-            platform="sleeper",
+            platform=platform,
             league_id=league_id,
             current_season=int(base_league_id),
             target_season=int(season),
@@ -1690,47 +1695,30 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     teams_index = ctx["teams_index"]
 
     # ---------- Rebuild roster_map every refresh ----------
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
-
-    ctx["roster_map"] = roster_map
+    ctx["roster_map"] = _build_roster_map(users, rosters)
 
     # ---------- League settings / refs that can matter to multiple pages ----------
     sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
         ctx["scoring_settings"] = get_effective_scoring_settings()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] scoring_settings failed: {e}")
 
     try:
         ctx["roster_positions"] = get_roster_positions()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] roster_positions failed: {e}")
 
     try:
         ctx["league_settings"] = get_league_settings()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] league_settings failed: {e}")
 
     try:
         ctx["total_rosters"] = get_total_rosters()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] total_rosters failed, falling back to len(rosters): {e}")
+        ctx["total_rosters"] = len(rosters)
 
     roster_counts = count_roster_positions(get_roster_positions())
     has_idp = any(k in roster_counts for k in ["DL", "LB", "DB", "IDP_FLEX"])
@@ -1897,12 +1885,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- Teams page ----------
     if page == "teams":
         clear_teams_cache_for_league(resolved_league_id)
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
     # ---------- Trade page ----------
     if page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
         # also refresh global model-value API cache used by /api/trade-eval
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -1911,7 +1899,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Offseason dashboard refresh ----------
     if page == "dashboard" and offseason_mode:
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
         if platform == "sleeper":
             try:
@@ -4213,12 +4201,18 @@ def build_activity_body(ctx: dict) -> str:
         )
 
     if not activity_html:
+        if platform == "espn":
+            _empty_title = "Activity not available for ESPN leagues"
+            _empty_copy = "Transaction history requires Sleeper league data. ESPN leagues currently show scores and standings only."
+        else:
+            _empty_title = "No recent activity yet"
+            _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
-            "<div class='card'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>No recent activity yet</div>"
-            "      <div class='bract-empty-copy'>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
+            "<div class=’card’>"
+            "  <div class=’card-body’>"
+            "    <div class=’bract-empty-state’>"
+            f"      <div class=’bract-empty-title’>{_empty_title}</div>"
+            f"      <div class=’bract-empty-copy’>{_empty_copy}</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -5404,6 +5398,20 @@ def page_history(platform: str, season: int, league_id: str):
         resolved_history_league_id=resolved_history_league_id,
     )
 
+    if platform == "espn":
+        espn_notice = (
+            "<div class='card' style='margin-bottom:16px;'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-title'>Limited history for ESPN leagues</div>"
+            "      <div class='bract-empty-copy'>Full season recaps and AI-powered history analysis are optimized for Sleeper leagues. "
+            "Some data may be incomplete for ESPN.</div>"
+            "    </div>"
+            "  </div>"
+            "</div>"
+        )
+        body_html = espn_notice + body_html
+
     return render_page(
         "League History",
         league_id,
@@ -5625,11 +5633,13 @@ def api_weekly_week():
 def set_viewer():
     league_id = (request.form.get("league_id") or "").strip()
     username = (request.form.get("username") or "").strip()
+    platform = (request.form.get("platform") or "sleeper").strip().lower()
+    season = int(request.form.get("season") or datetime.now().year)
 
     if not league_id or not username:
         return redirect(url_for("home"))
 
-    ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
+    ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
 
     if not viewer:
@@ -5804,6 +5814,7 @@ def api_trade_eval():
 
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip().lower()
     league_type = str(payload.get("league_type") or "1qb").strip().lower()
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
@@ -5973,7 +5984,7 @@ def api_trade_eval():
 
     if league_id and viewer_roster_id:
         try:
-            ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
+            ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
                 viewer_roster_id=str(viewer_roster_id),

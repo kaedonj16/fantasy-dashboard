@@ -8,6 +8,7 @@ import requests
 import time
 from bs4 import BeautifulSoup
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
 from pathlib import Path
 from plotly.offline import plot as plotly_plot
@@ -629,13 +630,22 @@ def get_transactions_by_week(
     season: int = 0,
 ) -> dict[int, list[dict]]:
     results: dict[int, list[dict]] = {}
-    for w in season_weeks:
-        try:
-            tx = platform_get_transactions(platform=platform, league_id=league_id, week=w, season=season)
-            results[w] = tx if isinstance(tx, list) else []
-        except Exception as e:
-            print(f"[transactions] Week {w} failed → {e}")
-            results[w] = []
+
+    def _fetch(w: int):
+        tx = platform_get_transactions(platform=platform, league_id=league_id, week=w, season=season)
+        return w, tx if isinstance(tx, list) else []
+
+    with ThreadPoolExecutor(max_workers=min(len(season_weeks), 8)) as pool:
+        futures = {pool.submit(_fetch, w): w for w in season_weeks}
+        for fut in as_completed(futures):
+            w = futures[fut]
+            try:
+                week, tx = fut.result()
+                results[week] = tx
+            except Exception as e:
+                print(f"[transactions] Week {w} failed → {e}")
+                results[w] = []
+
     return results
 
 

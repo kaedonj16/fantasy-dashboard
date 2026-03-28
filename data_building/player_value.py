@@ -1112,11 +1112,12 @@ def build_value_table_for_usage(
     starter_map: Dict[str, float] = {}
     elite_map: Dict[str, float] = {}
 
+    scale = num_teams / 10
     elite_cutoffs = {
-        "QB": 4,
-        "RB": 12,
-        "WR": 18,
-        "TE": 5,
+        "QB": round(4 * scale),
+        "RB": round(12 * scale),
+        "WR": round(18 * scale),
+        "TE": round(5 * scale),
     }
 
     for pos, lst_pos in dynasty_strength_by_pos.items():
