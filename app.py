@@ -3035,11 +3035,10 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
 
     raw_adj = base_from_gap * piece_factor
 
-    # 3. Caps so it never blows up:
-    #    - at most 60% of the stud
-    #    - at most 35% of the consolidating side's total *player* value
-    cap_stud = 0.60 * stud_val
-    cap_side = 0.35 * fewer_players_total
+    # 3. Caps: at most 75% of the stud value, or 50% of the consolidating
+    #    side's total player value — whichever is smaller.
+    cap_stud = 0.75 * stud_val
+    cap_side = 0.50 * fewer_players_total
     adj_cap = max(0.0, min(cap_stud, cap_side))
 
     adj = min(raw_adj, adj_cap)
@@ -5242,6 +5241,21 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     return ctx
 
 
+@app.route("/api/refresh-league", methods=["POST"])
+def api_refresh_league():
+    """Force-expire a league context so the next request rebuilds it from source."""
+    payload = request.get_json(silent=True) or {}
+    platform = (payload.get("platform") or "sleeper").strip().lower()
+    league_id = (payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+    key = _cache_key(platform, season, league_id)
+    if key in DASHBOARD_CACHE:
+        DASHBOARD_CACHE[key]["ts"] = 0  # expire immediately
+    return jsonify({"ok": True})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
 def page_dashboard(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -5305,7 +5319,9 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         league_id_safe = ctx.get("league_id") or league_id
         season_safe = int(ctx.get("season") or season or datetime.now().year)
         num_teams = ctx.get("total_rosters") or None
-        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams)
+        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+        scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
@@ -5734,7 +5750,9 @@ def api_refresh_page():
             league_id_safe = ctx.get("league_id") or league_id
             season_safe = int(ctx.get("season") or season or datetime.now().year)
             num_teams = ctx.get("total_rosters") or None
-            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams)
+            rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+            scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
 
         else:
             body_html = ""
@@ -5816,7 +5834,17 @@ def api_trade_eval():
     season = int(payload.get("season") or datetime.now().year)
     platform = str(payload.get("platform") or "sleeper").strip().lower()
     league_type = str(payload.get("league_type") or "1qb").strip().lower()
+    scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
+
+    # Position-based multipliers for non-PPR formats.
+    # RBs gain value in standard (rush-heavy); WRs/TEs lose value (fewer receptions).
+    _SCORING_MULTS = {
+        "ppr":  {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
+        "half": {"QB": 1.00, "RB": 1.06, "WR": 0.97, "TE": 0.94},
+        "std":  {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
+    }
+    scoring_mults = _SCORING_MULTS.get(scoring_format, _SCORING_MULTS["ppr"])
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
@@ -5834,6 +5862,8 @@ def api_trade_eval():
         if isinstance(p, dict) and "id" in p
     }
 
+    pick_values = load_pick_value_table()
+
     def value_pick(pk: str) -> float:
         try:
             yr_str, rnd_str, slot_str = pk.split("_")
@@ -5841,7 +5871,7 @@ def api_trade_eval():
             rnd = int(rnd_str)
 
             if slot_str in ['early', 'mid', 'late']:
-                bucket = bucket_for_slot(slot, num_teams=10)
+                bucket = bucket_for_slot(slot_str, num_teams=10)
             else:
                 bucket = slot_str
 
@@ -5849,7 +5879,6 @@ def api_trade_eval():
             return 0.0
 
         key = f"{year}_{rnd}_{bucket}"
-        pick_values = load_pick_value_table()
 
         val = pick_values.get(key)
         if val is not None:
@@ -5899,6 +5928,9 @@ def api_trade_eval():
 
             name = player.get("name")
             pos = player.get("position")
+
+            # Apply scoring format multiplier
+            val = round(val * scoring_mults.get((pos or "").upper(), 1.0), 1)
             team = player.get("team")
             age = player.get("age")
 
@@ -5966,9 +5998,16 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    FAIR_PCT = 0.08
+    # Fair band: tighter % for bigger trades (large trades need less slack),
+    # floored at 25 value points so tiny trades aren't hair-trigger.
     baseline = max(a_eff, b_eff, 1.0)
-    fair_band = baseline * FAIR_PCT
+    if baseline >= 600:
+        FAIR_PCT = 0.05
+    elif baseline >= 300:
+        FAIR_PCT = 0.07
+    else:
+        FAIR_PCT = 0.10
+    fair_band = max(baseline * FAIR_PCT, 25.0)
 
     if abs_diff <= fair_band:
         pct = (abs_diff / baseline) * 100.0

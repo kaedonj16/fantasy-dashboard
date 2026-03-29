@@ -797,15 +797,39 @@ window.initTradePage = function initTradePage(root = document) {
     return parseInt(checked?.value || "10", 10);
   }
 
+  function getScoringFormat() {
+    // Logged-in leagues: use the hidden input injected by the server
+    const hidden = root.querySelector("#scoringFormatInput");
+    if (hidden && hidden.value) return hidden.value;
+    // Guest mode: read from the scoring format radio group
+    const checked = root.querySelector('input[name="scoringFormat"]:checked');
+    return checked?.value || "ppr";
+  }
+
+  // Position multipliers matching the server-side _SCORING_MULTS table
+  const SCORING_MULTS = {
+    ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
+    half: { QB: 1.00, RB: 1.06, WR: 0.97, TE: 0.94 },
+    std:  { QB: 1.00, RB: 1.13, WR: 0.93, TE: 0.87 },
+  };
+
   function getPlayerValue(player) {
     const leagueType = getLeagueType();
     const size = getLeagueSize();
+    const fmt = getScoringFormat();
+    const mults = SCORING_MULTS[fmt] || SCORING_MULTS.ppr;
+    const pos = (player.position || "").toUpperCase();
+    const mult = mults[pos] ?? 1.0;
+
+    let base;
     if (leagueType === "sf") {
       const key = size === 10 ? "sf_value" : `sf_value_${size}`;
-      return Number(player[key] ?? player.sf_value ?? player.value ?? 0);
+      base = Number(player[key] ?? player.sf_value ?? player.value ?? 0);
+    } else {
+      const key = size === 10 ? "value" : `value_${size}`;
+      base = Number(player[key] ?? player.value ?? 0);
     }
-    const key = size === 10 ? "value" : `value_${size}`;
-    return Number(player[key] ?? player.value ?? 0);
+    return Math.round(base * mult * 10) / 10;
   }
 
   function onLeagueTypeChange() {
@@ -999,6 +1023,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      scoring_format: getScoringFormat(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
       side_a_picks: sideAPickIds,
@@ -1107,6 +1132,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      scoring_format: getScoringFormat(),
       viewer_side: viewerSide,
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -1274,6 +1300,17 @@ window.initTradePage = function initTradePage(root = document) {
     root.querySelectorAll('input[name="leagueSize"]').forEach(el => {
       bindOnce(el, "tradeLeagueSizeChange", "change", () => {
         // Same refresh as league type change — all values need recalculating
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+      });
+    });
+  }
+
+  function bindScoringFormatControls() {
+    root.querySelectorAll('input[name="scoringFormat"]').forEach(el => {
+      bindOnce(el, "tradeScoringFormatChange", "change", () => {
         renderChips("A");
         renderChips("B");
         recomputeTrade();
@@ -1652,6 +1689,7 @@ window.initTradePage = function initTradePage(root = document) {
     setupSearch("B");
     bindLeagueTypeControls();
     bindLeagueSizeControls();
+    bindScoringFormatControls();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();

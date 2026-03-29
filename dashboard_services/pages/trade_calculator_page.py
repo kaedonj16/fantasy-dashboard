@@ -3,10 +3,14 @@ from typing import Optional
 SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
 
+SUPPORTED_SCORING_FORMATS = [("ppr", "PPR"), ("half", "Half-PPR"), ("std", "Standard")]
+
+
 def build_trade_calculator_body(
     league_id: Optional[str],
     season: Optional[int],
     num_teams: Optional[int] = None,
+    scoring_format: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -18,6 +22,11 @@ def build_trade_calculator_body(
         num_teams_val = closest
     else:
         num_teams_val = 10  # default for guest
+
+    # Scoring format: use league value when logged in, default PPR for guests
+    scoring_format_val = (scoring_format or "ppr").strip().lower()
+    if scoring_format_val not in {s for s, _ in SUPPORTED_SCORING_FORMATS}:
+        scoring_format_val = "ppr"
 
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
@@ -65,6 +74,21 @@ def build_trade_calculator_body(
         league_size_block = ""
         league_size_hidden = f'<input type="hidden" id="leagueSizeInput" value="{num_teams_val}">'
 
+    # Scoring format control: selector in guest mode, hidden input when logged in
+    if is_guest:
+        fmt_options = ""
+        for val, label in SUPPORTED_SCORING_FORMATS:
+            checked = 'checked' if val == scoring_format_val else ''
+            fmt_options += f'<label class="otc-viewer-toggle"><input type="radio" name="scoringFormat" value="{val}" {checked}><span>{label}</span></label>\n'
+        scoring_format_block = f"""
+              <div class="otc-viewer-toggles" id="scoringFormatControl" style="margin-left: 16px;">
+                {fmt_options}
+              </div>"""
+        scoring_format_hidden = ""
+    else:
+        scoring_format_block = ""
+        scoring_format_hidden = f'<input type="hidden" id="scoringFormatInput" value="{scoring_format_val}">'
+
     return f"""
     <div class="otc-layout">
       <main class="otc-main">
@@ -73,6 +97,7 @@ def build_trade_calculator_body(
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
         {league_size_hidden}
+        {scoring_format_hidden}
 
         <div class="otc-shell">
           <div class="otc-page-head">
@@ -117,6 +142,7 @@ def build_trade_calculator_body(
                 </label>
               </div>
               {league_size_block}
+              {scoring_format_block}
             </div>
           </div>
 
