@@ -6,6 +6,20 @@ All notable changes to the BR Fantasy Dashboard are recorded here.
 
 ## [Unreleased]
 
+### Value Model — Red Zone & Age Curves
+- **Red zone stats for past seasons** — Historical `rec_rz_tgt_pg` and `rush_rz_att_pg` are now propagated through `build_player_history_features()` as 3-year weighted averages (`three_year_weighted_rec_rz`, `three_year_weighted_rush_rz`, `rz_trend_1yr`). The value engine now falls back to these historical averages in the offseason when current-season data is absent, the same pattern used for rush yards.
+- **TEs included in red zone fetch** — `ALLOWED_POS` in `sleeper_bulk_stats.py` was `["RB", "WR"]`; TEs are now included since they're among the most redzone-dependent positions.
+- **Age curves updated** — WR peak moved from 25 → 26, QB from 28.5 → 29.5, TE from 26.5 → 27.5, reflecting recent NFL career arc data. RB unchanged at 23.5. Changes reduce systematic undervaluation of 26–28 year old WRs and QBs in their prime.
+- **Historical parquet files rebuilt** — All three cached history files (2023, 2024, 2025) regenerated with the new redzone columns.
+
+### Trade Calculator
+- **Draft picks extended to rounds 4–5** — Pick value table previously capped at round 3; rounds 4 and 5 are now included from both FantasyCalc and DynastyProcess sources. Dynasty rebuilds that accumulate late-round capital now get meaningful values instead of 0.
+- **Fuzzy player search** — The trade calculator search now uses a scored fuzzy matcher instead of a plain `.includes()` filter. Handles: exact substring (highest priority), multi-word initials ("jsn" → Jaxon Smith-Njigba), any-word-starts match, and single-character typo tolerance for queries ≥ 4 characters. Results are ranked by match quality.
+
+### Projections
+- **Silent failure fixed** — `load_week_projection()` no longer throws or returns `None`; it always returns a dict (empty if unavailable) and logs the failure. Projected scores showing as 0 without explanation is no longer possible.
+- **"Projections unavailable" banner** — When no projection data can be loaded for a season/week, the weekly hub now shows a yellow warning banner instead of silently displaying 0-point projections.
+
 ### Value Model
 - **SF value floor for non-QB players** — Non-QB players no longer drop in Superflex value relative to their 1QB value. The DP 2QB vendor blend was pulling pass-catchers down; their SF value is now floored at their 1QB value. QBs still receive the full Superflex premium. Fixed 295 players that were incorrectly discounted.
 - **Per-league-size values (8, 10, 12, 14 teams)** — Player values now vary by league size. Larger leagues push more mid-tier players above the replacement line (higher value); smaller leagues concentrate value at the top. Fields `value_8`, `value_12`, `value_14` and their SF equivalents are populated using a position-rank scarcity model.

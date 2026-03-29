@@ -106,11 +106,14 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
     if pos == "RB":
         return _peak_age_score(age, peak=23.5, left_width=3.5, right_width=4.5)
     if pos == "WR":
-        return _peak_age_score(age, peak=25.0, left_width=4.5, right_width=7.5)
+        # WR prime extends later than historical models assumed; recent data shows peak ~26-27
+        return _peak_age_score(age, peak=26.0, left_width=4.5, right_width=7.5)
     if pos == "QB":
-        return _peak_age_score(age, peak=28.5, left_width=5.5, right_width=10.5)
+        # Elite QBs sustain into early 30s; peak production window is 29-31
+        return _peak_age_score(age, peak=29.5, left_width=5.5, right_width=10.5)
     if pos == "TE":
-        return _peak_age_score(age, peak=26.5, left_width=4.5, right_width=8.5)
+        # TEs develop late and have extended primes (Kelce, Waller, Andrews patterns)
+        return _peak_age_score(age, peak=27.5, left_width=4.5, right_width=8.5)
 
     return 0.80
 
@@ -892,7 +895,13 @@ def build_value_table_for_usage(
         ceiling_proxy = 0.65 * career_best_ppg + 0.35 * max(current_ppg, last_year_ppg)
         floor_proxy = 0.70 * career_avg_ppg + 0.30 * last_year_ppg
 
-        rz_metric = _safe_float(usage.get("rec_rz_tgt_pg")) + _safe_float(usage.get("rush_rz_att_pg"))
+        # Red zone metric: prefer current-season data, fall back to 3-year weighted historical average
+        rec_rz = _safe_float(usage.get("rec_rz_tgt_pg"))
+        rush_rz = _safe_float(usage.get("rush_rz_att_pg"))
+        if (rec_rz is None or rec_rz == 0.0) and (rush_rz is None or rush_rz == 0.0):
+            rec_rz = _safe_float(hist.get("three_year_weighted_rec_rz"), 0.0)
+            rush_rz = _safe_float(hist.get("three_year_weighted_rush_rz"), 0.0)
+        rz_metric = (rec_rz or 0.0) + (rush_rz or 0.0)
         role_security = _usage_role_security(usage, hist, pos)
         trend_score = _trend_score(hist, pos)
         age_curve = horizon_age_factor(pos, age)

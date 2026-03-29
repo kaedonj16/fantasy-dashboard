@@ -3386,8 +3386,20 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     highlights_html = _render_weekly_highlights(df_weekly, default_week)
 
+    proj_warn_html = ""
+    if not proj_by_week.get("_available"):
+        proj_warn_html = (
+            "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
+            "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
+            "    <strong>Projections unavailable</strong> — projected scores can't be loaded right now. "
+            "    Actual scores will still appear once games are final."
+            "  </div>"
+            "</div>"
+        )
+
     main_panel_html = f"""
           <div class="week-main-panel active" data-week="{default_week}">
+            {proj_warn_html}
             {top_scorers_html}
           </div>
     """
@@ -3544,13 +3556,15 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
 def build_projections_by_week(season: int, weeks: int):
     bundles = {}
+    any_projections = False
     for w in range(1, weeks + 1):
-        try:
-            projections = load_week_projection(season, w)
-            bundles[w] = {"projections": projections}
-        except Exception as e:
-            print(f"Error loading week {w} projections: {e}")
-            bundles[w] = {"projections": {}}
+        projections = load_week_projection(season, w)
+        bundles[w] = {"projections": projections or {}}
+        if projections:
+            any_projections = True
+    if not any_projections:
+        print(f"[projections] No projection data available for season {season}")
+    bundles["_available"] = any_projections
     return bundles
 
 

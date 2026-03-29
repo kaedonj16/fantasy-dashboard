@@ -1205,6 +1205,48 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Fuzzy player name matching — returns a score (higher = better match).
+  // Handles: exact substring, word-start matches, and single-transposition typos.
+  function fuzzyNameScore(name, query) {
+    if (!name || !query) return 0;
+    const n = name.toLowerCase();
+    const q = query.toLowerCase();
+    // Exact substring — highest priority
+    if (n.includes(q)) return 100 + (100 - n.indexOf(q));
+    // Check search_name field alias passed in via player object handled by caller
+    // Word-start matching: "jax sm" matches "Jaxon Smith-Njigba"
+    const nWords = n.split(/[\s\-]+/);
+    const qWords = q.split(/\s+/).filter(Boolean);
+    if (qWords.length > 1) {
+      let wi = 0;
+      for (const qw of qWords) {
+        while (wi < nWords.length && !nWords[wi].startsWith(qw)) wi++;
+        if (wi >= nWords.length) break;
+        wi++;
+      }
+      if (wi <= nWords.length && qWords.every((qw, i) => {
+        const start = nWords.slice(i).findIndex(w => w.startsWith(qw));
+        return start !== -1;
+      })) return 70;
+    }
+    // Any word starts with query
+    if (nWords.some(w => w.startsWith(q))) return 60;
+    // Typo tolerance: allow 1 character substitution/transposition for queries >= 4 chars
+    if (q.length >= 4) {
+      for (let i = 0; i < q.length; i++) {
+        // deletion
+        const del = q.slice(0, i) + q.slice(i + 1);
+        if (n.includes(del)) return 40;
+        // substitution with any char
+        for (const c of "abcdefghijklmnopqrstuvwxyz") {
+          const sub = q.slice(0, i) + c + q.slice(i + 1);
+          if (n.includes(sub) && sub !== q) return 30;
+        }
+      }
+    }
+    return 0;
+  }
+
   function setupSearch(side) {
     const input = root.querySelector(side === "A" ? "#sideASearch" : "#sideBSearch");
     const dropdown = root.querySelector(side === "A" ? "#sideADropdown" : "#sideBDropdown");
@@ -1234,10 +1276,20 @@ window.initTradePage = function initTradePage(root = document) {
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
       const matches = allPlayers
-        .filter(p => p.name && p.name.toLowerCase().includes(query))
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
-        .slice(0, 20);
+        .map(p => {
+          // Score against display name and search_name (normalized, no punctuation)
+          const score = Math.max(
+            fuzzyNameScore(p.name, query),
+            fuzzyNameScore(p.search_name, query)
+          );
+          return { p, score };
+        })
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20)
+        .map(({ p }) => p);
 
       const overallRankMap = buildOverallRankMap(allPlayers);
       if (!matches.length) return;

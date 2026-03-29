@@ -223,6 +223,8 @@ def build_player_history_features(history_df: pd.DataFrame) -> pd.DataFrame:
         ppg_vals = grp["ppr_ppg"].fillna(0.0).tolist()
         snap_vals = grp["avg_off_snap_pct"].fillna(0.0).tolist()
         target_vals = grp["target_share"].fillna(0.0).tolist()
+        rec_rz_vals = grp["rec_rz_tgt_pg"].fillna(0.0).tolist() if "rec_rz_tgt_pg" in grp.columns else []
+        rush_rz_vals = grp["rush_rz_att_pg"].fillna(0.0).tolist() if "rush_rz_att_pg" in grp.columns else []
 
         def last_n(values, n, fill=0.0):
             vals = list(values)[-n:]
@@ -233,10 +235,14 @@ def build_player_history_features(history_df: pd.DataFrame) -> pd.DataFrame:
         ppg_3 = last_n(ppg_vals, 3)
         snap_3 = last_n(snap_vals, 3)
         target_3 = last_n(target_vals, 3)
+        rec_rz_3 = last_n(rec_rz_vals, 3)
+        rush_rz_3 = last_n(rush_rz_vals, 3)
 
         weighted_ppg_3yr = (0.6 * ppg_3[-1]) + (0.3 * ppg_3[-2]) + (0.1 * ppg_3[-3])
         weighted_snap_3yr = (0.6 * snap_3[-1]) + (0.3 * snap_3[-2]) + (0.1 * snap_3[-3])
         weighted_target_3yr = (0.6 * target_3[-1]) + (0.3 * target_3[-2]) + (0.1 * target_3[-3])
+        weighted_rec_rz_3yr = (0.6 * rec_rz_3[-1]) + (0.3 * rec_rz_3[-2]) + (0.1 * rec_rz_3[-3])
+        weighted_rush_rz_3yr = (0.6 * rush_rz_3[-1]) + (0.3 * rush_rz_3[-2]) + (0.1 * rush_rz_3[-3])
 
         row = {
             "sleeper_id": str(sleeper_id),
@@ -260,6 +266,12 @@ def build_player_history_features(history_df: pd.DataFrame) -> pd.DataFrame:
             "ppg_trend_1yr": ppg_3[-1] - ppg_3[-2],
             "ppg_trend_2yr": ppg_3[-1] - ppg_3[-3],
             "target_share_trend_1yr": target_3[-1] - target_3[-2],
+
+            "rec_rz_tgt_pg": rec_rz_3[-1],
+            "rush_rz_att_pg": rush_rz_3[-1],
+            "three_year_weighted_rec_rz": weighted_rec_rz_3yr,
+            "three_year_weighted_rush_rz": weighted_rush_rz_3yr,
+            "rz_trend_1yr": rec_rz_3[-1] + rush_rz_3[-1] - rec_rz_3[-2] - rush_rz_3[-2],
 
             "games_last_year": float(latest.get("games") or 0.0),
             "games_last_3yr": float(grp["games"].fillna(0.0).sum()),
