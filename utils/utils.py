@@ -224,7 +224,19 @@ def load_engine_table():
 
 def load_model_value_table():
     # Return ONLY the parsed JSON data, not the path object
-    return read_json(path_model_value_table())
+    result = read_json(path_model_value_table())
+
+    # Fallback to database if JSON file doesn't exist
+    if result is None:
+        try:
+            from dashboard_services.player_value_history import load_latest_value_snapshot
+            result = load_latest_value_snapshot()
+            if result:
+                print(f"[load_model_value_table] Loaded {len(result)} players from database (JSON file not found)")
+        except Exception as e:
+            print(f"[load_model_value_table] Failed to load from database: {e}")
+
+    return result
 
 
 def load_teams_index() -> Optional[Dict]:
@@ -270,15 +282,25 @@ def load_week_schedule(season: int, w: int):
 def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
     """
     Load projections cache for (season, week), fetching if missing.
+    Returns an empty dict (never None/raises) so callers can safely .get() on the result.
     """
     proj_path = Path(path_week_proj(season, w))
     if not proj_path.exists() or force_refresh:
-        get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
+        try:
+            get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
+        except Exception as e:
+            print(f"[projections] fetch failed for {season} w{w}: {e}")
 
-    with open(proj_path, "r", encoding="utf-8") as f:
-        projections = json.load(f)
+    if not proj_path.exists():
+        return {}
 
-    return projections
+    try:
+        with open(proj_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[projections] load failed for {season} w{w}: {e}")
+        return {}
 
 
 def save_week_projections(season: int, week: int, proj_map: Dict[str, float]) -> None:

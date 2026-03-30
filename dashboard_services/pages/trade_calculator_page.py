@@ -1,10 +1,32 @@
 from typing import Optional
 
+SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
-def build_trade_calculator_body(league_id: Optional[str], season: Optional[int]) -> str:
+
+SUPPORTED_SCORING_FORMATS = [("ppr", "PPR"), ("half", "Half"), ("std", "STD")]
+
+
+def build_trade_calculator_body(
+    league_id: Optional[str],
+    season: Optional[int],
+    num_teams: Optional[int] = None,
+    scoring_format: Optional[str] = None,
+) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
     is_guest = not league_id
+
+    # Clamp logged-in league size to nearest supported value
+    if num_teams and not is_guest:
+        closest = min(SUPPORTED_LEAGUE_SIZES, key=lambda s: abs(s - int(num_teams)))
+        num_teams_val = closest
+    else:
+        num_teams_val = 10  # default for guest
+
+    # Scoring format: use league value when logged in, default PPR for guests
+    scoring_format_val = (scoring_format or "ppr").strip().lower()
+    if scoring_format_val not in {s for s, _ in SUPPORTED_SCORING_FORMATS}:
+        scoring_format_val = "ppr"
 
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
@@ -36,6 +58,41 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
     )
 
     is_guest_str = 'true' if is_guest else 'false'
+
+    # League type toggle: checkbox with 1QB and SF labels
+    league_type_block = f"""
+              <div class="otc-ctrl-group" id="leagueTypeControl">
+                <span class="otc-toggle-label">1QB</span>
+                <label class="otc-pill-switch">
+                  <input type="checkbox" id="leagueTypeToggle">
+                  <span class="otc-pill-track"></span>
+                </label>
+                <span class="otc-toggle-label">SF</span>
+              </div>"""
+
+    # League size dropdown: always shown
+    size_options = ""
+    for s in SUPPORTED_LEAGUE_SIZES:
+        selected = 'selected' if s == num_teams_val else ''
+        size_options += f'<option value="{s}" {selected}>{s}-team</option>\n'
+    league_size_block = f"""
+              <div class="otc-ctrl-group otc-toggle-divider" id="leagueSizeControl">
+                <select class="otc-ctrl-select" id="leagueSizeSelect" name="leagueSize">
+                  {size_options}
+                </select>
+              </div>"""
+
+    # Scoring format dropdown: always shown
+    fmt_options = ""
+    for val, label in SUPPORTED_SCORING_FORMATS:
+        selected = 'selected' if val == scoring_format_val else ''
+        fmt_options += f'<option value="{val}" {selected}>{label}</option>\n'
+    scoring_format_block = f"""
+              <div class="otc-ctrl-group" id="scoringFormatControl">
+                <select class="otc-ctrl-select" id="scoringFormatSelect" name="scoringFormat" style="width: 60px;">
+                  {fmt_options}
+                </select>
+              </div>"""
 
     return f"""
     <div class="otc-layout">
@@ -70,23 +127,16 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
               <div class="otc-viewer-toggles">
                 <label class="otc-viewer-toggle">
                   <input type="radio" name="viewerSide" value="a" checked>
-                  <span>Team 1 is mine</span>
+                  <span>Team 1</span>
                 </label>
                 <label class="otc-viewer-toggle">
                   <input type="radio" name="viewerSide" value="b">
-                  <span>Team 2 is mine</span>
+                  <span>Team 2</span>
                 </label>
               </div>
-              <div class="otc-viewer-toggles" style="margin-left: 16px;">
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="leagueType" value="1qb" checked>
-                  <span>1QB</span>
-                </label>
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="leagueType" value="sf">
-                  <span>Superflex</span>
-                </label>
-              </div>
+              {league_size_block}
+              {scoring_format_block}
+              {league_type_block}
             </div>
           </div>
 
@@ -170,6 +220,15 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
                 <div class="otc-summary-actions">
                   {team_select_block}
                   <button type="button" id="clearTradeBtn" class="otc-clear-btn" {analyze_btn_disabled}>{analyze_btn_label}</button>
+                  <button type="button" id="shareTradeBtn" class="otc-share-btn" title="Copy shareable link">
+                    <svg class="otc-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="18" cy="5" r="3"></circle>
+                      <circle cx="6" cy="12" r="3"></circle>
+                      <circle cx="18" cy="19" r="3"></circle>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                    </svg>
+                  </button>
                 </div>
               </div>
 
@@ -237,21 +296,38 @@ def build_trade_calculator_body(league_id: Optional[str], season: Optional[int])
         <div class="otc-side-stack">
           <div class="otc-side-panel otc-movers-panel">
             <div class="otc-mini-head">
-              <h3 class="otc-mini-title">Top Movers</h3>
+              <div class="otc-mini-head-row">
+                <h3 class="otc-mini-title">Player Insights</h3>
+                <div class="otc-mini-tabs">
+                  <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
+                  <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
+                </div>
+              </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
             </div>
 
-            <div class="otc-mini-section">
-              <div class="otc-mini-section-title">Top Risers</div>
-              <div id="otcRisersList" class="otc-mini-list">
-                <div class="otc-movers-empty">Loading movers...</div>
+            <div id="moversTabContent" class="otc-tab-content is-active">
+              <div class="otc-mini-section">
+                <div class="otc-mini-section-title">Top Risers</div>
+                <div id="otcRisersList" class="otc-mini-list">
+                  <div class="otc-movers-empty">Loading movers...</div>
+                </div>
+              </div>
+
+              <div class="otc-mini-section">
+                <div class="otc-mini-section-title">Top Fallers</div>
+                <div id="otcFallersList" class="otc-mini-list">
+                  <div class="otc-movers-empty">Loading movers...</div>
+                </div>
               </div>
             </div>
 
-            <div class="otc-mini-section">
-              <div class="otc-mini-section-title">Top Fallers</div>
-              <div id="otcFallersList" class="otc-mini-list">
-                <div class="otc-movers-empty">Loading movers...</div>
+            <div id="breakoutsTabContent" class="otc-tab-content">
+              <div class="otc-mini-section">
+                <div class="otc-mini-section-title">Offseason Breakouts</div>
+                <div id="otcBreakoutsList" class="otc-mini-list">
+                  <div class="otc-movers-empty">Loading breakouts...</div>
+                </div>
               </div>
             </div>
           </div>

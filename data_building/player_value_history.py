@@ -40,6 +40,36 @@ def init_value_history_db() -> None:
                 END $$;
                 """
             )
+            # Add league size columns (value_8, value_12, value_14, sf_value_8, sf_value_12, sf_value_14)
+            for size in [8, 12, 14]:
+                cur.execute(
+                    f"""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'player_value_history'
+                            AND column_name = 'value_{size}'
+                        ) THEN
+                            ALTER TABLE player_value_history ADD COLUMN value_{size} NUMERIC;
+                        END IF;
+                    END $$;
+                    """
+                )
+                cur.execute(
+                    f"""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'player_value_history'
+                            AND column_name = 'sf_value_{size}'
+                        ) THEN
+                            ALTER TABLE player_value_history ADD COLUMN sf_value_{size} NUMERIC;
+                        END IF;
+                    END $$;
+                    """
+                )
             cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_player_value_history_player_date
@@ -50,6 +80,31 @@ def init_value_history_db() -> None:
                 """
                 CREATE INDEX IF NOT EXISTS idx_player_value_history_date
                 ON player_value_history (as_of_date DESC)
+                """
+            )
+            # Performance indexes for top movers queries
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_player_value_history_date_value
+                ON player_value_history (as_of_date, value DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_player_value_history_date_sf_value
+                ON player_value_history (as_of_date, sf_value DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_player_value_history_player_position
+                ON player_value_history (player_id, position)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_player_value_history_source_date
+                ON player_value_history (source, as_of_date DESC)
                 """
             )
 
@@ -67,7 +122,14 @@ def record_model_value_snapshot(
         "name": "Bijan Robinson",
         "position": "RB",
         "team": "ATL",
-        "value": 968.0
+        "value": 968.0,
+        "sf_value": 980.0,
+        "value_8": 950.0,
+        "value_12": 985.0,
+        "value_14": 995.0,
+        "sf_value_8": 960.0,
+        "sf_value_12": 995.0,
+        "sf_value_14": 999.0
       }
     """
     init_value_history_db()
@@ -83,17 +145,20 @@ def record_model_value_snapshot(
         if not pid:
             continue
 
-        raw_val = p.get("value", 0)
-        try:
-            value = float(raw_val or 0.0)
-        except (TypeError, ValueError):
-            value = 0.0
+        def safe_float(key, default=0.0):
+            try:
+                return float(p.get(key, default) or default)
+            except (TypeError, ValueError):
+                return default
 
-        raw_sf_val = p.get("sf_value", raw_val)
-        try:
-            sf_value = float(raw_sf_val or 0.0)
-        except (TypeError, ValueError):
-            sf_value = 0.0
+        value = safe_float("value")
+        sf_value = safe_float("sf_value", value)
+        value_8 = safe_float("value_8")
+        value_12 = safe_float("value_12")
+        value_14 = safe_float("value_14")
+        sf_value_8 = safe_float("sf_value_8")
+        sf_value_12 = safe_float("sf_value_12")
+        sf_value_14 = safe_float("sf_value_14")
 
         rows_to_insert.append(
             (
@@ -104,6 +169,12 @@ def record_model_value_snapshot(
                 p.get("team"),
                 value,
                 sf_value,
+                value_8,
+                value_12,
+                value_14,
+                sf_value_8,
+                sf_value_12,
+                sf_value_14,
                 source,
             )
         )
@@ -116,15 +187,22 @@ def record_model_value_snapshot(
             cur.executemany(
                 """
                 INSERT INTO player_value_history
-                    (as_of_date, player_id, name, position, team, value, sf_value, source)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (as_of_date, player_id, name, position, team, value, sf_value,
+                     value_8, value_12, value_14, sf_value_8, sf_value_12, sf_value_14, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(as_of_date, player_id, source)
                 DO UPDATE SET
                     name = excluded.name,
                     position = excluded.position,
                     team = excluded.team,
                     value = excluded.value,
-                    sf_value = excluded.sf_value
+                    sf_value = excluded.sf_value,
+                    value_8 = excluded.value_8,
+                    value_12 = excluded.value_12,
+                    value_14 = excluded.value_14,
+                    sf_value_8 = excluded.sf_value_8,
+                    sf_value_12 = excluded.sf_value_12,
+                    sf_value_14 = excluded.sf_value_14
                 """,
                 rows_to_insert,
             )
@@ -208,6 +286,7 @@ def get_top_movers(
         limit: int = 15,
         source: str = "model",
         league_type: str = "1qb",
+        league_size: int = 10,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -218,6 +297,7 @@ def get_top_movers(
         limit: Max number of risers/fallers to return
         source: Source of values ('model', etc.)
         league_type: "1qb" or "sf" (superflex) to determine which value field to use
+        league_size: League size (8, 10, 12, 14) to determine which value field to use
     """
     init_value_history_db()
 
@@ -269,10 +349,21 @@ def get_top_movers(
                     "fallers": [],
                 }
 
-            # Determine which value field to use based on league type
-            value_field = "sf_value" if league_type == "sf" else "value"
-            # For Superflex, fall back to value if sf_value is NULL
-            value_expr = f"COALESCE({value_field}, value)" if league_type == "sf" else value_field
+            # Determine which value field to use based on league type and size
+            if league_size == 10:
+                value_field = "sf_value" if league_type == "sf" else "value"
+            else:
+                value_field = f"sf_value_{league_size}" if league_type == "sf" else f"value_{league_size}"
+
+            # Fallback chain: size-specific -> 10-team -> value
+            if league_type == "sf" and league_size != 10:
+                value_expr = f"COALESCE(sf_value_{league_size}, sf_value, value)"
+            elif league_type == "sf":
+                value_expr = "COALESCE(sf_value, value)"
+            elif league_size != 10:
+                value_expr = f"COALESCE(value_{league_size}, value)"
+            else:
+                value_expr = "value"
 
             cur.execute(
                 f"""

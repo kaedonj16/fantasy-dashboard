@@ -174,6 +174,88 @@ def load_player_investment_df() -> pd.DataFrame:
 
 
 # ------------------------------------------------
+# Advanced metrics loader
+# ------------------------------------------------
+
+def load_advanced_metrics_df() -> pd.DataFrame:
+    """
+    Load advanced efficiency metrics from the database.
+
+    Returns dataframe with player_id (renamed to sleeper_id) and all metrics.
+    Uses most recent available data (current or previous season).
+    Falls back to empty dataframe if metrics aren't available.
+    """
+    try:
+        from data_building.advanced_metrics import get_player_metrics
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            # Get latest date with metrics (regardless of season)
+            latest = conn.execute("""
+                SELECT MAX(as_of_date) as max_date
+                FROM player_advanced_metrics
+            """).fetchone()
+
+            if not latest or not latest["max_date"]:
+                print("[value_model] No advanced metrics available yet")
+                return pd.DataFrame()
+
+            latest_date = latest["max_date"]
+
+            # Load all metrics for latest date
+            rows = conn.execute("""
+                SELECT
+                    player_id,
+                    yards_per_target,
+                    catch_rate,
+                    yards_per_reception,
+                    target_quality_score,
+                    yards_per_carry,
+                    yards_per_touch,
+                    rush_td_rate,
+                    yards_per_attempt,
+                    completion_pct,
+                    td_rate,
+                    int_rate,
+                    snap_share,
+                    opportunity_share,
+                    red_zone_usage,
+                    role_score,
+                    usage_trend,
+                    efficiency_trend
+                FROM player_advanced_metrics
+                WHERE as_of_date = %s
+            """, (latest_date,)).fetchall()
+
+            df = pd.DataFrame([dict(row) for row in rows])
+
+            if df.empty:
+                print("[value_model] Advanced metrics table is empty")
+                return pd.DataFrame()
+
+            # Rename player_id to sleeper_id for joining
+            df = df.rename(columns={"player_id": "sleeper_id"})
+            df["sleeper_id"] = df["sleeper_id"].astype(str)
+
+            # Check if metrics are from previous season
+            from datetime import datetime, date as dt_date
+            today = dt_date.today()
+            metrics_date = datetime.strptime(str(latest_date), "%Y-%m-%d").date()
+            days_old = (today - metrics_date).days
+
+            if days_old > 30:
+                print(f"[value_model] Using advanced metrics from {latest_date} ({days_old} days old - likely previous season)")
+            else:
+                print(f"[value_model] Loaded {len(df)} players with current advanced metrics")
+
+            return df
+
+    except Exception as e:
+        print(f"[value_model] Failed to load advanced metrics: {e}")
+        return pd.DataFrame()
+
+
+# ------------------------------------------------
 # Internal stats loader
 # ------------------------------------------------
 
@@ -460,6 +542,7 @@ def build_training_dataframe() -> pd.DataFrame:
     engine_df = load_engine_df()
     history_features_df = load_history_feature_df(current_season)
     investment_df = load_player_investment_df()
+    advanced_metrics_df = load_advanced_metrics_df()
 
     df = fc_df.merge(engine_df, on="sleeper_id", how="left")
 
@@ -470,6 +553,10 @@ def build_training_dataframe() -> pd.DataFrame:
 
     if investment_df is not None and not investment_df.empty:
         df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    # ADVANCED METRICS: Merge efficiency metrics
+    if advanced_metrics_df is not None and not advanced_metrics_df.empty:
+        df = df.merge(advanced_metrics_df, on="sleeper_id", how="left")
 
     if "dp_name" in dp_df.columns:
         df["name_lower"] = df["name"].astype(str).str.lower().str.strip()
@@ -551,9 +638,9 @@ def train_trade_value_model(
     # (They're not available during inference from usage_table.json)
 
     weights = np.vstack([
-        np.where(~np.isnan(fc_norm.values), 0.50, 0.0),
-        np.where(~np.isnan(dp_norm.values), 0.35, 0.0),
-        np.where(~np.isnan(engine_norm.values), 0.15, 0.0),
+        np.where(~np.isnan(fc_norm.values), 0.35, 0.0),
+        np.where(~np.isnan(dp_norm.values), 0.25, 0.0),
+        np.where(~np.isnan(engine_norm.values), 0.40, 0.0),
     ])
 
     vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
@@ -663,11 +750,38 @@ def train_trade_value_model(
         "guaranteed_pct_pos_pct",
     ]
 
+    # ADVANCED METRICS: Efficiency and usage features
+    candidate_advanced_metrics_cols = [
+        # Receiving efficiency (WR/TE/RB)
+        "yards_per_target",
+        "catch_rate",
+        "yards_per_reception",
+        "target_quality_score",
+        # Rushing efficiency (RB)
+        "yards_per_carry",
+        "yards_per_touch",
+        "rush_td_rate",
+        # Passing efficiency (QB)
+        "yards_per_attempt",
+        "completion_pct",
+        "td_rate",
+        "int_rate",
+        # Usage metrics
+        "snap_share",
+        "opportunity_share",
+        "red_zone_usage",
+        # Composite scores
+        "role_score",
+        "usage_trend",
+        "efficiency_trend",
+    ]
+
     for col in (
             candidate_usage_cols
             + candidate_history_cols
             + team_feature_cols
             + candidate_investment_cols
+            + candidate_advanced_metrics_cols
     ):
         if col in df.columns:
             numeric_cols.append(col)
@@ -742,10 +856,10 @@ def train_trade_value_model(
     gbr = GradientBoostingRegressor(
         n_estimators=250,
         learning_rate=0.03,
-        max_depth=2,
+        max_depth=3,
         random_state=random_state,
         subsample=0.85,
-        min_samples_leaf=8,
+        min_samples_leaf=6,
     )
 
     model = Pipeline(
@@ -863,6 +977,7 @@ def build_inference_dataframe() -> pd.DataFrame:
     internal_df = load_internal_stats_df()
     history_features_df = load_history_feature_df(current_season)
     investment_df = load_player_investment_df()
+    advanced_metrics_df = load_advanced_metrics_df()
 
     df = internal_df.copy()
 
@@ -878,6 +993,10 @@ def build_inference_dataframe() -> pd.DataFrame:
 
     if investment_df is not None and not investment_df.empty:
         df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    # ADVANCED METRICS: Merge efficiency metrics
+    if advanced_metrics_df is not None and not advanced_metrics_df.empty:
+        df = df.merge(advanced_metrics_df, on="sleeper_id", how="left")
 
     if "age" not in df.columns:
         if "fc_age" in df.columns:
@@ -947,20 +1066,35 @@ def rewrite_value_table_with_model() -> Path:
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
 
-    # Load sf_engine_values from engine_values CSV
+    # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
     engine_values_path = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
     sf_engine_map: dict[str, float] = {}
+    # Per-league-size engine maps: {size: {pid: value}}
+    engine_size_map: dict[int, dict[str, float]] = {}
+    sf_engine_size_map: dict[int, dict[str, float]] = {}
+    LEAGUE_SIZES = [8, 10, 12, 14]
+    for n in LEAGUE_SIZES:
+        engine_size_map[n] = {}
+        sf_engine_size_map[n] = {}
     if engine_values_path.exists():
         try:
             engine_df = pd.read_csv(engine_values_path)
-            if "player_id" in engine_df.columns and "sf_engine_value" in engine_df.columns:
-                for _, row in engine_df.iterrows():
-                    pid = str(row.get("player_id"))
-                    sf_eng_val = row.get("sf_engine_value")
-                    if pid and pd.notna(sf_eng_val):
-                        sf_engine_map[pid] = float(sf_eng_val)
+            for _, row in engine_df.iterrows():
+                pid = str(row.get("player_id"))
+                if not pid:
+                    continue
+                sf_eng_val = row.get("sf_engine_value")
+                if pd.notna(sf_eng_val):
+                    sf_engine_map[pid] = float(sf_eng_val)
+                for n in LEAGUE_SIZES:
+                    col_1qb = f"engine_value_{n}"
+                    col_sf = f"sf_engine_value_{n}"
+                    if col_1qb in engine_df.columns and pd.notna(row.get(col_1qb)):
+                        engine_size_map[n][pid] = float(row[col_1qb])
+                    if col_sf in engine_df.columns and pd.notna(row.get(col_sf)):
+                        sf_engine_size_map[n][pid] = float(row[col_sf])
         except Exception as e:
-            print(f"[ERROR] Failed to load sf_engine_values: {e}")
+            print(f"[ERROR] Failed to load engine_values: {e}")
 
     # Load value_2qb from dynastyprocess (need to match by name+team)
     dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
@@ -1035,8 +1169,13 @@ def rewrite_value_table_with_model() -> Path:
             # Fallback to ML model for SF (same as 1QB for now)
             sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
-        # Position-specific adjustments: TEs capped at ~800
+        # Non-QB players are not less valuable in SF — QBs go up, everyone else stays the same.
+        # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
         position = player.get("position")
+        if position != "QB":
+            sf_value = max(sf_value, final_value)
+
+        # Position-specific adjustments: TEs capped at ~800
         if position == "TE":
             # Apply 1.35x multiplier to TEs (allows top TEs to reach ~800), then cap
             final_value = min(final_value * 1.35, 800.0)
@@ -1050,7 +1189,25 @@ def rewrite_value_table_with_model() -> Path:
                 age = row["fc_age"]
 
         name = player.get("name")
-        cleaned_assets.append({
+
+        # Per-league-size values: scale the blended model value by the ratio
+        # of engine values between the target size and the default 10-team size.
+        # This preserves vendor-consensus anchoring while adjusting for scarcity.
+        eng_base = engine_size_map[10].get(pid) or 0.0
+        sf_eng_base = sf_engine_size_map[10].get(pid) or 0.0
+        size_values: dict[str, float] = {}
+        sf_size_values: dict[str, float] = {}
+        for n in LEAGUE_SIZES:
+            if n == 10:
+                continue
+            eng_n = engine_size_map[n].get(pid) or 0.0
+            sf_eng_n = sf_engine_size_map[n].get(pid) or 0.0
+            ratio = (eng_n / eng_base) if eng_base > 0 else 1.0
+            sf_ratio = (sf_eng_n / sf_eng_base) if sf_eng_base > 0 else 1.0
+            size_values[f"value_{n}"] = round(min(float(final_value) * ratio, 999.9), 1)
+            sf_size_values[f"sf_value_{n}"] = round(min(float(sf_value) * sf_ratio, 999.9), 1)
+
+        asset = {
             "id": player.get("id"),
             "name": name,
             "team": player.get("team"),
@@ -1063,7 +1220,10 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
-        })
+        }
+        asset.update(size_values)
+        asset.update(sf_size_values)
+        cleaned_assets.append(asset)
 
     pick_values = load_pick_value_table() or {}
 
@@ -1121,7 +1281,7 @@ def rewrite_value_table_with_model() -> Path:
         else:
             continue
 
-        cleaned_assets.append({
+        pick_asset = {
             "id": key,
             "name": name,
             "team": "Pick",
@@ -1134,7 +1294,13 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
-        })
+        }
+        # Draft picks are not scarcity-sensitive to league size — same value in all sizes
+        for n in LEAGUE_SIZES:
+            if n != 10:
+                pick_asset[f"value_{n}"] = float(val)
+                pick_asset[f"sf_value_{n}"] = float(val)
+        cleaned_assets.append(pick_asset)
 
     pos_to_indices: dict[str, list[int]] = {}
 

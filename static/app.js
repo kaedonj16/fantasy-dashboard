@@ -398,6 +398,8 @@ window.initTradePage = function initTradePage(root = document) {
 
   let allPlayers = [];
   let activePosFilter = "ALL";
+  let playerDeltas = {}; // Cache of player_id -> 7-day delta
+  let playerIndicators = { rookies: [], breakouts: [] }; // Rookie and breakout flags
 
   const state = {
     sideAPlayers: [],
@@ -405,6 +407,38 @@ window.initTradePage = function initTradePage(root = document) {
     sideAPicks: [],
     sideBPicks: [],
   };
+
+  async function loadPlayerDeltas() {
+    try {
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+      const res = await fetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+      if (!res.ok) return;
+      playerDeltas = await res.json();
+    } catch (err) {
+      console.error("[trade] Failed to load player deltas:", err);
+    }
+  }
+
+  async function loadPlayerIndicators() {
+    try {
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+      const res = await fetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+      if (!res.ok) return;
+      playerIndicators = await res.json();
+    } catch (err) {
+      console.error("[trade] Failed to load player indicators:", err);
+    }
+  }
+
+  function isRookie(playerId) {
+    return playerIndicators.rookies && playerIndicators.rookies.includes(String(playerId));
+  }
+
+  function isBreakout(playerId) {
+    return playerIndicators.breakouts && playerIndicators.breakouts.includes(String(playerId));
+  }
 
   function getStorageKey() {
     const leagueId = leagueInput?.value || "";
@@ -470,6 +504,73 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  function encodeTradeToURL() {
+    const tradeData = {
+      a: state.sideAPlayers.map(p => p.id).join(','),
+      b: state.sideBPlayers.map(p => p.id).join(','),
+      ap: state.sideAPicks.map(p => p.id).join(','),
+      bp: state.sideBPicks.map(p => p.id).join(',')
+    };
+
+    const params = new URLSearchParams();
+    if (tradeData.a) params.set('a', tradeData.a);
+    if (tradeData.b) params.set('b', tradeData.b);
+    if (tradeData.ap) params.set('ap', tradeData.ap);
+    if (tradeData.bp) params.set('bp', tradeData.bp);
+
+    const url = new URL(window.location.href);
+    url.search = params.toString();
+    return url.toString();
+  }
+
+  function loadTradeFromURL() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const aIds = params.get('a')?.split(',').filter(Boolean) || [];
+      const bIds = params.get('b')?.split(',').filter(Boolean) || [];
+      const apIds = params.get('ap')?.split(',').filter(Boolean) || [];
+      const bpIds = params.get('bp')?.split(',').filter(Boolean) || [];
+
+      if (aIds.length === 0 && bIds.length === 0) return false;
+
+      // Load players from allPlayers
+      state.sideAPlayers = aIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
+      state.sideBPlayers = bIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
+
+      // Load picks
+      state.sideAPicks = apIds.map(id => ({ id, display: id }));
+      state.sideBPicks = bpIds.map(id => ({ id, display: id }));
+
+      renderChips("A");
+      renderChips("B");
+      recomputeTrade();
+      return true;
+    } catch (err) {
+      console.error("[Trade Calc] Failed to load trade from URL:", err);
+      return false;
+    }
+  }
+
+  function shareTradeToClipboard() {
+    const url = encodeTradeToURL();
+    navigator.clipboard.writeText(url).then(() => {
+      // Show success feedback
+      const btn = root.querySelector("#shareTradeBtn");
+      if (btn) {
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<svg class="otc-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        btn.classList.add("otc-share-btn-success");
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          btn.classList.remove("otc-share-btn-success");
+        }, 2000);
+      }
+    }).catch(err => {
+      console.error("Failed to copy to clipboard:", err);
+      alert("Failed to copy link. Please try again.");
+    });
+  }
+
   function formatValue(v) {
     const num = Number(v) || 0;
     return num.toFixed(1);
@@ -511,7 +612,14 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     if (p.team) metaBits.push(p.team);
-    if (p.age != null && p.age !== "") metaBits.push(`${p.age} yrs`);
+
+    // Display age (format to 1 decimal place)
+    if (p.age != null && p.age !== "") {
+      const ageNum = parseFloat(p.age);
+      if (!isNaN(ageNum)) {
+        metaBits.push(`${ageNum.toFixed(1)} yrs`);
+      }
+    }
 
     return metaBits;
   }
@@ -564,7 +672,16 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaSpan = document.createElement("div");
     metaSpan.className = "otc-value-sub";
-    metaSpan.textContent = buildMetaBits(p).join(" • ");
+
+    const metaBits = buildMetaBits(p);
+    if (isRookie(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+    }
+    if (isBreakout(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+    }
+
+    metaSpan.innerHTML = metaBits.join(" • ");
 
     mainWrap.appendChild(topLine);
     mainWrap.appendChild(metaSpan);
@@ -599,7 +716,16 @@ window.initTradePage = function initTradePage(root = document) {
 
     const sub = document.createElement("div");
     sub.className = "otc-dropdown-sub";
-    sub.textContent = buildMetaBits(p).join(" • ");
+
+    const metaBits = buildMetaBits(p);
+    if (isRookie(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+    }
+    if (isBreakout(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+    }
+
+    sub.innerHTML = metaBits.join(" • ");
 
     left.appendChild(top);
     left.appendChild(sub);
@@ -656,30 +782,206 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
-  async function loadTopMovers() {
+  let loadMoversTimeout = null;
+
+  async function loadTopMovers(immediate = false) {
+    // Debounce: wait 300ms before loading unless immediate
+    if (!immediate) {
+      clearTimeout(loadMoversTimeout);
+      loadMoversTimeout = setTimeout(() => loadTopMovers(true), 300);
+      return;
+    }
+
     const risersEl = root.querySelector("#otcRisersList");
     const fallersEl = root.querySelector("#otcFallersList");
+    const moversPanel = root.querySelector(".otc-movers-panel");
+
+    // Show loading state
+    if (moversPanel) {
+      moversPanel.classList.add("otc-movers-loading");
+    }
+    if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+    if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
 
     try {
       const leagueType = getLeagueType();
-      const res = await fetch(`/api/value-movers?days=7&limit=5&league_type=${leagueType}`, { cache: "no-store" });
+      const leagueSize = getLeagueSize();
+      const res = await fetch(`/api/value-movers?days=7&limit=5&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
       const usedDays = data?.used_days;
+      const latestDate = data?.latest_date;
 
       const sub = root.querySelector("#moversSub");
       if (sub && usedDays) {
         const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
-        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel} BR value`;
+        const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
+
+        // Add freshness indicator
+        let freshnessText = "";
+        if (latestDate) {
+          const dataDate = new Date(latestDate);
+          const now = new Date();
+          const hoursDiff = Math.floor((now - dataDate) / (1000 * 60 * 60));
+          if (hoursDiff < 1) {
+            freshnessText = " • Updated recently";
+          } else if (hoursDiff < 24) {
+            freshnessText = ` • Updated ${hoursDiff}h ago`;
+          } else {
+            const daysDiff = Math.floor(hoursDiff / 24);
+            freshnessText = ` • Updated ${daysDiff}d ago`;
+          }
+        }
+
+        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel}${sizeLabel} BR value${freshnessText}`;
       }
 
       renderMovers(data);
+
+      // Visual feedback - pulse animation
+      if (moversPanel) {
+        moversPanel.classList.remove("otc-movers-loading");
+        moversPanel.classList.add("otc-movers-updated");
+        setTimeout(() => moversPanel.classList.remove("otc-movers-updated"), 600);
+      }
     } catch (err) {
       console.error("[trade] movers error:", err);
       if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty">Unable to load risers.</div>';
       if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty">Unable to load fallers.</div>';
+      if (moversPanel) {
+        moversPanel.classList.remove("otc-movers-loading");
+      }
     }
+  }
+
+  // Load offseason breakout candidates
+  async function loadBreakouts() {
+    const breakoutsEl = root.querySelector("#otcBreakoutsList");
+    const moversPanel = root.querySelector(".otc-movers-panel");
+    if (!breakoutsEl) return;
+
+    // Show loading state
+    if (moversPanel) {
+      moversPanel.classList.add("otc-movers-loading");
+    }
+    breakoutsEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+
+    try {
+      const leagueType = getLeagueType();
+      const res = await fetch(`/api/offseason-breakout-candidates?min_score=30&limit=10`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load breakouts.");
+
+      let candidates = await res.json();
+
+      // Filter out high-value players (already established stars)
+      // Only show players with dynasty value < 2000 (roughly outside top 50)
+      // Also filter out players older than 25 (breakouts are typically young players)
+      const valueThreshold = 2000;
+      const maxAge = 25;
+      candidates = candidates.filter(c => {
+        const value = leagueType === "sf" ? (c.sf_value || c.value || 0) : (c.value || 0);
+        const age = c.age;
+        return value < valueThreshold && (age == null || age <= maxAge);
+      });
+
+      if (!candidates || candidates.length === 0) {
+        breakoutsEl.innerHTML = '<div class="otc-movers-empty">No breakout candidates found.</div>';
+        if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
+        return;
+      }
+
+      // Limit to top 8 for display
+      candidates = candidates.slice(0, 8);
+
+      breakoutsEl.innerHTML = "";
+      candidates.forEach(c => {
+        const row = document.createElement("div");
+        row.className = "otc-mini-row";
+
+        const name = document.createElement("div");
+        name.className = "otc-mini-name";
+
+        const playerName = document.createElement("span");
+        playerName.className = "otc-player-name";
+        playerName.textContent = c.name || "Unknown";
+
+        const meta = document.createElement("span");
+        meta.className = "otc-player-meta";
+
+        // Build meta string: position, team, age
+        const metaParts = [];
+        if (c.position) metaParts.push(c.position);
+        if (c.team) metaParts.push(c.team);
+        if (c.age != null) metaParts.push(`${c.age.toFixed(1)} yrs`);
+        meta.textContent = metaParts.join(" · ");
+
+        name.appendChild(playerName);
+        name.appendChild(meta);
+
+        row.appendChild(name);
+
+        breakoutsEl.appendChild(row);
+      });
+
+      if (moversPanel) {
+        moversPanel.classList.remove("otc-movers-loading");
+        moversPanel.classList.add("otc-movers-updated");
+        setTimeout(() => moversPanel.classList.remove("otc-movers-updated"), 600);
+      }
+    } catch (err) {
+      console.error("[trade] breakouts error:", err);
+      breakoutsEl.innerHTML = '<div class="otc-movers-empty">Unable to load breakouts.</div>';
+      if (moversPanel) {
+        moversPanel.classList.remove("otc-movers-loading");
+      }
+    }
+  }
+
+  // Handle tab switching
+  function initMoversBreakoutsTabs() {
+    const tabButtons = root.querySelectorAll(".otc-mini-tab");
+    const moversContent = root.querySelector("#moversTabContent");
+    const breakoutsContent = root.querySelector("#breakoutsTabContent");
+    const moversSub = root.querySelector("#moversSub");
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+
+        // Update active tab button
+        tabButtons.forEach(b => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+
+        // Update content visibility
+        if (tab === "movers") {
+          moversContent?.classList.add("is-active");
+          breakoutsContent?.classList.remove("is-active");
+          if (moversSub) {
+            moversSub.style.display = "block";
+            // Restore movers subtitle (will be updated by loadTopMovers)
+            const leagueType = getLeagueType();
+            const leagueSize = getLeagueSize();
+            const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
+            const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
+            moversSub.textContent = `Biggest 7-day changes in ${leagueLabel}${sizeLabel} BR value`;
+          }
+        } else if (tab === "breakouts") {
+          moversContent?.classList.remove("is-active");
+          breakoutsContent?.classList.add("is-active");
+          if (moversSub) {
+            moversSub.style.display = "block";
+            moversSub.textContent = "Young players poised for expanded roles";
+          }
+
+          // Load breakouts when tab is opened for the first time
+          if (!breakoutsContent.dataset.loaded) {
+            breakoutsContent.dataset.loaded = "true";
+            loadBreakouts();
+          }
+        }
+      });
+    });
   }
 
   function normalizePlayerRow(p) {
@@ -785,23 +1087,54 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function getLeagueType() {
-    return root.querySelector('input[name="leagueType"]:checked')?.value || "1qb";
+    const toggle = root.querySelector("#leagueTypeToggle");
+    return toggle?.checked ? "sf" : "1qb";
   }
+
+  function getLeagueSize() {
+    const sel = root.querySelector("#leagueSizeSelect");
+    return parseInt(sel?.value || "10", 10);
+  }
+
+  function getScoringFormat() {
+    const sel = root.querySelector("#scoringFormatSelect");
+    return sel?.value || "ppr";
+  }
+
+  // Position multipliers matching the server-side _SCORING_MULTS table
+  const SCORING_MULTS = {
+    ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
+    half: { QB: 1.00, RB: 1.06, WR: 0.97, TE: 0.94 },
+    std:  { QB: 1.00, RB: 1.13, WR: 0.93, TE: 0.87 },
+  };
 
   function getPlayerValue(player) {
     const leagueType = getLeagueType();
+    const size = getLeagueSize();
+    const fmt = getScoringFormat();
+    const mults = SCORING_MULTS[fmt] || SCORING_MULTS.ppr;
+    const pos = (player.position || "").toUpperCase();
+    const mult = mults[pos] ?? 1.0;
+
+    let base;
     if (leagueType === "sf") {
-      return Number(player.sf_value || player.value || 0);
+      const key = size === 10 ? "sf_value" : `sf_value_${size}`;
+      base = Number(player[key] ?? player.sf_value ?? player.value ?? 0);
+    } else {
+      const key = size === 10 ? "value" : `value_${size}`;
+      base = Number(player[key] ?? player.value ?? 0);
     }
-    return Number(player.value || 0);
+    return Math.round(base * mult * 10) / 10;
   }
 
-  function onLeagueTypeChange() {
+  async function onLeagueTypeChange() {
     // Refresh all value displays
+    await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
     renderChips("A");
     renderChips("B");
     recomputeTrade();
     renderAllPlayersList();
+    loadTopMovers();
   }
 
   function syncViewerSideLabels() {
@@ -850,7 +1183,18 @@ window.initTradePage = function initTradePage(root = document) {
 
       const metaEl = document.createElement("div");
       metaEl.className = "otc-chip-meta";
-      metaEl.textContent = buildMetaBits(p).join(" · ");
+
+      const metaBits = buildMetaBits(p);
+
+      // Add rookie/breakout badges
+      if (isRookie(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+      }
+      if (isBreakout(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+      }
+
+      metaEl.innerHTML = metaBits.join(" · ");
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -861,6 +1205,15 @@ window.initTradePage = function initTradePage(root = document) {
       const valueEl = document.createElement("span");
       valueEl.className = "otc-chip-value";
       valueEl.textContent = formatValue(getPlayerValue(p));
+
+      // Add delta indicator if available
+      const delta = p.delta || p.recent_delta || playerDeltas[p.id];
+      if (delta && Math.abs(delta) >= 1) {
+        const deltaEl = document.createElement("span");
+        deltaEl.className = delta > 0 ? "otc-chip-delta otc-chip-delta-positive" : "otc-chip-delta otc-chip-delta-negative";
+        deltaEl.textContent = delta > 0 ? `+${Math.round(delta)}` : Math.round(delta);
+        rightWrap.appendChild(deltaEl);
+      }
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
@@ -987,6 +1340,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      scoring_format: getScoringFormat(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
       side_a_picks: sideAPickIds,
@@ -1095,6 +1449,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      scoring_format: getScoringFormat(),
       viewer_side: viewerSide,
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -1167,6 +1522,48 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Fuzzy player name matching — returns a score (higher = better match).
+  // Handles: exact substring, word-start matches, and single-transposition typos.
+  function fuzzyNameScore(name, query) {
+    if (!name || !query) return 0;
+    const n = name.toLowerCase();
+    const q = query.toLowerCase();
+    // Exact substring — highest priority
+    if (n.includes(q)) return 100 + (100 - n.indexOf(q));
+    // Check search_name field alias passed in via player object handled by caller
+    // Word-start matching: "jax sm" matches "Jaxon Smith-Njigba"
+    const nWords = n.split(/[\s\-]+/);
+    const qWords = q.split(/\s+/).filter(Boolean);
+    if (qWords.length > 1) {
+      let wi = 0;
+      for (const qw of qWords) {
+        while (wi < nWords.length && !nWords[wi].startsWith(qw)) wi++;
+        if (wi >= nWords.length) break;
+        wi++;
+      }
+      if (wi <= nWords.length && qWords.every((qw, i) => {
+        const start = nWords.slice(i).findIndex(w => w.startsWith(qw));
+        return start !== -1;
+      })) return 70;
+    }
+    // Any word starts with query
+    if (nWords.some(w => w.startsWith(q))) return 60;
+    // Typo tolerance: allow 1 character substitution/transposition for queries >= 4 chars
+    if (q.length >= 4) {
+      for (let i = 0; i < q.length; i++) {
+        // deletion
+        const del = q.slice(0, i) + q.slice(i + 1);
+        if (n.includes(del)) return 40;
+        // substitution with any char
+        for (const c of "abcdefghijklmnopqrstuvwxyz") {
+          const sub = q.slice(0, i) + c + q.slice(i + 1);
+          if (n.includes(sub) && sub !== q) return 30;
+        }
+      }
+    }
+    return 0;
+  }
+
   function setupSearch(side) {
     const input = root.querySelector(side === "A" ? "#sideASearch" : "#sideBSearch");
     const dropdown = root.querySelector(side === "A" ? "#sideADropdown" : "#sideBDropdown");
@@ -1195,11 +1592,29 @@ window.initTradePage = function initTradePage(root = document) {
 
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
+      const leagueType = getLeagueType();
       const matches = allPlayers
-        .filter(p => p.name && p.name.toLowerCase().includes(query))
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
-        .slice(0, 20);
+        .map(p => {
+          // Score against display name and search_name (normalized, no punctuation)
+          const score = Math.max(
+            fuzzyNameScore(p.name, query),
+            fuzzyNameScore(p.search_name, query)
+          );
+          // Get player value for sorting
+          const value = leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0);
+          return { p, score, value };
+        })
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => {
+          // Primary sort by fuzzy score (better matches first)
+          if (b.score !== a.score) return b.score - a.score;
+          // Secondary sort by value (higher value first)
+          return b.value - a.value;
+        })
+        .slice(0, 20)
+        .map(({ p }) => p);
 
       const overallRankMap = buildOverallRankMap(allPlayers);
       if (!matches.length) return;
@@ -1251,11 +1666,39 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function bindLeagueTypeControls() {
-    root.querySelectorAll('input[name="leagueType"]').forEach(el => {
-      bindOnce(el, "tradeLeagueTypeChange", "change", () => {
+    const toggle = root.querySelector("#leagueTypeToggle");
+    if (toggle) {
+      bindOnce(toggle, "tradeLeagueTypeChange", "change", () => {
         onLeagueTypeChange();
       });
-    });
+    }
+  }
+
+  function bindLeagueSizeControls() {
+    const sel = root.querySelector("#leagueSizeSelect");
+    if (sel) {
+      bindOnce(sel, "tradeLeagueSizeChange", "change", async () => {
+        // Same refresh as league type change — all values need recalculating
+        await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+        loadTopMovers();
+      });
+    }
+  }
+
+  function bindScoringFormatControls() {
+    const sel = root.querySelector("#scoringFormatSelect");
+    if (sel) {
+      bindOnce(sel, "tradeScoringFormatChange", "change", () => {
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+      });
+    }
   }
 
   function bindViewerSideControls() {
@@ -1267,6 +1710,15 @@ window.initTradePage = function initTradePage(root = document) {
     });
 
     syncViewerSideLabels();
+  }
+
+  function bindShareButton() {
+    const btn = root.querySelector("#shareTradeBtn");
+    if (btn) {
+      bindOnce(btn, "shareTradeClick", "click", () => {
+        shareTradeToClipboard();
+      });
+    }
   }
 
   // ------------------------------------------------------------
@@ -1623,15 +2075,28 @@ window.initTradePage = function initTradePage(root = document) {
   Promise.allSettled([
     ensurePlayersLoaded(),
     loadTopMovers(),
+    loadPlayerDeltas(),
+    loadPlayerIndicators(),
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
     bindLeagueTypeControls();
+    bindLeagueSizeControls();
+    bindScoringFormatControls();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();
     bindSetupButton();
     bindClearTradeButton();
+    bindShareButton();
+    initMoversBreakoutsTabs();
+
+    // Try to load trade from URL first, otherwise load from localStorage
+    const loadedFromURL = loadTradeFromURL();
+    if (!loadedFromURL) {
+      loadState();
+    }
+
     updateAnalyzeButtonState();
     syncEmptyState("A");
     syncEmptyState("B");
@@ -1931,6 +2396,8 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
 document.addEventListener("DOMContentLoaded", () => {
   const platformBtns = document.querySelectorAll(".platform-btn");
   const sleeperFlow = document.getElementById("sleeperFlow");
+  const espnFlow = document.getElementById("espnFlow");
+  const sleeperHint = document.getElementById("sleeperHint");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
   const leagueSelect = document.getElementById("league");
@@ -1939,31 +2406,43 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorBox = document.getElementById("lookupError");
   const formPlatform = document.getElementById("formPlatform");
 
+  // ESPN elements
+  const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
+  const espnTeamName = document.getElementById("espnTeamName");
+  const espnSubmitBtn = document.getElementById("espnSubmitBtn");
+
   if (!platformBtns.length) return;
 
   let currentPlatform = "sleeper";
 
-  // Platform switching (ESPN coming soon, only Sleeper active)
+  function switchPlatform(platform) {
+    currentPlatform = platform;
+    platformBtns.forEach(b => b.classList.remove("active"));
+    const activeBtn = [...platformBtns].find(b => b.dataset.platform === platform);
+    if (activeBtn) activeBtn.classList.add("active");
+
+    if (formPlatform) formPlatform.value = platform;
+
+    // Reset shared state
+    if (leagueSelectWrap) leagueSelectWrap.style.display = "none";
+    if (generateWrap) generateWrap.style.display = "none";
+    if (errorBox) errorBox.style.display = "none";
+
+    if (platform === "espn") {
+      if (sleeperFlow) sleeperFlow.style.display = "none";
+      if (espnFlow) espnFlow.style.display = "block";
+      if (sleeperHint) sleeperHint.style.display = "none";
+    } else {
+      if (sleeperFlow) sleeperFlow.style.display = "block";
+      if (espnFlow) espnFlow.style.display = "none";
+      if (sleeperHint) sleeperHint.style.display = "";
+    }
+  }
+
+  // Platform switching
   platformBtns.forEach(btn => {
     btn.addEventListener("click", () => {
-      const platform = btn.dataset.platform;
-
-      // Only handle Sleeper for now
-      if (platform !== "sleeper") return;
-
-      currentPlatform = platform;
-
-      // Update active state
-      platformBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-
-      // Update form platform
-      if (formPlatform) formPlatform.value = platform;
-
-      // Reset state
-      if (leagueSelectWrap) leagueSelectWrap.style.display = "none";
-      if (generateWrap) generateWrap.style.display = "none";
-      if (errorBox) errorBox.style.display = "none";
+      switchPlatform(btn.dataset.platform);
     });
   });
 
@@ -1971,9 +2450,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (usernameInput) {
     usernameInput.addEventListener("input", () => {
       const formUsername = document.getElementById("formUsername");
-      if (formUsername) {
-        formUsername.value = usernameInput.value.trim();
-      }
+      if (formUsername) formUsername.value = usernameInput.value.trim();
     });
   }
 
@@ -2024,6 +2501,51 @@ document.addEventListener("DOMContentLoaded", () => {
       } finally {
         lookupBtn.disabled = false;
         lookupBtn.textContent = "Find My Leagues";
+      }
+    });
+  }
+
+  // ESPN submit
+  if (espnSubmitBtn) {
+    espnSubmitBtn.addEventListener("click", async () => {
+      const leagueId = espnLeagueIdInput?.value.trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (errorBox) {
+          errorBox.textContent = "Enter a valid ESPN League ID (numbers only).";
+          errorBox.style.display = "block";
+        }
+        return;
+      }
+
+      if (errorBox) errorBox.style.display = "none";
+      espnSubmitBtn.disabled = true;
+      espnSubmitBtn.textContent = "Validating...";
+
+      try {
+        const res = await fetch(`/api/espn-validate-league?league_id=${encodeURIComponent(leagueId)}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Unable to load ESPN league.");
+        }
+
+        // Inject league id into the form's league select and submit
+        leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "ESPN League"}</option>`;
+        if (formPlatform) formPlatform.value = "espn";
+
+        // Set optional team name as username for viewer matching
+        const teamName = espnTeamName?.value.trim() || "";
+        const formUsername = document.getElementById("formUsername");
+        if (formUsername) formUsername.value = teamName;
+
+        document.getElementById("leagueSelectForm")?.submit();
+      } catch (err) {
+        if (errorBox) {
+          errorBox.textContent = err.message || "Unable to load ESPN league.";
+          errorBox.style.display = "block";
+        }
+        espnSubmitBtn.disabled = false;
+        espnSubmitBtn.textContent = "Go to Dashboard";
       }
     });
   }

@@ -13,7 +13,7 @@ from utils.utils import load_relevant_index, write_json, read_json
 
 SLEEPER_BASE = "https://api.sleeper.app"
 SLEEPER_STATS_BASE = "https://api.sleeper.com"  # or .com depending on your system
-ALLOWED_POS = ["RB", "WR"]
+ALLOWED_POS = ["RB", "WR", "TE"]
 
 WEEK_CACHE_TTL = 24 * 60 * 60  # 1 day, adjust as you want
 CACHE_DIR = Path(__file__).resolve().parents[2] / "cache"

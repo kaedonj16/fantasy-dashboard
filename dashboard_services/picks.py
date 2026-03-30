@@ -288,7 +288,7 @@ def load_pick_value_table(
                 if year == current_year and draft_done:
                     continue
 
-                if rnd not in (1, 2, 3):
+                if rnd not in (1, 2, 3, 4, 5):
                     continue
 
                 # Remap exact slots to actual league size for the upcoming draft
@@ -361,7 +361,7 @@ def load_pick_value_table(
                 if year == current_year and draft_done:
                     continue
 
-                if rnd not in (1, 2, 3):
+                if rnd not in (1, 2, 3, 4, 5):
                     continue
 
                 # Remap exact slots to actual league size for the upcoming draft

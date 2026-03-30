@@ -432,6 +432,84 @@ def get_transactions(season: int, league_id: str, week: int) -> List[Dict[str, A
     return []
 
 
+def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
+    """ESPN doesn't expose dynasty draft history via the API. Returns empty list."""
+    return []
+
+
+# ESPN slot name -> Sleeper roster position
+_ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
+    "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
+    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX",
+    "OP": "SUPER_FLEX",
+    "K": "K",
+    "D/ST": "DEF", "DST": "DEF", "DEF": "DEF", "D-ST": "DEF",
+    "BE": "BN", "BENCH": "BN",
+    "IR": "IR",
+}
+
+
+def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
+    """
+    Extract ESPN league settings in Sleeper-compatible format.
+    Returns a dict with: scoring_settings, roster_positions, league_settings, total_rosters.
+    Called by platform_api.sync_league_globals() to populate api.py module globals.
+    """
+    try:
+        lg = _league(season, league_id)
+    except Exception as e:
+        print(f"[espn] get_league_globals failed: {e}")
+        return {}
+
+    settings = getattr(lg, "settings", None)
+
+    # Scoring type -> PPR value
+    scoring_type = (getattr(settings, "scoring_type", None) or "standard").lower().replace(" ", "_")
+    ppr_map = {"ppr": 1.0, "half_ppr": 0.5, "half-ppr": 0.5, "standard": 0.0}
+    ppr = ppr_map.get(scoring_type, 0.0)
+
+    scoring_settings: Dict[str, Any] = {
+        "rec": ppr,
+        "pass_yd": 0.04,
+        "pass_td": 4.0,
+        "pass_int": -2.0,
+        "rush_yd": 0.1,
+        "rush_td": 6.0,
+        "rec_yd": 0.1,
+        "rec_td": 6.0,
+        "fum_lost": -2.0,
+        "2pt": 2.0,
+        "fg_0_19": 3.0,
+        "fg_20_29": 3.0,
+        "fg_30_39": 3.0,
+        "fg_40_49": 4.0,
+        "fg_50p": 5.0,
+        "xpt": 1.0,
+    }
+
+    # Roster positions
+    raw_slots = getattr(settings, "roster_slots", None) or []
+    roster_positions = [
+        _ESPN_SLOT_TO_SLEEPER.get(str(s).upper().strip(), str(s).upper())
+        for s in raw_slots
+    ]
+
+    # League settings
+    total_rosters = len(getattr(lg, "teams", None) or [])
+    league_settings: Dict[str, Any] = {
+        "playoff_teams": _safe_int(getattr(settings, "playoff_team_count", 4)),
+        "num_teams": total_rosters,
+        "type": 0,
+    }
+
+    return {
+        "scoring_settings": scoring_settings,
+        "roster_positions": roster_positions,
+        "league_settings": league_settings,
+        "total_rosters": total_rosters,
+    }
+
+
 def build_espn_to_canonical(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
     """
     returns: espnId(str) -> canonical_id(str) where canonical_id is the dict key in your index

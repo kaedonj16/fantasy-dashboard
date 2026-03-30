@@ -216,6 +216,27 @@ def get_total_rosters() -> int:
     return TOTAL_ROSTERS
 
 
+def set_league_globals(
+    scoring_settings: Optional[Dict[str, Any]] = None,
+    roster_positions: Optional[List[str]] = None,
+    league_settings: Optional[Dict[str, Any]] = None,
+    total_rosters: Optional[int] = None,
+) -> None:
+    """
+    Allow external callers (e.g. ESPN integration) to populate the league globals
+    that are normally populated by a Sleeper get_league() call.
+    """
+    global SCORING_SETTINGS, ROSTER_POSITIONS, LEAGUE_SETTINGS, TOTAL_ROSTERS
+    if scoring_settings is not None:
+        SCORING_SETTINGS = scoring_settings
+    if roster_positions is not None:
+        ROSTER_POSITIONS = roster_positions
+    if league_settings is not None:
+        LEAGUE_SETTINGS = league_settings
+    if total_rosters is not None:
+        TOTAL_ROSTERS = int(total_rosters)
+
+
 @ttl_cache(ttl=300)
 def get_users(league_id: str) -> List[dict]:
     return fetch_json(f"/league/{league_id}/users")

@@ -56,7 +56,7 @@ def build_daily_data(season: int, week: int):
     if load_model_value_table() is None:
         rewrite_value_table_with_model()
         model_value_table = load_model_value_table() or []
-        inserted = record_model_value_snapshot(model_value_table)
+        record_model_value_snapshot(model_value_table)
 
 
 def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):

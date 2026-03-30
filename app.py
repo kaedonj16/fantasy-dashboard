@@ -18,6 +18,7 @@ from flask import (
     jsonify,
     render_template,
     session,
+    send_file,
 )
 from openai import OpenAI
 from pathlib import Path
@@ -65,6 +66,7 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_traded_picks,
     get_users,
+    sync_league_globals,
 )
 from dashboard_services.players import get_players_map
 from dashboard_services.providers.espn_api import safe_float
@@ -140,6 +142,30 @@ try:
 except Exception as e:
     print(f"[value-history] init skipped: {e}")
 
+
+def generate_recent_updates_html(limit=5):
+    """Generate HTML for recent changelog updates."""
+    from dashboard_services.changelog import CHANGELOG
+
+    recent = CHANGELOG[:limit]
+    if not recent:
+        return ""
+
+    html_parts = []
+    for entry in recent:
+        tag_class = f"update-tag-{entry['tag']}"
+        html_parts.append(f'''
+        <div class="home-update-item">
+          <div class="home-update-item-header">
+            <span class="home-update-tag {tag_class}">{entry['tag']}</span>
+            <span class="home-update-date">{entry['date']}</span>
+          </div>
+          <p class="home-update-text">{entry['text']}</p>
+        </div>
+        ''')
+
+    return '\n'.join(html_parts)
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -165,7 +191,7 @@ FORM_BODY = """
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn" disabled data-tooltip="ESPN integration coming soon!">ESPN (Coming Soon)</button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
           </div>
         </div>
 
@@ -181,6 +207,23 @@ FORM_BODY = """
           </div>
         </div>
 
+        <!-- ESPN Flow -->
+        <div id="espnFlow" style="display:none;">
+          <div class="row">
+            <label for="espnLeagueIdInput">ESPN League ID</label>
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 123456789" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional, to track your team)</span></label>
+            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row">
+            <button type="button" id="espnSubmitBtn">Go to Dashboard</button>
+          </div>
+          <p class="hint" style="margin-top:6px;">
+            ESPN private leagues require <code>ESPN_S2</code> and <code>ESPN_SWID</code> environment variables set on the server.
+          </p>
+        </div>
 
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -205,14 +248,15 @@ FORM_BODY = """
           {% endif %}
         </form>
 
-        <p class="hint">
+        <p class="hint" id="sleeperHint">
           Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
         </p>
       </div>
     </div>
   </section>
 
-  <section class="home-feature-grid">
+  <div class="home-content-wrapper">
+    <section class="home-feature-grid">
     <div class="home-feature-card">
       <div class="home-feature-icon">📊</div>
       <h3>Trade Calculator</h3>
@@ -267,6 +311,14 @@ FORM_BODY = """
       </p>
     </div>
   </section>
+
+    <aside class="home-updates-sidebar">
+      <h3 class="home-updates-sidebar-title">Recent Updates</h3>
+      <div class="home-updates-list">
+        {{ recent_updates | safe }}
+      </div>
+    </aside>
+  </div>
 </div>
 """
 
@@ -394,10 +446,13 @@ def normalize_sleeper_username(value: str) -> str:
 
 def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str) -> Union[Dict, None]:
     """
-    Resolve a Sleeper username to:
+    Resolve a Sleeper username (or ESPN team/owner name) to:
       - user_id
       - roster_id
       - display_name / team name
+
+    For ESPN leagues the `username` field holds the owner's display_name or team_name
+    because ESPN doesn't use Sleeper-style usernames.
     """
     wanted = normalize_sleeper_username(username)
     if not wanted:
@@ -405,8 +460,14 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
 
     matched_user = None
     for u in users or []:
-        uname = normalize_sleeper_username(u.get("display_name") or u.get("username") or "")
-        if uname == wanted:
+        # Check display_name, username, and ESPN team_name (in metadata)
+        meta = u.get("metadata") or {}
+        candidates = [
+            normalize_sleeper_username(u.get("display_name") or ""),
+            normalize_sleeper_username(u.get("username") or ""),
+            normalize_sleeper_username(meta.get("team_name") or ""),
+        ]
+        if wanted in candidates:
             matched_user = u
             break
 
@@ -424,17 +485,24 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
             matched_roster = r
             break
 
+    meta_u = matched_user.get("metadata") or {}
     if not matched_roster:
         return {
             "viewer_username": username,
             "viewer_user_id": user_id,
             "viewer_roster_id": None,
-            "viewer_team_name": matched_user.get("display_name") or matched_user.get("username") or "Unknown Team",
+            "viewer_team_name": (
+                meta_u.get("team_name")
+                or matched_user.get("display_name")
+                or matched_user.get("username")
+                or "Unknown Team"
+            ),
         }
 
     metadata = matched_roster.get("metadata") or {}
     team_name = (
             metadata.get("team_name")
+            or meta_u.get("team_name")
             or matched_user.get("display_name")
             or matched_user.get("username")
             or f"Roster {matched_roster.get('roster_id')}"
@@ -911,6 +979,27 @@ def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optiona
     return most_recent
 
 
+def _build_roster_map(users: list, rosters: list) -> dict:
+    """Map roster_id → display name, using metadata.team_name with user fallback."""
+    user_fallback = {
+        u["user_id"]: (
+            (u.get("metadata") or {}).get("team_name")
+            or u.get("display_name")
+            or u.get("username")
+            or str(u["user_id"])
+        )
+        for u in users
+    }
+    roster_map = {}
+    for r in rosters:
+        rid = str(r["roster_id"])
+        owner_id = r.get("owner_id")
+        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
+            owner_id, f"Roster {rid}"
+        )
+    return roster_map
+
+
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
@@ -978,6 +1067,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     teams_index = load_teams_index()
     players_map = get_players_map(players)
 
+    # Populate league-wide globals (scoring, roster positions, etc.)
+    # For Sleeper these were already populated by get_league() above.
+    # For ESPN we need an explicit sync step.
+    sync_league_globals(platform, resolved_league_id, season)
+
     # League settings
     scoring_settings = get_effective_scoring_settings()
     raw_scoring_settings = get_scoring_settings() if "get_scoring_settings" in globals() else None
@@ -1001,23 +1095,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         )
 
     # Always build roster_map from current rosters/users so offseason pages work
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
+    roster_map = _build_roster_map(users, rosters)
 
     if df_weekly.empty and not offseason_mode:
         print(
@@ -1476,12 +1554,12 @@ def history_ai_recap():
 
     try:
         # Get the same context that the history page uses
-        platform = "sleeper"
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
         base_league_id = request.args.get("base_season", season)
 
         # Resolve the correct league ID for the historical season
         resolved_history_league_id = resolve_league_id_for_season(
-            platform="sleeper",
+            platform=platform,
             league_id=league_id,
             current_season=int(base_league_id),
             target_season=int(season),
@@ -1651,46 +1729,30 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     teams_index = ctx["teams_index"]
 
     # ---------- Rebuild roster_map every refresh ----------
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
-
-    ctx["roster_map"] = roster_map
+    ctx["roster_map"] = _build_roster_map(users, rosters)
 
     # ---------- League settings / refs that can matter to multiple pages ----------
+    sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
         ctx["scoring_settings"] = get_effective_scoring_settings()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] scoring_settings failed: {e}")
 
     try:
         ctx["roster_positions"] = get_roster_positions()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] roster_positions failed: {e}")
 
     try:
         ctx["league_settings"] = get_league_settings()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] league_settings failed: {e}")
 
     try:
         ctx["total_rosters"] = get_total_rosters()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ctx] total_rosters failed, falling back to len(rosters): {e}")
+        ctx["total_rosters"] = len(rosters)
 
     roster_counts = count_roster_positions(get_roster_positions())
     has_idp = any(k in roster_counts for k in ["DL", "LB", "DB", "IDP_FLEX"])
@@ -1857,12 +1919,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- Teams page ----------
     if page == "teams":
         clear_teams_cache_for_league(resolved_league_id)
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
     # ---------- Trade page ----------
     if page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
         # also refresh global model-value API cache used by /api/trade-eval
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -1871,7 +1933,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Offseason dashboard refresh ----------
     if page == "dashboard" and offseason_mode:
-        ctx["model_value_table"] = load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
 
         if platform == "sleeper":
             try:
@@ -3007,11 +3069,10 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
 
     raw_adj = base_from_gap * piece_factor
 
-    # 3. Caps so it never blows up:
-    #    - at most 60% of the stud
-    #    - at most 35% of the consolidating side's total *player* value
-    cap_stud = 0.60 * stud_val
-    cap_side = 0.35 * fewer_players_total
+    # 3. Caps: at most 75% of the stud value, or 50% of the consolidating
+    #    side's total player value — whichever is smaller.
+    cap_stud = 0.75 * stud_val
+    cap_side = 0.50 * fewer_players_total
     adj_cap = max(0.0, min(cap_stud, cap_side))
 
     adj = min(raw_adj, adj_cap)
@@ -3359,8 +3420,20 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     highlights_html = _render_weekly_highlights(df_weekly, default_week)
 
+    proj_warn_html = ""
+    if not proj_by_week.get("_available"):
+        proj_warn_html = (
+            "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
+            "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
+            "    <strong>Projections unavailable</strong> — projected scores can't be loaded right now. "
+            "    Actual scores will still appear once games are final."
+            "  </div>"
+            "</div>"
+        )
+
     main_panel_html = f"""
           <div class="week-main-panel active" data-week="{default_week}">
+            {proj_warn_html}
             {top_scorers_html}
           </div>
     """
@@ -3517,13 +3590,15 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
 def build_projections_by_week(season: int, weeks: int):
     bundles = {}
+    any_projections = False
     for w in range(1, weeks + 1):
-        try:
-            projections = load_week_projection(season, w)
-            bundles[w] = {"projections": projections}
-        except Exception as e:
-            print(f"Error loading week {w} projections: {e}")
-            bundles[w] = {"projections": {}}
+        projections = load_week_projection(season, w)
+        bundles[w] = {"projections": projections or {}}
+        if projections:
+            any_projections = True
+    if not any_projections:
+        print(f"[projections] No projection data available for season {season}")
+    bundles["_available"] = any_projections
     return bundles
 
 
@@ -4173,12 +4248,18 @@ def build_activity_body(ctx: dict) -> str:
         )
 
     if not activity_html:
+        if platform == "espn":
+            _empty_title = "Activity not available for ESPN leagues"
+            _empty_copy = "Transaction history requires Sleeper league data. ESPN leagues currently show scores and standings only."
+        else:
+            _empty_title = "No recent activity yet"
+            _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
-            "<div class='card'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>No recent activity yet</div>"
-            "      <div class='bract-empty-copy'>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
+            "<div class=’card’>"
+            "  <div class=’card-body’>"
+            "    <div class=’bract-empty-state’>"
+            f"      <div class=’bract-empty-title’>{_empty_title}</div>"
+            f"      <div class=’bract-empty-copy’>{_empty_copy}</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -5208,6 +5289,21 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     return ctx
 
 
+@app.route("/api/refresh-league", methods=["POST"])
+def api_refresh_league():
+    """Force-expire a league context so the next request rebuilds it from source."""
+    payload = request.get_json(silent=True) or {}
+    platform = (payload.get("platform") or "sleeper").strip().lower()
+    league_id = (payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+    key = _cache_key(platform, season, league_id)
+    if key in DASHBOARD_CACHE:
+        DASHBOARD_CACHE[key]["ts"] = 0  # expire immediately
+    return jsonify({"ok": True})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
 def page_dashboard(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -5270,7 +5366,10 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         league_id_safe = ctx.get("league_id") or league_id
         season_safe = int(ctx.get("season") or season or datetime.now().year)
-        body = build_trade_calculator_body(league_id_safe, season_safe)
+        num_teams = ctx.get("total_rosters") or None
+        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+        scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
@@ -5363,6 +5462,20 @@ def page_history(platform: str, season: int, league_id: str):
         resolved_history_league_id=resolved_history_league_id,
     )
 
+    if platform == "espn":
+        espn_notice = (
+            "<div class='card' style='margin-bottom:16px;'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-title'>Limited history for ESPN leagues</div>"
+            "      <div class='bract-empty-copy'>Full season recaps and AI-powered history analysis are optimized for Sleeper leagues. "
+            "Some data may be incomplete for ESPN.</div>"
+            "    </div>"
+            "  </div>"
+            "</div>"
+        )
+        body_html = espn_notice + body_html
+
     return render_page(
         "League History",
         league_id,
@@ -5397,6 +5510,21 @@ def maybe_run_daily():
             daily_lock.release()
 
 
+@app.route("/ads.txt")
+def ads_txt():
+    """Serve ads.txt file for ad network authorization"""
+    try:
+        ads_file = Path(__file__).resolve().parent / "ads.txt"
+        if ads_file.exists():
+            return send_file(ads_file, mimetype="text/plain")
+        else:
+            # Return a placeholder if file doesn't exist
+            return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
+    except Exception as e:
+        print(f"[ads.txt] Error serving file: {e}")
+        return "# ads.txt unavailable", 500, {"Content-Type": "text/plain"}
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     nfl_state = get_nfl_state() or {}
@@ -5416,10 +5544,12 @@ def index():
                 username=username,
                 viewed_season=viewed_season,
                 error=err,
+                recent_updates=generate_recent_updates_html(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
-        # If username provided, set viewer session
+        # If username/team-name provided, set viewer session
+        # For ESPN leagues the "username" field holds the team owner's name or team name
         if username:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
             viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
@@ -5427,13 +5557,16 @@ def index():
             if viewer:
                 save_viewer_session(viewer)
             else:
-                body_html = render_template_string(
-                    FORM_BODY,
-                    username=username,
-                    viewed_season=viewed_season,
-                    error="Could not match that username to a team in this league.",
-                )
-                return render_page("BR Fantasy Dashboard", None, "home", body_html)
+                # For ESPN, skip the hard error — viewer matching is optional
+                if platform != "espn":
+                    body_html = render_template_string(
+                        FORM_BODY,
+                        username=username,
+                        viewed_season=viewed_season,
+                        error="Could not match that username to a team in this league.",
+                        recent_updates=generate_recent_updates_html(),
+                    )
+                    return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -5464,6 +5597,7 @@ def index():
         username="",
         viewed_season=viewed_season,
         error=None,
+        recent_updates=generate_recent_updates_html(),
     )
     return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
@@ -5581,11 +5715,13 @@ def api_weekly_week():
 def set_viewer():
     league_id = (request.form.get("league_id") or "").strip()
     username = (request.form.get("username") or "").strip()
+    platform = (request.form.get("platform") or "sleeper").strip().lower()
+    season = int(request.form.get("season") or datetime.now().year)
 
     if not league_id or not username:
         return redirect(url_for("home"))
 
-    ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
+    ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
 
     if not viewer:
@@ -5593,6 +5729,7 @@ def set_viewer():
             FORM_BODY,
             league=league_id,
             error="Could not match that username to a team in this league.",
+            recent_updates=generate_recent_updates_html(),
         )
 
     save_viewer_session(viewer)
@@ -5679,7 +5816,10 @@ def api_refresh_page():
         elif page == "trade":
             league_id_safe = ctx.get("league_id") or league_id
             season_safe = int(ctx.get("season") or season or datetime.now().year)
-            body_html = build_trade_calculator_body(league_id_safe, season_safe)
+            num_teams = ctx.get("total_rosters") or None
+            rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+            scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
 
         else:
             body_html = ""
@@ -5759,8 +5899,19 @@ def api_trade_eval():
 
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip().lower()
     league_type = str(payload.get("league_type") or "1qb").strip().lower()
+    scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
+
+    # Position-based multipliers for non-PPR formats.
+    # RBs gain value in standard (rush-heavy); WRs/TEs lose value (fewer receptions).
+    _SCORING_MULTS = {
+        "ppr":  {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
+        "half": {"QB": 1.00, "RB": 1.06, "WR": 0.97, "TE": 0.94},
+        "std":  {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
+    }
+    scoring_mults = _SCORING_MULTS.get(scoring_format, _SCORING_MULTS["ppr"])
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
@@ -5778,6 +5929,8 @@ def api_trade_eval():
         if isinstance(p, dict) and "id" in p
     }
 
+    pick_values = load_pick_value_table()
+
     def value_pick(pk: str) -> float:
         try:
             yr_str, rnd_str, slot_str = pk.split("_")
@@ -5785,7 +5938,7 @@ def api_trade_eval():
             rnd = int(rnd_str)
 
             if slot_str in ['early', 'mid', 'late']:
-                bucket = bucket_for_slot(slot, num_teams=10)
+                bucket = bucket_for_slot(slot_str, num_teams=10)
             else:
                 bucket = slot_str
 
@@ -5793,7 +5946,6 @@ def api_trade_eval():
             return 0.0
 
         key = f"{year}_{rnd}_{bucket}"
-        pick_values = load_pick_value_table()
 
         val = pick_values.get(key)
         if val is not None:
@@ -5843,6 +5995,9 @@ def api_trade_eval():
 
             name = player.get("name")
             pos = player.get("position")
+
+            # Apply scoring format multiplier
+            val = round(val * scoring_mults.get((pos or "").upper(), 1.0), 1)
             team = player.get("team")
             age = player.get("age")
 
@@ -5910,9 +6065,16 @@ def api_trade_eval():
     diff = a_eff - b_eff
     abs_diff = abs(diff)
 
-    FAIR_PCT = 0.08
+    # Fair band: tighter % for bigger trades (large trades need less slack),
+    # floored at 25 value points so tiny trades aren't hair-trigger.
     baseline = max(a_eff, b_eff, 1.0)
-    fair_band = baseline * FAIR_PCT
+    if baseline >= 600:
+        FAIR_PCT = 0.05
+    elif baseline >= 300:
+        FAIR_PCT = 0.07
+    else:
+        FAIR_PCT = 0.10
+    fair_band = max(baseline * FAIR_PCT, 25.0)
 
     if abs_diff <= fair_band:
         pct = (abs_diff / baseline) * 100.0
@@ -5928,7 +6090,7 @@ def api_trade_eval():
 
     if league_id and viewer_roster_id:
         try:
-            ctx = get_league_ctx_from_cache(platform="sleeper", league_id=league_id, season=season)
+            ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
                 viewer_roster_id=str(viewer_roster_id),
@@ -6037,7 +6199,15 @@ def api_value_movers():
 
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
 
-    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type) or {}
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        # Validate league size is one of the supported sizes
+        if league_size not in [8, 10, 12, 14]:
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type, league_size=league_size) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -6060,6 +6230,405 @@ def api_value_movers():
         }
 
     return jsonify(payload)
+
+
+@app.route("/api/player-deltas")
+def api_player_deltas():
+    """
+    Return recent 7-day deltas for all players in a compact format.
+    Used for showing delta badges in the trade calculator.
+    """
+    try:
+        days = int(request.args.get("days", 7))
+    except (TypeError, ValueError):
+        days = 7
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in [8, 10, 12, 14]:
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    # Get top movers data which includes deltas
+    movers_data = get_top_movers(days=days, limit=1000, league_type=league_type, league_size=league_size) or {}
+
+    # Build a simple player_id -> delta map
+    deltas = {}
+    for player in movers_data.get("risers", []) + movers_data.get("fallers", []):
+        pid = str(player.get("player_id", ""))
+        delta = player.get("delta")
+        if pid and delta is not None:
+            deltas[pid] = float(delta)
+
+    return jsonify(deltas)
+
+
+@app.route("/api/player-indicators")
+def api_player_indicators():
+    """
+    Return rookie and breakout indicators for players.
+    Returns: {
+      "rookies": ["player_id1", "player_id2", ...],
+      "breakouts": ["player_id3", "player_id4", ...]
+    }
+    """
+    try:
+        from datetime import datetime
+
+        league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+        try:
+            league_size = int(request.args.get("league_size", 10))
+            if league_size not in [8, 10, 12, 14]:
+                league_size = 10
+        except (TypeError, ValueError):
+            league_size = 10
+
+        # Get current NFL state
+        nfl_state = get_nfl_state() or {}
+        current_season = int(nfl_state.get("season") or datetime.now().year)
+
+        # Load all players to check for rookies
+        players_index = load_players_index() or {}
+        rookies = []
+
+        for player_id, player_data in players_index.items():
+            # Check if rookie (years_exp == 0 or rookie_year == current_season)
+            years_exp = player_data.get("years_exp")
+            rookie_year = player_data.get("rookie_year")
+
+            if years_exp == 0 or years_exp == "0":
+                rookies.append(str(player_id))
+            elif rookie_year and int(rookie_year) == current_season:
+                rookies.append(str(player_id))
+
+        # Get breakouts using multi-factor algorithm
+        # Falls back to value-based detection if advanced metrics not available
+        breakouts = []
+
+        # Check if we're in offseason
+        season_type = str(nfl_state.get("season_type", "")).lower().strip()
+        is_offseason = season_type == "off"
+
+        if is_offseason:
+            # During offseason, use roster change-based breakout detection
+            try:
+                from data_building.offseason_opportunity import get_offseason_breakout_candidates
+
+                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=30)
+                breakouts = [str(c["player_id"]) for c in offseason_candidates]
+                print(f"[player-indicators] Offseason: Found {len(breakouts)} breakout candidates from roster changes")
+
+            except Exception as e:
+                print(f"[player-indicators] Offseason breakout detection failed: {e}")
+
+        else:
+            # During season, use in-season breakout detection
+            try:
+                from data_building.advanced_metrics import detect_breakout_candidates
+
+                breakout_candidates = detect_breakout_candidates(lookback_days=14)
+                breakouts = [str(b["player_id"]) for b in breakout_candidates]
+                print(f"[player-indicators] Found {len(breakouts)} breakout candidates using advanced metrics")
+
+            except Exception as e:
+                # Fallback to simple value-based detection (more restrictive threshold)
+                print(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
+                movers_data = get_top_movers(days=7, limit=1000) or {}
+
+                for player in movers_data.get("risers", []):
+                    delta = player.get("delta", 0)
+                    position = player.get("position", "")
+
+                    # More restrictive thresholds to reduce false positives
+                    # Higher threshold for TEs since they're more volatile
+                    threshold = 100 if position == "TE" else 75
+
+                    if delta >= threshold:
+                        pid = str(player.get("player_id", ""))
+                        if pid:
+                            breakouts.append(pid)
+
+        return jsonify({
+            "rookies": rookies,
+            "breakouts": breakouts
+        })
+
+    except Exception as e:
+        print(f"[player-indicators] Error: {e}")
+        return jsonify({"rookies": [], "breakouts": []})
+
+
+@app.route("/api/player-advanced-metrics/<player_id>")
+def api_player_advanced_metrics(player_id: str):
+    """
+    Get advanced efficiency metrics for a specific player.
+
+    Returns:
+        {
+            "player_id": "123",
+            "position": "WR",
+            "metrics": {
+                "yards_per_target": 8.5,
+                "catch_rate": 0.72,
+                "yards_per_reception": 11.8,
+                "yards_per_carry": 4.2,
+                "snap_share": 0.78,
+                "opportunity_share": 8.5,
+                "red_zone_usage": 2.1,
+                "role_score": 67.3,
+                "usage_trend": 15.2,
+                "efficiency_trend": 8.7
+            },
+            "as_of_date": "2025-01-15"
+        }
+    """
+    try:
+        from data_building.advanced_metrics import get_player_metrics
+
+        metrics = get_player_metrics(str(player_id))
+
+        if not metrics:
+            return jsonify({
+                "player_id": str(player_id),
+                "error": "No metrics available for this player"
+            }), 404
+
+        # Extract date and clean up metrics
+        as_of_date = str(metrics.pop("as_of_date", None))
+        metrics.pop("id", None)  # Remove internal ID
+
+        return jsonify({
+            "player_id": str(player_id),
+            "position": metrics.get("position"),
+            "metrics": {
+                k: float(v) if v is not None else None
+                for k, v in metrics.items()
+                if k != "player_id" and k != "position"
+            },
+            "as_of_date": as_of_date,
+        })
+
+    except Exception as e:
+        print(f"[player-advanced-metrics] Error for {player_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "player_id": str(player_id),
+            "error": "Failed to retrieve metrics"
+        }), 500
+
+
+@app.route("/api/advanced-metrics/top-role-players")
+def api_top_role_players():
+    """
+    Get players with highest role scores (usage + efficiency composite).
+
+    Query params:
+        position: Filter by position (QB/RB/WR/TE) or omit for all
+        limit: Max number of players (default 50)
+
+    Returns:
+        [
+            {
+                "player_id": "123",
+                "position": "RB",
+                "role_score": 78.5,
+                "snap_share": 0.82,
+                "opportunity_share": 18.3,
+                ...
+            },
+            ...
+        ]
+    """
+    try:
+        from data_building.advanced_metrics import get_top_role_players
+
+        position = request.args.get("position")
+        if position:
+            position = position.upper().strip()
+            if position not in ("QB", "RB", "WR", "TE"):
+                position = None
+
+        try:
+            limit = int(request.args.get("limit", 50))
+            limit = max(1, min(limit, 200))  # Clamp between 1-200
+        except (TypeError, ValueError):
+            limit = 50
+
+        players = get_top_role_players(position=position, limit=limit)
+
+        # Clean up internal fields
+        for player in players:
+            player.pop("id", None)
+            # Convert decimals to floats
+            for k, v in player.items():
+                if v is not None and k not in ("player_id", "position", "as_of_date"):
+                    player[k] = float(v)
+
+        return jsonify(players)
+
+    except Exception as e:
+        print(f"[top-role-players] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+
+@app.route("/api/advanced-metrics/breakout-candidates")
+def api_breakout_candidates():
+    """
+    Get breakout candidates using multi-factor analysis.
+
+    Query params:
+        lookback_days: Days to analyze trends (default 14)
+        min_games: Minimum games played (default 2)
+
+    Returns:
+        [
+            {
+                "player_id": "456",
+                "name": "Player Name",
+                "position": "WR",
+                "age": 23.5,
+                "breakout_score": 67.3,
+                "score_components": {
+                    "snap_increase": 15.2,
+                    "opportunity_increase": 22.5,
+                    "efficiency_gains": 12.1,
+                    ...
+                },
+                "value_delta": 125.0
+            },
+            ...
+        ]
+    """
+    try:
+        from data_building.advanced_metrics import detect_breakout_candidates
+
+        try:
+            lookback_days = int(request.args.get("lookback_days", 14))
+            lookback_days = max(7, min(lookback_days, 90))  # Clamp 7-90 days
+        except (TypeError, ValueError):
+            lookback_days = 14
+
+        try:
+            min_games = int(request.args.get("min_games", 2))
+            min_games = max(1, min(min_games, 10))
+        except (TypeError, ValueError):
+            min_games = 2
+
+        candidates = detect_breakout_candidates(
+            lookback_days=lookback_days,
+            min_games=min_games,
+        )
+
+        return jsonify(candidates)
+
+    except Exception as e:
+        print(f"[breakout-candidates] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+
+@app.route("/api/offseason-breakout-candidates")
+def api_offseason_breakout_candidates():
+    """
+    Get offseason breakout candidates based on roster changes and vacated opportunity.
+
+    Identifies players who will benefit from departed teammates (FA, trades, retirements).
+    Examples:
+    - Mike Evans leaves TB → Egbuka gets targets
+    - Second-year WR moves up depth chart
+    - Backup RB becomes lead back
+
+    Query params:
+        season: Season year (default: current year)
+        min_score: Minimum breakout score (default: 30)
+        position: Filter by position (QB/RB/WR/TE)
+
+    Returns:
+        [
+            {
+                "player_id": "789",
+                "name": "Emeka Egbuka",
+                "team": "TB",
+                "position": "WR",
+                "age": 23,
+                "years_exp": 1,
+                "breakout_score": 65.5,
+                "projection_factors": {
+                    "absolute_opportunity_increase": 25.0,
+                    "relative_opportunity_increase": 18.5,
+                    "team_vacancy_size": 14.0,
+                    "youth_experience_bonus": 15.0
+                },
+                "previous_season": {
+                    "targets": 45,
+                    "carries": 0,
+                    "snap_share": 0.42
+                },
+                "projected": {
+                    "targets": 120,
+                    "carries": 0,
+                    "snap_share": 0.75
+                },
+                "increases": {
+                    "targets": 75,
+                    "carries": 0,
+                    "snap_share": 0.33
+                },
+                "departed_players": ["Mike Evans"],
+                "context": "Benefits from Mike Evans departure"
+            },
+            ...
+        ]
+    """
+    try:
+        from datetime import datetime
+        from data_building.offseason_opportunity import get_offseason_breakout_candidates
+
+        # Get season (default to current year)
+        nfl_state = get_nfl_state() or {}
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+
+        try:
+            season = int(request.args.get("season", default_season))
+        except (TypeError, ValueError):
+            season = default_season
+
+        # Get min score threshold
+        try:
+            min_score = float(request.args.get("min_score", 30))
+            min_score = max(0, min(min_score, 100))
+        except (TypeError, ValueError):
+            min_score = 30
+
+        # Get position filter
+        position = request.args.get("position")
+        if position:
+            position = position.upper().strip()
+            if position not in ("QB", "RB", "WR", "TE"):
+                position = None
+
+        # Get candidates
+        candidates = get_offseason_breakout_candidates(season, min_score=min_score)
+
+        # Filter by position if requested
+        if position:
+            candidates = [c for c in candidates if c.get("position") == position]
+
+        return jsonify(candidates)
+
+    except Exception as e:
+        print(f"[offseason-breakout-candidates] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
 
 
 @app.route("/api/player-value-history/<player_id>")
@@ -6129,6 +6698,37 @@ def api_sleeper_user_leagues():
 def api_changelog():
     """Return the changelog entries."""
     return jsonify(CHANGELOG)
+
+
+@app.route("/api/espn-validate-league")
+def api_espn_validate_league():
+    """
+    Validate an ESPN league ID and return basic league info.
+    Used by the landing page ESPN flow.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id or not league_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid ESPN league ID. Must be a number."}), 400
+
+    nfl_state = get_nfl_state() or {}
+    season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+
+    try:
+        from dashboard_services.providers.espn_api import get_league as espn_get_league
+        info = espn_get_league(season, league_id)
+        return jsonify({
+            "ok": True,
+            "league": {
+                "league_id": info.get("league_id"),
+                "name": info.get("name") or f"ESPN League {league_id}",
+                "season": info.get("season"),
+            },
+        })
+    except Exception as e:
+        msg = str(e)
+        if "Missing required env var" in msg:
+            return jsonify({"ok": False, "error": "Server not configured for ESPN (missing ESPN_S2/ESPN_SWID)."}), 503
+        return jsonify({"ok": False, "error": f"Could not load ESPN league: {msg}"}), 500
 
 
 if __name__ == "__main__":
