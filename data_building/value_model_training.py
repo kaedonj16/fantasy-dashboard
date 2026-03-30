@@ -174,6 +174,88 @@ def load_player_investment_df() -> pd.DataFrame:
 
 
 # ------------------------------------------------
+# Advanced metrics loader
+# ------------------------------------------------
+
+def load_advanced_metrics_df() -> pd.DataFrame:
+    """
+    Load advanced efficiency metrics from the database.
+
+    Returns dataframe with player_id (renamed to sleeper_id) and all metrics.
+    Uses most recent available data (current or previous season).
+    Falls back to empty dataframe if metrics aren't available.
+    """
+    try:
+        from data_building.advanced_metrics import get_player_metrics
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            # Get latest date with metrics (regardless of season)
+            latest = conn.execute("""
+                SELECT MAX(as_of_date) as max_date
+                FROM player_advanced_metrics
+            """).fetchone()
+
+            if not latest or not latest["max_date"]:
+                print("[value_model] No advanced metrics available yet")
+                return pd.DataFrame()
+
+            latest_date = latest["max_date"]
+
+            # Load all metrics for latest date
+            rows = conn.execute("""
+                SELECT
+                    player_id,
+                    yards_per_target,
+                    catch_rate,
+                    yards_per_reception,
+                    target_quality_score,
+                    yards_per_carry,
+                    yards_per_touch,
+                    rush_td_rate,
+                    yards_per_attempt,
+                    completion_pct,
+                    td_rate,
+                    int_rate,
+                    snap_share,
+                    opportunity_share,
+                    red_zone_usage,
+                    role_score,
+                    usage_trend,
+                    efficiency_trend
+                FROM player_advanced_metrics
+                WHERE as_of_date = %s
+            """, (latest_date,)).fetchall()
+
+            df = pd.DataFrame([dict(row) for row in rows])
+
+            if df.empty:
+                print("[value_model] Advanced metrics table is empty")
+                return pd.DataFrame()
+
+            # Rename player_id to sleeper_id for joining
+            df = df.rename(columns={"player_id": "sleeper_id"})
+            df["sleeper_id"] = df["sleeper_id"].astype(str)
+
+            # Check if metrics are from previous season
+            from datetime import datetime, date as dt_date
+            today = dt_date.today()
+            metrics_date = datetime.strptime(str(latest_date), "%Y-%m-%d").date()
+            days_old = (today - metrics_date).days
+
+            if days_old > 30:
+                print(f"[value_model] Using advanced metrics from {latest_date} ({days_old} days old - likely previous season)")
+            else:
+                print(f"[value_model] Loaded {len(df)} players with current advanced metrics")
+
+            return df
+
+    except Exception as e:
+        print(f"[value_model] Failed to load advanced metrics: {e}")
+        return pd.DataFrame()
+
+
+# ------------------------------------------------
 # Internal stats loader
 # ------------------------------------------------
 
@@ -460,6 +542,7 @@ def build_training_dataframe() -> pd.DataFrame:
     engine_df = load_engine_df()
     history_features_df = load_history_feature_df(current_season)
     investment_df = load_player_investment_df()
+    advanced_metrics_df = load_advanced_metrics_df()
 
     df = fc_df.merge(engine_df, on="sleeper_id", how="left")
 
@@ -470,6 +553,10 @@ def build_training_dataframe() -> pd.DataFrame:
 
     if investment_df is not None and not investment_df.empty:
         df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    # ADVANCED METRICS: Merge efficiency metrics
+    if advanced_metrics_df is not None and not advanced_metrics_df.empty:
+        df = df.merge(advanced_metrics_df, on="sleeper_id", how="left")
 
     if "dp_name" in dp_df.columns:
         df["name_lower"] = df["name"].astype(str).str.lower().str.strip()
@@ -663,11 +750,38 @@ def train_trade_value_model(
         "guaranteed_pct_pos_pct",
     ]
 
+    # ADVANCED METRICS: Efficiency and usage features
+    candidate_advanced_metrics_cols = [
+        # Receiving efficiency (WR/TE/RB)
+        "yards_per_target",
+        "catch_rate",
+        "yards_per_reception",
+        "target_quality_score",
+        # Rushing efficiency (RB)
+        "yards_per_carry",
+        "yards_per_touch",
+        "rush_td_rate",
+        # Passing efficiency (QB)
+        "yards_per_attempt",
+        "completion_pct",
+        "td_rate",
+        "int_rate",
+        # Usage metrics
+        "snap_share",
+        "opportunity_share",
+        "red_zone_usage",
+        # Composite scores
+        "role_score",
+        "usage_trend",
+        "efficiency_trend",
+    ]
+
     for col in (
             candidate_usage_cols
             + candidate_history_cols
             + team_feature_cols
             + candidate_investment_cols
+            + candidate_advanced_metrics_cols
     ):
         if col in df.columns:
             numeric_cols.append(col)
@@ -863,6 +977,7 @@ def build_inference_dataframe() -> pd.DataFrame:
     internal_df = load_internal_stats_df()
     history_features_df = load_history_feature_df(current_season)
     investment_df = load_player_investment_df()
+    advanced_metrics_df = load_advanced_metrics_df()
 
     df = internal_df.copy()
 
@@ -878,6 +993,10 @@ def build_inference_dataframe() -> pd.DataFrame:
 
     if investment_df is not None and not investment_df.empty:
         df = df.merge(investment_df, on="sleeper_id", how="left")
+
+    # ADVANCED METRICS: Merge efficiency metrics
+    if advanced_metrics_df is not None and not advanced_metrics_df.empty:
+        df = df.merge(advanced_metrics_df, on="sleeper_id", how="left")
 
     if "age" not in df.columns:
         if "fc_age" in df.columns:

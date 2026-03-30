@@ -1,0 +1,19 @@
+# ads.txt file for fantasy-dashboard
+# This file is used to prevent unauthorized inventory sales
+#
+# Format: domain, publisher ID, relationship type, certification authority ID
+#
+# Common ad networks:
+# - Google AdSense: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+# - Google Ad Manager: google.com, pub-XXXXXXXXXXXXXXXX, RESELLER, f08c47fec0942fa0
+# - Media.net: media.net, XXXXXXXX, DIRECT
+#
+# INSTRUCTIONS:
+# 1. Sign up for an ad network (Google AdSense, Media.net, etc.)
+# 2. Get your publisher ID from the ad network
+# 3. Replace the examples below with your actual publisher IDs
+# 4. Remove unused networks
+# 5. Serve this file from your root domain: https://yourdomain.com/ads.txt
+
+# Example entries (REPLACE WITH YOUR ACTUAL IDS):
+google.com, pub-9164153092633845, DIRECT, f08c47fec0942fa0

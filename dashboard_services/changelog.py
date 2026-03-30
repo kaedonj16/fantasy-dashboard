@@ -5,6 +5,42 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-03-30",
+        "tag": "new",
+        "text": "Offseason Breakouts: Identifies dynasty breakout candidates before the season starts based on roster changes",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-30",
+        "tag": "feature",
+        "text": "Trade Calculator: Value changes now show +/- indicators on player chips",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-30",
+        "tag": "feature",
+        "text": "Trade Calculator: Shareable trade links - copy and send trades to league mates instantly",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-30",
+        "tag": "feature",
+        "text": "Trade Calculator: Rookie and breakout badges identify emerging talent",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-30",
+        "tag": "feature",
+        "text": "Top Movers: See when player values were last updated with freshness indicators",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-30",
+        "tag": "improvement",
+        "text": "Trade Calculator: Faster loading with improved database performance",
+        "link": "/trade"
+    },
+    {
         "date": "2026-03-27",
         "tag": "new",
         "text": "Team Reports: AI-powered Front Office Briefings analyze your roster, trade opportunities, and league standings",

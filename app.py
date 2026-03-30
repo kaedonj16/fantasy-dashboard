@@ -18,6 +18,7 @@ from flask import (
     jsonify,
     render_template,
     session,
+    send_file,
 )
 from openai import OpenAI
 from pathlib import Path
@@ -141,6 +142,30 @@ try:
 except Exception as e:
     print(f"[value-history] init skipped: {e}")
 
+
+def generate_recent_updates_html(limit=5):
+    """Generate HTML for recent changelog updates."""
+    from dashboard_services.changelog import CHANGELOG
+
+    recent = CHANGELOG[:limit]
+    if not recent:
+        return ""
+
+    html_parts = []
+    for entry in recent:
+        tag_class = f"update-tag-{entry['tag']}"
+        html_parts.append(f'''
+        <div class="home-update-item">
+          <div class="home-update-item-header">
+            <span class="home-update-tag {tag_class}">{entry['tag']}</span>
+            <span class="home-update-date">{entry['date']}</span>
+          </div>
+          <p class="home-update-text">{entry['text']}</p>
+        </div>
+        ''')
+
+    return '\n'.join(html_parts)
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -230,7 +255,8 @@ FORM_BODY = """
     </div>
   </section>
 
-  <section class="home-feature-grid">
+  <div class="home-content-wrapper">
+    <section class="home-feature-grid">
     <div class="home-feature-card">
       <div class="home-feature-icon">📊</div>
       <h3>Trade Calculator</h3>
@@ -285,6 +311,14 @@ FORM_BODY = """
       </p>
     </div>
   </section>
+
+    <aside class="home-updates-sidebar">
+      <h3 class="home-updates-sidebar-title">Recent Updates</h3>
+      <div class="home-updates-list">
+        {{ recent_updates | safe }}
+      </div>
+    </aside>
+  </div>
 </div>
 """
 
@@ -5476,6 +5510,21 @@ def maybe_run_daily():
             daily_lock.release()
 
 
+@app.route("/ads.txt")
+def ads_txt():
+    """Serve ads.txt file for ad network authorization"""
+    try:
+        ads_file = Path(__file__).resolve().parent / "ads.txt"
+        if ads_file.exists():
+            return send_file(ads_file, mimetype="text/plain")
+        else:
+            # Return a placeholder if file doesn't exist
+            return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
+    except Exception as e:
+        print(f"[ads.txt] Error serving file: {e}")
+        return "# ads.txt unavailable", 500, {"Content-Type": "text/plain"}
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     nfl_state = get_nfl_state() or {}
@@ -5495,6 +5544,7 @@ def index():
                 username=username,
                 viewed_season=viewed_season,
                 error=err,
+                recent_updates=generate_recent_updates_html(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
@@ -5514,6 +5564,7 @@ def index():
                         username=username,
                         viewed_season=viewed_season,
                         error="Could not match that username to a team in this league.",
+                        recent_updates=generate_recent_updates_html(),
                     )
                     return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
@@ -5546,6 +5597,7 @@ def index():
         username="",
         viewed_season=viewed_season,
         error=None,
+        recent_updates=generate_recent_updates_html(),
     )
     return render_page("BR Fantasy Dashboard", None, "home", body_html)
 
@@ -5677,6 +5729,7 @@ def set_viewer():
             FORM_BODY,
             league=league_id,
             error="Could not match that username to a team in this league.",
+            recent_updates=generate_recent_updates_html(),
         )
 
     save_viewer_session(viewer)
@@ -6146,7 +6199,15 @@ def api_value_movers():
 
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
 
-    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type) or {}
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        # Validate league size is one of the supported sizes
+        if league_size not in [8, 10, 12, 14]:
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type, league_size=league_size) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -6169,6 +6230,405 @@ def api_value_movers():
         }
 
     return jsonify(payload)
+
+
+@app.route("/api/player-deltas")
+def api_player_deltas():
+    """
+    Return recent 7-day deltas for all players in a compact format.
+    Used for showing delta badges in the trade calculator.
+    """
+    try:
+        days = int(request.args.get("days", 7))
+    except (TypeError, ValueError):
+        days = 7
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in [8, 10, 12, 14]:
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    # Get top movers data which includes deltas
+    movers_data = get_top_movers(days=days, limit=1000, league_type=league_type, league_size=league_size) or {}
+
+    # Build a simple player_id -> delta map
+    deltas = {}
+    for player in movers_data.get("risers", []) + movers_data.get("fallers", []):
+        pid = str(player.get("player_id", ""))
+        delta = player.get("delta")
+        if pid and delta is not None:
+            deltas[pid] = float(delta)
+
+    return jsonify(deltas)
+
+
+@app.route("/api/player-indicators")
+def api_player_indicators():
+    """
+    Return rookie and breakout indicators for players.
+    Returns: {
+      "rookies": ["player_id1", "player_id2", ...],
+      "breakouts": ["player_id3", "player_id4", ...]
+    }
+    """
+    try:
+        from datetime import datetime
+
+        league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+        try:
+            league_size = int(request.args.get("league_size", 10))
+            if league_size not in [8, 10, 12, 14]:
+                league_size = 10
+        except (TypeError, ValueError):
+            league_size = 10
+
+        # Get current NFL state
+        nfl_state = get_nfl_state() or {}
+        current_season = int(nfl_state.get("season") or datetime.now().year)
+
+        # Load all players to check for rookies
+        players_index = load_players_index() or {}
+        rookies = []
+
+        for player_id, player_data in players_index.items():
+            # Check if rookie (years_exp == 0 or rookie_year == current_season)
+            years_exp = player_data.get("years_exp")
+            rookie_year = player_data.get("rookie_year")
+
+            if years_exp == 0 or years_exp == "0":
+                rookies.append(str(player_id))
+            elif rookie_year and int(rookie_year) == current_season:
+                rookies.append(str(player_id))
+
+        # Get breakouts using multi-factor algorithm
+        # Falls back to value-based detection if advanced metrics not available
+        breakouts = []
+
+        # Check if we're in offseason
+        season_type = str(nfl_state.get("season_type", "")).lower().strip()
+        is_offseason = season_type == "off"
+
+        if is_offseason:
+            # During offseason, use roster change-based breakout detection
+            try:
+                from data_building.offseason_opportunity import get_offseason_breakout_candidates
+
+                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=30)
+                breakouts = [str(c["player_id"]) for c in offseason_candidates]
+                print(f"[player-indicators] Offseason: Found {len(breakouts)} breakout candidates from roster changes")
+
+            except Exception as e:
+                print(f"[player-indicators] Offseason breakout detection failed: {e}")
+
+        else:
+            # During season, use in-season breakout detection
+            try:
+                from data_building.advanced_metrics import detect_breakout_candidates
+
+                breakout_candidates = detect_breakout_candidates(lookback_days=14)
+                breakouts = [str(b["player_id"]) for b in breakout_candidates]
+                print(f"[player-indicators] Found {len(breakouts)} breakout candidates using advanced metrics")
+
+            except Exception as e:
+                # Fallback to simple value-based detection (more restrictive threshold)
+                print(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
+                movers_data = get_top_movers(days=7, limit=1000) or {}
+
+                for player in movers_data.get("risers", []):
+                    delta = player.get("delta", 0)
+                    position = player.get("position", "")
+
+                    # More restrictive thresholds to reduce false positives
+                    # Higher threshold for TEs since they're more volatile
+                    threshold = 100 if position == "TE" else 75
+
+                    if delta >= threshold:
+                        pid = str(player.get("player_id", ""))
+                        if pid:
+                            breakouts.append(pid)
+
+        return jsonify({
+            "rookies": rookies,
+            "breakouts": breakouts
+        })
+
+    except Exception as e:
+        print(f"[player-indicators] Error: {e}")
+        return jsonify({"rookies": [], "breakouts": []})
+
+
+@app.route("/api/player-advanced-metrics/<player_id>")
+def api_player_advanced_metrics(player_id: str):
+    """
+    Get advanced efficiency metrics for a specific player.
+
+    Returns:
+        {
+            "player_id": "123",
+            "position": "WR",
+            "metrics": {
+                "yards_per_target": 8.5,
+                "catch_rate": 0.72,
+                "yards_per_reception": 11.8,
+                "yards_per_carry": 4.2,
+                "snap_share": 0.78,
+                "opportunity_share": 8.5,
+                "red_zone_usage": 2.1,
+                "role_score": 67.3,
+                "usage_trend": 15.2,
+                "efficiency_trend": 8.7
+            },
+            "as_of_date": "2025-01-15"
+        }
+    """
+    try:
+        from data_building.advanced_metrics import get_player_metrics
+
+        metrics = get_player_metrics(str(player_id))
+
+        if not metrics:
+            return jsonify({
+                "player_id": str(player_id),
+                "error": "No metrics available for this player"
+            }), 404
+
+        # Extract date and clean up metrics
+        as_of_date = str(metrics.pop("as_of_date", None))
+        metrics.pop("id", None)  # Remove internal ID
+
+        return jsonify({
+            "player_id": str(player_id),
+            "position": metrics.get("position"),
+            "metrics": {
+                k: float(v) if v is not None else None
+                for k, v in metrics.items()
+                if k != "player_id" and k != "position"
+            },
+            "as_of_date": as_of_date,
+        })
+
+    except Exception as e:
+        print(f"[player-advanced-metrics] Error for {player_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "player_id": str(player_id),
+            "error": "Failed to retrieve metrics"
+        }), 500
+
+
+@app.route("/api/advanced-metrics/top-role-players")
+def api_top_role_players():
+    """
+    Get players with highest role scores (usage + efficiency composite).
+
+    Query params:
+        position: Filter by position (QB/RB/WR/TE) or omit for all
+        limit: Max number of players (default 50)
+
+    Returns:
+        [
+            {
+                "player_id": "123",
+                "position": "RB",
+                "role_score": 78.5,
+                "snap_share": 0.82,
+                "opportunity_share": 18.3,
+                ...
+            },
+            ...
+        ]
+    """
+    try:
+        from data_building.advanced_metrics import get_top_role_players
+
+        position = request.args.get("position")
+        if position:
+            position = position.upper().strip()
+            if position not in ("QB", "RB", "WR", "TE"):
+                position = None
+
+        try:
+            limit = int(request.args.get("limit", 50))
+            limit = max(1, min(limit, 200))  # Clamp between 1-200
+        except (TypeError, ValueError):
+            limit = 50
+
+        players = get_top_role_players(position=position, limit=limit)
+
+        # Clean up internal fields
+        for player in players:
+            player.pop("id", None)
+            # Convert decimals to floats
+            for k, v in player.items():
+                if v is not None and k not in ("player_id", "position", "as_of_date"):
+                    player[k] = float(v)
+
+        return jsonify(players)
+
+    except Exception as e:
+        print(f"[top-role-players] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+
+@app.route("/api/advanced-metrics/breakout-candidates")
+def api_breakout_candidates():
+    """
+    Get breakout candidates using multi-factor analysis.
+
+    Query params:
+        lookback_days: Days to analyze trends (default 14)
+        min_games: Minimum games played (default 2)
+
+    Returns:
+        [
+            {
+                "player_id": "456",
+                "name": "Player Name",
+                "position": "WR",
+                "age": 23.5,
+                "breakout_score": 67.3,
+                "score_components": {
+                    "snap_increase": 15.2,
+                    "opportunity_increase": 22.5,
+                    "efficiency_gains": 12.1,
+                    ...
+                },
+                "value_delta": 125.0
+            },
+            ...
+        ]
+    """
+    try:
+        from data_building.advanced_metrics import detect_breakout_candidates
+
+        try:
+            lookback_days = int(request.args.get("lookback_days", 14))
+            lookback_days = max(7, min(lookback_days, 90))  # Clamp 7-90 days
+        except (TypeError, ValueError):
+            lookback_days = 14
+
+        try:
+            min_games = int(request.args.get("min_games", 2))
+            min_games = max(1, min(min_games, 10))
+        except (TypeError, ValueError):
+            min_games = 2
+
+        candidates = detect_breakout_candidates(
+            lookback_days=lookback_days,
+            min_games=min_games,
+        )
+
+        return jsonify(candidates)
+
+    except Exception as e:
+        print(f"[breakout-candidates] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+
+@app.route("/api/offseason-breakout-candidates")
+def api_offseason_breakout_candidates():
+    """
+    Get offseason breakout candidates based on roster changes and vacated opportunity.
+
+    Identifies players who will benefit from departed teammates (FA, trades, retirements).
+    Examples:
+    - Mike Evans leaves TB → Egbuka gets targets
+    - Second-year WR moves up depth chart
+    - Backup RB becomes lead back
+
+    Query params:
+        season: Season year (default: current year)
+        min_score: Minimum breakout score (default: 30)
+        position: Filter by position (QB/RB/WR/TE)
+
+    Returns:
+        [
+            {
+                "player_id": "789",
+                "name": "Emeka Egbuka",
+                "team": "TB",
+                "position": "WR",
+                "age": 23,
+                "years_exp": 1,
+                "breakout_score": 65.5,
+                "projection_factors": {
+                    "absolute_opportunity_increase": 25.0,
+                    "relative_opportunity_increase": 18.5,
+                    "team_vacancy_size": 14.0,
+                    "youth_experience_bonus": 15.0
+                },
+                "previous_season": {
+                    "targets": 45,
+                    "carries": 0,
+                    "snap_share": 0.42
+                },
+                "projected": {
+                    "targets": 120,
+                    "carries": 0,
+                    "snap_share": 0.75
+                },
+                "increases": {
+                    "targets": 75,
+                    "carries": 0,
+                    "snap_share": 0.33
+                },
+                "departed_players": ["Mike Evans"],
+                "context": "Benefits from Mike Evans departure"
+            },
+            ...
+        ]
+    """
+    try:
+        from datetime import datetime
+        from data_building.offseason_opportunity import get_offseason_breakout_candidates
+
+        # Get season (default to current year)
+        nfl_state = get_nfl_state() or {}
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+
+        try:
+            season = int(request.args.get("season", default_season))
+        except (TypeError, ValueError):
+            season = default_season
+
+        # Get min score threshold
+        try:
+            min_score = float(request.args.get("min_score", 30))
+            min_score = max(0, min(min_score, 100))
+        except (TypeError, ValueError):
+            min_score = 30
+
+        # Get position filter
+        position = request.args.get("position")
+        if position:
+            position = position.upper().strip()
+            if position not in ("QB", "RB", "WR", "TE"):
+                position = None
+
+        # Get candidates
+        candidates = get_offseason_breakout_candidates(season, min_score=min_score)
+
+        # Filter by position if requested
+        if position:
+            candidates = [c for c in candidates if c.get("position") == position]
+
+        return jsonify(candidates)
+
+    except Exception as e:
+        print(f"[offseason-breakout-candidates] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
 
 
 @app.route("/api/player-value-history/<player_id>")

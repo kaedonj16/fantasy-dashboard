@@ -178,6 +178,118 @@ def get_player_value_history(
     return out
 
 
+def load_latest_value_snapshot(source: str = "model") -> list[dict]:
+    """
+    Load the most recent value snapshot from the database.
+    Returns a list of player dicts in the same format as the JSON file.
+    Includes computed fields like search_name and pos_rank.
+    """
+    from utils.utils import normalize_name
+
+    init_value_history_db()
+
+    latest_date = get_latest_snapshot_date(source=source)
+    if not latest_date:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                player_id as id,
+                name,
+                position,
+                team,
+                value,
+                sf_value,
+                value_8,
+                value_12,
+                value_14,
+                sf_value_8,
+                sf_value_12,
+                sf_value_14
+            FROM player_value_history
+            WHERE source = %s
+              AND as_of_date = %s
+            ORDER BY value DESC
+            LIMIT 600
+            """,
+            (source, latest_date),
+        ).fetchall()
+
+    # Convert to dicts and add computed fields
+    players = []
+    for row in rows:
+        player = dict(row)
+        # Add search_name for fuzzy matching
+        player["search_name"] = normalize_name(player.get("name", ""))
+        players.append(player)
+
+    # Calculate position ranks
+    pos_to_indices = {}
+    for idx, player in enumerate(players):
+        pos = str(player.get("position") or "").upper()
+        if not pos or pos == "PICK":
+            continue
+        pos_to_indices.setdefault(pos, []).append(idx)
+
+    # Standard position ranks (by value)
+    for pos, indices in pos_to_indices.items():
+        indices.sort(key=lambda i: float(players[i].get("value") or 0.0), reverse=True)
+        rank = 1
+        for i in indices:
+            players[i]["pos_rank"] = rank
+            players[i]["pos_rank_label"] = f"{pos}{rank}"
+            rank += 1
+
+    # Superflex position ranks (by sf_value)
+    sf_pos_to_indices = {}
+    for idx, player in enumerate(players):
+        pos = str(player.get("position") or "").upper()
+        if not pos or pos == "PICK":
+            continue
+        sf_pos_to_indices.setdefault(pos, []).append(idx)
+
+    for pos, indices in sf_pos_to_indices.items():
+        indices.sort(key=lambda i: float(players[i].get("sf_value") or 0.0), reverse=True)
+        rank = 1
+        for i in indices:
+            players[i]["sf_pos_rank"] = rank
+            players[i]["sf_pos_rank_label"] = f"{pos}{rank}"
+            rank += 1
+
+    # Enrich with age from players_index
+    try:
+        from utils.utils import load_players_index
+        from datetime import datetime
+        players_index = load_players_index() or {}
+        for player in players:
+            pid = str(player.get("id") or player.get("player_id") or "")
+            age = None
+            if pid and pid != "" and pid in players_index:
+                # Try to get age directly
+                age = players_index[pid].get("age")
+                # If not available, calculate from birthday
+                if age is None:
+                    bday_str = players_index[pid].get("bDay")
+                    if bday_str:
+                        try:
+                            # Parse birthday (format: "M/D/YYYY")
+                            bday = datetime.strptime(bday_str, "%m/%d/%Y")
+                            today = datetime.now()
+                            age = today.year - bday.year - ((today.month, today.day) < (bday.month, bday.day))
+                            age = float(age) + (today.month - bday.month + (today.day - bday.day) / 30) / 12
+                        except Exception:
+                            pass
+            player["age"] = age
+    except Exception as e:
+        print(f"[load_latest_value_snapshot] Failed to enrich ages: {e}")
+        for player in players:
+            player["age"] = None
+
+    return players
+
+
 def get_top_movers(
         *,
         days: int = 7,

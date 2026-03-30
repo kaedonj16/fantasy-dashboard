@@ -6,6 +6,59 @@ All notable changes to the BR Fantasy Dashboard are recorded here.
 
 ## [Unreleased]
 
+### Offseason Breakout Detection System
+- **Roster change tracking** — New `roster_changes` table tracks player departures (free agent, trade, retirement, cut) with previous season usage stats (targets, carries, snap share, opportunity share). Enables detection of vacated opportunity before season starts.
+- **Vacated opportunity calculation** — `vacated_opportunity` table aggregates targets/carries/snaps left behind per team/position. Example: "TB WR has 140 vacated targets from Mike Evans departure". Function: `calculate_vacated_opportunity()`.
+- **Opportunity redistribution projection** — `projected_opportunity` table projects how vacated opportunity distributes to remaining players. Uses proportional allocation based on previous usage. Projects target increase, snap share increase, and assigns offseason breakout scores.
+- **Offseason breakout scoring** — 5-factor system (0-100 points): absolute opportunity increase (0-30), relative increase % (0-25), team vacancy size (0-20), youth/experience bonus (0-15), established role bonus (0-10). Threshold: 30+ points. Example: Egbuka scores 84.9 (WR2→WR1 after Evans departure).
+- **Auto-detection via season comparison** — `detect_roster_changes_between_seasons()` compares player teams in current vs previous season usage tables to identify departures. Enriches with usage stats automatically.
+- **Manual roster change entry** — `manual_add_roster_change()` allows adding high-profile moves (FA signings, trades) with player name lookup and usage stat retrieval.
+- **API endpoint** — `/api/offseason-breakout-candidates` returns ranked list with projection details, departed players context, and score breakdown. Filters: season, min_score, position.
+- **Season-aware player indicators** — `/api/player-indicators` switches breakout detection mode based on NFL season type. Offseason: uses roster change projections. In-season: uses performance-based metrics. Seamless transition.
+- **Population script** — `populate_roster_changes.py` runs full pipeline: detect changes → calculate vacated opp → project redistribution. Command: `python populate_roster_changes.py 2025`.
+
+### Home Page UX
+- **Changelog sidebar** — Recent updates now appear in a compact sidebar on the home page instead of a large centered section. Sidebar is sticky on desktop, stacks below features on mobile. Displays 5 most recent user-facing updates from `dashboard_services/changelog.py` with color-coded tags (feature/improvement/new).
+- **User-facing changelog separation** — Technical CHANGELOG.md tracks implementation details; `dashboard_services/changelog.py` contains user-friendly update descriptions without formulas or internal architecture mentions.
+
+### Trade Calculator UX Improvements
+- **Real-time value change indicators** — Player chips now display 7-day value deltas (+15, -8) with color coding (green for risers, red for fallers). Only shown for changes ≥1 point.
+- **Shareable trade links** — New share button (🔗) generates URL-encoded trade links. Copy to clipboard with one click; trades auto-load from shared URLs with fallback to localStorage for personal saves.
+- **Rookie & breakout badges** — Players identified as rookies show a blue "ROOKIE" badge; players with +50 value in 7 days get an orange "🔥 BREAKOUT" badge. Appears in trade chips, dropdowns, and value list.
+- **1QB ↔ Superflex toggle** — League type control redesigned as a pill toggle switch between 1QB and SF modes for quicker switching.
+- **Dropdown controls** — Team size (8/10/12/14) and scoring format (PPR/Half/STD) now always visible as compact dropdowns instead of hidden for logged-in users.
+
+### Top Movers Enhancements
+- **Loading states & animations** — Movers panel shows spinner during load with reduced opacity. Pulse highlight animation when data refreshes.
+- **Debounced refresh** — 300ms debounce on control changes prevents excessive API calls when rapidly toggling settings.
+- **Data freshness indicators** — Movers subtitle shows when values were last updated ("Updated 2h ago", "Updated 3d ago") based on database snapshot timestamps.
+- **League size-aware movers** — Top risers/fallers now respect selected league size (8/10/12/14-team) and display in subtitle (e.g., "Biggest 7-day changes in SF 12-team BR value").
+
+### Database & Performance
+- **Value history for all league sizes** — `player_value_history` table now stores `value_8`, `value_12`, `value_14`, `sf_value_8`, `sf_value_12`, `sf_value_14` fields. Historical tracking works across all league configurations.
+- **Database fallback for ephemeral filesystems** — `load_model_value_table()` now falls back to loading from database when JSON file doesn't exist, solving Render's ephemeral filesystem issue where cron_daily writes aren't accessible to the main app.
+- **Performance indexes** — Added 4 new indexes on `player_value_history`: `(as_of_date, value DESC)`, `(as_of_date, sf_value DESC)`, `(player_id, position)`, `(source, as_of_date DESC)` for faster movers queries.
+
+### Infrastructure
+- **ads.txt support** — Created `/ads.txt` endpoint for ad network authorization (Google AdSense, Media.net). Template file included with instructions for adding publisher credentials.
+
+### Advanced Metrics & Breakout Detection
+- **Advanced efficiency metrics table** — New `player_advanced_metrics` database table stores position-specific efficiency calculations: yards per target, catch rate, yards per reception (WR/TE/RB), yards per carry, yards per touch (RB), yards per attempt, completion %, TD/INT rates (QB), plus snap share, opportunity share, red zone usage, and composite role scores (0-100).
+- **Daily metrics calculation** — `cron_daily.py` now runs `build_daily_advanced_metrics()` after usage table generation to calculate and store efficiency metrics for all players daily.
+- **Offseason metrics handling** — Value model automatically uses most recent available metrics (from previous season) when in offseason. Logs indicate when using historical data (e.g., "Using metrics from 2025-12-30 (90 days old - likely previous season)"). Efficiency metrics remain relevant across seasons since player skill persists.
+- **Multi-factor breakout algorithm** — Breakout detection upgraded from simple +50 value threshold to composite scoring system analyzing: snap share increase (0-25 pts), opportunity share increase (0-30 pts), role score improvement (0-25 pts), efficiency gains (0-20 pts), red zone usage increase (0-15 pts), and age bonus for players under 26 (0-15 pts). Requires 30+ total score to qualify.
+- **Year-over-year breakout factors** — Added YoY snap increase (0-20 pts), YoY opportunity increase (0-25 pts), and second-year player bonus (10 pts) to capture depth chart promotions (WR2→WR1 when starter leaves), sophomore leaps (Jefferson, Chase, Lamb pattern), and situation changes. Uses `get_year_over_year_metrics()` to query metrics from ~365 days ago (±30 day window) for comparison. Dual-timeframe approach: 14-day trends identify hot hands, YoY comparisons identify structural advantages.
+- **Improved breakout thresholds** — Simple value-based fallback now uses ≥75 for QB/RB/WR, ≥100 for TE (reduced from uniform ≥50). Eliminates false positives: previous threshold flagged 858 players as breakouts, new threshold identifies 6 meaningful candidates.
+- **Role score calculation** — Position-specific composite metric combining usage volume (snaps, touches), efficiency (yards per touch, catch rate), and opportunity quality (red zone usage). Weights tailored per position (e.g., pass-catching RBs valued higher, WR target volume weighted more than snap count).
+- **Trend tracking** — `usage_trend` and `efficiency_trend` fields calculate 14-day % changes in opportunity share and role score, identifying emerging usage patterns before value changes.
+- **Advanced metrics API endpoints** — Three new endpoints: `/api/player-advanced-metrics/<id>` (individual player efficiency stats), `/api/advanced-metrics/top-role-players` (highest usage+efficiency composite scores by position), `/api/advanced-metrics/breakout-candidates` (multi-factor breakout analysis with score breakdowns).
+- **Breakout candidate scoring transparency** — Breakout API returns score components breakdown showing exactly why a player qualified (snap increase 15.2 pts, opportunity increase 22.5 pts, youth bonus 9.0 pts, etc.) along with current/previous role scores and value delta for context.
+- **Value model integration** — Advanced efficiency metrics now feed directly into the ML value model as training features. The gradient boosting model learns patterns like "high YPT + increasing snap share = rising value" and "declining efficiency trend = value risk". Metrics joined into both training and inference dataframes via `load_advanced_metrics_df()`. 18 new features: receiving efficiency (YPT, catch rate, YPR, target quality), rushing efficiency (YPC, yards per touch, TD rate), passing efficiency (YPA, completion %, TD/INT rates), usage (snap share, opportunity share, red zone usage), and trends (usage trend, efficiency trend, role score).
+
+### Trade Calculator UX
+- **Age display formatting** — Player ages now display consistently as "27.0 yrs" in trade chips with proper float-to-string conversion. Previously ages could appear missing due to type coercion issues.
+- **Position rank labels** — Position ranks (WR7, RB5, etc.) now display correctly in trade chips. Uses SF rank when Superflex mode selected, 1QB rank otherwise.
+
 ### Value Model — Red Zone & Age Curves
 - **Red zone stats for past seasons** — Historical `rec_rz_tgt_pg` and `rush_rz_att_pg` are now propagated through `build_player_history_features()` as 3-year weighted averages (`three_year_weighted_rec_rz`, `three_year_weighted_rush_rz`, `rz_trend_1yr`). The value engine now falls back to these historical averages in the offseason when current-season data is absent, the same pattern used for rush yards.
 - **TEs included in red zone fetch** — `ALLOWED_POS` in `sleeper_bulk_stats.py` was `["RB", "WR"]`; TEs are now included since they're among the most redzone-dependent positions.

@@ -224,7 +224,19 @@ def load_engine_table():
 
 def load_model_value_table():
     # Return ONLY the parsed JSON data, not the path object
-    return read_json(path_model_value_table())
+    result = read_json(path_model_value_table())
+
+    # Fallback to database if JSON file doesn't exist
+    if result is None:
+        try:
+            from dashboard_services.player_value_history import load_latest_value_snapshot
+            result = load_latest_value_snapshot()
+            if result:
+                print(f"[load_model_value_table] Loaded {len(result)} players from database (JSON file not found)")
+        except Exception as e:
+            print(f"[load_model_value_table] Failed to load from database: {e}")
+
+    return result
 
 
 def load_teams_index() -> Optional[Dict]:
