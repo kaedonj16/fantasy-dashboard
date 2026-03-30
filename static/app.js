@@ -785,25 +785,26 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function getLeagueType() {
-    return root.querySelector('input[name="leagueType"]:checked')?.value || "1qb";
+    const toggle = root.querySelector("#leagueTypeToggle");
+    return toggle?.checked ? "sf" : "1qb";
   }
 
   function getLeagueSize() {
     // Logged-in leagues: use the hidden input injected by the server
     const hidden = root.querySelector("#leagueSizeInput");
     if (hidden && hidden.value) return parseInt(hidden.value, 10) || 10;
-    // Guest mode: read from the size radio group
-    const checked = root.querySelector('input[name="leagueSize"]:checked');
-    return parseInt(checked?.value || "10", 10);
+    // Guest mode: read from the size dropdown
+    const sel = root.querySelector("#leagueSizeSelect");
+    return parseInt(sel?.value || "10", 10);
   }
 
   function getScoringFormat() {
     // Logged-in leagues: use the hidden input injected by the server
     const hidden = root.querySelector("#scoringFormatInput");
     if (hidden && hidden.value) return hidden.value;
-    // Guest mode: read from the scoring format radio group
-    const checked = root.querySelector('input[name="scoringFormat"]:checked');
-    return checked?.value || "ppr";
+    // Guest mode: read from the scoring format dropdown
+    const sel = root.querySelector("#scoringFormatSelect");
+    return sel?.value || "ppr";
   }
 
   // Position multipliers matching the server-side _SCORING_MULTS table
@@ -1341,34 +1342,37 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function bindLeagueTypeControls() {
-    root.querySelectorAll('input[name="leagueType"]').forEach(el => {
-      bindOnce(el, "tradeLeagueTypeChange", "change", () => {
+    const toggle = root.querySelector("#leagueTypeToggle");
+    if (toggle) {
+      bindOnce(toggle, "tradeLeagueTypeChange", "change", () => {
         onLeagueTypeChange();
       });
-    });
+    }
   }
 
   function bindLeagueSizeControls() {
-    root.querySelectorAll('input[name="leagueSize"]').forEach(el => {
-      bindOnce(el, "tradeLeagueSizeChange", "change", () => {
+    const sel = root.querySelector("#leagueSizeSelect");
+    if (sel) {
+      bindOnce(sel, "tradeLeagueSizeChange", "change", () => {
         // Same refresh as league type change — all values need recalculating
         renderChips("A");
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
       });
-    });
+    }
   }
 
   function bindScoringFormatControls() {
-    root.querySelectorAll('input[name="scoringFormat"]').forEach(el => {
-      bindOnce(el, "tradeScoringFormatChange", "change", () => {
+    const sel = root.querySelector("#scoringFormatSelect");
+    if (sel) {
+      bindOnce(sel, "tradeScoringFormatChange", "change", () => {
         renderChips("A");
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
       });
-    });
+    }
   }
 
   function bindViewerSideControls() {

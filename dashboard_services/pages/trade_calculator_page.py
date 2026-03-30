@@ -59,30 +59,34 @@ def build_trade_calculator_body(
 
     is_guest_str = 'true' if is_guest else 'false'
 
-    # League size control: selector in guest mode, hidden input when logged in
+    # League size control: dropdown in guest mode, hidden input when logged in
     if is_guest:
         size_options = ""
         for s in SUPPORTED_LEAGUE_SIZES:
-            checked = 'checked' if s == num_teams_val else ''
-            size_options += f'<label class="otc-viewer-toggle"><input type="radio" name="leagueSize" value="{s}" {checked}><span>{s}-team</span></label>\n'
+            selected = 'selected' if s == num_teams_val else ''
+            size_options += f'<option value="{s}" {selected}>{s}-team</option>\n'
         league_size_block = f"""
-              <div class="otc-viewer-toggles" id="leagueSizeControl" style="margin-left: 16px;">
-                {size_options}
+              <div class="otc-ctrl-group otc-toggle-divider" id="leagueSizeControl">
+                <select class="otc-ctrl-select" id="leagueSizeSelect" name="leagueSize">
+                  {size_options}
+                </select>
               </div>"""
         league_size_hidden = ""
     else:
         league_size_block = ""
         league_size_hidden = f'<input type="hidden" id="leagueSizeInput" value="{num_teams_val}">'
 
-    # Scoring format control: selector in guest mode, hidden input when logged in
+    # Scoring format control: dropdown in guest mode, hidden input when logged in
     if is_guest:
         fmt_options = ""
         for val, label in SUPPORTED_SCORING_FORMATS:
-            checked = 'checked' if val == scoring_format_val else ''
-            fmt_options += f'<label class="otc-viewer-toggle"><input type="radio" name="scoringFormat" value="{val}" {checked}><span>{label}</span></label>\n'
+            selected = 'selected' if val == scoring_format_val else ''
+            fmt_options += f'<option value="{val}" {selected}>{label}</option>\n'
         scoring_format_block = f"""
-              <div class="otc-viewer-toggles" id="scoringFormatControl" style="margin-left: 16px;">
-                {fmt_options}
+              <div class="otc-ctrl-group otc-toggle-divider" id="scoringFormatControl">
+                <select class="otc-ctrl-select" id="scoringFormatSelect" name="scoringFormat">
+                  {fmt_options}
+                </select>
               </div>"""
         scoring_format_hidden = ""
     else:
@@ -131,15 +135,13 @@ def build_trade_calculator_body(
                   <span>Team 2 is mine</span>
                 </label>
               </div>
-              <div class="otc-viewer-toggles" style="margin-left: 16px;">
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="leagueType" value="1qb" checked>
-                  <span>1QB</span>
+              <div class="otc-ctrl-group otc-toggle-divider">
+                <span class="otc-toggle-label">1QB</span>
+                <label class="otc-pill-switch">
+                  <input type="checkbox" id="leagueTypeToggle">
+                  <span class="otc-pill-track"></span>
                 </label>
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="leagueType" value="sf">
-                  <span>Superflex</span>
-                </label>
+                <span class="otc-toggle-label">SF</span>
               </div>
               {league_size_block}
               {scoring_format_block}
