@@ -715,6 +715,25 @@ def get_offseason_breakout_candidates(season: int, min_score: float = 30, top_n_
             player_meta = players_index.get(player_id, {})
             player_value = values_by_id.get(player_id, {})
 
+            # Position-specific rank filters
+            position = cand["position"]
+            pos_rank = player_value.get("pos_rank", 999)
+
+            # Cannot be a breakout if already top 5 at position (already elite)
+            if pos_rank <= 5:
+                continue
+
+            # Exclude players ranked too low (outside dynasty relevance)
+            rank_thresholds = {
+                "QB": 32,
+                "RB": 45,
+                "WR": 60,
+                "TE": 20
+            }
+            max_rank = rank_thresholds.get(position, 999)
+            if pos_rank > max_rank:
+                continue
+
             # Handle departed_players (could be list or JSON string)
             departed_players = cand["departed_players"]
             if isinstance(departed_players, str):
@@ -744,6 +763,8 @@ def get_offseason_breakout_candidates(season: int, min_score: float = 30, top_n_
                 "years_exp": player_meta.get("years_exp"),
                 "value": player_value.get("value", 0),
                 "sf_value": player_value.get("sf_value", player_value.get("value", 0)),
+                "pos_rank": player_value.get("pos_rank"),
+                "pos_rank_label": player_value.get("pos_rank_label"),
                 "breakout_score": round(float(cand["breakout_score"]), 1),
                 "projection_factors": projection_factors,
                 "previous_season": {

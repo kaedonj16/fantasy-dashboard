@@ -35,12 +35,6 @@ CHANGELOG = [
         "link": "/trade"
     },
     {
-        "date": "2026-03-30",
-        "tag": "improvement",
-        "text": "Trade Calculator: Faster loading with improved database performance",
-        "link": "/trade"
-    },
-    {
         "date": "2026-03-27",
         "tag": "new",
         "text": "Team Reports: AI-powered Front Office Briefings analyze your roster, trade opportunities, and league standings",

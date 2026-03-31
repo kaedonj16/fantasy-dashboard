@@ -134,9 +134,11 @@ def build_trade_calculator_body(
                   <span>Team 2</span>
                 </label>
               </div>
-              {league_size_block}
-              {scoring_format_block}
-              {league_type_block}
+              <div class="otc-settings-row">
+                {league_size_block}
+                {scoring_format_block}
+                {league_type_block}
+              </div>
             </div>
           </div>
 
@@ -324,7 +326,7 @@ def build_trade_calculator_body(
 
             <div id="breakoutsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
-                <div class="otc-mini-section-title">Offseason Breakouts</div>
+                <div class="otc-mini-section-title">Breakout Candidates</div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>
                 </div>

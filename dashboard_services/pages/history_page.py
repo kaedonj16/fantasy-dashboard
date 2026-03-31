@@ -711,43 +711,9 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
     """
 
 
-def build_history_body(
-        history_ctx: dict,
-        available_seasons: List[int],
-        base_platform: str,
-        base_season: int,
-        base_league_id: str,
-        selected_history_season: int,
-        resolved_history_league_id: str,
-) -> str:
-    league = history_ctx.get("league") or {}
-    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
-
+def get_history_summary_html(history_ctx: dict) -> str:
+    """Generate season awards/summary section HTML."""
     summary = _build_summary(history_ctx)
-
-    # Add summary to history_ctx for AI generation
-    history_ctx["summary"] = summary
-
-    # Use AI to generate league season summary
-    recap_line = get_league_season_summary(history_ctx, selected_history_season)
-    chart_html = _history_chart(df_weekly)
-
-    regular_season_team_stats = build_regular_season_team_stats(df_weekly, league)
-    standings_html = _standings_table(regular_season_team_stats)
-
-    options_html = []
-    for yr in available_seasons:
-        href = url_for(
-            "page_history",
-            platform=base_platform,
-            season=base_season,
-            league_id=base_league_id,
-            history_season=yr,
-        )
-        selected = "selected" if yr == selected_history_season else ""
-        options_html.append(f"<option value='{href}' {selected}>{yr}</option>")
-
-    league_name = league.get("name") or "League History"
 
     featured_cards_html = "".join(
         [
@@ -812,12 +778,79 @@ def build_history_body(
     )
 
     return f"""
+    <div class="history-awards-grid">
+      {featured_cards_html}
+      {compact_cards_html}
+    </div>
+    """
+
+
+def get_history_standings_html(history_ctx: dict) -> str:
+    """Generate standings table HTML."""
+    league = history_ctx.get("league") or {}
+    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+
+    regular_season_team_stats = build_regular_season_team_stats(df_weekly, league)
+    return _standings_table(regular_season_team_stats)
+
+
+def get_history_chart_html(history_ctx: dict) -> str:
+    """Generate season trend chart HTML."""
+    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+    return _history_chart(df_weekly)
+
+
+def build_history_body(
+        history_ctx: dict,
+        available_seasons: List[int],
+        base_platform: str,
+        base_season: int,
+        base_league_id: str,
+        selected_history_season: int,
+        resolved_history_league_id: str,
+) -> str:
+    league = history_ctx.get("league") or {}
+    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+
+    summary = _build_summary(history_ctx)
+
+    # Add summary to history_ctx for AI generation
+    history_ctx["summary"] = summary
+
+    # Use AI to generate league season summary
+    recap_line = get_league_season_summary(history_ctx, selected_history_season)
+
+    options_html = []
+    for yr in available_seasons:
+        href = url_for(
+            "page_history",
+            platform=base_platform,
+            season=base_season,
+            league_id=base_league_id,
+            history_season=yr,
+        )
+        selected = "selected" if yr == selected_history_season else ""
+        options_html.append(f"<option value='{href}' {selected}>{yr}</option>")
+
+    league_name = league.get("name") or "League History"
+
+    # Loading spinner HTML
+    loading_spinner = """
+    <div class="history-loading-state">
+      <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+      <div style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 12px;">Loading...</div>
+    </div>
+    """
+
+    return f"""
     <div class="history-page">
       <!-- Hidden inputs for JavaScript -->
       <input type="hidden" id="leagueIdInput" value="{base_league_id}">
       <input type="hidden" id="seasonInput" value="{base_season}">
+      <input type="hidden" id="platformInput" value="{base_platform}">
+      <input type="hidden" id="historySeasonInput" value="{selected_history_season}">
       <input type="hidden" id="resolvedLeagueIdInput" value="{resolved_history_league_id}">
-      
+
       <div class="history-header">
         <div>
           <div class="history-kicker">League History</div>
@@ -841,24 +874,24 @@ def build_history_body(
       <div class="history-top-grid">
         <div class="history-section-card history-awards-panel">
           <div class="history-section-title">Season Awards</div>
-
-          <div class="history-awards-grid">
-            {featured_cards_html}
-            {compact_cards_html}
+          <div id="historyAwardsContent">
+            {loading_spinner}
           </div>
         </div>
 
         <div class="history-section-card history-standings-panel">
           <div class="history-section-title">Regular Season Standings</div>
-          {standings_html}
+          <div id="historyStandingsContent">
+            {loading_spinner}
+          </div>
         </div>
       </div>
 
       <div class="history-top-grid">
         <div class="history-section-card history-chart-panel">
           <div class="history-section-title">Season Trend</div>
-          <div class="history-chart-wrap">
-            {chart_html}
+          <div id="historyChartContent">
+            {loading_spinner}
           </div>
         </div>
 

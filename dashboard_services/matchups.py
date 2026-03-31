@@ -132,6 +132,7 @@ def build_matchup_preview(
 
         return {
             "name": roster_map.get(rid, f"Roster {rid}"),
+            "roster_id": rid,
             "starters": s_infos,
             "pts_total": pts_total,
             "avatar": get_avatar(owner_id),
@@ -153,6 +154,7 @@ def build_matchup_preview(
         owner_id = owner_id_by_rid.get(rid_str)
         return {
             "name": name,
+            "roster_id": rid_str,
             "starters": [],
             "pts_total": None,
             "avatar": get_avatar(owner_id) if owner_id else None,
@@ -861,11 +863,12 @@ def render_matchup_slide(
 
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
+            rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">
           {img}
           <div>
-            <div class="name left">{t['name']}</div>
+            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
             <div>{t['record']} • @{t['username']}</div>
           </div>
           <span class="num">{points}</span>
@@ -878,11 +881,12 @@ def render_matchup_slide(
             week_proj_map,
         )
 
+        rid = t.get('roster_id', '')
         return f"""
         <div class="m-team">
           {img}
           <div>
-            <div class="name left">{t['name']}</div>
+            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
             <div>{t['record']} • @{t['username']}</div>
           </div>
           <div style="display:grid;grid-template-columns:1;justify-items: center;">
@@ -898,11 +902,12 @@ def render_matchup_slide(
 
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
+            rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">
           <span class="num">{points}</span>
           <div class="right">
-            <div class="name">{t['name']}</div>
+            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
             <div>@{t['username']} • {t['record']}</div>
           </div>
           {img}
@@ -914,6 +919,7 @@ def render_matchup_slide(
             status_by_pid,
             week_proj_map,
         )
+        rid = t.get('roster_id', '')
         return f"""
         <div class="m-team">
           <div style="display:grid;grid-template-columns:1;justify-items: center;">
@@ -921,7 +927,7 @@ def render_matchup_slide(
             <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
           </div>
           <div class="right">
-            <div class="name">{t['name']}</div>
+            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
             <div>@{t['username']} • {t['record']}</div>
           </div>
           {img}
@@ -1100,12 +1106,15 @@ def render_matchup_slide(
 
         meta_content = f"&nbsp;{nfl}"
 
+        # Add clickable attributes
+        clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'" if pid else " class='pname'"
+
         if left_side:
             if is_bye:
                 cell = (
                     f"<div class='p {side}' style='opacity:0.4;'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<span class='pname'>{name}</span>"
+                    f"<span{clickable_attrs}>{name}</span>"
                     f"<span class='meta'>{meta_content}</span>"
                     f"</div>"
                 )
@@ -1114,7 +1123,7 @@ def render_matchup_slide(
                     f"<div class='p {side}'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"<div style='display: flex;flex-direction: column;'>"
-                    f"<div><span class='pname'>{name} </span>"
+                    f"<div><span{clickable_attrs}>{name} </span>"
                     f"<span class='meta'> {meta_content}</span></div>"
                     f"<span class='meta'>{game_line}</span></div>"
                     f"</div>"
@@ -1124,7 +1133,7 @@ def render_matchup_slide(
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end; opacity:0.4;'>"
                     f"<span class='meta'>{meta_content}</span>"
-                    f"<span class='pname'>{name}</span>"
+                    f"<span{clickable_attrs}>{name}</span>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
                 )
@@ -1134,7 +1143,7 @@ def render_matchup_slide(
                     f"<div style='display:flex;flex-direction:column-reverse;'>"
                     f"<span class='meta'>{game_line}</span>"
                     f"<div><span class='meta'>{meta_content} </span>"
-                    f"<span class='pname'> {name}</span></div></div>"
+                    f"<span{clickable_attrs}> {name}</span></div></div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
                 )
