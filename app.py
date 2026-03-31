@@ -828,13 +828,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
+    # Show Weekly Hub if draft has ended (during offseason) OR if in-season
+    draft_ended = has_draft_ended(league_id, platform, season)
+    if draft_ended or not offseason_mode:
+        nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill("History", "page_history", "history"))
 
-    # In-season only
+    # Standings and Graphs remain in-season only
     if not offseason_mode:
-        nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
         nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
         nav_pills.append(nav_pill("Graphs", "page_graphs", "graphs"))
 
@@ -943,6 +946,35 @@ def _safe_int(value, default=None):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def has_draft_ended(league_id: str, platform: str, season: int) -> bool:
+    """
+    Check if the draft has ended for a given league/season.
+    Returns True if draft ended, False if not yet started or in progress.
+    """
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        if not ctx:
+            return False
+
+        latest_draft = ctx.get("latest_draft")
+        league = ctx.get("league")
+
+        draft_ts_ms = None
+        if isinstance(latest_draft, dict):
+            draft_ts_ms = _safe_int(latest_draft.get("start_time"))
+        if draft_ts_ms is None:
+            draft_ts_ms = _safe_int(league.get("draft_day"))
+
+        if not draft_ts_ms:
+            return False
+
+        draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
+        now_dt = datetime.now(EASTERN)
+        return now_dt > draft_dt
+    except Exception:
+        return False
 
 
 def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optional[dict]:
@@ -1587,6 +1619,18 @@ def api_history_summary(platform: str, season: int, league_id: str):
 
         history_season = int(request.args.get("history_season", season))
 
+        # Check if this is a valid history season
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+        if not available_seasons:
+            return jsonify({
+                "html": "<div class='history-empty'>This is your first season. Historical data will be available after the season completes.</div>"
+            })
+
+        if history_season not in available_seasons:
+            return jsonify({
+                "html": "<div class='history-empty'>No data available for this season.</div>"
+            })
+
         resolved_history_league_id = resolve_league_id_for_season(
             platform=platform,
             league_id=league_id,
@@ -1616,6 +1660,18 @@ def api_history_standings(platform: str, season: int, league_id: str):
 
         history_season = int(request.args.get("history_season", season))
 
+        # Check if this is a valid history season
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+        if not available_seasons:
+            return jsonify({
+                "html": "<div class='history-empty'>This is your first season. Historical standings will be available after the season completes.</div>"
+            })
+
+        if history_season not in available_seasons:
+            return jsonify({
+                "html": "<div class='history-empty'>No standings data available for this season.</div>"
+            })
+
         resolved_history_league_id = resolve_league_id_for_season(
             platform=platform,
             league_id=league_id,
@@ -1644,6 +1700,20 @@ def api_history_chart(platform: str, season: int, league_id: str):
         from dashboard_services.pages.history_page import _filtered_season_df
 
         history_season = int(request.args.get("history_season", season))
+
+        # Check if this is a valid history season
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+        if not available_seasons:
+            return jsonify({
+                "error": "No data",
+                "html": "<div class='history-empty'>This is your first season. Week-by-week trends will be available after the season completes.</div>"
+            })
+
+        if history_season not in available_seasons:
+            return jsonify({
+                "error": "No data",
+                "html": "<div class='history-empty'>No weekly data available for this season.</div>"
+            })
 
         resolved_history_league_id = resolve_league_id_for_season(
             platform=platform,
@@ -5521,25 +5591,7 @@ def page_standings(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-
-    # Check if draft has ended
-    draft_ended = False
-    latest_draft = ctx.get("latest_draft")
-    league = ctx.get("league")
-
-    draft_ts_ms = None
-    if isinstance(latest_draft, dict):
-        draft_ts_ms = _safe_int(latest_draft.get("start_time"))
-    if draft_ts_ms is None:
-        draft_ts_ms = _safe_int(league.get("draft_day"))
-
-    if draft_ts_ms:
-        try:
-            draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
-            now_dt = datetime.now(EASTERN)
-            draft_ended = now_dt > draft_dt
-        except Exception:
-            pass
+    draft_ended = has_draft_ended(league_id, platform, season)
 
     if not draft_ended:
         body = """
@@ -5629,6 +5681,28 @@ def page_teams(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/history")
 def page_history(platform: str, season: int, league_id: str):
     available_seasons = get_available_history_seasons(platform, league_id, season)
+
+    # Handle first-year league case
+    if not available_seasons:
+        body_html = """
+        <div class="card central">
+          <div class="card-body">
+            <div class="bract-empty-state">
+              <div class="bract-empty-title">Welcome to Your First Season!</div>
+              <div class="bract-empty-copy">This is the first year of your league. Historical season data, AI-powered recaps, and year-over-year comparisons will appear here after your current season completes. Check back after championship week!</div>
+            </div>
+          </div>
+        </div>
+        """
+        return render_page(
+            "League History",
+            league_id,
+            "history",
+            body_html,
+            platform,
+            season,
+        )
+
     default_history_season = get_default_history_season(available_seasons, season)
 
     selected_history_season = int(
