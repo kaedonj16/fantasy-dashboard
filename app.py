@@ -84,7 +84,7 @@ from dashboard_services.service import (
     seed_top6_from_team_stats,
 )
 from data_building.build_daily_value_table import build_daily_data
-from data_building.player_value_history import get_top_movers, init_value_history_db
+from data_building.player_value_history import get_top_movers, init_value_history_db, get_player_value_history
 from utils.utils import (
     bucket_for_slot,
     build_and_save_week_stats_for_league,
@@ -1579,6 +1579,108 @@ def history_ai_recap():
         return jsonify({"error": "Failed to generate recap"}), 500
 
 
+@app.route("/api/history/<platform>/<int:season>/<league_id>/summary")
+def api_history_summary(platform: str, season: int, league_id: str):
+    """Get season awards/summary data."""
+    try:
+        from dashboard_services.pages.history_page import get_history_summary_html
+
+        history_season = int(request.args.get("history_season", season))
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=history_season,
+        )
+
+        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
+        if not history_ctx:
+            return jsonify({"error": "League context not found"}), 404
+
+        html = get_history_summary_html(history_ctx)
+        return jsonify({"html": html})
+
+    except Exception as e:
+        print(f"[api_history_summary] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/history/<platform>/<int:season>/<league_id>/standings")
+def api_history_standings(platform: str, season: int, league_id: str):
+    """Get regular season standings."""
+    try:
+        from dashboard_services.pages.history_page import get_history_standings_html
+
+        history_season = int(request.args.get("history_season", season))
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=history_season,
+        )
+
+        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
+        if not history_ctx:
+            return jsonify({"error": "League context not found"}), 404
+
+        html = get_history_standings_html(history_ctx)
+        return jsonify({"html": html})
+
+    except Exception as e:
+        print(f"[api_history_standings] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/history/<platform>/<int:season>/<league_id>/chart")
+def api_history_chart(platform: str, season: int, league_id: str):
+    """Get season trend chart data."""
+    try:
+        from dashboard_services.pages.history_page import _filtered_season_df
+
+        history_season = int(request.args.get("history_season", season))
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=history_season,
+        )
+
+        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
+        if not history_ctx:
+            return jsonify({"error": "League context not found"}), 404
+
+        df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+        chart_df = _filtered_season_df(df_weekly)
+
+        if chart_df.empty or not {"week", "owner", "points"}.issubset(chart_df.columns):
+            return jsonify({"error": "No data", "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
+
+        # Build chart data for each team
+        chart_data = []
+        for owner, grp in chart_df.groupby("owner"):
+            grp = grp.sort_values("week")
+            chart_data.append({
+                "name": str(owner),
+                "x": grp["week"].tolist(),
+                "y": grp["points"].tolist(),
+            })
+
+        return jsonify({"data": chart_data})
+
+    except Exception as e:
+        print(f"[api_history_chart] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
     return f"""
     <div class="ai-copy">
@@ -2660,23 +2762,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
-    gm_memo_html = ""
     front_office_html = ""
-
-    # Don't auto-generate GM memo - wait for button click
-    # if viewer_roster_id:
-    #     try:
-    #         gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-    #     except Exception as e:
-    #         print(f"[offseason-dashboard] gm memo exception: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    # else:
-    #     try:
-    #         front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-    #     except Exception as e:
-    #         print(f"[offseason-dashboard] front office briefing skipped: {e}")
-
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
     countdown_text = "TBD"
@@ -2697,8 +2783,39 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             delta_days = (draft_dt.date() - now_dt.date()).days
 
             draft_text = draft_dt.strftime("%b %d, %Y at %I:%M %p %Z")
-            countdown_text = f"{delta_days} days" if delta_days >= 0 else "Draft passed"
-            draft_subtext = "Countdown to your next league draft."
+
+            if delta_days >= 0:
+                # Draft hasn't happened yet
+                countdown_text = f"{delta_days} days"
+                draft_subtext = "Countdown to your next league draft."
+            else:
+                # Draft has passed - show Week 1 countdown
+                nfl_state = get_nfl_state() or {}
+                season_start_date = nfl_state.get("season_start_date")
+
+                if season_start_date:
+                    try:
+                        # Parse season start date (format: "YYYY-MM-DD")
+                        from dateutil import parser
+                        week1_dt = parser.parse(season_start_date).replace(tzinfo=EASTERN)
+                        week1_delta = (week1_dt.date() - now_dt.date()).days
+
+                        if week1_delta > 0:
+                            countdown_text = f"{week1_delta} days"
+                            draft_subtext = "Countdown to Week 1 kickoff."
+                        elif week1_delta == 0:
+                            countdown_text = "Today!"
+                            draft_subtext = "Week 1 starts today!"
+                        else:
+                            countdown_text = "Season started"
+                            draft_subtext = "Week 1 is underway!"
+                    except Exception as e:
+                        print(f"[offseason] Failed to parse season_start_date: {e}")
+                        countdown_text = "Draft passed"
+                        draft_subtext = "Season starting soon."
+                else:
+                    countdown_text = "Draft passed"
+                    draft_subtext = "Awaiting season start date."
         except Exception:
             pass
 
@@ -2759,8 +2876,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             "team_name": team_name,
             "roster_value": roster_value,
             "pick_count": pick_count,
+            "roster_id": rid,
             "html": f"""
-            <div class="os-snapshot-card">
+            <div class="os-snapshot-card team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{team_name}">
               <div class="os-snapshot-top">
                 <div class="os-snapshot-rank-block">
                   <div class="os-snapshot-team">{team_name}</div>
@@ -2859,6 +2977,48 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     top_waiver_assets_html = "".join(waiver_html)
 
+    # Build matchup carousel (even if offseason/preseason - show with 0 projections)
+    matchup_html = ""
+    try:
+        from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks
+
+        matchups_by_week = ctx.get("matchups_by_week", {})
+        proj_by_week = ctx.get("proj_by_week", {})
+        statuses = ctx.get("statuses", {})
+        players_index = ctx.get("players_index", {})
+        teams_index = ctx.get("teams_index", {})
+        team_game_lookup = ctx.get("team_game_lookup", {})
+        current_week = ctx.get("current_week", 1)
+
+        # Generate slides for Week 1 (or current week)
+        week_to_show = current_week if current_week > 0 else 1
+        matchups_for_week = matchups_by_week.get(week_to_show, [])
+
+        if matchups_for_week:
+            slides = [
+                render_matchup_slide(
+                    season,
+                    m,
+                    week_to_show,
+                    week_to_show,
+                    status_by_pid=statuses.get(week_to_show, {}).get("statuses", {}),
+                    projections=proj_by_week,
+                    players=players_index,
+                    teams=teams_index,
+                    team_game_lookup=team_game_lookup,
+                )
+                for m in matchups_for_week
+            ]
+            slides_by_week = {week_to_show: "".join(slides)}
+            matchup_html = render_matchup_carousel_weeks(
+                slides_by_week,
+                dashboard=True,
+                active_week=week_to_show,
+            )
+    except Exception as e:
+        print(f"[offseason] Failed to generate matchup carousel: {e}")
+        matchup_html = ""
+
     gm_card_html = ""
     if viewer_roster_id:
         # Show button to generate GM memo instead of auto-generating
@@ -2867,7 +3027,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">BR Front Office Report</h2>
-              <div class="os-section-subtitle">@{viewer.get("viewer_team_name") or "Your Team"}</div>
+              <div class="os-section-subtitle">{viewer.get("viewer_team_name") or "Your Team"}</div>
             </div>
             <div class="os-section-head-actions">
               <button type="button" id="generateGmMemoBtn" class="recap-generate-btn" 
@@ -2968,6 +3128,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         {gm_card_html}
         {front_office_card_html}
+
+        {matchup_html}
 
         <section class="os-card">
           <div class="os-section-head">
@@ -3234,7 +3396,7 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
         <div class="highlight-game-card white">
           <div class="hg-row">
             <div class="hg-team">
-              <span class="hg-name">{top['owner']}</span>
+              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{top['roster_id']}" data-team-name="{top['owner']}">{top['owner']}</span>
             </div>
             <div class="hg-score">{top['use_score']:.1f}</div>
           </div>
@@ -3250,7 +3412,7 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
         <div class="highlight-game-card white">
           <div class="hg-row">
             <div class="hg-team">
-              <span class="hg-name">{low['owner']}</span>
+              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{low['roster_id']}" data-team-name="{low['owner']}">{low['owner']}</span>
             </div>
             <div class="hg-score">{low['use_score']:.1f}</div>
           </div>
@@ -3273,8 +3435,10 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
 
         matchups.append({
             "winner": win["owner"],
+            "winner_rid": win["roster_id"],
             "winnerPts": float(win["use_score"]),
             "loser": lose["owner"],
+            "loser_rid": lose["roster_id"],
             "loserPts": float(lose["use_score"]),
             "margin": margin,
         })
@@ -3294,11 +3458,11 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
           <div class="card-body">
             <div class="highlight-game-card white">
               <div class="hg-row">
-                <span class="hg-name">{closest['winner']}</span>
+                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['winner_rid']}" data-team-name="{closest['winner']}">{closest['winner']}</span>
                 <span class="hg-score">{closest['winnerPts']:.1f}</span>
               </div>
               <div class="hg-row">
-                <span class="hg-name">{closest['loser']}</span>
+                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['loser_rid']}" data-team-name="{closest['loser']}">{closest['loser']}</span>
                 <span class="hg-score">{closest['loserPts']:.1f}</span>
               </div>
             </div>
@@ -3314,11 +3478,11 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
           <div class="card-body">
             <div class="highlight-game-card white">
               <div class="hg-row">
-                <span class="hg-name">{blowout['winner']}</span>
+                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['winner_rid']}" data-team-name="{blowout['winner']}">{blowout['winner']}</span>
                 <span class="hg-score">{blowout['winnerPts']:.1f}</span>
               </div>
               <div class="hg-row">
-                <span class="hg-name">{blowout['loser']}</span>
+                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['loser_rid']}" data-team-name="{blowout['loser']}">{blowout['loser']}</span>
                 <span class="hg-score">{blowout['loserPts']:.1f}</span>
               </div>
             </div>
@@ -3969,13 +4133,18 @@ def build_activity_body(ctx: dict) -> str:
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
+
+                # Make player name clickable using the pid from the player dict
+                pid = p.get("pid", "")
+                clickable_attrs = f" class='player-clickable' style='cursor:pointer;font-weight:600;' data-player-id='{pid}' data-player-name='{name}'" if pid else " style='font-weight:600'"
+
                 return (
                     "<div class='player-activity'>"
                     "<div style='gap: 10px;display: flex;align-items: center;'>"
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
-                    f"  <div style='font-weight:600'>{p['name']}</div>"
+                    f"  <div{clickable_attrs}>{name}</div>"
                     f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p['team']}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
@@ -4118,9 +4287,11 @@ def build_activity_body(ctx: dict) -> str:
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
+                team_name = tm.get('name', '')
+                roster_id = tm.get('roster_id', '')
                 cols.append(
                     "<div class='team-col'>"
-                    f"  <header>{img}<div class='team-name'>{tm.get('name', '')}</div></header>"
+                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
                     f"  <div class='plist'>{gets}{sends}{total_html}</div>"
                     "</div>"
                 )
@@ -4148,6 +4319,7 @@ def build_activity_body(ctx: dict) -> str:
 
             d = txrow["data"]
             team_name = d.get("name") or "Unknown Team"
+            roster_id = d.get("roster_id", "")
             most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
             waiver_count += 1
 
@@ -4187,7 +4359,7 @@ def build_activity_body(ctx: dict) -> str:
                 "<div class='tx activity-item' data-kind='waiver'>"
                 f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
                 "  <div class='team-col'>"
-                f"    <header>{img}<div class='team-name'>{team_name}</div></header>"
+                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
                 f"    <div class='plist'>{adds}</div>"
                 "  </div>"
                 "</div>"
@@ -4777,6 +4949,7 @@ def build_teams_body(ctx: dict) -> str:
                 p.get('position', '')
             )
             age = name_to_age.get(name_key)
+            age_txt = f"{age:.1f} yrs" if age is not None else ""
 
             try:
                 val = float(p.get("value") or 0.0)
@@ -4784,13 +4957,20 @@ def build_teams_body(ctx: dict) -> str:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
 
+            # Build meta parts (rank, team, age)
+            meta_parts = [rank_label, p.get('team', '')]
+            if age_txt:
+                meta_parts.append(age_txt)
+            meta_str = " • ".join(filter(None, meta_parts))
+
+            player_id = p.get("id", "")
             rows_html.append(
                 "<div class='player-activity'>"
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
                 "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
-                f"      <div style='font-weight:600'>{name}</div>"
+                f"      <div style='font-weight:600;cursor:pointer;' class='player-clickable' data-player-id='{player_id}' data-player-name='{name}'>{name}</div>"
                 f"      <div style='color:#64748b;font-size:12px'>"
-                f"        {rank_label} • {p.get('team', '')} • {age} yrs"
+                f"        {meta_str}"
                 "      </div>"
                 "    </div>"
                 f"    <div class='player-trade-value'>{val_txt}</div>"
@@ -4886,7 +5066,7 @@ def build_teams_body(ctx: dict) -> str:
         card_html = (
             "<div class='card team-strength-card'>"
             "  <div class='card-header-row'>"
-            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2>{name}</h2></div>"
+            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2></div>"
             f"    <div class='mini-label'>Positional Index: "
             f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
             "  </div>"
@@ -5342,13 +5522,32 @@ def page_standings(platform: str, season: int, league_id: str):
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
+    # Check if draft has ended
+    draft_ended = False
+    latest_draft = ctx.get("latest_draft")
+    league = ctx.get("league")
+
+    draft_ts_ms = None
+    if isinstance(latest_draft, dict):
+        draft_ts_ms = _safe_int(latest_draft.get("start_time"))
+    if draft_ts_ms is None:
+        draft_ts_ms = _safe_int(league.get("draft_day"))
+
+    if draft_ts_ms:
+        try:
+            draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
+            now_dt = datetime.now(EASTERN)
+            draft_ended = now_dt > draft_dt
+        except Exception:
+            pass
+
+    if not draft_ended:
         body = """
         <div class="card central">
           <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
           <div class="card-body">
-            <p>The Weekly Hub becomes active once the season begins.</p>
-            <p>Use the dashboard, teams, activity, and trade tools for offseason planning.</p>
+            <p>The Weekly Hub becomes active once your league draft has completed.</p>
+            <p>Use the dashboard, teams, activity, and trade tools for pre-draft planning.</p>
           </div>
         </div>
         """
@@ -6362,10 +6561,114 @@ def api_player_indicators():
         return jsonify({"rookies": [], "breakouts": []})
 
 
+@app.route("/api/breakout-candidates")
+def api_breakout_candidates():
+    """
+    Get breakout candidates - automatically switches between offseason and in-season detection.
+    Returns full candidate objects with stats, not just IDs.
+    """
+    try:
+        from datetime import datetime
+        from utils.utils import load_players_index, load_model_value_table
+
+        min_score = float(request.args.get("min_score", 30))
+        limit = int(request.args.get("limit", 20))
+
+        # Get current NFL state
+        nfl_state = get_nfl_state() or {}
+        current_season = int(nfl_state.get("season") or datetime.now().year)
+        season_type = str(nfl_state.get("season_type", "")).lower().strip()
+        is_offseason = season_type == "off"
+
+        candidates = []
+
+        if is_offseason:
+            # Use offseason opportunity-based detection
+            try:
+                from data_building.offseason_opportunity import get_offseason_breakout_candidates
+                candidates = get_offseason_breakout_candidates(current_season, min_score=min_score, top_n_players=600)
+                print(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
+            except Exception as e:
+                print(f"[breakout-candidates] Offseason detection error: {e}")
+        else:
+            # Use in-season breakout detection with enrichment
+            try:
+                from data_building.advanced_metrics import detect_breakout_candidates
+
+                breakout_ids = detect_breakout_candidates(lookback_days=14)
+
+                # Enrich with full player data
+                players_index = load_players_index() or {}
+                value_table = load_model_value_table() or []
+                values_by_id = {str(p.get("id")): p for p in value_table}
+
+                for b in breakout_ids:
+                    player_id = str(b.get("player_id", ""))
+                    player_meta = players_index.get(player_id, {})
+                    player_value = values_by_id.get(player_id, {})
+
+                    candidates.append({
+                        "player_id": player_id,
+                        "name": player_meta.get("name", "Unknown"),
+                        "team": player_meta.get("team"),
+                        "position": player_meta.get("pos"),
+                        "age": player_value.get("age"),
+                        "value": player_value.get("value", 0),
+                        "sf_value": player_value.get("sf_value", player_value.get("value", 0)),
+                        "pos_rank": player_value.get("pos_rank"),
+                        "pos_rank_label": player_value.get("pos_rank_label"),
+                        "breakout_score": b.get("score", 0),
+                    })
+
+                print(f"[breakout-candidates] In-season mode: {len(candidates)} candidates")
+            except Exception as e:
+                print(f"[breakout-candidates] In-season detection error: {e}")
+                # Fallback to value movers
+                movers_data = get_top_movers(days=7, limit=100) or {}
+                players_index = load_players_index() or {}
+                value_table = load_model_value_table() or []
+                values_by_id = {str(p.get("id")): p for p in value_table}
+
+                for player in movers_data.get("risers", []):
+                    delta = player.get("delta", 0)
+                    position = player.get("position", "")
+                    threshold = 100 if position == "TE" else 75
+
+                    if delta >= threshold:
+                        player_id = str(player.get("player_id", ""))
+                        player_meta = players_index.get(player_id, {})
+                        player_value = values_by_id.get(player_id, {})
+
+                        candidates.append({
+                            "player_id": player_id,
+                            "name": player.get("name", "Unknown"),
+                            "team": player_meta.get("team"),
+                            "position": position,
+                            "age": player_value.get("age"),
+                            "value": player.get("value", 0),
+                            "sf_value": player.get("sf_value", player.get("value", 0)),
+                            "pos_rank": player_value.get("pos_rank"),
+                            "pos_rank_label": player_value.get("pos_rank_label"),
+                            "breakout_score": delta,
+                        })
+
+        # Sort by breakout score and limit
+        candidates.sort(key=lambda x: x.get("breakout_score", 0), reverse=True)
+        return jsonify(candidates[:limit])
+
+    except Exception as e:
+        print(f"[breakout-candidates] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+
 @app.route("/api/player-advanced-metrics/<player_id>")
 def api_player_advanced_metrics(player_id: str):
     """
     Get advanced efficiency metrics for a specific player.
+
+    PREMIUM FEATURE - Requires active subscription.
 
     Returns:
         {
@@ -6387,7 +6690,19 @@ def api_player_advanced_metrics(player_id: str):
         }
     """
     try:
+        from dashboard_services.subscriptions import has_premium_access
         from data_building.advanced_metrics import get_player_metrics
+
+        # Check premium access
+        user_id = request.args.get("user_id") or session.get("viewer_username")
+        league_id = request.args.get("league_id")
+
+        if not has_premium_access(user_id, league_id):
+            return jsonify({
+                "player_id": str(player_id),
+                "premium_required": True,
+                "error": "Premium subscription required to view advanced metrics"
+            }), 403
 
         metrics = get_player_metrics(str(player_id))
 
@@ -6479,7 +6794,7 @@ def api_top_role_players():
 
 
 @app.route("/api/advanced-metrics/breakout-candidates")
-def api_breakout_candidates():
+def api_advanced_metrics_breakout_candidates():
     """
     Get breakout candidates using multi-factor analysis.
 
@@ -6540,6 +6855,8 @@ def api_offseason_breakout_candidates():
     """
     Get offseason breakout candidates based on roster changes and vacated opportunity.
 
+    PREMIUM FEATURE - Requires active subscription.
+
     Identifies players who will benefit from departed teammates (FA, trades, retirements).
     Examples:
     - Mike Evans leaves TB → Egbuka gets targets
@@ -6590,7 +6907,18 @@ def api_offseason_breakout_candidates():
     """
     try:
         from datetime import datetime
+        from dashboard_services.subscriptions import has_premium_access
         from data_building.offseason_opportunity import get_offseason_breakout_candidates
+
+        # Check premium access
+        user_id = request.args.get("user_id") or session.get("viewer_username")
+        league_id = request.args.get("league_id")
+
+        if not has_premium_access(user_id, league_id):
+            return jsonify({
+                "premium_required": True,
+                "error": "Premium subscription required to view breakout candidates"
+            }), 403
 
         # Get season (default to current year)
         nfl_state = get_nfl_state() or {}
@@ -6646,6 +6974,499 @@ def api_player_value_history(player_id: str):
             "history": history,
         }
     )
+
+
+@app.route("/api/player-details/<player_id>")
+def api_player_details(player_id: str):
+    """Get comprehensive player details for modal display."""
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        import json
+        import os
+        import glob
+        import re
+
+        players_index = load_players_index() or {}
+        player_meta = players_index.get(player_id, {})
+
+        if not player_meta:
+            return jsonify({"error": "Player not found"}), 404
+
+        player_team = player_meta.get("team", "")
+
+        # Get value data
+        value_table = load_model_value_table() or []
+        player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
+
+        # Get FULL value history from database (not just 90 days)
+        value_history = get_player_value_history(player_id, days=365)
+
+        # Load game logs from sleeper_stats for all available seasons
+        game_logs_by_year = {}
+
+        # Find all available season years (handle both old and new naming patterns)
+        stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+        available_years = set()
+        for stats_file in stats_files:
+            try:
+                basename = os.path.basename(stats_file)
+                # New pattern: sleeper_stats_s2025_w1_2025-12-16.json
+                if basename.startswith("sleeper_stats_s"):
+                    # Use regex to extract year from s{YEAR}_w{WEEK} pattern
+                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    if match:
+                        year = int(match.group(1))
+                        available_years.add(year)
+                # Old pattern: sleeper_stats_2023_week_1.json
+                elif "_week_" in basename:
+                    year = int(basename.split('_')[2])
+                    available_years.add(year)
+            except:
+                continue
+
+        # Process each available year
+        for season_year in sorted(available_years, reverse=True):  # Most recent first
+            game_logs = []
+
+            # Load schedule data for ALL weeks to show all games
+            schedule_by_week = {}
+            schedule_pattern = os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")
+            for schedule_file in glob.glob(schedule_pattern):
+                try:
+                    # Extract week from filename: schedule_s2024_w1_d2024-09-05.json
+                    filename = os.path.basename(schedule_file)
+                    week_num = int(filename.split('_w')[1].split('_')[0])
+
+                    with open(schedule_file, 'r') as f:
+                        games = json.load(f)
+                        # Ensure games is a list
+                        if isinstance(games, list) and week_num not in schedule_by_week:
+                            schedule_by_week[week_num] = games
+                except Exception as e:
+                    print(f"[api_player_details] Error loading schedule {schedule_file}: {e}")
+                    continue
+
+
+            # Load all stats for this season into memory
+            stats_by_week = {}
+            stats_pattern_old = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season_year}_week_*.json")
+            stats_pattern_new = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
+            week_files = glob.glob(stats_pattern_old) + glob.glob(stats_pattern_new)
+
+            for week_file in week_files:
+                try:
+                    basename = os.path.basename(week_file)
+                    # Extract week number from filename (handle both patterns)
+                    if "_week_" in basename:
+                        week_num = int(basename.split('_week_')[1].split('.')[0])
+                    else:
+                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                        if match:
+                            week_num = int(match.group(2))
+                        else:
+                            continue
+
+                    with open(week_file, 'r') as f:
+                        week_stats = json.load(f)
+                        stats_by_week[week_num] = week_stats
+                except Exception as e:
+                    continue
+
+            # Check if player has ANY stats in this season
+            # Skip the season if player has no stats at all (didn't exist yet or retired)
+            player_has_stats_this_season = False
+            for week_stats in stats_by_week.values():
+                if player_id in week_stats:
+                    player_has_stats_this_season = True
+                    break
+
+            if not player_has_stats_this_season:
+                print(f"[api_player_details] Player {player_id} has no stats in {season_year}, skipping season")
+                continue
+
+            # Now iterate through schedule and create game logs for ALL games
+            for week_num in sorted(schedule_by_week.keys()):
+                games = schedule_by_week[week_num]
+
+                # Ensure games is a list
+                if not isinstance(games, list):
+                    continue
+
+                # Find player's team game this week
+                opponent = ""
+                is_away = False
+                game_date = ""
+
+                for game in games:
+                    # Ensure game is a dict
+                    if not isinstance(game, dict):
+                        continue
+
+                    home_team = game.get("home", "")
+                    away_team = game.get("away", "")
+
+                    if player_team == home_team:
+                        opponent = away_team
+                        is_away = False
+                        game_date = game.get("gameDate", "")
+                        break
+                    elif player_team == away_team:
+                        opponent = home_team
+                        is_away = True
+                        game_date = game.get("gameDate", "")
+                        break
+
+                # Skip if player's team didn't have a game this week
+                if not opponent:
+                    continue
+
+                # Check if we have stats for this player this week
+                week_stats = stats_by_week.get(week_num, {})
+                stats = week_stats.get(player_id)
+
+                if stats:
+                    # Player has stats - calculate fantasy points
+                    pts = 0.0
+                    pts += (stats.get("pass_yd") or 0) * 0.04
+                    pts += (stats.get("pass_td") or 0) * 4
+                    pts += (stats.get("pass_int") or 0) * -2
+                    pts += (stats.get("rush_yd") or 0) * 0.1
+                    pts += (stats.get("rush_td") or 0) * 6
+                    pts += (stats.get("rec") or 0) * 1
+                    pts += (stats.get("rec_yd") or 0) * 0.1
+                    pts += (stats.get("rec_td") or 0) * 6
+                    pts += (stats.get("fum_lost") or 0) * -2
+
+                    game_log = {
+                        "week": week_num,
+                        "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": round(pts, 1),
+                        "stats": {
+                            "pass_yd": stats.get("pass_yd"),
+                            "pass_td": stats.get("pass_td"),
+                            "pass_int": stats.get("pass_int"),
+                            "rush_att": stats.get("rush_att"),
+                            "rush_yd": stats.get("rush_yd"),
+                            "rush_td": stats.get("rush_td"),
+                            "rec": stats.get("rec"),
+                            "rec_tgt": stats.get("rec_tgt"),
+                            "rec_yd": stats.get("rec_yd"),
+                            "rec_td": stats.get("rec_td"),
+                            "fum_lost": stats.get("fum_lost"),
+                        }
+                    }
+                else:
+                    # No stats - show game but with 0 points
+                    game_log = {
+                        "week": week_num,
+                        "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": 0.0,
+                        "stats": {
+                            "pass_yd": None,
+                            "pass_td": None,
+                            "pass_int": None,
+                            "rush_att": None,
+                            "rush_yd": None,
+                            "rush_td": None,
+                            "rec": None,
+                            "rec_tgt": None,
+                            "rec_yd": None,
+                            "rec_td": None,
+                            "fum_lost": None,
+                        }
+                    }
+
+                game_logs.append(game_log)
+
+            # Only add year if there are games
+            if game_logs:
+                # Sort game logs chronologically by date (earliest to latest)
+                game_logs.sort(key=lambda g: g.get("date", "") or "")
+                game_logs_by_year[season_year] = game_logs
+
+        response = {
+            "player_id": player_id,
+            "name": player_meta.get("name", "Unknown"),
+            "position": player_meta.get("pos"),
+            "team": player_meta.get("team"),
+            "age": player_value.get("age"),
+            "pos_rank": player_value.get("pos_rank"),
+            "pos_rank_label": player_value.get("pos_rank_label"),
+            "stats": {
+                "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
+                "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
+                "pos_rank": player_value.get("pos_rank"),
+                "pos_rank_label": player_value.get("pos_rank_label"),
+                "years_exp": player_meta.get("years_exp"),
+            },
+            "value_history": value_history,
+            "game_logs_by_year": game_logs_by_year,
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"[api_player_details] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/team-details/<roster_id>")
+def api_team_details(roster_id: str):
+    """Get comprehensive team details for modal display."""
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+
+        # Get league context
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = request.args.get("season")
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        if not season:
+            nfl_state = get_nfl_state() or {}
+            season = str(nfl_state.get("season") or datetime.now().year)
+
+        # Get league data
+        league = get_league(platform, league_id, season)
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+
+        # Find the specific roster
+        roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
+        if not roster:
+            return jsonify({"error": "Roster not found"}), 404
+
+        # Get owner info
+        owner_id = roster.get("owner_id")
+        user = next((u for u in users if u.get("user_id") == owner_id), None)
+
+        username = user.get("display_name") if user else None
+        team_name = (roster.get("metadata") or {}).get("team_name") or username or f"Roster {roster_id}"
+        avatar = avatar_from_users(platform, users, owner_id)
+
+        # Get record
+        settings = roster.get("settings") or {}
+        wins = settings.get("wins", 0)
+        losses = settings.get("losses", 0)
+        ties = settings.get("ties", 0)
+
+        record_str = f"{wins}-{losses}"
+        if ties:
+            record_str += f"-{ties}"
+
+        # Get players with values
+        players_index = load_players_index() or {}
+        value_table = load_model_value_table() or []
+        values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
+
+        player_ids = roster.get("players") or []
+        starters = roster.get("starters") or []
+
+        # Build roster with values
+        roster_players = []
+        total_value = 0.0
+
+        ages_found = 0
+        ages_missing = 0
+        for pid in player_ids:
+            pid_str = str(pid)
+            player_meta = players_index.get(pid_str, {})
+            value_row = values_by_id.get(pid_str, {})
+
+            value = value_row.get("value", 0) or 0
+            total_value += float(value)
+
+            position = player_meta.get("pos") or ""
+
+            # Get age from value table (has calculated age) or player meta
+            age = value_row.get("age") or player_meta.get("age")
+            if age is not None:
+                ages_found += 1
+            else:
+                ages_missing += 1
+
+            roster_players.append({
+                "player_id": pid_str,
+                "name": player_meta.get("name", "Unknown"),
+                "position": position,
+                "team": player_meta.get("team"),
+                "age": age,
+                "years_exp": player_meta.get("years_exp"),
+                "value": round(float(value), 1) if value else None,
+                "pos_rank_label": value_row.get("pos_rank_label"),
+                "is_starter": pid_str in starters
+            })
+
+        print(f"[api_team_details] Ages: {ages_found} found, {ages_missing} missing out of {len(roster_players)} total players")
+
+        # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
+        pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
+        roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
+
+        # Get draft picks
+        traded_picks = league.get("traded_picks") or [] if isinstance(league, dict) else []
+        num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
+        current_season = int(league.get("season") or season)
+
+        # Build picks
+        all_picks = []
+        for offset in range(3):  # Next 3 years
+            year = current_season + offset
+            for rnd in range(1, num_rounds + 1):
+                # Check if traded
+                original_owner = int(roster_id)
+                current_owner = original_owner
+
+                for tp in traded_picks:
+                    try:
+                        if (int(tp.get("season")) == year and
+                            int(tp.get("round")) == rnd and
+                            int(tp.get("roster_id")) == original_owner):
+                            current_owner = int(tp.get("owner_id"))
+                    except:
+                        pass
+
+                if current_owner == int(roster_id):
+                    via = None
+                    if current_owner != original_owner:
+                        # Find who it came from
+                        via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
+                        if via_roster:
+                            via_owner_id = via_roster.get("owner_id")
+                            via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
+                            via = via_user.get("display_name") if via_user else f"Team {original_owner}"
+
+                    all_picks.append({
+                        "year": year,
+                        "round": rnd,
+                        "via": via
+                    })
+
+        # Sort picks by year then round
+        all_picks.sort(key=lambda p: (p["year"], p["round"]))
+
+        # Get graph data for team modal
+        graphs_data = {}
+        try:
+            from utils.utils import z_better_outward
+            import pandas as pd
+
+            # Get league context for graphs
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            team_stats = ctx.get("team_stats")
+            df_weekly = ctx.get("df_weekly")
+
+            print(f"[api_team_details] Graphs debug - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
+            if df_weekly is not None and not df_weekly.empty:
+                print(f"[api_team_details] df_weekly shape before filter: {df_weekly.shape}, has 'finalized' column: {'finalized' in df_weekly.columns}")
+
+            if team_stats is not None and df_weekly is not None and not df_weekly.empty:
+                # Filter to finalized weeks only (if finalized column exists)
+                if "finalized" in df_weekly.columns:
+                    df_weekly = df_weekly[df_weekly["finalized"] == True].copy()
+                    print(f"[api_team_details] df_weekly shape after finalized filter: {df_weekly.shape}")
+
+                # Only build graphs if we have data after filtering
+                if not df_weekly.empty:
+                    # Get weekly scores for this team
+                    team_weekly = df_weekly[df_weekly["owner"] == team_name]
+                    weekly_scores = []
+                    if not team_weekly.empty:
+                        for _, row in team_weekly.sort_values("week").iterrows():
+                            weekly_scores.append({
+                                "week": int(row["week"]),
+                                "points": round(float(row["points"]), 1)
+                            })
+
+                    # Get league average weekly scores
+                    league_avg = df_weekly.groupby("week")["points"].mean().reset_index()
+                    league_avg_scores = []
+                    for _, row in league_avg.iterrows():
+                        league_avg_scores.append({
+                            "week": int(row["week"]),
+                            "points": round(float(row["points"]), 1)
+                        })
+
+                    # Get z-scores for radar chart
+                    metrics = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
+                    Z = z_better_outward(team_stats, metrics)
+
+                    # Find this team's row in team_stats
+                    team_row = team_stats[team_stats["owner"] == team_name]
+                    if not team_row.empty:
+                        team_idx = team_row.index[0]
+                        z_scores = Z.iloc[team_idx].values.astype(float).tolist()
+
+                        # Get raw stats too
+                        raw_stats = {}
+                        for metric in metrics:
+                            raw_stats[metric] = round(float(team_row[metric].iloc[0]), 1)
+
+                        graphs_data = {
+                            "weekly_scores": weekly_scores,
+                            "league_avg_scores": league_avg_scores,
+                            "radar": {
+                                "metrics": metrics,
+                                "z_scores": z_scores,
+                                "raw_stats": raw_stats
+                            }
+                        }
+                        print(f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks, radar has {len(z_scores)} metrics")
+                    else:
+                        print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'")
+                else:
+                    print(f"[api_team_details] No graphs generated - df_weekly is empty after finalized filter")
+        except Exception as graph_err:
+            print(f"[api_team_details] Error getting graph data: {graph_err}")
+            import traceback
+            traceback.print_exc()
+            # Continue without graph data
+
+        response = {
+            "roster_id": roster_id,
+            "team_name": team_name,
+            "username": username,
+            "avatar": avatar,
+            "record": record_str,
+            "wins": wins,
+            "losses": losses,
+            "ties": ties,
+            "total_value": round(total_value, 1),
+            "roster": roster_players,
+            "picks": all_picks,
+            "graphs": graphs_data
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"[api_team_details] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/subscription-status")
+def api_subscription_status():
+    """Check if user has premium access for a league."""
+    from dashboard_services.subscriptions import get_subscription_info
+
+    user_id = request.args.get("user_id") or session.get("viewer_username")
+    league_id = request.args.get("league_id")
+    platform = request.args.get("platform", "sleeper")
+
+    try:
+        sub_info = get_subscription_info(user_id, league_id, platform)
+        return jsonify(sub_info)
+    except Exception as e:
+        print(f"[api_subscription_status] Error: {e}")
+        return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
 
 
 @app.route("/api/sleeper-user-leagues")

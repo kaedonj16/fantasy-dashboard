@@ -647,7 +647,14 @@ window.initTradePage = function initTradePage(root = document) {
 
   function buildPlayerValueRow(p, overallRank) {
     const row = document.createElement("div");
-    row.className = "otc-value-row";
+    row.className = "otc-value-row player-clickable";
+
+    // Make row clickable
+    if (p.id) {
+      row.style.cursor = "pointer";
+      row.dataset.playerId = p.id;
+      row.dataset.playerName = p.name || "Unknown";
+    }
 
     const rankWrap = document.createElement("div");
     rankWrap.className = "otc-value-rank";
@@ -745,8 +752,14 @@ window.initTradePage = function initTradePage(root = document) {
     row.className = "otc-mini-row " + directionClass;
 
     const name = document.createElement("div");
-    name.className = "otc-mini-name";
+    name.className = "otc-mini-name player-clickable";
     name.textContent = p.name || "Unknown";
+
+    // Make player clickable
+    if (p.player_id) {
+      name.dataset.playerId = p.player_id;
+      name.dataset.playerName = p.name || "Unknown";
+    }
 
     const delta = document.createElement("div");
     delta.className = "otc-mini-delta";
@@ -869,7 +882,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     try {
       const leagueType = getLeagueType();
-      const res = await fetch(`/api/offseason-breakout-candidates?min_score=30&limit=10`, { cache: "no-store" });
+      const res = await fetch(`/api/breakout-candidates?min_score=30`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load breakouts.");
 
       let candidates = await res.json();
@@ -877,49 +890,81 @@ window.initTradePage = function initTradePage(root = document) {
       // Filter out high-value players (already established stars)
       // Only show players with dynasty value < 2000 (roughly outside top 50)
       // Also filter out players older than 25 (breakouts are typically young players)
+      // Cannot be a breakout if already top 5 at position (already elite)
+      // Position-specific rank thresholds: QB top 32, RB top 45, WR top 60, TE top 20
       const valueThreshold = 2000;
       const maxAge = 25;
+      const rankThresholds = { QB: 32, RB: 45, WR: 60, TE: 20 };
+
       candidates = candidates.filter(c => {
         const value = leagueType === "sf" ? (c.sf_value || c.value || 0) : (c.value || 0);
         const age = c.age;
-        return value < valueThreshold && (age == null || age <= maxAge);
+        const posRank = c.pos_rank || 999;
+        const maxRank = rankThresholds[c.position] || 999;
+
+        return value < valueThreshold &&
+               (age == null || age <= maxAge) &&
+               posRank > 5 &&
+               posRank <= maxRank;
       });
 
       if (!candidates || candidates.length === 0) {
-        breakoutsEl.innerHTML = '<div class="otc-movers-empty">No breakout candidates found.</div>';
+        breakoutsEl.innerHTML = `
+          <div class="otc-movers-empty" style="padding: 16px; text-align: center;">
+            <div style="font-size: 13px; color: #64748b; line-height: 1.5;">
+              No breakout candidates available yet.<br>
+              <span style="font-size: 11px;">Data will appear once offseason roster changes are tracked.</span>
+            </div>
+          </div>
+        `;
         if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
         return;
       }
 
-      // Limit to top 8 for display
-      candidates = candidates.slice(0, 8);
+      // Show all candidates that meet criteria (no limit)
 
       breakoutsEl.innerHTML = "";
-      candidates.forEach(c => {
+      candidates.forEach((c, idx) => {
         const row = document.createElement("div");
-        row.className = "otc-mini-row";
+        row.className = "otc-mini-row otc-breakout-row";
+        row.style.animationDelay = `${idx * 50}ms`;
 
         const name = document.createElement("div");
         name.className = "otc-mini-name";
 
         const playerName = document.createElement("span");
-        playerName.className = "otc-player-name";
+        playerName.className = "otc-player-name player-clickable";
         playerName.textContent = c.name || "Unknown";
+        playerName.dataset.playerId = c.player_id;
+        playerName.dataset.playerName = c.name || "Unknown";
 
         const meta = document.createElement("span");
         meta.className = "otc-player-meta";
 
-        // Build meta string: position, team, age
+        // Build meta string: position rank (RB13), team, age
         const metaParts = [];
-        if (c.position) metaParts.push(c.position);
+        // Show position rank label (e.g., "RB13") instead of just position
+        if (c.pos_rank_label) {
+          metaParts.push(c.pos_rank_label);
+        } else if (c.position && c.pos_rank) {
+          metaParts.push(`${c.position}${c.pos_rank}`);
+        } else if (c.position) {
+          metaParts.push(c.position);
+        }
         if (c.team) metaParts.push(c.team);
         if (c.age != null) metaParts.push(`${c.age.toFixed(1)} yrs`);
         meta.textContent = metaParts.join(" · ");
+
+        // Add opportunity badge
+        const badge = document.createElement("div");
+        badge.className = "otc-breakout-badge";
+        badge.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
 
         name.appendChild(playerName);
         name.appendChild(meta);
 
         row.appendChild(name);
+        row.appendChild(badge);
 
         breakoutsEl.appendChild(row);
       });
@@ -931,7 +976,14 @@ window.initTradePage = function initTradePage(root = document) {
       }
     } catch (err) {
       console.error("[trade] breakouts error:", err);
-      breakoutsEl.innerHTML = '<div class="otc-movers-empty">Unable to load breakouts.</div>';
+      breakoutsEl.innerHTML = `
+        <div class="otc-movers-empty" style="padding: 16px; text-align: center;">
+          <div style="font-size: 13px; color: #ef4444; line-height: 1.5;">
+            Unable to load breakout candidates.<br>
+            <span style="font-size: 11px; color: #64748b;">Please try refreshing the page.</span>
+          </div>
+        </div>
+      `;
       if (moversPanel) {
         moversPanel.classList.remove("otc-movers-loading");
       }
@@ -1178,8 +1230,14 @@ window.initTradePage = function initTradePage(root = document) {
       leftWrap.className = "otc-chip-main";
 
       const nameEl = document.createElement("div");
-      nameEl.className = "otc-chip-name";
+      nameEl.className = "otc-chip-name player-clickable";
       nameEl.textContent = p.name || "Unknown";
+
+      // Make player name clickable
+      if (p.id) {
+        nameEl.dataset.playerId = p.id;
+        nameEl.dataset.playerName = p.name || "Unknown";
+      }
 
       const metaEl = document.createElement("div");
       metaEl.className = "otc-chip-meta";
@@ -1593,6 +1651,7 @@ window.initTradePage = function initTradePage(root = document) {
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
       const leagueType = getLeagueType();
+
       const matches = allPlayers
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
@@ -2793,6 +2852,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // League switcher functionality
 document.addEventListener('DOMContentLoaded', function() {
+  // Helper function to show full-screen loading overlay
+  function showFullscreenLoading(message = 'Loading...') {
+    // Remove any existing overlay
+    const existingOverlay = document.getElementById('fullscreenLoadingOverlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'fullscreenLoadingOverlay';
+    overlay.className = 'fullscreen-loading-overlay';
+    overlay.innerHTML = `
+      <div class="loading-spinner"></div>
+      <div class="fullscreen-loading-text">${message}</div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
   const leagueSwitcher = document.getElementById('leagueSwitcher');
 
   if (leagueSwitcher) {
@@ -2827,6 +2905,9 @@ document.addEventListener('DOMContentLoaded', function() {
     leagueSwitcher.addEventListener('change', function() {
       const selectedLeagueId = this.value;
       if (selectedLeagueId && selectedLeagueId !== currentLeagueId) {
+        // Show full-screen loading overlay
+        showFullscreenLoading('Switching leagues...');
+
         // Get current page from URL
         const pathParts = window.location.pathname.split('/');
         const currentPage = pathParts[pathParts.length - 1] || 'dashboard';
@@ -2955,5 +3036,820 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }
     });
+  }
+
+  // History page dynamic loading
+  const historyPage = document.querySelector('.history-page');
+  if (historyPage) {
+    const platform = document.getElementById('platformInput')?.value;
+    const season = document.getElementById('seasonInput')?.value;
+    const leagueId = document.getElementById('leagueIdInput')?.value;
+    const historySeason = document.getElementById('historySeasonInput')?.value;
+
+    if (platform && season && leagueId && historySeason) {
+      // Load awards section
+      const awardsContent = document.getElementById('historyAwardsContent');
+      if (awardsContent) {
+        fetch(`/api/history/${platform}/${season}/${leagueId}/summary?history_season=${historySeason}`, { cache: 'no-store' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.html) {
+              awardsContent.innerHTML = data.html;
+            } else {
+              awardsContent.innerHTML = '<div class="history-empty">Failed to load season awards.</div>';
+            }
+          })
+          .catch(err => {
+            console.error('Error loading history awards:', err);
+            awardsContent.innerHTML = '<div class="history-empty">Error loading season awards.</div>';
+          });
+      }
+
+      // Load standings section
+      const standingsContent = document.getElementById('historyStandingsContent');
+      if (standingsContent) {
+        fetch(`/api/history/${platform}/${season}/${leagueId}/standings?history_season=${historySeason}`, { cache: 'no-store' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.html) {
+              standingsContent.innerHTML = data.html;
+            } else {
+              standingsContent.innerHTML = '<div class="history-empty">Failed to load standings.</div>';
+            }
+          })
+          .catch(err => {
+            console.error('Error loading history standings:', err);
+            standingsContent.innerHTML = '<div class="history-empty">Error loading standings.</div>';
+          });
+      }
+
+      // Load chart section
+      const chartContent = document.getElementById('historyChartContent');
+      if (chartContent) {
+        fetch(`/api/history/${platform}/${season}/${leagueId}/chart?history_season=${historySeason}`, { cache: 'no-store' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.html) {
+              // Empty state or error message
+              chartContent.innerHTML = data.html;
+            } else if (data.data && data.data.length > 0) {
+              // Create div for Plotly chart
+              chartContent.innerHTML = '<div id="historyChartPlotly" style="width: 100%; height: 430px;"></div>';
+
+              // Build Plotly traces
+              const traces = data.data.map(team => ({
+                x: team.x,
+                y: team.y,
+                mode: 'lines+markers',
+                name: team.name,
+                hovertemplate: '%{fullData.name}<br>Week %{x}<br>%{y:.1f} pts<extra></extra>'
+              }));
+
+              // Plotly layout
+              const layout = {
+                template: 'plotly_white',
+                height: 430,
+                margin: { l: 40, r: 20, t: 20, b: 40 },
+                legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0 },
+                xaxis: { title: 'Week', dtick: 1 },
+                yaxis: { title: 'Points' }
+              };
+
+              // Render chart
+              Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false });
+            } else {
+              chartContent.innerHTML = '<div class="history-empty">No chart data available.</div>';
+            }
+          })
+          .catch(err => {
+            console.error('Error loading history chart:', err);
+            chartContent.innerHTML = '<div class="history-empty">Error loading season chart.</div>';
+          });
+      }
+    }
+  }
+});
+// Player Modal
+function openPlayerModal(playerId, playerName) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'player-modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closePlayerModal();
+    }
+  });
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.className = 'player-modal';
+  modal.id = 'playerModal';
+
+  modal.innerHTML = `
+    <div class="player-modal-header">
+      <div class="player-modal-title-section">
+        <h2 class="player-modal-name">${playerName || 'Loading...'}</h2>
+        <div class="player-modal-meta" id="playerModalMeta">
+          <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+        </div>
+      </div>
+      <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+    </div>
+    <div class="player-modal-body" id="playerModalBody">
+      <div class="player-modal-loading">
+        <div class="loading-spinner"></div>
+        <div>Loading player data...</div>
+      </div>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  // Fetch player data
+  fetch(`/api/player-details/${playerId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById('playerModalBody').innerHTML = `
+          <div class="player-modal-loading">
+            <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
+            <div style="font-size: 13px;">${data.error}</div>
+          </div>
+        `;
+        return;
+      }
+
+      // Determine badges with position-aware thresholds
+      let badges = '';
+      const value = data.stats?.value || 0;
+      const pos = data.position;
+      const yearsExp = data.stats?.years_exp;
+
+      // Position-specific elite thresholds (players who would make any team better)
+      const eliteThresholds = {
+        'RB': 650,   // Elite young backs
+        'WR': 650,   // Elite WRs
+        'TE': 550,   // Premium TE scarcity
+        'QB': 400,   // Solid QB1s
+        'K': 9999,   // No elite kickers
+        'DEF': 9999  // No elite defenses
+      };
+
+      const threshold = eliteThresholds[pos] || 750;
+      const isElite = value >= threshold;
+      const isRookie = yearsExp != null && yearsExp === 0;
+
+      if (isElite) {
+        badges += '<span class="elite-badge">ELITE</span>';
+      }
+      if (isRookie) {
+        badges += '<span class="rookie-badge">ROOKIE</span>';
+      }
+
+      // Update player name with badges (badges appear after name)
+      document.querySelector('.player-modal-name').innerHTML = `${playerName || 'Unknown Player'}${badges}`;
+
+      // Update meta
+      const metaParts = [];
+      if (data.position && data.pos_rank) metaParts.push(`${data.position}${data.pos_rank}`);
+      if (data.team) metaParts.push(data.team);
+      if (data.age) metaParts.push(`${data.age.toFixed(1)} yrs`);
+      document.getElementById('playerModalMeta').innerHTML = metaParts.join(' · ');
+
+      // Build modal body
+      let bodyHTML = '';
+
+      // Stats section
+      if (data.stats) {
+        bodyHTML += `
+          <div class="player-modal-section">
+            <div class="player-modal-section-title">Dynasty Value</div>
+            <div class="player-modal-stats-grid">
+              ${data.stats.value ? `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">1QB Value</div>
+                  <div class="player-modal-stat-value">${data.stats.value}</div>
+                </div>
+              ` : ''}
+              ${data.stats.sf_value ? `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">SF Value</div>
+                  <div class="player-modal-stat-value">${data.stats.sf_value}</div>
+                </div>
+              ` : ''}
+              ${data.stats.pos_rank ? `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">Position Rank</div>
+                  <div class="player-modal-stat-value">${data.stats.pos_rank_label || data.stats.pos_rank}</div>
+                </div>
+              ` : ''}
+              ${data.stats.years_exp != null ? `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">Experience</div>
+                  <div class="player-modal-stat-value">${data.stats.years_exp} yrs</div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      // Value history chart
+      if (data.value_history && data.value_history.length > 0) {
+        bodyHTML += `
+          <div class="player-modal-section">
+            <div class="player-modal-section-title">Value History</div>
+            <div class="player-modal-chart-container" id="playerValueChart"></div>
+          </div>
+        `;
+      }
+
+      // Game Logs grouped by year
+      if (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0) {
+        bodyHTML += `
+          <div class="player-modal-section">
+            <div class="player-modal-section-title">Game Logs</div>
+        `;
+
+        // Sort years in descending order (most recent first)
+        const years = Object.keys(data.game_logs_by_year).sort((a, b) => b - a);
+
+        years.forEach((year, index) => {
+          const gameLogs = data.game_logs_by_year[year];
+          const isFirstYear = index === 0;
+
+          // Calculate season totals
+          let totalFantasyPts = 0;
+          let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
+          let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
+          let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
+          let totalFumLost = 0;
+
+          gameLogs.forEach(game => {
+            totalFantasyPts += game.fantasy_pts || 0;
+            const s = game.stats;
+            totalPassYd += s.pass_yd || 0;
+            totalPassTd += s.pass_td || 0;
+            totalPassInt += s.pass_int || 0;
+            totalRushAtt += s.rush_att || 0;
+            totalRushYd += s.rush_yd || 0;
+            totalRushTd += s.rush_td || 0;
+            totalRecTgt += s.rec_tgt || 0;
+            totalRec += s.rec || 0;
+            totalRecYd += s.rec_yd || 0;
+            totalRecTd += s.rec_td || 0;
+            totalFumLost += s.fum_lost || 0;
+          });
+
+          // Build season summary for header
+          const seasonSummaryParts = [];
+          seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
+          if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
+          if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
+          if (totalRec >
+           0) seasonSummaryParts.push(`${totalRec} rec`);
+          const seasonSummary = seasonSummaryParts.join(' • ');
+
+          bodyHTML += `
+            <div class="game-log-year-section">
+              <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
+                <div class="game-log-year-header-main">
+                  <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
+                  <span class="game-log-year-title">${year} Season</span>
+                </div>
+              </div>
+              <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
+                <table class="game-log-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Opp</th>
+                      <th>Pts</th>
+                      <th>Pass Yd</th>
+                      <th>Pass TD</th>
+                      <th>INT</th>
+                      <th>Rush Att</th>
+                      <th>Rush Yd</th>
+                      <th>Rush TD</th>
+                      <th>Tgt</th>
+                      <th>Rec</th>
+                      <th>Rec Yd</th>
+                      <th>Rec TD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          `;
+
+          gameLogs.forEach(game => {
+            const stats = game.stats;
+
+            // Format date: 20240908 -> 9/8
+            let dateStr = game.date || '';
+            if (dateStr.length === 8) {
+              const month = parseInt(dateStr.substring(4, 6));
+              const day = parseInt(dateStr.substring(6, 8));
+              dateStr = `${month}/${day}`;
+            }
+
+            // Check if player has any stats at all
+            const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
+                               stats.rec != null || stats.rec_tgt != null;
+
+            const val = (v) => v != null && v > 0 ? v : '—';
+            const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+
+            bodyHTML += `
+              <tr class="${rowClass}">
+                <td>${dateStr}</td>
+                <td class="game-log-table-opp">${game.opponent || '—'}</td>
+                <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+                <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
+                <td>${val(stats.pass_td)}</td>
+                <td>${val(stats.pass_int)}</td>
+                <td>${val(stats.rush_att)}</td>
+                <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
+                <td>${val(stats.rush_td)}</td>
+                <td>${val(stats.rec_tgt)}</td>
+                <td>${val(stats.rec)}</td>
+                <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
+                <td>${val(stats.rec_td)}</td>
+              </tr>
+            `;
+          });
+
+          const valTotal = (v) => v != null && v > 0 ? v : '—';
+
+          // Add season totals row in table format (inside the table)
+          bodyHTML += `
+                  </tbody>
+                  <tfoot>
+                    <tr class="game-log-table-total">
+                      <td><strong>Total</strong></td>
+                      <td><strong>${gameLogs.length}G</strong></td>
+                      <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
+                      <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
+                      <td><strong>${valTotal(totalPassTd)}</strong></td>
+                      <td><strong>${valTotal(totalPassInt)}</strong></td>
+                      <td><strong>${valTotal(totalRushAtt)}</strong></td>
+                      <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
+                      <td><strong>${valTotal(totalRushTd)}</strong></td>
+                      <td><strong>${valTotal(totalRecTgt)}</strong></td>
+                      <td><strong>${valTotal(totalRec)}</strong></td>
+                      <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
+                      <td><strong>${valTotal(totalRecTd)}</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          `;
+        });
+
+        bodyHTML += `
+          </div>
+        `;
+      }
+
+      document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
+
+      // Render value history chart if data exists
+      if (data.value_history && data.value_history.length > 0) {
+        const chartDiv = document.getElementById('playerValueChart');
+        if (chartDiv && typeof Plotly !== 'undefined') {
+          // Format dates as M/D
+          const formatDate = (dateStr) => {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return `${date.getMonth() + 1}/${date.getDate()}`;
+          };
+
+          const trace = {
+            x: data.value_history.map(d => formatDate(d.as_of_date)),
+            y: data.value_history.map(d => d.value),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Value',
+            line: { color: '#3b82f6', width: 2 },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(59, 130, 246, 0.1)',
+            hovertemplate: '%{y}<br>%{x}<extra></extra>'
+          };
+
+          // Adjust chart height based on screen size
+          const isMobile = window.innerWidth <= 768;
+          const chartHeight = isMobile ? 200 : 250;
+
+          const layout = {
+            margin: { l: 40, r: 20, t: 10, b: 40 },
+            height: chartHeight,
+            xaxis: {
+              title: 'Date',
+              showgrid: false,
+              type: 'category',
+              tickangle: isMobile ? -45 : 0
+            },
+            yaxis: {
+              title: isMobile ? '' : 'Value',
+              showgrid: true
+            },
+            hovermode: 'x unified'
+          };
+
+          Plotly.newPlot('playerValueChart', [trace], layout, {
+            displayModeBar: false,
+            responsive: true
+          });
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Error loading player data:', err);
+      document.getElementById('playerModalBody').innerHTML = `
+        <div class="player-modal-loading">
+          <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
+          <div style="font-size: 13px;">Please try again</div>
+        </div>
+      `;
+    });
+}
+
+function toggleGameLogYear(year) {
+  const content = document.getElementById(`year-${year}`);
+  const toggle = document.getElementById(`toggle-${year}`);
+
+  if (content.classList.contains('expanded')) {
+    content.classList.remove('expanded');
+    toggle.textContent = '▶';
+  } else {
+    content.classList.add('expanded');
+    toggle.textContent = '▼';
+  }
+}
+
+function closePlayerModal() {
+  const overlay = document.querySelector('.player-modal-overlay');
+  if (overlay) {
+    document.body.style.overflow = '';
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 200);
+  }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closePlayerModal();
+  }
+});
+// Make player modal work site-wide
+document.addEventListener('DOMContentLoaded', function() {
+  initGlobalPlayerModals();
+});
+
+function initGlobalPlayerModals() {
+  // Attach click handlers to all elements with player data
+  document.addEventListener('click', function(e) {
+    const target = e.target.closest('[data-player-id]');
+    if (target && target.dataset.playerId) {
+      const playerId = target.dataset.playerId;
+      const playerName = target.dataset.playerName || target.textContent || 'Player';
+
+      // Don't interfere with chip remove buttons
+      if (e.target.classList.contains('chip-remove')) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      openPlayerModal(playerId, playerName);
+    }
+  });
+}
+
+// Helper function to make any element open player modal
+function makePlayerClickable(element, playerId, playerName) {
+  element.dataset.playerId = playerId;
+  element.dataset.playerName = playerName;
+  element.style.cursor = 'pointer';
+  element.classList.add('player-clickable');
+}
+
+// ============================================
+// Team Modal Functions
+// ============================================
+
+function openTeamModal(rosterId, teamName) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'team-modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closeTeamModal();
+    }
+  });
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.className = 'team-modal';
+  modal.id = 'teamModal';
+
+  modal.innerHTML = `
+    <div class="team-modal-header">
+      <div class="team-modal-title-section">
+        <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
+        <div class="team-modal-meta" id="teamModalMeta">
+          <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+        </div>
+      </div>
+      <button class="team-modal-close" onclick="closeTeamModal()">×</button>
+    </div>
+    <div class="team-modal-body" id="teamModalBody">
+      <div class="team-modal-loading">
+        <div class="loading-spinner"></div>
+        <div>Loading team details...</div>
+      </div>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  // Fetch team details
+  fetchTeamDetails(rosterId);
+}
+
+function closeTeamModal() {
+  const overlay = document.querySelector('.team-modal-overlay');
+  const modal = document.getElementById('teamModal');
+
+  if (overlay) overlay.remove();
+  if (modal) modal.remove();
+  document.body.style.overflow = '';
+}
+
+async function fetchTeamDetails(rosterId) {
+  try {
+    // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const platform = pathParts[0] || 'sleeper';
+    const season = pathParts[1] || new Date().getFullYear();
+    const leagueId = pathParts[2];
+
+    if (!leagueId) {
+      throw new Error('League ID not found in URL');
+    }
+
+    const response = await fetch(`/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    renderTeamDetails(data);
+
+  } catch (error) {
+    console.error('[team-modal] Error fetching team details:', error);
+    document.getElementById('teamModalBody').innerHTML = `
+      <div class="team-modal-error">
+        <div>Failed to load team details</div>
+        <div style="color: #9ca3af; font-size: 14px;">${error.message}</div>
+      </div>
+    `;
+  }
+}
+
+function renderTeamDetails(data) {
+  // Update header
+  const metaHTML = `
+    <div class="team-modal-stat-row">
+      <span class="team-modal-stat-label">Record:</span>
+      <span class="team-modal-stat-value">${data.record}</span>
+    </div>
+    <div class="team-modal-stat-row">
+      <span class="team-modal-stat-label">Manager:</span>
+      <span class="team-modal-stat-value">@${data.username || 'Unknown'}</span>
+    </div>
+    <div class="team-modal-stat-row">
+      <span class="team-modal-stat-label">Total Value:</span>
+      <span class="team-modal-stat-value">${data.total_value}</span>
+    </div>
+  `;
+  document.getElementById('teamModalMeta').innerHTML = metaHTML;
+
+  // Build roster table
+  let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
+
+  if (data.roster && data.roster.length > 0) {
+    rosterHTML += '<table class="team-roster-table">';
+    rosterHTML += `
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Pos</th>
+          <th>Team</th>
+          <th>Age</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+    `;
+
+    data.roster.forEach(player => {
+      // Determine badges with position-aware thresholds
+      let badges = '';
+      const value = player.value || 0;
+      const pos = player.position;
+
+      // Position-specific elite thresholds (players who would make any team better)
+      const eliteThresholds = {
+        'RB': 650,   // Elite young backs
+        'WR': 650,   // Elite WRs
+        'TE': 550,   // Premium TE scarcity
+        'QB': 400,   // Solid QB1s
+        'K': 9999,   // No elite kickers
+        'DEF': 9999  // No elite defenses
+      };
+
+      const threshold = eliteThresholds[pos] || 750;
+      const isElite = value >= threshold;
+      const isRookie = player.years_exp != null && player.years_exp === 0;
+
+      if (isElite) {
+        badges += '<span class="elite-badge">ELITE</span>';
+      }
+      if (isRookie) {
+        badges += '<span class="rookie-badge">ROOKIE</span>';
+      }
+
+      rosterHTML += `
+        <tr class="player-clickable" style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}">
+          <td>
+            ${badges}
+            <strong>${player.name}</strong>
+          </td>
+          <td><span class="pos-badge ${player.position}">${player.position}</span></td>
+          <td>${player.team || '—'}</td>
+          <td>${player.age != null ? player.age : '—'}</td>
+          <td>${player.value != null ? player.value.toFixed(1) : '—'}</td>
+        </tr>
+      `;
+    });
+
+    rosterHTML += '</tbody></table>';
+  } else {
+    rosterHTML += '<div class="team-modal-empty">No players on roster</div>';
+  }
+
+  rosterHTML += '</div>';
+
+  // Build picks section
+  let picksHTML = '<div class="team-modal-section"><h3>Draft Picks</h3>';
+
+  if (data.picks && data.picks.length > 0) {
+    picksHTML += '<div class="team-picks-list">';
+
+    data.picks.forEach(pick => {
+      const viaText = pick.via ? ` <span class="pick-via">via ${pick.via}</span>` : '';
+      picksHTML += `
+        <div class="team-pick-item">
+          <span class="pick-label">${pick.year} Round ${pick.round}</span>
+          ${viaText}
+        </div>
+      `;
+    });
+
+    picksHTML += '</div>';
+  } else {
+    picksHTML += '<div class="team-modal-empty">No future picks</div>';
+  }
+
+  picksHTML += '</div>';
+
+  // Build graphs section
+  let graphsHTML = '';
+  console.log('[team-modal] Graphs data:', data.graphs);
+
+  if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
+    graphsHTML += '<div class="team-modal-section"><h3>Performance Charts</h3>';
+
+    // Weekly scores line chart
+    if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
+      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart" style="margin-bottom: 20px;"></div>';
+    }
+
+    // Radar chart
+    if (data.graphs.radar && data.graphs.radar.z_scores) {
+      graphsHTML += '<div class="team-chart-container" id="teamRadarChart" style="height: 400px;"></div>';
+    }
+
+    graphsHTML += '</div>';
+  }
+
+  // Set body content
+  document.getElementById('teamModalBody').innerHTML = rosterHTML + picksHTML + graphsHTML;
+
+  // Render charts using Plotly (if data exists)
+  if (data.graphs && typeof Plotly !== 'undefined') {
+    // Render weekly scores chart
+    if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
+      const weeks = data.graphs.weekly_scores.map(d => d.week);
+      const points = data.graphs.weekly_scores.map(d => d.points);
+
+      const traces = [{
+        x: weeks,
+        y: points,
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: data.team_name,
+        line: { color: '#667eea', width: 3 },
+        marker: { size: 8 }
+      }];
+
+      // Add league average if available
+      if (data.graphs.league_avg_scores && data.graphs.league_avg_scores.length > 0) {
+        const avgWeeks = data.graphs.league_avg_scores.map(d => d.week);
+        const avgPoints = data.graphs.league_avg_scores.map(d => d.points);
+        traces.push({
+          x: avgWeeks,
+          y: avgPoints,
+          type: 'scatter',
+          mode: 'lines',
+          name: 'League Avg',
+          line: { dash: 'dash', color: '#9ca3af', width: 2 },
+          opacity: 0.7
+        });
+      }
+
+      const weeklyLayout = {
+        xaxis: { title: 'Week', standoff: 12 },
+        yaxis: { title: 'Points' },
+        hovermode: 'x unified',
+        margin: { l: 50, r: 20, t: 20, b: 50 },
+        showlegend: true,
+        legend: { x: 0, y: 1.1, orientation: 'h' }
+      };
+
+      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true });
+    }
+
+    // Render radar chart
+    if (data.graphs.radar && data.graphs.radar.z_scores) {
+      const metrics = data.graphs.radar.metrics;
+      const zScores = data.graphs.radar.z_scores;
+      const rawStats = data.graphs.radar.raw_stats;
+
+      // Close the ring
+      const closedMetrics = [...metrics, metrics[0]];
+      const closedZScores = [...zScores, zScores[0]];
+
+      // Create hover text with raw stats
+      const hoverText = metrics.map((metric, i) =>
+        `${metric}: ${rawStats[metric]} (z: ${zScores[i].toFixed(2)})`
+      );
+      hoverText.push(hoverText[0]); // Close the ring for hover text too
+
+      const radarTrace = {
+        type: 'scatterpolar',
+        r: closedZScores,
+        theta: closedMetrics,
+        fill: 'toself',
+        fillcolor: 'rgba(102, 126, 234, 0.3)',
+        line: { color: '#667eea', width: 2 },
+        marker: { size: 6, color: '#667eea' },
+        name: data.team_name,
+        text: hoverText,
+        hoverinfo: 'text'
+      };
+
+      const radarLayout = {
+        polar: {
+          radialaxis: {
+            visible: true,
+            range: [-3, 3],
+            tickvals: [-3, -2, -1, 0, 1, 2, 3]
+          }
+        },
+        margin: { l: 60, r: 60, t: 40, b: 40 },
+        showlegend: false
+      };
+
+      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, { responsive: true });
+    }
+  }
+}
+
+// Team click handler (event delegation)
+document.addEventListener('click', (e) => {
+  const teamCard = e.target.closest('.team-clickable');
+  if (teamCard) {
+    const rosterId = teamCard.dataset.rosterId;
+    const teamName = teamCard.dataset.teamName;
+    if (rosterId) {
+      openTeamModal(rosterId, teamName);
+    }
   }
 });

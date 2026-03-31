@@ -38,8 +38,9 @@ def render_awards_section(awards: dict) -> str:
         rows.append(acard("Most Consistent", f"{t} — σ <strong>{sd:.2f}</strong> over {n} games"))
 
     if awards.get("highest_player"):
-        w, pts, n, pos, team, owner = awards["highest_player"]
-        rows.append(acard("Highest Points By a Player", f"{n} — Week {w}: <strong>{pts} points</strong>"))
+        w, pts, n, pos, team, owner, pid = awards["highest_player"]
+        clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
+        rows.append(acard("Highest Points By a Player", f"<span{clickable_attrs}>{n}</span> — Week {w}: <strong>{pts} points</strong>"))
 
     return f"""
     <div class="card awards-card" data-section="awards">
@@ -59,14 +60,14 @@ def highest_single_game_points(league_id: str,
     """
     Returns a dict for the single highest fantasy score by any NFL player in your league:
       {
-        'week', 'points', 'name', 'pos', 'nfl', 'owner'
+        'week', 'points', 'name', 'pos', 'nfl', 'owner', 'pid'
       }
 
     Set started_only=True to consider only players that were in starting lineups.
     """
     # You likely already have this helper; otherwise map roster_id -> "Team (Owner)"
     roster_map = build_roster_map(platform, league_id, season, users, rosters)
-    best = ["", 0.0, "", "", "", ""]
+    best = ["", 0.0, "", "", "", "", ""]
 
     for w in range(1, weeks):
         matchups = get_matchups(platform, league_id, w, season) or []
@@ -86,6 +87,7 @@ def highest_single_game_points(league_id: str,
                         p.get("position"),
                         p.get("team") or "FA",
                         owner,
+                        pid_str,
                     ]
 
     # If nothing found (e.g., empty season), normalize to None/0
@@ -93,7 +95,7 @@ def highest_single_game_points(league_id: str,
         return {
             None, 0.0,
             None, None, None,
-            None
+            None, None
         }
     return best
 

@@ -70,6 +70,60 @@ def build_daily_advanced_metrics(season: int, week: int):
         traceback.print_exc()
 
 
+def build_daily_breakout_candidates(season: int, week: int):
+    """
+    Calculate offseason breakout candidates based on roster changes and vacated opportunity.
+
+    This creates database tables on first run, then calculates:
+    - Vacated opportunity from roster changes
+    - Projected opportunity redistribution to remaining players
+    - Offseason breakout scores
+
+    Runs during:
+    - Offseason and preseason (projections based on roster moves)
+    - First 4 weeks of regular season (combo of projections + early actual data)
+    - After week 4, actual usage data is reliable enough without projections
+    """
+    from data_building.offseason_opportunity import (
+        init_offseason_opportunity_db,
+        calculate_vacated_opportunity,
+        project_opportunity_redistribution
+    )
+
+    # Check if we should run breakout calculations
+    nfl_state = get_nfl_state() or {}
+    season_type = str(nfl_state.get("season_type", "")).lower().strip()
+
+    # Run during offseason, preseason, or early regular season (weeks 1-4)
+    should_run = (
+        season_type in ["off", "pre"] or
+        (season_type == "regular" and week <= 4)
+    )
+
+    if not should_run:
+        print(f"[cron] Skipping breakout calculations - season_type={season_type}, week={week} (only runs during offseason/preseason/weeks 1-4)")
+        return
+
+    print(f"[cron] Calculating offseason breakout candidates for season={season}, week={week}")
+
+    try:
+        # Initialize database tables (safe to call multiple times)
+        init_offseason_opportunity_db()
+
+        # Calculate vacated opportunity from roster changes
+        calculate_vacated_opportunity(season)
+
+        # Project opportunity redistribution and identify breakout candidates
+        project_opportunity_redistribution(season, top_n_players=600)
+
+        print(f"[cron] Breakout candidates calculated successfully")
+
+    except Exception as e:
+        print(f"[cron] Breakout candidates calculation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     state = get_nfl_state() or {}
     season = int(state.get("season"))
@@ -79,6 +133,20 @@ def main():
 
     # run your existing function
     build_daily_data(season, week)
+
+    # Save player values to database for historical tracking
+    try:
+        from data_building.save_player_values import save_daily_values_to_db
+        from utils.utils import load_model_value_table
+
+        value_table = load_model_value_table()
+        if value_table:
+            count = save_daily_values_to_db(value_table)
+            print(f"[daily] Saved {count} player values to database")
+        else:
+            print("[daily] No value table available, skipping database save")
+    except Exception as e:
+        print(f"[daily] player values save skipped: {e}")
 
     # Calculate advanced metrics from usage data
     try:
@@ -91,6 +159,12 @@ def main():
         build_daily_market_pulse()
     except Exception as e:
         print(f"[daily] market pulse skipped: {e}")
+
+    # Calculate offseason breakout candidates
+    try:
+        build_daily_breakout_candidates(season, week)
+    except Exception as e:
+        print(f"[daily] breakout candidates skipped: {e}")
 
 
 if __name__ == "__main__":

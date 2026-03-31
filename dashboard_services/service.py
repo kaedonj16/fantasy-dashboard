@@ -225,6 +225,19 @@ def fantasy_team_for_player(pid: str, rosters: list, roster_map: dict) -> str:
     return "Free Agent"
 
 
+def fantasy_team_and_roster_for_player(pid: str, rosters: list, roster_map: dict) -> tuple[str, str]:
+    """
+    Returns (team_name, roster_id) for a player.
+    Returns ("Free Agent", "") if player is not rostered.
+    """
+    for r in rosters:
+        if pid in (r.get("players") or []):
+            rid = str(r["roster_id"])
+            team_name = roster_map.get(rid, f"Roster {rid}")
+            return team_name, rid
+    return "Free Agent", ""
+
+
 def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
     def card(pos, rows):
         if not rows:
@@ -234,14 +247,26 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
             team = r.get("nfl") or r.get("team", "")
             pts = r.get("pts") or r.get("points", 0.0)
             if not r.get("owner_id"):
-                owner = fantasy_team_for_player(r["pid"], rosters, roster_map)
+                owner, roster_id = fantasy_team_and_roster_for_player(r["pid"], rosters, roster_map)
+            else:
+                owner = "Unknown"
+                roster_id = ""
             place = "first" if i == 1 else "second" if i == 2 else "third"
+
+            # Make player name clickable
+            pid = r.get("pid", "")
+            player_name = r['name']
+            clickable_attrs = f" class='name player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid else " class='name'"
+
+            # Make team name clickable
+            team_clickable = f"<span class='team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{owner}'>{owner}</span>" if roster_id else owner
+
             lis.append(
                 f"<div class='side-row'>"
                 f"  <span class='rank rank-{place}'>{i}</span>"
                 f"  <div class='who'>"
-                f"    <div class='name'>{r['name']}</div>"
-                f"    <div class='sub'>{team} • {owner}</div>"
+                f"    <div{clickable_attrs}>{player_name}</div>"
+                f"    <div class='sub'>{team} • {team_clickable}</div>"
                 f"  </div>"
                 f"  <div class='pts'>{pts:.1f}</div>"
                 f"</div>"
@@ -695,6 +720,7 @@ def build_week_activity(
             "pos": gp("pos", ""),
             "team": gp("team", "FA"),
             "age": gp("age", None),
+            "pid": pid_str,
         }
         pinfo_cache[pid_str] = info
         return info
@@ -1395,10 +1421,16 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     pos_badge = f"<span class='pos-badge {pos}'>{pos}</span>" if pos else ""
                     nfl = p.get("nfl")
                     nfl_html = f"<span class='meta'>{nfl}</span>" if nfl else ""
+
+                    # Make player name clickable
+                    pid = p.get("pid", "")
+                    player_name = p['name']
+                    clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid else " class='pname'"
+
                     out.append(
                         f"<div class='{row_cls}'>"
                         f"{pos_badge}"
-                        f"<span class='pname'>{p['name']}</span>"
+                        f"<span{clickable_attrs}>{player_name}</span>"
                         f"{nfl_html}"
                         "</div>"
                     )

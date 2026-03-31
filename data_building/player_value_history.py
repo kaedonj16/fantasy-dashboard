@@ -236,7 +236,13 @@ def get_player_value_history(
     if not latest_date:
         return []
 
-    cutoff = (date.fromisoformat(latest_date) - timedelta(days=max(days, 1) - 1)).isoformat()
+    # Handle both date objects and strings
+    if isinstance(latest_date, date):
+        latest_date_obj = latest_date
+    else:
+        latest_date_obj = date.fromisoformat(str(latest_date))
+
+    cutoff = (latest_date_obj - timedelta(days=max(days, 1) - 1)).isoformat()
 
     with get_conn() as conn:
         rows = conn.execute(

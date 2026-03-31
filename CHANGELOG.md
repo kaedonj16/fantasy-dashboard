@@ -6,6 +6,43 @@ All notable changes to the BR Fantasy Dashboard are recorded here.
 
 ## [Unreleased]
 
+### Player Modal (Site-Wide)
+- **Click any player to view details** — All player names across the entire site are now clickable and open a detailed modal with comprehensive stats, value history, and game logs. Works on trade calculator chips, breakout candidates, team rosters, movers lists, and anywhere else players appear.
+- **Modal content** — Shows player name, position rank (e.g., "RB13"), team, age, dynasty values (1QB and SF), position rank, years of experience, value history chart (90 days), and recent season stats (games, targets, carries, snaps).
+- **Value history visualization** — Interactive Plotly chart displays 90-day value trends with area fill, helping identify buying/selling windows.
+- **Smooth animations** — Fade-in overlay with scale-in modal animation. Closes on overlay click or Escape key. Mobile-responsive design with bottom sheet treatment on small screens.
+- **Global click handler** — Any element with `data-player-id` attribute automatically opens the modal. Developers can use `makePlayerClickable(element, playerId, playerName)` helper to add modal functionality to custom components.
+- **API endpoint** — New `/api/player-details/<player_id>` returns comprehensive player information including stats from `cache/player_history/usage_rows_2025.json`.
+
+### Unified Breakout Detection
+- **Season-aware breakout candidates** — New `/api/breakout-candidates` endpoint automatically switches between offseason (roster-change based) and in-season (performance-based) breakout detection based on NFL season state. Returns full candidate objects with all stats, not just IDs.
+- **Enhanced filtering** — Breakout candidates now exclude:
+  - Players already top 5 at their position (already elite, not "breaking out")
+  - Position-specific rank thresholds: QB ≤32, RB ≤45, WR ≤60, TE ≤20
+  - Players older than 25 (breakouts are typically young emerging players)
+  - High-value established stars (value ≥2000)
+- **Visual enhancements** — Breakout tab features:
+  - Fade-in slide animations (staggered per row)
+  - Lightning bolt gradient badge on each player
+  - Hover effects with background gradient and badge rotation
+  - Position rank labels (shows "RB13" instead of just "RB")
+  - Improved player name styling with hover underline
+- **No longer offseason-only** — Breakout detection works year-round, automatically switching modes. Tab renamed from "Offseason Breakouts" to "Breakout Candidates" to reflect all-season functionality.
+
+### Mobile Trade Calculator Layout
+- **Reorganized controls for mobile** — On mobile devices, the league size, scoring format, and 1QB/SF toggle now appear together on a single row beneath the Team 1/Team 2 picker. Previously these were stacked vertically taking up excessive space. Desktop layout unchanged.
+- **Better mobile UX** — Controls container uses flexbox with equal spacing, making it easier to adjust all settings at once on small screens.
+
+### Full-Screen Loading States
+- **League switch loading** — When switching between leagues, a full-screen overlay with spinner now appears showing "Switching leagues..." message. Prevents confusion during page transition with professional loading experience.
+- **Backdrop blur effect** — Semi-transparent white overlay with backdrop blur creates modern loading state. Spinner scales larger (48px) for better visibility.
+
+### History Page Performance
+- **Dynamic section loading** — History page now loads its frame immediately, then populates sections (Season Awards, Standings, Season Trend chart) independently with loading spinners. Eliminates the long wait for full page render.
+- **Non-blocking data** — Slow sections (like complex stats calculations) don't delay fast sections. Each section fetches and renders as data arrives.
+- **Client-side chart rendering** — Season trend chart data returned as JSON, Plotly renders client-side. Fixes issues with dynamically-inserted chart HTML.
+- **New API endpoints** — Added `/api/history/<platform>/<season>/<league_id>/summary`, `/summary`, `/standings`, `/chart` for section-specific data loading.
+
 ### Offseason Breakout Detection System
 - **Roster change tracking** — New `roster_changes` table tracks player departures (free agent, trade, retirement, cut) with previous season usage stats (targets, carries, snap share, opportunity share). Enables detection of vacated opportunity before season starts.
 - **Vacated opportunity calculation** — `vacated_opportunity` table aggregates targets/carries/snaps left behind per team/position. Example: "TB WR has 140 vacated targets from Mike Evans departure". Function: `calculate_vacated_opportunity()`.
