@@ -13,8 +13,8 @@ Each function calculates one of the 7 component scores:
 All functions return (score: float, details: Dict) tuples.
 """
 
-from typing import Dict, List, Optional, Tuple
 from datetime import date, timedelta
+from typing import Dict, List, Optional, Tuple
 
 from .config import *
 from .db_helpers import (
@@ -71,9 +71,9 @@ def _normalize_range(value: float, low: float, high: float) -> float:
 
 
 def _sample_confidence(
-    observed: float,
-    full_confidence: float,
-    min_confidence: float = 0.35
+        observed: float,
+        full_confidence: float,
+        min_confidence: float = 0.35
 ) -> float:
     """
     Reliability multiplier between min_confidence and 1.0.
@@ -113,23 +113,23 @@ def _position_usage_volume(position: str, usage: Dict) -> float:
 
     if position in ["WR", "TE"]:
         return (
-            targets * 0.50 +
-            routes * 0.20 +
-            snap_share * 100 * 0.30
+                targets * 0.50 +
+                routes * 0.20 +
+                snap_share * 100 * 0.30
         )
     if position == "RB":
         total_touches = carries + targets
         return (
-            carries * 0.35 +
-            targets * 0.20 +
-            total_touches * 0.15 +
-            snap_share * 100 * 0.30
+                carries * 0.35 +
+                targets * 0.20 +
+                total_touches * 0.15 +
+                snap_share * 100 * 0.30
         )
     if position == "QB":
         return (
-            pass_attempts * 0.50 +
-            carries * 0.10 +
-            snap_share * 100 * 0.40
+                pass_attempts * 0.50 +
+                carries * 0.10 +
+                snap_share * 100 * 0.40
         )
     return snap_share * 100
 
@@ -209,11 +209,11 @@ def _score_bucket(value: float, thresholds: List[Tuple[float, float]], default: 
 # ==============================================================================
 
 def calculate_opportunity_opened_score(
-    player_id: str,
-    team: str,
-    position: str,
-    season: int,
-    vacated_cache: Optional[Dict] = None
+        player_id: str,
+        team: str,
+        position: str,
+        season: int,
+        vacated_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on total opportunity vacated from team/position.
@@ -293,26 +293,26 @@ def _departure_competition_load(position: str, dep: Dict) -> Tuple[float, Dict]:
 
     if position in ["WR", "TE"]:
         load = (
-            dep_targets * 0.50 +
-            dep_routes * 0.20 +
-            dep_snap * 100 * 0.20 +
-            dep_points * 0.10
+                dep_targets * 0.50 +
+                dep_routes * 0.20 +
+                dep_snap * 100 * 0.20 +
+                dep_points * 0.10
         )
         primary_usage = dep_targets
     elif position == "RB":
         weighted_work = dep_carries + (dep_targets * 1.2)
         load = (
-            weighted_work * 0.55 +
-            dep_snap * 100 * 0.20 +
-            dep_points * 0.25
+                weighted_work * 0.55 +
+                dep_snap * 100 * 0.20 +
+                dep_points * 0.25
         )
         primary_usage = weighted_work
     elif position == "QB":
         load = (
-            dep_attempts * 0.50 +
-            dep_carries * 0.10 +
-            dep_snap * 100 * 0.25 +
-            dep_points * 0.15
+                dep_attempts * 0.50 +
+                dep_carries * 0.10 +
+                dep_snap * 100 * 0.25 +
+                dep_points * 0.15
         )
         primary_usage = dep_attempts
     else:
@@ -334,12 +334,12 @@ def _departure_competition_load(position: str, dep: Dict) -> Tuple[float, Dict]:
 
 
 def calculate_competition_removed_score(
-    player_id: str,
-    team: str,
-    position: str,
-    season: int,
-    player_prev_usage: Dict,
-    departures_cache: Optional[Dict] = None
+        player_id: str,
+        team: str,
+        position: str,
+        season: int,
+        player_prev_usage: Dict,
+        departures_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on meaningful same-position competition leaving the roster.
@@ -509,25 +509,25 @@ def _calculate_arrival_role_threat(position: str, arrival: Dict) -> Tuple[float,
 
     if position in ["WR", "TE"]:
         usage_signal = (
-            _normalize_to_one(prev_targets, 110) * 0.45 +
-            _normalize_to_one(prev_routes, 450) * 0.20 +
-            _normalize_to_one(prev_snap, 0.80) * 0.20 +
-            _normalize_to_one(prev_points, 220) * 0.15
+                _normalize_to_one(prev_targets, 110) * 0.45 +
+                _normalize_to_one(prev_routes, 450) * 0.20 +
+                _normalize_to_one(prev_snap, 0.80) * 0.20 +
+                _normalize_to_one(prev_points, 220) * 0.15
         )
         primary_usage = prev_targets
     elif position == "RB":
         weighted_work = prev_carries + (prev_targets * 1.35)
         usage_signal = (
-            _normalize_to_one(weighted_work, 260) * 0.55 +
-            _normalize_to_one(prev_snap, 0.70) * 0.20 +
-            _normalize_to_one(prev_points, 250) * 0.25
+                _normalize_to_one(weighted_work, 260) * 0.55 +
+                _normalize_to_one(prev_snap, 0.70) * 0.20 +
+                _normalize_to_one(prev_points, 250) * 0.25
         )
         primary_usage = weighted_work
     elif position == "QB":
         usage_signal = (
-            _normalize_to_one(prev_attempts, 550) * 0.50 +
-            _normalize_to_one(prev_snap, 0.85) * 0.25 +
-            _normalize_to_one(prev_points, 320) * 0.25
+                _normalize_to_one(prev_attempts, 550) * 0.50 +
+                _normalize_to_one(prev_snap, 0.85) * 0.25 +
+                _normalize_to_one(prev_points, 320) * 0.25
         )
         primary_usage = prev_attempts
     else:
@@ -594,11 +594,11 @@ def _threat_score_to_penalty(threat_score: float, position: str) -> Tuple[float,
 
 
 def calculate_competition_added_penalty(
-    player_id: str,
-    team: str,
-    position: str,
-    season: int,
-    arrivals_cache: Optional[Dict] = None
+        player_id: str,
+        team: str,
+        position: str,
+        season: int,
+        arrivals_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Negative score for added same-position competition.
@@ -705,10 +705,10 @@ def calculate_competition_added_penalty(
 # ==============================================================================
 
 def calculate_team_environment_score(
-    team: str,
-    position: str,
-    season: int,
-    team_stats_cache: Optional[Dict] = None
+        team: str,
+        position: str,
+        season: int,
+        team_stats_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on how favorable the team offensive environment is
@@ -748,34 +748,34 @@ def calculate_team_environment_score(
     volume_score = _normalize_range(total_plays_pg, 55.0, 70.0) * 20.0
 
     scoring_score = (
-        _normalize_range(points_pg, 16.0, 30.0) * 12.0 +
-        _normalize_range(total_td_pg, 1.6, 3.8) * 8.0
+            _normalize_range(points_pg, 16.0, 30.0) * 12.0 +
+            _normalize_range(total_td_pg, 1.6, 3.8) * 8.0
     )
 
     efficiency_score = (
-        _normalize_range(yards_per_play, 4.7, 6.4) * 10.0 +
-        (1.0 - _normalize_range(sacks_allowed_pg, 1.0, 4.0)) * 5.0
+            _normalize_range(yards_per_play, 4.7, 6.4) * 10.0 +
+            (1.0 - _normalize_range(sacks_allowed_pg, 1.0, 4.0)) * 5.0
     )
 
     red_zone_score = _normalize_range(red_zone_trips_pg, 2.0, 4.5) * 15.0
 
     if position in ["WR", "TE"]:
         position_fit_score = (
-            _normalize_range(pass_rate, 0.48, 0.67) * 10.0 +
-            _normalize_range(pass_yds_pg, 180.0, 310.0) * 6.0 +
-            _normalize_range(pass_td_pg, 1.1, 2.4) * 4.0
+                _normalize_range(pass_rate, 0.48, 0.67) * 10.0 +
+                _normalize_range(pass_yds_pg, 180.0, 310.0) * 6.0 +
+                _normalize_range(pass_td_pg, 1.1, 2.4) * 4.0
         )
     elif position == "RB":
         position_fit_score = (
-            _normalize_range(run_rate, 0.33, 0.52) * 8.0 +
-            _normalize_range(rush_att_pg, 20.0, 33.0) * 7.0 +
-            _normalize_range(rush_td_pg, 0.5, 1.8) * 5.0
+                _normalize_range(run_rate, 0.33, 0.52) * 8.0 +
+                _normalize_range(rush_att_pg, 20.0, 33.0) * 7.0 +
+                _normalize_range(rush_td_pg, 0.5, 1.8) * 5.0
         )
     elif position == "QB":
         position_fit_score = (
-            _normalize_range(pass_rate, 0.48, 0.67) * 8.0 +
-            _normalize_range(pass_att_pg, 27.0, 41.0) * 7.0 +
-            _normalize_range(pass_td_pg, 1.1, 2.4) * 5.0
+                _normalize_range(pass_rate, 0.48, 0.67) * 8.0 +
+                _normalize_range(pass_att_pg, 27.0, 41.0) * 7.0 +
+                _normalize_range(pass_td_pg, 1.1, 2.4) * 5.0
         )
     else:
         position_fit_score = 10.0
@@ -842,13 +842,13 @@ def calculate_team_environment_score(
 # ==============================================================================
 
 def calculate_player_readiness_score(
-    player_id: str,
-    position: str,
-    season: int,
-    player_metadata: Dict,
-    prev_usage: Dict,
-    is_drafted_rookie: bool = False,
-    draft_capital: Optional[Dict] = None
+        player_id: str,
+        position: str,
+        season: int,
+        player_metadata: Dict,
+        prev_usage: Dict,
+        is_drafted_rookie: bool = False,
+        draft_capital: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on player's ability to capitalize on opportunity.
@@ -1040,11 +1040,11 @@ def calculate_player_readiness_score(
 # ==============================================================================
 
 def _offseason_role_trajectory_score(
-    player_id: str,
-    as_of_date: date,
-    prev_usage: Dict,
-    current_team: Optional[str],
-    position: Optional[str]
+        player_id: str,
+        as_of_date: date,
+        prev_usage: Dict,
+        current_team: Optional[str],
+        position: Optional[str]
 ) -> Tuple[float, Dict]:
     """
     Offseason trajectory:
@@ -1141,9 +1141,9 @@ def _offseason_role_trajectory_score(
 
 
 def _inseason_role_trajectory_score(
-    player_id: str,
-    as_of_date: date,
-    lookback_days: int
+        player_id: str,
+        as_of_date: date,
+        lookback_days: int
 ) -> Tuple[float, Dict]:
     """
     In-season trajectory:
@@ -1245,13 +1245,13 @@ def _inseason_role_trajectory_score(
 
 
 def calculate_role_trajectory_score(
-    player_id: str,
-    as_of_date: date,
-    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
-    phase: str = "in_season",
-    prev_usage: Dict = None,
-    current_team: str = None,
-    position: str = None
+        player_id: str,
+        as_of_date: date,
+        lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+        phase: str = "in_season",
+        prev_usage: Dict = None,
+        current_team: str = None,
+        position: str = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on role trajectory.
@@ -1294,10 +1294,10 @@ def calculate_role_trajectory_score(
 # ==============================================================================
 
 def calculate_confidence_score(
-    player_id: str,
-    prev_usage: Dict,
-    phase: str,
-    data_quality_metrics: Dict
+        player_id: str,
+        prev_usage: Dict,
+        phase: str,
+        data_quality_metrics: Dict
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) indicating confidence in the projection.

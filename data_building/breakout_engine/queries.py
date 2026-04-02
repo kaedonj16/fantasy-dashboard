@@ -5,16 +5,17 @@ These functions query pre-calculated breakout scores from the database
 instead of recalculating them on every request.
 """
 
-from typing import List, Dict, Optional
 from datetime import date
+from typing import List, Dict, Optional
+
 from dashboard_services.db import get_conn
 
 
 def get_latest_breakout_candidates(
-    season: int,
-    min_score: float = 30.0,
-    position: Optional[str] = None,
-    limit: int = 100
+        season: int,
+        min_score: float = 30.0,
+        position: Optional[str] = None,
+        limit: int = 100
 ) -> List[Dict]:
     """
     Fast query to get pre-calculated breakout candidates from database.
@@ -87,9 +88,9 @@ def get_latest_breakout_candidates(
 
 
 def get_breakout_score_for_player(
-    player_id: str,
-    season: int,
-    as_of_date: Optional[date] = None
+        player_id: str,
+        season: int,
+        as_of_date: Optional[date] = None
 ) -> Optional[Dict]:
     """
     Get breakout score for a specific player.
@@ -175,9 +176,9 @@ def get_breakout_scores_summary(season: int) -> Dict:
 
 
 def get_top_breakouts_by_position(
-    season: int,
-    position: str,
-    limit: int = 10
+        season: int,
+        position: str,
+        limit: int = 10
 ) -> List[Dict]:
     """
     Get top breakout candidates for a specific position.

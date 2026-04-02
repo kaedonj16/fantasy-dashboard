@@ -6,6 +6,7 @@ affect specific players' breakout opportunities.
 """
 
 from typing import Dict, List
+
 from .db_helpers import (
     get_departures_by_team_position,
     get_arrivals_by_team_position,
@@ -28,10 +29,10 @@ class TransactionImpactAnalyzer:
         self.season = season
 
     def get_impacting_transactions(
-        self,
-        player_id: str,
-        team: str,
-        position: str
+            self,
+            player_id: str,
+            team: str,
+            position: str
     ) -> Dict:
         """
         Get all transactions affecting a specific player's opportunity.
@@ -106,10 +107,10 @@ class TransactionImpactAnalyzer:
         }
 
     def generate_transaction_summary(
-        self,
-        player_id: str,
-        team: str,
-        position: str
+            self,
+            player_id: str,
+            team: str,
+            position: str
     ) -> Dict[str, str]:
         """
         Generate human-readable transaction summaries.

@@ -17,12 +17,12 @@ from typing import Dict
 
 PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
     'offseason': {
-        'opportunity_opened': 0.20,        # High - offseason focus on vacated opportunity
-        'competition_removed': 0.20,       # High - who left matters most
-        'competition_added_penalty': 0.10, # Low - signings still happening
+        'opportunity_opened': 0.20,  # High - offseason focus on vacated opportunity
+        'competition_removed': 0.20,  # High - who left matters most
+        'competition_added_penalty': 0.10,  # Low - signings still happening
         'team_environment': 0.15,
-        'player_readiness': 0.25,          # High - historical data important
-        'role_trajectory': 0.1,           # Low - no recent in-season data
+        'player_readiness': 0.25,  # High - historical data important
+        'role_trajectory': 0.1,  # Low - no recent in-season data
         'confidence': 0.05
     },
     'post_free_agency': {
@@ -31,7 +31,7 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
         'competition_added_penalty': 0.15,  # Higher - FA signings impact
         'team_environment': 0.15,
         'player_readiness': 0.18,
-        'role_trajectory': 0.05,            # Still offseason
+        'role_trajectory': 0.05,  # Still offseason
         'confidence': 0.07
     },
     'post_draft': {
@@ -39,26 +39,26 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
         'competition_removed': 0.15,
         'competition_added_penalty': 0.20,  # Highest - draft picks compete heavily
         'team_environment': 0.15,
-        'player_readiness': 0.20,           # Draft capital boosts rookies
+        'player_readiness': 0.20,  # Draft capital boosts rookies
         'role_trajectory': 0.05,
         'confidence': 0.05
     },
     'preseason': {
-        'opportunity_opened': 0.15,         # Lower - opportunity mostly known
+        'opportunity_opened': 0.15,  # Lower - opportunity mostly known
         'competition_removed': 0.12,
         'competition_added_penalty': 0.15,  # Roster cuts happening
         'team_environment': 0.13,
         'player_readiness': 0.18,
-        'role_trajectory': 0.20,            # Higher - preseason usage trends
+        'role_trajectory': 0.20,  # Higher - preseason usage trends
         'confidence': 0.07
     },
     'in_season': {
-        'opportunity_opened': 0.10,         # Lowest - past data less relevant
+        'opportunity_opened': 0.10,  # Lowest - past data less relevant
         'competition_removed': 0.08,
         'competition_added_penalty': 0.05,  # Roster mostly set
         'team_environment': 0.12,
         'player_readiness': 0.15,
-        'role_trajectory': 0.40,            # Highest - recent performance key
+        'role_trajectory': 0.40,  # Highest - recent performance key
         'confidence': 0.10
     }
 }
@@ -84,22 +84,22 @@ COMPETITION_PENALTY_MAX = -50.0  # Can go negative
 MAX_VACATED_TARGETS_WR_TE = 150  # 150 targets = max opportunity for WR/TE
 
 # Vacated carries that equal max score for RBs
-MAX_VACATED_CARRIES_RB = 250     # 250 carries = 70 points (primary)
-MAX_VACATED_TARGETS_RB = 100     # 100 targets = 30 points (secondary)
+MAX_VACATED_CARRIES_RB = 250  # 250 carries = 70 points (primary)
+MAX_VACATED_TARGETS_RB = 100  # 100 targets = 30 points (secondary)
 
 # Snap share bonus
-MAX_SNAP_SHARE_BONUS = 20        # Up to 20 bonus points for high snap share vacated
+MAX_SNAP_SHARE_BONUS = 20  # Up to 20 bonus points for high snap share vacated
 
 # QB thresholds
-QB_STARTER_SNAP_THRESHOLD = 0.70 # 70%+ snap share = starter left
+QB_STARTER_SNAP_THRESHOLD = 0.70  # 70%+ snap share = starter left
 
 # ==============================================================================
 # COMPETITION REMOVED SCORE - Thresholds
 # ==============================================================================
 
 # How much more usage a departed player needed vs current player to be a threat
-HIGH_THREAT_MULTIPLIER = 1.5     # 1.5x current player's usage
-MEDIUM_THREAT_MULTIPLIER = 1.0   # 1.0x current player's usage
+HIGH_THREAT_MULTIPLIER = 1.5  # 1.5x current player's usage
+MEDIUM_THREAT_MULTIPLIER = 1.0  # 1.0x current player's usage
 
 # Points awarded for threats at each level
 HIGH_THREAT_MAX_POINTS = 40
@@ -117,10 +117,10 @@ DRAFT_PENALTY_ROUND_3 = -10
 DRAFT_PENALTY_ROUND_4_PLUS = -5
 
 # Free agent / trade threat levels (based on previous season usage)
-FA_HIGH_THREAT_TARGETS = 80      # 80+ targets last season
-FA_MEDIUM_THREAT_TARGETS = 50    # 50+ targets last season
-FA_HIGH_THREAT_CARRIES = 150     # 150+ carries last season
-FA_MEDIUM_THREAT_CARRIES = 80    # 80+ carries last season
+FA_HIGH_THREAT_TARGETS = 80  # 80+ targets last season
+FA_MEDIUM_THREAT_TARGETS = 50  # 50+ targets last season
+FA_HIGH_THREAT_CARRIES = 150  # 150+ carries last season
+FA_MEDIUM_THREAT_CARRIES = 80  # 80+ carries last season
 
 FA_HIGH_THREAT_PENALTY = -25
 FA_MEDIUM_THREAT_PENALTY = -15
@@ -131,14 +131,14 @@ FA_LOW_THREAT_PENALTY = -5
 # ==============================================================================
 
 # Pace scoring (plays per game)
-ELITE_PLAYS_PER_GAME = 95        # 95+ plays = max pace score (30)
+ELITE_PLAYS_PER_GAME = 95  # 95+ plays = max pace score (30)
 PACE_SCORE_MAX = 30
-PACE_BASELINE = 50               # Below this = 0 points
+PACE_BASELINE = 50  # Below this = 0 points
 
 # Pass rate thresholds
 PASS_RATE_SCORE_MAX = 30
-HIGH_PASS_RATE = 0.60            # 60%+ = max for WR/TE
-BALANCED_PASS_RATE = 0.50        # 50% = balanced
+HIGH_PASS_RATE = 0.60  # 60%+ = max for WR/TE
+BALANCED_PASS_RATE = 0.50  # 50% = balanced
 
 # Offensive ranking (total yards per game)
 ELITE_YARDS_PER_GAME = 380
@@ -163,11 +163,11 @@ QB_AVERAGE_BONUS = 5
 # ==============================================================================
 
 # Age/Experience scoring
-SECOND_YEAR_SCORE = 30           # Year 2 players (prime breakout)
-THIRD_YEAR_SCORE = 25            # Year 3 players
-YEAR_3_4_SCORE = 20              # Years 3-4
-ROOKIE_SCORE = 15                # Year 0 (rookies)
-VETERAN_SCORE = 5                # Year 5+
+SECOND_YEAR_SCORE = 30  # Year 2 players (prime breakout)
+THIRD_YEAR_SCORE = 25  # Year 3 players
+YEAR_3_4_SCORE = 20  # Years 3-4
+ROOKIE_SCORE = 15  # Year 0 (rookies)
+VETERAN_SCORE = 5  # Year 5+
 
 YOUNG_AGE_THRESHOLD = 26
 VETERAN_AGE_THRESHOLD = 27
@@ -289,22 +289,22 @@ CONSISTENCY_LOW_SCORE = 5
 
 # Phase certainty scoring
 PHASE_CERTAINTY = {
-    'in_season': 15,        # Highest - seeing it in real time
-    'preseason': 10,        # Preseason games provide data
-    'post_draft': 8,        # Roster locked
+    'in_season': 15,  # Highest - seeing it in real time
+    'preseason': 10,  # Preseason games provide data
+    'post_draft': 8,  # Roster locked
     'post_free_agency': 6,  # Still some moves possible
-    'offseason': 5          # Most uncertain
+    'offseason': 5  # Most uncertain
 }
 
 # ==============================================================================
 # DIRECTIONAL TREND - Thresholds
 # ==============================================================================
 
-TREND_RISING_THRESHOLD = 70      # role_trajectory > 70 = rising
-TREND_FALLING_THRESHOLD = 40     # role_trajectory < 40 = falling
+TREND_RISING_THRESHOLD = 70  # role_trajectory > 70 = rising
+TREND_FALLING_THRESHOLD = 40  # role_trajectory < 40 = falling
 
-SCORE_CHANGE_RISING = 10         # Offseason: +10 score change = rising
-SCORE_CHANGE_FALLING = -10       # Offseason: -10 score change = falling
+SCORE_CHANGE_RISING = 10  # Offseason: +10 score change = rising
+SCORE_CHANGE_FALLING = -10  # Offseason: -10 score change = falling
 
 # ==============================================================================
 # ROLE CLASSIFIER - Thresholds
@@ -324,13 +324,13 @@ RB2_CARRIES = 100
 
 # Role modifiers thresholds
 RED_ZONE_USAGE_THRESHOLD = 0.20  # 20%+ RZ usage = "Red Zone" modifier
-THREE_DOWN_SNAP_THRESHOLD = 0.85 # 85%+ snaps = "3-Down" modifier
-PASSING_DOWN_TARGETS = 60        # 60+ targets for RB = "Passing Down" modifier
+THREE_DOWN_SNAP_THRESHOLD = 0.85  # 85%+ snaps = "3-Down" modifier
+PASSING_DOWN_TARGETS = 60  # 60+ targets for RB = "Passing Down" modifier
 WORKHORSE_SNAP_THRESHOLD = 0.80  # 80%+ snaps = "Workhorse" for RB
 
 # QB role tiers
-QB_LOCKED_STARTER_SNAP = 0.95    # 95%+ snaps = "Locked Starter"
-QB_STARTER_SNAP = 0.70           # 70%+ snaps = "QB1"
+QB_LOCKED_STARTER_SNAP = 0.95  # 95%+ snaps = "Locked Starter"
+QB_STARTER_SNAP = 0.70  # 70%+ snaps = "QB1"
 
 # ==============================================================================
 # EXPLAINABILITY - Configuration

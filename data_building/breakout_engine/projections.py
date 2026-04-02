@@ -5,22 +5,23 @@ Uses AI to project full stat lines based on role changes and previous usage.
 """
 
 import json
-from typing import Dict, Any, Optional
 import os
+from typing import Dict, Any, Optional
 
 # Try to import anthropic, but gracefully fall back if not available
 try:
     import anthropic
+
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
 
 
 def project_player_stats(
-    player_info: Dict[str, Any],
-    previous_usage: Dict[str, Any],
-    efficiency_metrics: Optional[Dict[str, Any]],
-    role_change: Dict[str, Any]
+        player_info: Dict[str, Any],
+        previous_usage: Dict[str, Any],
+        efficiency_metrics: Optional[Dict[str, Any]],
+        role_change: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Project player stats based on role changes.
@@ -236,9 +237,9 @@ Return your projection as JSON following the exact format specified in the syste
 
 
 def _fallback_projection(
-    player_info: Dict[str, Any],
-    previous_usage: Dict[str, Any],
-    role_change: Dict[str, Any]
+        player_info: Dict[str, Any],
+        previous_usage: Dict[str, Any],
+        role_change: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Simple fallback projection when LLM is unavailable.
@@ -291,11 +292,11 @@ def _fallback_projection(
 
     # Fantasy points
     ppr_total = (
-        proj_rush_yards * 0.1 +
-        proj_rush_tds * 6 +
-        proj_rec_yards * 0.1 +
-        proj_rec_tds * 6 +
-        proj_receptions * 1
+            proj_rush_yards * 0.1 +
+            proj_rush_tds * 6 +
+            proj_rec_yards * 0.1 +
+            proj_rec_tds * 6 +
+            proj_receptions * 1
     )
     half_ppr_total = ppr_total - (proj_receptions * 0.5)
     standard_total = ppr_total - proj_receptions

@@ -62,7 +62,7 @@ def load_season_aware_usage_data(season: int, week: int = 0, season_type: str = 
 
         if os.path.exists(last_season_file):
             print(f"[season-aware] Offseason detected - loading {season - 1} usage data")
-            return read_json(usage_rows_json_path_for_season(season-1))
+            return read_json(usage_rows_json_path_for_season(season - 1))
         else:
             print(f"[season-aware] Warning: {last_season_file} not found")
             return []
@@ -286,31 +286,31 @@ def _is_established_star(position: Optional[str], prev_usage: Dict) -> bool:
     if position == "RB":
         touches = carries + targets
         return (
-            ppg >= 15.0 or
-            touches >= 240 or
-            (snap_share >= 0.62 and touches >= 180)
+                ppg >= 15.0 or
+                touches >= 240 or
+                (snap_share >= 0.62 and touches >= 180)
         )
 
     if position == "WR":
         return (
-            ppg >= 14.5 or
-            targets >= 120 or
-            target_share >= 0.25 or
-            (snap_share >= 0.80 and routes >= 475 and targets >= 100)
+                ppg >= 14.5 or
+                targets >= 120 or
+                target_share >= 0.25 or
+                (snap_share >= 0.80 and routes >= 475 and targets >= 100)
         )
 
     if position == "TE":
         return (
-            ppg >= 11.5 or
-            targets >= 100 or
-            target_share >= 0.23
+                ppg >= 11.5 or
+                targets >= 100 or
+                target_share >= 0.23
         )
 
     if position == "QB":
         return (
-            ppg >= 18.0 or
-            pass_attempts >= 525 or
-            snap_share >= 0.90
+                ppg >= 18.0 or
+                pass_attempts >= 525 or
+                snap_share >= 0.90
         )
 
     return False
@@ -347,6 +347,7 @@ def _is_true_dust(position: Optional[str], prev_usage: Dict, flag: bool, player_
         return pass_attempts < 25
 
     return False
+
 
 def _candidate_band_multiplier(position: str, prev_usage: Dict, candidate: Any) -> Tuple[float, str]:
     """
@@ -424,6 +425,7 @@ def _candidate_band_multiplier(position: str, prev_usage: Dict, candidate: Any) 
     mult = min(mult + situation_bonus, 1.10)
     return round(mult, 2), status
 
+
 def _qualifies_opportunity_exception(candidate: Any) -> bool:
     """
     Keeps rare low-foothold players if the situation is unusually strong.
@@ -435,10 +437,10 @@ def _qualifies_opportunity_exception(candidate: Any) -> bool:
     player_readiness_score = _safe_float(getattr(candidate, "player_readiness_score", 0))
 
     return (
-        opportunity_opened_score >= 75 and
-        competition_removed_score >= 20 and
-        competition_added_penalty > -8 and
-        (role_trajectory_score >= 35 or player_readiness_score >= 35)
+            opportunity_opened_score >= 75 and
+            competition_removed_score >= 20 and
+            competition_added_penalty > -8 and
+            (role_trajectory_score >= 35 or player_readiness_score >= 35)
     )
 
 
@@ -508,6 +510,7 @@ def _classify_candidate(candidate: Any, prev_usage: Dict, flag: bool) -> Tuple[b
     multiplier, status = _candidate_band_multiplier(position, prev_usage, candidate)
     return True, status, multiplier
 
+
 def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) -> Tuple[List[Any], Dict[str, int]]:
     kept: List[Any] = []
     summary = {
@@ -527,7 +530,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
     for candidate in candidates:
         player_id = str(candidate.get("player_id", ""))
         prev_usage = usage_by_id.get(player_id, {})
-        
+
         # Age filter: exclude players over 26 except QBs
         position = candidate.get("position", "").upper()
         age = candidate.get("age")
@@ -573,6 +576,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
     kept.sort(key=lambda x: _safe_float(getattr(x, "breakout_opportunity_score", 0)), reverse=True)
     summary["kept_candidates"] = len(kept)
     return kept, summary
+
 
 def main() -> Dict[str, Any]:
     from dashboard_services.api import get_nfl_state

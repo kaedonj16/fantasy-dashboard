@@ -217,10 +217,10 @@ def get_total_rosters() -> int:
 
 
 def set_league_globals(
-    scoring_settings: Optional[Dict[str, Any]] = None,
-    roster_positions: Optional[List[str]] = None,
-    league_settings: Optional[Dict[str, Any]] = None,
-    total_rosters: Optional[int] = None,
+        scoring_settings: Optional[Dict[str, Any]] = None,
+        roster_positions: Optional[List[str]] = None,
+        league_settings: Optional[Dict[str, Any]] = None,
+        total_rosters: Optional[int] = None,
 ) -> None:
     """
     Allow external callers (e.g. ESPN integration) to populate the league globals

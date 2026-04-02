@@ -7,6 +7,7 @@ This script fetches stats from Sleeper's API and saves them to the cache.
 
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
 
+
 def main():
     print("Repopulating missing 2025 stats...")
     print("=" * 50)
@@ -24,6 +25,7 @@ def main():
     print("\n" + "=" * 50)
     print("Done! Stats files updated.")
     print("\nYou can now refresh player modals to see weeks 16-18 stats.")
+
 
 if __name__ == "__main__":
     main()

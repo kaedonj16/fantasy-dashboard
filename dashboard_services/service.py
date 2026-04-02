@@ -649,10 +649,10 @@ def compute_streaks(df_weekly: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_transactions_by_week(
-    league_id: str,
-    season_weeks: list[int],
-    platform: str = "sleeper",
-    season: int = 0,
+        league_id: str,
+        season_weeks: list[int],
+        platform: str = "sleeper",
+        season: int = 0,
 ) -> dict[int, list[dict]]:
     results: dict[int, list[dict]] = {}
 

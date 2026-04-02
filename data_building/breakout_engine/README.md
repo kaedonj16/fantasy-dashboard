@@ -4,9 +4,11 @@ A year-round fantasy football breakout detection system that adapts scoring base
 
 ## Overview
 
-This engine replaces the previous dual-system approach (separate offseason and in-season formulas) with a unified scoring system that uses **7 modular component scores** and **phase-based dynamic weighting**.
+This engine replaces the previous dual-system approach (separate offseason and in-season formulas) with a unified
+scoring system that uses **7 modular component scores** and **phase-based dynamic weighting**.
 
 ### Key Principles
+
 - **Forward-looking**: Scores future opportunity, not past draft capital
 - **Transaction-driven**: Roster changes (departures, signings, trades, draft picks) are primary signals
 - **Explainable**: Every score includes text explanations and transaction summaries
@@ -78,13 +80,13 @@ data_building/breakout_engine/
 
 The engine automatically detects the current NFL calendar phase and adjusts component weights:
 
-| Phase | Dates | Key Characteristics |
-|-------|-------|---------------------|
-| **Offseason** | Jan-Feb | Focus on opportunity_opened (25%) and competition_removed (20%) |
-| **Post-Free Agency** | Mar-Apr | Competition_added_penalty increases (15%) |
-| **Post-Draft** | May-Jul | Highest competition_added_penalty weight (20%) |
-| **Preseason** | Aug-early Sep | Role_trajectory begins to matter (20%) |
-| **In-Season** | Sep-Jan | Role_trajectory dominates (40%) |
+| Phase                | Dates         | Key Characteristics                                             |
+|----------------------|---------------|-----------------------------------------------------------------|
+| **Offseason**        | Jan-Feb       | Focus on opportunity_opened (25%) and competition_removed (20%) |
+| **Post-Free Agency** | Mar-Apr       | Competition_added_penalty increases (15%)                       |
+| **Post-Draft**       | May-Jul       | Highest competition_added_penalty weight (20%)                  |
+| **Preseason**        | Aug-early Sep | Role_trajectory begins to matter (20%)                          |
+| **In-Season**        | Sep-Jan       | Role_trajectory dominates (40%)                                 |
 
 ---
 
@@ -95,6 +97,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: Total opportunity vacated from team/position
 
 **Calculation**:
+
 - **WR/TE**: Score based on vacated targets (150 targets = max score 100)
 - **RB**: Weighted sum of carries (primary, 70 pts max) + targets (secondary, 30 pts max)
 - **QB**: Binary - starter left or not (70%+ snap share = 100)
@@ -107,6 +110,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: Specific high-value competitors who departed
 
 **Calculation**:
+
 - Identifies departed players who were ahead on depth chart
 - **High threat** (1.5x current player's usage): 40 pts max
 - **Medium threat** (1.0x current player's usage): 25 pts max
@@ -119,14 +123,15 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: New competition from signings/draft (negative score)
 
 **Calculation**:
+
 - **Draft picks**:
-  - Round 1: -30 pts
-  - Round 2: -20 pts
-  - Round 3: -10 pts
-  - Round 4+: -5 pts
+    - Round 1: -30 pts
+    - Round 2: -20 pts
+    - Round 3: -10 pts
+    - Round 4+: -5 pts
 - **Free agent signings**: Based on previous season usage
-  - 80+ targets last season: -25 pts
-  - 50-80 targets: -15 pts
+    - 80+ targets last season: -25 pts
+    - 50-80 targets: -15 pts
 - **Cap**: Maximum penalty of -50
 
 **Dual Impact**: Draft picks hurt existing players AND boost the rookie's own player_readiness_score
@@ -136,6 +141,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: Quality of offensive environment
 
 **Calculation** (4 sub-components):
+
 1. **Pace** (0-30 pts): Total plays per game (95+ plays = max)
 2. **Pass rate** (0-30 pts): Position-dependent (WR/TE prefer high, RB balanced)
 3. **Offensive ranking** (0-25 pts): Total yards per game (400+ = elite)
@@ -148,6 +154,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: Player's ability to capitalize on opportunity
 
 **Calculation** (4 sub-components):
+
 1. **Age/experience** (0-30 pts): Year 2 = 30 (prime breakout window), Year 3 = 25
 2. **Efficiency** (0-35 pts): YPT/YPC/catch rate from previous season
 3. **Draft capital boost** (0-35 pts): For rookies - Round 1 = 35, Round 2 = 25
@@ -160,6 +167,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: Recent usage trends (in-season only)
 
 **Calculation** (14-day lookback):
+
 1. **Snap share trend** (0-30 pts): 30%+ increase = max
 2. **Opportunity share trend** (0-35 pts): 25%+ increase = max
 3. **Red zone usage trend** (0-20 pts): 30%+ increase = max
@@ -172,6 +180,7 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 **What it measures**: How certain is this projection
 
 **Calculation**:
+
 1. **Sample size** (0-40 pts): Games played × touches
 2. **Data completeness** (0-25 pts): Have efficiency data + advanced metrics?
 3. **Usage consistency** (0-20 pts): Low variance = more predictable
@@ -223,18 +232,21 @@ The engine automatically detects the current NFL calendar phase and adjusts comp
 Hybrid format combining depth chart position with specializations:
 
 **WR/TE Examples**:
+
 - "WR1"
 - "WR2 + Red Zone Target"
 - "WR3 + Slot"
 - "TE1 + Goal Line"
 
 **RB Examples**:
+
 - "RB1 (Bellcow)"
 - "RB2 + Passing Down"
 - "RB2 + 3-Down Back"
 - "Committee Back"
 
 **QB Examples**:
+
 - "QB1 (Locked Starter)"
 - "QB1"
 - "Backup QB"
@@ -291,7 +303,7 @@ CREATE TABLE breakout_opportunity_scores (
 ### Supporting Tables
 
 - `roster_changes` - Player movements (departures, signings, trades, draft picks)
-  - Enhanced with `draft_metadata` JSONB column
+    - Enhanced with `draft_metadata` JSONB column
 - `vacated_opportunity` - Aggregated opportunity per team/position
 - `player_advanced_metrics` - Daily efficiency/usage snapshots
 
@@ -304,6 +316,7 @@ CREATE TABLE breakout_opportunity_scores (
 Get breakout candidates using unified engine.
 
 **Query Parameters**:
+
 - `season` (int): Season year (default: current year)
 - `min_score` (float): Minimum breakout score (default: 30)
 - `position` (string): Filter by position (QB/RB/WR/TE)
@@ -316,10 +329,12 @@ Get breakout candidates using unified engine.
 Calculate and save breakout scores for all players (admin endpoint).
 
 **Query Parameters**:
+
 - `season` (int): Season year
 - `min_score` (float): Minimum score to save (default: 30)
 
 **Response**:
+
 ```json
 {
     "success": true,
@@ -335,6 +350,7 @@ Calculate and save breakout scores for all players (admin endpoint).
 Backwards-compatible endpoint. Now uses unified engine by default.
 
 **Query Parameters**:
+
 - `season` (int): Season year
 - `min_score` (float): Minimum breakout score (default: 30)
 - `position` (string): Filter by position
@@ -403,14 +419,14 @@ populate_draft_picks(season=2025, draft_data=draft_data)
 ### Dual Impact of Draft Picks
 
 1. **Existing Players**: Get `competition_added_penalty`
-   - Round 1 pick at WR: Existing WRs lose 30 points
-   - Round 2 pick: -20 points
-   - Round 3 pick: -10 points
+    - Round 1 pick at WR: Existing WRs lose 30 points
+    - Round 2 pick: -20 points
+    - Round 3 pick: -10 points
 
 2. **Drafted Rookie**: Gets boosted `player_readiness_score`
-   - Round 1: +35 points
-   - Round 2: +25 points
-   - Round 3: +15 points
+    - Round 1: +35 points
+    - Round 2: +25 points
+    - Round 3: +15 points
 
 ---
 
@@ -425,6 +441,7 @@ python test_breakout_engine.py
 ```
 
 Tests:
+
 - ✓ Phase detection (5 test cases)
 - ✓ Component score calculations
 - ✓ Engine initialization
@@ -511,6 +528,7 @@ RuntimeError: DATABASE_URL is not set.
 ```
 
 **Solution**: Set DATABASE_URL environment variable:
+
 ```bash
 export DATABASE_URL="postgresql://user:password@host:5432/database"
 ```

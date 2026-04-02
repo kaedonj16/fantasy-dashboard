@@ -1,15 +1,10 @@
 from datetime import date
 
-from data_building.breakout_engine.calculate_breakouts_with_real_data import apply_candidate_filter, build_usage_maps
 from dashboard_services.api import get_nfl_state
-from dashboard_services.service import age_from_bday
 from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse
-from data_building.external_data.player_history import usage_rows_json_path_for_season
-from utils.utils import read_json
-from data_building.breakout_workflow import run_modular_breakout_workflow
 
 
-def build_daily_advanced_metrics(season: int, week: int):
+def build_daily_advanced_metrics():
     """
     Calculate and save advanced efficiency metrics for all players.
     """
@@ -67,11 +62,11 @@ def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
     Calculate breakout candidates using new modular workflow.
     """
     from data_building.breakout_workflow import run_modular_breakout_workflow
-    
+
     season_type = str(nfl_state.get("season_type", "")).lower().strip()
     should_run = (
-        season_type in ["off", "pre"] or
-        (season_type == "regular" and week <= 9)
+            season_type in ["off", "pre"] or
+            (season_type == "regular" and week <= 9)
     )
 
     if not should_run:
@@ -79,7 +74,7 @@ def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
         return
 
     print(f"[cron] Starting breakout calculations for season={season}, week={week}")
-    
+
     # Clean up previous day's data for fresh calculations
     from dashboard_services.db import get_conn
     with get_conn() as conn:
@@ -87,30 +82,30 @@ def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
             DELETE FROM breakout_opportunity_scores 
             WHERE season = %s AND as_of_date = CURRENT_DATE
         """, (season,)).rowcount
-        
+
         deleted_projections = conn.execute("""
             DELETE FROM projected_opportunity 
             WHERE season = %s AND calculated_at::date = CURRENT_DATE
         """, (season,)).rowcount
-        
+
         deleted_changes = conn.execute("""
             DELETE FROM roster_changes 
             WHERE season = %s AND created_at::date = CURRENT_DATE
         """, (season,)).rowcount
-        
+
         deleted_vacated = conn.execute("""
             DELETE FROM vacated_opportunity 
             WHERE season = %s AND calculated_at::date = CURRENT_DATE
         """, (season,)).rowcount
-        
+
         conn.commit()
         total_cleaned = deleted_scores + deleted_projections + deleted_changes + deleted_vacated
         if total_cleaned > 0:
             print(f"[cron] Cleaned {total_cleaned} previous records")
-    
+
     # Run the modular workflow
     success = run_modular_breakout_workflow(season, week, nfl_state)
-    
+
     if success:
         print(f"[cron] Breakout workflow completed successfully")
     else:
@@ -126,8 +121,8 @@ def main():
 
     try:
         build_daily_data(season, week)
-        build_daily_advanced_metrics(season, week)
-        
+        build_daily_advanced_metrics()
+
         from data_building.build_daily_value_table import build_daily_model_values
         build_daily_model_values()
 

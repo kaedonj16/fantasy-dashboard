@@ -40,7 +40,8 @@ def render_awards_section(awards: dict) -> str:
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
         clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
-        rows.append(acard("Highest Points By a Player", f"<span{clickable_attrs}>{n}</span> — Week {w}: <strong>{pts} points</strong>"))
+        rows.append(acard("Highest Points By a Player",
+                          f"<span{clickable_attrs}>{n}</span> — Week {w}: <strong>{pts} points</strong>"))
 
     return f"""
     <div class="card awards-card" data-section="awards">
