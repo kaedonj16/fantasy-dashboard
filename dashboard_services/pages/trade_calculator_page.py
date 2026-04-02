@@ -2,15 +2,14 @@ from typing import Optional
 
 SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
-
 SUPPORTED_SCORING_FORMATS = [("ppr", "PPR"), ("half", "Half"), ("std", "STD")]
 
 
 def build_trade_calculator_body(
-    league_id: Optional[str],
-    season: Optional[int],
-    num_teams: Optional[int] = None,
-    scoring_format: Optional[str] = None,
+        league_id: Optional[str],
+        season: Optional[int],
+        num_teams: Optional[int] = None,
+        scoring_format: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""

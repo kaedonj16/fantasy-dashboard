@@ -116,6 +116,7 @@ def enrich_teams_index_with_offense(season: int):
 
     _save_teams_index_raw(teams_index)
 
+
 def _to_float(value) -> float:
     """Helper: safely convert Tank01 string/None -> float."""
     if value is None:

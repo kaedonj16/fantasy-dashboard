@@ -608,9 +608,9 @@ def _apply_qb_market_compression(
             base = 0.42
             elite_boost = 0.22 * elite_soft
             ceiling_boost = 0.05 * ceiling_soft
-            rushing_boost = 0.20 * rush_norm      # raised: rushing matters more
+            rushing_boost = 0.20 * rush_norm  # raised: rushing matters more
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.82)          # raised cap to reward top mobile QBs
+            qb_keep = min(qb_keep, 0.82)  # raised cap to reward top mobile QBs
         elif league_type == "Superflex":
             # QBs are boosted relative to 1QB, but the multipliers are calibrated
             # so that only the very best QBs (Allen) clearly outrank elite WRs/RBs.
@@ -626,16 +626,16 @@ def _apply_qb_market_compression(
             # proven_bonus rewards historically elite QBs (career_best>=23 tier).
             proven_elite_val = (per_pid.get(pid, {}) or {}).get("proven_elite", 0.0)
             base = 1.00
-            elite_boost = 0.70 * (elite ** 2.0)    # ^2 concentrates on Allen tier
+            elite_boost = 0.70 * (elite ** 2.0)  # ^2 concentrates on Allen tier
             proven_bonus = 0.40 * proven_elite_val  # Allen/Lamar who have 23+ career best
-            youth_boost = 0.80 * youth_upside       # young unproven QBs (Maye/Daniels)
-            rushing_boost = 0.20 * rush_norm        # mobile QB premium (Lamar/Allen)
+            youth_boost = 0.80 * youth_upside  # young unproven QBs (Maye/Daniels)
+            rushing_boost = 0.20 * rush_norm  # mobile QB premium (Lamar/Allen)
             qb_keep = base + elite_boost + proven_bonus + youth_boost + rushing_boost
             qb_keep = min(qb_keep, 1.65)
         elif league_type == "2QB":
             base = 1.10
             elite_boost = 0.12 * elite_soft
-            rushing_boost = 0.18 * rush_norm      # raised to match importance
+            rushing_boost = 0.18 * rush_norm  # raised to match importance
             qb_keep = base + elite_boost + rushing_boost
             qb_keep = min(qb_keep, 1.38)
         else:
@@ -871,8 +871,8 @@ def build_value_table_for_usage(
 
         denom = max(current_weight + hist_weight, 1e-9)
         blended_prod_raw = (
-                               current_weight * current_ppg +
-                               hist_weight * weighted_ppg_3yr
+                                   current_weight * current_ppg +
+                                   hist_weight * weighted_ppg_3yr
                            ) / denom
 
         # Opponent-adjusted production: discount stats accumulated against soft defenses,

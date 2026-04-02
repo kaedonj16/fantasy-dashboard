@@ -12,7 +12,6 @@ from typing import Literal, Optional, List, Dict
 
 from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
 
-
 # ---------------------------
 # Paths / constants
 # ---------------------------

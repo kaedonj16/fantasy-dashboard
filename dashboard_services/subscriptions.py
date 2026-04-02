@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+
 from dashboard_services.db import get_conn
 
 
@@ -73,7 +74,8 @@ def has_premium_access(user_id: Optional[str], league_id: Optional[str], platfor
         return False
 
 
-def get_subscription_info(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> Dict[str, Any]:
+def get_subscription_info(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> Dict[
+    str, Any]:
     """
     Get detailed subscription information for a user/league.
 
@@ -144,12 +146,12 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
 
 
 def create_league_subscription(
-    league_id: str,
-    subscriber_user_id: str,
-    expires_at: datetime,
-    platform: str = "sleeper",
-    stripe_subscription_id: Optional[str] = None,
-    stripe_customer_id: Optional[str] = None
+        league_id: str,
+        subscriber_user_id: str,
+        expires_at: datetime,
+        platform: str = "sleeper",
+        stripe_subscription_id: Optional[str] = None,
+        stripe_customer_id: Optional[str] = None
 ) -> bool:
     """Create or update a league subscription."""
     try:
@@ -180,11 +182,11 @@ def create_league_subscription(
 
 
 def create_user_subscription(
-    user_id: str,
-    expires_at: datetime,
-    platform: str = "sleeper",
-    stripe_subscription_id: Optional[str] = None,
-    stripe_customer_id: Optional[str] = None
+        user_id: str,
+        expires_at: datetime,
+        platform: str = "sleeper",
+        stripe_subscription_id: Optional[str] = None,
+        stripe_customer_id: Optional[str] = None
 ) -> bool:
     """Create or update a user subscription."""
     try:

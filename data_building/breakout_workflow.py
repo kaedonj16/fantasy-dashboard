@@ -10,17 +10,17 @@ This module implements the new 4-step workflow:
 Each step is independent, testable, and builds on stored database results.
 """
 
+import json
 from datetime import date
 from typing import Dict, List, Tuple, Any
-import json
 
 from dashboard_services.db import get_conn
 from dashboard_services.service import age_from_bday
-from data_building.breakout_engine.calculate_breakouts_with_real_data import load_season_aware_usage_data
-from data_building.populate_roster_changes import detect_roster_changes_between_seasons, load_usage_table_for_season
-from data_building.offseason_opportunity import track_roster_change
 from data_building.breakout_engine import BreakoutEngine
-from utils.utils import load_players_index, load_model_value_table
+from data_building.breakout_engine.calculate_breakouts_with_real_data import load_season_aware_usage_data
+from data_building.offseason_opportunity import track_roster_change
+from data_building.populate_roster_changes import detect_roster_changes_between_seasons, load_usage_table_for_season
+from utils.utils import load_players_index
 
 
 def detect_and_store_roster_changes(season: int) -> int:
@@ -34,14 +34,14 @@ def detect_and_store_roster_changes(season: int) -> int:
         Number of roster changes stored
     """
     print(f"[workflow] 🔍 Step 1: Detecting roster changes for {season}")
-    
+
     # Detect changes between seasons
     changes = detect_roster_changes_between_seasons(season)
-    
+
     if not changes:
         print(f"[workflow] No roster changes detected for {season}")
         return 0
-    
+
     # Store changes to database
     stored_count = 0
     for change in changes:
@@ -60,7 +60,7 @@ def detect_and_store_roster_changes(season: int) -> int:
             stored_count += 1
         except Exception as e:
             print(f"[workflow] Error storing roster change for {change.get('player_name', 'unknown')}: {e}")
-    
+
     print(f"[workflow] 📝 Stored {stored_count} roster changes to database")
     return stored_count
 
@@ -76,7 +76,7 @@ def calculate_and_store_vacated_opportunity(season: int) -> int:
         Number of team/position combinations with vacated opportunity
     """
     print(f"[workflow] 🧹 Step 2: Calculating vacated opportunity from database")
-    
+
     with get_conn() as conn:
         # Get all departures by team/position
         departures = conn.execute("""
@@ -102,11 +102,11 @@ def calculate_and_store_vacated_opportunity(season: int) -> int:
             GROUP BY old_team, position
             HAVING SUM(last_season_targets) > 0 OR SUM(last_season_carries) > 0
         """, (season,)).fetchall()
-        
+
         if not departures:
             print(f"[workflow] No vacated opportunity found for {season}")
             return 0
-        
+
         # Store vacated opportunity
         stored_count = 0
         for departure in departures:
@@ -134,8 +134,9 @@ def calculate_and_store_vacated_opportunity(season: int) -> int:
                 ))
                 stored_count += 1
             except Exception as e:
-                print(f"[workflow] Error storing vacated opportunity for {departure.get('old_team', 'unknown')} {departure.get('position', 'unknown')}: {e}")
-        
+                print(
+                    f"[workflow] Error storing vacated opportunity for {departure.get('old_team', 'unknown')} {departure.get('position', 'unknown')}: {e}")
+
         conn.commit()
         print(f"[workflow] 🧹 Stored vacated opportunity for {stored_count} team/position combinations")
         return stored_count
@@ -153,25 +154,26 @@ def calculate_and_store_breakout_scores(season: int, week: int, nfl_state: dict)
         Number of breakout scores calculated and stored
     """
     print(f"[workflow] 🎯 Step 3: Calculating breakout scores from database")
-    
+
     # Initialize breakout engine
     engine = BreakoutEngine(season=season, as_of_date=date.today())
     season_type = str(nfl_state.get("season_type", "off"))
-    
+
     # Load players and usage data (same as before)
     players_index = load_players_index() or {}
-    from data_building.breakout_engine.calculate_breakouts_with_real_data import apply_candidate_filter, build_usage_maps
-    
+    from data_building.breakout_engine.calculate_breakouts_with_real_data import apply_candidate_filter, \
+        build_usage_maps
+
     # Load season-aware usage data
     usage_table = load_season_aware_usage_data(season, week, season_type)
     usage_by_id, age_by_id = build_usage_maps(usage_table)
-    
+
     # Build all players list
     all_players = []
     for player_id, player_data in players_index.items():
         pos = player_data.get('pos')
         team = player_data.get('team')
-        
+
         if pos in ["QB", "RB", "WR", "TE"] and team:
             age = age_from_bday(player_data.get("bDay"))
 
@@ -190,14 +192,14 @@ def calculate_and_store_breakout_scores(season: int, week: int, nfl_state: dict)
     # Apply candidate filters
     filtered_candidates, filter_summary = apply_candidate_filter(all_players, usage_by_id)
     print(f"[workflow] Candidate filtering: {filter_summary}")
-    
+
     # Calculate breakout scores
     candidates = engine.calculate_breakout_scores(filtered_candidates, min_score=0)
-    
+
     # Store to database
     saved_count = engine.save_scores(candidates)
     high_score_count = sum(1 for c in candidates if getattr(c, 'breakout_opportunity_score', 0) >= 40)
-    
+
     print(f"[workflow] 🎯 Stored {saved_count} breakout scores ({high_score_count} high-score candidates)")
     return saved_count
 
@@ -213,7 +215,7 @@ def calculate_and_store_projections(season: int) -> int:
         Number of projections calculated and stored
     """
     print(f"[workflow] 📈 Step 4: Calculating projections from database")
-    
+
     # Load data from database
     with get_conn() as conn:
         # Get vacated opportunity
@@ -224,70 +226,72 @@ def calculate_and_store_projections(season: int) -> int:
             FROM vacated_opportunity 
             WHERE season = %s
         """, (season,)).fetchall()
-        
+
         # Get breakout scores
         breakout_data = conn.execute("""
             SELECT player_id, breakout_opportunity_score, team, position
             FROM breakout_opportunity_scores 
             WHERE season = %s
         """, (season,)).fetchall()
-    
+
     if not vacated_data:
         print(f"[workflow] No vacated opportunity found for projections")
         return 0
-    
+
     # Build lookup tables
     vacated_by_team_pos = {(v['team'], v['position']): v for v in vacated_data}
     breakout_by_player = {b['player_id']: b for b in breakout_data}
-    
+
     # Load player data for projections
 
     prev_season = season - 1
     usage_table = load_usage_table_for_season(prev_season) or []
     usage_by_player = {str(p.get('player_id') or p.get('id', '')): p for p in usage_table}
-    
+
     # Calculate projections for high-score breakout candidates
     projections = []
     for breakout in breakout_data:
         if breakout['breakout_opportunity_score'] < 30:  # Only significant opportunities
             continue
-            
+
         player_id = breakout['player_id']
         team = breakout['team']
         position = breakout['position']
-        
+
         # Get player's previous usage
         player_usage = usage_by_player.get(player_id, {})
         usage = player_usage.get('usage', {})
         games = usage.get('games', 1) or 1
-        
-        prev_targets = int(usage.get('targets') or usage.get('total_targets') or (usage.get('avg_targets', 0) * games) or 0)
+
+        prev_targets = int(
+            usage.get('targets') or usage.get('total_targets') or (usage.get('avg_targets', 0) * games) or 0)
         prev_carries = int(usage.get('carries') or (usage.get('avg_carries', 0) * games) or 0)
-        prev_snap_share = (usage.get('snap_pct') or usage.get('avg_off_snap_pct') or 0) / 100 if (usage.get('snap_pct') or usage.get('avg_off_snap_pct')) else 0
-        
+        prev_snap_share = (usage.get('snap_pct') or usage.get('avg_off_snap_pct') or 0) / 100 if (
+                    usage.get('snap_pct') or usage.get('avg_off_snap_pct')) else 0
+
         # Calculate opportunity increases
         vacated = vacated_by_team_pos.get((team, position), {})
         targets_vacated = float(vacated.get('total_targets_vacated', 0))
         carries_vacated = float(vacated.get('total_carries_vacated', 0))
-        
+
         # Simple projection: give them a share of vacated opportunity based on breakout score
         breakout_score = float(breakout['breakout_opportunity_score'])
         opportunity_share = min(breakout_score / 100, 1.0)  # Cap at 100%
-        
+
         target_increase = int(targets_vacated * opportunity_share * 0.5)  # Conservative estimate
         carry_increase = int(carries_vacated * opportunity_share * 0.5)
-        
+
         projected_targets = prev_targets + target_increase
         projected_carries = prev_carries + carry_increase
         projected_snap_share = min(prev_snap_share + (opportunity_share * 0.1), 1.0)
-        
+
         # Get player name
         player_name = "Unknown"
         for p in usage_table:
             if str(p.get('player_id') or p.get('id', '')) == player_id:
                 player_name = p.get('player_name') or p.get('name', 'Unknown')
                 break
-        
+
         projections.append({
             "player_id": player_id,
             "player_name": player_name,
@@ -315,7 +319,7 @@ def calculate_and_store_projections(season: int) -> int:
                 "opportunity_share": opportunity_share
             })
         })
-    
+
     # Store projections
     if projections:
         with get_conn() as conn:
@@ -358,7 +362,7 @@ def calculate_and_store_projections(season: int) -> int:
                     proj["breakout_score"], proj["projection_factors"]
                 ))
             conn.commit()
-    
+
     print(f"[workflow] 📈 Stored {len(projections)} opportunity projections")
     return len(projections)
 
@@ -375,28 +379,28 @@ def run_modular_breakout_workflow(season: int, week: int, state: dict) -> bool:
         True if workflow completed successfully, False otherwise
     """
     print(f"[workflow] 🚀 Starting modular breakout workflow for season={season}, week={week}")
-    
+
     try:
         # Step 1: Detect and store roster changes
         changes_count = detect_and_store_roster_changes(season)
-        
+
         # Step 2: Calculate and store vacated opportunity
         vacated_count = calculate_and_store_vacated_opportunity(season)
-        
+
         # Step 3: Calculate and store breakout scores
         scores_count = calculate_and_store_breakout_scores(season, week, state)
-        
+
         # Step 4: Calculate and store projections
         proj_count = calculate_and_store_projections(season)
-        
+
         print(f"[workflow] ✅ Workflow completed:")
         print(f"[workflow]   - {changes_count} roster changes")
         print(f"[workflow]   - {vacated_count} vacated opportunity groups")
         print(f"[workflow]   - {scores_count} breakout scores")
         print(f"[workflow]   - {proj_count} projections")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"[workflow] ❌ Workflow failed: {e}")
         import traceback

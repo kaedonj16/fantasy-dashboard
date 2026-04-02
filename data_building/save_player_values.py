@@ -5,9 +5,9 @@ This module provides functions to persist player values to PostgreSQL,
 enabling historical trend analysis and value change tracking over time.
 """
 
+import os
 from datetime import date
 from typing import List, Dict, Any
-import os
 
 
 def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: date = None) -> int:

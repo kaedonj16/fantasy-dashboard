@@ -7,6 +7,7 @@ and provides appropriate component score weights for each phase.
 
 from datetime import date
 from typing import Dict
+
 from .config import PHASE_WEIGHTS
 
 
@@ -26,24 +27,24 @@ class PhaseDetector:
     # These are approximate and can be adjusted based on actual NFL calendar
     PHASE_BOUNDARIES = {
         'offseason': {
-            'start': (1, 1),    # January 1
-            'end': (2, 28)      # February 28
+            'start': (1, 1),  # January 1
+            'end': (2, 28)  # February 28
         },
         'post_free_agency': {
-            'start': (3, 1),    # March 1
-            'end': (4, 24)      # April 24 (day before typical draft)
+            'start': (3, 1),  # March 1
+            'end': (4, 24)  # April 24 (day before typical draft)
         },
         'post_draft': {
-            'start': (4, 25),   # April 25 (day after draft typically ends)
-            'end': (7, 31)      # July 31
+            'start': (4, 25),  # April 25 (day after draft typically ends)
+            'end': (7, 31)  # July 31
         },
         'preseason': {
-            'start': (8, 1),    # August 1
-            'end': (9, 4)       # September 4 (before season starts)
+            'start': (8, 1),  # August 1
+            'end': (9, 4)  # September 4 (before season starts)
         },
         'in_season': {
-            'start': (9, 5),    # September 5
-            'end': (12, 31)     # December 31 (wraps to January)
+            'start': (9, 5),  # September 5
+            'end': (12, 31)  # December 31 (wraps to January)
         }
     }
 
@@ -115,9 +116,9 @@ class PhaseDetector:
 
     @classmethod
     def calculate_aggregate_score(
-        cls,
-        component_scores: Dict[str, float],
-        phase: str
+            cls,
+            component_scores: Dict[str, float],
+            phase: str
     ) -> float:
         """
         Calculate weighted aggregate breakout score based on phase.
@@ -187,8 +188,8 @@ def get_phase_weights(phase: str) -> Dict[str, float]:
 
 
 def calculate_aggregate_score(
-    component_scores: Dict[str, float],
-    phase: str
+        component_scores: Dict[str, float],
+        phase: str
 ) -> float:
     """
     Convenience function to calculate aggregate score.

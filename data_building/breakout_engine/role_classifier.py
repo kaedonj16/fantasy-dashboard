@@ -5,6 +5,7 @@ Generates hybrid role tags like "WR2 + Red Zone Target" or "RB1 (Bellcow)".
 """
 
 from typing import Dict
+
 from .config import *
 
 
@@ -16,10 +17,10 @@ class RoleClassifier:
     """
 
     def classify_role(
-        self,
-        position: str,
-        projected_usage: Dict,
-        component_details: Dict
+            self,
+            position: str,
+            projected_usage: Dict,
+            component_details: Dict
     ) -> str:
         """
         Generate projected role tag.
@@ -42,10 +43,10 @@ class RoleClassifier:
             return "Unknown Position"
 
     def _classify_receiver_role(
-        self,
-        position: str,
-        projected_usage: Dict,
-        component_details: Dict
+            self,
+            position: str,
+            projected_usage: Dict,
+            component_details: Dict
     ) -> str:
         """
         Classify WR/TE role.
@@ -88,9 +89,9 @@ class RoleClassifier:
             return base
 
     def _classify_rb_role(
-        self,
-        projected_usage: Dict,
-        component_details: Dict
+            self,
+            projected_usage: Dict,
+            component_details: Dict
     ) -> str:
         """
         Classify RB role.
@@ -131,8 +132,8 @@ class RoleClassifier:
             return base
 
     def _classify_qb_role(
-        self,
-        projected_usage: Dict
+            self,
+            projected_usage: Dict
     ) -> str:
         """
         Classify QB role.

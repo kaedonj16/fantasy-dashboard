@@ -5,11 +5,13 @@ Analyzes players_index to find players who changed teams,
 then enriches with usage stats from previous season.
 """
 
-from typing import Dict, List, Optional
-from datetime import date, datetime
-import os
 import json
-from data_building.offseason_opportunity import track_roster_change, calculate_vacated_opportunity, project_opportunity_redistribution
+import os
+from datetime import date, datetime
+from typing import Dict, List, Optional
+
+from data_building.offseason_opportunity import track_roster_change, calculate_vacated_opportunity, \
+    project_opportunity_redistribution
 from utils.utils import load_players_index, DATA_DIR
 
 
@@ -63,8 +65,8 @@ def load_usage_table_for_season(season: int) -> List[Dict]:
 
 
 def detect_roster_changes_between_seasons(
-    current_season: int,
-    compare_to_season: Optional[int] = None
+        current_season: int,
+        compare_to_season: Optional[int] = None
 ) -> List[Dict]:
     """
     Detect roster changes by comparing current player teams to previous season.
@@ -182,9 +184,9 @@ def populate_offseason_data(season: int):
     Args:
         season: Season to populate offseason data for
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"POPULATING OFFSEASON DATA FOR {season}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Step 1: Detect roster changes
     print("STEP 1: Detecting roster changes...")
@@ -213,18 +215,18 @@ def populate_offseason_data(season: int):
     print("\nSTEP 4: Projecting opportunity redistribution (top 600 players only)...")
     project_opportunity_redistribution(season, top_n_players=600)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"✓ OFFSEASON DATA POPULATION COMPLETE")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 def manual_add_roster_change(
-    player_name: str,
-    old_team: str,
-    new_team: Optional[str],
-    change_type: str,
-    season: int,
-    change_date: Optional[date] = None
+        player_name: str,
+        old_team: str,
+        new_team: Optional[str],
+        change_type: str,
+        season: int,
+        change_date: Optional[date] = None
 ):
     """
     Manually add a roster change (for high-profile moves not auto-detected).
@@ -246,7 +248,7 @@ def manual_add_roster_change(
         season: Season year
         change_date: Date of change (defaults to March 1 of season)
     """
-    from utils.utils import load_players_index, load_usage_table
+    from utils.utils import load_players_index
 
     # Find player by name
     players_index = load_players_index() or {}
@@ -339,9 +341,9 @@ def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
     """
     from utils.utils import load_players_index
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"POPULATING DRAFT PICKS FOR {season}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if draft_data is None:
         # TODO: Fetch from Sleeper API or other source
@@ -392,9 +394,9 @@ def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
         draft_count += 1
         print(f"[populate_draft_picks] ✓ Added {player_name} to {team} (Round {round_num}, Pick {pick_num})")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"✓ DRAFT PICKS POPULATION COMPLETE: {draft_count} picks added")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":
@@ -409,6 +411,7 @@ if __name__ == "__main__":
 
     # Initialize database first
     from data_building.offseason_opportunity import init_offseason_opportunity_db
+
     init_offseason_opportunity_db()
 
     # Populate offseason data

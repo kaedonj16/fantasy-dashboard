@@ -244,7 +244,8 @@ def load_advanced_metrics_df() -> pd.DataFrame:
             days_old = (today - metrics_date).days
 
             if days_old > 30:
-                print(f"[value_model] Using advanced metrics from {latest_date} ({days_old} days old - likely previous season)")
+                print(
+                    f"[value_model] Using advanced metrics from {latest_date} ({days_old} days old - likely previous season)")
             else:
                 print(f"[value_model] Loaded {len(df)} players with current advanced metrics")
 

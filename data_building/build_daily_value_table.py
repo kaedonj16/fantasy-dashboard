@@ -4,22 +4,21 @@ from pathlib import Path
 
 from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
 from dashboard_services.api import get_nfl_state
+from data_building.external_data.sleeper_usage import write_usage_table_snapshot
+from data_building.external_data.team_enrichment import (
+    enrich_all_team_info,
+    enrich_teams_index_with_rushing,
+)
 from data_building.player_value_history import record_model_value_snapshot
+from data_building.value_exports import export_engine_values
+from data_building.value_model_training import rewrite_value_table_with_model
 from utils.utils import (
     path_teams_index,
     load_teams_index,
     load_model_value_table,
     get_live_game_ids_for_today,
     load_week_schedule,
-    build_and_save_week_stats_for_league, load_usage_table, load_engine_table,
-)
-from data_building.external_data.sleeper_usage import write_usage_table_snapshot
-from data_building.external_data.team_enrichment import (
-    enrich_all_team_info,
-    enrich_teams_index_with_rushing,
-)
-from data_building.value_exports import export_engine_values
-from data_building.value_model_training import rewrite_value_table_with_model
+    build_and_save_week_stats_for_league, )
 
 
 def _safe_float(value):

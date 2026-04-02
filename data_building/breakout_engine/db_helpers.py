@@ -9,16 +9,16 @@ Provides functions to fetch data needed for component score calculations:
 - Team statistics
 """
 
-from typing import Dict, List, Optional
-from datetime import date, timedelta
-import os
 import json
+import os
+from datetime import date, timedelta
+from typing import Dict, List, Optional
+
 from dashboard_services.db import get_conn
 from .config import (
     ROSTER_CHANGES_TABLE,
     VACATED_OPPORTUNITY_TABLE,
     PLAYER_ADVANCED_METRICS_TABLE,
-    PLAYER_VALUES_TABLE,
     BREAKOUT_SCORES_TABLE
 )
 
@@ -70,9 +70,9 @@ def get_vacated_opportunity(team: str, position: str, season: int) -> Optional[D
 
 
 def get_departures_by_team_position(
-    team: str,
-    position: str,
-    season: int
+        team: str,
+        position: str,
+        season: int
 ) -> List[Dict]:
     """
     Get all player departures for a team/position/season.
@@ -117,9 +117,9 @@ def get_departures_by_team_position(
 
 
 def get_arrivals_by_team_position(
-    team: str,
-    position: str,
-    season: int
+        team: str,
+        position: str,
+        season: int
 ) -> List[Dict]:
     """
     Get all player arrivals for a team/position/season.
@@ -171,9 +171,9 @@ def get_arrivals_by_team_position(
 
 
 def get_player_advanced_metrics(
-    player_id: str,
-    as_of_date: date,
-    lookback_days: int = 14
+        player_id: str,
+        as_of_date: date,
+        lookback_days: int = 14
 ) -> Optional[Dict]:
     """
     Get player's advanced metrics for a specific date or date range.
@@ -244,8 +244,8 @@ def get_player_advanced_metrics(
 
 
 def get_player_previous_season_usage(
-    player_id: str,
-    season: int
+        player_id: str,
+        season: int
 ) -> Optional[Dict]:
     """
     Get player's usage statistics from previous season.
@@ -379,7 +379,7 @@ def get_team_offensive_environment(team: str, season: int) -> Dict:
 
     # Get this team's stats
     team_pace = team_data.get('total_plays_pg', 0) or (
-        team_data.get('pass_att_pg', 33.0) + team_data.get('rush_att_pg', 25.0)
+            team_data.get('pass_att_pg', 33.0) + team_data.get('rush_att_pg', 25.0)
     )
     team_qb_rating = team_data.get('qb_rating', 0) or team_data.get('pass_rating', 90.0)
 
@@ -389,7 +389,7 @@ def get_team_offensive_environment(team: str, season: int) -> Dict:
 
     for tm_abbr, tm_data in teams_index.items():
         pace = tm_data.get('total_plays_pg', 0) or (
-            tm_data.get('pass_att_pg', 33.0) + tm_data.get('rush_att_pg', 25.0)
+                tm_data.get('pass_att_pg', 33.0) + tm_data.get('rush_att_pg', 25.0)
         )
         qb_rating = tm_data.get('qb_rating', 0) or tm_data.get('pass_rating', 90.0)
 
@@ -418,9 +418,9 @@ def get_team_offensive_environment(team: str, season: int) -> Dict:
 
 
 def get_previous_breakout_score(
-    player_id: str,
-    season: int,
-    as_of_date: date
+        player_id: str,
+        season: int,
+        as_of_date: date
 ) -> Optional[float]:
     """
     Get player's previous breakout score for trend comparison.

@@ -10,7 +10,9 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 """
 
 from __future__ import annotations
+
 from typing import Dict, Any, List, Optional
+
 from dashboard_services.db import get_conn
 
 
@@ -162,11 +164,11 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
 
 
 def calculate_role_score(
-    usage: Dict[str, float],
-    position: str,
-    receiving_metrics: Dict[str, Optional[float]],
-    rushing_metrics: Dict[str, Optional[float]],
-    passing_metrics: Dict[str, Optional[float]],
+        usage: Dict[str, float],
+        position: str,
+        receiving_metrics: Dict[str, Optional[float]],
+        rushing_metrics: Dict[str, Optional[float]],
+        passing_metrics: Dict[str, Optional[float]],
 ) -> Optional[float]:
     """
     Calculate a composite role score (0-100) indicating player's overall value.
@@ -202,12 +204,12 @@ def calculate_role_score(
         rz_usage = usage.get("rush_rz_att_pg", 0) + usage.get("rec_rz_tgt_pg", 0)
 
         score = (
-            (carries * 0.8) +
-            (targets * 1.2) +  # Pass-catching RBs more valuable
-            (ypc * 2) +
-            (ypt * 1.5) +
-            (rz_usage * 5) +
-            (snap_pct * 0.4)
+                (carries * 0.8) +
+                (targets * 1.2) +  # Pass-catching RBs more valuable
+                (ypc * 2) +
+                (ypt * 1.5) +
+                (rz_usage * 5) +
+                (snap_pct * 0.4)
         )
 
     elif position in ("WR", "TE"):
@@ -218,20 +220,20 @@ def calculate_role_score(
         rz_targets = usage.get("rec_rz_tgt_pg", 0) or 0
 
         score = (
-            (targets * 1.5) +
-            (ypt * 3) +
-            (catch_rate * 20) +
-            (rz_targets * 6) +
-            (snap_pct * 0.3)
+                (targets * 1.5) +
+                (ypt * 3) +
+                (catch_rate * 20) +
+                (rz_targets * 6) +
+                (snap_pct * 0.3)
         )
 
     return min(score, 100.0)  # Cap at 100
 
 
 def calculate_player_metrics(
-    player_id: str,
-    usage: Dict[str, float],
-    position: str,
+        player_id: str,
+        usage: Dict[str, float],
+        position: str,
 ) -> Dict[str, Any]:
     """
     Calculate all advanced metrics for a single player.
@@ -499,9 +501,9 @@ def get_year_over_year_metrics(conn, player_id: str, current_dt: "datetime") -> 
 
 
 def detect_breakout_candidates_legacy(
-    lookback_days: int = 14,
-    min_games: int = 2,
-    age_threshold: float = 26.0,
+        lookback_days: int = 14,
+        min_games: int = 2,
+        age_threshold: float = 26.0,
 ) -> List[Dict[str, Any]]:
     """
     LEGACY: Detect breakout candidates using multi-factor analysis.
@@ -723,10 +725,10 @@ def detect_breakout_candidates_legacy(
 
 
 def detect_breakout_candidates(
-    lookback_days: int = 14,
-    min_games: int = 2,
-    age_threshold: float = 26.0,
-    use_unified_engine: bool = True
+        lookback_days: int = 14,
+        min_games: int = 2,
+        age_threshold: float = 26.0,
+        use_unified_engine: bool = True
 ) -> List[Dict[str, Any]]:
     """
     Detect in-season breakout candidates.

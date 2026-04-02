@@ -6,6 +6,7 @@ Includes key reasons, directional trends, and contextual summaries.
 """
 
 from typing import Dict, Optional
+
 from .config import *
 
 
@@ -27,12 +28,12 @@ class ExplainabilityEngine:
     """
 
     def generate_key_reasons(
-        self,
-        player_name: str,
-        position: str,
-        component_scores: Dict[str, float],
-        component_details: Dict[str, Dict],
-        phase: str
+            self,
+            player_name: str,
+            position: str,
+            component_scores: Dict[str, float],
+            component_details: Dict[str, Dict],
+            phase: str
     ) -> str:
         """
         Generate concise bullet-point explanation of breakout score.
@@ -109,7 +110,8 @@ class ExplainabilityEngine:
                 reasons.append(f"High-volume offense ({total_plays_pg:.0f} plays/game)")
 
         # 5. Role trajectory (if score > threshold and in-season)
-        if phase == 'in_season' and component_scores.get('role_trajectory_score', 0) > EXPLAIN_ROLE_TRAJECTORY_THRESHOLD:
+        if phase == 'in_season' and component_scores.get('role_trajectory_score',
+                                                         0) > EXPLAIN_ROLE_TRAJECTORY_THRESHOLD:
             details = component_details.get('role_trajectory', {})
             snap_inc = details.get('snap_increase_pct')
             opp_inc = details.get('opp_increase_pct')
@@ -138,13 +140,13 @@ class ExplainabilityEngine:
             return "• Moderate breakout opportunity based on overall factors"
 
     def determine_directional_trend(
-        self,
-        player_id: str,
-        season: int,
-        as_of_date,
-        current_score: float,
-        role_trajectory_score: float,
-        phase: str
+            self,
+            player_id: str,
+            season: int,
+            as_of_date,
+            current_score: float,
+            role_trajectory_score: float,
+            phase: str
     ) -> str:
         """
         Determine if breakout opportunity is rising, falling, or stable.

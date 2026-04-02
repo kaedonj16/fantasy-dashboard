@@ -86,7 +86,6 @@ from dashboard_services.service import (
 from data_building.build_daily_value_table import build_daily_data
 from data_building.player_value_history import get_top_movers, init_value_history_db, get_player_value_history
 from utils.utils import (
-    bucket_for_slot,
     build_and_save_week_stats_for_league,
     build_status_for_week,
     build_teams_overview,
@@ -171,7 +170,7 @@ def get_team_full_name(abbreviation: str) -> str:
     """Map team abbreviation to full team name."""
     team_names = {
         "ARI": "Arizona Cardinals",
-        "ATL": "Atlanta Falcons", 
+        "ATL": "Atlanta Falcons",
         "BAL": "Baltimore Ravens",
         "BUF": "Buffalo Bills",
         "CAR": "Carolina Panthers",
@@ -205,6 +204,7 @@ def get_team_full_name(abbreviation: str) -> str:
         "WSH": "Washington Commanders"
     }
     return team_names.get(abbreviation.upper(), abbreviation)
+
 
 FORM_BODY = """
 <div class="home-page">
@@ -536,10 +536,10 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
             "viewer_user_id": user_id,
             "viewer_roster_id": None,
             "viewer_team_name": (
-                meta_u.get("team_name")
-                or matched_user.get("display_name")
-                or matched_user.get("username")
-                or "Unknown Team"
+                    meta_u.get("team_name")
+                    or matched_user.get("display_name")
+                    or matched_user.get("username")
+                    or "Unknown Team"
             ),
         }
 
@@ -571,13 +571,13 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dic
     """Get viewer session resolved for the current league instead of stale session data."""
     session_viewer = get_viewer_session()
     username = session_viewer.get("viewer_username")
-    
+
     if not username:
         return session_viewer
-    
+
     # Resolve the viewer for this specific league
     league_viewer = resolve_viewer_for_league(users, rosters, username)
-    
+
     if league_viewer:
         save_viewer_session(league_viewer)
         return league_viewer
@@ -1096,10 +1096,10 @@ def _build_roster_map(users: list, rosters: list) -> dict:
     """Map roster_id → display name, using metadata.team_name with user fallback."""
     user_fallback = {
         u["user_id"]: (
-            (u.get("metadata") or {}).get("team_name")
-            or u.get("display_name")
-            or u.get("username")
-            or str(u["user_id"])
+                (u.get("metadata") or {}).get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or str(u["user_id"])
         )
         for u in users
     }
@@ -1811,7 +1811,8 @@ def api_history_chart(platform: str, season: int, league_id: str):
         chart_df = _filtered_season_df(df_weekly)
 
         if chart_df.empty or not {"week", "owner", "points"}.issubset(chart_df.columns):
-            return jsonify({"error": "No data", "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
+            return jsonify({"error": "No data",
+                            "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
 
         # Build chart data for each team
         chart_data = []
@@ -5704,7 +5705,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         num_teams = ctx.get("total_rosters") or None
         rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
-        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
+        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
+                                           scoring_format=scoring_format)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
@@ -6344,7 +6346,8 @@ def api_refresh_page():
             num_teams = ctx.get("total_rosters") or None
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
-            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams, scoring_format=scoring_format)
+            body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
+                                                    scoring_format=scoring_format)
 
         else:
             body_html = ""
@@ -6391,19 +6394,19 @@ def get_model_value_table_cached():
 @app.route("/api/gm-memo", methods=["POST"])
 def api_gm_memo():
     payload = request.get_json(force=True)
-    
+
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
     platform = str(payload.get("platform") or "sleeper").strip()
     viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
-    
+
     if not league_id or not season or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
-    
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
-        
+
         return jsonify({
             "success": True,
             "gm_memo_html": gm_memo_html
@@ -6432,9 +6435,9 @@ def api_trade_eval():
     # Position-based multipliers for non-PPR formats.
     # RBs gain value in standard (rush-heavy); WRs/TEs lose value (fewer receptions).
     _SCORING_MULTS = {
-        "ppr":  {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
+        "ppr": {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
         "half": {"QB": 1.00, "RB": 1.06, "WR": 0.97, "TE": 0.94},
-        "std":  {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
+        "std": {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
     }
     scoring_mults = _SCORING_MULTS.get(scoring_format, _SCORING_MULTS["ppr"])
 
@@ -6726,7 +6729,8 @@ def api_value_movers():
     except (TypeError, ValueError):
         league_size = 10
 
-    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type, league_size=league_size) or {}
+    payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
+                             league_size=league_size) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -7272,26 +7276,26 @@ def api_offseason_breakout_candidates():
         from utils.utils import load_model_value_table
         model_values = load_model_value_table() or []
         values_by_id = {str(p["id"]): p for p in model_values if isinstance(p, dict) and p.get("id")}
-        
+
         # Position-specific elite thresholds
         elite_thresholds = {
             'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
         }
-        
+
         filtered_candidates = []
         for candidate in candidates:
             player_id = str(candidate.get("player_id", ""))
             pos = candidate.get("position", "")
             threshold = elite_thresholds.get(pos, 750)
-            
+
             # Get player value
             player_value = values_by_id.get(player_id, {})
             value = float(player_value.get("value", 0)) if player_value.get("value") else 0
-            
+
             # Only include if not elite
             if value < threshold:
                 filtered_candidates.append(candidate)
-        
+
         candidates = filtered_candidates
 
         return jsonify(candidates)
@@ -7478,7 +7482,6 @@ def api_player_details(player_id: str):
                 except Exception as e:
                     print(f"[api_player_details] Error loading schedule {schedule_file}: {e}")
                     continue
-
 
             # Load all stats for this season into memory
             stats_by_week = {}
@@ -7720,11 +7723,11 @@ def api_team_details(roster_id: str):
                 position = "K"
             elif position in ["DST", "D/ST"]:
                 position = "DEF"
-            
+
             # Special handling for defense players (team abbreviations as IDs)
             player_name = player_meta.get("name", "Unknown")
             player_team = player_meta.get("team")
-            
+
             # If player_id is a team abbreviation and no metadata found, treat as defense
             if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
                 # This is likely a defense player with team ID
@@ -7758,7 +7761,8 @@ def api_team_details(roster_id: str):
                 "is_starter": pid_str in starters
             })
 
-        print(f"[api_team_details] Ages: {ages_found} found, {ages_missing} missing out of {len(roster_players)} total players")
+        print(
+            f"[api_team_details] Ages: {ages_found} found, {ages_missing} missing out of {len(roster_players)} total players")
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
@@ -7780,8 +7784,8 @@ def api_team_details(roster_id: str):
                 for tp in traded_picks:
                     try:
                         if (int(tp.get("season")) == year and
-                            int(tp.get("round")) == rnd and
-                            int(tp.get("roster_id")) == original_owner):
+                                int(tp.get("round")) == rnd and
+                                int(tp.get("roster_id")) == original_owner):
                             current_owner = int(tp.get("owner_id"))
                     except:
                         pass
@@ -7816,9 +7820,11 @@ def api_team_details(roster_id: str):
             team_stats = ctx.get("team_stats")
             df_weekly = ctx.get("df_weekly")
 
-            print(f"[api_team_details] Graphs debug - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
+            print(
+                f"[api_team_details] Graphs debug - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
             if df_weekly is not None and not df_weekly.empty:
-                print(f"[api_team_details] df_weekly shape before filter: {df_weekly.shape}, has 'finalized' column: {'finalized' in df_weekly.columns}")
+                print(
+                    f"[api_team_details] df_weekly shape before filter: {df_weekly.shape}, has 'finalized' column: {'finalized' in df_weekly.columns}")
 
             if team_stats is not None and df_weekly is not None and not df_weekly.empty:
                 # Filter to finalized weeks only (if finalized column exists)
@@ -7871,7 +7877,8 @@ def api_team_details(roster_id: str):
                                 "raw_stats": raw_stats
                             }
                         }
-                        print(f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks, radar has {len(z_scores)} metrics")
+                        print(
+                            f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks, radar has {len(z_scores)} metrics")
                     else:
                         print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'")
                 else:

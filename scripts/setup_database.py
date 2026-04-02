@@ -15,8 +15,8 @@ This script creates:
 6. Performance indexes
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -29,7 +29,7 @@ from dashboard_services.db import get_conn
 def create_subscription_tables():
     """Create subscription system tables."""
     print("Creating subscription tables...")
-    
+
     with get_conn() as conn:
         # League-based subscription system
         conn.execute("""
@@ -47,7 +47,7 @@ def create_subscription_tables():
                 CONSTRAINT valid_status CHECK (subscription_status IN ('active', 'canceled', 'expired'))
             );
         """)
-        
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS user_subscriptions (
                 id SERIAL PRIMARY KEY,
@@ -63,7 +63,7 @@ def create_subscription_tables():
                 UNIQUE (user_id, platform)
             );
         """)
-        
+
         # Indexes for subscription tables
         conn.execute("CREATE INDEX IF NOT EXISTS idx_league_subs_league_id ON league_subscriptions(league_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_league_subs_expires_at ON league_subscriptions(expires_at);")
@@ -74,7 +74,7 @@ def create_subscription_tables():
 def create_update_trigger():
     """Create the update_timestamp trigger function."""
     print("Creating update timestamp trigger...")
-    
+
     with get_conn() as conn:
         conn.execute("""
             CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -85,14 +85,14 @@ def create_update_trigger():
             END;
             $$ language 'plpgsql';
         """)
-        
+
         # Apply triggers to subscription tables
         conn.execute("""
             DROP TRIGGER IF EXISTS update_league_subscriptions_updated_at ON league_subscriptions;
             CREATE TRIGGER update_league_subscriptions_updated_at BEFORE UPDATE ON league_subscriptions
                 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
         """)
-        
+
         conn.execute("""
             DROP TRIGGER IF EXISTS update_user_subscriptions_updated_at ON user_subscriptions;
             CREATE TRIGGER update_user_subscriptions_updated_at BEFORE UPDATE ON user_subscriptions
@@ -103,7 +103,7 @@ def create_update_trigger():
 def create_player_values_table():
     """Create player_values table for daily value tracking."""
     print("Creating player_values table...")
-    
+
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS player_values (
@@ -121,7 +121,7 @@ def create_player_values_table():
                 PRIMARY KEY (player_id, date)
             );
         """)
-        
+
         # Indexes for player_values
         conn.execute("CREATE INDEX IF NOT EXISTS idx_player_values_date ON player_values(date);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_player_values_player ON player_values(player_id);")
@@ -131,7 +131,7 @@ def create_player_values_table():
 def create_playoff_odds_table():
     """Create playoff_odds table for Monte Carlo simulation results."""
     print("Creating playoff_odds table...")
-    
+
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS playoff_odds (
@@ -154,16 +154,17 @@ def create_playoff_odds_table():
                 PRIMARY KEY (league_id, season, week, roster_id)
             );
         """)
-        
+
         # Indexes for playoff_odds
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_playoff_odds_league_season ON playoff_odds(league_id, season, week);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playoff_odds_league_season ON playoff_odds(league_id, season, week);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_playoff_odds_team ON playoff_odds(roster_id);")
 
 
 def create_advanced_metrics_table():
     """Create player_advanced_metrics table for advanced player statistics."""
     print("Creating player_advanced_metrics table...")
-    
+
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS player_advanced_metrics (
@@ -203,17 +204,18 @@ def create_advanced_metrics_table():
                 PRIMARY KEY (player_id, as_of_date)
             );
         """)
-        
+
         # Indexes for player_advanced_metrics
         conn.execute("CREATE INDEX IF NOT EXISTS idx_advanced_metrics_date ON player_advanced_metrics(as_of_date);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_advanced_metrics_player ON player_advanced_metrics(player_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_advanced_metrics_position ON player_advanced_metrics(position, as_of_date);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_advanced_metrics_position ON player_advanced_metrics(position, as_of_date);")
 
 
 def create_luck_index_table():
     """Create luck_index table for luck vs skill analysis."""
     print("Creating luck_index table...")
-    
+
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS luck_index (
@@ -237,7 +239,7 @@ def create_luck_index_table():
                 PRIMARY KEY (league_id, season, roster_id)
             );
         """)
-        
+
         # Indexes for luck_index
         conn.execute("CREATE INDEX IF NOT EXISTS idx_luck_index_league ON luck_index(league_id, season);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_luck_index_tier ON luck_index(luck_tier);")
@@ -246,7 +248,7 @@ def create_luck_index_table():
 def create_breakout_tables():
     """Create breakout opportunity scoring tables."""
     print("Creating breakout opportunity tables...")
-    
+
     with get_conn() as conn:
         # roster_changes table
         conn.execute("""
@@ -271,7 +273,7 @@ def create_breakout_tables():
                 UNIQUE(player_id, old_team, new_team, season)
             );
         """)
-        
+
         # vacated_opportunity table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS vacated_opportunity (
@@ -288,7 +290,7 @@ def create_breakout_tables():
                 UNIQUE(team, position, season)
             );
         """)
-        
+
         # projected_opportunity table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS projected_opportunity (
@@ -331,7 +333,7 @@ def create_breakout_tables():
                 UNIQUE(player_id, season)
             );
         """)
-        
+
         # breakout_opportunity_scores table (unified engine)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS breakout_opportunity_scores (
@@ -367,80 +369,115 @@ def create_breakout_tables():
 def create_performance_indexes():
     """Create performance indexes for optimal query performance."""
     print("Creating performance indexes...")
-    
+
     with get_conn() as conn:
         # Indexes for projected_opportunity table
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_score ON projected_opportunity(season, breakout_score DESC);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_position ON projected_opportunity(season, position);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_opportunity_team_position_season ON projected_opportunity(team, position, season);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_opportunity_player_season ON projected_opportunity(player_id, season);")
-        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_score ON projected_opportunity(season, breakout_score DESC);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_position ON projected_opportunity(season, position);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_team_position_season ON projected_opportunity(team, position, season);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_player_season ON projected_opportunity(player_id, season);")
+
         # Indexes for breakout_opportunity_scores table
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_season_score ON breakout_opportunity_scores(season, breakout_opportunity_score DESC);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_position_score ON breakout_opportunity_scores(position, breakout_opportunity_score DESC);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_team_position_season ON breakout_opportunity_scores(team, position, season);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_player_season ON breakout_opportunity_scores(player_id, season);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_season_score ON breakout_opportunity_scores(season, breakout_opportunity_score DESC);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_position_score ON breakout_opportunity_scores(position, breakout_opportunity_score DESC);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_team_position_season ON breakout_opportunity_scores(team, position, season);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_player_season ON breakout_opportunity_scores(player_id, season);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_player ON breakout_opportunity_scores(player_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_season ON breakout_opportunity_scores(season);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_date ON breakout_opportunity_scores(as_of_date);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_score ON breakout_opportunity_scores(breakout_opportunity_score DESC);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_position ON breakout_opportunity_scores(position);")
-        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_score ON breakout_opportunity_scores(breakout_opportunity_score DESC);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_position ON breakout_opportunity_scores(position);")
+
         # Indexes for roster_changes table
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_roster_changes_season_team_position ON roster_changes(season, new_team, position);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_roster_changes_player_season ON roster_changes(player_id, season);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_roster_changes_change_type_season ON roster_changes(change_type, season);")
-        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_roster_changes_season_team_position ON roster_changes(season, new_team, position);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_roster_changes_player_season ON roster_changes(player_id, season);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_roster_changes_change_type_season ON roster_changes(change_type, season);")
+
         # Indexes for vacated_opportunity table
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_vacated_opportunity_team_position_season ON vacated_opportunity(team, position, season);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_vacated_opportunity_team_position_season ON vacated_opportunity(team, position, season);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vacated_opportunity_season ON vacated_opportunity(season);")
-        
+
         # Composite indexes for common UI query patterns
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_opportunity_ui_query ON projected_opportunity(season, position, breakout_score DESC) WHERE breakout_score >= 30;")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_breakout_scores_ui_query ON breakout_opportunity_scores(season, position, breakout_opportunity_score DESC) WHERE breakout_opportunity_score >= 40;")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_ui_query ON projected_opportunity(season, position, breakout_score DESC) WHERE breakout_score >= 30;")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_breakout_scores_ui_query ON breakout_opportunity_scores(season, position, breakout_opportunity_score DESC) WHERE breakout_opportunity_score >= 40;")
 
 
 def add_table_comments():
     """Add helpful comments to tables and columns."""
     print("Adding table comments...")
-    
+
     with get_conn() as conn:
         # Subscription table comments
         conn.execute("COMMENT ON TABLE league_subscriptions IS 'League-based subscription system for premium access';")
         conn.execute("COMMENT ON TABLE user_subscriptions IS 'User-based subscription system for premium access';")
-        
+
         # Player values comments
-        conn.execute("COMMENT ON TABLE player_values IS 'Daily snapshots of dynasty player values for historical tracking and trend analysis';")
+        conn.execute(
+            "COMMENT ON TABLE player_values IS 'Daily snapshots of dynasty player values for historical tracking and trend analysis';")
         conn.execute("COMMENT ON COLUMN player_values.player_id IS 'Sleeper player ID';")
         conn.execute("COMMENT ON COLUMN player_values.date IS 'Date of this value snapshot';")
         conn.execute("COMMENT ON COLUMN player_values.value_1qb IS '1QB league dynasty value (0-999.9)';")
         conn.execute("COMMENT ON COLUMN player_values.value_sf IS 'Superflex league dynasty value (0-999.9)';")
-        
+
         # Playoff odds comments
-        conn.execute("COMMENT ON TABLE playoff_odds IS 'Weekly playoff probability calculations using Monte Carlo simulation';")
+        conn.execute(
+            "COMMENT ON TABLE playoff_odds IS 'Weekly playoff probability calculations using Monte Carlo simulation';")
         conn.execute("COMMENT ON COLUMN playoff_odds.playoff_probability IS 'Probability of making playoffs (0-100%)';")
-        conn.execute("COMMENT ON COLUMN playoff_odds.first_seed_probability IS 'Probability of earning #1 seed (0-100%)';")
-        conn.execute("COMMENT ON COLUMN playoff_odds.num_simulations IS 'Number of Monte Carlo simulations run (default 10,000)';")
-        
+        conn.execute(
+            "COMMENT ON COLUMN playoff_odds.first_seed_probability IS 'Probability of earning #1 seed (0-100%)';")
+        conn.execute(
+            "COMMENT ON COLUMN playoff_odds.num_simulations IS 'Number of Monte Carlo simulations run (default 10,000)';")
+
         # Luck index comments
         conn.execute("COMMENT ON TABLE luck_index IS 'Season-long luck vs skill analysis for fantasy teams';")
-        conn.execute("COMMENT ON COLUMN luck_index.schedule_luck_score IS 'Did you face tough/easy opponents? -100 (unlucky) to +100 (lucky)';")
-        conn.execute("COMMENT ON COLUMN luck_index.close_game_luck_score IS 'Win% in games decided by <10 points, -100 (unlucky) to +100 (lucky)';")
-        conn.execute("COMMENT ON COLUMN luck_index.lineup_efficiency IS 'Percentage of optimal points scored (actual/optimal * 100)';")
-        conn.execute("COMMENT ON COLUMN luck_index.overall_luck_score IS 'Composite luck score: 0 (very unlucky) to 100 (very lucky), 50 = average';")
-        
+        conn.execute(
+            "COMMENT ON COLUMN luck_index.schedule_luck_score IS 'Did you face tough/easy opponents? -100 (unlucky) to +100 (lucky)';")
+        conn.execute(
+            "COMMENT ON COLUMN luck_index.close_game_luck_score IS 'Win% in games decided by <10 points, -100 (unlucky) to +100 (lucky)';")
+        conn.execute(
+            "COMMENT ON COLUMN luck_index.lineup_efficiency IS 'Percentage of optimal points scored (actual/optimal * 100)';")
+        conn.execute(
+            "COMMENT ON COLUMN luck_index.overall_luck_score IS 'Composite luck score: 0 (very unlucky) to 100 (very lucky), 50 = average';")
+
         # Breakout scoring comments
-        conn.execute("COMMENT ON TABLE breakout_opportunity_scores IS 'Unified breakout opportunity scoring system. Stores 7 component scores that adapt based on NFL calendar phase (offseason, post-draft, in-season). Includes explainability fields for user-facing text.';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.opportunity_opened_score IS 'Score (0-100) based on total opportunity vacated from team/position (targets, carries, snaps)';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.competition_removed_score IS 'Score (0-100) based on specific high-value competitors who departed';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.competition_added_penalty IS 'Negative score (0 to -50) for new competition from draft picks, signings, trades';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.team_environment_score IS 'Score (0-100) based on offensive environment quality (pace, pass rate, QB quality)';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.player_readiness_score IS 'Score (0-100) based on player ability to capitalize (age, efficiency, draft capital, usage history)';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.role_trajectory_score IS 'Score (0-100) based on recent usage trends (in-season only, neutral 50 in offseason)';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.confidence_score IS 'Score (0-100) indicating projection certainty (sample size, data completeness, phase)';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.phase IS 'NFL calendar phase: offseason, post_free_agency, post_draft, preseason, in_season';")
-        conn.execute("COMMENT ON COLUMN breakout_opportunity_scores.component_details IS 'JSONB containing detailed breakdowns for each component score';")
-        conn.execute("COMMENT ON COLUMN roster_changes.draft_metadata IS 'JSONB containing draft information for drafted players: round, pick, overall_pick, college';")
+        conn.execute(
+            "COMMENT ON TABLE breakout_opportunity_scores IS 'Unified breakout opportunity scoring system. Stores 7 component scores that adapt based on NFL calendar phase (offseason, post-draft, in-season). Includes explainability fields for user-facing text.';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.opportunity_opened_score IS 'Score (0-100) based on total opportunity vacated from team/position (targets, carries, snaps)';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.competition_removed_score IS 'Score (0-100) based on specific high-value competitors who departed';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.competition_added_penalty IS 'Negative score (0 to -50) for new competition from draft picks, signings, trades';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.team_environment_score IS 'Score (0-100) based on offensive environment quality (pace, pass rate, QB quality)';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.player_readiness_score IS 'Score (0-100) based on player ability to capitalize (age, efficiency, draft capital, usage history)';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.role_trajectory_score IS 'Score (0-100) based on recent usage trends (in-season only, neutral 50 in offseason)';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.confidence_score IS 'Score (0-100) indicating projection certainty (sample size, data completeness, phase)';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.phase IS 'NFL calendar phase: offseason, post_free_agency, post_draft, preseason, in_season';")
+        conn.execute(
+            "COMMENT ON COLUMN breakout_opportunity_scores.component_details IS 'JSONB containing detailed breakdowns for each component score';")
+        conn.execute(
+            "COMMENT ON COLUMN roster_changes.draft_metadata IS 'JSONB containing draft information for drafted players: round, pick, overall_pick, college';")
 
 
 def main():
@@ -448,7 +485,7 @@ def main():
     print("Starting database setup...")
     print("Note: player_value_history table is excluded as requested")
     print("=" * 60)
-    
+
     try:
         # Create all tables in order
         create_subscription_tables()
@@ -460,12 +497,12 @@ def main():
         create_breakout_tables()
         create_performance_indexes()
         add_table_comments()
-        
+
         print("=" * 60)
         print("✅ Database setup completed successfully!")
         print("All tables have been created with proper indexes and comments.")
         print("Excluded: player_value_history table (as requested)")
-        
+
     except Exception as e:
         print(f"❌ Error during database setup: {e}")
         sys.exit(1)

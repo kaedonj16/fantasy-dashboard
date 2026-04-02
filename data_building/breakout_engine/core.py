@@ -5,12 +5,11 @@ Main entry point for calculating unified breakout scores.
 Orchestrates all component calculators and generates final outputs.
 """
 
-from typing import List, Optional, Dict
-from datetime import date
-from dataclasses import dataclass, asdict
 import json
+from dataclasses import dataclass, asdict
+from datetime import date
+from typing import List, Optional, Dict
 
-from .phases import PhaseDetector
 from .components import (
     calculate_opportunity_opened_score,
     calculate_competition_removed_score,
@@ -20,9 +19,6 @@ from .components import (
     calculate_role_trajectory_score,
     calculate_confidence_score
 )
-from .transactions import TransactionImpactAnalyzer
-from .explainability import ExplainabilityEngine
-from .role_classifier import RoleClassifier
 from .config import MIN_BREAKOUT_SCORE
 from .db_helpers import (
     save_breakout_scores,
@@ -30,7 +26,11 @@ from .db_helpers import (
     batch_load_all_breakout_data,
     load_all_team_stats
 )
+from .explainability import ExplainabilityEngine
+from .phases import PhaseDetector
 from .projections import project_player_stats
+from .role_classifier import RoleClassifier
+from .transactions import TransactionImpactAnalyzer
 
 
 @dataclass
@@ -77,7 +77,8 @@ class BreakoutCandidate:
         # Convert date to string for JSON serialization
         d['as_of_date'] = str(self.as_of_date)
         # Ensure component_details is JSON-serializable
-        d['component_details'] = json.dumps(self.component_details) if isinstance(self.component_details, dict) else self.component_details
+        d['component_details'] = json.dumps(self.component_details) if isinstance(self.component_details,
+                                                                                  dict) else self.component_details
         return d
 
 
@@ -116,9 +117,9 @@ class BreakoutEngine:
               f"{len(self.team_stats_cache)} teams")
 
     def calculate_breakout_scores(
-        self,
-        player_list: Optional[List[Dict]] = None,
-        min_score: float = MIN_BREAKOUT_SCORE
+            self,
+            player_list: Optional[List[Dict]] = None,
+            min_score: float = MIN_BREAKOUT_SCORE
     ) -> List[BreakoutCandidate]:
         """
         Calculate breakout scores for all relevant players.
