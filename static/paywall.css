@@ -23,7 +23,7 @@
 
 .paywall-content {
   position: relative;
-  background: white;
+  background: var(--card);
   border-radius: 16px;
   max-width: 600px;
   width: 90%;
@@ -49,14 +49,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 24px 24px 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
 }
 
 .paywall-header h2 {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .paywall-close {
@@ -94,13 +94,13 @@
   margin: 0 0 12px;
   font-size: 28px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .paywall-body > p {
   margin: 0 0 24px;
   font-size: 16px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .paywall-features {
@@ -116,8 +116,8 @@
 .paywall-features li {
   padding: 12px 0;
   font-size: 15px;
-  color: #374151;
-  border-bottom: 1px solid #f3f4f6;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
 }
 
 .paywall-features li:last-child {
@@ -142,7 +142,7 @@
   border-radius: 12px;
   padding: 24px;
   transition: all 0.3s;
-  background: white;
+  background: var(--card);
 }
 
 .pricing-option:hover {
@@ -163,7 +163,7 @@
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .pricing-badge {
@@ -180,19 +180,19 @@
 .pricing-price {
   font-size: 36px;
   font-weight: 800;
-  color: #1f2937;
+  color: var(--text);
   margin-bottom: 8px;
 }
 
 .pricing-price span {
   font-size: 16px;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .pricing-desc {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin: 0 0 20px;
 }
 
@@ -218,7 +218,7 @@
 }
 
 .btn-secondary {
-  background: white;
+  background: var(--card);
   color: #667eea;
   border: 2px solid #667eea;
 }

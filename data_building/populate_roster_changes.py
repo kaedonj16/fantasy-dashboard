@@ -145,7 +145,8 @@ def detect_roster_changes_between_seasons(
         carries = int(carries)
 
         # Only track meaningful departures (had actual usage)
-        if targets < 10 and carries < 10:
+        # Lower threshold to capture more players who could vacate opportunity
+        if targets < 5 and carries < 5:
             continue
 
         # Use position from current player (key is 'pos', not 'position') or previous season data
@@ -297,6 +298,103 @@ def manual_add_roster_change(
 
     print(f"[manual_add] ✓ Added {player_name}: {old_team} → {new_team or 'FA'} ({change_type})")
     print(f"[manual_add]   Stats: {usage_stats.get('targets', 0)} targets, {usage_stats.get('carries', 0)} carries")
+
+
+def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
+    """
+    Import NFL draft picks as roster changes.
+
+    After the NFL draft, this function adds draft picks to the roster_changes table
+    with draft_metadata (round, pick, college). This allows drafted rookies to:
+    1. Create competition_added_penalty for existing players
+    2. Get boosted player_readiness_score from draft capital
+
+    Args:
+        season: Season year
+        draft_data: Optional list of draft pick dictionaries.
+                   If None, will attempt to fetch from Sleeper API.
+                   Each dict should have:
+                   - player_id
+                   - player_name
+                   - position
+                   - team
+                   - round
+                   - pick (overall pick number)
+                   - college (optional)
+                   - draft_date (optional)
+
+    Example:
+        draft_data = [
+            {
+                'player_id': '11625',
+                'player_name': 'Jalen McMillan',
+                'position': 'WR',
+                'team': 'TB',
+                'round': 3,
+                'pick': 89,
+                'college': 'Washington'
+            }
+        ]
+        populate_draft_picks(2025, draft_data)
+    """
+    from utils.utils import load_players_index
+
+    print(f"\n{'='*60}")
+    print(f"POPULATING DRAFT PICKS FOR {season}")
+    print(f"{'='*60}\n")
+
+    if draft_data is None:
+        # TODO: Fetch from Sleeper API or other source
+        # For now, this would need to be called manually with draft data
+        print("[populate_draft_picks] WARNING: No draft data provided.")
+        print("[populate_draft_picks] Please call with draft_data parameter containing draft pick info.")
+        return
+
+    players_index = load_players_index() or {}
+    draft_count = 0
+
+    for pick in draft_data:
+        player_id = pick.get('player_id')
+        player_name = pick.get('player_name')
+        position = pick.get('position')
+        team = pick.get('team')
+        round_num = pick.get('round')
+        pick_num = pick.get('pick')
+        college = pick.get('college')
+        draft_date = pick.get('draft_date', date(season, 4, 26))  # Default to late April
+
+        if not all([player_id, player_name, position, team, round_num, pick_num]):
+            print(f"[populate_draft_picks] WARNING: Skipping incomplete draft pick: {pick}")
+            continue
+
+        # Create draft metadata
+        draft_metadata = {
+            'round': round_num,
+            'pick': pick_num,
+            'overall_pick': pick_num,
+            'college': college
+        }
+
+        # Track as roster change
+        track_roster_change(
+            player_id=player_id,
+            player_name=player_name,
+            position=position,
+            old_team=None,  # Rookies have no old team
+            new_team=team,
+            change_type='draft',
+            change_date=draft_date,
+            season=season,
+            last_season_stats={},  # Rookies have no previous season stats
+            draft_metadata=draft_metadata
+        )
+
+        draft_count += 1
+        print(f"[populate_draft_picks] ✓ Added {player_name} to {team} (Round {round_num}, Pick {pick_num})")
+
+    print(f"\n{'='*60}")
+    print(f"✓ DRAFT PICKS POPULATION COMPLETE: {draft_count} picks added")
+    print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":

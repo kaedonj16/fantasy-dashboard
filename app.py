@@ -166,6 +166,46 @@ def generate_recent_updates_html(limit=5):
 
     return '\n'.join(html_parts)
 
+
+def get_team_full_name(abbreviation: str) -> str:
+    """Map team abbreviation to full team name."""
+    team_names = {
+        "ARI": "Arizona Cardinals",
+        "ATL": "Atlanta Falcons", 
+        "BAL": "Baltimore Ravens",
+        "BUF": "Buffalo Bills",
+        "CAR": "Carolina Panthers",
+        "CHI": "Chicago Bears",
+        "CIN": "Cincinnati Bengals",
+        "CLE": "Cleveland Browns",
+        "DAL": "Dallas Cowboys",
+        "DEN": "Denver Broncos",
+        "DET": "Detroit Lions",
+        "GB": "Green Bay Packers",
+        "HOU": "Houston Texans",
+        "IND": "Indianapolis Colts",
+        "JAX": "Jacksonville Jaguars",
+        "KC": "Kansas City Chiefs",
+        "LV": "Las Vegas Raiders",
+        "LAC": "Los Angeles Chargers",
+        "LAR": "Los Angeles Rams",
+        "MIA": "Miami Dolphins",
+        "MIN": "Minnesota Vikings",
+        "NE": "New England Patriots",
+        "NO": "New Orleans Saints",
+        "NYG": "New York Giants",
+        "NYJ": "New York Jets",
+        "PHI": "Philadelphia Eagles",
+        "PIT": "Pittsburgh Steelers",
+        "SF": "San Francisco 49ers",
+        "SEA": "Seattle Seahawks",
+        "TB": "Tampa Bay Buccaneers",
+        "TEN": "Tennessee Titans",
+        "WAS": "Washington Commanders",
+        "WSH": "Washington Commanders"
+    }
+    return team_names.get(abbreviation.upper(), abbreviation)
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -191,7 +231,9 @@ FORM_BODY = """
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            <button type="button" class="platform-btn" data-platform="espn" disabled style="opacity: 0.6; cursor: not-allowed;">
+              ESPN <span style="font-size: 0.75em; font-weight: 400;">(Coming Soon)</span>
+            </button>
           </div>
         </div>
 
@@ -208,6 +250,7 @@ FORM_BODY = """
         </div>
 
         <!-- ESPN Flow -->
+        <!-- DISABLED
         <div id="espnFlow" style="display:none;">
           <div class="row">
             <label for="espnLeagueIdInput">ESPN League ID</label>
@@ -224,6 +267,7 @@ FORM_BODY = """
             ESPN private leagues require <code>ESPN_S2</code> and <code>ESPN_SWID</code> environment variables set on the server.
           </p>
         </div>
+        -->
 
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -736,6 +780,42 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
     )
 
+    # Changelog bell (used in both home and league nav)
+    changelog_bell = (
+        "<div class='changelog-bell-wrapper'>"
+        "  <button type='button' id='changelogBell' class='changelog-bell-btn' aria-label='Recent Updates'>"
+        "    <img src='/static/bell.png' style='width: 16px; height: 16px;' alt='Recent Updates'>"
+        "  </button>"
+        "  <div class='changelog-dot changelog-dot-hidden'></div>"
+        "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
+        "</div>"
+    )
+
+    # Dark mode toggle button HTML (used in settings dropdown)
+    dark_mode_toggle_html = (
+        "<button type='button' class='settings-menu-item' id='settingsDarkModeBtn'>"
+        "  <img src='/static/moon.png' class='settings-menu-icon theme-icon light-icon' alt='Toggle dark mode'>"
+        "  <img src='/static/moon.png' class='settings-menu-icon theme-icon dark-icon' style='display:none;' alt='Toggle dark mode'>"
+        "  <span class='settings-menu-label'>Dark Mode</span>"
+        "</button>"
+    )
+
+    # Build settings dropdown content (minimal for logged-out users)
+    settings_content = dark_mode_toggle_html
+
+    # Settings gear dropdown (used in both home and league nav)
+    settings_gear = (
+        "<div class='settings-gear-wrapper'>"
+        "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
+        "          aria-label='Settings' title='Settings'>"
+        "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
+        "  </button>"
+        f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
+        f"    {settings_content}"
+        "  </div>"
+        "</div>"
+    )
+
     if not league_id:
         def simple_pill(label: str, href: str, key: str) -> str:
             cls = "nav-pill active" if key == active else "nav-pill"
@@ -750,16 +830,35 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_pill("Contact", "/contact", "contact"),
         ]
 
+        # Build utility bar for home screen (just settings gear with dark mode)
+        home_utility_bar = (
+            "<div class='nav-utility-bar'>"
+            f"  {changelog_bell}"
+            f"  {settings_gear}"
+            "</div>"
+        )
+
+        # Build pills container
+        pills_html = ''.join(pills)
+        home_pills_container = (
+            "<div class='nav-pills-container'>"
+            f"  {pills_html}"
+            "</div>"
+        )
+
         return (
             "<nav class='top-nav'>"
-            "  <div class='nav-header-main'>"
+            "  <div class='nav-left'>"
             "    <a href='/'>"
             "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
             "    </a>"
-            "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
             "  </div>"
-            "  <div class='nav-links-wrapper'>"
-            f"    {''.join(pills)}"
+            "  <div class='nav-center'>"
+            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
+            f"    {home_pills_container}"
+            "  </div>"
+            "  <div class='nav-right'>"
+            f"    {home_utility_bar}"
             "  </div>"
             "</nav>"
         )
@@ -771,60 +870,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
-    # Only show refresh for pages that still have meaningful refresh behavior
-    refreshable_pages = {"dashboard", "teams", "activity", "trade"}
-    if not offseason_mode:
-        refreshable_pages.update({"weekly", "standings", "graphs"})
+    # Generate dashboard URL for logo link
+    dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
 
-    refresh_label_map = {
-        "dashboard": "↻",
-        "weekly": "↻",
-        "teams": "↻",
-        "activity": "↻",
-        "standings": "↻",
-        "graphs": "↻",
-        "trade": "↻",
-    }
-    refresh_label = refresh_label_map.get(active, "↻")
-
-    refresh_btn = ""
-    if active in refreshable_pages:
-        refresh_btn = (
-            f"<button type='button'"
-            f"        id='refreshBtn'"
-            f"        class='refresh-icon'"
-            f"        data-page='{active}'"
-            f"        data-league='{league_id}'"
-            f"        data-platform='{platform}'"
-            f"        data-season='{season}'"
-            f"        style='display:inline-flex;gap:6px;color: #122d4b;font-size: x-large;"
-            f"               background: white;border: white;transform: rotate(90deg);'>"
-            f"{refresh_label}"
-            f"</button>"
-        )
-
-    pills = []
-    if refresh_btn:
-        pills.append(refresh_btn)
-
-    # Changelog bell (always visible)
-    changelog_bell = (
-        "<div class='changelog-bell-wrapper' style='position:relative;display:inline-flex;'>"
-        "  <button type='button' id='changelogBell' class='changelog-bell-btn' "
-        "          style='display:inline-flex;align-items:center;justify-content:center;"
-        "                 width:36px;height:36px;border-radius:50%;border:1px solid #ddd;"
-        "                 background:white;cursor:pointer;font-size:18px;color:#122d4b;'>"
-        "    🔔"
-        "  </button>"
-        "  <div class='changelog-dot changelog-dot-hidden' "
-        "       style='position:absolute;top:2px;right:2px;width:7px;height:7px;"
-        "              border-radius:50%;background:#E24B4A;border:1.5px solid white;'></div>"
-        "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
-        "</div>"
-    )
-    pills.append(changelog_bell)
-
-    # Navigation pills
+    # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
@@ -834,6 +883,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
+    nav_pills.append(nav_pill("Breakouts", "page_breakouts", "breakouts"))
     nav_pills.append(nav_pill("History", "page_history", "history"))
 
     # Standings and Graphs remain in-season only
@@ -841,55 +891,86 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
         nav_pills.append(nav_pill("Graphs", "page_graphs", "graphs"))
 
-    nav_pills.append("<a class='nav-pill logout-pill' href='/logout'>Logout</a>")
-
-    # Create utility row for refresh button and notifications (if applicable)
-    utility_row = ""
-    utility_items = []
-    
-    if refresh_btn:
-        utility_items.append(refresh_btn)
-    
-    # Always add changelog bell
-    utility_items.append(changelog_bell)
-    
-    if utility_items:
-        utility_row = f"<div class='utility-row'>{''.join(utility_items)}</div>"
-
-    # Combine pills and utility row
-    all_nav_items = ''.join(nav_pills)
-    if utility_row:
-        all_nav_items = f"{all_nav_items}{utility_row}"
-    
+    # Changelog bell
     # League switcher dropdown (if user is logged in)
+    # Single switcher for settings dropdown (works on both desktop and mobile)
     league_switcher_html = ""
     viewer_username = session.get("viewer_username")
     if viewer_username:
-        league_switcher_html = f"""
-        <div class="league-switcher">
-          <select id="leagueSwitcher" class="league-switcher-dropdown" data-current-league="{league_id}" data-current-platform="{platform}" data-current-season="{season}">
-            <option value="">Loading leagues...</option>
-          </select>
-        </div>
-        """
+        league_switcher_html = (
+            f"<div class='league-switcher-wrapper'>"
+            f"  <select id='leagueSwitcher' class='league-switcher' "
+            f"          data-current-league='{league_id}' "
+            f"          data-current-platform='{platform}' "
+            f"          data-current-season='{season}' "
+            f"          data-current-username='{viewer_username}'>"
+            f"    <option value=''>Loading leagues...</option>"
+            f"  </select>"
+            f"</div>"
+        )
 
-    # Add league switcher to mobile menu
-    if league_switcher_html:
-        all_nav_items = f"{league_switcher_html}{all_nav_items}"
+        # Update settings dropdown content for logged-in users with full menu
+        settings_content = (
+            f"<button type='button' id='refreshBtn' class='settings-menu-item' "
+            f"        data-page='{active}' data-league='{league_id}' "
+            f"        data-platform='{platform}' data-season='{season}'>"
+            "  <img src='/static/refresh.png' class='settings-menu-icon' alt='Refresh'>"
+            "  <span class='settings-menu-label'>Refresh Data</span>"
+            "</button>"
+            "<button type='button' class='settings-menu-item' id='settingsChangelogBtn'>"
+            "  <img src='/static/bell.png' class='settings-menu-icon' alt='Changelog'>"
+            "  <span class='settings-menu-label'>Changelog</span>"
+            "</button>"
+            f"{dark_mode_toggle_html}"
+            f"{league_switcher_html}"
+            "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
+            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
+            "  <span class='settings-menu-label'>Logout</span>"
+            "</a>"
+        )
 
-    # Generate dashboard URL for logo link
-    dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
+        # Rebuild settings gear with updated content
+        settings_gear = (
+            "<div class='settings-gear-wrapper'>"
+            "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
+            "          aria-label='Settings' title='Settings'>"
+            "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
+            "  </button>"
+            f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
+            f"    {settings_content}"
+            "  </div>"
+            "</div>"
+        )
+
+    # Build utility bar (desktop right side, mobile header)
+    utility_bar = (
+        "<div class='nav-utility-bar'>"
+        f"  {changelog_bell}"
+        f"  {settings_gear}"
+        "</div>"
+    )
+
+    # Build pills container (includes league switcher and logout for mobile menu)
+    pills_html = ''.join(nav_pills)
+    pills_container = (
+        "<div class='nav-pills-container'>"
+        f"  {pills_html}"
+        "</div>"
+    )
 
     return (
         "<nav class='top-nav'>"
-        "  <div class='nav-header-main'>"
+        "  <div class='nav-left'>"
         f"    <a href='{dashboard_url}'>"
         "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
         "    </a>"
-        "    <button type='button' id='navToggle' class='nav-toggle'>☰</button>"
         "  </div>"
-        "  <div class='nav-links-wrapper'>"
-        f"    {all_nav_items}"
+        "  <div class='nav-center'>"
+        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
+        f"    {pills_container}"
+        "  </div>"
+        "  <div class='nav-right'>"
+        f"    {utility_bar}"
         "  </div>"
         "</nav>"
     )
@@ -3019,6 +3100,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             "value": val,
             "age": row.get("age"),
             "pos_rank_label": row.get("pos_rank_label") or "",
+            "player_id": pid,
         })
 
     top_waiver_assets.sort(key=lambda x: x["value"], reverse=True)
@@ -4551,8 +4633,8 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-summary-card {{
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
+        border: 1px solid var(--border);
+        background: var(--card-soft);
         border-radius: 12px;
         padding: 12px 14px;
       }}
@@ -4562,7 +4644,7 @@ def build_activity_body(ctx: dict) -> str:
         line-height: 1.2;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #64748b;
+        color: var(--text-muted);
         margin-bottom: 6px;
         font-weight: 700;
       }}
@@ -4571,7 +4653,7 @@ def build_activity_body(ctx: dict) -> str:
         font-size: 24px;
         line-height: 1.1;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--text);
       }}
 
       .bract-summary-text {{
@@ -4580,8 +4662,8 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-spotlight {{
-        border: 1px solid #dbeafe;
-        background: #eff6ff;
+        border: 1px solid var(--border);
+        background: var(--accent-soft);
         border-radius: 12px;
         padding: 12px 14px;
         margin-bottom: 14px;
@@ -4592,13 +4674,13 @@ def build_activity_body(ctx: dict) -> str:
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #1d4ed8;
+        color: var(--accent);
         margin-bottom: 4px;
       }}
 
       .bract-spotlight-copy {{
         font-size: 14px;
-        color: #1e293b;
+        color: var(--text);
       }}
 
       .bract-total-row {{
@@ -4612,7 +4694,7 @@ def build_activity_body(ctx: dict) -> str:
         gap: 8px;
         font-size: 14px;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--text);
       }}
 
       .bract-net-pos {{
@@ -5034,11 +5116,13 @@ def build_teams_body(ctx: dict) -> str:
             meta_str = " • ".join(filter(None, meta_parts))
 
             player_id = p.get("id", "")
+            position = p.get('position', '')
+            years_exp = p.get('years_exp')
             rows_html.append(
                 "<div class='player-activity'>"
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
                 "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
-                f"      <div style='font-weight:600;cursor:pointer;' class='player-clickable' data-player-id='{player_id}' data-player-name='{name}'>{name}</div>"
+                f"      <div style='font-weight:600;cursor:pointer;' class='player-clickable' data-player-id='{player_id}' data-player-name='{name}' data-position='{position}' data-years-exp='{years_exp}' data-value='{val}' data-breakout-check='true'>{name}</div>"
                 f"      <div style='color:#64748b;font-size:12px'>"
                 f"        {meta_str}"
                 "      </div>"
@@ -5666,6 +5750,174 @@ def page_graphs(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
 
+@app.route("/<platform>/<int:season>/<league_id>/breakouts")
+def page_breakouts(platform: str, season: int, league_id: str):
+    """Dedicated page for breakout candidates with detailed projections."""
+    body_html = f"""
+    <div class="card central">
+      <div class="card-header">
+        <h2>Breakout Candidates</h2>
+        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+          Players positioned for breakouts based on opportunity, efficiency, and roster changes
+        </div>
+      </div>
+      <div class="card-body">
+        <!-- Position Filter -->
+        <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
+        </div>
+
+        <!-- Loading State -->
+        <div id="breakoutsLoading" class="player-modal-loading" style="padding: 40px;">
+          <div class="loading-spinner"></div>
+          <div style="margin-top: 12px;">Loading breakout candidates...</div>
+        </div>
+
+        <!-- Breakouts Container -->
+        <div id="breakoutsContainer" style="display: none;"></div>
+
+        <!-- Empty State -->
+        <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
+          <div style="font-size: 24px; margin-bottom: 12px;">📊</div>
+          <div>No breakout candidates found</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let breakoutCandidates = [];
+      let currentFilter = 'ALL';
+
+      // Fetch breakout candidates on page load
+      fetch('/api/offseason-breakout-candidates?season={season}&min_score=25')
+        .then(res => res.json())
+        .then(data => {{
+          breakoutCandidates = data || [];
+          document.getElementById('breakoutsLoading').style.display = 'none';
+
+          if (breakoutCandidates.length === 0) {{
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else {{
+            renderBreakouts();
+          }}
+        }})
+        .catch(err => {{
+          console.error('Error loading breakouts:', err);
+          document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
+        }});
+
+      function filterBreakouts(position) {{
+        currentFilter = position;
+
+        // Update active button
+        document.querySelectorAll('.breakout-filter-btn').forEach(btn => {{
+          btn.classList.toggle('active', btn.getAttribute('data-position') === position);
+        }});
+
+        renderBreakouts();
+      }}
+
+      function renderBreakouts() {{
+        const container = document.getElementById('breakoutsContainer');
+        const filtered = currentFilter === 'ALL'
+          ? breakoutCandidates
+          : breakoutCandidates.filter(c => c.position === currentFilter);
+
+        if (filtered.length === 0) {{
+          document.getElementById('breakoutsEmpty').style.display = 'block';
+          container.style.display = 'none';
+          return;
+        }}
+
+        document.getElementById('breakoutsEmpty').style.display = 'none';
+        container.style.display = 'block';
+
+        let html = '<div class="breakout-grid">';
+
+        filtered.forEach(candidate => {{
+          const name = candidate.name || 'Unknown';
+          const team = candidate.team || '?';
+          const pos = candidate.position || '?';
+          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '?';
+          const score = candidate.breakout_score ? candidate.breakout_score.toFixed(1) : '0';
+          const context = candidate.context || '';
+          const departed = Array.isArray(candidate.departed_players) ? candidate.departed_players : [];
+          const pid = candidate.player_id || ''; // Extract player ID for clickable functionality
+
+          // Get projection increases
+          const increases = candidate.increases || {{}};
+          const targetsInc = increases.targets || 0;
+          const carriesInc = increases.carries || 0;
+
+          // Breakout factors
+          const factors = candidate.projection_factors || {{}};
+          const snapShareInc = (candidate.snap_share_increase || 0) * 100; // Convert to percentage
+          const oppShareInc = (candidate.opportunity_share_increase || 0) * 100; // Convert to percentage
+          const youthBonus = factors.youth_experience_bonus || 0;
+
+          // Score badge color
+          let scoreColor = '#10b981'; // green for high scores
+          if (score < 40) scoreColor = '#f59e0b'; // amber for medium
+          if (score < 30) scoreColor = '#6b7280'; // gray for low
+
+          html += `
+            <div class="breakout-card">
+              <div class="breakout-card-header">
+                <div>
+                  <div class="breakout-player-name player-clickable" data-player-id='` + pid + `' data-player-name='` + name + `'>` + name + `</div>
+                  <div class="breakout-player-meta">${{team}} • ${{pos}} • ${{age}} yrs</div>
+                </div>
+                <div class="breakout-score-badge" style="background: ${{scoreColor}};">
+                  ${{score}}
+                </div>
+              </div>
+
+              <div class="breakout-card-body">
+                ${{context ? `<div class="breakout-context">${{context}}</div>` : ''}}
+
+                ${{departed.length > 0 ? `
+                  <div class="breakout-section">
+                    <div class="breakout-section-title">Departed Players</div>
+                    <div class="breakout-departed">${{departed.join(', ')}}</div>
+                  </div>
+                ` : ''}}
+
+                <div class="breakout-section">
+                  <div class="breakout-section-title">Projected Increases</div>
+                  <div class="breakout-stats-row">
+                    ${{targetsInc > 0 ? `<span class="breakout-stat">+${{targetsInc}} targets</span>` : ''}}
+                    ${{carriesInc > 0 ? `<span class="breakout-stat">+${{carriesInc}} carries</span>` : ''}}
+                    ${{snapShareInc > 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snap</span>` : ''}}
+                    ${{snapShareInc > 0 && snapShareInc <= 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snaps</span>` : ''}}
+                    ${{oppShareInc > 0 ? `<span class="breakout-stat">+${{oppShareInc.toFixed(1)}}% opportunity</span>` : ''}}
+                  </div>
+                </div>
+
+                ${{youthBonus > 0 ? `
+                  <div class="breakout-youth-bonus">
+                    ⭐ Youth/Experience Bonus: +${{youthBonus.toFixed(1)}}
+                  </div>
+                ` : ''}}
+              </div>
+            </div>
+          `;
+        }});
+
+        html += '</div>';
+        container.innerHTML = html;
+      }}
+      
+      // Initialize global player modals for clickable player names
+      initGlobalPlayerModals();
+    </script>
+    """
+    return render_page("Breakout Candidates", league_id, "breakouts", body_html, platform, season)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/teams")
 def page_teams(platform: str, season: int, league_id: str):
     cached = get_page_html_from_cache(platform, season, league_id, "teams")
@@ -6209,16 +6461,10 @@ def api_trade_eval():
             yr_str, rnd_str, slot_str = pk.split("_")
             year = int(yr_str)
             rnd = int(rnd_str)
-
-            if slot_str in ['early', 'mid', 'late']:
-                bucket = bucket_for_slot(slot_str, num_teams=10)
-            else:
-                bucket = slot_str
-
         except Exception:
             return 0.0
 
-        key = f"{year}_{rnd}_{bucket}"
+        key = f"{year}_{rnd}_{slot_str}"
 
         val = pick_values.get(key)
         if val is not None:
@@ -6645,7 +6891,7 @@ def api_breakout_candidates():
         from datetime import datetime
         from utils.utils import load_players_index, load_model_value_table
 
-        min_score = float(request.args.get("min_score", 30))
+        min_score = float(request.args.get("min_score", 40))  # Selective threshold
         limit = int(request.args.get("limit", 20))
 
         # Get current NFL state
@@ -6657,10 +6903,15 @@ def api_breakout_candidates():
         candidates = []
 
         if is_offseason:
-            # Use offseason opportunity-based detection
+            # Use offseason opportunity-based detection (FAST - uses database)
             try:
                 from data_building.offseason_opportunity import get_offseason_breakout_candidates
-                candidates = get_offseason_breakout_candidates(current_season, min_score=min_score, top_n_players=600)
+                candidates = get_offseason_breakout_candidates(
+                    current_season,
+                    min_score=min_score,
+                    limit=limit * 5,  # Get more initially for filtering
+                    max_per_team_position=2
+                )
                 print(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
             except Exception as e:
                 print(f"[breakout-candidates] Offseason detection error: {e}")
@@ -6764,20 +7015,9 @@ def api_player_advanced_metrics(player_id: str):
         }
     """
     try:
-        from dashboard_services.subscriptions import has_premium_access
         from data_building.advanced_metrics import get_player_metrics
 
-        # Check premium access
-        user_id = request.args.get("user_id") or session.get("viewer_username")
-        league_id = request.args.get("league_id")
-
-        if not has_premium_access(user_id, league_id):
-            return jsonify({
-                "player_id": str(player_id),
-                "premium_required": True,
-                "error": "Premium subscription required to view advanced metrics"
-            }), 403
-
+        # Advanced metrics are now available to all users (no premium check)
         metrics = get_player_metrics(str(player_id))
 
         if not metrics:
@@ -6939,8 +7179,9 @@ def api_offseason_breakout_candidates():
 
     Query params:
         season: Season year (default: current year)
-        min_score: Minimum breakout score (default: 30)
+        min_score: Minimum breakout score (default: 40)
         position: Filter by position (QB/RB/WR/TE)
+        max_per_team_position: Max candidates per team+position (default: 2, range: 1-5)
 
     Returns:
         [
@@ -6981,18 +7222,9 @@ def api_offseason_breakout_candidates():
     """
     try:
         from datetime import datetime
-        from dashboard_services.subscriptions import has_premium_access
         from data_building.offseason_opportunity import get_offseason_breakout_candidates
 
-        # Check premium access
-        user_id = request.args.get("user_id") or session.get("viewer_username")
-        league_id = request.args.get("league_id")
-
-        if not has_premium_access(user_id, league_id):
-            return jsonify({
-                "premium_required": True,
-                "error": "Premium subscription required to view breakout candidates"
-            }), 403
+        # Breakout candidates are now available to all users (no premium check)
 
         # Get season (default to current year)
         nfl_state = get_nfl_state() or {}
@@ -7003,12 +7235,19 @@ def api_offseason_breakout_candidates():
         except (TypeError, ValueError):
             season = default_season
 
-        # Get min score threshold
+        # Get min score threshold (default 40 for selectivity)
         try:
-            min_score = float(request.args.get("min_score", 30))
+            min_score = float(request.args.get("min_score", 40))
             min_score = max(0, min(min_score, 100))
         except (TypeError, ValueError):
-            min_score = 30
+            min_score = 40
+
+        # Get max per team/position (default 2, range 1-5)
+        try:
+            max_per_team_position = int(request.args.get("max_per_team_position", 2))
+            max_per_team_position = max(1, min(max_per_team_position, 5))
+        except (TypeError, ValueError):
+            max_per_team_position = 2
 
         # Get position filter
         position = request.args.get("position")
@@ -7017,12 +7256,43 @@ def api_offseason_breakout_candidates():
             if position not in ("QB", "RB", "WR", "TE"):
                 position = None
 
-        # Get candidates
-        candidates = get_offseason_breakout_candidates(season, min_score=min_score)
+        # Get candidates (FAST - uses database queries, no artificial filtering)
+        candidates = get_offseason_breakout_candidates(
+            season,
+            min_score=min_score,
+            max_per_team_position=max_per_team_position
+        )
 
         # Filter by position if requested
         if position:
             candidates = [c for c in candidates if c.get("position") == position]
+
+        # Filter out elite players (they shouldn't be breakout candidates)
+        # Load model values to check elite thresholds
+        from utils.utils import load_model_value_table
+        model_values = load_model_value_table() or []
+        values_by_id = {str(p["id"]): p for p in model_values if isinstance(p, dict) and p.get("id")}
+        
+        # Position-specific elite thresholds
+        elite_thresholds = {
+            'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
+        }
+        
+        filtered_candidates = []
+        for candidate in candidates:
+            player_id = str(candidate.get("player_id", ""))
+            pos = candidate.get("position", "")
+            threshold = elite_thresholds.get(pos, 750)
+            
+            # Get player value
+            player_value = values_by_id.get(player_id, {})
+            value = float(player_value.get("value", 0)) if player_value.get("value") else 0
+            
+            # Only include if not elite
+            if value < threshold:
+                filtered_candidates.append(candidate)
+        
+        candidates = filtered_candidates
 
         return jsonify(candidates)
 
@@ -7031,6 +7301,95 @@ def api_offseason_breakout_candidates():
         import traceback
         traceback.print_exc()
         return jsonify([])
+
+
+@app.route("/api/calculate-breakout-scores")
+def api_calculate_breakout_scores():
+    """
+    Calculate and save breakout scores for all players.
+
+    This is an admin endpoint that runs the unified breakout engine
+    and saves results to the database.
+
+    Query params:
+        season: Season year (default: current year)
+        min_score: Minimum score to save (default: 30)
+
+    Returns:
+        {
+            "success": true,
+            "candidates_calculated": 150,
+            "candidates_saved": 150,
+            "phase": "post_free_agency",
+            "season": 2026
+        }
+    """
+    try:
+        from datetime import datetime
+        from data_building.breakout_engine import BreakoutEngine
+        from utils.utils import load_players_index, load_usage_table
+
+        # Get season
+        nfl_state = get_nfl_state() or {}
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+
+        try:
+            season = int(request.args.get("season", default_season))
+        except (TypeError, ValueError):
+            season = default_season
+
+        # Get min score
+        try:
+            min_score = float(request.args.get("min_score", 30))
+        except (TypeError, ValueError):
+            min_score = 30
+
+        # Initialize engine
+        engine = BreakoutEngine(season=season)
+
+        # Get all players from usage table or players_index
+        # This is a simplified version - in production you'd filter to relevant players
+        usage_table = load_usage_table() or []
+        players_index = load_players_index() or {}
+
+        # Build player list (top 600 by value/relevance)
+        player_list = []
+        for player in usage_table[:600]:  # Limit to top 600
+            player_id = player.get('player_id') or player.get('id')
+            if not player_id:
+                continue
+
+            # Get additional metadata from players_index
+            player_meta = players_index.get(player_id, {})
+
+            player_list.append({
+                'player_id': player_id,
+                'player_name': player.get('name') or player_meta.get('full_name'),
+                'team': player.get('team') or player_meta.get('team'),
+                'position': player.get('position') or player_meta.get('pos'),
+                'age': player_meta.get('age'),
+                'years_exp': player_meta.get('years_exp', 0)
+            })
+
+        # Calculate scores
+        candidates = engine.calculate_breakout_scores(player_list, min_score=min_score)
+
+        # Save to database
+        saved_count = engine.save_scores(candidates)
+
+        return jsonify({
+            "success": True,
+            "candidates_calculated": len(candidates),
+            "candidates_saved": saved_count,
+            "phase": engine.phase,
+            "season": season
+        })
+
+    except Exception as e:
+        print(f"[calculate-breakout-scores] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "success": False}), 500
 
 
 @app.route("/api/player-value-history/<player_id>")
@@ -7357,9 +7716,31 @@ def api_team_details(roster_id: str):
             total_value += float(value)
 
             position = player_meta.get("pos") or ""
+            if position == "PK":
+                position = "K"
+            elif position in ["DST", "D/ST"]:
+                position = "DEF"
+            
+            # Special handling for defense players (team abbreviations as IDs)
+            player_name = player_meta.get("name", "Unknown")
+            player_team = player_meta.get("team")
+            
+            # If player_id is a team abbreviation and no metadata found, treat as defense
+            if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
+                # This is likely a defense player with team ID
+                teams_index = get_teams_index_global()
+                # Use the full team name for defense players
+                full_team_name = get_team_full_name(pid_str)
+                player_name = f"{full_team_name} Defense"
+                position = "DEF"
+                player_team = pid_str
 
             # Get age from value table (has calculated age) or player meta
-            age = value_row.get("age") or player_meta.get("age")
+            # For kickers, prioritize players_index birthday info
+            if position == "K":
+                age = player_meta.get("age") or value_row.get("age")
+            else:
+                age = value_row.get("age") or player_meta.get("age")
             if age is not None:
                 ages_found += 1
             else:
@@ -7367,9 +7748,9 @@ def api_team_details(roster_id: str):
 
             roster_players.append({
                 "player_id": pid_str,
-                "name": player_meta.get("name", "Unknown"),
+                "name": player_name,
                 "position": position,
-                "team": player_meta.get("team"),
+                "team": player_team,
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,
@@ -7378,7 +7759,6 @@ def api_team_details(roster_id: str):
             })
 
         print(f"[api_team_details] Ages: {ages_found} found, {ages_missing} missing out of {len(roster_players)} total players")
-
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))

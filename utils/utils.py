@@ -1971,16 +1971,3 @@ def count_roster_positions(positions: list[str]) -> dict[str, int]:
       ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
     """
     return dict(Counter(positions))
-
-
-def timed(label: str, fn, *args, **kwargs):
-    """
-    Helper to log how long a block takes.
-    Usage: result = timed("build_tables", build_tables, ...)
-    """
-    t0 = time.perf_counter()
-    try:
-        return fn(*args, **kwargs)
-    finally:
-        dt = time.perf_counter() - t0
-        print(f"[TIMING] {label}: {dt:.2f}s")

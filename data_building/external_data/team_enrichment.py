@@ -277,26 +277,6 @@ def _fetch_teamrankings_table(
     return out
 
 
-def fetch_team_rush_attempts_per_game() -> Dict[str, float]:
-    return _fetch_teamrankings_table(RUSH_ATT_PG_URL, session=HTTP_SESSION)
-
-
-def fetch_team_rush_yards_per_game() -> Dict[str, float]:
-    return _fetch_teamrankings_table(RUSH_YDS_PG_URL, session=HTTP_SESSION)
-
-
-def fetch_team_pass_yards_per_game() -> Dict[str, float]:
-    return _fetch_teamrankings_table(PASS_YDS_PG_URL, session=HTTP_SESSION)
-
-
-def fetch_opp_pass_yards_per_game() -> Dict[str, float]:
-    return _fetch_teamrankings_table(OPP_PASS_YDS_PG_URL, session=HTTP_SESSION)
-
-
-def fetch_opp_rush_yards_per_game() -> Dict[str, float]:
-    return _fetch_teamrankings_table(OPP_RUSH_YDS_PG_URL, session=HTTP_SESSION)
-
-
 def enrich_teams_index_with_rushing(
         teams_index_path: Path,
         out_path: Optional[Path] = None,
