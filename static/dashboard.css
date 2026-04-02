@@ -4184,7 +4184,7 @@ thead th {
 }
 
 .os-card-soft {
-  background: var(--card-soft);
+  background: var(--card);
 }
 
 .os-hero-badge {
