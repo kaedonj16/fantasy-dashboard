@@ -96,6 +96,8 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
     """
     Fetch Sleeper redzone stats for all relevant players in parallel.
 
+    Uses daily caching to avoid hundreds of API calls on every run.
+
     Returns:
         {
             "9509": {
@@ -106,6 +108,29 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
             ...
         }
     """
+    # Check cache first (daily cache)
+    cache_path = Path(CACHE_DIR) / "sleeper_stats" / f"redzone_stats_{season}_{date.today().isoformat()}.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if cache_path.exists():
+        try:
+            print(f"[sleeper_redzone] Loading from cache: {cache_path.name}")
+            cached_data = read_json(str(cache_path))
+            if isinstance(cached_data, dict):
+                print(f"[sleeper_redzone] Loaded {len(cached_data)} players from cache")
+                return cached_data
+        except Exception as e:
+            print(f"[sleeper_redzone] Cache read failed: {e}, fetching fresh data")
+
+    # Remove old cache files for this season
+    for old_file in cache_path.parent.glob(f"redzone_stats_{season}_*.json"):
+        if old_file != cache_path:
+            try:
+                old_file.unlink()
+                print(f"[sleeper_redzone] Removed old cache: {old_file.name}")
+            except Exception:
+                pass
+
     players_index = load_relevant_index()
 
     # Only query players we actually care about
@@ -171,4 +196,9 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
                 rz_map[pid] = result
 
     print(f"[sleeper_redzone] Built redzone stats for {len(rz_map)} players")
+
+    # Save to cache
+    write_json(str(cache_path), rz_map)
+    print(f"[sleeper_redzone] Cached results to {cache_path.name}")
+
     return rz_map

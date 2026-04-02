@@ -16,49 +16,6 @@ import json
 import os
 
 
-def load_usage_table_for_season(season: int) -> List[Dict]:
-    """Load usage table for a specific season from cache or data directory."""
-    from utils.utils import DATA_DIR
-
-    # Try cache/player_history first (historical data)
-    cache_path = os.path.join("cache", "player_history", f"usage_rows_{season}.json")
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, 'r') as f:
-                return json.load(f)
-        except Exception:
-            pass
-
-    # Try recent dates from that season in data directory
-    potential_dates = [
-        f"{season}-12-31",
-        f"{season}-12-30",
-        f"{season}-12-29",
-        f"{season + 1}-01-01",
-        f"{season + 1}-01-02"
-    ]
-
-    for date_str in potential_dates:
-        path = os.path.join(DATA_DIR, f"usage_table_{date_str}.json")
-        if os.path.exists(path):
-            try:
-                with open(path, 'r') as f:
-                    return json.load(f)
-            except Exception:
-                continue
-
-    # Search for any file matching the season
-    try:
-        for filename in os.listdir(DATA_DIR):
-            if filename.startswith(f"usage_table_{season}-") and filename.endswith(".json"):
-                path = os.path.join(DATA_DIR, filename)
-                with open(path, 'r') as f:
-                    return json.load(f)
-    except Exception:
-        pass
-
-    return []
-
 
 def init_offseason_opportunity_db():
     """
@@ -268,8 +225,6 @@ def track_roster_change(
             draft_meta_json
         ))
         conn.commit()
-
-    print(f"[offseason] Tracked {change_type}: {player_name} ({old_team} → {new_team or 'N/A'})")
 
 
 def calculate_vacated_opportunity(season: int):
