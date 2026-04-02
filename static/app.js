@@ -77,6 +77,76 @@ function bindOnce(el, key, type, handler, options) {
 }
 
 // ------------------------------------------------------------
+// Dark Mode Toggle
+// ------------------------------------------------------------
+(function initDarkMode() {
+  // Apply saved theme immediately to prevent flash
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+
+  function toggleDarkMode() {
+    const root = document.documentElement;
+    const currentTheme = root.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    if (newTheme === 'dark') {
+      root.setAttribute('data-theme', 'dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      root.removeAttribute('data-theme');
+      localStorage.setItem('theme', 'light');
+    }
+
+    // Update toggle button icons
+    updateThemeIcons();
+  }
+
+  function updateThemeIcons() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const lightIcons = document.querySelectorAll('.theme-icon.light-icon');
+    const darkIcons = document.querySelectorAll('.theme-icon.dark-icon');
+
+    lightIcons.forEach(icon => {
+      icon.style.display = isDark ? 'none' : 'inline';
+    });
+    darkIcons.forEach(icon => {
+      icon.style.display = isDark ? 'inline' : 'none';
+    });
+  }
+
+  // Bind toggle button
+  function bindDarkModeToggle() {
+    const toggleBtn = document.getElementById('darkModeToggle');
+    if (toggleBtn && !toggleBtn.__darkModeInitialized) {
+      toggleBtn.addEventListener('click', toggleDarkMode);
+      toggleBtn.__darkModeInitialized = true;
+      updateThemeIcons();
+    }
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindDarkModeToggle);
+  } else {
+    bindDarkModeToggle();
+  }
+
+  // Re-bind after any page updates (for SPA-like behavior)
+  const observer = new MutationObserver(function(mutations) {
+    bindDarkModeToggle();
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // Expose toggleDarkMode globally for settings dropdown
+  window.toggleDarkMode = toggleDarkMode;
+})();
+
+// ------------------------------------------------------------
 // Reusable Init Helpers (IDEMPOTENT)
 // ------------------------------------------------------------
 
@@ -647,7 +717,7 @@ window.initTradePage = function initTradePage(root = document) {
 
   function buildPlayerValueRow(p, overallRank) {
     const row = document.createElement("div");
-    row.className = "otc-value-row player-clickable";
+    row.className = "otc-value-row";
 
     // Make row clickable
     if (p.id) {
@@ -667,7 +737,7 @@ window.initTradePage = function initTradePage(root = document) {
     topLine.className = "otc-value-topline";
 
     const nameSpan = document.createElement("div");
-    nameSpan.className = "otc-value-name";
+    nameSpan.className = "otc-value-name player-clickable";
     nameSpan.textContent = p.name || "Unknown";
 
     const valueSpan = document.createElement("div");
@@ -796,6 +866,21 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   let loadMoversTimeout = null;
+  let currentMoversDays = 7; // Default to 7 days
+
+  // Function to change movers days period
+  window.changeMoversDays = function(days) {
+    currentMoversDays = days;
+
+    // Update active button
+    const dayFilters = document.querySelectorAll('.otc-day-filter');
+    dayFilters.forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.getAttribute('data-days')) === days);
+    });
+
+    // Reload movers with new days
+    loadTopMovers(true);
+  };
 
   async function loadTopMovers(immediate = false) {
     // Debounce: wait 300ms before loading unless immediate
@@ -819,7 +904,7 @@ window.initTradePage = function initTradePage(root = document) {
     try {
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
-      const res = await fetch(`/api/value-movers?days=7&limit=5&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+      const res = await fetch(`/api/value-movers?days=${currentMoversDays}&limit=5&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
@@ -882,38 +967,21 @@ window.initTradePage = function initTradePage(root = document) {
 
     try {
       const leagueType = getLeagueType();
-      const res = await fetch(`/api/breakout-candidates?min_score=30`, { cache: "no-store" });
+      const nflState = await fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}));
+      const currentSeason = nflState.season || new Date().getFullYear();
+      
+      const res = await fetch(`/api/offseason-breakout-candidates?season=${currentSeason}&min_score=25`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load breakouts.");
 
       let candidates = await res.json();
 
-      // Filter out high-value players (already established stars)
-      // Only show players with dynasty value < 2000 (roughly outside top 50)
-      // Also filter out players older than 25 (breakouts are typically young players)
-      // Cannot be a breakout if already top 5 at position (already elite)
-      // Position-specific rank thresholds: QB top 32, RB top 45, WR top 60, TE top 20
-      const valueThreshold = 2000;
-      const maxAge = 25;
-      const rankThresholds = { QB: 32, RB: 45, WR: 60, TE: 20 };
-
-      candidates = candidates.filter(c => {
-        const value = leagueType === "sf" ? (c.sf_value || c.value || 0) : (c.value || 0);
-        const age = c.age;
-        const posRank = c.pos_rank || 999;
-        const maxRank = rankThresholds[c.position] || 999;
-
-        return value < valueThreshold &&
-               (age == null || age <= maxAge) &&
-               posRank > 5 &&
-               posRank <= maxRank;
-      });
-
+      // No additional filtering - show the same results as the main breakouts page
       if (!candidates || candidates.length === 0) {
         breakoutsEl.innerHTML = `
           <div class="otc-movers-empty" style="padding: 16px; text-align: center;">
             <div style="font-size: 13px; color: #64748b; line-height: 1.5;">
               No breakout candidates available yet.<br>
-              <span style="font-size: 11px;">Data will appear once offseason roster changes are tracked.</span>
+              <span style="font-size: 11px;">Top 5 breakout candidates will appear here once offseason roster changes are tracked.</span>
             </div>
           </div>
         `;
@@ -921,10 +989,12 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
-      // Show all candidates that meet criteria (no limit)
+      // Show only top 5 candidates by breakout score
+      candidates.sort((a, b) => (b.breakout_score || 0) - (a.breakout_score || 0));
+      const topCandidates = candidates.slice(0, 5);
 
       breakoutsEl.innerHTML = "";
-      candidates.forEach((c, idx) => {
+      topCandidates.forEach((c, idx) => {
         const row = document.createElement("div");
         row.className = "otc-mini-row otc-breakout-row";
         row.style.animationDelay = `${idx * 50}ms`;
@@ -1023,7 +1093,7 @@ window.initTradePage = function initTradePage(root = document) {
           breakoutsContent?.classList.add("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
-            moversSub.textContent = "Young players poised for expanded roles";
+            moversSub.textContent = "Top 5 breakout candidates by database score";
           }
 
           // Load breakouts when tab is opened for the first time
@@ -2465,10 +2535,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorBox = document.getElementById("lookupError");
   const formPlatform = document.getElementById("formPlatform");
 
-  // ESPN elements
-  const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
-  const espnTeamName = document.getElementById("espnTeamName");
-  const espnSubmitBtn = document.getElementById("espnSubmitBtn");
+  // ESPN elements - DISABLED
+  // const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
+  // const espnTeamName = document.getElementById("espnTeamName");
+  // const espnSubmitBtn = document.getElementById("espnSubmitBtn");
 
   if (!platformBtns.length) return;
 
@@ -2487,20 +2557,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if (generateWrap) generateWrap.style.display = "none";
     if (errorBox) errorBox.style.display = "none";
 
-    if (platform === "espn") {
-      if (sleeperFlow) sleeperFlow.style.display = "none";
-      if (espnFlow) espnFlow.style.display = "block";
-      if (sleeperHint) sleeperHint.style.display = "none";
-    } else {
+    // ESPN platform disabled
+    // if (platform === "espn") {
+    //   if (sleeperFlow) sleeperFlow.style.display = "none";
+    //   if (espnFlow) espnFlow.style.display = "block";
+    //   if (sleeperHint) sleeperHint.style.display = "none";
+    // } else {
       if (sleeperFlow) sleeperFlow.style.display = "block";
       if (espnFlow) espnFlow.style.display = "none";
       if (sleeperHint) sleeperHint.style.display = "";
-    }
+    // }
   }
 
   // Platform switching
   platformBtns.forEach(btn => {
     btn.addEventListener("click", () => {
+      // Ignore clicks on disabled ESPN button
+      if (btn.dataset.platform === "espn" && btn.disabled) {
+        return;
+      }
       switchPlatform(btn.dataset.platform);
     });
   });
@@ -2564,7 +2639,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ESPN submit
+  // ESPN submit - DISABLED
+  /*
   if (espnSubmitBtn) {
     espnSubmitBtn.addEventListener("click", async () => {
       const leagueId = espnLeagueIdInput?.value.trim();
@@ -2608,6 +2684,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  */
 
 });
 
@@ -2646,6 +2723,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   closeBtn?.addEventListener("click", closeModal);
   overlay?.addEventListener("click", closeModal);
+
+  // Add click handler for guest "Log in to see more" links
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("otc-guest-link")) {
+      e.preventDefault();
+      openModal();
+    }
+  });
 
   lookupBtn?.addEventListener("click", async () => {
     const username = usernameInput?.value.trim();
@@ -2850,6 +2935,80 @@ document.addEventListener("DOMContentLoaded", () => {
   initChangelog();
 });
 
+// Settings Gear Dropdown
+document.addEventListener("DOMContentLoaded", () => {
+  const gearWrapper = document.querySelector(".settings-gear-wrapper");
+  const gearBtn = document.getElementById("settingsGearBtn");
+  const dropdown = document.getElementById("settingsDropdown");
+
+  if (!gearBtn || !dropdown) return;
+
+  let isDropdownOpen = false;
+
+  function toggleDropdown() {
+    isDropdownOpen = !isDropdownOpen;
+    dropdown.style.display = isDropdownOpen ? "block" : "none";
+  }
+
+  function closeDropdown() {
+    if (isDropdownOpen) {
+      isDropdownOpen = false;
+      dropdown.style.display = "none";
+    }
+  }
+
+  gearBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleDropdown();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (gearWrapper && !gearWrapper.contains(e.target)) {
+      closeDropdown();
+    }
+  });
+
+  // Refresh button - close dropdown after click
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      closeDropdown();
+    });
+  }
+
+  // Changelog button triggers changelog dropdown
+  const settingsChangelogBtn = document.getElementById("settingsChangelogBtn");
+  const changelogBellBtn = document.getElementById("changelogBell");
+  if (settingsChangelogBtn && changelogBellBtn) {
+    settingsChangelogBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeDropdown();
+      changelogBellBtn.click();
+    });
+  }
+
+  // Dark mode toggle
+  const settingsDarkModeBtn = document.getElementById("settingsDarkModeBtn");
+  if (settingsDarkModeBtn) {
+    settingsDarkModeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (window.toggleDarkMode) {
+        window.toggleDarkMode();
+      }
+    });
+  }
+
+  // Prevent dropdown from closing when clicking inside (except on links)
+  if (dropdown) {
+    dropdown.addEventListener("click", (e) => {
+      // Let links work normally, but stop propagation for other elements
+      if (e.target.tagName !== 'A' && !e.target.closest('a')) {
+        e.stopPropagation();
+      }
+    });
+  }
+});
+
 // League switcher functionality
 document.addEventListener('DOMContentLoaded', function() {
   // Helper function to show full-screen loading overlay
@@ -2871,20 +3030,29 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.appendChild(overlay);
   }
 
+  // Handle league switcher
   const leagueSwitcher = document.getElementById('leagueSwitcher');
 
   if (leagueSwitcher) {
     const currentLeagueId = leagueSwitcher.getAttribute('data-current-league');
     const currentPlatform = leagueSwitcher.getAttribute('data-current-platform');
     const currentSeason = leagueSwitcher.getAttribute('data-current-season');
+    const username = leagueSwitcher.getAttribute('data-current-username');
 
     // Fetch user leagues
-    fetch('/api/sleeper-user-leagues?season=' + currentSeason)
+    fetch('/api/sleeper-user-leagues?username=' + username)
       .then(res => res.json())
       .then(data => {
-        if (data.ok && data.leagues) {
-          leagueSwitcher.innerHTML = '';
+        // Handle error response
+        if (!data.ok) {
+          console.warn('League switcher API error:', data.error || 'Unknown error');
+          leagueSwitcher.innerHTML = '<option value="">No leagues available</option>';
+          return;
+        }
 
+        // Handle success
+        if (data.leagues && data.leagues.length > 0) {
+          leagueSwitcher.innerHTML = '';
           data.leagues.forEach(league => {
             const option = document.createElement('option');
             option.value = league.league_id;
@@ -2894,6 +3062,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             leagueSwitcher.appendChild(option);
           });
+        } else {
+          leagueSwitcher.innerHTML = '<option value="">No leagues found</option>';
         }
       })
       .catch(err => {
@@ -2922,24 +3092,30 @@ document.addEventListener('DOMContentLoaded', function() {
 // Mobile nav toggle functionality
 document.addEventListener('DOMContentLoaded', function() {
   const navToggle = document.getElementById('navToggle');
-  const navLinksWrapper = document.querySelector('.nav-links-wrapper');
+  const navPillsContainer = document.querySelector('.nav-pills-container');
 
-  if (navToggle && navLinksWrapper) {
-    navToggle.addEventListener('click', function() {
-      navLinksWrapper.classList.toggle('nav-open');
+  if (navToggle && navPillsContainer) {
+    navToggle.addEventListener('click', function(e) {
+      e.stopPropagation();
+      navPillsContainer.classList.toggle('nav-open');
+
+      // Update hamburger icon
+      navToggle.textContent = navPillsContainer.classList.contains('nav-open') ? '✕' : '☰';
     });
 
     // Close menu when clicking outside
     document.addEventListener('click', function(e) {
-      if (!navToggle.contains(e.target) && !navLinksWrapper.contains(e.target)) {
-        navLinksWrapper.classList.remove('nav-open');
+      if (!navToggle.contains(e.target) && !navPillsContainer.contains(e.target)) {
+        navPillsContainer.classList.remove('nav-open');
+        navToggle.textContent = '☰';
       }
     });
 
-    // Close menu when clicking a link
-    navLinksWrapper.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', function() {
-        navLinksWrapper.classList.remove('nav-open');
+    // Close menu when clicking a nav link
+    navPillsContainer.querySelectorAll('.nav-pill').forEach(pill => {
+      pill.addEventListener('click', function() {
+        navPillsContainer.classList.remove('nav-open');
+        navToggle.textContent = '☰';
       });
     });
   }
@@ -3131,6 +3307,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // Player Modal
 function openPlayerModal(playerId, playerName) {
+  console.log('Opening player modal for ID:', playerId, 'Name:', playerName); // Debug: Log player info
+  
   // Create modal overlay
   const overlay = document.createElement('div');
   overlay.className = 'player-modal-overlay';
@@ -3171,11 +3349,25 @@ function openPlayerModal(playerId, playerName) {
   fetch(`/api/player-details/${playerId}`)
     .then(res => res.json())
     .then(data => {
+      console.log('Player modal data received:', data); // Debug: Log received data
+      
       if (data.error) {
         document.getElementById('playerModalBody').innerHTML = `
           <div class="player-modal-loading">
             <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
             <div style="font-size: 13px;">${data.error}</div>
+          </div>
+        `;
+        return;
+      }
+      
+      // Check if data has expected structure
+      if (!data.name) {
+        document.getElementById('playerModalBody').innerHTML = `
+          <div class="player-modal-loading">
+            <div style="color: #f59e0b; font-weight: 500;">Player data incomplete</div>
+            <div style="font-size: 13px;">Player ID: ${playerId}</div>
+            <div style="font-size: 11px; color: #6b7280;">Raw data: ${JSON.stringify(data, null, 2)}</div>
           </div>
         `;
         return;
@@ -3200,6 +3392,7 @@ function openPlayerModal(playerId, playerName) {
       const threshold = eliteThresholds[pos] || 750;
       const isElite = value >= threshold;
       const isRookie = yearsExp != null && yearsExp === 0;
+      const isBreakoutPlayer = !isElite && isBreakout(data.player_id);
 
       if (isElite) {
         badges += '<span class="elite-badge">ELITE</span>';
@@ -3207,9 +3400,12 @@ function openPlayerModal(playerId, playerName) {
       if (isRookie) {
         badges += '<span class="rookie-badge">ROOKIE</span>';
       }
+      if (isBreakoutPlayer) {
+        badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+      }
 
-      // Update player name with badges (badges appear after name)
-      document.querySelector('.player-modal-name').innerHTML = `${playerName || 'Unknown Player'}${badges}`;
+      // Update player name with badges (badges appear before name)
+      document.querySelector('.player-modal-name').innerHTML = `${badges}${playerName || 'Unknown Player'}`;
 
       // Update meta
       const metaParts = [];
@@ -3251,6 +3447,19 @@ function openPlayerModal(playerId, playerName) {
                   <div class="player-modal-stat-value">${data.stats.years_exp} yrs</div>
                 </div>
               ` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      // Advanced Metrics section (placeholder, will be populated via fetch)
+      if (pos && pos !== 'K' && pos !== 'DEF') {
+        bodyHTML += `
+          <div class="player-modal-section" id="advancedMetricsSection">
+            <div class="player-modal-section-title">Advanced Metrics</div>
+            <div class="player-modal-loading" style="padding: 20px;">
+              <div class="loading-spinner" style="width: 20px; height: 20px;"></div>
+              <div style="font-size: 13px; margin-top: 8px;">Loading advanced stats...</div>
             </div>
           </div>
         `;
@@ -3463,6 +3672,155 @@ function openPlayerModal(playerId, playerName) {
           });
         }
       }
+
+      // Fetch and render advanced metrics
+      const advancedSection = document.getElementById('advancedMetricsSection');
+      if (advancedSection) {
+        // Extract league context for API call
+        const path = window.location.pathname;
+        const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+        const leagueId = match ? match[3] : null;
+
+        fetch(`/api/player-advanced-metrics/${playerId}?league_id=${leagueId}`)
+          .then(res => res.json())
+          .then(metricsData => {
+            if (metricsData.error || metricsData.premium_required) {
+              // Hide the section if no data or premium required
+              advancedSection.style.display = 'none';
+              return;
+            }
+
+            const metrics = metricsData.metrics || {};
+            const position = metricsData.position;
+
+            let metricsHTML = '<div class="player-modal-stats-grid">';
+
+            // Role Score (universal metric)
+            if (metrics.role_score != null) {
+              const roleScore = metrics.role_score.toFixed(1);
+              const roleGrade = getRoleGrade(metrics.role_score);
+              metricsHTML += `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">Role Score</div>
+                  <div class="player-modal-stat-value">${roleScore} <span style="font-size: 12px; color: var(--text-muted);">${roleGrade}</span></div>
+                </div>
+              `;
+            }
+
+            // Snap Share
+            if (metrics.snap_share != null) {
+              const snapPct = (metrics.snap_share * 100).toFixed(1);
+              metricsHTML += `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">Snap Share</div>
+                  <div class="player-modal-stat-value">${snapPct}%</div>
+                </div>
+              `;
+            }
+
+            // Position-specific metrics
+            if (position === 'QB') {
+              if (metrics.yards_per_attempt != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Yards/Attempt</div>
+                    <div class="player-modal-stat-value">${metrics.yards_per_attempt.toFixed(1)}</div>
+                  </div>
+                `;
+              }
+              if (metrics.completion_rate != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Completion %</div>
+                    <div class="player-modal-stat-value">${(metrics.completion_rate * 100).toFixed(1)}%</div>
+                  </div>
+                `;
+              }
+            } else if (position === 'RB') {
+              if (metrics.yards_per_carry != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Yards/Carry</div>
+                    <div class="player-modal-stat-value">${metrics.yards_per_carry.toFixed(1)}</div>
+                  </div>
+                `;
+              }
+              if (metrics.opportunity_share != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Opportunity Share</div>
+                    <div class="player-modal-stat-value">${metrics.opportunity_share.toFixed(1)}%</div>
+                  </div>
+                `;
+              }
+            } else if (position === 'WR' || position === 'TE') {
+              if (metrics.yards_per_target != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Yards/Target</div>
+                    <div class="player-modal-stat-value">${metrics.yards_per_target.toFixed(1)}</div>
+                  </div>
+                `;
+              }
+              if (metrics.catch_rate != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Catch Rate</div>
+                    <div class="player-modal-stat-value">${(metrics.catch_rate * 100).toFixed(1)}%</div>
+                  </div>
+                `;
+              }
+              if (metrics.target_share != null) {
+                metricsHTML += `
+                  <div class="player-modal-stat-card">
+                    <div class="player-modal-stat-label">Target Share</div>
+                    <div class="player-modal-stat-value">${(metrics.target_share * 100).toFixed(1)}%</div>
+                  </div>
+                `;
+              }
+            }
+
+            // Red Zone Usage (for skill positions)
+            if (metrics.red_zone_usage != null && position !== 'QB') {
+              metricsHTML += `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">RZ Usage/Game</div>
+                  <div class="player-modal-stat-value">${metrics.red_zone_usage.toFixed(1)}</div>
+                </div>
+              `;
+            }
+
+            // Efficiency Trend (with arrow indicator)
+            if (metrics.efficiency_trend != null) {
+              const trend = metrics.efficiency_trend;
+              const trendIcon = trend > 5 ? '↗️' : trend < -5 ? '↘️' : '→';
+              const trendColor = trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : 'var(--text-muted)';
+              metricsHTML += `
+                <div class="player-modal-stat-card">
+                  <div class="player-modal-stat-label">Efficiency Trend</div>
+                  <div class="player-modal-stat-value" style="color: ${trendColor};">${trendIcon} ${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</div>
+                </div>
+              `;
+            }
+
+            metricsHTML += '</div>';
+
+            // Add "as of" date if available
+            if (metricsData.as_of_date) {
+              metricsHTML += `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;">As of ${metricsData.as_of_date}</div>`;
+            }
+
+            advancedSection.innerHTML = `
+              <div class="player-modal-section-title">Advanced Metrics</div>
+              ${metricsHTML}
+            `;
+          })
+          .catch(err => {
+            console.error('Error loading advanced metrics:', err);
+            // Hide section on error
+            advancedSection.style.display = 'none';
+          });
+      }
     })
     .catch(err => {
       console.error('Error loading player data:', err);
@@ -3473,6 +3831,15 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
     });
+}
+
+function getRoleGrade(roleScore) {
+  if (roleScore >= 80) return 'Elite';
+  if (roleScore >= 70) return 'Great';
+  if (roleScore >= 60) return 'Good';
+  if (roleScore >= 50) return 'Average';
+  if (roleScore >= 40) return 'Below Avg';
+  return 'Limited';
 }
 
 function toggleGameLogYear(year) {
@@ -3506,7 +3873,57 @@ document.addEventListener('keydown', (e) => {
 // Make player modal work site-wide
 document.addEventListener('DOMContentLoaded', function() {
   initGlobalPlayerModals();
+  loadGlobalPlayerIndicators();
+  addBreakoutBadgesToTeamsPage();
 });
+
+// Add breakout badges to teams page
+function addBreakoutBadgesToTeamsPage() {
+  // Wait a bit for indicators to load, then process players
+  setTimeout(() => {
+    const players = document.querySelectorAll('[data-breakout-check="true"]');
+    players.forEach(playerEl => {
+      const playerId = playerEl.dataset.playerId;
+      const badges = [];
+      
+      // Get player data from data attributes
+      const value = parseFloat(playerEl.dataset.value) || 0;
+      const position = playerEl.dataset.position || '';
+      const yearsExp = playerEl.dataset.yearsExp;
+      
+      // Position-specific elite thresholds
+      const eliteThresholds = {
+        'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
+      };
+      const threshold = eliteThresholds[position] || 750;
+      const isElite = value >= threshold;
+      const isRookie = yearsExp !== null && yearsExp !== '' && parseInt(yearsExp) === 0;
+      
+      if (isElite) {
+        badges.push('<span class="elite-badge">ELITE</span>');
+      }
+      if (isRookie) {
+        badges.push('<span class="rookie-badge">ROOKIE</span>');
+      }
+      
+      // Only show breakout badge if player is not elite
+      if (!isElite && isBreakout(playerId)) {
+        badges.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+      }
+      
+      // Add badges after player name
+      if (badges.length > 0) {
+        const badgeContainer = document.createElement('span');
+        badgeContainer.innerHTML = badges.join(' ');
+        badgeContainer.style.marginLeft = '5px';
+        playerEl.parentNode.insertBefore(badgeContainer, playerEl.nextSibling);
+      }
+      
+      // Remove the check attribute
+      playerEl.removeAttribute('data-breakout-check');
+    });
+  }, 1000);
+}
 
 function initGlobalPlayerModals() {
   // Attach click handlers to all elements with player data
@@ -3622,6 +4039,25 @@ async function fetchTeamDetails(rosterId) {
   }
 }
 
+// Global player indicators for team modal
+let globalPlayerIndicators = { rookies: [], breakouts: [] };
+
+// Load player indicators globally
+async function loadGlobalPlayerIndicators() {
+  try {
+    const res = await fetch('/api/player-indicators?league_type=all&league_size=12', { cache: "no-store" });
+    if (!res.ok) return;
+    globalPlayerIndicators = await res.json();
+  } catch (err) {
+    console.error("[global] Failed to load player indicators:", err);
+  }
+}
+
+// Global isBreakout function
+function isBreakout(playerId) {
+  return globalPlayerIndicators.breakouts && globalPlayerIndicators.breakouts.includes(String(playerId));
+}
+
 function renderTeamDetails(data) {
   // Update header
   const metaHTML = `
@@ -3677,6 +4113,7 @@ function renderTeamDetails(data) {
       const threshold = eliteThresholds[pos] || 750;
       const isElite = value >= threshold;
       const isRookie = player.years_exp != null && player.years_exp === 0;
+      const isBreakoutPlayer = !isElite && isBreakout(player.player_id);
 
       if (isElite) {
         badges += '<span class="elite-badge">ELITE</span>';
@@ -3684,16 +4121,19 @@ function renderTeamDetails(data) {
       if (isRookie) {
         badges += '<span class="rookie-badge">ROOKIE</span>';
       }
+      if (isBreakoutPlayer) {
+        badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+      }
 
       rosterHTML += `
-        <tr class="player-clickable" style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}">
+        <tr style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}">
           <td>
+            <strong class="player-clickable">${player.name}</strong>
             ${badges}
-            <strong>${player.name}</strong>
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
           <td>${player.team || '—'}</td>
-          <td>${player.age != null ? player.age : '—'}</td>
+          <td>${player.age != null ? player.age.toFixed(1) : '—'}</td>
           <td>${player.value != null ? player.value.toFixed(1) : '—'}</td>
         </tr>
       `;

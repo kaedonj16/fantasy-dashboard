@@ -2,7 +2,6 @@
 
 import csv
 import requests
-import ssl
 import time
 from bs4 import BeautifulSoup
 from datetime import date, timedelta
@@ -12,26 +11,6 @@ from requests.adapters import HTTPAdapter
 from typing import Literal, Optional, List, Dict
 
 from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
-
-
-# ---------------------------
-# TLS adapter for sites we still hit via requests (FantasyCalc)
-# ---------------------------
-
-class TLS12Adapter(HTTPAdapter):
-    def init_poolmanager(self, *args, **kwargs):
-        # Create a TLS client context
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-
-        # Enforce TLS >= 1.2
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-
-        # Normal verification
-        ctx.check_hostname = True
-        ctx.verify_mode = ssl.CERT_REQUIRED
-
-        kwargs["ssl_context"] = ctx
-        return super().init_poolmanager(*args, **kwargs)
 
 
 # ---------------------------

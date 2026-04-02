@@ -124,6 +124,7 @@ def init_offseason_opportunity_db():
             CREATE TABLE IF NOT EXISTS projected_opportunity (
                 id SERIAL PRIMARY KEY,
                 player_id VARCHAR(50) NOT NULL,
+                player_name VARCHAR(100),
                 season INT NOT NULL,
                 team VARCHAR(10),
                 position VARCHAR(5),
@@ -157,8 +158,46 @@ def init_offseason_opportunity_db():
             );
         """)
 
+        # Ensure player_name column exists (for tables created before this column was added)
+        try:
+            conn.execute("""
+                ALTER TABLE projected_opportunity 
+                ADD COLUMN IF NOT EXISTS player_name VARCHAR(100);
+            """)
+        except Exception:
+            pass  # Column already exists or other issue
+
+        # Add performance indexes for faster queries
+        create_performance_indexes(conn)
+
         conn.commit()
-        print("[offseason_opportunity] Database tables initialized")
+
+
+def create_performance_indexes(conn):
+    """Create database indexes to improve query performance for the UI and API."""
+    indexes = [
+        # projected_opportunity table indexes
+        "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_score ON projected_opportunity(season, breakout_score DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_season_position ON projected_opportunity(season, position)",
+        "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_team_position_season ON projected_opportunity(team, position, season)",
+        "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_player_season ON projected_opportunity(player_id, season)",
+        
+        # breakout_opportunity_scores table indexes (unified engine)
+        "CREATE INDEX IF NOT EXISTS idx_breakout_scores_season_score ON breakout_opportunity_scores(season, breakout_opportunity_score DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_breakout_scores_position_score ON breakout_opportunity_scores(position, breakout_opportunity_score DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_breakout_scores_team_position_season ON breakout_opportunity_scores(team, position, season)",
+        "CREATE INDEX IF NOT EXISTS idx_breakout_scores_player_season ON breakout_opportunity_scores(player_id, season)",
+        
+        # Composite index for common UI query pattern
+        "CREATE INDEX IF NOT EXISTS idx_projected_opportunity_ui_query ON projected_opportunity(season, position, breakout_score DESC) WHERE breakout_score >= 30",
+        "CREATE INDEX IF NOT EXISTS idx_breakout_scores_ui_query ON breakout_opportunity_scores(season, position, breakout_opportunity_score DESC) WHERE breakout_opportunity_score >= 40",
+    ]
+    
+    for index_sql in indexes:
+        try:
+            conn.execute(index_sql)
+        except Exception:
+            pass  # Index already exists or table doesn't exist yet
 
 
 def track_roster_change(
@@ -170,10 +209,11 @@ def track_roster_change(
     change_type: str,
     change_date: date,
     season: int,
-    last_season_stats: Optional[Dict[str, Any]] = None
+    last_season_stats: Optional[Dict[str, Any]] = None,
+    draft_metadata: Optional[Dict[str, Any]] = None
 ):
     """
-    Record a roster change (departure, signing, trade, retirement).
+    Record a roster change (departure, signing, trade, retirement, draft).
 
     Args:
         player_id: Sleeper player ID
@@ -185,10 +225,16 @@ def track_roster_change(
         change_date: Date of change
         season: Season year
         last_season_stats: Usage stats from previous season
+        draft_metadata: Draft pick metadata (for draft picks only)
+                       Dict with: round, pick, overall_pick, college
     """
     from dashboard_services.db import get_conn
+    import json
 
     stats = last_season_stats or {}
+
+    # Convert draft_metadata to JSON string if provided
+    draft_meta_json = json.dumps(draft_metadata) if draft_metadata else None
 
     with get_conn() as conn:
         conn.execute("""
@@ -197,8 +243,9 @@ def track_roster_change(
                 change_type, change_date, season,
                 last_season_targets, last_season_carries,
                 last_season_snap_share, last_season_opportunity_share,
-                last_season_team_target_pct, last_season_team_carry_pct
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                last_season_team_target_pct, last_season_team_carry_pct,
+                draft_metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (player_id, old_team, new_team, season)
             DO UPDATE SET
                 change_date = EXCLUDED.change_date,
@@ -207,7 +254,8 @@ def track_roster_change(
                 last_season_snap_share = EXCLUDED.last_season_snap_share,
                 last_season_opportunity_share = EXCLUDED.last_season_opportunity_share,
                 last_season_team_target_pct = EXCLUDED.last_season_team_target_pct,
-                last_season_team_carry_pct = EXCLUDED.last_season_team_carry_pct
+                last_season_team_carry_pct = EXCLUDED.last_season_team_carry_pct,
+                draft_metadata = EXCLUDED.draft_metadata
         """, (
             player_id, player_name, position, old_team, new_team,
             change_type, change_date, season,
@@ -216,7 +264,8 @@ def track_roster_change(
             stats.get("snap_share"),
             stats.get("opportunity_share"),
             stats.get("team_target_pct"),
-            stats.get("team_carry_pct")
+            stats.get("team_carry_pct"),
+            draft_meta_json
         ))
         conn.commit()
 
@@ -392,10 +441,18 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
             carries_vacated = vac_opp["total_carries_vacated"]
             snap_share_vacated = float(vac_opp["total_snap_share_vacated"] or 0)
 
-            print(f"\n[offseason] Projecting {team} {position} (vacated: {targets_vacated} tgts, {carries_vacated} cars)")
+            # Get new arrivals for this team/position
+            new_arrivals = conn.execute("""
+                SELECT DISTINCT player_id
+                FROM roster_changes
+                WHERE season = %s
+                  AND new_team = %s
+                  AND position = %s
+                  AND old_team IS NOT NULL
+                  AND old_team != 'FA'
+            """, (season, team, position)).fetchall()
 
-            # Find remaining players on this team at this position
-            remaining_players = []
+            new_arrival_ids = set(row["player_id"] for row in new_arrivals)
 
             # Get departed player IDs
             departed_players = vac_opp["departed_players"]
@@ -406,6 +463,10 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
             else:
                 departed_ids = []
 
+            # Separate remaining players into RETURNING vs NEW ARRIVALS
+            returning_players = []
+            new_arrival_players = []
+
             for pid, player in players_index.items():
                 # Only consider top N players
                 if top_player_ids and pid not in top_player_ids:
@@ -414,137 +475,247 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                 # Match team and position
                 if player.get("team") == team and player.get("pos") == position:
                     # Exclude players who left
-                    if pid not in departed_ids:
-                        remaining_players.append({
-                            "player_id": pid,
-                            "name": player.get("name"),
-                            "age": player.get("age"),
-                            "years_exp": player.get("years_exp"),
-                            "prev_usage": usage_by_player.get(pid, {})
-                        })
+                    if pid in departed_ids:
+                        continue
 
-            if not remaining_players:
+                    player_data = {
+                        "player_id": pid,
+                        "name": player.get("name"),
+                        "age": player.get("age"),
+                        "years_exp": player.get("years_exp"),
+                        "prev_usage": usage_by_player.get(pid, {})
+                    }
+
+                    # Categorize: new arrival vs returning player
+                    if pid in new_arrival_ids:
+                        new_arrival_players.append(player_data)
+                    else:
+                        returning_players.append(player_data)
+
+            if not returning_players and not new_arrival_players:
                 print(f"  No remaining players found for {team} {position}")
                 continue
 
-            print(f"  Found {len(remaining_players)} remaining players")
+            # Only redistribute to returning players if they exist
+            if returning_players:
+                # Calculate total previous usage by RETURNING players only
+                # Note: historical data uses total_targets, avg_carries*games, avg_off_snap_pct
+                total_prev_targets = 0
+                total_prev_carries = 0
+                total_prev_snap_pct = 0
+                for p in returning_players:
+                    usage = p["prev_usage"]
+                    games = usage.get("games", 1) or 1
+                    targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
+                    carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
+                    snap_pct = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                    total_prev_targets += int(targets)
+                    total_prev_carries += int(carries)
+                    total_prev_snap_pct += float(snap_pct)
 
-            # Calculate total previous usage by remaining players
-            # Note: historical data uses total_targets, avg_carries*games, avg_off_snap_pct
-            total_prev_targets = 0
-            total_prev_carries = 0
-            for p in remaining_players:
-                usage = p["prev_usage"]
-                games = usage.get("games", 1) or 1
-                targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
-                carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
-                total_prev_targets += int(targets)
-                total_prev_carries += int(carries)
+                # Redistribute vacated opportunity to RETURNING players only
+                for player in returning_players:
+                    usage = player["prev_usage"]
+                    games = usage.get("games", 1) or 1
 
-            # Redistribute vacated opportunity proportionally
-            for player in remaining_players:
+                    # Extract stats with field name fallbacks
+                    prev_targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
+                    prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
+                    prev_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                    prev_opp_share = usage.get("opportunity_share", 0)
+
+                    # Convert to integers
+                    prev_targets = int(prev_targets)
+                    prev_carries = int(prev_carries)
+
+                    # Calculate share of vacated opportunity this player will receive
+                    # Use depth chart weighting - players with higher usage get disproportionately more
+                    # This models "WR1 absorbs WR1 targets" better than linear distribution
+
+                    # Target share with depth chart weighting
+                    if total_prev_targets > 0:
+                        proportional_share = prev_targets / total_prev_targets
+                        # Use exponent 0.7 for diminishing returns - prevents extreme concentration
+                        usage_weight = (prev_targets / total_prev_targets) ** 0.7
+                        # Blend: 40% proportional, 60% usage-weighted
+                        target_share = (0.4 * proportional_share) + (0.6 * usage_weight)
+                    else:
+                        # Equal distribution if no previous data
+                        target_share = 1.0 / len(returning_players)
+
+                    # Carry share with depth chart weighting
+                    if total_prev_carries > 0:
+                        carry_proportional = prev_carries / total_prev_carries
+                        carry_usage_weight = (prev_carries / total_prev_carries) ** 0.7
+                        carry_share = (0.4 * carry_proportional) + (0.6 * carry_usage_weight)
+                    else:
+                        carry_share = 1.0 / len(returning_players)
+
+                    # Snap share with snap-specific distribution (NOT target-based)
+                    if total_prev_snap_pct > 0:
+                        snap_proportional = (prev_snap_share or 0) / total_prev_snap_pct
+                        snap_usage_weight = ((prev_snap_share or 0) / total_prev_snap_pct) ** 0.7
+                        snap_share = (0.4 * snap_proportional) + (0.6 * snap_usage_weight)
+                    else:
+                        snap_share = 1.0 / len(returning_players)
+
+                    # Project increases
+                    target_increase = int(targets_vacated * target_share)
+                    carry_increase = int(carries_vacated * carry_share)
+                    snap_share_increase = snap_share_vacated * snap_share
+
+                    # Calculate opportunity share increase
+                    prev_opportunity = prev_targets + prev_carries
+                    total_prev_opportunity = total_prev_targets + total_prev_carries
+                    departed_opportunity = targets_vacated + carries_vacated
+                    team_total_opportunity = departed_opportunity + total_prev_opportunity
+
+                    if team_total_opportunity > 0:
+                        opportunity_share_vacated = departed_opportunity / team_total_opportunity
+
+                        if total_prev_opportunity > 0:
+                            opp_proportional = prev_opportunity / total_prev_opportunity
+                            opp_usage_weight = (prev_opportunity / total_prev_opportunity) ** 0.7
+                            opp_share = (0.4 * opp_proportional) + (0.6 * opp_usage_weight)
+                        else:
+                            opp_share = 1.0 / len(returning_players)
+
+                        opportunity_share_increase = opportunity_share_vacated * opp_share
+                        projected_opportunity_share = (prev_opportunity / team_total_opportunity if team_total_opportunity > 0 else 0) + opportunity_share_increase
+                    else:
+                        opportunity_share_increase = 0
+                        projected_opportunity_share = 0
+
+                    projected_targets = prev_targets + target_increase
+                    projected_carries = prev_carries + carry_increase
+                    projected_snap_share = min(prev_snap_share + snap_share_increase, 1.0)
+
+                    # Calculate offseason breakout score
+                    score, factors = calculate_offseason_breakout_score(
+                        player=player,
+                        target_increase=target_increase,
+                        carry_increase=carry_increase,
+                        snap_share_increase=snap_share_increase,
+                        vacated_targets=targets_vacated,
+                        vacated_carries=carries_vacated,
+                        prev_targets=prev_targets,
+                        prev_carries=prev_carries
+                    )
+
+                    if score >= 30:  # Only save significant opportunities
+                        projections.append({
+                            "player_id": player["player_id"],
+                            "player_name": player["name"],
+                            "season": season,
+                            "team": team,
+                            "position": position,
+                            "prev_season_targets": prev_targets,
+                            "prev_season_carries": prev_carries,
+                            "prev_season_snap_share": prev_snap_share,
+                            "prev_season_opportunity_share": prev_opp_share,
+                            "projected_targets": projected_targets,
+                            "projected_carries": projected_carries,
+                            "projected_snap_share": projected_snap_share,
+                            "projected_opportunity_share": projected_opportunity_share,
+                            "target_increase": target_increase,
+                            "carry_increase": carry_increase,
+                            "snap_share_increase": snap_share_increase,
+                            "opportunity_share_increase": opportunity_share_increase,
+                            "breakout_score": score,
+                            "projection_factors": json.dumps(factors)
+                        })
+
+                        print(f"  ✓ {player['name']}: {prev_targets}→{projected_targets} tgts "
+                              f"(+{target_increase}), score: {score:.1f}")
+
+            # Handle new arrivals separately - give them baseline projections
+            for player in new_arrival_players:
                 usage = player["prev_usage"]
                 games = usage.get("games", 1) or 1
 
-                # Extract stats with field name fallbacks
+                # Get their PREVIOUS TEAM usage (what they did before joining)
                 prev_targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
                 prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
                 prev_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
-                prev_opp_share = usage.get("opportunity_share", 0)
 
-                # Convert to integers
                 prev_targets = int(prev_targets)
                 prev_carries = int(prev_carries)
 
-                # Calculate share of vacated opportunity this player will receive
-                # Players with higher previous usage get proportionally more
-                if total_prev_targets > 0:
-                    target_share = prev_targets / total_prev_targets
-                else:
-                    # Equal distribution if no previous data
-                    target_share = 1.0 / len(remaining_players)
+                # PROJECT: Maintain 80% of their previous role (conservative estimate in new system)
+                projected_targets = int(prev_targets * 0.8)
+                projected_carries = int(prev_carries * 0.8)
+                projected_snap_share = prev_snap_share * 0.8
 
-                if total_prev_carries > 0:
-                    carry_share = prev_carries / total_prev_carries
-                else:
-                    carry_share = 1.0 / len(remaining_players)
+                # No "increase" - they're filling a vacancy, not benefiting from one
+                target_increase = 0
+                carry_increase = 0
+                snap_share_increase = 0
 
-                # Project increases
-                target_increase = int(targets_vacated * target_share)
-                carry_increase = int(carries_vacated * carry_share)
-                snap_share_increase = snap_share_vacated * target_share
+                # Low breakout score - they're replacements, not breakout candidates
+                score = 15.0
+                factors = {"new_arrival_baseline": 15.0}
 
-                projected_targets = prev_targets + target_increase
-                projected_carries = prev_carries + carry_increase
-                projected_snap_share = min(prev_snap_share + snap_share_increase, 1.0)
-
-                # Calculate offseason breakout score
-                score, factors = calculate_offseason_breakout_score(
-                    player=player,
-                    target_increase=target_increase,
-                    carry_increase=carry_increase,
-                    snap_share_increase=snap_share_increase,
-                    vacated_targets=targets_vacated,
-                    vacated_carries=carries_vacated,
-                    prev_targets=prev_targets,
-                    prev_carries=prev_carries
-                )
-
-                if score >= 30:  # Only save significant opportunities
+                # Only save if they had meaningful usage on previous team
+                if prev_targets >= 40 or prev_carries >= 40:
                     projections.append({
                         "player_id": player["player_id"],
+                        "player_name": player["name"],
                         "season": season,
                         "team": team,
                         "position": position,
-                        "prev_season_targets": prev_targets,
-                        "prev_season_carries": prev_carries,
-                        "prev_season_snap_share": prev_snap_share,
-                        "prev_season_opportunity_share": prev_opp_share,
+                        "prev_season_targets": 0,  # Zero on THIS team
+                        "prev_season_carries": 0,
+                        "prev_season_snap_share": 0,
+                        "prev_season_opportunity_share": 0,
                         "projected_targets": projected_targets,
                         "projected_carries": projected_carries,
                         "projected_snap_share": projected_snap_share,
+                        "projected_opportunity_share": 0,
                         "target_increase": target_increase,
                         "carry_increase": carry_increase,
                         "snap_share_increase": snap_share_increase,
+                        "opportunity_share_increase": 0,
                         "breakout_score": score,
                         "projection_factors": json.dumps(factors)
                     })
-
-                    print(f"  ✓ {player['name']}: {prev_targets}→{projected_targets} tgts "
-                          f"(+{target_increase}), score: {score:.1f}")
 
         # Insert projections into database
         for proj in projections:
             conn.execute("""
                 INSERT INTO projected_opportunity (
-                    player_id, season, team, position,
+                    player_id, player_name, season, team, position,
                     prev_season_targets, prev_season_carries,
                     prev_season_snap_share, prev_season_opportunity_share,
                     projected_targets, projected_carries, projected_snap_share,
+                    projected_opportunity_share,
                     target_increase, carry_increase, snap_share_increase,
+                    opportunity_share_increase,
                     breakout_score, projection_factors
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (player_id, season)
                 DO UPDATE SET
+                    player_name = EXCLUDED.player_name,
                     projected_targets = EXCLUDED.projected_targets,
                     projected_carries = EXCLUDED.projected_carries,
                     projected_snap_share = EXCLUDED.projected_snap_share,
+                    projected_opportunity_share = EXCLUDED.projected_opportunity_share,
                     target_increase = EXCLUDED.target_increase,
                     carry_increase = EXCLUDED.carry_increase,
                     snap_share_increase = EXCLUDED.snap_share_increase,
+                    opportunity_share_increase = EXCLUDED.opportunity_share_increase,
                     breakout_score = EXCLUDED.breakout_score,
                     projection_factors = EXCLUDED.projection_factors,
                     calculated_at = NOW()
             """, (
-                proj["player_id"], proj["season"], proj["team"], proj["position"],
+                proj["player_id"], proj.get("player_name"), proj["season"], proj["team"], proj["position"],
                 proj["prev_season_targets"], proj["prev_season_carries"],
                 proj["prev_season_snap_share"], proj["prev_season_opportunity_share"],
                 proj["projected_targets"], proj["projected_carries"],
-                proj["projected_snap_share"],
+                proj["projected_snap_share"], proj["projected_opportunity_share"],
                 proj["target_increase"], proj["carry_increase"],
-                proj["snap_share_increase"],
+                proj["snap_share_increase"], proj["opportunity_share_increase"],
                 proj["breakout_score"], proj["projection_factors"]
             ))
 
@@ -651,9 +822,12 @@ def calculate_offseason_breakout_score(
     return total_score, factors
 
 
-def get_offseason_breakout_candidates(season: int, min_score: float = 30, top_n_players: int = 600) -> List[Dict[str, Any]]:
+def get_offseason_breakout_candidates_legacy(season: int, min_score: float = 30, top_n_players: int = 600) -> List[Dict[str, Any]]:
     """
-    Get offseason breakout candidates with projected opportunity increases.
+    LEGACY: Get offseason breakout candidates with projected opportunity increases.
+
+    This is the original implementation. New code should use the unified breakout engine
+    via get_offseason_breakout_candidates() which wraps the BreakoutEngine.
 
     Args:
         season: Season year
@@ -685,12 +859,15 @@ def get_offseason_breakout_candidates(season: int, min_score: float = 30, top_n_
                 po.prev_season_targets,
                 po.prev_season_carries,
                 po.prev_season_snap_share,
+                po.prev_season_opportunity_share,
                 po.projected_targets,
                 po.projected_carries,
                 po.projected_snap_share,
+                po.projected_opportunity_share,
                 po.target_increase,
                 po.carry_increase,
                 po.snap_share_increase,
+                po.opportunity_share_increase,
                 po.breakout_score,
                 po.projection_factors,
                 vo.departed_players
@@ -767,26 +944,233 @@ def get_offseason_breakout_candidates(season: int, min_score: float = 30, top_n_
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "breakout_score": round(float(cand["breakout_score"]), 1),
                 "projection_factors": projection_factors,
+                "snap_share_increase": round(float(cand["snap_share_increase"] or 0), 3),
+                "opportunity_share_increase": round(float(cand["opportunity_share_increase"] or 0), 3),
                 "previous_season": {
                     "targets": cand["prev_season_targets"],
                     "carries": cand["prev_season_carries"],
-                    "snap_share": round(float(cand["prev_season_snap_share"] or 0), 3)
+                    "snap_share": round(float(cand["prev_season_snap_share"] or 0), 3),
+                    "opportunity_share": round(float(cand["prev_season_opportunity_share"] or 0), 3)
                 },
                 "projected": {
                     "targets": cand["projected_targets"],
                     "carries": cand["projected_carries"],
-                    "snap_share": round(float(cand["projected_snap_share"] or 0), 3)
+                    "snap_share": round(float(cand["projected_snap_share"] or 0), 3),
+                    "opportunity_share": round(float(cand["projected_opportunity_share"] or 0), 3)
                 },
                 "increases": {
                     "targets": cand["target_increase"],
                     "carries": cand["carry_increase"],
-                    "snap_share": round(float(cand["snap_share_increase"] or 0), 3)
+                    "snap_share": round(float(cand["snap_share_increase"] or 0), 3),
+                    "opportunity_share": round(float(cand["opportunity_share_increase"] or 0), 3)
                 },
                 "departed_players": departed_names,
                 "context": f"Benefits from {', '.join(departed_names[:2])} departure"
             })
 
         return results
+
+
+def apply_team_position_limit(
+    candidates: List[Dict],
+    max_per_position_per_team: int = 2
+) -> List[Dict]:
+    """
+    Limit breakout candidates to top N per position per team.
+
+    Prevents showing entire team rosters as "breakout candidates".
+    Example: Only show top 1-2 WRs from CHI, not all 6.
+
+    Args:
+        candidates: List of breakout candidate dictionaries
+        max_per_position_per_team: Maximum candidates per position per team (default 2)
+
+    Returns:
+        Filtered list with at most N candidates per team-position combination
+    """
+    from collections import defaultdict
+
+    # Group by team + position
+    by_team_pos = defaultdict(list)
+
+    for candidate in candidates:
+        team = candidate.get("team")
+        position = candidate.get("position")
+
+        if not team or not position:
+            continue
+
+        key = f"{team}_{position}"
+        by_team_pos[key].append(candidate)
+
+    # Take top N per group (already sorted by score DESC from database)
+    filtered = []
+    for key, group in by_team_pos.items():
+        # Sort by breakout_opportunity_score DESC (should already be sorted, but ensure)
+        sorted_group = sorted(
+            group,
+            key=lambda x: x.get("breakout_score", x.get("breakout_opportunity_score", 0)),
+            reverse=True
+        )
+
+        # Take top N
+        top_n = sorted_group[:max_per_position_per_team]
+        filtered.extend(top_n)
+
+    # Re-sort overall by breakout score
+    filtered.sort(
+        key=lambda x: x.get("breakout_score", x.get("breakout_opportunity_score", 0)),
+        reverse=True
+    )
+
+    return filtered
+
+
+def get_offseason_breakout_candidates(
+    season: int,
+    min_score: float = 40,  # Selective threshold for true breakout opportunities
+    limit: int = 20,  # Top N to return (changed from top_n_players for simplicity)
+    use_unified_engine: bool = True,
+    max_per_team_position: int = 2  # NEW: Limit candidates per team-position
+) -> List[Dict[str, Any]]:
+    """
+    Get top offseason breakout candidates from database (FAST).
+
+    Simply queries database for top N candidates. No calculation, just a fast lookup.
+    Applies per-team-position limit to avoid showing entire rosters as breakouts.
+
+    Args:
+        season: Season year
+        min_score: Minimum breakout score threshold (default 40)
+        limit: Number of top candidates to return (default 20)
+        use_unified_engine: Use new unified engine (default True) vs legacy implementation
+        max_per_team_position: Maximum candidates per position per team (default 2)
+
+    Returns:
+        List of top candidates sorted by breakout score (descending)
+    """
+    if not use_unified_engine:
+        # Use legacy implementation
+        return get_offseason_breakout_candidates_legacy(season, min_score, limit)
+
+    # Use unified breakout engine with FAST database queries
+    try:
+        from data_building.breakout_engine.queries import get_latest_breakout_candidates
+        from utils.utils import load_model_value_table
+
+        # FAST: Single database query (< 10ms)
+        # Get more than limit to allow filtering, then take top N after filtering
+        db_candidates = get_latest_breakout_candidates(
+            season=season,
+            min_score=min_score,
+            limit=limit * 5  # Get 5x more to ensure we have enough after filtering
+        )
+
+        # Enrich with value data from model_value_table
+        value_table = load_model_value_table() or []
+        values_by_id = {str(p.get("id")): p for p in value_table}
+
+        # Also get projected opportunity data for increases
+        from dashboard_services.db import get_conn
+        projected_opportunity_by_id = {}
+        try:
+            with get_conn() as conn:
+                projected_data = conn.execute("""
+                    SELECT player_id, target_increase, carry_increase, snap_share_increase,
+                           prev_season_targets, prev_season_carries, prev_season_snap_share,
+                           projected_targets, projected_carries, projected_snap_share
+                    FROM projected_opportunity 
+                    WHERE season = %s AND breakout_score >= %s
+                """, (season, min_score)).fetchall()
+                
+                for row in projected_data:
+                    projected_opportunity_by_id[row["player_id"]] = row
+        except Exception:
+            pass  # If table doesn't exist or query fails, continue without increases
+
+        # Build API response
+        results = []
+        for candidate in db_candidates:
+            player_id = str(candidate.get("player_id"))
+            player_value = values_by_id.get(player_id, {})
+            pos_rank = player_value.get("pos_rank", 999)
+            position = candidate.get("position")
+
+            # No artificial filters - the formula is the gate
+            # If a player scored >= min_score, they're a breakout candidate
+
+            # Get projected opportunity data for this player
+            proj_data = projected_opportunity_by_id.get(player_id, {})
+            
+            # Build API response format (convert all numeric fields to float)
+            response_data = {
+                "player_id": player_id,
+                "name": candidate.get("player_name"),
+                "team": candidate.get("team"),
+                "position": position,
+                "age": float(player_value.get("age")) if player_value.get("age") else None,
+                "years_exp": player_value.get("years_exp"),
+                "breakout_score": float(candidate.get("breakout_opportunity_score", 0)),
+                "value": float(player_value.get("value", 0)),
+                "sf_value": float(player_value.get("sf_value", player_value.get("value", 0))),
+                "pos_rank": pos_rank,
+                "pos_rank_label": player_value.get("pos_rank_label"),
+                # Component scores (convert to float)
+                "projection_factors": {
+                    "opportunity_opened": float(candidate.get("opportunity_opened_score", 0)),
+                    "competition_removed": float(candidate.get("competition_removed_score", 0)),
+                    "competition_added": float(candidate.get("competition_added_penalty", 0)),
+                    "team_environment": float(candidate.get("team_environment_score", 0)),
+                    "player_readiness": float(candidate.get("player_readiness_score", 0)),
+                    "role_trajectory": float(candidate.get("role_trajectory_score", 0)),
+                    "confidence": float(candidate.get("confidence_score", 0)),
+                },
+                # Explainability
+                "key_reasons": candidate.get("key_reasons", ""),
+                "projected_role": candidate.get("projected_role_tag"),
+                "directional_trend": candidate.get("directional_trend"),
+                "context": candidate.get("vacated_usage_summary"),
+                "departed_players": candidate.get("vacated_usage_summary"),
+                "recent_transactions": candidate.get("recent_transactions_affecting_player"),
+                "added_competition": candidate.get("added_competition_summary"),
+                "phase": candidate.get("phase"),
+            }
+            
+            # Add projected increases if available
+            if proj_data:
+                response_data.update({
+                    "previous_season": {
+                        "targets": proj_data.get("prev_season_targets", 0),
+                        "carries": proj_data.get("prev_season_carries", 0),
+                        "snap_share": round(float(proj_data.get("prev_season_snap_share") or 0), 3),
+                    },
+                    "projected": {
+                        "targets": proj_data.get("projected_targets", 0),
+                        "carries": proj_data.get("projected_carries", 0),
+                        "snap_share": round(float(proj_data.get("projected_snap_share") or 0), 3),
+                    },
+                    "increases": {
+                        "targets": proj_data.get("target_increase", 0),
+                        "carries": proj_data.get("carry_increase", 0),
+                        "snap_share": round(float(proj_data.get("snap_share_increase") or 0), 3),
+                    }
+                })
+            
+            results.append(response_data)
+
+        # Apply per-team-position filtering
+        filtered_results = apply_team_position_limit(results, max_per_team_position)
+
+        # Take top N after filtering
+        return filtered_results[:limit]
+
+    except Exception as e:
+        print(f"[get_offseason_breakout_candidates] Database query failed: {e}")
+        print("[get_offseason_breakout_candidates] Falling back to legacy implementation")
+        import traceback
+        traceback.print_exc()
+        # Fallback to legacy
+        return get_offseason_breakout_candidates_legacy(season, min_score, limit)
 
 
 if __name__ == "__main__":

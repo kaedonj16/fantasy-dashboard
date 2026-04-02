@@ -1415,6 +1415,9 @@ def render_teams_sidebar(teams: List[dict]) -> str:
             if players:
                 for p in players:
                     row_cls = "player-row"
+                    if p.get("name") == "0":
+                        p['name'] = "Empty"
+                        row_cls = "player-row empty"
                     if extra_class:
                         row_cls += f" {extra_class}"
                     pos = p.get("pos")
@@ -1425,7 +1428,7 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     # Make player name clickable
                     pid = p.get("pid", "")
                     player_name = p['name']
-                    clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid else " class='pname'"
+                    clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid != "0" else " class='pname'"
 
                     out.append(
                         f"<div class='{row_cls}'>"

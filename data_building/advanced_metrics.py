@@ -498,13 +498,16 @@ def get_year_over_year_metrics(conn, player_id: str, current_dt: "datetime") -> 
     return None
 
 
-def detect_breakout_candidates(
+def detect_breakout_candidates_legacy(
     lookback_days: int = 14,
     min_games: int = 2,
     age_threshold: float = 26.0,
 ) -> List[Dict[str, Any]]:
     """
-    Detect breakout candidates using multi-factor analysis.
+    LEGACY: Detect breakout candidates using multi-factor analysis.
+
+    This is the original implementation. New code should use the unified breakout engine
+    via detect_breakout_candidates() which wraps the BreakoutEngine.
 
     Factors considered:
     1. Short-term usage increase (snap %, opportunity share vs 14 days ago)
@@ -717,6 +720,116 @@ def detect_breakout_candidates(
         breakouts.sort(key=lambda x: x["breakout_score"], reverse=True)
 
         return breakouts
+
+
+def detect_breakout_candidates(
+    lookback_days: int = 14,
+    min_games: int = 2,
+    age_threshold: float = 26.0,
+    use_unified_engine: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Detect in-season breakout candidates.
+
+    This function now uses the unified breakout engine by default, which provides
+    year-round scoring with phase-based weighting and explainability.
+
+    Args:
+        lookback_days: Days to look back for trend comparison
+        min_games: Minimum games played
+        age_threshold: Age threshold for youth bonus
+        use_unified_engine: Use new unified engine (default True) vs legacy
+
+    Returns:
+        List of breakout candidates sorted by score
+    """
+    if not use_unified_engine:
+        # Use legacy implementation
+        return detect_breakout_candidates_legacy(lookback_days, min_games, age_threshold)
+
+    # Use unified breakout engine
+    try:
+        from data_building.breakout_engine import BreakoutEngine
+        from utils.utils import load_players_index, load_model_value_table
+        from datetime import datetime, date
+
+        # Get current season
+        nfl_state = get_nfl_state() or {}
+        current_season = int(nfl_state.get("season") or datetime.now().year)
+
+        players_index = load_players_index() or {}
+        value_table = load_model_value_table() or []
+
+        # Build values lookup
+        values_by_id = {str(p.get("id")): p for p in value_table}
+
+        # Get top 600 players by value
+        sorted_values = sorted(value_table, key=lambda x: x.get("value", 0), reverse=True)
+        top_player_ids = set(str(p.get("id")) for p in sorted_values[:600])
+
+        # Build player list for engine
+        player_list = []
+        for player_id in top_player_ids:
+            player_meta = players_index.get(player_id, {})
+            player_value = values_by_id.get(player_id, {})
+
+            position = player_meta.get("pos") or player_value.get("position")
+            if not position:
+                continue
+
+            player_list.append({
+                'player_id': player_id,
+                'player_name': player_meta.get("name") or player_meta.get("full_name"),
+                'team': player_meta.get("team"),
+                'position': position,
+                'age': player_value.get("age"),
+                'years_exp': player_meta.get("years_exp", 0)
+            })
+
+        # Initialize engine for in-season
+        engine = BreakoutEngine(season=current_season, as_of_date=date.today())
+
+        # Calculate scores
+        candidates = engine.calculate_breakout_scores(player_list, min_score=30)
+
+        # Convert to legacy format for compatibility
+        results = []
+        for cand in candidates:
+            player_value = values_by_id.get(cand.player_id, {})
+
+            results.append({
+                "player_id": cand.player_id,
+                "name": cand.player_name,
+                "team": cand.team,
+                "position": cand.position,
+                "age": player_value.get("age"),
+                "years_exp": player_value.get("years_exp"),
+                "value": player_value.get("value", 0),
+                "breakout_score": cand.breakout_opportunity_score,
+                "score_components": {
+                    "opportunity_opened": cand.opportunity_opened_score,
+                    "competition_removed": cand.competition_removed_score,
+                    "competition_added": cand.competition_added_penalty,
+                    "team_environment": cand.team_environment_score,
+                    "player_readiness": cand.player_readiness_score,
+                    "role_trajectory": cand.role_trajectory_score,
+                    "confidence": cand.confidence_score
+                },
+                "key_reasons": cand.key_reasons,
+                "projected_role": cand.projected_role_tag,
+                "directional_trend": cand.directional_trend,
+                "phase": cand.phase
+            })
+
+        return results
+
+    except Exception as e:
+        print(f"[detect_breakout_candidates] Error using unified engine: {e}")
+        print("[detect_breakout_candidates] Falling back to legacy implementation")
+        import traceback
+        traceback.print_exc()
+        # Fallback to legacy
+        return detect_breakout_candidates_legacy(lookback_days, min_games, age_threshold)
 
 
 def get_value_delta_for_player(player_id: str, days: int) -> Optional[float]:

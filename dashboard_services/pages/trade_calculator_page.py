@@ -28,6 +28,18 @@ def build_trade_calculator_body(
     if scoring_format_val not in {s for s, _ in SUPPORTED_SCORING_FORMATS}:
         scoring_format_val = "ppr"
 
+    # Create dynamic breakouts URL based on login status
+    if is_guest:
+        breakouts_url = "#"
+        breakouts_link_text = "Log in to see more →"
+        breakouts_link_class = "otc-view-all-link otc-guest-link"
+    else:
+        # For logged-in users, link to their league's breakouts page
+        platform_val = "sleeper"  # Default platform, can be made dynamic if needed
+        breakouts_url = f"/{platform_val}/{season_val}/{league_val}/breakouts"
+        breakouts_link_text = "View All →"
+        breakouts_link_class = "otc-view-all-link"
+
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
     # to avoid nested triple-quote SyntaxErrors
@@ -306,6 +318,11 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
+              <div class="otc-day-filters" style="display: flex; gap: 6px; margin-top: 8px; padding: 0 12px;">
+                <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
+                <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
+                <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
+              </div>
             </div>
 
             <div id="moversTabContent" class="otc-tab-content is-active">
@@ -326,7 +343,10 @@ def build_trade_calculator_body(
 
             <div id="breakoutsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
-                <div class="otc-mini-section-title">Breakout Candidates</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div class="otc-mini-section-title">Breakout Candidates</div>
+                  <a href="{breakouts_url}" class="{breakouts_link_class}" style="font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 500;">{breakouts_link_text}</a>
+                </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>
                 </div>

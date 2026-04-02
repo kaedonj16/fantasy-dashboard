@@ -5,6 +5,36 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-04-02",
+        "tag": "new",
+        "text": "Breakouts Page: Dedicated dashboard for breakout candidates with opportunity projections and scoring",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-04-01",
+        "tag": "feature",
+        "text": "Dark Mode: Toggle between light and dark themes with your preference saved automatically",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-04-01",
+        "tag": "feature",
+        "text": "Advanced Metrics: View role scores, snap share, and efficiency stats in player modals",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-04-01",
+        "tag": "feature",
+        "text": "Value Movers: Filter by 7-day, 14-day, or 30-day periods to track player value changes",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-03-31",
+        "tag": "feature",
+        "text": "Player & team modals: click any player or team to view detailed stats and roster info.",
+        "link": "/dashboard"
+    },
+    {
         "date": "2026-03-30",
         "tag": "new",
         "text": "Offseason Breakouts: Identifies dynasty breakout candidates before the season starts based on roster changes",
