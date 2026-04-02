@@ -20,12 +20,6 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
 
     Returns:
         Number of players saved to database
-
-    Example:
-        >>> from utils.utils import load_value_table
-        >>> value_table = load_value_table()
-        >>> count = save_daily_values_to_db(value_table)
-        >>> print(f"Saved {count} player values")
     """
     # Only import if DATABASE_URL is set
     db_url = os.getenv("DATABASE_URL", "").strip()

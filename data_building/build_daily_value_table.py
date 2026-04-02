@@ -31,6 +31,12 @@ def _safe_float(value):
 
 
 def build_daily_data(season: int, week: int):
+    """
+    Build usage table and vendor values.
+
+    NOTE: This does NOT build model values - that should be done AFTER
+    advanced metrics are calculated (see build_daily_model_values).
+    """
     from data_building.external_data.external_values_scraper import (
         scrape_all_vendor_values,
         load_fantasycalc_api_values,
@@ -47,16 +53,30 @@ def build_daily_data(season: int, week: int):
     if load_fantasycalc_api_values() is None or load_dynastyprocess_values() is None:
         scrape_all_vendor_values()
 
-    if load_usage_table() is None or load_engine_table() is None:
-        write_usage_table_snapshot(season, weeks=range(1, 19))
-        enrich_all_team_info(season)
-        enrich_teams_index_with_rushing(Path(path_teams_index()))
-        export_engine_values()
+    # Only fetch weeks 1 through current week (or max 18)
+    # In offseason, fetch last season's full data
+    weeks_to_fetch = range(1, min(week + 1, 19)) if not offseason_mode and week >= 1 else range(1, 19)
 
-    if load_model_value_table() is None:
-        rewrite_value_table_with_model()
-        model_value_table = load_model_value_table() or []
-        record_model_value_snapshot(model_value_table)
+    print(f"[build_daily_data] Refreshing usage table for weeks {list(weeks_to_fetch)}")
+
+    # Always refresh usage table daily (for up-to-date stats)
+    write_usage_table_snapshot(season, weeks=weeks_to_fetch)
+    enrich_all_team_info(season)
+    enrich_teams_index_with_rushing(Path(path_teams_index()))
+    export_engine_values()
+
+
+def build_daily_model_values():
+    """
+    Build model values using ML model.
+
+    MUST be called AFTER build_daily_advanced_metrics() so that advanced
+    metrics are available for the model to use.
+    """
+    print(f"[build_daily_data] Building model values with advanced metrics")
+    rewrite_value_table_with_model()
+    model_value_table = load_model_value_table() or []
+    record_model_value_snapshot(model_value_table)
 
 
 def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):

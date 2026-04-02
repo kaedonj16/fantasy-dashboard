@@ -98,9 +98,40 @@ def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, fl
     """
     Fetch target share for all teams, in parallel.
 
+    Uses daily caching to avoid scraping 32 teams on every run.
+
     Returns:
         { (team, player_name): { "total_targets": x, "target_share": y } }
     """
+    # Check cache first (daily cache)
+    cache_dir = Path(DATA_DIR).parent / "cache" / "target_share"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"target_share_{season}_{date.today().isoformat()}.json"
+
+    if cache_path.exists():
+        try:
+            print(f"[target_share] Loading from cache: {cache_path.name}")
+            with cache_path.open("r") as f:
+                cached_data = json.load(f)
+                # Convert string keys back to tuples
+                league_map = {}
+                for key_str, value in cached_data.items():
+                    team, name = json.loads(key_str)
+                    league_map[(team, name)] = value
+                print(f"[target_share] Loaded {len(league_map)} player-team combos from cache")
+                return league_map
+        except Exception as e:
+            print(f"[target_share] Cache read failed: {e}, fetching fresh data")
+
+    # Remove old cache files for this season
+    for old_file in cache_dir.glob(f"target_share_{season}_*.json"):
+        if old_file != cache_path:
+            try:
+                old_file.unlink()
+                print(f"[target_share] Removed old cache: {old_file.name}")
+            except Exception:
+                pass
+
     league_map: Dict[Tuple[str, str], Dict[str, float]] = {}
 
     print(f"[target_share] Fetching targets for all teams (season {season})")
@@ -130,6 +161,13 @@ def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, fl
                 }
 
     print(f"[target_share] Built target share map for {len(league_map)} (team, player) combos")
+
+    # Save to cache (convert tuple keys to strings for JSON)
+    cache_data = {json.dumps([team, name]): value for (team, name), value in league_map.items()}
+    with cache_path.open("w") as f:
+        json.dump(cache_data, f, indent=2)
+    print(f"[target_share] Cached results to {cache_path.name}")
+
     return league_map
 
 

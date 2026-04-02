@@ -1066,6 +1066,7 @@ window.initTradePage = function initTradePage(root = document) {
     const moversContent = root.querySelector("#moversTabContent");
     const breakoutsContent = root.querySelector("#breakoutsTabContent");
     const moversSub = root.querySelector("#moversSub");
+    const dayFilters = root.querySelector(".otc-day-filters");
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
@@ -1088,12 +1089,20 @@ window.initTradePage = function initTradePage(root = document) {
             const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
             moversSub.textContent = `Biggest 7-day changes in ${leagueLabel}${sizeLabel} BR value`;
           }
+          // Show day filters for movers
+          if (dayFilters) {
+            dayFilters.style.display = "flex";
+          }
         } else if (tab === "breakouts") {
           moversContent?.classList.remove("is-active");
           breakoutsContent?.classList.add("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
             moversSub.textContent = "Top 5 breakout candidates by database score";
+          }
+          // Hide day filters for breakouts
+          if (dayFilters) {
+            dayFilters.style.display = "none";
           }
 
           // Load breakouts when tab is opened for the first time

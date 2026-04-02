@@ -3119,7 +3119,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             f"""
             <div class="os-waiver-row">
               <div class="os-waiver-main">
-                <div class="os-waiver-name">{p['name']}</div>
+                <div class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</div>
                 <div class="os-waiver-sub">{subline}</div>
               </div>
               <div class="os-waiver-value">{p['value']:.0f}</div>
