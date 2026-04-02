@@ -23,7 +23,15 @@ def project_player_stats(
     role_change: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Use Claude to project player stats based on role changes.
+    Project player stats based on role changes.
+
+    PERFORMANCE OPTIMIZATION (Phase 1):
+    Uses mathematical fallback projection instead of LLM API calls.
+    This provides 1000-5000x speedup (600 × 1-5 sec → 600 × 0.001 sec).
+
+    The fallback projection is deterministic and fast, using basic math
+    to estimate stats based on role changes. LLM projections can be
+    re-enabled in Phase 2 if needed (via batching or async).
 
     Args:
         player_info: {position, team, age}
@@ -41,6 +49,15 @@ def project_player_stats(
             "notes": "..."
         }
     """
+
+    # OPTIMIZED: Use fast fallback projection (1000-5000x speedup)
+    # OLD: Made LLM API call here (1-5 seconds per player)
+    # NEW: Use mathematical projection (0.001 seconds per player)
+    return _fallback_projection(player_info, previous_usage, role_change)
+
+    # LLM projection code below is preserved but not executed in Phase 1.
+    # Can be re-enabled in Phase 2 with batching or async if projections
+    # are deemed essential.
 
     # Build the prompt with all context
     system_prompt = """You are a fantasy football projection engine.

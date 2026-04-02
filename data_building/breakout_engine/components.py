@@ -212,12 +212,21 @@ def calculate_opportunity_opened_score(
     player_id: str,
     team: str,
     position: str,
-    season: int
+    season: int,
+    vacated_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on total opportunity vacated from team/position.
+
+    Args:
+        vacated_cache: Optional dict mapping (team, position) to vacated opportunity.
+                      If provided, uses O(1) cache lookup instead of DB query.
     """
-    vac_opp = get_vacated_opportunity(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
+    if vacated_cache is not None:
+        vac_opp = vacated_cache.get((team, position))
+    else:
+        vac_opp = get_vacated_opportunity(team, position, season)
 
     if not vac_opp:
         return 0.0, {
@@ -329,12 +338,21 @@ def calculate_competition_removed_score(
     team: str,
     position: str,
     season: int,
-    player_prev_usage: Dict
+    player_prev_usage: Dict,
+    departures_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on meaningful same-position competition leaving the roster.
+
+    Args:
+        departures_cache: Optional dict mapping (team, position) to list of departures.
+                         If provided, uses O(1) cache lookup instead of DB query.
     """
-    departures = get_departures_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
+    if departures_cache is not None:
+        departures = departures_cache.get((team, position), [])
+    else:
+        departures = get_departures_by_team_position(team, position, season)
 
     if not departures:
         return 0.0, {
@@ -579,12 +597,21 @@ def calculate_competition_added_penalty(
     player_id: str,
     team: str,
     position: str,
-    season: int
+    season: int,
+    arrivals_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Negative score for added same-position competition.
+
+    Args:
+        arrivals_cache: Optional dict mapping (team, position) to list of arrivals.
+                       If provided, uses O(1) cache lookup instead of DB query.
     """
-    arrivals = get_arrivals_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
+    if arrivals_cache is not None:
+        arrivals = arrivals_cache.get((team, position), [])
+    else:
+        arrivals = get_arrivals_by_team_position(team, position, season)
 
     if not arrivals:
         return 0.0, {
@@ -680,13 +707,25 @@ def calculate_competition_added_penalty(
 def calculate_team_environment_score(
     team: str,
     position: str,
-    season: int
+    season: int,
+    team_stats_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on how favorable the team offensive environment is
     for a breakout at the given position.
+
+    Args:
+        team_stats_cache: Optional dict mapping team to team stats dict.
+                         If provided, uses O(1) cache lookup instead of file load.
+
+    Note: Results are automatically cached via lru_cache for repeated calls
+          with same (team, position, season) arguments.
     """
-    team_stats = get_team_stats(team, season) or {}
+    # OPTIMIZED: Use cache if provided, otherwise fall back to file load
+    if team_stats_cache is not None:
+        team_stats = team_stats_cache.get(team, {})
+    else:
+        team_stats = get_team_stats(team, season) or {}
 
     pass_att_pg = _safe_float(team_stats.get("pass_att_pg", 30.0))
     rush_att_pg = _safe_float(team_stats.get("rush_att_pg", 25.0))
