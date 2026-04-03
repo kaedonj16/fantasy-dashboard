@@ -27,7 +27,7 @@ def calculate_snap_share_from_usage(usage: Dict[str, Any]) -> float:
     
     Returns snap share as decimal (0.0 to 1.0)
     """
-    avg_off_snaps = usage.get("avg_off_snaps", 0) or 0
+    avg_off_snaps = usage.get("avg_off_snap_pct", 0) or 0
     if avg_off_snaps <= 0:
         return 0.0
     
