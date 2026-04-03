@@ -393,11 +393,11 @@ BASE_HTML = """
       <!-- Top Banner Ad -->
       <div class="ad-container ad-top-banner">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block; width:728px; height:90px; max-width:100%;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="YOUR_AD_SLOT_ID_1"
              data-ad-format="horizontal"
-             data-full-width-responsive="true"></ins>
+             data-full-width-responsive="false"></ins>
       </div>
 
       <main id="page-root" class="overview-layout">
@@ -407,11 +407,11 @@ BASE_HTML = """
       <!-- Bottom Content Ad -->
       <div class="ad-container ad-bottom-content">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block; width:728px; height:90px; max-width:100%;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="YOUR_AD_SLOT_ID_2"
              data-ad-format="horizontal"
-             data-full-width-responsive="true"></ins>
+             data-full-width-responsive="false"></ins>
       </div>
     </div>
 
@@ -450,9 +450,13 @@ BASE_HTML = """
 
     <script src="/static/app.js"></script>
     <script>
-      // Initialize AdSense ads
-      (adsbygoogle = window.adsbygoogle || []).push({{}});
-      (adsbygoogle = window.adsbygoogle || []).push({{}});
+      // Initialize AdSense ads with error handling
+      try {{
+        (adsbygoogle = window.adsbygoogle || []).push({{}});
+        (adsbygoogle = window.adsbygoogle || []).push({{}});
+      }} catch (e) {{
+        console.warn('AdSense initialization error:', e);
+      }}
 
       // Cookie consent handling
       (function() {{
