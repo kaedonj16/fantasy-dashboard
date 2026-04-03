@@ -7458,10 +7458,6 @@ def api_player_details(player_id: str):
                     if match:
                         year = int(match.group(1))
                         available_years.add(year)
-                # Old pattern: sleeper_stats_2023_week_1.json
-                elif "_week_" in basename:
-                    year = int(basename.split('_')[2])
-                    available_years.add(year)
             except:
                 continue
 
@@ -7489,22 +7485,18 @@ def api_player_details(player_id: str):
 
             # Load all stats for this season into memory
             stats_by_week = {}
-            stats_pattern_old = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season_year}_week_*.json")
-            stats_pattern_new = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
-            week_files = glob.glob(stats_pattern_old) + glob.glob(stats_pattern_new)
+            stats_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
+            week_files = glob.glob(stats_pattern)
 
             for week_file in week_files:
                 try:
                     basename = os.path.basename(week_file)
-                    # Extract week number from filename (handle both patterns)
-                    if "_week_" in basename:
-                        week_num = int(basename.split('_week_')[1].split('.')[0])
+                    # Extract week number from filename
+                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    if match:
+                        week_num = int(match.group(2))
                     else:
-                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                        if match:
-                            week_num = int(match.group(2))
-                        else:
-                            continue
+                        continue
 
                     with open(week_file, 'r') as f:
                         week_stats = json.load(f)
