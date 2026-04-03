@@ -28,8 +28,8 @@ from dashboard_services.api import (
 # Player info utilities
 # ------------------------------------------------
 
-def from_players_map(pid: str) -> Dict[str, str]:
-    """Get player info from the global players_map."""
+def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Get player info from the provided players_map."""
     info = players_map.get(pid) if players_map else None
     if info:
         name = info.get("name") or pid
@@ -965,8 +965,9 @@ def build_matchup_player(
         proj_map: dict[str, float],
         actual_map: dict[str, float],
         status_by_pid: dict[str, str],
+        players_map: Optional[Dict[str, Any]] = None,
 ) -> dict:
-    base = from_players_map(pid)  # existing helper in your codebase
+    base = from_players_map(pid, players_map)
     # base has: name, pos, nfl, etc.
 
     player = {
