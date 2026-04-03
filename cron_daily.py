@@ -166,7 +166,7 @@ def main():
         value_count = save_daily_values_to_db(value_table)
         print(f"[cron] Saved {value_count} player values")
 
-        build_daily_market_pulse()
+        # build_daily_market_pulse()
         build_daily_breakout_candidates(season, week, state)
 
         print(f"[cron] Daily run completed - Season {season}, Week {week}")
