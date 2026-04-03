@@ -92,7 +92,7 @@ def build_matchup_preview(
 
 
     def _pinfo(pid: str, pts_map: Dict[str, float]) -> dict:
-        base = from_players_map(pid)
+        base = from_players_map(pid, players_map)
         pts = pts_map.get(pid) if pts_map else None
         return {
             "pid": pid,
