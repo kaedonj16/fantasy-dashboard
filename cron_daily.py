@@ -59,9 +59,13 @@ def build_daily_advanced_metrics():
 
 def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
     """
-    Calculate breakout candidates using new modular workflow.
+    Calculate breakout candidates using new modular workflow with smart data management.
     """
     from data_building.breakout_workflow import run_modular_breakout_workflow
+    from data_building.breakout_data_manager import BreakoutDataManager
+    
+    # Initialize data manager
+    data_manager = BreakoutDataManager()
 
     season_type = str(nfl_state.get("season_type", "")).lower().strip()
     should_run = (
@@ -73,7 +77,17 @@ def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
         print(f"[cron] Breakout calculations skipped - season_type={season_type}, week={week}")
         return
 
+    # Check if data needs refreshing
+    needs_refresh = data_manager.needs_refresh()
+    should_refresh_for_changes, refresh_reason = data_manager.should_refresh_for_changes()
+    
+    if not needs_refresh and not should_refresh_for_changes:
+        print(f"[cron] Breakout data fresh, skipping refresh")
+        return
+
     print(f"[cron] Starting breakout calculations for season={season}, week={week}")
+    if should_refresh_for_changes:
+        print(f"[cron] Reason: {refresh_reason}")
 
     # Clean up previous day's data for fresh calculations
     from dashboard_services.db import get_conn
@@ -108,8 +122,24 @@ def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
 
     if success:
         print(f"[cron] Breakout workflow completed successfully")
+        
+        # Show freshness report
+        freshness_report = data_manager.get_data_freshness_report()
+        print(f"[cron] Data freshness: Scores {freshness_report['scores']['days_old']} days old, Projections {freshness_report['projections']['days_old']} days old")
+        
+        # Show any auto-calculations that were performed
+        if freshness_report.get('auto_calculations'):
+            print(f"[cron] Auto-calculations performed:")
+            for calc in freshness_report['auto_calculations']:
+                print(f"  - {calc}")
     else:
-        print(f"[cron] Breakout workflow failed")
+        print(f"[cron] Breakout workflow failed, attempting force refresh...")
+        
+        # Force refresh as fallback
+        force_results = data_manager.force_refresh_all_data()
+        print(f"[cron] Force refresh results:")
+        for data_type, result in force_results.items():
+            print(f"  - {data_type}: {result}")
 
 
 def main():

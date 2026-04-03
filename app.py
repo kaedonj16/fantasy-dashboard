@@ -7270,6 +7270,7 @@ def api_offseason_breakout_candidates():
             min_score=min_score,
             max_per_team_position=max_per_team_position
         )
+        print(candidates[0])
 
         # Filter by position if requested
         if position:
