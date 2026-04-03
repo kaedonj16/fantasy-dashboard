@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import os
-from espn_api.football import League
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
+
+from espn_api.football import League
 
 from utils.utils import load_players_index
 

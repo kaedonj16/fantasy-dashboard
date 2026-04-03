@@ -12,7 +12,6 @@ Each step is independent, testable, and builds on stored database results.
 
 import json
 from datetime import date
-from typing import Dict, List, Tuple, Any
 
 from dashboard_services.db import get_conn
 from dashboard_services.service import age_from_bday
@@ -266,8 +265,15 @@ def calculate_and_store_projections(season: int) -> int:
         prev_targets = int(
             usage.get('targets') or usage.get('total_targets') or (usage.get('avg_targets', 0) * games) or 0)
         prev_carries = int(usage.get('carries') or (usage.get('avg_carries', 0) * games) or 0)
-        prev_snap_share = (usage.get('snap_pct') or usage.get('avg_off_snap_pct') or 0) / 100 if (
-                    usage.get('snap_pct') or usage.get('avg_off_snap_pct')) else 0
+
+        # Snap share: avg_off_snap_pct is already a decimal (0-1), not a percentage (0-100)
+        prev_snap_share = usage.get('avg_off_snap_pct') or 0
+
+        # Opportunity share: calculate from usage data
+        from data_building.offseason_opportunity import calculate_opportunity_share_from_usage
+        prev_opp_share = usage.get('opportunity_share', 0)
+        if prev_opp_share == 0:
+            prev_opp_share = calculate_opportunity_share_from_usage(usage)
 
         # Calculate opportunity increases
         vacated = vacated_by_team_pos.get((team, position), {})
@@ -301,7 +307,7 @@ def calculate_and_store_projections(season: int) -> int:
             "prev_season_targets": prev_targets,
             "prev_season_carries": prev_carries,
             "prev_season_snap_share": prev_snap_share,
-            "prev_season_opportunity_share": 0,
+            "prev_season_opportunity_share": prev_opp_share,  # FIXED: Use calculated value
             "projected_targets": projected_targets,
             "projected_carries": projected_carries,
             "projected_snap_share": projected_snap_share,

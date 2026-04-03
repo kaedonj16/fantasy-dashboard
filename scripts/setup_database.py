@@ -15,7 +15,6 @@ This script creates:
 6. Performance indexes
 """
 
-import os
 import sys
 from pathlib import Path
 

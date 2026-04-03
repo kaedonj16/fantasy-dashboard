@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import pandas as pd
 from pathlib import Path
 from typing import Any, Optional
+
+import pandas as pd
 
 from cache.paths import PLAYER_HISTORY_DIR
 from data_building.external_data.nfl_target_share import fetch_league_target_share

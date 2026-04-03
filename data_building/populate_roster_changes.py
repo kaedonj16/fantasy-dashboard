@@ -7,7 +7,7 @@ then enriches with usage stats from previous season.
 
 import json
 import os
-from datetime import date, datetime
+from datetime import date
 from typing import Dict, List, Optional
 
 from data_building.offseason_opportunity import track_roster_change, calculate_vacated_opportunity, \
@@ -139,8 +139,15 @@ def detect_roster_changes_between_seasons(
         games = usage.get("games", 1)
         targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
         carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
-        snap_pct = usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0
+
+        # Snap share: avg_off_snap_pct is already a decimal (0-1), not a percentage (0-100)
+        snap_share = usage.get("avg_off_snap_pct") or 0
+
+        # Opportunity share: calculate from usage data if not available
+        from data_building.offseason_opportunity import calculate_opportunity_share_from_usage
         opp_share = usage.get("opportunity_share", 0)
+        if opp_share == 0:
+            opp_share = calculate_opportunity_share_from_usage(usage)
 
         # Convert to integers
         targets = int(targets)
@@ -165,7 +172,7 @@ def detect_roster_changes_between_seasons(
             "stats": {
                 "targets": targets,
                 "carries": carries,
-                "snap_share": snap_pct / 100 if snap_pct else 0,
+                "snap_share": snap_share,  # Already a decimal (0-1), don't divide by 100
                 "opportunity_share": opp_share,
                 "team_target_pct": None,  # Would need team totals to calculate
                 "team_carry_pct": None
@@ -273,11 +280,26 @@ def manual_add_roster_change(
     for p in usage_table:
         if str(p.get("player_id")) == player_id:
             usage = p.get("usage", {})
+
+            # Snap share: avg_off_snap_pct is already a decimal (0-1), not a percentage (0-100)
+            snap_share = usage.get("avg_off_snap_pct") or 0
+
+            # Opportunity share: calculate from usage data if not available
+            from data_building.offseason_opportunity import calculate_opportunity_share_from_usage
+            opp_share = usage.get("opportunity_share", 0)
+            if opp_share == 0:
+                opp_share = calculate_opportunity_share_from_usage(usage)
+
+            # Calculate total targets and carries
+            games = usage.get("games", 1)
+            targets = usage.get("targets") or usage.get("total_targets") or (usage.get("avg_targets", 0) * games) or 0
+            carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
+
             usage_stats = {
-                "targets": usage.get("targets", 0),
-                "carries": usage.get("carries", 0),
-                "snap_share": usage.get("snap_pct", 0) / 100 if usage.get("snap_pct") else 0,
-                "opportunity_share": usage.get("opportunity_share", 0)
+                "targets": int(targets),
+                "carries": int(carries),
+                "snap_share": snap_share,  # Already a decimal (0-1)
+                "opportunity_share": opp_share
             }
             break
 

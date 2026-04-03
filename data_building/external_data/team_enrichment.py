@@ -3,12 +3,11 @@
 import concurrent.futures
 import json
 import os
+from pathlib import Path
+from typing import Dict, Optional
+
 import requests
 from bs4 import BeautifulSoup
-from collections import defaultdict
-from datetime import date
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional
 
 from utils.utils import load_teams_index, write_json, path_teams_index
 

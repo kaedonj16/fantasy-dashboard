@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, Any, Iterable
+from typing import Dict, Iterable
 
 from dashboard_services.service import age_from_bday
 from data_building.external_data.nfl_target_share import fetch_league_target_share
+from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
 from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from utils.utils import canon_team, load_players_index
 
@@ -19,13 +20,13 @@ def build_usage_map_for_season(
 ) -> Dict[str, Dict[str, float]]:
     """
     Aggregate Sleeper season stats for the given season + weeks and
-    enrich with red-zone stats + Footballguys target share.
+    enrich with red-zone stats + Footballguys target share + PFR snap counts.
 
     Returns per player:
       {
         "games": int,
-        "avg_off_snap_pct": float,
-        "avg_off_snaps": float,
+        "avg_off_snap_pct": float,  # From PFR (0-1)
+        "avg_off_snaps": float,      # From PFR
         "avg_targets": float,
         "avg_receptions": float,
         "avg_rec_yards": float,
@@ -57,6 +58,10 @@ def build_usage_map_for_season(
     season_stats = fetch_season_stats(season, weeks)
     rz_map = fetch_season_redzone_stats(season)
     ts_map = fetch_league_target_share(season)
+
+    # NEW: Fetch Pro Football Reference snap counts
+    print(f"[build_usage] Fetching PFR snap counts for {season}...")
+    snap_counts_map = fetch_season_snap_counts(season, weeks)
 
     # NEW: players_index so we can map pid -> (team, name)
     players_index = load_players_index() or {}
@@ -217,6 +222,8 @@ def build_usage_map_for_season(
 
         usage[pid] = {
             "games": g,
+            # NOTE: Sleeper doesn't provide snap data, so these are placeholders
+            # Will be overwritten by PFR data below
             "avg_off_snap_pct": acc["off_snap_pct"] / g,
             "avg_off_snaps": acc["off_snaps"] / g,
             "avg_targets": acc["targets"] / g,
@@ -244,6 +251,67 @@ def build_usage_map_for_season(
             "total_targets": acc.get("total_targets", 0.0),
             "target_share": acc.get("target_share", 0.0),
         }
+
+    # ---- Merge PFR snap count data ----
+    # Match players by name + team since PFR doesn't have Sleeper IDs
+    print(f"[build_usage] Merging PFR snap counts for {len(snap_counts_map)} players...")
+
+    players_index = load_players_index() or {}
+    snap_matches = 0
+
+    for pid, player_usage in usage.items():
+        if player_usage["games"] == 0:
+            continue
+
+        # Get player name and team from players_index
+        player_meta = players_index.get(pid, {})
+        player_name = player_meta.get("name", "")
+        player_team = canon_team(player_meta.get("team", ""))
+
+        if not player_name or not player_team:
+            continue
+
+        # Try to find matching snap data by name
+        snap_data = snap_counts_map.get(player_name)
+
+        if snap_data and snap_data["team"] == player_team:
+            # Found a match! Overwrite Sleeper's empty snap data with PFR data
+            player_usage["avg_off_snap_pct"] = snap_data["avg_off_snap_pct"]
+            player_usage["avg_off_snaps"] = snap_data["avg_off_snaps"]
+            snap_matches += 1
+
+    print(f"[build_usage] Matched snap data for {snap_matches} players")
+
+    # ---- Apply snap share estimation for players without real snap data ----
+    from data_building.external_data.pfr_snap_counts import estimate_snap_share_from_usage
+
+    estimated_count = 0
+    for pid, player_usage in usage.items():
+        if player_usage["games"] == 0:
+            continue
+
+        # If no snap data was matched (avg_off_snap_pct is still 0 or very low)
+        if player_usage["avg_off_snap_pct"] < 0.01:
+            # Get player position
+            player_meta = players_index.get(pid, {})
+            position = player_meta.get("pos", "")
+
+            if position in ["QB", "RB", "WR", "TE"]:
+                # Estimate snap share from usage
+                estimated_snap_share = estimate_snap_share_from_usage(
+                    position=position,
+                    avg_targets=player_usage["avg_targets"],
+                    avg_carries=player_usage["avg_carries"],
+                    avg_pass_att=player_usage.get("avg_pass_att", 0)
+                )
+
+                if estimated_snap_share > 0:
+                    player_usage["avg_off_snap_pct"] = estimated_snap_share
+                    # Estimate total snaps (assuming ~65 offensive snaps per game as average)
+                    player_usage["avg_off_snaps"] = estimated_snap_share * 65.0
+                    estimated_count += 1
+
+    print(f"[build_usage] Estimated snap share for {estimated_count} players without real data")
 
     return usage
 

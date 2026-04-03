@@ -60,15 +60,10 @@ def get_latest_breakout_candidates(
                     projected_role_tag
                 FROM breakout_opportunity_scores
                 WHERE season = %s
-                    AND as_of_date = (
-                        SELECT MAX(as_of_date)
-                        FROM breakout_opportunity_scores
-                        WHERE season = %s
-                    )
                     AND breakout_opportunity_score >= %s
             """
 
-            params = [season, season, min_score]
+            params = [season, min_score]
 
             if position:
                 query += " AND position = %s"

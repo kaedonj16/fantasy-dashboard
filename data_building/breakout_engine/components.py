@@ -14,7 +14,7 @@ All functions return (score: float, details: Dict) tuples.
 """
 
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .config import *
 from .db_helpers import (
@@ -115,7 +115,7 @@ def _position_usage_volume(position: str, usage: Dict) -> float:
         return (
                 targets * 0.50 +
                 routes * 0.20 +
-                snap_share * 100 * 0.30
+                snap_share * 0.30
         )
     if position == "RB":
         total_touches = carries + targets
@@ -123,15 +123,15 @@ def _position_usage_volume(position: str, usage: Dict) -> float:
                 carries * 0.35 +
                 targets * 0.20 +
                 total_touches * 0.15 +
-                snap_share * 100 * 0.30
+                snap_share * 0.30
         )
     if position == "QB":
         return (
                 pass_attempts * 0.50 +
                 carries * 0.10 +
-                snap_share * 100 * 0.40
+                snap_share * 0.40
         )
-    return snap_share * 100
+    return snap_share
 
 
 def _position_sample_confidence(position: str, usage: Dict) -> float:

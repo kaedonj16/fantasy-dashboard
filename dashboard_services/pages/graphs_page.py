@@ -1,8 +1,9 @@
 import json
+from typing import Dict
+
 import numpy as np
 import plotly.graph_objs as go
 from plotly.offline import plot as plotly_plot
-from typing import Dict
 
 from utils.utils import z_better_outward
 

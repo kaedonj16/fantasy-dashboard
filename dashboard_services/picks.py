@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import math
-import pandas as pd
 import re
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Dict, Tuple, List, Union
+
+import math
+import pandas as pd
 
 from dashboard_services.api import get_nfl_state
 from data_building.paths import DATA_DIR

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import requests
-from typing import Dict, Any
 
 from dashboard_services.ai.cache import load_cached_ai_text, save_cached_ai_text
 from dashboard_services.ai.prompts import get_ai_client

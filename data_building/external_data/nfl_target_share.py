@@ -2,13 +2,13 @@
 
 import concurrent.futures
 import json
-import pandas as pd
-import requests
-import time
 from datetime import date
 from io import StringIO
 from pathlib import Path
 from typing import Dict, Tuple
+
+import pandas as pd
+import requests
 
 from utils.paths import DATA_DIR
 

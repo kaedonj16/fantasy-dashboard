@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import functools
-import json
 import os
-import requests
-import time
-from datetime import date
-from pathlib import Path
 from typing import Any, List, Dict, Optional, Union
+
+import requests
 
 # ---- League context globals ----
 SCORING_SETTINGS: Dict[str, Any] = {}
@@ -516,19 +513,40 @@ def resolve_league_id_for_season(
     if platform != "sleeper":
         return str(league_id).strip()
 
+    # Check if we're in offseason and should use previous season logic
+    try:
+        from dashboard_services.api import get_nfl_state
+        nfl_state = get_nfl_state() or {}
+        current_nfl_season = int(nfl_state.get("season", current_season))
+        season_type = str(nfl_state.get("season_type", "")).lower().strip()
+
+        # Determine which season to actually use for league resolution
+        effective_season = target_season
+        if current_nfl_season > current_season and season_type in {"offseason", "pre"}:
+            # We're in offseason before current season has started, use previous season
+            effective_season = target_season - 1
+        elif current_nfl_season == current_season and season_type == "offseason":
+            # Current season is over, use completed season
+            effective_season = target_season
+        elif season_type in {"offseason", "pre"}:
+            # We're in some form of offseason, try previous season
+            effective_season = target_season - 1
+    except:
+        effective_season = target_season
+
     season_map = build_league_history_map(platform, league_id, current_season)
 
-    # exact match
-    if target_season in season_map:
-        return season_map[target_season]
+    # exact match with effective season
+    if effective_season in season_map:
+        return season_map[effective_season]
 
     # fallback: closest older season
-    older = [s for s in season_map if s <= target_season]
+    older = [s for s in season_map if s <= effective_season]
     if older:
         return season_map[max(older)]
 
     # fallback: closest newer season
-    newer = [s for s in season_map if s >= target_season]
+    newer = [s for s in season_map if s >= effective_season]
     if newer:
         return season_map[min(newer)]
 

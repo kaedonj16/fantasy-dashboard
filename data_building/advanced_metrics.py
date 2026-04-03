@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Dict, Any, List, Optional
 
+from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
 
 

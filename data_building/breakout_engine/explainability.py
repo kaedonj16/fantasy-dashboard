@@ -5,7 +5,7 @@ Generates human-readable explanations for why a player has a certain breakout sc
 Includes key reasons, directional trends, and contextual summaries.
 """
 
-from typing import Dict, Optional
+from typing import Optional
 
 from .config import *
 

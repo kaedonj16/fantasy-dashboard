@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import json
-import numpy as np
-import pandas as pd
-import re
-import requests
 import time
-from bs4 import BeautifulSoup
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
-from pathlib import Path
-from plotly.offline import plot as plotly_plot
-from typing import Dict, Any, Iterable, Tuple, Optional, List, Union, Callable
-from zoneinfo import ZoneInfo
+from typing import Dict, Any, Iterable, Tuple, Optional, List, Union
+
+import numpy as np
+import pandas as pd
+import requests
 
 from dashboard_services.api import (
     _avatar_url,

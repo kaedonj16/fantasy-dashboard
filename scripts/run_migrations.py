@@ -6,7 +6,6 @@ Usage:
     python scripts/run_migrations.py
 """
 
-import os
 import sys
 from pathlib import Path
 

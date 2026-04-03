@@ -1,14 +1,17 @@
 import hashlib
 import html
 import json
-import math
-import numpy as np
 import os
-import pandas as pd
 import threading
 import time
 from collections import defaultdict
 from datetime import date, datetime
+from pathlib import Path
+from typing import List, Dict, Optional, Union, Tuple
+from zoneinfo import ZoneInfo
+
+import math
+import pandas as pd
 from flask import (
     Flask,
     request,
@@ -16,15 +19,10 @@ from flask import (
     redirect,
     url_for,
     jsonify,
-    render_template,
     session,
     send_file,
 )
-from openai import OpenAI
-from pathlib import Path
-from plotly.offline import plot as plotly_plot, get_plotlyjs
-from typing import List, Dict, Any, Optional, Union, Tuple
-from zoneinfo import ZoneInfo
+from plotly.offline import get_plotlyjs
 
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import get_team_gm_memo, get_front_office_briefing
@@ -393,11 +391,11 @@ BASE_HTML = """
       <!-- Top Banner Ad -->
       <div class="ad-container ad-top-banner">
         <ins class="adsbygoogle"
-             style="display:block; width:728px; height:90px; max-width:100%;"
+             style="display:block"
              data-ad-client="ca-pub-9164153092633845"
-             data-ad-slot="YOUR_AD_SLOT_ID_1"
-             data-ad-format="horizontal"
-             data-full-width-responsive="false"></ins>
+             data-ad-slot="5233061286"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
       </div>
 
       <main id="page-root" class="overview-layout">
@@ -407,11 +405,11 @@ BASE_HTML = """
       <!-- Bottom Content Ad -->
       <div class="ad-container ad-bottom-content">
         <ins class="adsbygoogle"
-             style="display:block; width:728px; height:90px; max-width:100%;"
+             style="display:block"
              data-ad-client="ca-pub-9164153092633845"
-             data-ad-slot="YOUR_AD_SLOT_ID_2"
-             data-ad-format="horizontal"
-             data-full-width-responsive="false"></ins>
+             data-ad-slot="5233061286"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
       </div>
     </div>
 
@@ -450,13 +448,17 @@ BASE_HTML = """
 
     <script src="/static/app.js"></script>
     <script>
-      // Initialize AdSense ads with error handling
-      try {{
-        (adsbygoogle = window.adsbygoogle || []).push({{}});
-        (adsbygoogle = window.adsbygoogle || []).push({{}});
-      }} catch (e) {{
-        console.warn('AdSense initialization error:', e);
-      }}
+      // Initialize AdSense ads after page loads
+      window.addEventListener('load', function() {{
+        setTimeout(function() {{
+          try {{
+            (adsbygoogle = window.adsbygoogle || []).push({{}});
+            (adsbygoogle = window.adsbygoogle || []).push({{}});
+          }} catch (e) {{
+            console.warn('AdSense initialization error:', e);
+          }}
+        }}, 100);
+      }});
 
       // Cookie consent handling
       (function() {{
@@ -1191,7 +1193,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     # League settings
     scoring_settings = get_effective_scoring_settings()
-    raw_scoring_settings = get_scoring_settings() if "get_scoring_settings" in globals() else None
+    raw_scoring_settings = get_effective_scoring_settings() if "get_scoring_settings" in globals() else None
     roster_positions = get_roster_positions()
     league_settings = get_league_settings()
     total_rosters = get_total_rosters()
@@ -3937,14 +3939,6 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
 
 HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
 
-
-def _safe_int(v, default=0):
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return default
-
-
 def build_historical_pick_slot_map(
         platform: str,
         root_league_id: str,
@@ -4812,38 +4806,6 @@ def build_activity_body(ctx: dict) -> str:
     }})();
     </script>
     """
-
-
-def render_pos_section(rid: int, pos_label: str, pos_code: str) -> str:
-    plist = roster_pos_players.get(rid, {}).get(pos_code, [])
-    if not plist:
-        return ""  # no block if they have no players at that position
-
-    rows_html = []
-    for p in plist:
-        val = float(p.get("value", 0.0))
-        val_txt = f"{val:.1f}" if val > 0 else ""
-        rows_html.append(
-            # reuse your same flex layout style as activity tab
-            f"<div class='player-activity'>"
-            f"  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
-            f"    <div>"
-            f"      <div style='font-weight:600'>{p.get('name', '')}</div>"
-            f"      <div style='color:#64748b;font-size:12px'>"
-            f"        {p.get('position', '')} • {p.get('team', '')}"
-            f"      </div>"
-            f"    </div>"
-            f"    <div class='player-trade-value'>{val_txt}</div>"
-            f"  </div>"
-            f"</div>"
-        )
-
-    return (
-        f"<div class='pos-group'>"
-        f"  <div class='pos-header'>{pos_label}</div>"
-        f"  <div class='pos-list'>{''.join(rows_html)}</div>"
-        f"</div>"
-    )
 
 
 def _weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
@@ -6477,7 +6439,7 @@ def api_trade_eval():
         if val is not None:
             return float(val)
 
-        generic_key = f"any_{rnd}_{bucket}"
+        generic_key = f"any_{rnd}_{slot_str}"
         if generic_key in pick_values:
             return float(pick_values[generic_key])
 
@@ -7458,10 +7420,6 @@ def api_player_details(player_id: str):
                     if match:
                         year = int(match.group(1))
                         available_years.add(year)
-                # Old pattern: sleeper_stats_2023_week_1.json
-                elif "_week_" in basename:
-                    year = int(basename.split('_')[2])
-                    available_years.add(year)
             except:
                 continue
 
@@ -7489,22 +7447,18 @@ def api_player_details(player_id: str):
 
             # Load all stats for this season into memory
             stats_by_week = {}
-            stats_pattern_old = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season_year}_week_*.json")
-            stats_pattern_new = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
-            week_files = glob.glob(stats_pattern_old) + glob.glob(stats_pattern_new)
+            stats_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
+            week_files = glob.glob(stats_pattern)
 
             for week_file in week_files:
                 try:
                     basename = os.path.basename(week_file)
-                    # Extract week number from filename (handle both patterns)
-                    if "_week_" in basename:
-                        week_num = int(basename.split('_week_')[1].split('.')[0])
+                    # Extract week number from filename
+                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    if match:
+                        week_num = int(match.group(2))
                     else:
-                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                        if match:
-                            week_num = int(match.group(2))
-                        else:
-                            continue
+                        continue
 
                     with open(week_file, 'r') as f:
                         week_stats = json.load(f)
@@ -7659,6 +7613,7 @@ def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
     try:
         from utils.utils import load_players_index, load_model_value_table
+        from dashboard_services.api import get_nfl_state
 
         # Get league context
         league_id = request.args.get("league_id")
@@ -7669,8 +7624,10 @@ def api_team_details(roster_id: str):
             return jsonify({"error": "league_id required"}), 400
 
         if not season:
-            nfl_state = get_nfl_state() or {}
+            nfl_state = get_nfl_state()
             season = str(nfl_state.get("season") or datetime.now().year)
+
+        season = int(season)
 
         # Get league data
         league = get_league(platform, league_id, season)
@@ -7687,8 +7644,10 @@ def api_team_details(roster_id: str):
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
         username = user.get("display_name") if user else None
-        team_name = (roster.get("metadata") or {}).get("team_name") or username or f"Roster {roster_id}"
+        team_name = user.get("metadata", {}).get("team_name") if user else username
         avatar = avatar_from_users(platform, users, owner_id)
+        if team_name is None:
+            team_name = username
 
         # Get record
         settings = roster.get("settings") or {}
@@ -7735,8 +7694,6 @@ def api_team_details(roster_id: str):
             # If player_id is a team abbreviation and no metadata found, treat as defense
             if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
                 # This is likely a defense player with team ID
-                teams_index = get_teams_index_global()
-                # Use the full team name for defense players
                 full_team_name = get_team_full_name(pid_str)
                 player_name = f"{full_team_name} Defense"
                 position = "DEF"
@@ -7772,7 +7729,7 @@ def api_team_details(roster_id: str):
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
 
         # Get draft picks
-        traded_picks = league.get("traded_picks") or [] if isinstance(league, dict) else []
+        traded_picks = get_traded_picks(platform, league_id, season)
         num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
         current_season = int(league.get("season") or season)
 
@@ -7781,34 +7738,98 @@ def api_team_details(roster_id: str):
         for offset in range(3):  # Next 3 years
             year = current_season + offset
             for rnd in range(1, num_rounds + 1):
-                # Check if traded
-                original_owner = int(roster_id)
-                current_owner = original_owner
 
+                # Collect all picks this team owns for this year/round
+                owned_picks = []
+
+                # First check: All picks this team acquired from other teams
                 for tp in traded_picks:
                     try:
                         if (int(tp.get("season")) == year and
                                 int(tp.get("round")) == rnd and
-                                int(tp.get("roster_id")) == original_owner):
-                            current_owner = int(tp.get("owner_id"))
+                                int(tp.get("owner_id")) == int(roster_id)):
+                            # This team acquired this pick from another team
+                            owned_picks.append({
+                                "current_owner": int(tp.get("owner_id")),
+                                "original_owner": int(tp.get("roster_id")),
+                                "previous_owner": int(tp.get("previous_owner_id")),
+                                "trade_data": tp
+                            })
                     except:
                         pass
 
-                if current_owner == int(roster_id):
-                    via = None
-                    if current_owner != original_owner:
-                        # Find who it came from
-                        via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
-                        if via_roster:
-                            via_owner_id = via_roster.get("owner_id")
-                            via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
-                            via = via_user.get("display_name") if via_user else f"Team {original_owner}"
+                # Second check: This team's own draft position pick (only if not already found as acquired)
+                own_position_found = any(p["original_owner"] == int(roster_id) for p in owned_picks)
+                if not own_position_found:
+                    for tp in traded_picks:
+                        try:
+                            if (int(tp.get("season")) == year and
+                                    int(tp.get("round")) == rnd and
+                                    int(tp.get("roster_id")) == int(roster_id)):
+                                # This pick belongs to this roster's draft position
+                                owned_picks.append({
+                                    "current_owner": int(tp.get("owner_id")),
+                                    "original_owner": int(tp.get("roster_id")),
+                                    "previous_owner": int(tp.get("previous_owner_id")),
+                                    "trade_data": tp
+                                })
+                                break
+                        except:
+                            pass
 
-                    all_picks.append({
-                        "year": year,
-                        "round": rnd,
-                        "via": via
-                    })
+                # If no traded picks found, check if this team owns their own pick by default
+                # BUT also check if we should add the default pick in addition to acquired picks
+                own_position_as_acquired = any(p["original_owner"] == int(roster_id) for p in owned_picks)
+
+                if not own_position_as_acquired:
+                    # This team owns their own pick unless it was traded away
+                    pick_traded_away = False
+                    for tp in traded_picks:
+                        try:
+                            if (int(tp.get("season")) == year and
+                                    int(tp.get("round")) == rnd and
+                                    int(tp.get("roster_id")) == int(roster_id) and
+                                    int(tp.get("owner_id")) != int(roster_id)):
+                                pick_traded_away = True
+                                break
+                        except:
+                            pass
+
+                    if not pick_traded_away:
+                        owned_picks.append({
+                            "current_owner": int(roster_id),
+                            "original_owner": int(roster_id),
+                            "previous_owner": None,
+                            "trade_data": None
+                        })
+
+                # Add all owned picks to the list
+                for pick_info in owned_picks:
+                    if pick_info["current_owner"] == int(roster_id):
+                        via = None
+                        previous_owner = pick_info["previous_owner"]
+                        original_owner = pick_info["original_owner"]
+
+                        if previous_owner is not None and previous_owner != original_owner:
+                            # Find who it came from (the previous owner who traded it away)
+                            via_roster = next((r for r in rosters if r.get("roster_id") == previous_owner), None)
+                            if via_roster:
+                                via_owner_id = via_roster.get("owner_id")
+                                via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
+                                via = via_user.get("display_name") if via_user else f"Team {previous_owner}"
+                        elif original_owner != int(roster_id):
+                            # This team acquired the pick from its original owner
+                            via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
+                            if via_roster:
+                                via_owner_id = via_roster.get("owner_id")
+                                via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
+                                via = via_user.get("display_name") if via_user else f"Team {original_owner}"
+
+                        all_picks.append({
+                            "year": year,
+                            "round": rnd,
+                            "via": via
+                        })
 
         # Sort picks by year then round
         all_picks.sort(key=lambda p: (p["year"], p["round"]))
@@ -7818,26 +7839,74 @@ def api_team_details(roster_id: str):
         try:
             from utils.utils import z_better_outward
             import pandas as pd
+            from dashboard_services.api import get_nfl_state
+
+            # Check if we're in offseason and should use previous season data
+            nfl_state = get_nfl_state() or {}
+            current_nfl_season = int(nfl_state.get("season", current_season))
+            season_type = str(nfl_state.get("season_type", "")).lower().strip()
+
+            print(
+                f"[api_team_details] Graph logic - current_season: {current_season}, current_nfl_season: {current_nfl_season}, season_type: '{season_type}'")
+
+            # Determine which season to use for graphs
+            graph_season = current_season
+            if current_nfl_season > int(season) and season_type in {"offseason", "pre"}:
+                # We're in offseason before current season has started, use previous season data
+                graph_season = int(season) - 1
+            elif current_nfl_season == int(season) and season_type == "offseason":
+                # Current season is over, use completed season data
+                graph_season = int(season)
+            elif season_type in {"offseason", "pre"}:
+                # We're in some form of offseason, try previous season
+                graph_season = int(season) - 1
+
+            print(f"[api_team_details] Using graph_season: {graph_season}")
 
             # Get league context for graphs
-            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            ctx = get_league_ctx_from_cache(platform, league_id, graph_season)
             team_stats = ctx.get("team_stats")
             df_weekly = ctx.get("df_weekly")
 
             print(
-                f"[api_team_details] Graphs debug - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
+                f"[api_team_details] Graph context - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
             if df_weekly is not None and not df_weekly.empty:
-                print(
-                    f"[api_team_details] df_weekly shape before filter: {df_weekly.shape}, has 'finalized' column: {'finalized' in df_weekly.columns}")
+                print(f"[api_team_details] df_weekly shape: {df_weekly.shape}")
 
+            # If we don't have weekly data for the chosen season, try previous season
+            if (df_weekly is None or df_weekly.empty) and graph_season > 2025:
+                fallback_season = graph_season - 1
+                print(f"[api_team_details] No data for {graph_season}, trying fallback season: {fallback_season}")
+
+                # Resolve correct league_id for fallback season
+                from dashboard_services.api import resolve_league_id_for_season
+                fallback_league_id = resolve_league_id_for_season(
+                    platform=platform,
+                    league_id=league_id,
+                    current_season=current_season,
+                    target_season=fallback_season
+                )
+                print(
+                    f"[api_team_details] Using fallback league_id: {fallback_league_id} for season: {fallback_season}")
+
+                ctx = get_league_ctx_from_cache(platform, fallback_league_id, fallback_season)
+                team_stats = ctx.get("team_stats")
+                df_weekly = ctx.get("df_weekly")
+                graph_season = fallback_season
+                print(
+                    f"[api_team_details] Fallback context - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
+                if df_weekly is not None and not df_weekly.empty:
+                    print(f"[api_team_details] Fallback df_weekly shape: {df_weekly.shape}")
+
+            # Remove debug prints for cleaner logs
             if team_stats is not None and df_weekly is not None and not df_weekly.empty:
                 # Filter to finalized weeks only (if finalized column exists)
                 if "finalized" in df_weekly.columns:
                     df_weekly = df_weekly[df_weekly["finalized"] == True].copy()
-                    print(f"[api_team_details] df_weekly shape after finalized filter: {df_weekly.shape}")
 
                 # Only build graphs if we have data after filtering
                 if not df_weekly.empty:
+                    print(f"[api_team_details] Building graphs with df_weekly shape: {df_weekly.shape}")
                     # Get weekly scores for this team
                     team_weekly = df_weekly[df_weekly["owner"] == team_name]
                     weekly_scores = []
@@ -7862,7 +7931,31 @@ def api_team_details(roster_id: str):
                     Z = z_better_outward(team_stats, metrics)
 
                     # Find this team's row in team_stats
+                    if team_stats is not None:
+                        available_teams = team_stats["owner"].tolist() if "owner" in team_stats.columns else []
+                        print(f"[api_team_details] Available team names in stats: {available_teams}")
+                        print(f"[api_team_details] Looking for team_name: '{team_name}'")
+
+                    # Try exact match first
                     team_row = team_stats[team_stats["owner"] == team_name]
+
+                    # If no exact match, try fuzzy matching for team name variations
+                    if team_row.empty and available_teams:
+                        # Try case-insensitive match
+                        team_row = team_stats[team_stats["owner"].str.lower() == team_name.lower()]
+
+                        # If still no match, try partial matching (handle team name changes)
+                        if team_row.empty:
+                            for available_team in available_teams:
+                                # Remove special characters and convert to lowercase for comparison
+                                clean_available = ''.join(c.lower() for c in available_team if c.isalnum())
+                                clean_target = ''.join(c.lower() for c in team_name if c.isalnum())
+
+                                if clean_available in clean_target or clean_target in clean_available:
+                                    team_row = team_stats[team_stats["owner"] == available_team]
+                                    print(f"[api_team_details] Fuzzy matched '{team_name}' to '{available_team}'")
+                                    break
+
                     if not team_row.empty:
                         team_idx = team_row.index[0]
                         z_scores = Z.iloc[team_idx].values.astype(float).tolist()
@@ -7879,14 +7972,17 @@ def api_team_details(roster_id: str):
                                 "metrics": metrics,
                                 "z_scores": z_scores,
                                 "raw_stats": raw_stats
-                            }
+                            },
+                            "season_used": graph_season  # Add info about which season data was used
                         }
-                        print(
-                            f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks, radar has {len(z_scores)} metrics")
+                        print(f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks")
                     else:
                         print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'")
                 else:
-                    print(f"[api_team_details] No graphs generated - df_weekly is empty after finalized filter")
+                    print(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
+            else:
+                print(
+                    f"[api_team_details] No graphs generated - team_stats: {team_stats is not None}, df_weekly: {df_weekly is not None and not df_weekly.empty}")
         except Exception as graph_err:
             print(f"[api_team_details] Error getting graph data: {graph_err}")
             import traceback

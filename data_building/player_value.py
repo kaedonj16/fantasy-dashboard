@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import math
 from typing import Dict, Optional
+
+import math
 
 from dashboard_services.api import get_nfl_state
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features

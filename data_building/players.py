@@ -1,7 +1,8 @@
 import json
-import requests
 from pathlib import Path
-from typing import Dict, Any, Union
+from typing import Any, Union
+
+import requests
 
 from utils.utils import path_players_index
 
