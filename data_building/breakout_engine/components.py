@@ -14,7 +14,7 @@ All functions return (score: float, details: Dict) tuples.
 """
 
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .config import *
 from .db_helpers import (

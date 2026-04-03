@@ -7237,22 +7237,15 @@ img, svg, canvas {
 @media (max-width: 728px) {
   .ad-container {
     max-width: 100%;
-    height: auto;
-    min-height: 106px;
+    min-height: 90px;
   }
-  
+
   .ad-container ins {
     max-width: 100%;
-    height: 90px;
   }
-  
+
   .adsbygoogle {
     margin: 10px auto;
-  }
-  
-  .adsbygoogle responsive {
-    max-width: 100%;
-    height: auto;
   }
 }
 
@@ -9105,16 +9098,16 @@ img, svg, canvas {
 /* Ad Containers */
 .ad-container {
   width: 100%;
-  max-width: 728px;
+  max-width: 100%;
   margin: 16px auto;
   padding: 8px;
-  display: flex;
+  display: none; /* Hidden until AdSense ads are approved */
   justify-content: center;
   align-items: center;
   background: rgba(0, 0, 0, 0.02);
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.05);
-  height: 106px; /* 90px ad + 16px padding */
+  min-height: 90px;
 }
 
 .ad-top-banner {
@@ -9129,8 +9122,7 @@ img, svg, canvas {
 
 /* Ensure ads don't overflow on mobile */
 .ad-container ins {
-  max-width: 728px;
-  height: 90px;
+  width: 100%;
   display: block;
 }
 
@@ -9231,7 +9223,7 @@ img, svg, canvas {
   .ad-container {
     margin: 12px auto;
     padding: 6px;
-    min-height: 70px;
+    min-height: 90px;
   }
 
   .ad-top-banner {
@@ -9707,7 +9699,7 @@ img, svg, canvas {
 .team-modal {
   background: var(--card);
   border-radius: 16px;
-  max-width: 900px;
+  max-width: 1200px;
   width: 100%;
   max-height: 90vh;
   overflow: hidden;
@@ -9790,6 +9782,19 @@ img, svg, canvas {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+  display: flex;
+  gap: 24px;
+}
+
+.team-modal-body-left {
+  flex: 0 0 50%;
+}
+
+.team-modal-body-right {
+  flex: 0 0 calc(50% - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .team-modal-loading,
@@ -9801,6 +9806,15 @@ img, svg, canvas {
   padding: 60px 20px;
   color: var(--text-muted);
   font-size: 15px;
+  width: 100%;
+}
+
+/* Override flexbox layout when loading/error */
+.team-modal-body:has(.team-modal-loading),
+.team-modal-body:has(.team-modal-error) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .team-modal-section {
@@ -9928,7 +9942,7 @@ img, svg, canvas {
 
 .team-pick-item {
   background: var(--card-soft);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
   font-size: 14px;
@@ -9956,12 +9970,13 @@ img, svg, canvas {
 /* Team chart containers */
 .team-chart-container {
   width: 100%;
-  height: 350px;
+  height: 250px;
   background: var(--card);
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
   padding: 12px;
-  margin-bottom: 16px;
+}
+
+#teamRadarChart {
+  height: 280px;
 }
 
 /* Clickable team cards */
@@ -9994,6 +10009,12 @@ img, svg, canvas {
 
   .team-modal-body {
     padding: 16px;
+    flex-direction: column;
+  }
+
+  .team-modal-body-left,
+  .team-modal-body-right {
+    flex: 1;
   }
 
   .team-roster-table {

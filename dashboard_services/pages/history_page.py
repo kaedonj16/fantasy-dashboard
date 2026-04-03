@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List
+
 import math
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from flask import url_for
 from plotly.offline import plot as plotly_plot
-from typing import Any, Dict, List
 
 from dashboard_services.ai.history_recap import get_league_season_summary
 from dashboard_services.platform_api import get_bracket

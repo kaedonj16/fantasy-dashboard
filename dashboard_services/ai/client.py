@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+
 from openai import OpenAI
 
 _AI_CLIENT = None

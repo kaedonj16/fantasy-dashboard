@@ -13,35 +13,34 @@ FUTURE ENHANCEMENT: Replace with actual snap data from:
 Formula: snap_share ≈ (targets + carries) / league_avg_touches × position_coefficient
 """
 
-import json
-from datetime import date
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / "cache" / "snap_counts"
 
 # Position-specific coefficients for snap share estimation
 # Based on typical NFL usage patterns
 SNAP_SHARE_COEFFICIENTS = {
-    "QB": 0.95,   # QBs play almost all offensive snaps when starting
-    "RB": 0.55,   # RBs typically split snaps more
-    "WR": 0.70,   # WRs often on field but not always targeted
-    "TE": 0.65,   # TEs block or run routes
+    "QB": 0.95,  # QBs play almost all offensive snaps when starting
+    "RB": 0.55,  # RBs typically split snaps more
+    "WR": 0.70,  # WRs often on field but not always targeted
+    "TE": 0.65,  # TEs block or run routes
 }
 
 # Average touches per game for a featured player at each position
 AVG_TOUCHES_FEATURED = {
     "QB": 35,  # Passes
     "RB": 18,  # Carries + targets
-    "WR": 8,   # Targets
-    "TE": 6,   # Targets
+    "WR": 8,  # Targets
+    "TE": 6,  # Targets
 }
 
+
 def estimate_snap_share_from_usage(
-    position: str,
-    avg_targets: float,
-    avg_carries: float,
-    avg_pass_att: float = 0.0
+        position: str,
+        avg_targets: float,
+        avg_carries: float,
+        avg_pass_att: float = 0.0
 ) -> float:
     """
     Estimate offensive snap share from usage statistics.
@@ -89,8 +88,8 @@ def estimate_snap_share_from_usage(
 
 
 def fetch_season_snap_counts(
-    season: int,
-    weeks: range = range(1, 19)
+        season: int,
+        weeks: range = range(1, 19)
 ) -> Dict[str, Dict]:
     """
     STUB FUNCTION: Returns empty dict to disable snap scraping.

@@ -11,8 +11,7 @@ Key scenarios:
 """
 
 import json
-import os
-from datetime import datetime, date
+from datetime import date
 from typing import Dict, List, Optional, Any, Tuple
 
 
@@ -30,19 +29,19 @@ def calculate_snap_share_from_usage(usage: Dict[str, Any]) -> float:
     avg_off_snaps = usage.get("avg_off_snap_pct", 0) or 0
     if avg_off_snaps <= 0:
         return 0.0
-    
+
     # Estimate typical offensive snaps per game by position
     typical_snaps = {
-        "RB": 65,   # RBs get ~65 snaps when active
-        "WR": 70,   # WRs get ~70 snaps when active  
-        "TE": 70,   # TEs get ~70 snaps when active
-        "QB": 70,   # QBs get ~70 snaps when active
+        "RB": 65,  # RBs get ~65 snaps when active
+        "WR": 70,  # WRs get ~70 snaps when active
+        "TE": 70,  # TEs get ~70 snaps when active
+        "QB": 70,  # QBs get ~70 snaps when active
     }
-    
+
     # Default to 70 if position unknown
     position = usage.get("position", "UNKNOWN")
     expected_snaps = typical_snaps.get(position, 70)
-    
+
     snap_share = min(avg_off_snaps / expected_snaps, 1.0)
     return snap_share
 
@@ -59,13 +58,13 @@ def calculate_opportunity_share_from_usage(usage: Dict[str, Any], team_total_tar
     games = usage.get("games", 1) or 1
     avg_targets = usage.get("avg_targets", 0) or 0
     avg_carries = usage.get("avg_carries", 0) or 0
-    
+
     # Calculate player's total touches per game
     player_opportunity_per_game = avg_targets + avg_carries
-    
+
     if player_opportunity_per_game <= 0:
         return 0.0
-    
+
     # Estimate team opportunity if not provided
     if team_total_targets > 0:
         team_opportunity_per_game = team_total_targets / games if games > 0 else 0
@@ -73,10 +72,10 @@ def calculate_opportunity_share_from_usage(usage: Dict[str, Any], team_total_tar
         # Typical team targets per game by position group
         # This is a rough estimate - teams average ~35 passes/game
         team_opportunity_per_game = 35.0
-    
+
     if team_opportunity_per_game <= 0:
         return 0.0
-    
+
     opportunity_share = min(player_opportunity_per_game / team_opportunity_per_game, 1.0)
     return opportunity_share
 
@@ -528,12 +527,12 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                     usage = p["prev_usage"]
                     games = usage.get("games", 1) or 1
                     targets = usage.get("targets") or usage.get("total_targets") or (
-                                usage.get("avg_targets", 0) * games) or 0
+                            usage.get("avg_targets", 0) * games) or 0
                     carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
-                    
+
                     # Calculate snap share using helper function if standard field is 0
                     standard_snap_pct = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                                usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                            usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
                     if standard_snap_pct > 0:
                         snap_pct = standard_snap_pct
                     else:
@@ -543,7 +542,7 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                         player_pos = p.get("pos") or p.get("position") or position
                         usage_with_position["position"] = player_pos
                         snap_pct = calculate_snap_share_from_usage(usage_with_position)
-                    
+
                     total_prev_targets += int(targets)
                     total_prev_carries += int(carries)
                     total_prev_snap_pct += float(snap_pct)
@@ -555,12 +554,12 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
 
                     # Extract stats with field name fallbacks
                     prev_targets = usage.get("targets") or usage.get("total_targets") or (
-                                usage.get("avg_targets", 0) * games) or 0
+                            usage.get("avg_targets", 0) * games) or 0
                     prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
-                    
+
                     # Calculate snap share using helper function if standard field is 0
                     standard_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                                usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                            usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
                     if standard_snap_share > 0:
                         prev_snap_share = standard_snap_share
                     else:
@@ -570,7 +569,7 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                         player_pos = player.get("pos") or player.get("position") or position
                         usage_with_position["position"] = player_pos
                         prev_snap_share = calculate_snap_share_from_usage(usage_with_position)
-                    
+
                     # Calculate opportunity share using helper function if standard field is 0
                     standard_opp_share = usage.get("opportunity_share", 0)
                     if standard_opp_share > 0:
@@ -691,12 +690,12 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
 
                 # Get their PREVIOUS TEAM usage (what they did before joining)
                 prev_targets = usage.get("targets") or usage.get("total_targets") or (
-                            usage.get("avg_targets", 0) * games) or 0
+                        usage.get("avg_targets", 0) * games) or 0
                 prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
-                
+
                 # Calculate snap share using helper function if standard field is 0
                 standard_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                            usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                        usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
                 if standard_snap_share > 0:
                     prev_snap_share = standard_snap_share
                 else:
@@ -706,7 +705,7 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                     player_pos = player.get("pos") or player.get("position") or position
                     usage_with_position["position"] = player_pos
                     prev_snap_share = calculate_snap_share_from_usage(usage_with_position)
-                
+
                 # Calculate opportunity share using helper function if standard field is 0
                 standard_opp_share = usage.get("opportunity_share", 0)
                 if standard_opp_share > 0:

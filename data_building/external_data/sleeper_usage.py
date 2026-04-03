@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, Any, Iterable
+from typing import Dict, Iterable
 
 from dashboard_services.service import age_from_bday
 from data_building.external_data.nfl_target_share import fetch_league_target_share
-from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
+from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
 from utils.utils import canon_team, load_players_index
 
 

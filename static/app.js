@@ -4187,19 +4187,21 @@ function renderTeamDetails(data) {
 
     // Weekly scores line chart
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart" style="margin-bottom: 20px;"></div>';
+      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart"></div>';
     }
 
     // Radar chart
     if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-chart-container" id="teamRadarChart" style="height: 400px;"></div>';
+      graphsHTML += '<div class="team-chart-container" id="teamRadarChart"></div>';
     }
 
     graphsHTML += '</div>';
   }
 
-  // Set body content
-  document.getElementById('teamModalBody').innerHTML = rosterHTML + picksHTML + graphsHTML;
+  // Set body content with two-column layout
+  const leftColumn = `<div class="team-modal-body-left">${rosterHTML}</div>`;
+  const rightColumn = `<div class="team-modal-body-right">${graphsHTML}${picksHTML}</div>`;
+  document.getElementById('teamModalBody').innerHTML = leftColumn + rightColumn;
 
   // Render charts using Plotly (if data exists)
   if (data.graphs && typeof Plotly !== 'undefined') {

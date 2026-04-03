@@ -3,11 +3,12 @@
 import concurrent.futures
 import json
 import os
-import requests
 import time
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
+
+import requests
 
 from utils.utils import load_relevant_index, write_json, read_json
 

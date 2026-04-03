@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-import psycopg
 from contextlib import contextmanager
-from psycopg.rows import dict_row
 from typing import Iterator
+
+import psycopg
+from psycopg.rows import dict_row
 
 
 def get_database_url() -> str:

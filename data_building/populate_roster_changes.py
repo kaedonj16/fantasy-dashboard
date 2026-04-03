@@ -7,7 +7,7 @@ then enriches with usage stats from previous season.
 
 import json
 import os
-from datetime import date, datetime
+from datetime import date
 from typing import Dict, List, Optional
 
 from data_building.offseason_opportunity import track_roster_change, calculate_vacated_opportunity, \

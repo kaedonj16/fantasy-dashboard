@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
-import numpy as np
-import pandas as pd
 import pickle
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.impute import SimpleImputer
@@ -17,7 +19,6 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from typing import Dict, List, Optional
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table

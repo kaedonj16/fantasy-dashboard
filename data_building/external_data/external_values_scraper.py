@@ -1,14 +1,11 @@
 # dashboard_services/external_values_scraper.py
 
 import csv
-import requests
-import time
-from bs4 import BeautifulSoup
 from datetime import date, timedelta
 from pathlib import Path
-from playwright.sync_api import sync_playwright
-from requests.adapters import HTTPAdapter
-from typing import Literal, Optional, List, Dict
+from typing import Optional, List, Dict
+
+import requests
 
 from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
 

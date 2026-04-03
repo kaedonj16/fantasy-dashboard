@@ -14,7 +14,7 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_bracket
 )
-from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name
+from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name, from_players_map
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
@@ -90,26 +90,9 @@ def build_matchup_preview(
         except (TypeError, ValueError):
             return None
 
-    def _from_players_map(pid: str) -> Dict[str, str]:
-        info = players_map.get(pid) if players_map else None
-        if info:
-            name = info.get("name") or pid
-            nfl = info.get("team") or "FA"
-            pos = info.get("pos") or (
-                info.get("fantasy_positions", [""])[0]
-                if info.get("fantasy_positions")
-                else ""
-            )
-            return {"name": name, "nfl": nfl, "pos": pos}
-
-        # DEF fallback for team abbrevs
-        if pid.isalpha() and 2 <= len(pid) <= 3:
-            return {"name": f"{pid} D/ST", "nfl": pid, "pos": "DEF"}
-
-        return {"name": pid, "nfl": "FA", "pos": ""}
 
     def _pinfo(pid: str, pts_map: Dict[str, float]) -> dict:
-        base = _from_players_map(pid)
+        base = from_players_map(pid)
         pts = pts_map.get(pid) if pts_map else None
         return {
             "pid": pid,

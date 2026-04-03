@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import re
-import requests
 import time
 from datetime import date
 from io import BytesIO
-from pathlib import Path
 from typing import Optional
+
+import numpy as np
+import pandas as pd
+import requests
 
 from cache.paths import PLAYER_INVESTMENT_DIR
 from utils.utils import normalize_name, load_players_index

@@ -12,7 +12,6 @@ Each step is independent, testable, and builds on stored database results.
 
 import json
 from datetime import date
-from typing import Dict, List, Tuple, Any
 
 from dashboard_services.db import get_conn
 from dashboard_services.service import age_from_bday

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from typing import Any, Dict, List
+from typing import Any
 
 
 def _safe_float(v, default: float = 0.0) -> float:

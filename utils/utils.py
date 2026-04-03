@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from collections import defaultdict, Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Any, Callable, List
+from typing import Dict, Optional, Any, Callable, List, Iterable
 
 from dashboard_services.api import (
     get_nfl_games_for_week_raw,
@@ -24,6 +24,28 @@ from dashboard_services.api import (
     get_nfl_state,
     get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
 )
+# ------------------------------------------------
+# Player info utilities
+# ------------------------------------------------
+
+def from_players_map(pid: str) -> Dict[str, str]:
+    """Get player info from the global players_map."""
+    info = players_map.get(pid) if players_map else None
+    if info:
+        name = info.get("name") or pid
+        nfl = info.get("team") or "FA"
+        pos = info.get("pos") or (
+            info.get("fantasy_positions", [""])[0]
+            if info.get("fantasy_positions")
+            else ""
+        )
+        return {"name": name, "nfl": nfl, "pos": pos}
+
+    # DEF fallback for team abbrevs
+    if pid.isalpha() and 2 <= len(pid) <= 3:
+        return {"name": f"{pid} D/ST", "nfl": pid, "pos": "DEF"}
+
+    return {"name": pid, "nfl": "FA", "pos": ""}
 
 # ------------------------------------------------
 # Core paths / constants
@@ -944,7 +966,7 @@ def build_matchup_player(
         actual_map: dict[str, float],
         status_by_pid: dict[str, str],
 ) -> dict:
-    base = _from_players_map(pid)  # existing helper in your codebase
+    base = from_players_map(pid)  # existing helper in your codebase
     # base has: name, pos, nfl, etc.
 
     player = {

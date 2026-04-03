@@ -49,7 +49,6 @@ def load_season_aware_usage_data(season: int, week: int = 0, season_type: str = 
     Returns:
         List of player usage dictionaries
     """
-    import json
     import os
 
     season_type = season_type.lower().strip()
