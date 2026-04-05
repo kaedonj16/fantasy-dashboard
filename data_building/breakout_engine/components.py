@@ -213,7 +213,8 @@ def calculate_opportunity_opened_score(
         team: str,
         position: str,
         season: int,
-        vacated_cache: Optional[Dict] = None
+        vacated_cache: Optional[Dict] = None,
+        air_yards_data: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on total opportunity vacated from team/position.
@@ -221,6 +222,9 @@ def calculate_opportunity_opened_score(
     Args:
         vacated_cache: Optional dict mapping (team, position) to vacated opportunity.
                       If provided, uses O(1) cache lookup instead of DB query.
+        air_yards_data: Optional dict with air yards context for WR/TE quality bonus:
+                        - 'vacated_air_yards' (int): total air yards from departed WRs/TEs
+                        - 'avg_depth_of_target' (float): average aDOT of departed targets
     """
     # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
     if vacated_cache is not None:
@@ -260,7 +264,32 @@ def calculate_opportunity_opened_score(
         raw_score = 0.0
 
     snap_bonus = min(vacated_snap_share * 50.0, MAX_SNAP_SHARE_BONUS)
-    final_score = min(raw_score + snap_bonus, 100.0)
+
+    # --- Air yards quality bonus (WR/TE only) ---
+    air_yards_bonus = 0.0
+    vacated_air_yards = 0
+    avg_depth_of_target = 0.0
+
+    if position in ["WR", "TE"] and air_yards_data:
+        vacated_air_yards = _safe_int(air_yards_data.get("vacated_air_yards", 0), 0)
+        avg_depth_of_target = _safe_float(air_yards_data.get("avg_depth_of_target", 0.0), 0.0)
+
+        # Volume bonus: normalized against elite WR1 air yards season
+        volume_bonus = _normalize_to_one(vacated_air_yards, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
+
+        # Depth bonus: routes that go downfield are harder to replace and more valuable
+        if avg_depth_of_target >= AIR_YARDS_ELITE_ADOT:
+            depth_bonus = AIR_YARDS_ELITE_BONUS
+        elif avg_depth_of_target >= AIR_YARDS_GOOD_ADOT:
+            depth_bonus = AIR_YARDS_GOOD_BONUS
+        elif avg_depth_of_target >= AIR_YARDS_AVERAGE_ADOT:
+            depth_bonus = AIR_YARDS_AVERAGE_BONUS
+        else:
+            depth_bonus = 0.0
+
+        air_yards_bonus = _clamp(volume_bonus * 0.6 + depth_bonus * 0.4, 0.0, AIR_YARDS_ELITE_BONUS)
+
+    final_score = _clamp(raw_score + snap_bonus + air_yards_bonus, 0.0, 100.0)
 
     details = {
         "player_id": player_id,
@@ -272,6 +301,9 @@ def calculate_opportunity_opened_score(
         "vacated_snap_share": round(vacated_snap_share, 3),
         "raw_score": round(raw_score, 2),
         "snap_bonus": round(snap_bonus, 2),
+        "air_yards_bonus": round(air_yards_bonus, 2),
+        "vacated_air_yards": vacated_air_yards,
+        "avg_depth_of_target": round(avg_depth_of_target, 2),
         "departed_players": departed_players,
     }
 
@@ -708,7 +740,9 @@ def calculate_team_environment_score(
         team: str,
         position: str,
         season: int,
-        team_stats_cache: Optional[Dict] = None
+        team_stats_cache: Optional[Dict] = None,
+        coaching_changes: Optional[Dict] = None,
+        qb_change_data: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on how favorable the team offensive environment is
@@ -717,9 +751,16 @@ def calculate_team_environment_score(
     Args:
         team_stats_cache: Optional dict mapping team to team stats dict.
                          If provided, uses O(1) cache lookup instead of file load.
-
-    Note: Results are automatically cached via lru_cache for repeated calls
-          with same (team, position, season) arguments.
+        coaching_changes: Optional dict with coaching context:
+                          - 'new_oc' (bool): New offensive coordinator hired
+                          - 'new_hc' (bool): New head coach hired
+                          - 'oc_prior_pass_rate' (float): New OC's prior team pass rate
+                          - 'oc_prior_team' (str): New OC's previous team (informational)
+        qb_change_data: Optional dict with QB situation:
+                        - 'qb_changed' (bool): Starting QB changed from last season
+                        - 'change_type' ('upgrade'|'downgrade'|'lateral'|'unknown')
+                        - 'new_qb_passer_rating' (float): New QB's prior passer rating
+                        - 'old_qb_passer_rating' (float): Departed QB's passer rating
     """
     # OPTIMIZED: Use cache if provided, otherwise fall back to file load
     if team_stats_cache is not None:
@@ -797,13 +838,78 @@ def calculate_team_environment_score(
         elif pass_att_pg < 28 and total_td_pg < 2.0:
             context_bonus -= 4.0
 
+    # --- OC / Coaching change modifier ---
+    coaching_bonus = 0.0
+    coaching_note = "no_change"
+
+    if coaching_changes:
+        new_oc = coaching_changes.get("new_oc", False)
+        new_hc = coaching_changes.get("new_hc", False)
+        oc_prior_pass_rate = _safe_float(coaching_changes.get("oc_prior_pass_rate", 0.0), 0.0)
+
+        if new_hc:
+            coaching_bonus += HC_CHANGE_UNCERTAINTY_PENALTY
+            coaching_note = "new_hc_uncertainty"
+
+        if new_oc and oc_prior_pass_rate > 0:
+            if position in ["WR", "TE"]:
+                if oc_prior_pass_rate >= OC_PASS_HEAVY_THRESHOLD:
+                    coaching_bonus += OC_PASS_HEAVY_WR_BONUS
+                    coaching_note = "new_oc_pass_heavy"
+                elif oc_prior_pass_rate <= OC_RUN_HEAVY_THRESHOLD:
+                    coaching_bonus += OC_RUN_HEAVY_WR_PENALTY
+                    coaching_note = "new_oc_run_heavy"
+                else:
+                    coaching_note = "new_oc_balanced"
+            elif position == "RB":
+                if oc_prior_pass_rate <= OC_RUN_HEAVY_THRESHOLD:
+                    coaching_bonus += OC_RUN_HEAVY_RB_BONUS
+                    coaching_note = "new_oc_run_heavy"
+                elif oc_prior_pass_rate >= OC_PASS_HEAVY_THRESHOLD:
+                    coaching_bonus += OC_PASS_HEAVY_RB_PENALTY
+                    coaching_note = "new_oc_pass_heavy"
+        elif new_oc:
+            # OC changed but prior scheme unknown — small uncertainty penalty
+            coaching_bonus += HC_CHANGE_UNCERTAINTY_PENALTY
+            coaching_note = "new_oc_unknown_scheme"
+
+    # --- QB change modifier (WR/TE primary, minor for RB/QB) ---
+    qb_change_bonus = 0.0
+    qb_change_note = "no_change"
+
+    if qb_change_data and qb_change_data.get("qb_changed"):
+        change_type = qb_change_data.get("change_type", "unknown")
+        new_passer_rating = _safe_float(qb_change_data.get("new_qb_passer_rating", 0.0), 0.0)
+
+        if position in ["WR", "TE"]:
+            if change_type == "upgrade":
+                qb_change_bonus = QB_UPGRADE_WR_BONUS
+            elif change_type == "downgrade":
+                qb_change_bonus = QB_DOWNGRADE_WR_PENALTY
+            elif change_type == "lateral":
+                qb_change_bonus = QB_LATERAL_CHANGE
+            else:
+                # Unknown change type: derive from passer rating if available
+                if new_passer_rating >= QB_TIER_ELITE_RATING:
+                    qb_change_bonus = QB_TIER_WR_SCORES['elite']
+                elif new_passer_rating >= QB_TIER_GOOD_RATING:
+                    qb_change_bonus = QB_TIER_WR_SCORES['good']
+                elif new_passer_rating >= QB_TIER_AVERAGE_RATING:
+                    qb_change_bonus = QB_TIER_WR_SCORES['average']
+                elif new_passer_rating > 0:
+                    qb_change_bonus = QB_TIER_WR_SCORES['poor']
+
+            qb_change_note = change_type
+
     total_score = _clamp(
         volume_score +
         scoring_score +
         efficiency_score +
         red_zone_score +
         position_fit_score +
-        context_bonus,
+        context_bonus +
+        coaching_bonus +
+        qb_change_bonus,
         0.0,
         100.0,
     )
@@ -818,6 +924,10 @@ def calculate_team_environment_score(
         "red_zone_score": round(red_zone_score, 2),
         "position_fit_score": round(position_fit_score, 2),
         "context_bonus": round(context_bonus, 2),
+        "coaching_bonus": round(coaching_bonus, 2),
+        "coaching_note": coaching_note,
+        "qb_change_bonus": round(qb_change_bonus, 2),
+        "qb_change_note": qb_change_note,
         "total_plays_pg": round(total_plays_pg, 2),
         "pass_rate": round(pass_rate, 3),
         "run_rate": round(run_rate, 3),
@@ -848,10 +958,18 @@ def calculate_player_readiness_score(
         player_metadata: Dict,
         prev_usage: Dict,
         is_drafted_rookie: bool = False,
-        draft_capital: Optional[Dict] = None
+        draft_capital: Optional[Dict] = None,
+        injury_status: Optional[str] = None,
+        injury_history: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on player's ability to capitalize on opportunity.
+
+    Args:
+        injury_status: Current injury designation ('healthy', 'questionable',
+                       'doubtful', 'out', 'ir', 'pup'). Applies immediate penalty.
+        injury_history: Dict with 'games_missed_last_season' (int) and optional
+                        'chronic' (bool). Applies history-based discount.
     """
     age = _safe_float(player_metadata.get("age", 25), 25.0)
     years_exp = _safe_int(player_metadata.get("years_exp", 0), 0)
@@ -1011,10 +1129,36 @@ def calculate_player_readiness_score(
 
         draft_score = 0.0
 
-    total_score = (
+    base_score = (
         exp_score + efficiency_score + draft_score
         if is_drafted_rookie
         else exp_score + efficiency_score + usage_baseline_score
+    )
+
+    # --- Injury status modifier ---
+    injury_status_penalty = 0.0
+    injury_history_penalty = 0.0
+    injury_status_used = 'healthy'
+
+    if injury_status:
+        normalized = injury_status.lower().strip()
+        injury_status_used = normalized
+        injury_status_penalty = _safe_float(
+            INJURY_STATUS_PENALTIES.get(normalized, 0), 0.0
+        )
+
+    if injury_history:
+        games_missed = _safe_int(injury_history.get('games_missed_last_season', 0), 0)
+        if games_missed >= INJURY_HISTORY_GAMES_MISSED_SEVERE:
+            injury_history_penalty = INJURY_HISTORY_SEVERE_PENALTY
+        elif games_missed >= INJURY_HISTORY_GAMES_MISSED_MODERATE:
+            injury_history_penalty = INJURY_HISTORY_MODERATE_PENALTY
+        if injury_history.get('chronic'):
+            injury_history_penalty = min(injury_history_penalty - 5, -5)
+
+    total_score = _clamp(
+        base_score + injury_status_penalty + injury_history_penalty,
+        0.0, 100.0
     )
 
     details = {
@@ -1030,9 +1174,12 @@ def calculate_player_readiness_score(
         "draft_score": round(draft_score, 2) if is_drafted_rookie else None,
         "usage_baseline_score": round(usage_baseline_score, 2) if not is_drafted_rookie else None,
         "is_rookie": is_drafted_rookie,
+        "injury_status": injury_status_used,
+        "injury_status_penalty": round(injury_status_penalty, 2),
+        "injury_history_penalty": round(injury_history_penalty, 2),
     }
 
-    return min(round(total_score, 2), 100.0), details
+    return round(total_score, 2), details
 
 
 # ==============================================================================

@@ -21,24 +21,30 @@ def project_player_stats(
         player_info: Dict[str, Any],
         previous_usage: Dict[str, Any],
         efficiency_metrics: Optional[Dict[str, Any]],
-        role_change: Dict[str, Any]
+        role_change: Dict[str, Any],
+        breakout_score: float = 0.0,
+        use_llm_threshold: float = 70.0,
 ) -> Dict[str, Any]:
     """
     Project player stats based on role changes.
 
-    PERFORMANCE OPTIMIZATION (Phase 1):
-    Uses mathematical fallback projection instead of LLM API calls.
-    This provides 1000-5000x speedup (600 × 1-5 sec → 600 × 0.001 sec).
+    Uses the fast mathematical fallback by default. For high-confidence
+    breakout candidates (breakout_score >= use_llm_threshold), the Claude API
+    is called for a richer, context-aware projection — but only when an
+    ANTHROPIC_API_KEY is available and the anthropic package is installed.
 
-    The fallback projection is deterministic and fast, using basic math
-    to estimate stats based on role changes. LLM projections can be
-    re-enabled in Phase 2 if needed (via batching or async).
+    This keeps bulk scoring fast while investing LLM compute only where
+    projection quality has the most impact (top candidates).
 
     Args:
         player_info: {position, team, age}
         previous_usage: Previous season usage stats
         efficiency_metrics: Efficiency metrics (yards per carry, etc.)
         role_change: Expected changes in usage (carries_delta, targets_delta, etc.)
+        breakout_score: Aggregate breakout_opportunity_score (0-100). When this
+                        exceeds use_llm_threshold AND the API is available,
+                        the LLM projection path is used.
+        use_llm_threshold: Score threshold above which LLM is invoked (default 70).
 
     Returns:
         {
@@ -47,19 +53,34 @@ def project_player_stats(
             "fantasy_points": {...},
             "efficiency_adjustments": {...},
             "confidence": 0-100,
-            "notes": "..."
+            "notes": "...",
+            "projection_method": "llm" | "fallback"
         }
     """
 
-    # OPTIMIZED: Use fast fallback projection (1000-5000x speedup)
-    # OLD: Made LLM API call here (1-5 seconds per player)
-    # NEW: Use mathematical projection (0.001 seconds per player)
-    return _fallback_projection(player_info, previous_usage, role_change)
+    # Selective LLM: only call API for top breakout candidates
+    if breakout_score >= use_llm_threshold and HAS_ANTHROPIC:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            return _llm_projection(
+                player_info, previous_usage, efficiency_metrics, role_change, api_key
+            )
 
-    # LLM projection code below is preserved but not executed in Phase 1.
-    # Can be re-enabled in Phase 2 with batching or async if projections
-    # are deemed essential.
+    result = _fallback_projection(player_info, previous_usage, role_change)
+    result["projection_method"] = "fallback"
+    return result
 
+def _llm_projection(
+        player_info: Dict[str, Any],
+        previous_usage: Dict[str, Any],
+        efficiency_metrics: Optional[Dict[str, Any]],
+        role_change: Dict[str, Any],
+        api_key: str,
+) -> Dict[str, Any]:
+    """
+    LLM-based projection for top breakout candidates.
+    Called selectively (score >= threshold) to keep bulk scoring fast.
+    """
     # Build the prompt with all context
     system_prompt = """You are a fantasy football projection engine.
 
@@ -185,16 +206,6 @@ Role Change (expected deltas):
 Return your projection as JSON following the exact format specified in the system prompt."""
 
     try:
-        # Check if anthropic library is available
-        if not HAS_ANTHROPIC:
-            return _fallback_projection(player_info, previous_usage, role_change)
-
-        # Initialize Claude client
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            # Fallback to simple projection if no API key
-            return _fallback_projection(player_info, previous_usage, role_change)
-
         client = anthropic.Anthropic(api_key=api_key)
 
         # Call Claude with the projection prompt
@@ -227,13 +238,14 @@ Return your projection as JSON following the exact format specified in the syste
 
         # Parse JSON response
         projection = json.loads(response_text)
-
+        projection["projection_method"] = "llm"
         return projection
 
     except Exception as e:
         print(f"[projections] LLM projection failed: {e}")
-        # Fallback to simple projection
-        return _fallback_projection(player_info, previous_usage, role_change)
+        result = _fallback_projection(player_info, previous_usage, role_change)
+        result["projection_method"] = "fallback"
+        return result
 
 
 def _fallback_projection(
