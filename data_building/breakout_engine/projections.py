@@ -1,20 +1,17 @@
 """
 LLM-based projection engine for breakout candidates.
 
-Uses AI to project full stat lines based on role changes and previous usage.
+Uses OpenAI (via the shared get_ai_client helper) to project full stat lines
+based on role changes and previous usage.
 """
 
 import json
 import os
 from typing import Dict, Any, Optional
 
-# Try to import anthropic, but gracefully fall back if not available
-try:
-    import anthropic
+from dashboard_services.ai.client import get_ai_client, ai_enabled
 
-    HAS_ANTHROPIC = True
-except ImportError:
-    HAS_ANTHROPIC = False
+HAS_OPENAI = True  # always available via project dependency
 
 
 def project_player_stats(
@@ -59,12 +56,10 @@ def project_player_stats(
     """
 
     # Selective LLM: only call API for top breakout candidates
-    if breakout_score >= use_llm_threshold and HAS_ANTHROPIC:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if api_key:
-            return _llm_projection(
-                player_info, previous_usage, efficiency_metrics, role_change, api_key
-            )
+    if breakout_score >= use_llm_threshold and ai_enabled():
+        return _llm_projection(
+            player_info, previous_usage, efficiency_metrics, role_change
+        )
 
     result = _fallback_projection(player_info, previous_usage, role_change)
     result["projection_method"] = "fallback"
@@ -75,10 +70,9 @@ def _llm_projection(
         previous_usage: Dict[str, Any],
         efficiency_metrics: Optional[Dict[str, Any]],
         role_change: Dict[str, Any],
-        api_key: str,
 ) -> Dict[str, Any]:
     """
-    LLM-based projection for top breakout candidates.
+    OpenAI-based projection for top breakout candidates.
     Called selectively (score >= threshold) to keep bulk scoring fast.
     """
     # Build the prompt with all context
@@ -206,43 +200,30 @@ Role Change (expected deltas):
 Return your projection as JSON following the exact format specified in the system prompt."""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = get_ai_client()
 
-        # Call Claude with the projection prompt
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=2000,
-            temperature=0.3,  # Lower temperature for more consistent projections
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ]
+        resp = client.responses.create(
+            model="gpt-4o",
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
+        response_text = resp.output_text.strip()
 
-        # Extract JSON from response
-        response_text = message.content[0].text.strip()
-
-        # Remove markdown code blocks if present
+        # Strip markdown fences if present
         if response_text.startswith("```"):
-            # Find the actual JSON content
-            lines = response_text.split("\n")
-            json_lines = []
-            in_code_block = False
-            for line in lines:
-                if line.strip().startswith("```"):
-                    in_code_block = not in_code_block
-                    continue
-                if in_code_block or (not line.strip().startswith("```") and "{" in response_text):
-                    json_lines.append(line)
-            response_text = "\n".join(json_lines)
+            lines = response_text.splitlines()
+            response_text = "\n".join(
+                l for l in lines if not l.strip().startswith("```")
+            )
 
-        # Parse JSON response
         projection = json.loads(response_text)
         projection["projection_method"] = "llm"
         return projection
 
     except Exception as e:
-        print(f"[projections] LLM projection failed: {e}")
+        print(f"[projections] OpenAI projection failed: {e}")
         result = _fallback_projection(player_info, previous_usage, role_change)
         result["projection_method"] = "fallback"
         return result
