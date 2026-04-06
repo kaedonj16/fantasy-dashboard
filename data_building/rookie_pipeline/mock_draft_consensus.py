@@ -121,16 +121,58 @@ SEED_MOCKS_2026: List[Dict[str, Any]] = [
 ]
 
 SEED_MOCKS_2025: List[Dict[str, Any]] = [
-    {"player_id": "ROOKIE_2025_CAM_WARD",        "source_name": "ESPN_McShay",    "projected_pick": 1,  "mock_date": "2025-03-01"},
-    {"player_id": "ROOKIE_2025_CAM_WARD",        "source_name": "NFL_Network_Jeremiah","projected_pick": 1, "mock_date": "2025-03-10"},
-    {"player_id": "ROOKIE_2025_TRAVIS_HUNTER",   "source_name": "ESPN_McShay",    "projected_pick": 2,  "mock_date": "2025-03-01"},
-    {"player_id": "ROOKIE_2025_TRAVIS_HUNTER",   "source_name": "NFL_Network_Jeremiah","projected_pick": 3, "mock_date": "2025-03-10"},
-    {"player_id": "ROOKIE_2025_ASHTON_JEANTY",   "source_name": "ESPN_McShay",    "projected_pick": 2,  "mock_date": "2025-03-01"},
-    {"player_id": "ROOKIE_2025_ASHTON_JEANTY",   "source_name": "NFL_Network_Jeremiah","projected_pick": 4, "mock_date": "2025-03-10"},
-    {"player_id": "ROOKIE_2025_TETAIROA_MCMILLAN","source_name": "ESPN_McShay",   "projected_pick": 5,  "mock_date": "2025-03-01"},
-    {"player_id": "ROOKIE_2025_TETAIROA_MCMILLAN","source_name": "NFL_Network_Jeremiah","projected_pick": 7, "mock_date": "2025-03-10"},
-    {"player_id": "ROOKIE_2025_TYLER_WARREN",    "source_name": "ESPN_McShay",    "projected_pick": 10, "mock_date": "2025-03-01"},
-    {"player_id": "ROOKIE_2025_TYLER_WARREN",    "source_name": "NFL_Network_Jeremiah","projected_pick": 9, "mock_date": "2025-03-10"},
+    # ── Cam Ward (QB, #1 overall) ─────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_CAM_WARD",           "source_name": "ESPN_McShay",          "projected_pick": 1,  "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_CAM_WARD",           "source_name": "NFL_Network_Jeremiah", "projected_pick": 1,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_CAM_WARD",           "source_name": "PFF_Miller",           "projected_pick": 1,  "mock_date": "2025-03-15"},
+    # ── Travis Hunter (WR, #2 overall) ───────────────────────────────────────
+    {"player_id": "ROOKIE_2025_TRAVIS_HUNTER",      "source_name": "ESPN_McShay",          "projected_pick": 2,  "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_TRAVIS_HUNTER",      "source_name": "NFL_Network_Jeremiah", "projected_pick": 3,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_TRAVIS_HUNTER",      "source_name": "PFF_Miller",           "projected_pick": 2,  "mock_date": "2025-03-15"},
+    # ── Ashton Jeanty (RB) ───────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_ASHTON_JEANTY",      "source_name": "ESPN_McShay",          "projected_pick": 5,  "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_ASHTON_JEANTY",      "source_name": "NFL_Network_Jeremiah", "projected_pick": 4,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_ASHTON_JEANTY",      "source_name": "PFF_Miller",           "projected_pick": 6,  "mock_date": "2025-03-15"},
+    # ── Tetairoa McMillan (WR) ────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_TETAIROA_MCMILLAN",  "source_name": "ESPN_McShay",          "projected_pick": 8,  "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_TETAIROA_MCMILLAN",  "source_name": "NFL_Network_Jeremiah", "projected_pick": 7,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_TETAIROA_MCMILLAN",  "source_name": "PFF_Miller",           "projected_pick": 9,  "mock_date": "2025-03-15"},
+    # ── Tyler Warren (TE) ─────────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_TYLER_WARREN",       "source_name": "ESPN_McShay",          "projected_pick": 10, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_TYLER_WARREN",       "source_name": "NFL_Network_Jeremiah", "projected_pick": 9,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_TYLER_WARREN",       "source_name": "PFF_Miller",           "projected_pick": 11, "mock_date": "2025-03-15"},
+    # ── Shedeur Sanders (QB) ─────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_SHEDEUR_SANDERS",    "source_name": "ESPN_McShay",          "projected_pick": 4,  "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_SHEDEUR_SANDERS",    "source_name": "NFL_Network_Jeremiah", "projected_pick": 3,  "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_SHEDEUR_SANDERS",    "source_name": "PFF_Miller",           "projected_pick": 5,  "mock_date": "2025-03-15"},
+    # ── Harold Fannin Jr (TE) ─────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_HAROLD_FANNIN",      "source_name": "ESPN_McShay",          "projected_pick": 33, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_HAROLD_FANNIN",      "source_name": "NFL_Network_Jeremiah", "projected_pick": 38, "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_HAROLD_FANNIN",      "source_name": "PFF_Miller",           "projected_pick": 35, "mock_date": "2025-03-15"},
+    # ── Omarion Hampton (RB) ─────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_OMARION_HAMPTON",    "source_name": "ESPN_McShay",          "projected_pick": 22, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_OMARION_HAMPTON",    "source_name": "NFL_Network_Jeremiah", "projected_pick": 20, "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_OMARION_HAMPTON",    "source_name": "PFF_Miller",           "projected_pick": 24, "mock_date": "2025-03-15"},
+    # ── Quinshon Judkins (RB) ────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_QUINSHON_JUDKINS",   "source_name": "ESPN_McShay",          "projected_pick": 36, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_QUINSHON_JUDKINS",   "source_name": "NFL_Network_Jeremiah", "projected_pick": 40, "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_QUINSHON_JUDKINS",   "source_name": "PFF_Miller",           "projected_pick": 38, "mock_date": "2025-03-15"},
+    # ── Luther Burden III (WR) ────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_LUTHER_BURDEN",      "source_name": "ESPN_McShay",          "projected_pick": 42, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_LUTHER_BURDEN",      "source_name": "NFL_Network_Jeremiah", "projected_pick": 45, "mock_date": "2025-03-10"},
+    {"player_id": "ROOKIE_2025_LUTHER_BURDEN",      "source_name": "PFF_Miller",           "projected_pick": 40, "mock_date": "2025-03-15"},
+    # ── Matthew Golden (WR) ──────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_MATTHEW_GOLDEN",     "source_name": "ESPN_McShay",          "projected_pick": 28, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_MATTHEW_GOLDEN",     "source_name": "NFL_Network_Jeremiah", "projected_pick": 30, "mock_date": "2025-03-10"},
+    # ── Jayden Higgins (WR) ──────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_JAYDEN_HIGGINS",     "source_name": "ESPN_McShay",          "projected_pick": 52, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_JAYDEN_HIGGINS",     "source_name": "NFL_Network_Jeremiah", "projected_pick": 55, "mock_date": "2025-03-10"},
+    # ── Mason Taylor (TE) ────────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_MASON_TAYLOR",       "source_name": "ESPN_McShay",          "projected_pick": 44, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_MASON_TAYLOR",       "source_name": "NFL_Network_Jeremiah", "projected_pick": 48, "mock_date": "2025-03-10"},
+    # ── Dillon Gabriel (QB) ──────────────────────────────────────────────────
+    {"player_id": "ROOKIE_2025_DILLON_GABRIEL",     "source_name": "ESPN_McShay",          "projected_pick": 68, "mock_date": "2025-03-01"},
+    {"player_id": "ROOKIE_2025_DILLON_GABRIEL",     "source_name": "NFL_Network_Jeremiah", "projected_pick": 72, "mock_date": "2025-03-10"},
 ]
 
 SEED_MOCKS_BY_YEAR: Dict[int, List[Dict]] = {

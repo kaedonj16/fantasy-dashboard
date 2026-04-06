@@ -262,6 +262,45 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
     return saved
 
 
+def upsert_mock_entries(draft_year: int, conn) -> int:
+    """Write seed mock draft entries to rookie_mock_draft_entries.
+    Only inserts entries whose player_id already exists in rookie_prospects
+    (FK constraint) — players not yet persisted are silently skipped.
+    """
+    from .mock_draft_consensus import get_seed_mocks
+    entries = get_seed_mocks(draft_year)
+    saved = 0
+    with conn.cursor() as cur:
+        for e in entries:
+            cur.execute(
+                """
+                INSERT INTO rookie_mock_draft_entries
+                    (player_id, draft_class_year, source_name,
+                     projected_round, projected_pick, mock_date)
+                SELECT %(player_id)s, %(draft_class_year)s, %(source_name)s,
+                       %(projected_round)s, %(projected_pick)s, %(mock_date)s
+                WHERE EXISTS (
+                    SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+                )
+                ON CONFLICT (player_id, source_name, mock_date) DO UPDATE SET
+                    projected_pick  = EXCLUDED.projected_pick,
+                    projected_round = EXCLUDED.projected_round
+                """,
+                {
+                    "player_id":        e["player_id"],
+                    "draft_class_year": draft_year,
+                    "source_name":      e["source_name"],
+                    "projected_round":  e.get("projected_round",
+                                             1 if (e.get("projected_pick") or 999) <= 32 else
+                                             2 if (e.get("projected_pick") or 999) <= 64 else 3),
+                    "projected_pick":   e.get("projected_pick"),
+                    "mock_date":        e.get("mock_date"),
+                },
+            )
+            saved += 1
+    return saved
+
+
 def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn) -> int:
     saved = 0
     with conn.cursor() as cur:
@@ -429,18 +468,33 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
 # Public API — in-memory path (no DB required)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _norm_name(name: str) -> str:
+    """
+    Normalize a player name for dedup comparison.
+    Lowercases, strips punctuation, removes common generational suffixes
+    so 'Harold Fannin Jr.' == 'Harold Fannin Jr' == 'Harold Fannin'.
+    """
+    import re
+    n = name.lower().strip()
+    # Remove trailing generational suffixes (jr, sr, ii, iii, iv, v)
+    n = re.sub(r'[\s,]+(jr\.?|sr\.?|ii|iii|iv|v\.?)$', '', n).strip()
+    # Strip any remaining punctuation
+    n = re.sub(r'[^a-z\s]', '', n).strip()
+    return n
+
+
 def _filter_active_nfl_players(prospects: List[Dict]) -> List[Dict]:
     """
     Remove any prospect who is already in the NFL player database.
 
     Uses Sleeper's /players/nfl endpoint (no auth, public API) to get the
-    full player index.  A prospect is filtered out when:
-      - their normalized name matches a Sleeper player
-      - AND that player has years_exp is not None (they have NFL experience)
-           OR has a non-null NFL team (just drafted this cycle)
+    full player index.  A prospect is filtered out when their normalized name
+    matches a Sleeper player who has years_exp not None OR a non-null team.
 
-    Failures (network error, no key needed) are non-fatal — the full list is
-    returned unchanged so the page still works.
+    Name comparison strips generational suffixes (Jr./Sr./II/III) and
+    punctuation so 'Harold Fannin Jr.' matches 'Harold Fannin Jr'.
+
+    Failures are non-fatal — the full list is returned unchanged.
     """
     try:
         from dashboard_services.api import get_nfl_players
@@ -452,27 +506,27 @@ def _filter_active_nfl_players(prospects: List[Dict]) -> List[Dict]:
     if not nfl_players:
         return prospects
 
-    # Build a set of lowercase names for active/drafted NFL players
+    # Build a set of normalized names for active/drafted NFL players
     active_names: set = set()
     for pid, p in nfl_players.items():
         name = (
             p.get("full_name") or
             " ".join(filter(None, [p.get("first_name"), p.get("last_name")]))
-        ).strip().lower()
+        ).strip()
         if not name:
             continue
         years_exp = p.get("years_exp")
         team      = p.get("team")
-        # Include if they're in the NFL system (drafted or active)
         if years_exp is not None or team:
-            active_names.add(name)
+            active_names.add(_norm_name(name))
 
     before = len(prospects)
-    filtered = [p for p in prospects if p["name"].lower() not in active_names]
+    filtered = [p for p in prospects if _norm_name(p["name"]) not in active_names]
     removed = before - len(filtered)
     if removed:
         log.info("[pipeline] Filtered %d already-drafted players from prospect list", removed)
     return filtered
+
 
 
 def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, Any]:
@@ -525,13 +579,14 @@ def run_rookie_pipeline(draft_year: Optional[int] = None) -> Dict[str, Any]:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             n_prospects = upsert_prospects(result["prospects"], conn)
+            n_entries   = upsert_mock_entries(result["draft_year"], conn)
             n_mocks     = upsert_mock_consensus(result["consensus"], result["draft_year"], conn)
             n_rankings  = upsert_rankings(result["scores"], result["values"], conn)
             conn.commit()
 
         log.info(
-            "[pipeline] Saved %d prospects, %d mock entries, %d rankings for %d class",
-            n_prospects, n_mocks, n_rankings, result["draft_year"],
+            "[pipeline] Saved %d prospects, %d mock entries, %d consensus, %d rankings for %d class",
+            n_prospects, n_entries, n_mocks, n_rankings, result["draft_year"],
         )
     except Exception as exc:
         log.error("[pipeline] DB save failed: %s", exc)
