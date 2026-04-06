@@ -123,8 +123,17 @@ class PhaseDetector:
         """
         Calculate weighted aggregate breakout score based on phase.
 
+        When competition signals (opportunity_opened, competition_removed) are
+        both 0 they are treated as *unavailable* rather than genuine zeros, and
+        the remaining components are renormalized to fill the 0-100 range.
+        This prevents scores being structurally capped at ~45 when the
+        roster-changes DB table hasn't been populated.
+
+        competition_added_penalty = 0 means no new competition was added — a
+        neutral/positive outcome — so it IS kept in the denominator.
+
         Args:
-            component_scores: Dictionary of component name -> score
+            component_scores: Dictionary of component name -> score (0-100)
             phase: Current NFL calendar phase
 
         Returns:
@@ -132,13 +141,26 @@ class PhaseDetector:
         """
         weights = cls.get_phase_weights(phase)
 
+        # If both primary DB-dependent signals are 0, treat them as absent
+        opp_opened = component_scores.get('opportunity_opened', 0.0)
+        comp_removed = component_scores.get('competition_removed', 0.0)
+        competition_data_absent = (opp_opened == 0.0 and comp_removed == 0.0)
+        absent = {'opportunity_opened', 'competition_removed'} if competition_data_absent else set()
+
         total = 0.0
+        active_weight = 0.0
         for component, score in component_scores.items():
             weight = weights.get(component, 0.0)
+            if component in absent:
+                continue
             total += score * weight
+            active_weight += weight
 
-        # Ensure result is in valid range
-        return max(0.0, min(100.0, total))
+        if active_weight <= 0:
+            return 0.0
+
+        # Renormalize so the active-weight components span the full 0-100 range
+        return max(0.0, min(100.0, total / active_weight))
 
     @classmethod
     def get_phase_description(cls, phase: str) -> str:
