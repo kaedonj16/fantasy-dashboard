@@ -575,6 +575,16 @@ def run_rookie_pipeline(draft_year: Optional[int] = None) -> Dict[str, Any]:
         log.info("[pipeline] DATABASE_URL not configured — returning in-memory results only")
         return result
 
+    # Filter mock consensus to only include players that exist in prospects
+    prospect_ids = {p["player_id"] for p in result["prospects"]}
+    filtered_consensus = {pid: data for pid, data in result["consensus"].items() if pid in prospect_ids}
+
+    if len(filtered_consensus) != len(result["consensus"]):
+        filtered_count = len(result["consensus"]) - len(filtered_consensus)
+        log.warning(f"[pipeline] Filtered out {filtered_count} mock consensus entries for players not in prospect data")
+
+    result["consensus"] = filtered_consensus
+
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
