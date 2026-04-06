@@ -142,6 +142,12 @@ CREATE TABLE IF NOT EXISTS rookie_rankings (
     prospect_score               DECIMAL(6,2),
     rookie_value                 DECIMAL(8,2),  -- 1QB dynasty value (0-999 scale)
     rookie_sf_value              DECIMAL(8,2),  -- SF dynasty value
+    rookie_value_8               DECIMAL(8,2),  -- 1QB 8-team value
+    rookie_value_12              DECIMAL(8,2),  -- 1QB 12-team value
+    rookie_value_14              DECIMAL(8,2),  -- 1QB 14-team value
+    rookie_sf_value_8            DECIMAL(8,2),  -- SF 8-team value
+    rookie_sf_value_12           DECIMAL(8,2),  -- SF 12-team value
+    rookie_sf_value_14           DECIMAL(8,2),  -- SF 14-team value
     tier                         INTEGER,        -- 1-6
     tier_label                   TEXT,
     key_reasons                  TEXT,           -- human-readable summary

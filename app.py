@@ -5779,67 +5779,81 @@ def page_players(platform: str, season: int, league_id: str):
       <div class="card-body" style="padding-top:0;">
 
         <!-- Controls -->
-        <div id="prControls" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:16px 0 14px;border-bottom:1px solid var(--border);margin-bottom:12px;">
+        <div class="filter-controls-container">
+          <!-- Row 1: Primary filters -->
+          <div class="filter-row filter-row-primary">
+            <!-- Search -->
+            <div class="filter-search">
+              <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
+                style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                       border:1px solid var(--border);background:var(--card-bg);
+                       color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
+                           color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+              <button id="prSearchClear" onclick="prClearSearch()"
+                style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                       background:none;border:none;cursor:pointer;color:var(--text-muted);
+                       font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
+            </div>
 
-          <!-- Search -->
-          <div style="position:relative;flex:1;min-width:180px;max-width:320px;">
-            <input id="prSearch" type="text" placeholder="Search players…"
-              autocomplete="off"
-              style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                     border:1px solid var(--border);background:var(--card-bg);
-                     color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                         color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
-            <button id="prSearchClear" onclick="prClearSearch()"
-              style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                     background:none;border:none;cursor:pointer;color:var(--text-muted);
-                     font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
-          </div>
+            <!-- Position filters -->
+            <div class="filter-positions">
+              <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+              <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+              <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+              <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+              <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+              <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            </div>
 
-          <!-- League type toggle -->
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Format</span>
-            <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-              <button id="pr1qbBtn" class="pr-toggle-btn active" onclick="prSetLeagueType('1qb')">1QB</button>
-              <button id="prSfBtn"  class="pr-toggle-btn"        onclick="prSetLeagueType('sf')">SF</button>
+            <!-- Settings button -->
+            <div style="position:relative;">
+              <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
+                ⚙️ Settings
+              </button>
+
+              <!-- Settings panel (hidden by default) -->
+              <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
+                <div class="settings-section">
+                  <span class="settings-section-label">League Format</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
+                    <button class="settings-toggle" data-value="sf" onclick="prSetLeagueType('sf')">SF</button>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <span class="settings-section-label">League Size</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle" data-value="8" onclick="prSetSize(8)">8</button>
+                    <button class="settings-toggle active" data-value="10" onclick="prSetSize(10)">10</button>
+                    <button class="settings-toggle" data-value="12" onclick="prSetSize(12)">12</button>
+                    <button class="settings-toggle" data-value="14" onclick="prSetSize(14)">14</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- League size -->
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Teams</span>
-            <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-              <button class="pr-toggle-btn pr-size-btn" data-size="8"  onclick="prSetSize(8)">8</button>
-              <button class="pr-toggle-btn pr-size-btn active" data-size="10" onclick="prSetSize(10)">10</button>
-              <button class="pr-toggle-btn pr-size-btn" data-size="12" onclick="prSetSize(12)">12</button>
-              <button class="pr-toggle-btn pr-size-btn" data-size="14" onclick="prSetSize(14)">14</button>
+          <!-- Row 2: Secondary filters -->
+          <div class="filter-row filter-row-secondary">
+            <!-- Sort dropdown -->
+            <div class="filter-sort">
+              <label class="filter-label">Sort by</label>
+              <select id="prSort" onchange="prRender()"
+                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
+                <option value="rank">Rank</option>
+                <option value="value">Value</option>
+                <option value="age">Age (youngest)</option>
+                <option value="pos_rank">Pos Rank</option>
+              </select>
             </div>
-          </div>
 
-          <!-- Position filters -->
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Position</span>
-            <div style="display:flex;gap:5px;flex-wrap:wrap;">
-              <button class="pr-pos-btn active" data-pos="ALL"  onclick="prTogglePos('ALL')">All</button>
-              <button class="pr-pos-btn"        data-pos="QB"   onclick="prTogglePos('QB')">QB</button>
-              <button class="pr-pos-btn"        data-pos="RB"   onclick="prTogglePos('RB')">RB</button>
-              <button class="pr-pos-btn"        data-pos="WR"   onclick="prTogglePos('WR')">WR</button>
-              <button class="pr-pos-btn"        data-pos="TE"   onclick="prTogglePos('TE')">TE</button>
-              <button class="pr-pos-btn"        data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            <!-- Active settings indicator -->
+            <div id="prActiveSettings" class="active-settings-indicator">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
             </div>
-          </div>
-
-          <!-- Sort -->
-          <div style="display:flex;flex-direction:column;gap:4px;margin-left:auto;">
-            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Sort</span>
-            <select id="prSort" onchange="prRender()"
-              style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                     background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
-              <option value="rank">Rank</option>
-              <option value="value">Value</option>
-              <option value="age">Age (youngest)</option>
-              <option value="pos_rank">Pos Rank</option>
-            </select>
           </div>
         </div>
 
@@ -5930,39 +5944,168 @@ def page_players(platform: str, season: int, league_id: str):
         font-weight: 700;
         color: var(--accent);
       }
-      .pr-pos-btn {
-        padding: 5px 11px;
+      /* Filter Controls */
+      .filter-controls-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 0 14px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 12px;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .filter-row-primary {
+        gap: 12px;
+      }
+      .filter-row-secondary {
+        padding-top: 4px;
+      }
+      .filter-search {
+        position: relative;
+        flex: 1;
+        min-width: 200px;
+        max-width: 400px;
+      }
+      .filter-positions {
+        display: flex;
+        gap: 3px;
+        flex-wrap: wrap;
+      }
+      .pos-pill {
+        padding: 6px 12px;
         border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.12s;
+        white-space: nowrap;
+      }
+      .pos-pill.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .filter-settings-btn {
+        padding: 7px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: all 0.12s;
+      }
+      .filter-settings-btn:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .filter-settings-panel {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 8px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        padding: 16px;
+        min-width: 260px;
+        z-index: 1000;
+      }
+      .settings-section {
+        margin-bottom: 16px;
+      }
+      .settings-section:last-of-type {
+        margin-bottom: 0;
+      }
+      .settings-section-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 8px;
+      }
+      .settings-toggle-group {
+        display: flex;
+        gap: 6px;
+      }
+      .settings-toggle {
+        flex: 1;
+        padding: 8px 12px;
+        border-radius: 8px;
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text-muted);
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.12s, color 0.12s, border-color 0.12s;
+        transition: all 0.12s;
       }
-      .pr-pos-btn.active {
+      .settings-toggle.active {
         background: var(--accent);
         color: #fff;
         border-color: var(--accent);
       }
-      .pr-toggle-btn {
-        padding: 6px 13px;
-        font-size: 12px;
+      .active-settings-indicator {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .active-setting-tag {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 11px;
         font-weight: 600;
-        border: none;
-        cursor: pointer;
-        background: var(--card-bg);
+      }
+      .filter-sort {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .filter-label {
+        font-size: 11px;
+        font-weight: 600;
         color: var(--text-muted);
-        transition: background 0.12s, color 0.12s;
-        min-height: 34px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
-      .pr-toggle-btn.active {
-        background: var(--accent);
-        color: #fff;
-      }
-      .pr-toggle-btn + .pr-toggle-btn {
-        border-left: 1px solid var(--border);
+
+      /* Mobile responsive */
+      @media (max-width: 768px) {
+        .filter-row-primary {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .filter-search {
+          max-width: 100%;
+        }
+        .filter-positions {
+          justify-content: center;
+        }
+        .active-settings-indicator {
+          justify-content: center;
+          order: -1;
+          width: 100%;
+        }
       }
     </style>
 
@@ -6023,18 +6166,57 @@ def page_players(platform: str, season: int, league_id: str):
         return prIndicators.breakouts && prIndicators.breakouts.includes(String(id));
       }
 
+      // Settings panel toggle
+      function prToggleSettings() {
+        const panel = document.getElementById('prSettingsPanel');
+        const btn = document.getElementById('prSettingsBtn');
+        if (!panel || !btn) return;
+
+        const isOpen = panel.style.display === 'block';
+        panel.style.display = isOpen ? 'none' : 'block';
+        btn.classList.toggle('active', !isOpen);
+      }
+
+      // Update active settings indicator tags
+      function updateSettingsIndicator() {
+        const indicator = document.getElementById('prActiveSettings');
+        if (!indicator) return;
+
+        const sizeTag = indicator.querySelector('.active-setting-tag:first-child');
+        const formatTag = indicator.querySelector('.active-setting-tag:last-child');
+
+        if (sizeTag) sizeTag.textContent = prLeagueSize + '-Team';
+        if (formatTag) formatTag.textContent = prLeagueType.toUpperCase();
+      }
+
       function prSetLeagueType(type) {
         prLeagueType = type;
-        document.getElementById('pr1qbBtn').classList.toggle('active', type === '1qb');
-        document.getElementById('prSfBtn').classList.toggle('active', type === 'sf');
+
+        // Update settings panel toggles
+        document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
+          const section = btn.closest('.settings-section');
+          if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
+            btn.classList.toggle('active', btn.getAttribute('data-value') === type);
+          }
+        });
+
+        updateSettingsIndicator();
         prRender();
       }
 
       function prSetSize(size) {
         prLeagueSize = size;
-        document.querySelectorAll('.pr-size-btn').forEach(b => {
-          b.classList.toggle('active', Number(b.getAttribute('data-size')) === size);
+
+        // Update settings panel toggles
+        document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
+          const section = btn.closest('.settings-section');
+          if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
+            const btnSize = parseInt(btn.getAttribute('data-value'));
+            btn.classList.toggle('active', btnSize === size);
+          }
         });
+
+        updateSettingsIndicator();
         prRender();
       }
 
@@ -6050,7 +6232,7 @@ def page_players(platform: str, season: int, league_id: str):
           }
         }
         // Sync button states
-        document.querySelectorAll('.pr-pos-btn').forEach(b => {
+        document.querySelectorAll('.pos-pill').forEach(b => {
           const p = b.getAttribute('data-pos');
           if (p === 'ALL') {
             b.classList.toggle('active', prPosFilters.size === 0);
@@ -6180,6 +6362,19 @@ def page_players(platform: str, season: int, league_id: str):
           prRender();
         });
       })();
+
+      // Close settings panel when clicking outside
+      document.addEventListener('click', function(e) {
+        const panel = document.getElementById('prSettingsPanel');
+        const btn = document.getElementById('prSettingsBtn');
+
+        if (panel && btn && panel.style.display === 'block') {
+          if (!panel.contains(e.target) && !btn.contains(e.target)) {
+            panel.style.display = 'none';
+            btn.classList.remove('active');
+          }
+        }
+      });
 
       // Load data
       Promise.all([

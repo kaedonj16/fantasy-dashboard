@@ -57,11 +57,30 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
                 )
                 rows = cur.fetchall()
         if rows:
-            for year, season_end in rows:
+            for row in rows:
+                year = int(row['draft_class_year'])  # Ensure integer type
+                season_end = row['season_end']
+                # Convert season_end to date if needed
+                if season_end is not None:
+                    if isinstance(season_end, str):
+                        from datetime import datetime
+                        try:
+                            season_end = datetime.strptime(season_end, '%Y-%m-%d').date()
+                        except ValueError:
+                            # Try other common formats
+                            try:
+                                season_end = datetime.strptime(season_end, '%Y-%m-%d %H:%M:%S').date()
+                            except ValueError:
+                                log.warning(f"Unable to parse season_end date: {season_end}")
+                                season_end = None
+                    elif not isinstance(season_end, date):
+                        log.warning(f"Unexpected season_end type: {type(season_end)}")
+                        season_end = None
+                
                 if season_end is None or today <= season_end:
                     return year
             # All classes have ended → return latest + 1
-            return rows[-1][0] + 1
+            return int(rows[-1]['draft_class_year']) + 1
     except Exception as exc:
         log.warning("[pipeline] DB unavailable for active class lookup: %s", exc)
 
@@ -305,6 +324,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      durability_score, projected_draft_capital_score,
                      fantasy_translation_score, confidence_score,
                      prospect_score, rookie_value, rookie_sf_value,
+                     rookie_value_8, rookie_value_12, rookie_value_14,
+                     rookie_sf_value_8, rookie_sf_value_12, rookie_sf_value_14,
                      tier, tier_label, key_reasons, calculated_at)
                 VALUES
                     (%(player_id)s, %(draft_class_year)s, %(overall_rank)s, %(position_rank)s,
@@ -314,6 +335,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      %(durability_score)s, %(projected_draft_capital_score)s,
                      %(fantasy_translation_score)s, %(confidence_score)s,
                      %(prospect_score)s, %(rookie_value)s, %(rookie_sf_value)s,
+                     %(rookie_value_8)s, %(rookie_value_12)s, %(rookie_value_14)s,
+                     %(rookie_sf_value_8)s, %(rookie_sf_value_12)s, %(rookie_sf_value_14)s,
                      %(tier)s, %(tier_label)s, %(key_reasons)s, NOW())
                 ON CONFLICT (player_id, draft_class_year) DO UPDATE SET
                     overall_rank                  = EXCLUDED.overall_rank,
@@ -332,6 +355,12 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     prospect_score                = EXCLUDED.prospect_score,
                     rookie_value                  = EXCLUDED.rookie_value,
                     rookie_sf_value               = EXCLUDED.rookie_sf_value,
+                    rookie_value_8                = EXCLUDED.rookie_value_8,
+                    rookie_value_12               = EXCLUDED.rookie_value_12,
+                    rookie_value_14               = EXCLUDED.rookie_value_14,
+                    rookie_sf_value_8             = EXCLUDED.rookie_sf_value_8,
+                    rookie_sf_value_12            = EXCLUDED.rookie_sf_value_12,
+                    rookie_sf_value_14            = EXCLUDED.rookie_sf_value_14,
                     tier                          = EXCLUDED.tier,
                     tier_label                    = EXCLUDED.tier_label,
                     key_reasons                   = EXCLUDED.key_reasons,
@@ -356,6 +385,12 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     "prospect_score":               s.get("prospect_score"),
                     "rookie_value":                 v.get("rookie_value"),
                     "rookie_sf_value":              v.get("rookie_sf_value"),
+                    "rookie_value_8":               v.get("rookie_value_8"),
+                    "rookie_value_12":              v.get("rookie_value_12"),
+                    "rookie_value_14":              v.get("rookie_value_14"),
+                    "rookie_sf_value_8":            v.get("rookie_sf_value_8"),
+                    "rookie_sf_value_12":           v.get("rookie_sf_value_12"),
+                    "rookie_sf_value_14":           v.get("rookie_sf_value_14"),
                     "tier":                         v.get("tier"),
                     "tier_label":                   v.get("tier_label"),
                     "key_reasons":                  s.get("key_reasons"),
@@ -462,6 +497,8 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
     Fetch persisted rankings from the database.  Falls back to in-memory pipeline
     if DB is unavailable or empty.
     """
+    # Ensure draft_year is an integer
+    draft_year = int(draft_year)
     if _db_available():
         try:
             from dashboard_services.db import get_conn
@@ -476,6 +513,8 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                             rp.early_declare, rp.transfer_history,
                             rr.overall_rank, rr.position_rank,
                             rr.prospect_score, rr.rookie_value, rr.rookie_sf_value,
+                            rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
+                            rr.rookie_sf_value_8, rr.rookie_sf_value_12, rr.rookie_sf_value_14,
                             rr.tier, rr.tier_label, rr.key_reasons,
                             rr.production_score, rr.efficiency_score, rr.age_score,
                             rr.breakout_profile_score, rr.athleticism_score,
@@ -494,8 +533,7 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                         """,
                         (draft_year,),
                     )
-                    cols = [d[0] for d in cur.description]
-                    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+                    rows = cur.fetchall()
 
             if rows:
                 return rows

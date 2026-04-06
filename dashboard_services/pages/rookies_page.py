@@ -29,86 +29,99 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
   <div class="card-body" style="padding-top:0;">
 
     <!-- Controls -->
-    <div id="rookieControls"
-      style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;
-             padding:16px 0 14px;border-bottom:1px solid var(--border);margin-bottom:12px;">
+    <div class="filter-controls-container">
+      <!-- Row 1: Primary filters -->
+      <div class="filter-row filter-row-primary">
+        <!-- Search -->
+        <div class="filter-search">
+          <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
+            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                   border:1px solid var(--border);background:var(--card-bg);
+                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
+                       color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+          <button id="rookieSearchClear" onclick="rkClearSearch()"
+            style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                   background:none;border:none;cursor:pointer;color:var(--text-muted);
+                   font-size:16px;padding:2px;">&#x2715;</button>
+        </div>
 
-      <!-- Search -->
-      <div style="position:relative;flex:1;min-width:160px;max-width:280px;">
-        <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
-          style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                 border:1px solid var(--border);background:var(--card-bg);
-                 color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                     color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
-        <button id="rookieSearchClear" onclick="rkClearSearch()"
-          style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                 background:none;border:none;cursor:pointer;color:var(--text-muted);
-                 font-size:16px;padding:2px;">&#x2715;</button>
-      </div>
+        <!-- Position filters -->
+        <div class="filter-positions">
+          <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
+          <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
+          <button class="pos-pill" data-pos="RB"  onclick="rkTogglePos('RB')">RB</button>
+          <button class="pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
+          <button class="pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
+        </div>
 
-      <!-- League type -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <span class="rk-ctrl-label">Format</span>
-        <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-          <button id="rk1qbBtn" class="rk-toggle active" onclick="rkSetLeague('1qb')">1QB</button>
-          <button id="rkSfBtn"  class="rk-toggle"        onclick="rkSetLeague('sf')">SF</button>
+        <!-- Settings button with collapsible panel -->
+        <div style="position:relative;">
+          <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
+            ⚙️ Settings
+          </button>
+          <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
+            <!-- League Format section -->
+            <div class="settings-section">
+              <span class="settings-section-label">League Format</span>
+              <div class="settings-toggle-group">
+                <button class="settings-toggle active" data-value="1qb" onclick="rkSetLeague('1qb')">1QB</button>
+                <button class="settings-toggle" data-value="sf" onclick="rkSetLeague('sf')">SF</button>
+              </div>
+            </div>
+            <!-- League Size section -->
+            <div class="settings-section">
+              <span class="settings-section-label">League Size</span>
+              <div class="settings-toggle-group">
+                <button class="settings-toggle" data-value="8" onclick="rkSetSize(8)">8</button>
+                <button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>
+                <button class="settings-toggle" data-value="12" onclick="rkSetSize(12)">12</button>
+                <button class="settings-toggle" data-value="14" onclick="rkSetSize(14)">14</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- League size -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <span class="rk-ctrl-label">Teams</span>
-        <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-          <button class="rk-toggle rk-size-btn" data-size="8"  onclick="rkSetSize(8)">8</button>
-          <button class="rk-toggle rk-size-btn active" data-size="10" onclick="rkSetSize(10)">10</button>
-          <button class="rk-toggle rk-size-btn" data-size="12" onclick="rkSetSize(12)">12</button>
-          <button class="rk-toggle rk-size-btn" data-size="14" onclick="rkSetSize(14)">14</button>
+      <!-- Row 2: Secondary filters -->
+      <div class="filter-row filter-row-secondary">
+        <!-- Tier filter -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="filter-label">Tier</label>
+          <select id="rkTierFilter" onchange="rkRender()"
+            style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                   background:var(--card-bg);color:var(--text);font-size:12px;
+                   cursor:pointer;outline:none;min-height:34px;">
+            <option value="0">All Tiers</option>
+            <option value="1">Tier 1 — Elite</option>
+            <option value="2">Tier 2 — Top</option>
+            <option value="3">Tier 3 — Day-1</option>
+            <option value="4">Tier 4 — Day-2</option>
+            <option value="5">Tier 5 — Dev</option>
+            <option value="6">Tier 6 — Flier</option>
+          </select>
         </div>
-      </div>
 
-      <!-- Position -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <span class="rk-ctrl-label">Position</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;">
-          <button class="rk-pos-btn active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
-          <button class="rk-pos-btn" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
-          <button class="rk-pos-btn" data-pos="RB"  onclick="rkTogglePos('RB')">RB</button>
-          <button class="rk-pos-btn" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
-          <button class="rk-pos-btn" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
+        <!-- Sort dropdown -->
+        <div class="filter-sort">
+          <label class="filter-label">Sort by</label>
+          <select id="rkSort" onchange="rkRender()"
+            style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                   background:var(--card-bg);color:var(--text);font-size:12px;
+                   cursor:pointer;outline:none;min-height:34px;">
+            <option value="rank">Overall Rank</option>
+            <option value="value">Value</option>
+            <option value="score">Prospect Score</option>
+            <option value="age">Age (youngest)</option>
+            <option value="pick">Draft Pick</option>
+          </select>
         </div>
-      </div>
 
-      <!-- Tier filter -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <span class="rk-ctrl-label">Tier</span>
-        <select id="rkTierFilter" onchange="rkRender()"
-          style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                 background:var(--card-bg);color:var(--text);font-size:12px;
-                 cursor:pointer;outline:none;min-height:34px;">
-          <option value="0">All Tiers</option>
-          <option value="1">Tier 1 — Elite</option>
-          <option value="2">Tier 2 — Top</option>
-          <option value="3">Tier 3 — Day-1</option>
-          <option value="4">Tier 4 — Day-2</option>
-          <option value="5">Tier 5 — Dev</option>
-          <option value="6">Tier 6 — Flier</option>
-        </select>
-      </div>
-
-      <!-- Sort -->
-      <div style="display:flex;flex-direction:column;gap:4px;margin-left:auto;">
-        <span class="rk-ctrl-label">Sort</span>
-        <select id="rkSort" onchange="rkRender()"
-          style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                 background:var(--card-bg);color:var(--text);font-size:12px;
-                 cursor:pointer;outline:none;min-height:34px;">
-          <option value="rank">Overall Rank</option>
-          <option value="value">Value</option>
-          <option value="score">Prospect Score</option>
-          <option value="age">Age (youngest)</option>
-          <option value="pick">Draft Pick</option>
-        </select>
+        <!-- Active settings indicator -->
+        <div id="rkActiveSettings" class="active-settings-indicator">
+          <span class="active-setting-tag">10-Team</span>
+          <span class="active-setting-tag">1QB</span>
+        </div>
       </div>
     </div>
 
@@ -157,42 +170,165 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 </div>
 
 <style>
-  .rk-ctrl-label {
+  /* Filter Controls */
+  .filter-controls-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 0 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .filter-row-primary {
+    gap: 12px;
+  }
+  .filter-search {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 400px;
+  }
+  .filter-positions {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+  .pos-pill {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+  }
+  .pos-pill.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .filter-settings-btn {
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: all 0.12s;
+  }
+  .filter-settings-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .filter-settings-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    padding: 16px;
+    min-width: 260px;
+    z-index: 1000;
+  }
+  .settings-section {
+    margin-bottom: 16px;
+  }
+  .settings-section:last-of-type {
+    margin-bottom: 0;
+  }
+  .settings-section-label {
+    display: block;
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    margin-bottom: 8px;
   }
-  .rk-toggle {
-    padding: 6px 13px;
-    font-size: 12px;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
-    background: var(--card-bg);
-    color: var(--text-muted);
-    transition: background 0.12s, color 0.12s;
-    min-height: 34px;
+  .settings-toggle-group {
+    display: flex;
+    gap: 6px;
   }
-  .rk-toggle.active { background: var(--accent); color: #fff; }
-  .rk-toggle + .rk-toggle { border-left: 1px solid var(--border); }
-
-  .rk-pos-btn {
-    padding: 5px 11px;
-    border-radius: 999px;
+  .settings-toggle {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--card-bg);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    transition: all 0.12s;
   }
-  .rk-pos-btn.active {
+  .settings-toggle.active {
     background: var(--accent);
     color: #fff;
     border-color: var(--accent);
+  }
+  .active-settings-indicator {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .active-setting-tag {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .filter-sort {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .filter-row-primary {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .filter-search {
+      max-width: 100%;
+    }
+    .filter-positions {
+      justify-content: center;
+    }
+    .active-settings-indicator {
+      justify-content: center;
+      order: -1;
+      width: 100%;
+    }
   }
 
   /* Table grid */
@@ -341,18 +477,57 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     }
   }
 
+  // Settings panel toggle
+  function rkToggleSettings() {
+    var panel = document.getElementById('rkSettingsPanel');
+    var btn = document.getElementById('rkSettingsBtn');
+    if (!panel || !btn) return;
+
+    var isOpen = panel.style.display === 'block';
+    panel.style.display = isOpen ? 'none' : 'block';
+    btn.classList.toggle('active', !isOpen);
+  }
+
+  // Update active settings indicator tags
+  function updateRookieSettingsIndicator() {
+    var indicator = document.getElementById('rkActiveSettings');
+    if (!indicator) return;
+
+    var sizeTag = indicator.querySelector('.active-setting-tag:first-child');
+    var formatTag = indicator.querySelector('.active-setting-tag:last-child');
+
+    if (sizeTag) sizeTag.textContent = rkSize + '-Team';
+    if (formatTag) formatTag.textContent = rkLeague.toUpperCase();
+  }
+
   function rkSetLeague(type) {
     rkLeague = type;
-    document.getElementById('rk1qbBtn').classList.toggle('active', type === '1qb');
-    document.getElementById('rkSfBtn').classList.toggle('active', type === 'sf');
+
+    // Update settings panel toggles
+    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
+      var section = btn.closest('.settings-section');
+      if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
+        btn.classList.toggle('active', btn.getAttribute('data-value') === type);
+      }
+    });
+
+    updateRookieSettingsIndicator();
     rkRender();
   }
 
   function rkSetSize(sz) {
     rkSize = sz;
-    document.querySelectorAll('.rk-size-btn').forEach(function(b) {
-      b.classList.toggle('active', parseInt(b.getAttribute('data-size')) === sz);
+
+    // Update settings panel toggles
+    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
+      var section = btn.closest('.settings-section');
+      if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
+        var btnSize = parseInt(btn.getAttribute('data-value'));
+        btn.classList.toggle('active', btnSize === sz);
+      }
     });
+
+    updateRookieSettingsIndicator();
     rkRender();
   }
 
@@ -363,7 +538,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
       if (rkPosFilters.has(pos)) rkPosFilters.delete(pos);
       else rkPosFilters.add(pos);
     }
-    document.querySelectorAll('.rk-pos-btn').forEach(function(b) {
+    document.querySelectorAll('.pos-pill').forEach(function(b) {
       var p = b.getAttribute('data-pos');
       b.classList.toggle('active', p === 'ALL' ? rkPosFilters.size === 0 : rkPosFilters.has(p));
     });
@@ -616,6 +791,19 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
       rkRender();
     });
   })();
+
+  // Close settings panel when clicking outside
+  document.addEventListener('click', function(e) {
+    var panel = document.getElementById('rkSettingsPanel');
+    var btn = document.getElementById('rkSettingsBtn');
+
+    if (panel && btn && panel.style.display === 'block') {
+      if (!panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.style.display = 'none';
+        btn.classList.remove('active');
+      }
+    }
+  });
 
   fetch('/api/rookies/active-class')
     .then(function(r){ return r.json(); })

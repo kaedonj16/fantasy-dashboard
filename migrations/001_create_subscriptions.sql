@@ -46,8 +46,10 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_league_subscriptions_updated_at ON league_subscriptions;
 CREATE TRIGGER update_league_subscriptions_updated_at BEFORE UPDATE ON league_subscriptions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_subscriptions_updated_at ON user_subscriptions;
 CREATE TRIGGER update_user_subscriptions_updated_at BEFORE UPDATE ON user_subscriptions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
