@@ -76,20 +76,20 @@ def _career_seasons(seasons: List[Dict]) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 CONF_QUALITY: Dict[str, float] = {
-    "SEC":          1.00,
-    "Big Ten":      0.95,
-    "Big 12":       0.88,
-    "ACC":          0.85,
-    "Pac-12":       0.83,
-    "Mountain West":0.60,
-    "American":     0.58,
-    "Sun Belt":     0.52,
-    "MAC":          0.50,
-    "CUSA":         0.48,
-    "FBS Independents": 0.70,
+    "SEC":               1.00,
+    "Big Ten":           0.96,
+    "Big 12":            0.88,
+    "ACC":               0.85,
+    "Pac-12":            0.83,
+    "Mountain West":     0.73,   # was 0.60 — legitimate mid-major that produces NFL talent
+    "American":          0.68,   # was 0.58
+    "Sun Belt":          0.62,   # was 0.52
+    "MAC":               0.58,   # was 0.50
+    "CUSA":              0.54,   # was 0.48
+    "FBS Independents":  0.75,   # Notre Dame / BYU tier
 }
 
-DEFAULT_CONF_QUALITY = 0.55
+DEFAULT_CONF_QUALITY = 0.62     # was 0.55
 
 
 def _conf_quality(conference: Optional[str]) -> float:
@@ -222,10 +222,11 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
     return _clip(eff)
 
 
-# Typical draft-class age by position (age at start of NFL rookie year)
-_TYPICAL_AGE = {"QB": 22.5, "RB": 21.5, "WR": 22.0, "TE": 22.5}
+# Typical draft-class age by position (age at start of NFL rookie year).
+# Updated to reflect modern college football (COVID year, grad transfers, etc.)
+_TYPICAL_AGE = {"QB": 23.5, "RB": 22.0, "WR": 22.5, "TE": 23.0}
 _AGE_ELITE   = {"QB": 22.0, "RB": 20.5, "WR": 21.0, "TE": 21.5}
-_AGE_WORST   = {"QB": 25.0, "RB": 23.5, "WR": 24.0, "TE": 24.5}
+_AGE_WORST   = {"QB": 26.5, "RB": 25.0, "WR": 25.5, "TE": 26.0}   # widened — old ranges were too tight
 
 
 def calc_age_score(age: Optional[float], draft_year: int, position: str) -> float:
@@ -237,11 +238,11 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
         return 50.0  # neutral default
     pos = position.upper()
     elite = _AGE_ELITE.get(pos, 21.5)
-    worst = _AGE_WORST.get(pos, 24.5)
-    # Invert: lower age → higher score
-    score = _scale(worst - age, worst - worst, worst - elite)
-    # Clamp gracefully: being very young gives at most 95
-    return _clip(score, 0, 95)
+    worst = _AGE_WORST.get(pos, 26.0)
+    # Invert: lower age → higher score.  _scale maps [elite, worst] → [100, 0].
+    score = _scale(worst - age, 0.0, worst - elite)
+    # Floor at 20 so age never completely destroys a player's score; cap at 95.
+    return _clip(score, 20, 95)
 
 
 def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str) -> float:
@@ -260,12 +261,18 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
     sorted_s = sorted(seasons, key=lambda s: _safe(s.get("season"), 0))
     ls = sorted_s[-1]  # most recent season
 
-    # Dominator breakout threshold by position
-    dom_thresh = {"WR": 0.20, "RB": 0.35, "TE": 0.12, "QB": 0.0}
+    # Dominator breakout threshold by position.
+    # QB dominator_rating is receiving-based and not meaningful for QBs — use neutral.
+    dom_thresh = {"WR": 0.20, "RB": 0.35, "TE": 0.12}
     dom = _safe(ls.get("dominator_rating"))
-    thresh = dom_thresh.get(pos, 0.20)
+    thresh = dom_thresh.get(pos)
 
-    dom_score = min(100, max(0, (dom / max(thresh, 0.01) - 1) * 50 + 60)) if dom > 0 else 30.0
+    if pos == "QB" or thresh is None:
+        dom_score = 50.0  # dominator_rating not applicable for QBs
+    elif dom > 0:
+        dom_score = min(100, max(0, (dom / thresh - 1) * 50 + 60))
+    else:
+        dom_score = 30.0
 
     # Trajectory: did production grow?
     traj_score = 50.0

@@ -431,6 +431,8 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         if (sortBy === 'score')  return (b.prospect_score||0) - (a.prospect_score||0);
         if (sortBy === 'age')    return (a.age||99) - (b.age||99);
         if (sortBy === 'pick')   return (a.projected_pick||999) - (b.projected_pick||999);
+        // Default rank: in SF mode use SF value so QBs are ranked correctly
+        if (rkLeague === 'sf')   return rkGetValue(b) - rkGetValue(a);
         return (a.overall_rank||999) - (b.overall_rank||999);
       });
     }

@@ -66,14 +66,11 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
         log.warning("[pipeline] DB unavailable for active class lookup: %s", exc)
 
     # Fallback: heuristic
-    # NFL Draft is late April. Rookie season ends mid-January of the following year.
-    # Jan 1–Apr 20: show current year's upcoming class
-    # Apr 21–Dec 31: show current year's class (just drafted / playing)
-    # After Jan 11 of year+1: show year+1 class
-    if today.month == 1 and today.day > 11:
-        return today.year
-    if today.month > 1 or (today.month == 1 and today.day <= 11):
-        return today.year
+    # NFL Draft is late April. Rookie season ends ≈ wild-card weekend (Jan 12-ish).
+    # Jan 1–11: still watching prior year's class in the playoffs → show year-1
+    # Jan 12 onward: prior class is done; next class is upcoming → show year
+    if today.month == 1 and today.day <= 11:
+        return today.year - 1
     return today.year
 
 
