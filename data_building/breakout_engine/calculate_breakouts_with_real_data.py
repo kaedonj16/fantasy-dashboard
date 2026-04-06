@@ -606,7 +606,9 @@ def main() -> Dict[str, Any]:
             age = age_from_bday(player_data.get("bDay"))
 
             if age is not None and age < 26:
-                years_exp = max(0, int(age - 21.5))
+                # Adjusted to 22.5 to better align with typical NFL entry age
+                # Most players enter at 22-23, so this gives more accurate year classification
+                years_exp = max(0, int(age - 22.5))
 
                 all_players.append({
                     "player_id": player_id,

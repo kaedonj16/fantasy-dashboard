@@ -3413,8 +3413,8 @@ function openPlayerModal(playerId, playerName) {
         badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
       }
 
-      // Update player name with badges (badges appear before name)
-      document.querySelector('.player-modal-name').innerHTML = `${badges}${playerName || 'Unknown Player'}`;
+      // Update player name with badges (badges appear after name)
+      document.querySelector('.player-modal-name').innerHTML = `${playerName || 'Unknown Player'}${badges}`;
 
       // Update meta
       const metaParts = [];

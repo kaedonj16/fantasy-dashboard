@@ -139,6 +139,14 @@ try:
 except Exception as e:
     print(f"[value-history] init skipped: {e}")
 
+# Register breakout detection API routes
+try:
+    from dashboard_services.breakout_api import register_breakout_routes
+    register_breakout_routes(app)
+    print("[breakout-api] Breakout API endpoints registered")
+except Exception as e:
+    print(f"[breakout-api] Registration skipped: {e}")
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -5760,11 +5768,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
 
-      // Fetch breakout candidates on page load
-      fetch('/api/offseason-breakout-candidates?season={season}&min_score=25')
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
+      fetch('/api/breakout/candidates?season={season}&min_score=25')
         .then(res => res.json())
         .then(data => {{
-          breakoutCandidates = data || [];
+          breakoutCandidates = (data && data.candidates) || [];
           document.getElementById('breakoutsLoading').style.display = 'none';
 
           if (breakoutCandidates.length === 0) {{
@@ -5807,37 +5815,40 @@ def page_breakouts(platform: str, season: int, league_id: str):
         let html = '<div class="breakout-grid">';
 
         filtered.forEach(candidate => {{
-          const name = candidate.name || 'Unknown';
+          const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
-          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '?';
-          const score = candidate.breakout_score ? candidate.breakout_score.toFixed(1) : '0';
-          const context = candidate.context || '';
-          const departed = Array.isArray(candidate.departed_players) ? candidate.departed_players : [];
-          const pid = candidate.player_id || ''; // Extract player ID for clickable functionality
+          const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
+          const pid = candidate.player_id || '';
 
-          // Get projection increases
-          const increases = candidate.increases || {{}};
-          const targetsInc = increases.targets || 0;
-          const carriesInc = increases.carries || 0;
+          // Breakout type classification
+          const breakoutType = candidate.breakout_type || {{}};
+          const emoji = breakoutType.emoji || '📊';
+          const label = breakoutType.profile_label || 'Breakout Candidate';
+          const driver = breakoutType.primary_driver || 'balanced';
 
-          // Breakout factors
-          const factors = candidate.projection_factors || {{}};
-          const snapShareInc = (candidate.snap_share_increase || 0) * 100; // Convert to percentage
-          const oppShareInc = (candidate.opportunity_share_increase || 0) * 100; // Convert to percentage
-          const youthBonus = factors.youth_experience_bonus || 0;
+          // Component scores
+          const oppScore = parseFloat(candidate.opportunity_opened_score || 0).toFixed(1);
+          const readyScore = parseFloat(candidate.player_readiness_score || 0).toFixed(1);
+          const confScore = parseFloat(candidate.confidence_score || 0).toFixed(1);
+          const teamEnv = parseFloat(candidate.team_environment_score || 0).toFixed(1);
 
-          // Score badge color
-          let scoreColor = '#10b981'; // green for high scores
-          if (score < 40) scoreColor = '#f59e0b'; // amber for medium
-          if (score < 30) scoreColor = '#6b7280'; // gray for low
+          // Key reasons (from engine)
+          const reasons = candidate.key_reasons || '';
+          const reasonsList = reasons.split('\\n').filter(r => r.trim() && r.startsWith('•')).map(r => r.substring(1).trim());
+
+          // Score badge color based on score ranges
+          let scoreColor = '#10b981'; // green (50+)
+          if (score < 50) scoreColor = '#3b82f6'; // blue (40-49)
+          if (score < 40) scoreColor = '#f59e0b'; // amber (30-39)
+          if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
             <div class="breakout-card">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name player-clickable" data-player-id='` + pid + `' data-player-name='` + name + `'>` + name + `</div>
-                  <div class="breakout-player-meta">${{team}} • ${{pos}} • ${{age}} yrs</div>
+                  <div class="breakout-player-meta">${{team}} • ${{pos}}</div>
                 </div>
                 <div class="breakout-score-badge" style="background: ${{scoreColor}};">
                   ${{score}}
@@ -5845,31 +5856,49 @@ def page_breakouts(platform: str, season: int, league_id: str):
               </div>
 
               <div class="breakout-card-body">
-                ${{context ? `<div class="breakout-context">${{context}}</div>` : ''}}
-
-                ${{departed.length > 0 ? `
-                  <div class="breakout-section">
-                    <div class="breakout-section-title">Departed Players</div>
-                    <div class="breakout-departed">${{departed.join(', ')}}</div>
-                  </div>
-                ` : ''}}
-
-                <div class="breakout-section">
-                  <div class="breakout-section-title">Projected Increases</div>
-                  <div class="breakout-stats-row">
-                    ${{targetsInc > 0 ? `<span class="breakout-stat">+${{targetsInc}} targets</span>` : ''}}
-                    ${{carriesInc > 0 ? `<span class="breakout-stat">+${{carriesInc}} carries</span>` : ''}}
-                    ${{snapShareInc > 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snap</span>` : ''}}
-                    ${{snapShareInc > 0 && snapShareInc <= 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snaps</span>` : ''}}
-                    ${{oppShareInc > 0 ? `<span class="breakout-stat">+${{oppShareInc.toFixed(1)}}% opportunity</span>` : ''}}
-                  </div>
+                <!-- Breakout Type Badge -->
+                <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
+                  <span style="font-size: 20px;">${{emoji}}</span>
+                  <span style="font-weight: 500; flex: 1;">${{label}}</span>
+                  <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
 
-                ${{youthBonus > 0 ? `
-                  <div class="breakout-youth-bonus">
-                    ⭐ Youth/Experience Bonus: +${{youthBonus.toFixed(1)}}
+                <!-- Key Reasons -->
+                ${{reasonsList.length > 0 ? `
+                  <div class="breakout-section">
+                    <div class="breakout-section-title">Why This Breakout?</div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+                      ${{reasonsList.map(r => `<li>${{r}}</li>`).join('')}}
+                    </ul>
                   </div>
                 ` : ''}}
+
+                <!-- Component Scores -->
+                <div class="breakout-section">
+                  <div class="breakout-section-title">Component Breakdown</div>
+                  <div class="breakout-components" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
+                    ${{driver === 'opportunity' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Opportunity</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #10b981;">${{oppScore}}</div>
+                      </div>
+                    ` : ''}}
+                    ${{driver === 'readiness' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Talent/Readiness</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #3b82f6;">${{readyScore}}</div>
+                      </div>
+                    ` : ''}}
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Team Environment</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{teamEnv}}</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Confidence</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{confScore}}%</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           `;

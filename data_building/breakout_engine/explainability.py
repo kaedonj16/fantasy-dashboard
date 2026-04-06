@@ -53,7 +53,7 @@ class ExplainabilityEngine:
         reasons = []
 
         # 1. Opportunity opened (if score > threshold)
-        if component_scores.get('opportunity_opened_score', 0) > EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD:
+        if component_scores.get('opportunity_opened', 0) > EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD:
             details = component_details.get('opportunity_opened', {})
             departed = details.get('departed_players', [])
             vacated_targets = details.get('vacated_targets', 0)
@@ -77,7 +77,7 @@ class ExplainabilityEngine:
                     reasons.append(f"{departure_name} {verb}")
 
         # 2. Competition removed (if score > threshold)
-        if component_scores.get('competition_removed_score', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD:
+        if component_scores.get('competition_removed', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD:
             details = component_details.get('competition_removed', {})
             key_deps = details.get('key_departures', [])
 
@@ -86,31 +86,50 @@ class ExplainabilityEngine:
                 reasons.append(f"Key competitor {dep.get('name')} departed")
 
         # 3. Player readiness (if score > threshold)
-        if component_scores.get('player_readiness_score', 0) > EXPLAIN_PLAYER_READINESS_THRESHOLD:
+        if component_scores.get('player_readiness', 0) > EXPLAIN_PLAYER_READINESS_THRESHOLD:
             details = component_details.get('player_readiness', {})
             years_exp = details.get('years_exp', 0)
             draft_score = details.get('draft_score')
+            age = details.get('age', 0)
 
+            # Year-based reasons (prime breakout window is years 2-4)
             if years_exp == 1:
                 reasons.append("Second-year player (prime breakout window)")
             elif years_exp == 2:
                 reasons.append("Third-year player entering prime")
+            elif years_exp == 3:
+                reasons.append("Fourth-year player with untapped potential")
+            elif years_exp == 0 and age and age < 23:
+                reasons.append("Young player with upside")
 
+            # Draft capital (if available)
             if draft_score and draft_score > 25:
                 round_num = details.get('draft_round')
                 if round_num:
                     reasons.append(f"High draft capital (Round {round_num})")
 
+            # Efficiency-based reasons if no year/draft reasons found
+            if not reasons:
+                efficiency_score = details.get('efficiency_score', 0)
+                if efficiency_score > 20:
+                    reasons.append("Strong efficiency metrics")
+
         # 4. Team environment (if score > threshold)
-        if component_scores.get('team_environment_score', 0) > EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD:
+        if component_scores.get('team_environment', 0) > EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD:
             details = component_details.get('team_environment', {})
             total_plays_pg = details.get('total_plays_pg', 0)
+            pass_rate = details.get('pass_rate', 0)
+            pass_td_pg = details.get('pass_td_pg', 0)
 
             if total_plays_pg >= ELITE_PLAYS_PER_GAME:
                 reasons.append(f"High-volume offense ({total_plays_pg:.0f} plays/game)")
+            elif pass_td_pg and pass_td_pg >= ELITE_PASS_TD_PER_GAME and position in ['WR', 'TE']:
+                reasons.append("Elite passing offense")
+            elif pass_rate and pass_rate >= HIGH_PASS_RATE and position in ['WR', 'TE']:
+                reasons.append("Pass-heavy offensive system")
 
         # 5. Role trajectory (if score > threshold and in-season)
-        if phase == 'in_season' and component_scores.get('role_trajectory_score',
+        if phase == 'in_season' and component_scores.get('role_trajectory',
                                                          0) > EXPLAIN_ROLE_TRAJECTORY_THRESHOLD:
             details = component_details.get('role_trajectory', {})
             snap_inc = details.get('snap_increase_pct')
@@ -137,6 +156,22 @@ class ExplainabilityEngine:
         if reasons:
             return "• " + "\n• ".join(reasons)
         else:
+            # Fallback: show the top contributing factor even if below thresholds
+            top_component = max(component_scores.items(), key=lambda x: x[1])
+            comp_name, comp_score = top_component
+
+            # Try to give a meaningful fallback based on top component
+            if comp_name == 'player_readiness' and comp_score > 40:
+                details = component_details.get('player_readiness', {})
+                age = details.get('age', 0)
+                if age and age < 25:
+                    return "• Young player with developing skill set"
+                return "• Established player seeking expanded role"
+            elif comp_name == 'team_environment' and comp_score > 40:
+                return "• Favorable offensive environment"
+            elif comp_name == 'confidence' and comp_score > 60:
+                return "• Proven track record with upside"
+
             return "• Moderate breakout opportunity based on overall factors"
 
     def determine_directional_trend(

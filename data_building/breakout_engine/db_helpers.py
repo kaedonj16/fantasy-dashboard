@@ -481,6 +481,7 @@ def save_breakout_scores(scores: List[Dict]) -> int:
     if not scores:
         return 0
 
+
     query = f"""
         INSERT INTO {BREAKOUT_SCORES_TABLE} (
             player_id,
@@ -703,9 +704,9 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
             age_from_bday = _compute_age_at_season_start(bday_str, season) if bday_str else None
             age = age_from_bday if age_from_bday is not None else player.get('age')
 
-            # years_exp: not stored directly; estimate from age assuming ~22 as entry age
-            # (22 is a reasonable NFL minimum — most rookies are 21-23 at start of season)
-            years_exp = max(0, round(age - 22)) if age is not None else 0
+            # years_exp: not stored directly; estimate from age assuming ~22.5 as typical entry age
+            # Adjusted to 22.5 to better align with actual NFL entry age (most enter at 22-23)
+            years_exp = max(0, round(age - 22.5)) if age is not None else 0
 
             usage_by_id[player_id] = {
                 # Identity
@@ -842,8 +843,14 @@ def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
         return _empty
 
     # Build lookup indices: (team, position) → data
+    # Transform keys to match what component functions expect
     vacated_by_team_pos = {
-        (row['team'], row['position']): dict(row)
+        (row['team'], row['position']): {
+            'targets': row['total_targets_vacated'] or 0,
+            'carries': row['total_carries_vacated'] or 0,
+            'snap_share': row['total_snap_share_vacated'] or 0.0,
+            'departed_players': row['departed_players'] or []
+        }
         for row in vacated_rows
     }
 

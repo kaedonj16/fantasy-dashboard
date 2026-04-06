@@ -424,12 +424,13 @@ QB_STARTER_SNAP = 0.70  # 70%+ snaps = "QB1"
 MAX_KEY_REASONS = 5
 
 # Component score thresholds to include in explanation
-EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD = 60
-EXPLAIN_COMPETITION_REMOVED_THRESHOLD = 50
-EXPLAIN_PLAYER_READINESS_THRESHOLD = 70
-EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD = 70
-EXPLAIN_ROLE_TRAJECTORY_THRESHOLD = 60
-EXPLAIN_COMPETITION_PENALTY_THRESHOLD = -20
+# Lowered thresholds to provide more detailed explanations for most candidates
+EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD = 30  # Lowered from 40 - captures moderate opportunities
+EXPLAIN_COMPETITION_REMOVED_THRESHOLD = 20  # Lowered from 30 - any meaningful departure
+EXPLAIN_PLAYER_READINESS_THRESHOLD = 45  # Lowered from 50 - captures most viable candidates
+EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD = 55  # Slightly raised from 50 - only noteworthy teams
+EXPLAIN_ROLE_TRAJECTORY_THRESHOLD = 55  # Unchanged
+EXPLAIN_COMPETITION_PENALTY_THRESHOLD = -10  # Unchanged - any significant addition
 
 # ==============================================================================
 # POSITION-SPECIFIC CONFIGURATIONS
