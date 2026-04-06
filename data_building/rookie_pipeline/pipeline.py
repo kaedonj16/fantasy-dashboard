@@ -429,6 +429,52 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
 # Public API — in-memory path (no DB required)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _filter_active_nfl_players(prospects: List[Dict]) -> List[Dict]:
+    """
+    Remove any prospect who is already in the NFL player database.
+
+    Uses Sleeper's /players/nfl endpoint (no auth, public API) to get the
+    full player index.  A prospect is filtered out when:
+      - their normalized name matches a Sleeper player
+      - AND that player has years_exp is not None (they have NFL experience)
+           OR has a non-null NFL team (just drafted this cycle)
+
+    Failures (network error, no key needed) are non-fatal — the full list is
+    returned unchanged so the page still works.
+    """
+    try:
+        from dashboard_services.api import get_nfl_players
+        nfl_players = get_nfl_players()
+    except Exception as exc:
+        log.warning("[pipeline] Could not fetch NFL player index for dedup: %s", exc)
+        return prospects
+
+    if not nfl_players:
+        return prospects
+
+    # Build a set of lowercase names for active/drafted NFL players
+    active_names: set = set()
+    for pid, p in nfl_players.items():
+        name = (
+            p.get("full_name") or
+            " ".join(filter(None, [p.get("first_name"), p.get("last_name")]))
+        ).strip().lower()
+        if not name:
+            continue
+        years_exp = p.get("years_exp")
+        team      = p.get("team")
+        # Include if they're in the NFL system (drafted or active)
+        if years_exp is not None or team:
+            active_names.add(name)
+
+    before = len(prospects)
+    filtered = [p for p in prospects if p["name"].lower() not in active_names]
+    removed = before - len(filtered)
+    if removed:
+        log.info("[pipeline] Filtered %d already-drafted players from prospect list", removed)
+    return filtered
+
+
 def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, Any]:
     """
     Run the full pipeline without writing to the database.
@@ -446,6 +492,7 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
     log.info("[pipeline] Running in-memory pipeline for %d draft class", draft_year)
 
     prospects    = load_prospects_for_year(draft_year)
+    prospects    = _filter_active_nfl_players(prospects)
     consensus    = build_mock_draft_consensus(draft_year)
     scores       = score_all_prospects(prospects, consensus)
     values       = translate_all(scores, prospects, consensus)
@@ -537,10 +584,51 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
 
             if rows:
                 return rows
+
+            # DB available but tables empty — run the full pipeline to seed them
+            log.info("[pipeline] DB empty for %d — running full pipeline to populate tables", draft_year)
+            run_rookie_pipeline(draft_year)
+
+            # Re-query after population
+            with get_conn() as conn2:
+                with conn2.cursor() as cur2:
+                    cur2.execute(
+                        """
+                        SELECT
+                            rr.player_id, rr.draft_class_year,
+                            rp.name, rp.position, rp.school, rp.age,
+                            rp.height_inches, rp.weight_lbs,
+                            rp.early_declare, rp.transfer_history,
+                            rr.overall_rank, rr.position_rank,
+                            rr.prospect_score, rr.rookie_value, rr.rookie_sf_value,
+                            rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
+                            rr.rookie_sf_value_8, rr.rookie_sf_value_12, rr.rookie_sf_value_14,
+                            rr.tier, rr.tier_label, rr.key_reasons,
+                            rr.production_score, rr.efficiency_score, rr.age_score,
+                            rr.breakout_profile_score, rr.athleticism_score,
+                            rr.competition_score, rr.projected_draft_capital_score,
+                            rr.confidence_score, rr.calculated_at,
+                            rmc.projected_round, rmc.projected_pick,
+                            rmc.projected_pick_low, rmc.projected_pick_high,
+                            rmc.num_mocks_used, rmc.consensus_confidence,
+                            rpa.forty_yard, rpa.ras_score
+                        FROM   rookie_rankings rr
+                        JOIN   rookie_prospects rp  ON rp.player_id = rr.player_id
+                        LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
+                        LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
+                        WHERE  rr.draft_class_year = %s
+                        ORDER  BY rr.overall_rank
+                        """,
+                        (draft_year,),
+                    )
+                    rows = cur2.fetchall()
+            if rows:
+                return rows
+
         except Exception as exc:
             log.warning("[pipeline] DB read failed: %s", exc)
 
-    # Fall back to in-memory
+    # Final fallback to in-memory (DB unavailable or pipeline population also failed)
     log.info("[pipeline] Falling back to in-memory pipeline for %d", draft_year)
     result = run_rookie_pipeline_inmemory(draft_year)
     return _merge_inmemory_result(result)
