@@ -39,6 +39,8 @@ Normalization contract — every player dict returned by this module has:
 """
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import os
 import re
@@ -52,6 +54,13 @@ log = logging.getLogger(__name__)
 SPORTRADAR_KEY    = os.getenv("SPORTRADAR_API_KEY", "")
 SPORTRADAR_ACCESS = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")   # "trial" or "production"
 _SR_BASE          = "https://api.sportradar.com/draft/nfl"
+
+# Supplementary sources
+CFBD_KEY  = os.getenv("CFBD_API_KEY", "")                           # college stats
+CFBD_BASE = "https://api.collegefootballdata.com"
+_NFLVERSE_COMBINE_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/combine/combine.csv"
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -97,6 +106,258 @@ def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
             time.sleep(wait)
     log.error("[sportradar] %s failed after %d attempts", path, retries)
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supplementary source 1 — NFLVerse combine.csv  (no auth required)
+# Provides: forty_yard, vertical_inches, broad_jump_in, bench_reps,
+#           three_cone, short_shuttle, height, weight, school
+# URL: https://github.com/nflverse/nflverse-data/releases/download/combine/combine.csv
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
+    """
+    Download the NFLVerse combine CSV and return a name-keyed dict of
+    combine measurements for prospects from `draft_year`.
+
+    Returns {player_name_lower: athleticism_dict}  where athleticism_dict has:
+        forty_yard, vertical_inches, broad_jump_in, bench_reps,
+        three_cone, short_shuttle
+    Also includes height_inches and weight_lbs as fallback bio fields.
+    """
+    try:
+        resp = requests.get(_NFLVERSE_COMBINE_URL, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        log.warning("[nflverse] combine.csv download failed: %s", exc)
+        return {}
+
+    results: Dict[str, Dict[str, Any]] = {}
+    reader = csv.DictReader(io.StringIO(resp.text))
+    for row in reader:
+        # draft_year column is the year they were drafted
+        row_year = _safe_int(row.get("draft_year") or row.get("season"))
+        if row_year != draft_year:
+            continue
+
+        name = (row.get("player_name") or "").strip().lower()
+        if not name:
+            continue
+
+        def _csv_float(col):
+            v = row.get(col, "").strip()
+            return _safe(v) if v and v != "NA" else None
+
+        def _csv_int(col):
+            v = row.get(col, "").strip()
+            return _safe_int(v) if v and v != "NA" else None
+
+        ath: Dict[str, Any] = {}
+        if (v := _csv_float("forty"))        is not None: ath["forty_yard"]      = v
+        if (v := _csv_float("vertical"))     is not None: ath["vertical_inches"] = v
+        if (v := _csv_float("broad_jump"))   is not None: ath["broad_jump_in"]   = v
+        if (v := _csv_int("bench"))          is not None: ath["bench_reps"]      = v
+        if (v := _csv_float("cone"))         is not None: ath["three_cone"]      = v
+        if (v := _csv_float("shuttle"))      is not None: ath["short_shuttle"]   = v
+
+        # Height is "6-2" format in nflverse; weight is integer lbs
+        results[name] = {
+            "athleticism":    ath,
+            "height_inches":  _parse_height(row.get("ht")),
+            "weight_lbs":     _csv_int("wt"),
+        }
+
+    log.info("[nflverse] Loaded combine data for %d prospects in %d class",
+             len(results), draft_year)
+    return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supplementary source 2 — CFBD college stats  (requires CFBD_API_KEY)
+# Provides: per-season receiving/rushing/passing stats, games_played,
+#           team, conference, market share, dominator rating
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Optional[Any]:
+    url = f"{CFBD_BASE}{path}"
+    headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, headers=headers, params=params or {}, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as exc:
+            wait = 2 ** attempt
+            log.warning("[cfbd] %s attempt %d failed: %s — retrying in %ds",
+                        path, attempt + 1, exc, wait)
+            time.sleep(wait)
+    log.error("[cfbd] %s failed after %d attempts", path, retries)
+    return None
+
+
+def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
+                       games: Optional[int]) -> Dict:
+    """Fold CFBD stat rows for one player-season into a single normalized dict."""
+    row: Dict[str, Any] = {
+        "season": season, "games_played": games,
+        "pass_yards": 0, "pass_tds": 0, "pass_attempts": 0,
+        "completions": 0, "interceptions": 0,
+        "rush_attempts": 0, "rush_yards": 0, "rush_tds": 0,
+        "receptions": 0, "targets": 0, "receiving_yards": 0, "receiving_tds": 0,
+        "team": None, "conference": None,
+    }
+    stat_map = {
+        "passingYards": "pass_yards", "passingTDs": "pass_tds",
+        "passAttempts": "pass_attempts", "passCompletions": "completions",
+        "interceptions": "interceptions",
+        "rushingYards": "rush_yards", "rushingTDs": "rush_tds",
+        "rushingAttempts": "rush_attempts",
+        "receivingYards": "receiving_yards", "receivingTDs": "receiving_tds",
+        "receptions": "receptions",
+    }
+    for s in raw_stats:
+        k = s.get("statName", "")
+        if k in stat_map:
+            row[stat_map[k]] = (row.get(stat_map[k]) or 0) + (_safe_int(s.get("stat")) or 0)
+        row["team"]       = row["team"]       or s.get("team")
+        row["conference"] = row["conference"] or s.get("conference")
+
+    ts       = team_stats.get(row.get("team", ""), {})
+    rush_att = row["rush_attempts"] or 0
+    rush_yds = row["rush_yards"]    or 0
+    rec_yds  = row["receiving_yards"] or 0
+    rec_tds  = row["receiving_tds"]   or 0
+    rush_tds = row["rush_tds"]        or 0
+    pass_att = row["pass_attempts"]   or 0
+    pass_yds = row["pass_yards"]      or 0
+    comp     = row["completions"]     or 0
+    ints     = row["interceptions"]   or 0
+
+    row["yds_per_carry"]     = round(rush_yds / rush_att, 2) if rush_att > 0 else None
+    row["yds_per_reception"] = round(rec_yds / max(row["receptions"] or 1, 1), 2) if rec_yds > 0 else None
+    row["yds_per_attempt"]   = round(pass_yds / pass_att, 2) if pass_att > 0 else None
+    row["completion_pct"]    = round(comp / pass_att * 100, 1) if pass_att > 0 else None
+    row["td_int_ratio"]      = round(row["pass_tds"] / max(ints, 1), 2) if row["pass_tds"] else None
+
+    t_yds = (ts.get("netPassingYards", 0) or 0) + (ts.get("rushingYards", 0) or 0)
+    t_tds = (ts.get("passingTDs", 0) or 0) + (ts.get("rushingTDs", 0) or 0)
+    p_yds = rec_yds + rush_yds
+    p_tds = rec_tds + rush_tds
+
+    row["market_share_yards"] = round(p_yds / t_yds, 3) if t_yds > 0 else None
+    row["market_share_tds"]   = round(p_tds / t_tds, 3) if t_tds > 0 else None
+    row["team_total_yards"]   = _safe_int(t_yds)
+    row["team_total_tds"]     = _safe_int(t_tds)
+    row["team_pass_rate"]     = ts.get("pass_rate")
+
+    dom = 0.0
+    if t_yds > 0: dom += (p_yds / t_yds) * 0.65
+    if t_tds > 0: dom += (p_tds / t_tds) * 0.35
+    row["dominator_rating"] = round(dom, 4) if (t_yds or t_tds) else None
+
+    return row
+
+
+def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
+    """
+    Fetch college stats from CFBD for the 3 seasons before `draft_year`.
+    Returns {player_name_lower: [season_dict, ...]} sorted oldest→newest.
+    Requires CFBD_API_KEY env var; returns {} silently if not set.
+    """
+    if not CFBD_KEY:
+        return {}
+
+    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+
+    # Team season totals for market share / dominator calculation
+    team_stats: Dict[int, Dict] = {}
+    for yr in years:
+        data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
+        if not data:
+            team_stats[yr] = {}
+            continue
+        teams: Dict[str, Dict] = {}
+        for row in data:
+            t = row.get("team", "")
+            teams.setdefault(t, {})[row.get("statName", "")] = _safe(row.get("statValue"), 0)
+        for t, s in teams.items():
+            pa = s.get("passAttempts", 0) or 0
+            ra = s.get("rushingAttempts", 0) or 0
+            total = pa + ra
+            s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
+        team_stats[yr] = teams
+
+    # Player usage (games played)
+    usage: Dict[int, Dict[int, int]] = {}   # {yr: {player_id: games}}
+    for yr in years:
+        data = _cfbd_get("/player/usage", {"year": yr, "seasonType": "regular"}) or []
+        usage[yr] = {
+            int(r["id"]): _safe_int(r.get("games"))
+            for r in data if r.get("id") is not None
+        }
+
+    # Player season stats — indexed by name and by player ID
+    by_name: Dict[int, Dict[str, List]] = {}   # {yr: {name_lower: [rows]}}
+    by_id:   Dict[int, Dict[int, List]] = {}   # {yr: {player_id: [rows]}}
+    for yr in years:
+        data = _cfbd_get("/stats/player/season",
+                         {"year": yr, "seasonType": "regular"}) or []
+        bn: Dict[str, List] = {}
+        bi: Dict[int, List] = {}
+        for row in data:
+            n  = (row.get("player") or "").lower()
+            pid = _safe_int(row.get("playerId"))
+            if n:   bn.setdefault(n, []).append(row)
+            if pid: bi.setdefault(pid, []).append(row)
+        by_name[yr] = bn
+        by_id[yr]   = bi
+
+    # Collapse into per-player season lists keyed by lowercase name
+    all_names: set = set()
+    for yr in years:
+        all_names.update(by_name[yr].keys())
+
+    result: Dict[str, List[Dict]] = {}
+    for name in all_names:
+        seasons = []
+        for yr in years:
+            rows = by_name[yr].get(name, [])
+            if not rows:
+                continue
+            pid = _safe_int(rows[0].get("playerId"))
+            gp  = usage[yr].get(pid) if pid else None
+            seasons.append(_build_cfbd_season(rows, team_stats[yr], yr, gp))
+        if seasons:
+            seasons.sort(key=lambda s: s["season"])
+            result[name] = seasons
+
+    log.info("[cfbd] Loaded stats for %d players (draft class %d)", len(result), draft_year)
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supplementary source 3 — Age estimation from Sportradar experience field
+# Sportradar provides SR/JR/SO/FR but no DOB.
+# We estimate age at draft (late April) from typical enrollment ages.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Typical age at draft by college class + position adjustments are minor,
+# so we use position-neutral estimates.
+_EXP_AGE: Dict[str, float] = {
+    "SR":  22.7,   # 4-year senior; many are 22–23 at April draft
+    "JR":  21.5,   # 3-year junior / early declare
+    "SO":  20.5,   # 2-year sophomore (rare early declare)
+    "FR":  19.5,   # true freshman (extremely rare)
+}
+
+def _estimate_age(experience: Optional[str], draft_year: int) -> Optional[float]:
+    """
+    Estimate age at the draft from Sportradar's experience field.
+    Returns a float or None if experience is unknown.
+    """
+    if not experience:
+        return None
+    return _EXP_AGE.get(experience.upper())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,17 +432,18 @@ def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
         "name":             name,
         "position":         position,
         "school":           school,
-        "age":              None,   # not in this endpoint; filled from seed on merge
+        "age":              None,   # filled from combine or estimated from experience
         "height_inches":    _safe_int(raw.get("height")),
         "weight_lbs":       _safe_int(raw.get("weight")),
         "state":            state,
         "draft_class_year": draft_year,
         "early_declare":    False,
-        "seasons":          [],     # not in this endpoint; filled from seed on merge
-        "athleticism":      {},     # not in this endpoint; filled from seed on merge
+        "seasons":          [],     # filled from CFBD stats or seed
+        "athleticism":      {},     # filled from NFLVerse combine or seed
         "source":           "sportradar",
-        # Attach raw conference name so competition scoring works for new players
+        # Internal fields used during merge — stripped before normalization
         "_conference":      conference,
+        "_experience":      raw.get("experience"),  # SR/JR/SO/FR for age estimation
     }
 
 
@@ -574,65 +836,101 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     """
     Entry point: return normalized prospect list for `draft_year`.
 
-    When SPORTRADAR_API_KEY is set:
-      - Fetches the official prospect list from Sportradar, which provides
-        name, position, height, weight, school, and conference.
-      - For any player whose name matches a seed entry, the seed's age,
-        college seasons, and athleticism/combine data are merged in, since
-        the Sportradar prospects endpoint does not include those fields.
-      - Players in Sportradar but not in the seed get scored on bio alone
-        (stats/combine default to neutral).
-      - Seed players not returned by Sportradar are appended so the page
-        always has a complete roster.
+    Merges up to four sources in priority order:
 
-    Falls back entirely to seed data when no API key is configured.
+    1. Sportradar (SPORTRADAR_API_KEY)  → player list, bio, height, weight,
+                                          school, conference, experience
+    2. NFLVerse combine.csv (no key)    → forty_yard, vertical, broad_jump,
+                                          bench_reps, three_cone, shuttle
+    3. CFBD (CFBD_API_KEY)              → per-season college stats,
+                                          games_played, market share,
+                                          dominator rating
+    4. Seed dataset (always available)  → fallback for any missing field;
+                                          used entirely when Sportradar is
+                                          not configured
+
+    Age: taken from NFLVerse if height/weight match found, otherwise
+         estimated from Sportradar experience (SR/JR/SO/FR), otherwise
+         seed value, otherwise None.
     """
     seed = get_seed_prospects(draft_year)
 
-    if SPORTRADAR_KEY:
-        live = fetch_sportradar_prospects(draft_year)
-        if live:
-            # Build a name-keyed lookup from seed for enrichment
-            seed_by_name = {p["name"].lower(): p for p in seed}
+    # ── No Sportradar key — use seed only ────────────────────────────────────
+    if not SPORTRADAR_KEY:
+        log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
+        return [normalize_prospect(p) for p in seed]
 
-            enriched = []
-            for sr in live:
-                seed_match = seed_by_name.get(sr["name"].lower())
-                if seed_match:
-                    # Prefer Sportradar bio fields; fill gaps from seed
-                    merged = dict(seed_match)
-                    merged["height_inches"] = sr["height_inches"] or seed_match.get("height_inches")
-                    merged["weight_lbs"]    = sr["weight_lbs"]    or seed_match.get("weight_lbs")
-                    merged["school"]        = sr["school"]        or seed_match.get("school")
-                    merged["source"]        = "sportradar"
-                else:
-                    # New player not in seed — use Sportradar bio, inject conference
-                    # into each season placeholder so competition scoring works
-                    merged = dict(sr)
-                    if sr.get("_conference"):
-                        merged["seasons"] = [{
-                            "season": draft_year - 1,
-                            "conference": sr["_conference"],
-                        }]
-                # Drop internal keys
-                merged.pop("_conference", None)
-                merged.pop("_draft_round", None)
-                merged.pop("_draft_pick", None)
-                enriched.append(merged)
-
-            # Keep seed players not returned by Sportradar
-            sr_names   = {p["name"].lower() for p in live}
-            seed_only  = [p for p in seed if p["name"].lower() not in sr_names]
-            if seed_only:
-                log.info("[ingestion] %d seed prospects not in Sportradar — keeping seed data",
-                         len(seed_only))
-
-            merged_list = enriched + seed_only
-            log.info("[ingestion] %d total prospects for %d (%d Sportradar, %d seed-only)",
-                     len(merged_list), draft_year, len(enriched), len(seed_only))
-            return [normalize_prospect(p) for p in merged_list]
-
+    # ── Fetch from all live sources in parallel ───────────────────────────────
+    sr_prospects = fetch_sportradar_prospects(draft_year)
+    if not sr_prospects:
         log.warning("[ingestion] Sportradar returned no data for %d — using seed", draft_year)
+        return [normalize_prospect(p) for p in seed]
 
-    log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
-    return [normalize_prospect(p) for p in seed]
+    combine_data = fetch_nflverse_combine(draft_year)         # always attempted
+    cfbd_stats   = fetch_cfbd_college_stats(draft_year)       # only if CFBD_KEY set
+
+    seed_by_name = {p["name"].lower(): p for p in seed}
+
+    enriched: List[Dict] = []
+    for sr in sr_prospects:
+        name_key = sr["name"].lower()
+        seed_p   = seed_by_name.get(name_key)
+        nflv     = combine_data.get(name_key, {})
+        cfbd_seasons = cfbd_stats.get(name_key)
+
+        # Start with Sportradar bio
+        p: Dict[str, Any] = {
+            "player_id":        sr["player_id"],
+            "name":             sr["name"],
+            "position":         sr["position"],
+            "school":           sr["school"] or (seed_p or {}).get("school"),
+            "height_inches":    sr["height_inches"] or nflv.get("height_inches") or (seed_p or {}).get("height_inches"),
+            "weight_lbs":       sr["weight_lbs"]    or nflv.get("weight_lbs")    or (seed_p or {}).get("weight_lbs"),
+            "state":            sr.get("state"),
+            "draft_class_year": draft_year,
+            "early_declare":    (seed_p or {}).get("early_declare", False),
+            "transfer_history": (seed_p or {}).get("transfer_history"),
+            "source":           "sportradar",
+        }
+
+        # ── Age ──────────────────────────────────────────────────────────────
+        p["age"] = (
+            (seed_p or {}).get("age") or
+            _estimate_age(sr.get("_experience"), draft_year)
+        )
+
+        # ── Athleticism / combine ─────────────────────────────────────────────
+        seed_ath  = (seed_p or {}).get("athleticism") or {}
+        nflv_ath  = nflv.get("athleticism") or {}
+        # NFLVerse is authoritative for combine; seed fills any remaining gaps
+        p["athleticism"] = {**seed_ath, **nflv_ath}
+
+        # ── College stats ─────────────────────────────────────────────────────
+        if cfbd_seasons:
+            p["seasons"] = cfbd_seasons
+        elif seed_p and seed_p.get("seasons"):
+            p["seasons"] = seed_p["seasons"]
+        elif sr.get("_conference"):
+            # New player with no stats — inject conference so competition score works
+            p["seasons"] = [{"season": draft_year - 1, "conference": sr["_conference"]}]
+        else:
+            p["seasons"] = []
+
+        enriched.append(p)
+
+    # Seed players not returned by Sportradar
+    sr_names  = {p["name"].lower() for p in sr_prospects}
+    seed_only = [p for p in seed if p["name"].lower() not in sr_names]
+    if seed_only:
+        log.info("[ingestion] %d seed prospects not in Sportradar — appending", len(seed_only))
+
+    final = enriched + seed_only
+    log.info(
+        "[ingestion] %d total prospects for %d  "
+        "(Sportradar: %d | combine: %d matched | CFBD stats: %d matched | seed-only: %d)",
+        len(final), draft_year,
+        len(enriched), sum(1 for p in enriched if p.get("athleticism")),
+        sum(1 for p in enriched if cfbd_stats.get(p["name"].lower())),
+        len(seed_only),
+    )
+    return [normalize_prospect(p) for p in final]
