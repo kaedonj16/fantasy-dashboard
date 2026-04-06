@@ -768,16 +768,35 @@ def calculate_team_environment_score(
     else:
         team_stats = get_team_stats(team, season) or {}
 
-    pass_att_pg = _safe_float(team_stats.get("pass_att_pg", 30.0))
-    rush_att_pg = _safe_float(team_stats.get("rush_att_pg", 25.0))
-    pass_yds_pg = _safe_float(team_stats.get("pass_yds_pg", 200.0))
-    rush_yds_pg = _safe_float(team_stats.get("rush_yds_pg", 100.0))
-    pass_td_pg = _safe_float(team_stats.get("pass_td_pg", 1.5))
-    rush_td_pg = _safe_float(team_stats.get("rush_td_pg", 0.8))
+    # NFL league averages — used as floor when cached stats are missing/zero.
+    # Zero values indicate absent enrichment (not a genuinely zero-offense team)
+    # so we substitute league averages rather than produce artificially low scores.
+    _NFL_PASS_ATT_PG = 33.5
+    _NFL_RUSH_ATT_PG = 25.5
+    _NFL_PASS_YDS_PG = 228.0
+    _NFL_RUSH_YDS_PG = 110.0
+    _NFL_PASS_TD_PG = 1.65
+    _NFL_RUSH_TD_PG = 0.85
+    _NFL_POINTS_PG = 22.5
+    _NFL_RED_ZONE_TRIPS_PG = 3.2
+    _NFL_SACKS_ALLOWED_PG = 2.4
 
-    points_pg = _safe_float(team_stats.get("points_pg", 22.0))
-    red_zone_trips_pg = _safe_float(team_stats.get("red_zone_trips_pg", 3.0))
-    sacks_allowed_pg = _safe_float(team_stats.get("sacks_allowed_pg", 2.3))
+    def _stat_or_avg(key: str, avg: float) -> float:
+        v = _safe_float(team_stats.get(key, 0.0))
+        return v if v > 0.01 else avg
+
+    pass_att_pg = _stat_or_avg("pass_att_pg", _NFL_PASS_ATT_PG)
+    rush_att_pg = _stat_or_avg("rush_att_pg", _NFL_RUSH_ATT_PG)
+    pass_yds_pg = _stat_or_avg("pass_yds_pg", _NFL_PASS_YDS_PG)
+    rush_yds_pg = _stat_or_avg("rush_yds_pg", _NFL_RUSH_YDS_PG)
+    pass_td_pg = _stat_or_avg("pass_td_pg", _NFL_PASS_TD_PG)
+    rush_td_pg = _stat_or_avg("rush_td_pg", _NFL_RUSH_TD_PG)
+    points_pg = _stat_or_avg("points_pg", _NFL_POINTS_PG)
+    red_zone_trips_pg = _stat_or_avg("red_zone_trips_pg", _NFL_RED_ZONE_TRIPS_PG)
+    sacks_allowed_pg = _stat_or_avg("sacks_allowed_pg", _NFL_SACKS_ALLOWED_PG)
+
+    # Track whether we fell back to league averages for explainability
+    _using_derived_stats = _safe_float(team_stats.get("pass_att_pg", 0.0)) <= 0.01
 
     total_plays_pg = pass_att_pg + rush_att_pg
     total_yds_pg = pass_yds_pg + rush_yds_pg
@@ -942,6 +961,7 @@ def calculate_team_environment_score(
         "pass_td_pg": round(pass_td_pg, 2),
         "rush_td_pg": round(rush_td_pg, 2),
         "sacks_allowed_pg": round(sacks_allowed_pg, 2),
+        "stats_source": "derived_from_yards" if _using_derived_stats else "cached",
     }
 
     return round(total_score, 2), details

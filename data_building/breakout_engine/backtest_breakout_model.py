@@ -611,7 +611,11 @@ def _build_candidate_player_list(
     """
     Build the list of players to evaluate from the usage cache.
 
-    Returns a list of minimal player dicts with the fields required by
+    The usage_cache is expected to contain the flat format produced by
+    load_all_player_usage() (i.e. direct fields like 'targets', 'carries',
+    'age', 'years_exp' — NOT nested under a 'usage' sub-dict).
+
+    Returns a list of player dicts with the fields required by
     BreakoutEngine.calculate_player_breakout_score().
     """
     players = []
@@ -621,13 +625,17 @@ def _build_candidate_player_list(
         if position not in positions:
             continue
 
-        usage = player_data.get("usage") or {}
+        # Flat format: age and years_exp are top-level after load_all_player_usage fix
         age = player_data.get("age")
-        years_exp = player_data.get("years_exp", player_data.get("experience", 0)) or 0
+        years_exp = player_data.get("years_exp", 0) or 0
+        games = player_data.get("games", 0) or 0
 
-        # Skip players with no meaningful usage data and no rookie status
-        games = usage.get("games", 0) or 0
+        # Skip players with no meaningful usage data and not a rookie
         if games == 0 and years_exp > 0:
+            continue
+
+        # Skip players whose age is entirely unknown (can't score readiness)
+        if age is None:
             continue
 
         players.append({

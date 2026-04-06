@@ -112,6 +112,20 @@ class BreakoutEngine:
         self.usage_cache = load_all_player_usage(season - 1)
         self.db_cache = batch_load_all_breakout_data(season)
         self.team_stats_cache = load_all_team_stats(season)
+
+        # Warn once if DB data is unavailable (avoids per-player log spam)
+        has_db_data = bool(
+            self.db_cache['vacated'] or
+            self.db_cache['departures'] or
+            self.db_cache['arrivals']
+        )
+        if not has_db_data:
+            print(
+                f"[BreakoutEngine] WARNING: No DB competition data for season {season}. "
+                "opportunity_opened, competition_removed, and competition_added scores will "
+                "all be 0. Run the roster-changes pipeline to populate the database."
+            )
+
         print(f"[BreakoutEngine] Data loaded: {len(self.usage_cache)} players, "
               f"{len(self.db_cache['vacated'])} vacated opportunities, "
               f"{len(self.team_stats_cache)} teams")

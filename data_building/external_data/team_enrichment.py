@@ -26,6 +26,9 @@ RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/rushing-yards-per-game"
 PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/passing-yards-per-game"
 OPP_PASS_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-passing-yards-per-game"
 OPP_RUSH_YDS_PG_URL = "https://www.teamrankings.com/nfl/stat/opponent-rushing-yards-per-game"
+POINTS_PG_URL = "https://www.teamrankings.com/nfl/stat/points-per-game"
+SACKS_ALLOWED_PG_URL = "https://www.teamrankings.com/nfl/stat/sacks-allowed-per-game"
+RED_ZONE_TRIPS_PG_URL = "https://www.teamrankings.com/nfl/stat/red-zone-trips-per-game"
 
 HEADERS = {
     "User-Agent": (
@@ -208,14 +211,85 @@ def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
         meta["rush_att_pg"] = stats["rush_att_pg"]
         meta["rush_td_pg"] = stats["rush_td_pg"]
 
+        # Derive points_pg from TDs: pass + rush TDs * 7 pts (incl PAT) + ~1.2 FGs * 3 pts
+        pass_td = stats["pass_td_pg"]
+        rush_td = stats["rush_td_pg"]
+        meta["points_pg"] = round((pass_td + rush_td) * 6.5 + 1.2 * 3.0, 2)
+
+        # red_zone_trips_pg and sacks_allowed_pg are not in the Tank01 team-stats response.
+        # Set to 0 here so callers know to fall back to NFL averages; the enrichment
+        # pipeline can fill these from a dedicated source (e.g. TeamRankings) in the future.
+        if not meta.get("red_zone_trips_pg"):
+            meta["red_zone_trips_pg"] = 0.0
+        if not meta.get("sacks_allowed_pg"):
+            meta["sacks_allowed_pg"] = 0.0
+
     write_json(path_teams_index(), teams_index)
+
+
+def enrich_teams_index_with_scoring_and_pressure() -> Dict[str, dict]:
+    """
+    Fetch points_pg, red_zone_trips_pg, and sacks_allowed_pg from TeamRankings
+    and merge into teams_index.json.
+
+    These three stats are not available from the Tank01 team-offense endpoint
+    (which only has passing/rushing yards/attempts/TDs), so we scrape them
+    separately from TeamRankings.
+
+    Returns the updated teams_index dict.
+    """
+    teams_index = load_teams_index() or {}
+
+    urls = {
+        "points_pg": POINTS_PG_URL,
+        "red_zone_trips_pg": RED_ZONE_TRIPS_PG_URL,
+        "sacks_allowed_pg": SACKS_ALLOWED_PG_URL,
+    }
+
+    results: Dict[str, Dict[str, float]] = {}
+    session = HTTP_SESSION
+
+    def worker(key: str, url: str):
+        try:
+            data = _fetch_teamrankings_table(url, session=session)
+            return key, data, None
+        except Exception as e:
+            return key, {}, e
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_map = {
+            executor.submit(worker, key, url): key
+            for key, url in urls.items()
+        }
+        for fut in concurrent.futures.as_completed(future_map):
+            key, data, err = fut.result()
+            if err:
+                print(f"[teamrankings] ERROR fetching {key}: {err}")
+                data = {}
+            results[key] = data
+
+    for abbr, meta in teams_index.items():
+        if abbr in results.get("points_pg", {}):
+            meta["points_pg"] = results["points_pg"][abbr]
+        if abbr in results.get("red_zone_trips_pg", {}):
+            meta["red_zone_trips_pg"] = results["red_zone_trips_pg"][abbr]
+        if abbr in results.get("sacks_allowed_pg", {}):
+            meta["sacks_allowed_pg"] = results["sacks_allowed_pg"][abbr]
+
+    write_json(path_teams_index(), teams_index)
+    return teams_index
 
 
 def enrich_all_team_info(season: int):
     """
     Convenience: enrich both value table and teams index.
+    Fetches Tank01 offense stats + TeamRankings scoring/pressure stats.
     """
     enrich_teams_index_with_team_offense(season)
+    try:
+        enrich_teams_index_with_scoring_and_pressure()
+    except Exception as e:
+        print(f"[team_enrichment] Could not enrich scoring/pressure stats: {e}")
 
 
 def _fetch_teamrankings_table(

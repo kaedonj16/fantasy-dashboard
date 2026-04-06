@@ -53,10 +53,13 @@ def get_vacated_opportunity(team: str, position: str, season: int) -> Optional[D
           AND season = %s
     """
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (team, position, season))
-            row = cur.fetchone()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (team, position, season))
+                row = cur.fetchone()
+    except Exception:
+        return None
 
     if not row:
         return None
@@ -108,10 +111,13 @@ def get_departures_by_team_position(
         ORDER BY last_season_targets DESC NULLS LAST, last_season_carries DESC NULLS LAST
     """
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (team, position, season))
-            rows = cur.fetchall()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (team, position, season))
+                rows = cur.fetchall()
+    except Exception:
+        return []
 
     return rows
 
@@ -162,10 +168,13 @@ def get_arrivals_by_team_position(
             last_season_targets DESC NULLS LAST
     """
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (team, position, season))
-            rows = cur.fetchall()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (team, position, season))
+                rows = cur.fetchall()
+    except Exception:
+        return []
 
     return rows
 
@@ -443,10 +452,13 @@ def get_previous_breakout_score(
         LIMIT 1
     """
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (player_id, season, as_of_date))
-            row = cur.fetchone()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (player_id, season, as_of_date))
+                row = cur.fetchone()
+    except Exception:
+        return None
 
     if not row:
         return None
@@ -575,12 +587,39 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
 # =============================================================================
 
 
+def _compute_age_at_season_start(bday_str: str, season: int) -> Optional[float]:
+    """
+    Compute a player's age on September 1 of the given season year.
+
+    Args:
+        bday_str: Birth date string in M/D/YYYY format (e.g. '9/4/1996')
+        season: NFL season year
+
+    Returns:
+        Age as float, or None if the date cannot be parsed
+    """
+    try:
+        from datetime import date as _date
+        parts = bday_str.strip().split('/')
+        month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+        bday = _date(year, month, day)
+        season_start = _date(season, 9, 1)
+        delta = season_start - bday
+        return round(delta.days / 365.25, 1)
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
 def load_all_player_usage(season: int) -> Dict[str, Dict]:
     """
     Load and index all player usage data once for O(1) lookups.
 
-    This optimizes the N+1 JSON file load pattern by loading the entire
-    usage file once and building a dictionary index.
+    Transforms each raw player record into a flat dict matching the format
+    returned by get_player_previous_season_usage(), so the batch path and
+    the per-player path produce identical structures.
+
+    Also enriches each record with `age` (float) and `years_exp` (int)
+    by cross-referencing players_index.json when available.
 
     Performance improvement:
     - Before: 600 × (file load + 2832 comparisons) = ~60 sec
@@ -591,12 +630,13 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
         season: Season year to load usage data for
 
     Returns:
-        Dictionary mapping player_id (str) to player usage dict.
+        Dictionary mapping player_id (str) to flat usage dict.
         Empty dict if cache file doesn't exist.
 
     Example:
         >>> cache = load_all_player_usage(2024)
         >>> player_usage = cache.get('9509')  # O(1) lookup
+        >>> player_usage['targets']            # flat field, not nested
     """
     cache_path = os.path.join("cache", "player_history", f"usage_rows_{season}.json")
 
@@ -604,18 +644,114 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
         print(f"[db_helpers] Usage cache not found: {cache_path}")
         return {}
 
+    # Load players_index for bDay-based age enrichment
+    players_index: Dict[str, Dict] = {}
+    try:
+        players_index_path = os.path.join("cache", "players_index.json")
+        if os.path.exists(players_index_path):
+            with open(players_index_path, 'r') as f:
+                players_index = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        pass  # Non-fatal — fall back to usage-cache age
+
     try:
         with open(cache_path, 'r') as f:
             usage_data = json.load(f)
 
-        # Build index: O(n) once instead of O(n) per player
-        usage_by_id = {}
+        usage_by_id: Dict[str, Dict] = {}
         for player in usage_data:
             player_id = str(player.get('id'))
-            if player_id:
-                usage_by_id[player_id] = player
+            if not player_id:
+                continue
 
-        print(f"[db_helpers] Loaded {len(usage_by_id)} players from usage cache")
+            usage = player.get('usage') or {}
+            games = usage.get('games', 0) or 0
+            avg_targets = usage.get('avg_targets', 0) or 0
+            avg_receptions = usage.get('avg_receptions', 0) or 0
+            avg_carries = usage.get('avg_carries', 0) or 0
+            avg_rush_yards = usage.get('avg_rush_yards', 0) or 0
+            avg_rec_yards = usage.get('avg_rec_yards', 0) or 0
+            avg_rush_tds = usage.get('avg_rush_tds', 0) or 0
+            avg_rec_tds = usage.get('avg_rec_tds', 0) or 0
+            avg_pass_att = usage.get('avg_pass_att', 0) or 0
+            avg_pass_yds = usage.get('avg_pass_yds', 0) or 0
+            avg_pass_tds = usage.get('avg_pass_tds', 0) or 0
+            avg_pass_int = usage.get('avg_pass_int', 0) or 0
+            snap_share = usage.get('avg_off_snap_pct', 0) or 0
+            target_share = usage.get('target_share', 0) or 0
+            total_targets = usage.get('total_targets', avg_targets * games)
+
+            # Per-season totals
+            total_receptions = avg_receptions * games
+            total_carries = avg_carries * games
+            total_rush_yards = avg_rush_yards * games
+            total_rec_yards = avg_rec_yards * games
+            total_rush_tds = avg_rush_tds * games
+            total_rec_tds = avg_rec_tds * games
+            total_pass_att = avg_pass_att * games
+            total_pass_yds = avg_pass_yds * games
+            total_pass_tds = avg_pass_tds * games
+
+            # Derived efficiency metrics
+            ypc = avg_rush_yards / avg_carries if avg_carries > 0 else 0.0
+            yards_per_target = avg_rec_yards / avg_targets if avg_targets > 0 else 0.0
+            catch_rate = avg_receptions / avg_targets if avg_targets > 0 else 0.0
+
+            # Age: prefer bDay-derived age at season start, fall back to cache age
+            idx_entry = players_index.get(player_id, {})
+            bday_str = idx_entry.get('bDay')
+            age_from_bday = _compute_age_at_season_start(bday_str, season) if bday_str else None
+            age = age_from_bday if age_from_bday is not None else player.get('age')
+
+            # years_exp: not stored directly; estimate from age assuming ~22 as entry age
+            # (22 is a reasonable NFL minimum — most rookies are 21-23 at start of season)
+            years_exp = max(0, round(age - 22)) if age is not None else 0
+
+            usage_by_id[player_id] = {
+                # Identity
+                'player_id': player_id,
+                'name': player.get('name') or player.get('player_name', ''),
+                'team': player.get('team', ''),
+                'position': player.get('position', ''),
+                # Player metadata
+                'age': age,
+                'years_exp': years_exp,
+                # Usage totals (season)
+                'games': games,
+                'targets': int(total_targets),
+                'receptions': int(total_receptions),
+                'carries': int(total_carries),
+                'rush_yards': int(total_rush_yards),
+                'rec_yards': int(total_rec_yards),
+                'rush_tds': round(total_rush_tds, 1),
+                'rec_tds': round(total_rec_tds, 1),
+                'pass_attempts': int(total_pass_att),
+                'pass_yards': int(total_pass_yds),
+                'pass_tds': round(total_pass_tds, 1),
+                'interceptions': round(avg_pass_int * games, 1),
+                # Per-game averages (kept for projections fallback)
+                'avg_targets': avg_targets,
+                'avg_receptions': avg_receptions,
+                'avg_carries': avg_carries,
+                'avg_rush_yards': avg_rush_yards,
+                'avg_rec_yards': avg_rec_yards,
+                'avg_rush_tds': avg_rush_tds,
+                'avg_rec_tds': avg_rec_tds,
+                # Role/share
+                'snap_share': snap_share,
+                'avg_off_snap_pct': snap_share,
+                'opportunity_share': target_share,
+                'target_share': target_share,
+                # Efficiency
+                'yards_per_carry': round(ypc, 2),
+                'yards_per_target': round(yards_per_target, 2),
+                'catch_rate': round(catch_rate, 3),
+                # Fantasy
+                'ppr_ppg': usage.get('ppr_ppg', 0) or 0,
+                'half_ppr_ppg': usage.get('half_ppr_ppg', 0) or 0,
+            }
+
+        print(f"[db_helpers] Loaded {len(usage_by_id)} players from usage cache (season {season})")
         return usage_by_id
 
     except (json.JSONDecodeError, IOError) as e:
@@ -649,39 +785,46 @@ def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
         >>> vac_opp = cache['vacated'].get(('KC', 'WR'))  # O(1) lookup
         >>> departures = cache['departures'].get(('KC', 'WR'), [])
     """
-    with get_conn() as conn:
-        # Query 1: All vacated opportunity (~128 rows: 32 teams × 4 positions)
-        vacated_rows = conn.execute(f"""
-            SELECT team, position, total_targets_vacated,
-                   total_carries_vacated, total_snap_share_vacated,
-                   total_opportunity_share_vacated, departed_players
-            FROM {VACATED_OPPORTUNITY_TABLE}
-            WHERE season = %s
-        """, (season,)).fetchall()
+    _empty = {'vacated': {}, 'departures': {}, 'arrivals': {}}
 
-        # Query 2: All departures (~200-300 rows)
-        departure_rows = conn.execute(f"""
-            SELECT old_team, position, player_id, player_name,
-                   change_type, last_season_targets, last_season_carries,
-                   last_season_snap_share, last_season_opportunity_share
-            FROM {ROSTER_CHANGES_TABLE}
-            WHERE season = %s
-              AND change_type IN ('free_agent', 'trade', 'cut', 'retirement')
-              AND old_team IS NOT NULL
-              AND old_team != ''
-        """, (season,)).fetchall()
+    try:
+        with get_conn() as conn:
+            # Query 1: All vacated opportunity (~128 rows: 32 teams × 4 positions)
+            vacated_rows = conn.execute(f"""
+                SELECT team, position, total_targets_vacated,
+                       total_carries_vacated, total_snap_share_vacated,
+                       total_opportunity_share_vacated, departed_players
+                FROM {VACATED_OPPORTUNITY_TABLE}
+                WHERE season = %s
+            """, (season,)).fetchall()
 
-        # Query 3: All arrivals (~200-300 rows)
-        arrival_rows = conn.execute(f"""
-            SELECT new_team, position, player_id, player_name,
-                   change_type, draft_metadata, last_season_targets,
-                   last_season_carries
-            FROM {ROSTER_CHANGES_TABLE}
-            WHERE season = %s
-              AND change_type IN ('free_agent', 'trade', 'draft')
-              AND new_team IS NOT NULL
-              AND new_team != ''
-        """, (season,)).fetchall()
+            # Query 2: All departures (~200-300 rows)
+            departure_rows = conn.execute(f"""
+                SELECT old_team, position, player_id, player_name,
+                       change_type, last_season_targets, last_season_carries,
+                       last_season_snap_share, last_season_opportunity_share
+                FROM {ROSTER_CHANGES_TABLE}
+                WHERE season = %s
+                  AND change_type IN ('free_agent', 'trade', 'cut', 'retirement')
+                  AND old_team IS NOT NULL
+                  AND old_team != ''
+            """, (season,)).fetchall()
+
+            # Query 3: All arrivals (~200-300 rows)
+            arrival_rows = conn.execute(f"""
+                SELECT new_team, position, player_id, player_name,
+                       change_type, draft_metadata, last_season_targets,
+                       last_season_carries
+                FROM {ROSTER_CHANGES_TABLE}
+                WHERE season = %s
+                  AND change_type IN ('free_agent', 'trade', 'draft')
+                  AND new_team IS NOT NULL
+                  AND new_team != ''
+            """, (season,)).fetchall()
+
+    except Exception as e:
+        print(f"[db_helpers] DB unavailable — competition signals will be 0 for all players: {e}")
+        return _empty
 
     # Build lookup indices: (team, position) → data
     vacated_by_team_pos = {
@@ -736,15 +879,66 @@ def load_all_team_stats(season: int) -> Dict[str, Dict]:
 
     teams_index = load_teams_index() or {}
 
+    # NFL league averages — used as fallback when cached values are zero/missing
+    NFL_AVG_PASS_ATT_PG = 33.5
+    NFL_AVG_RUSH_ATT_PG = 25.5
+    NFL_AVG_PASS_YDS_PG = 228.0
+    NFL_AVG_RUSH_YDS_PG = 110.0
+    NFL_AVG_PASS_TD_PG = 1.65
+    NFL_AVG_RUSH_TD_PG = 0.85
+    NFL_AVG_POINTS_PG = 22.5
+    NFL_AVG_RED_ZONE_TRIPS_PG = 3.2
+    NFL_AVG_SACKS_ALLOWED_PG = 2.4
+    # Approximate conversions for deriving missing stats from available data
+    YARDS_PER_PASS_ATTEMPT = 7.2   # NFL average ~6.8-7.5
+    PASS_YDS_PER_TD = 138.0        # ~1 TD per 138 pass yards
+    RUSH_TD_RATE = 0.035           # ~3.5% of carries result in a TD
+
     team_stats_cache = {}
     for team, data in teams_index.items():
+        pass_yds_pg = data.get('pass_yds_pg') or NFL_AVG_PASS_YDS_PG
+        rush_yds_pg = data.get('rush_yds_pg') or NFL_AVG_RUSH_YDS_PG
+        rush_att_pg = data.get('rush_att_pg') or NFL_AVG_RUSH_ATT_PG
+
+        # Derive pass_att_pg from pass_yds_pg when zeroed/missing
+        raw_pass_att = data.get('pass_att_pg') or 0.0
+        pass_att_pg = raw_pass_att if raw_pass_att > 1.0 else (pass_yds_pg / YARDS_PER_PASS_ATTEMPT)
+
+        # Derive TD rates when zeroed/missing
+        raw_pass_td = data.get('pass_td_pg') or 0.0
+        pass_td_pg = raw_pass_td if raw_pass_td > 0.01 else (pass_yds_pg / PASS_YDS_PER_TD)
+
+        raw_rush_td = data.get('rush_td_pg') or 0.0
+        rush_td_pg = raw_rush_td if raw_rush_td > 0.01 else (rush_att_pg * RUSH_TD_RATE)
+
+        # Derive points_pg from TDs + field goal estimate when not stored
+        raw_points = data.get('points_pg') or 0.0
+        if raw_points > 1.0:
+            points_pg = raw_points
+        else:
+            estimated_td_pts = (pass_td_pg + rush_td_pg) * 6.5  # ~6.5 pts/TD incl PAT
+            estimated_fg_pts = 1.2 * 3.0  # ~1.2 FGs/game × 3 pts
+            points_pg = estimated_td_pts + estimated_fg_pts
+
+        # Non-derivable fields — use stored value or NFL average
+        red_zone_trips_pg = data.get('red_zone_trips_pg') or NFL_AVG_RED_ZONE_TRIPS_PG
+        sacks_allowed_pg = data.get('sacks_allowed_pg') or NFL_AVG_SACKS_ALLOWED_PG
+
+        off_snaps_pg = data.get('off_snaps_pg') or (pass_att_pg + rush_att_pg + 2.0)
+        total_plays_pg = data.get('total_plays_pg') or (pass_att_pg + rush_att_pg)
+
         team_stats_cache[team] = {
-            'pass_att_pg': data.get('pass_att_pg', 33.0),
-            'rush_att_pg': data.get('rush_att_pg', 25.0),
-            'off_snaps_pg': data.get('off_snaps_pg', 65.0),
-            'pass_yds_pg': data.get('pass_yds_pg', 225.0),
-            'rush_yds_pg': data.get('rush_yds_pg', 110.0),
-            'total_plays_pg': data.get('total_plays_pg', 65.0),
+            'pass_att_pg': round(pass_att_pg, 2),
+            'rush_att_pg': round(rush_att_pg, 2),
+            'off_snaps_pg': round(off_snaps_pg, 2),
+            'pass_yds_pg': round(pass_yds_pg, 2),
+            'rush_yds_pg': round(rush_yds_pg, 2),
+            'pass_td_pg': round(pass_td_pg, 3),
+            'rush_td_pg': round(rush_td_pg, 3),
+            'points_pg': round(points_pg, 2),
+            'red_zone_trips_pg': round(red_zone_trips_pg, 2),
+            'sacks_allowed_pg': round(sacks_allowed_pg, 2),
+            'total_plays_pg': round(total_plays_pg, 2),
             'games_tracked': data.get('games_tracked', 0),
         }
 
