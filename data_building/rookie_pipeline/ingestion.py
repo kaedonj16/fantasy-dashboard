@@ -336,19 +336,120 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary source 3 — Age estimation from Sportradar experience field
-# Sportradar provides SR/JR/SO/FR but no DOB.
-# We estimate age at draft (late April) from typical enrollment ages.
+# Supplementary source 3 — ESPN athlete search  (no auth required)
+# Provides: dateOfBirth → exact age at draft
+#
+# Endpoint: https://site.api.espn.com/apis/common/v3/search
+#   ?query={name}&sport=football&type=athlete&limit=3
+#
+# Response shape (relevant portion):
+#   { "results": [{ "contents": [{ "type": "athlete",
+#                                   "displayName": "Travis Hunter",
+#                                   "dateOfBirth": "2004-12-15",
+#                                   "league": {"name": "College Football"}, ... }] }] }
+#
+# We match on normalized display name and pick the college-football entry when
+# multiple sport entries are returned (e.g. the same name in NFL + CFB).
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Typical age at draft by college class + position adjustments are minor,
-# so we use position-neutral estimates.
+_ESPN_SEARCH_URL = "https://site.api.espn.com/apis/common/v3/search"
+
+
+def _age_at_date(dob_str: str, ref_year: int, ref_month: int = 4, ref_day: int = 25) -> Optional[float]:
+    """
+    Compute fractional age (years) at ref_year-ref_month-ref_day given a
+    'YYYY-MM-DD' (or 'YYYY-MM-DDTHH:MM:SSZ') date-of-birth string.
+    """
+    try:
+        dob_part = dob_str[:10]   # keep only 'YYYY-MM-DD'
+        from datetime import date
+        dob  = date.fromisoformat(dob_part)
+        ref  = date(ref_year, ref_month, ref_day)
+        days = (ref - dob).days
+        return round(days / 365.25, 2)
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_espn_ages(names: List[str], draft_year: int,
+                    delay: float = 0.25) -> Dict[str, float]:
+    """
+    Look up each prospect by name via ESPN's public search API and return a
+    dict of {name_lower: age_at_draft_float}.
+
+    Uses a small delay between requests to avoid rate-limiting.
+    Silently skips any name that can't be resolved.
+
+    Args:
+        names:       list of player names to look up
+        draft_year:  draft year (used as reference date — late April)
+        delay:       seconds to sleep between requests (default 0.25 s)
+    """
+    result: Dict[str, float] = {}
+    for name in names:
+        try:
+            resp = requests.get(
+                _ESPN_SEARCH_URL,
+                params={"query": name, "sport": "football",
+                        "type": "athlete", "limit": "5"},
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as exc:
+            log.debug("[espn_ages] request failed for %r: %s", name, exc)
+            time.sleep(delay)
+            continue
+
+        name_norm = name.lower().strip()
+        dob: Optional[str] = None
+
+        for group in data.get("results", []):
+            for item in group.get("contents", []):
+                if item.get("type") != "athlete":
+                    continue
+                item_name = (item.get("displayName") or "").lower().strip()
+                if item_name != name_norm:
+                    continue
+                # Prefer college-football entry; fall back to any match
+                league = (item.get("league") or {}).get("name", "")
+                candidate = item.get("dateOfBirth")
+                if candidate:
+                    dob = candidate
+                    if "college" in league.lower():
+                        break       # best match found
+
+        if dob:
+            age = _age_at_date(dob, draft_year)
+            if age is not None:
+                result[name_norm] = age
+                log.debug("[espn_ages] %s  DOB=%s  age=%.2f", name, dob, age)
+            else:
+                log.debug("[espn_ages] %s  DOB=%s unparseable", name, dob)
+        else:
+            log.debug("[espn_ages] %s  no DOB found", name)
+
+        time.sleep(delay)
+
+    log.info("[espn_ages] Resolved ages for %d / %d prospects",
+             len(result), len(names))
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Age fallback — estimation from Sportradar experience field
+# Used only when ESPN lookup fails.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Typical age at draft by college class (position-neutral)
 _EXP_AGE: Dict[str, float] = {
     "SR":  22.7,   # 4-year senior; many are 22–23 at April draft
     "JR":  21.5,   # 3-year junior / early declare
     "SO":  20.5,   # 2-year sophomore (rare early declare)
     "FR":  19.5,   # true freshman (extremely rare)
 }
+
 
 def _estimate_age(experience: Optional[str], draft_year: int) -> Optional[float]:
     """
@@ -836,22 +937,21 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     """
     Entry point: return normalized prospect list for `draft_year`.
 
-    Merges up to four sources in priority order:
+    Merges up to five sources in priority order:
 
     1. Sportradar (SPORTRADAR_API_KEY)  → player list, bio, height, weight,
                                           school, conference, experience
-    2. NFLVerse combine.csv (no key)    → forty_yard, vertical, broad_jump,
+    2. ESPN search (no key)             → exact age from dateOfBirth
+    3. NFLVerse combine.csv (no key)    → forty_yard, vertical, broad_jump,
                                           bench_reps, three_cone, shuttle
-    3. CFBD (CFBD_API_KEY)              → per-season college stats,
+    4. CFBD (CFBD_API_KEY)              → per-season college stats,
                                           games_played, market share,
                                           dominator rating
-    4. Seed dataset (always available)  → fallback for any missing field;
+    5. Seed dataset (always available)  → fallback for any missing field;
                                           used entirely when Sportradar is
                                           not configured
 
-    Age: taken from NFLVerse if height/weight match found, otherwise
-         estimated from Sportradar experience (SR/JR/SO/FR), otherwise
-         seed value, otherwise None.
+    Age priority: ESPN DOB lookup → seed value → Sportradar experience estimate
     """
     seed = get_seed_prospects(draft_year)
 
@@ -860,11 +960,14 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
         return [normalize_prospect(p) for p in seed]
 
-    # ── Fetch from all live sources in parallel ───────────────────────────────
+    # ── Fetch from all live sources ───────────────────────────────────────────
     sr_prospects = fetch_sportradar_prospects(draft_year)
     if not sr_prospects:
         log.warning("[ingestion] Sportradar returned no data for %d — using seed", draft_year)
         return [normalize_prospect(p) for p in seed]
+
+    # ESPN age lookup for all Sportradar prospects (no key required)
+    espn_ages = fetch_espn_ages([p["name"] for p in sr_prospects], draft_year)
 
     combine_data = fetch_nflverse_combine(draft_year)         # always attempted
     cfbd_stats   = fetch_cfbd_college_stats(draft_year)       # only if CFBD_KEY set
@@ -893,8 +996,9 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
             "source":           "sportradar",
         }
 
-        # ── Age ──────────────────────────────────────────────────────────────
+        # ── Age: ESPN DOB (exact) → seed → experience estimate ───────────────
         p["age"] = (
+            espn_ages.get(name_key) or
             (seed_p or {}).get("age") or
             _estimate_age(sr.get("_experience"), draft_year)
         )
