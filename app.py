@@ -147,6 +147,14 @@ try:
 except Exception as e:
     print(f"[breakout-api] Registration skipped: {e}")
 
+# Register rookie prospect API routes
+try:
+    from dashboard_services.rookie_api import register_rookie_routes
+    register_rookie_routes(app)
+    print("[rookie-api] Rookie API endpoints registered")
+except Exception as e:
+    print(f"[rookie-api] Registration skipped: {e}")
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -925,10 +933,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
-        ("Player Rankings", "page_players", "players", False),
-        ("Breakouts", "page_breakouts", "breakouts", False),
-        ("Rookies", None, "rookies", True),
-    ], ["players", "breakouts"]))
+        ("Player Rankings", "page_players",  "players",  False),
+        ("Breakouts",       "page_breakouts","breakouts", False),
+        ("Rookies",         "page_rookies",  "rookies",   False),
+    ], ["players", "breakouts", "rookies"]))
     nav_pills.append(nav_pill("History", "page_history", "history"))
 
     # Standings and Graphs remain in-season only
@@ -6218,6 +6226,14 @@ def page_players(platform: str, season: int, league_id: str):
     </script>
     """
     return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/rookies")
+def page_rookies(platform: str, season: int, league_id: str):
+    """Rookie prospect rankings page — active class auto-detected."""
+    from dashboard_services.pages.rookies_page import build_rookies_body
+    body_html = build_rookies_body(platform, season, league_id)
+    return render_page("Rookie Rankings", league_id, "rookies", body_html, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
