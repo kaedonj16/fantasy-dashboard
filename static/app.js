@@ -3130,6 +3130,24 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
+// Players nav dropdown toggle
+function togglePlayersNav(e) {
+  e.stopPropagation();
+  const wrapper = document.getElementById('playersNavDropdown');
+  if (!wrapper) return;
+  wrapper.classList.toggle('open');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Close players nav dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('playersNavDropdown');
+    if (wrapper && !wrapper.contains(e.target)) {
+      wrapper.classList.remove('open');
+    }
+  });
+});
+
 // Card collapse toggle functionality
 document.addEventListener('DOMContentLoaded', function() {
   const collapseToggles = document.querySelectorAll('.card-collapse-toggle');

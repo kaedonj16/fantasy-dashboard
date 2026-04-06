@@ -470,6 +470,115 @@ ul {
   transform: translateY(-1px);
 }
 
+/* ---- Players nav dropdown ---- */
+.nav-pill-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.nav-pill-dropdown-wrapper .nav-pill {
+  cursor: pointer;
+  border: none;
+  gap: 4px;
+  user-select: none;
+}
+
+.nav-pill-chevron {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.nav-pill-dropdown-wrapper.open .nav-pill-chevron {
+  transform: rotate(180deg);
+}
+
+.nav-pill-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  min-width: 160px;
+  z-index: 9999;
+  overflow: hidden;
+  display: none;
+}
+
+.nav-pill-dropdown-wrapper.open .nav-pill-dropdown-menu {
+  display: block;
+}
+
+.nav-pill-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+}
+
+.nav-pill-dropdown-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.nav-pill-dropdown-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-pill-dropdown-item.disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.nav-pill-dropdown-item + .nav-pill-dropdown-item {
+  border-top: 1px solid var(--border);
+}
+
+/* Mobile: dropdown appears inline in expanded menu */
+@media (max-width: 768px) {
+  .nav-pill-dropdown-wrapper {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .nav-pill-dropdown-wrapper .nav-pill {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    justify-content: space-between;
+  }
+
+  .nav-pill-dropdown-menu {
+    position: static;
+    transform: none;
+    left: auto;
+    top: auto;
+    box-shadow: none;
+    border-radius: 8px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .nav-pill-dropdown-wrapper.open .nav-pill-dropdown-menu {
+    display: block;
+  }
+}
+
 .refresh-icon {
   display: inline-flex !important;
   align-items: center;
