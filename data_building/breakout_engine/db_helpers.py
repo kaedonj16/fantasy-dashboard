@@ -751,6 +751,21 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
                 'half_ppr_ppg': usage.get('half_ppr_ppg', 0) or 0,
             }
 
+        # Compute position ranks by PPR points so callers can filter out
+        # established starters (top-12 = not a breakout candidate)
+        by_pos: Dict[str, list] = {}
+        for pid, entry in usage_by_id.items():
+            pos = entry.get('position', '')
+            if pos not in ('QB', 'RB', 'WR', 'TE'):
+                continue
+            ppr_total = entry['ppr_ppg'] * max(entry['games'], 1)
+            by_pos.setdefault(pos, []).append((pid, ppr_total))
+
+        for pos, players in by_pos.items():
+            players.sort(key=lambda x: x[1], reverse=True)
+            for rank, (pid, _) in enumerate(players, start=1):
+                usage_by_id[pid]['prior_position_rank'] = rank
+
         print(f"[db_helpers] Loaded {len(usage_by_id)} players from usage cache (season {season})")
         return usage_by_id
 

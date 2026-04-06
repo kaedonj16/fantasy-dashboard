@@ -603,40 +603,56 @@ def run_backtest(
     return all_results
 
 
+ESTABLISHED_STARTER_RANK = 12   # Top-N at position = already broke out, not a candidate
+
+
 def _build_candidate_player_list(
         usage_cache: Dict[str, Dict],
         season: int,
-        positions: List[str]
+        positions: List[str],
+        exclude_established: bool = True,
+        established_rank_cutoff: int = ESTABLISHED_STARTER_RANK,
 ) -> List[Dict]:
     """
     Build the list of players to evaluate from the usage cache.
 
+    A breakout candidate must NOT have been an established top-N starter
+    at their position the prior year.  Players already ranked within the
+    top-N are excluded by default — they have already broken out.
+
     The usage_cache is expected to contain the flat format produced by
-    load_all_player_usage() (i.e. direct fields like 'targets', 'carries',
-    'age', 'years_exp' — NOT nested under a 'usage' sub-dict).
+    load_all_player_usage() which includes a 'prior_position_rank' field
+    computed from PPR points.
 
     Returns a list of player dicts with the fields required by
     BreakoutEngine.calculate_player_breakout_score().
     """
     players = []
+    excluded_established = 0
 
     for player_id, player_data in usage_cache.items():
         position = player_data.get("position", "")
         if position not in positions:
             continue
 
-        # Flat format: age and years_exp are top-level after load_all_player_usage fix
         age = player_data.get("age")
         years_exp = player_data.get("years_exp", 0) or 0
         games = player_data.get("games", 0) or 0
 
-        # Skip players with no meaningful usage data and not a rookie
+        # Skip unknown ages (can't score readiness)
+        if age is None:
+            continue
+
+        # Skip players with no usage and not a rookie
         if games == 0 and years_exp > 0:
             continue
 
-        # Skip players whose age is entirely unknown (can't score readiness)
-        if age is None:
-            continue
+        # Exclude already-established starters: they have already broken out
+        if exclude_established:
+            prior_rank = player_data.get("prior_position_rank")
+            if prior_rank is not None and prior_rank <= established_rank_cutoff:
+                excluded_established += 1
+                continue
 
         players.append({
             "player_id": player_id,
@@ -647,6 +663,9 @@ def _build_candidate_player_list(
             "years_exp": years_exp,
             "is_rookie": years_exp == 0,
         })
+
+    if excluded_established:
+        print(f"[backtest] Excluded {excluded_established} established top-{established_rank_cutoff} starters from candidate pool")
 
     return players
 
