@@ -1,13 +1,31 @@
 """
 Rookie prospect data ingestion.
 
-Primary source: Sportradar NFL API (requires SPORTRADAR_API_KEY env var).
+Primary source: Sportradar NFL Draft API (requires SPORTRADAR_API_KEY env var).
 Fallback:       Curated seed dataset for 2025 and 2026 draft classes so the
                 page works immediately without any external credentials.
 
-Sportradar endpoint:
-    GET https://api.sportradar.com/nfl/official/{version}/en/prospects.json
-        ?api_key={key}&year={draft_year}
+Sportradar endpoint (Draft API v1, separate from the main NFL v6 API):
+    GET https://api.sportradar.com/draft/nfl/{access_level}/v1/en/{year}/prospects.json
+        ?api_key={key}
+    OR  x-api-key: {key}  header
+
+    access_level = "trial" | "production"  (matches your key tier)
+
+What this endpoint provides:
+    id, name, first_name, last_name, position,
+    height (inches), weight (lbs),
+    team_name (college), conference {name, alias},
+    experience (SR/JR/SO/FR), birth_place (city/state string),
+    top_prospect (bool)
+
+What it does NOT provide:
+    - Age / birth date  (birth_place is a city string, not a DOB)
+    - Combine measurements (40-time, vertical, bench, etc.)
+    - College stats
+
+Age, combine data, and stats come from the seed dataset and are preserved
+for any player matched by name between Sportradar and the seed.
 
 Normalization contract — every player dict returned by this module has:
     player_id, name, position, school, age, height_inches, weight_lbs,
@@ -25,16 +43,15 @@ import logging
 import os
 import re
 import time
-from datetime import date
 from typing import Any, Dict, List, Optional
 
 import requests
 
 log = logging.getLogger(__name__)
 
-SPORTRADAR_KEY     = os.getenv("SPORTRADAR_API_KEY", "")
-SPORTRADAR_BASE    = "https://api.sportradar.com/nfl/official"
-SPORTRADAR_VERSION = os.getenv("SPORTRADAR_NFL_VERSION", "trial/v7")
+SPORTRADAR_KEY    = os.getenv("SPORTRADAR_API_KEY", "")
+SPORTRADAR_ACCESS = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")   # "trial" or "production"
+_SR_BASE          = "https://api.sportradar.com/draft/nfl"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -59,14 +76,18 @@ def _safe_int(v, default=None):
         return default
 
 
-def _sportradar_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Optional[Any]:
-    """GET from Sportradar API with retry/backoff. Returns None on failure."""
-    url = f"{SPORTRADAR_BASE}/{SPORTRADAR_VERSION}/en/{path}"
-    p = dict(params or {})
-    p["api_key"] = SPORTRADAR_KEY
+def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
+    """
+    GET from Sportradar Draft API with retry/backoff.
+    Sends the API key as both query param and header (Sportradar accepts both).
+    Returns parsed JSON or None on failure.
+    """
+    url = f"{_SR_BASE}/{SPORTRADAR_ACCESS}/v1/en/{path}"
+    headers = {"x-api-key": SPORTRADAR_KEY, "Accept": "application/json"}
+    params  = {"api_key": SPORTRADAR_KEY}
     for attempt in range(retries):
         try:
-            resp = requests.get(url, params=p, timeout=20)
+            resp = requests.get(url, headers=headers, params=params, timeout=20)
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
@@ -81,18 +102,6 @@ def _sportradar_get(path: str, params: Dict[str, Any] = None, retries: int = 3) 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sportradar ingestion
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _age_at_draft(birth_date: Optional[str], draft_year: int) -> Optional[float]:
-    """Calculate age at the approximate draft date (late April of draft_year)."""
-    if not birth_date:
-        return None
-    try:
-        bdate = date.fromisoformat(str(birth_date)[:10])
-        draft_date = date(draft_year, 4, 25)
-        return round((draft_date - bdate).days / 365.25, 1)
-    except (ValueError, TypeError):
-        return None
-
 
 def _parse_height(raw) -> Optional[int]:
     """
@@ -117,161 +126,62 @@ def _parse_height(raw) -> Optional[int]:
         return None
 
 
-def _parse_sportradar_season(season_obj: Dict, position: str) -> Dict:
-    """
-    Convert one Sportradar season statistics object into our normalized format.
-
-    Sportradar nests stats under keys like 'passing', 'rushing', 'receiving'
-    within the season object (or a nested 'statistics' sub-object).
-    """
-    # Stats may live directly on season_obj or under a 'statistics' sub-key
-    stats = season_obj.get("statistics") or season_obj
-
-    passing   = stats.get("passing")   or {}
-    rushing   = stats.get("rushing")   or {}
-    receiving = stats.get("receiving") or {}
-
-    pass_att  = _safe_int(passing.get("attempts")      or passing.get("att"),         0)
-    pass_yds  = _safe_int(passing.get("yards")         or passing.get("pass_yards"),  0)
-    pass_tds  = _safe_int(passing.get("touchdowns")    or passing.get("pass_tds"),    0)
-    comp      = _safe_int(passing.get("completions")   or passing.get("comp"),        0)
-    ints      = _safe_int(passing.get("interceptions") or passing.get("int"),         0)
-
-    rush_att  = _safe_int(rushing.get("attempts")   or rushing.get("att"),        0)
-    rush_yds  = _safe_int(rushing.get("yards")      or rushing.get("rush_yards"), 0)
-    rush_tds  = _safe_int(rushing.get("touchdowns") or rushing.get("rush_tds"),   0)
-
-    rec_yds   = _safe_int(receiving.get("yards")       or receiving.get("rec_yards"), 0)
-    rec_tds   = _safe_int(receiving.get("touchdowns")  or receiving.get("rec_tds"),   0)
-    recs      = _safe_int(receiving.get("receptions")  or receiving.get("rec"),       0)
-    targets   = _safe_int(receiving.get("targets"),                                   0)
-
-    # games_played: may sit at season level or under stats
-    gp = _safe_int(
-        season_obj.get("games_played") or season_obj.get("games") or
-        stats.get("games_played")      or stats.get("games")
-    )
-
-    # Team / conference
-    team_obj = season_obj.get("team") or {}
-    team = team_obj.get("name") if isinstance(team_obj, dict) else team_obj
-    conf_obj = season_obj.get("conference") or {}
-    conference = conf_obj.get("name") if isinstance(conf_obj, dict) else conf_obj
-
-    row: Dict[str, Any] = {
-        "season":          _safe_int(season_obj.get("season") or season_obj.get("year")),
-        "games_played":    gp,
-        "pass_yards":      pass_yds,
-        "pass_tds":        pass_tds,
-        "pass_attempts":   pass_att,
-        "completions":     comp,
-        "interceptions":   ints,
-        "rush_attempts":   rush_att,
-        "rush_yards":      rush_yds,
-        "rush_tds":        rush_tds,
-        "receptions":      recs,
-        "targets":         targets,
-        "receiving_yards": rec_yds,
-        "receiving_tds":   rec_tds,
-        "team":            team,
-        "conference":      conference,
-        # Sportradar doesn't supply team-level totals needed for market share /
-        # dominator rating, so these remain None until enriched externally.
-        "dominator_rating":   None,
-        "market_share_yards": None,
-        "market_share_tds":   None,
-        "team_total_yards":   None,
-        "team_total_tds":     None,
-        "team_pass_rate":     None,
-    }
-
-    # Derived efficiency metrics
-    row["yds_per_carry"]     = round(rush_yds / rush_att, 2) if rush_att > 0 else None
-    row["yds_per_reception"] = round(rec_yds / max(recs, 1), 2) if rec_yds > 0 else None
-    row["yds_per_attempt"]   = round(pass_yds / pass_att, 2) if pass_att > 0 else None
-    row["completion_pct"]    = round(comp / pass_att * 100, 1) if pass_att > 0 else None
-    row["td_int_ratio"]      = round(pass_tds / max(ints, 1), 2) if pass_tds else None
-
-    return row
-
 
 def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
-    """Convert a single Sportradar prospect object to our normalized format."""
-    # Name — try full name first, fall back to first+last
+    """
+    Convert a single Sportradar Draft API prospect object to our normalized format.
+
+    Actual Sportradar fields (Draft API v1):
+        name, first_name, last_name — player name
+        position                    — e.g. "WR", "RB"
+        height                      — integer, total inches
+        weight                      — integer, pounds
+        team_name                   — college team name string
+        conference                  — object: {name, alias}
+        experience                  — "SR" / "JR" / "SO" / "FR"
+        birth_place                 — city/state string e.g. "Suwanee, GA, USA"
+        top_prospect                — boolean
+
+    NOT present: age/DOB, combine measurements, college stats.
+    Those come from the seed dataset when a name match is found.
+    """
     name = (
-        raw.get("name_full") or
-        " ".join(filter(None, [raw.get("name_first"), raw.get("name_last")])) or
-        raw.get("name", "")
+        raw.get("name") or
+        " ".join(filter(None, [raw.get("first_name"), raw.get("last_name")]))
     ).strip()
     if not name:
         return None
 
     position = (raw.get("position") or "").upper()
+    school   = raw.get("team_name")
 
-    school_obj = raw.get("school") or {}
-    school = school_obj.get("name") if isinstance(school_obj, dict) else school_obj
+    conf_obj    = raw.get("conference") or {}
+    conference  = conf_obj.get("name") if isinstance(conf_obj, dict) else conf_obj
 
-    age = _age_at_draft(raw.get("birth_date"), draft_year)
-
-    # Combine / pro-day measurements
-    combine_obj = raw.get("combine") or {}
-    athleticism: Dict[str, Any] = {}
-    mapping = {
-        "forty_yard":      ("forty_yard_dash",       _safe),
-        "vertical_inches": ("vertical_jump",          _safe),
-        "broad_jump_in":   ("broad_jump",             _safe_int),
-        "bench_reps":      ("bench_press",            _safe_int),
-        "three_cone":      ("three_cone_drill",       _safe),
-        "short_shuttle":   ("twenty_yard_shuttle",    _safe),
-    }
-    for our_key, (sr_key, cast) in mapping.items():
-        val = combine_obj.get(sr_key)
-        if val is not None:
-            athleticism[our_key] = cast(val)
-
-    # College seasons
-    # Sportradar may return seasons under: statistics.seasons[], seasons[], or
-    # a top-level list keyed by year.
-    stats_root  = raw.get("statistics") or {}
-    season_list = (
-        stats_root.get("seasons") or
-        raw.get("seasons") or
-        (stats_root if isinstance(stats_root, list) else [])
-    )
-
-    seasons = []
-    for s in season_list:
-        yr = _safe_int(s.get("season") or s.get("year"))
-        if not yr:
-            continue
-        # Keep only the last 3 college seasons before the draft
-        if yr < draft_year - 3 or yr >= draft_year:
-            continue
-        season_row = _parse_sportradar_season(s, position)
-        season_row["season"] = yr
-        seasons.append(season_row)
-
-    # Draft info (populated after the draft)
-    draft_obj = raw.get("draft") or {}
+    # birth_place is "City, ST, USA" — no DOB available from this endpoint
+    birth_place = raw.get("birth_place") or ""
+    state = None
+    if birth_place:
+        parts = [p.strip() for p in birth_place.split(",")]
+        if len(parts) >= 2:
+            state = parts[1]   # e.g. "GA"
 
     return {
         "player_id":        f"ROOKIE_{draft_year}_{_slug(name)}",
         "name":             name,
         "position":         position,
         "school":           school,
-        "age":              age,
-        "height_inches":    _parse_height(raw.get("height")),
+        "age":              None,   # not in this endpoint; filled from seed on merge
+        "height_inches":    _safe_int(raw.get("height")),
         "weight_lbs":       _safe_int(raw.get("weight")),
-        "hometown":         raw.get("hometown"),
-        "state":            raw.get("birth_place", {}).get("state") if isinstance(raw.get("birth_place"), dict) else None,
+        "state":            state,
         "draft_class_year": draft_year,
         "early_declare":    False,
-        "seasons":          seasons,
-        "athleticism":      athleticism,
+        "seasons":          [],     # not in this endpoint; filled from seed on merge
+        "athleticism":      {},     # not in this endpoint; filled from seed on merge
         "source":           "sportradar",
-        # Preserved for mock consensus enrichment downstream
-        "_draft_round":     _safe_int(draft_obj.get("round")),
-        "_draft_pick":      _safe_int(draft_obj.get("pick")),
+        # Attach raw conference name so competition scoring works for new players
+        "_conference":      conference,
     }
 
 
@@ -279,24 +189,20 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
     """
     Fetch the full NFL prospect list for `draft_year` from Sportradar.
 
-    Tries two URL patterns:
-      1. /prospects.json?year={draft_year}           (year-filtered)
-      2. /draft/{draft_year}/prospects.json          (draft-scoped path)
-
-    Returns a list of normalized prospect dicts.
+    Endpoint: GET /draft/nfl/{access_level}/v1/en/{year}/prospects.json
+    Returns a list of partially-normalized prospect dicts (bio only).
+    Age, combine, and stats are not provided by this endpoint and must be
+    merged from the seed dataset or other sources.
     """
     if not SPORTRADAR_KEY:
         log.info("[sportradar] No SPORTRADAR_API_KEY set — skipping live fetch")
         return []
 
-    data = _sportradar_get("prospects.json", {"year": draft_year})
-    if not data:
-        data = _sportradar_get(f"draft/{draft_year}/prospects.json")
+    data = _sportradar_get(f"{draft_year}/prospects.json")
     if not data:
         log.warning("[sportradar] No prospect data returned for %d", draft_year)
         return []
 
-    # Response is either {"prospects": [...]} or a bare list
     raw_list = data.get("prospects") or (data if isinstance(data, list) else [])
     if not raw_list:
         log.warning("[sportradar] Empty prospects list for %d", draft_year)
@@ -308,7 +214,7 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
         if prospect:
             results.append(prospect)
 
-    log.info("[sportradar] Parsed %d prospects for %d", len(results), draft_year)
+    log.info("[sportradar] Fetched %d prospects for %d", len(results), draft_year)
     return results
 
 
@@ -669,14 +575,15 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     Entry point: return normalized prospect list for `draft_year`.
 
     When SPORTRADAR_API_KEY is set:
-      - Calls the Sportradar NFL prospects endpoint for the full class with
-        bio (name, position, school, height, weight, age/DOB), combine
-        measurements (40-time, vertical, broad jump, bench, 3-cone, shuttle),
-        and multi-season college stats.
-      - Any player returned by Sportradar but with no college stats still
-        appears in the list — scoring falls back to graceful defaults.
-      - Seed prospects not found in the Sportradar response are appended so
-        the page always has a complete roster even during API outages.
+      - Fetches the official prospect list from Sportradar, which provides
+        name, position, height, weight, school, and conference.
+      - For any player whose name matches a seed entry, the seed's age,
+        college seasons, and athleticism/combine data are merged in, since
+        the Sportradar prospects endpoint does not include those fields.
+      - Players in Sportradar but not in the seed get scored on bio alone
+        (stats/combine default to neutral).
+      - Seed players not returned by Sportradar are appended so the page
+        always has a complete roster.
 
     Falls back entirely to seed data when no API key is configured.
     """
@@ -685,15 +592,46 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     if SPORTRADAR_KEY:
         live = fetch_sportradar_prospects(draft_year)
         if live:
-            live_ids = {p["player_id"] for p in live}
-            seed_only = [p for p in seed if p["player_id"] not in live_ids]
+            # Build a name-keyed lookup from seed for enrichment
+            seed_by_name = {p["name"].lower(): p for p in seed}
+
+            enriched = []
+            for sr in live:
+                seed_match = seed_by_name.get(sr["name"].lower())
+                if seed_match:
+                    # Prefer Sportradar bio fields; fill gaps from seed
+                    merged = dict(seed_match)
+                    merged["height_inches"] = sr["height_inches"] or seed_match.get("height_inches")
+                    merged["weight_lbs"]    = sr["weight_lbs"]    or seed_match.get("weight_lbs")
+                    merged["school"]        = sr["school"]        or seed_match.get("school")
+                    merged["source"]        = "sportradar"
+                else:
+                    # New player not in seed — use Sportradar bio, inject conference
+                    # into each season placeholder so competition scoring works
+                    merged = dict(sr)
+                    if sr.get("_conference"):
+                        merged["seasons"] = [{
+                            "season": draft_year - 1,
+                            "conference": sr["_conference"],
+                        }]
+                # Drop internal keys
+                merged.pop("_conference", None)
+                merged.pop("_draft_round", None)
+                merged.pop("_draft_pick", None)
+                enriched.append(merged)
+
+            # Keep seed players not returned by Sportradar
+            sr_names   = {p["name"].lower() for p in live}
+            seed_only  = [p for p in seed if p["name"].lower() not in sr_names]
             if seed_only:
-                log.info("[ingestion] %d seed prospects not in Sportradar response — keeping seed data",
+                log.info("[ingestion] %d seed prospects not in Sportradar — keeping seed data",
                          len(seed_only))
-            merged = live + seed_only
-            log.info("[ingestion] %d total prospects for %d (%d Sportradar, %d seed)",
-                     len(merged), draft_year, len(live), len(seed_only))
-            return [normalize_prospect(p) for p in merged]
+
+            merged_list = enriched + seed_only
+            log.info("[ingestion] %d total prospects for %d (%d Sportradar, %d seed-only)",
+                     len(merged_list), draft_year, len(enriched), len(seed_only))
+            return [normalize_prospect(p) for p in merged_list]
+
         log.warning("[ingestion] Sportradar returned no data for %d — using seed", draft_year)
 
     log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
