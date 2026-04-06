@@ -141,11 +141,19 @@ class PhaseDetector:
         """
         weights = cls.get_phase_weights(phase)
 
-        # If both primary DB-dependent signals are 0, treat them as absent
+        # Detect DB-absent state: all three competition components return 0 when
+        # the roster-changes table hasn't been populated. Treat them as absent
+        # (exclude from both numerator and denominator) so they don't drag down
+        # the renormalized score. Note that competition_added_penalty ranges from
+        # -38 to 0 (it is a pure penalty, never positive), so a value of 0 is
+        # ambiguous — it could mean "no data" or "no new competition added".
+        # When combined with opportunity_opened=0 and competition_removed=0, all
+        # three are almost certainly absent rather than genuinely zero.
         opp_opened = component_scores.get('opportunity_opened', 0.0)
         comp_removed = component_scores.get('competition_removed', 0.0)
-        competition_data_absent = (opp_opened == 0.0 and comp_removed == 0.0)
-        absent = {'opportunity_opened', 'competition_removed'} if competition_data_absent else set()
+        comp_added = component_scores.get('competition_added_penalty', 0.0)
+        competition_data_absent = (opp_opened == 0.0 and comp_removed == 0.0 and comp_added == 0.0)
+        absent = {'opportunity_opened', 'competition_removed', 'competition_added_penalty'} if competition_data_absent else set()
 
         total = 0.0
         active_weight = 0.0
