@@ -80,27 +80,10 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Opt
 # CFBD ingestion
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fetch_cfbd_player_season_stats(year: int) -> List[Dict[str, Any]]:
-    """
-    Fetch all player season stat lines from CFBD for `year`.
-    Returns a flat list of stat dicts keyed by athlete name + team.
-    """
-    if not CFBD_KEY:
-        log.info("[cfbd] No CFBD_API_KEY set — skipping live fetch for %d", year)
-        return []
-
-    data = _cfbd_get("/stats/player/season", {"year": year, "seasonType": "regular"})
-    if not data:
-        return []
-
-    log.info("[cfbd] Fetched %d stat lines for %d", len(data), year)
-    return data
-
-
 def fetch_cfbd_team_stats(year: int) -> Dict[str, Dict[str, Any]]:
     """
     Returns {team_name: {total_yards, total_tds, pass_rate, ...}}.
-    Used to compute market share metrics.
+    Used to compute market share and dominator rating metrics.
     """
     if not CFBD_KEY:
         return {}
@@ -114,10 +97,8 @@ def fetch_cfbd_team_stats(year: int) -> Dict[str, Dict[str, Any]]:
         team = row.get("team", "")
         stat = row.get("statName", "")
         val  = _safe(row.get("statValue"), 0)
-        entry = teams.setdefault(team, {})
-        entry[stat] = val
+        teams.setdefault(team, {})[stat] = val
 
-    # Compute pass rate per team
     for team, stats in teams.items():
         pass_att = stats.get("passAttempts", 0) or 0
         rush_att = stats.get("rushingAttempts", 0) or 0
@@ -127,13 +108,90 @@ def fetch_cfbd_team_stats(year: int) -> Dict[str, Dict[str, Any]]:
     return teams
 
 
-def _build_season_row(raw_stats: List[Dict], team_stats: Dict[str, Any], season: int) -> Dict:
+def fetch_cfbd_player_season_stats(year: int) -> List[Dict[str, Any]]:
+    """
+    Fetch all player season stat lines from CFBD for `year`.
+    Returns a flat list keyed by playerId + statName.
+    """
+    if not CFBD_KEY:
+        return []
+    data = _cfbd_get("/stats/player/season", {"year": year, "seasonType": "regular"})
+    if not data:
+        return []
+    log.info("[cfbd] Fetched %d stat lines for %d", len(data), year)
+    return data
+
+
+def fetch_cfbd_player_usage(year: int) -> Dict[int, Dict[str, Any]]:
+    """
+    Fetch player usage stats from CFBD for `year`.
+    Returns {athlete_id: usage_dict} — includes `games` played.
+    """
+    if not CFBD_KEY:
+        return {}
+    data = _cfbd_get("/player/usage", {"year": year, "seasonType": "regular"})
+    if not data:
+        return {}
+    return {
+        int(row["id"]): row
+        for row in data
+        if row.get("id") is not None
+    }
+
+
+def fetch_cfbd_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Fetch actual NFL draft picks from CFBD for `draft_year`.
+    Returns a list of pick dicts with bio fields:
+        collegeAthleteId, name, position, college, height, weight,
+        pick, round, preDraftRanking, preDraftPositionRanking
+    Only populated once the draft has occurred (historical years).
+    """
+    if not CFBD_KEY:
+        return []
+    data = _cfbd_get("/draft/picks", {"year": draft_year})
+    if not data:
+        return []
+    log.info("[cfbd] Fetched %d draft picks for %d", len(data), draft_year)
+    return data
+
+
+def fetch_cfbd_player_search(name: str, position: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Search CFBD for a player by name and return bio data:
+        id, name, position, team, height, weight, hometown, state
+    Returns the best match or None.
+    """
+    if not CFBD_KEY:
+        return None
+    params: Dict[str, Any] = {"searchTerm": name}
+    if position:
+        params["position"] = position
+    data = _cfbd_get("/players/search", params)
+    if not data:
+        return None
+
+    name_lower = name.lower()
+    # Prefer exact name match, then first result
+    for p in data:
+        if (p.get("name") or "").lower() == name_lower:
+            return p
+    return data[0] if data else None
+
+
+def _build_season_row(
+    raw_stats: List[Dict],
+    team_stats: Dict[str, Any],
+    season: int,
+    games_played: Optional[int] = None,
+) -> Dict:
     """
     Fold a list of raw CFBD stat rows for one player-season into a single dict.
+    `games_played` comes from the usage endpoint (passed in separately).
     """
     row: Dict[str, Any] = {
         "season": season,
-        "games_played": None,
+        "games_played": games_played,
         "pass_yards": 0, "pass_tds": 0, "pass_attempts": 0,
         "completions": 0, "interceptions": 0,
         "rush_attempts": 0, "rush_yards": 0, "rush_tds": 0,
@@ -142,13 +200,17 @@ def _build_season_row(raw_stats: List[Dict], team_stats: Dict[str, Any], season:
     }
 
     stat_map = {
-        "passingYards": "pass_yards", "passingTDs": "pass_tds",
-        "passAttempts": "pass_attempts", "passCompletions": "completions",
-        "interceptions": "interceptions",
-        "rushingYards": "rush_yards", "rushingTDs": "rush_tds",
-        "rushingAttempts": "rush_attempts",
-        "receivingYards": "receiving_yards", "receivingTDs": "receiving_tds",
-        "receptions": "receptions",
+        "passingYards":     "pass_yards",
+        "passingTDs":       "pass_tds",
+        "passAttempts":     "pass_attempts",
+        "passCompletions":  "completions",
+        "interceptions":    "interceptions",
+        "rushingYards":     "rush_yards",
+        "rushingTDs":       "rush_tds",
+        "rushingAttempts":  "rush_attempts",
+        "receivingYards":   "receiving_yards",
+        "receivingTDs":     "receiving_tds",
+        "receptions":       "receptions",
     }
 
     for s in raw_stats:
@@ -161,32 +223,29 @@ def _build_season_row(raw_stats: List[Dict], team_stats: Dict[str, Any], season:
         if not row["conference"]:
             row["conference"] = s.get("conference")
 
-    team = row.get("team", "")
-    ts   = team_stats.get(team, {})
+    ts = team_stats.get(row.get("team", ""), {})
 
-    # Derived metrics
-    gp = row["games_played"] or 1
+    gp       = row["games_played"] or 1
     rush_att = row["rush_attempts"] or 0
-    rush_yds = row["rush_yards"] or 0
+    rush_yds = row["rush_yards"]    or 0
     rec_yds  = row["receiving_yards"] or 0
-    rec_tds  = row["receiving_tds"] or 0
-    rush_tds = row["rush_tds"] or 0
-    pass_att = row["pass_attempts"] or 0
-    pass_yds = row["pass_yards"] or 0
-    comp     = row["completions"] or 0
+    rec_tds  = row["receiving_tds"]   or 0
+    rush_tds = row["rush_tds"]        or 0
+    pass_att = row["pass_attempts"]   or 0
+    pass_yds = row["pass_yards"]      or 0
+    comp     = row["completions"]     or 0
+    ints     = row["interceptions"]   or 0
 
     row["yds_per_carry"]     = round(rush_yds / rush_att, 2) if rush_att > 0 else None
     row["yds_per_reception"] = round(rec_yds / max(row["receptions"] or 1, 1), 2) if rec_yds > 0 else None
     row["yds_per_attempt"]   = round(pass_yds / pass_att, 2) if pass_att > 0 else None
     row["completion_pct"]    = round(comp / pass_att * 100, 1) if pass_att > 0 else None
-    ints = row["interceptions"] or 0
     row["td_int_ratio"]      = round(row["pass_tds"] / max(ints, 1), 2) if row["pass_tds"] else None
 
-    # Market share
     team_total_yds = (ts.get("netPassingYards", 0) or 0) + (ts.get("rushingYards", 0) or 0)
-    team_total_tds = (ts.get("passingTDs", 0) or 0) + (ts.get("rushingTDs", 0) or 0)
-    player_yds = rec_yds + rush_yds
-    player_tds = rec_tds + rush_tds
+    team_total_tds = (ts.get("passingTDs", 0) or 0)      + (ts.get("rushingTDs", 0) or 0)
+    player_yds     = rec_yds + rush_yds
+    player_tds     = rec_tds + rush_tds
 
     row["market_share_yards"] = round(player_yds / team_total_yds, 3) if team_total_yds > 0 else None
     row["market_share_tds"]   = round(player_tds / team_total_tds, 3) if team_total_tds > 0 else None
@@ -194,7 +253,6 @@ def _build_season_row(raw_stats: List[Dict], team_stats: Dict[str, Any], season:
     row["team_total_tds"]     = _safe_int(team_total_tds)
     row["team_pass_rate"]     = ts.get("pass_rate")
 
-    # Dominator rating = (player_yds / team_total_yds)*0.65 + (player_tds / team_total_tds)*0.35
     dom = 0.0
     if team_total_yds > 0:
         dom += (player_yds / team_total_yds) * 0.65
@@ -205,51 +263,177 @@ def _build_season_row(raw_stats: List[Dict], team_stats: Dict[str, Any], season:
     return row
 
 
-def fetch_cfbd_prospects(draft_year: int, player_names: List[str]) -> List[Dict[str, Any]]:
+def _parse_height(raw) -> Optional[int]:
     """
-    For a list of prospect names, pull their last 2-3 college seasons from CFBD.
-    Returns normalized player dicts ready for DB insertion.
+    Convert CFBD height to total inches.
+    Handles both integer inches (74) and string formats ('6-2', "6'2\"").
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    s = str(raw).strip()
+    # "6-2" or "6'2"
+    for sep in ("-", "'", "\"", " "):
+        if sep in s:
+            parts = s.replace("\"", "").split(sep)
+            try:
+                return int(parts[0]) * 12 + int(parts[1])
+            except (ValueError, IndexError):
+                pass
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
+def fetch_cfbd_prospects(draft_year: int, seed_prospects: List[Dict]) -> List[Dict[str, Any]]:
+    """
+    Fetch live prospect data from CFBD for the given draft class.
+
+    Strategy:
+    1. Try /draft/picks?year={draft_year} — provides bio + draft slot for
+       past/current classes where the draft has occurred.
+    2. For each prospect (from picks or seed fallback), fetch their stats
+       across the last 3 college seasons using their CFBD athlete ID where
+       possible (far more reliable than name matching).
+    3. Enrich bio (height, weight, position, school) from /players/search
+       for any player missing that data.
+
+    Returns normalised prospect dicts ready for scoring.
     """
     if not CFBD_KEY:
-        log.info("[cfbd] No API key — returning empty for live fetch")
+        log.info("[cfbd] No API key — skipping live fetch for %d", draft_year)
         return []
 
-    results = []
     years_to_check = [draft_year - 1, draft_year - 2, draft_year - 3]
 
-    # Pre-fetch team stats for all years
-    all_team_stats: Dict[int, Dict] = {}
-    for yr in years_to_check:
-        all_team_stats[yr] = fetch_cfbd_team_stats(yr)
+    # ── Step 1: build the prospect bio table ─────────────────────────────────
+    # Key: lower-cased name → {player_id, name, position, school, height_inches,
+    #                           weight_lbs, cfbd_id}
+    bio_by_name: Dict[str, Dict[str, Any]] = {}
 
-    # Pre-fetch all player stat lines for each year
+    picks = fetch_cfbd_draft_picks(draft_year)
+    if picks:
+        for p in picks:
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            bio_by_name[name.lower()] = {
+                "player_id":     f"ROOKIE_{draft_year}_{_slug(name)}",
+                "name":          name,
+                "position":      p.get("position"),
+                "school":        p.get("college"),
+                "height_inches": _parse_height(p.get("height")),
+                "weight_lbs":    _safe_int(p.get("weight")),
+                "cfbd_id":       _safe_int(p.get("collegeAthleteId")),
+                "draft_pick":    _safe_int(p.get("pick")),
+                "draft_round":   _safe_int(p.get("round")),
+            }
+        log.info("[cfbd] Built bio table from %d draft picks for %d", len(bio_by_name), draft_year)
+
+    # Fill in any seed prospects not covered by draft picks
+    for sp in seed_prospects:
+        key = (sp.get("name") or "").lower()
+        if key and key not in bio_by_name:
+            bio_by_name[key] = {
+                "player_id":     sp["player_id"],
+                "name":          sp["name"],
+                "position":      sp.get("position"),
+                "school":        sp.get("school"),
+                "height_inches": sp.get("height_inches"),
+                "weight_lbs":    sp.get("weight_lbs"),
+                "cfbd_id":       None,
+            }
+
+    if not bio_by_name:
+        log.warning("[cfbd] No prospects to process for %d", draft_year)
+        return []
+
+    # ── Step 2: pre-fetch season stats and usage for all relevant years ───────
     all_season_stats: Dict[int, List[Dict]] = {}
+    all_team_stats:   Dict[int, Dict]       = {}
+    all_usage:        Dict[int, Dict]       = {}
     for yr in years_to_check:
         all_season_stats[yr] = fetch_cfbd_player_season_stats(yr)
+        all_team_stats[yr]   = fetch_cfbd_team_stats(yr)
+        all_usage[yr]        = fetch_cfbd_player_usage(yr)
 
-    for name in player_names:
-        name_lower = name.lower()
+    # Index season stats by (lower name, team) and by cfbd athlete id
+    stats_by_id:   Dict[int, Dict[int, List[Dict]]] = {}   # {yr: {cfbd_id: [rows]}}
+    stats_by_name: Dict[int, Dict[str, List[Dict]]] = {}   # {yr: {name_lower: [rows]}}
+    for yr in years_to_check:
+        by_id:   Dict[int, List[Dict]] = {}
+        by_name: Dict[str, List[Dict]] = {}
+        for row in all_season_stats[yr]:
+            pid  = _safe_int(row.get("playerId"))
+            name = (row.get("player") or "").lower()
+            if pid:
+                by_id.setdefault(pid, []).append(row)
+            if name:
+                by_name.setdefault(name, []).append(row)
+        stats_by_id[yr]   = by_id
+        stats_by_name[yr] = by_name
+
+    # ── Step 3: enrich bio via /players/search where cfbd_id is missing ───────
+    for key, bio in bio_by_name.items():
+        if bio["cfbd_id"] is None:
+            result = fetch_cfbd_player_search(bio["name"], bio.get("position"))
+            if result:
+                bio["cfbd_id"]       = _safe_int(result.get("id"))
+                bio["height_inches"] = bio["height_inches"] or _parse_height(result.get("height"))
+                bio["weight_lbs"]    = bio["weight_lbs"]    or _safe_int(result.get("weight"))
+                bio["position"]      = bio["position"]      or result.get("position")
+                bio["school"]        = bio["school"]        or result.get("team")
+                if not bio.get("hometown"):
+                    bio["hometown"] = result.get("hometown")
+                    bio["state"]    = result.get("state")
+
+    # ── Step 4: build per-player seasons ─────────────────────────────────────
+    results = []
+    for key, bio in bio_by_name.items():
+        cfbd_id = bio.get("cfbd_id")
         player_seasons = []
 
         for yr in years_to_check:
-            stats_for_year = [
-                s for s in all_season_stats.get(yr, [])
-                if (s.get("player") or "").lower() == name_lower
-            ]
-            if stats_for_year:
-                season_row = _build_season_row(stats_for_year, all_team_stats.get(yr, {}), yr)
-                player_seasons.append(season_row)
+            # Prefer ID-based lookup; fall back to name match
+            if cfbd_id and cfbd_id in stats_by_id[yr]:
+                raw_rows = stats_by_id[yr][cfbd_id]
+            elif key in stats_by_name[yr]:
+                raw_rows = stats_by_name[yr][key]
+            else:
+                continue
 
-        if player_seasons:
-            player_id = f"ROOKIE_{draft_year}_{_slug(name)}"
-            results.append({
-                "player_id": player_id,
-                "name": name,
-                "draft_class_year": draft_year,
-                "seasons": player_seasons,
-                "source": "cfbd",
-            })
+            # Games played from usage endpoint
+            gp = None
+            if cfbd_id and cfbd_id in all_usage[yr]:
+                gp = _safe_int(all_usage[yr][cfbd_id].get("games"))
 
+            season_row = _build_season_row(raw_rows, all_team_stats[yr], yr, gp)
+            player_seasons.append(season_row)
+
+        if not player_seasons:
+            log.debug("[cfbd] No season stats found for %s (%d)", bio["name"], draft_year)
+            continue
+
+        prospect = {
+            "player_id":       bio["player_id"],
+            "name":            bio["name"],
+            "position":        bio.get("position"),
+            "school":          bio.get("school"),
+            "height_inches":   bio.get("height_inches"),
+            "weight_lbs":      bio.get("weight_lbs"),
+            "hometown":        bio.get("hometown"),
+            "state":           bio.get("state"),
+            "draft_class_year": draft_year,
+            "early_declare":   False,
+            "seasons":         player_seasons,
+            "athleticism":     {},
+            "source":          "cfbd",
+        }
+        results.append(prospect)
+
+    log.info("[cfbd] Built %d prospect records for %d", len(results), draft_year)
     return results
 
 
@@ -608,17 +792,36 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
 def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     """
     Entry point: return normalized prospect list for `draft_year`.
-    Uses live CFBD data when API key is set; otherwise falls back to seed data.
-    """
-    if CFBD_KEY:
-        seed = get_seed_prospects(draft_year)
-        names = [p["name"] for p in seed]
-        live  = fetch_cfbd_prospects(draft_year, names)
-        if live:
-            log.info("[ingestion] Loaded %d prospects via CFBD API for %d", len(live), draft_year)
-            return [normalize_prospect(p) for p in live]
-        log.warning("[ingestion] CFBD returned no data, falling back to seed for %d", draft_year)
 
+    When CFBD_API_KEY is set:
+      - Fetches the full draft class bio from /draft/picks (if the draft has
+        occurred) or discovers players via the seed list + /players/search.
+      - Pulls up to 3 years of college stats per player using athlete IDs
+        (not fragile name matching).
+      - Gets games_played from /player/usage so per-game metrics are correct.
+      - Merges seed data for any player that CFBD returned no stats for, so
+        the page always has a full roster.
+
+    Falls back entirely to seed data when no API key is configured.
+    """
     seed = get_seed_prospects(draft_year)
+
+    if CFBD_KEY:
+        live = fetch_cfbd_prospects(draft_year, seed)
+        if live:
+            # CFBD gave us stats; merge seed bio data for players not in live set
+            live_ids = {p["player_id"] for p in live}
+            seed_only = [p for p in seed if p["player_id"] not in live_ids]
+            if seed_only:
+                log.info(
+                    "[ingestion] %d seed prospects not found in CFBD — keeping seed data",
+                    len(seed_only),
+                )
+            merged = live + seed_only
+            log.info("[ingestion] %d total prospects for %d (%d CFBD, %d seed)",
+                     len(merged), draft_year, len(live), len(seed_only))
+            return [normalize_prospect(p) for p in merged]
+        log.warning("[ingestion] CFBD returned no data for %d — using seed", draft_year)
+
     log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
     return [normalize_prospect(p) for p in seed]
