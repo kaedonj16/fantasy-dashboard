@@ -150,7 +150,8 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             key_reasons,
             projected_role_tag,
             as_of_date,
-            calculated_at
+            calculated_at,
+            (component_details->'player_readiness'->>'age')::numeric as age
         FROM breakout_opportunity_scores
         WHERE season = %s
           AND breakout_opportunity_score >= %s

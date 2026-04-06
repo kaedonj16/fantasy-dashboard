@@ -257,6 +257,100 @@ def _extract_usage_metrics(payload_or_usage: Dict[str, Any]) -> Dict[str, float]
     }
 
 
+def _calculate_team_rankings(players_data: List[dict], season: int) -> Dict[tuple, List[tuple]]:
+    """
+    Calculate positional rankings within each team based on PPR PPG.
+
+    Returns:
+        Dict mapping (team, position) -> [(player_id, rank, ppg), ...]
+        Sorted by PPG descending (rank 1 = highest scorer)
+    """
+    from collections import defaultdict
+
+    team_position_players = defaultdict(list)
+
+    for player in players_data:
+        team = player.get('team')
+        position = player.get('position')
+        player_id = player.get('player_id')
+        ppr_ppg = player.get('ppr_ppg', 0)
+
+        if team and position and position in ['QB', 'RB', 'WR', 'TE']:
+            team_position_players[(team, position)].append((player_id, ppr_ppg))
+
+    # Sort and assign ranks
+    rankings = {}
+    for key, player_list in team_position_players.items():
+        sorted_players = sorted(player_list, key=lambda x: x[1], reverse=True)
+        rankings[key] = [(pid, rank+1, ppg) for rank, (pid, ppg) in enumerate(sorted_players)]
+
+    return rankings
+
+
+def _has_blocking_starter(
+    player_id: str,
+    team: str,
+    position: str,
+    team_rankings: Dict,
+    age: float,
+    players_data: List[dict],
+    opportunity_opened_score: float
+) -> bool:
+    """
+    Check if player is blocked by an established starter on the same team.
+
+    Blocking criteria:
+    - Another player on same team/position is ranked 2+ spots higher
+    - Blocker finished top-12 at position last season (established starter)
+    - Blocker is within 2 years of candidate's age (not aging out)
+
+    Exception:
+    - If opportunity_opened_score > 75, don't penalize (starter is leaving)
+
+    Returns:
+        True if blocked, False otherwise
+    """
+    # Exception: High opportunity opened means starter is leaving
+    if opportunity_opened_score > 75:
+        return False
+
+    # Find candidate's rank on team
+    team_pos_rankings = team_rankings.get((team, position), [])
+    candidate_rank = None
+    for pid, rank, ppg in team_pos_rankings:
+        if pid == player_id:
+            candidate_rank = rank
+            break
+
+    if candidate_rank is None or candidate_rank == 1:
+        return False  # Not found or already team leader
+
+    # Top-12 thresholds (established starter level)
+    TOP_12_THRESHOLDS = {
+        'QB': 16.0,   # ~QB12 level
+        'RB': 10.0,   # ~RB12 level
+        'WR': 11.0,   # ~WR12 level
+        'TE': 8.0     # ~TE12 level
+    }
+
+    threshold = TOP_12_THRESHOLDS.get(position)
+    if threshold is None:
+        return False
+
+    # Check each player ranked higher on team
+    for pid, rank, ppg in team_pos_rankings:
+        if rank < candidate_rank:  # Ranked higher
+            if ppg >= threshold:  # Established starter (top-12)
+                # Check age proximity
+                blocker_data = next((p for p in players_data if p.get('player_id') == pid), None)
+                if blocker_data:
+                    blocker_age = blocker_data.get('age', 0)
+                    if blocker_age and abs(blocker_age - age) <= 2:
+                        return True  # Blocked by similar-age established starter
+
+    return False
+
+
 def _is_established_star(position: Optional[str], prev_usage: Dict) -> bool:
     """
     Hard exclude true established players.
@@ -526,6 +620,11 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
         "too_established": 0,
     }
 
+    # Calculate team rankings for depth chart filtering
+    # Need to get season from candidates (assume all same season)
+    season = candidates[0].get('season', 2026) if candidates else 2026
+    team_rankings = _calculate_team_rankings(candidates, season)
+
     for candidate in candidates:
         player_id = str(candidate.get("player_id", ""))
         prev_usage = usage_by_id.get(player_id, {})
@@ -557,6 +656,35 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
             else:
                 summary["excluded_other"] += 1
             continue
+
+        # Apply depth chart blocking penalty if applicable
+        team = candidate.get('team')
+        if team and position and age is not None:
+            # Get component scores to check opportunity_opened
+            opportunity_opened_score = 0
+            try:
+                component_scores = getattr(candidate, 'component_scores', {})
+                if isinstance(component_scores, dict):
+                    opportunity_opened_score = component_scores.get('opportunity_opened', 0)
+            except Exception:
+                pass
+
+            if _has_blocking_starter(
+                player_id=player_id,
+                team=team,
+                position=position,
+                team_rankings=team_rankings,
+                age=float(age),
+                players_data=candidates,
+                opportunity_opened_score=opportunity_opened_score
+            ):
+                # Apply 0.3x penalty for depth chart blocking
+                multiplier *= 0.3
+                # Update the attribute as well
+                try:
+                    setattr(candidate, "breakout_candidate_multiplier", multiplier)
+                except Exception:
+                    pass
 
         try:
             candidate.raw_breakout_opportunity_score = _safe_float(candidate.breakout_opportunity_score)

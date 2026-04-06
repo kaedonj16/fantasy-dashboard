@@ -5818,6 +5818,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
+          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '-';
           const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
           const pid = candidate.player_id || '';
 
@@ -5848,7 +5849,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name player-clickable" data-player-id='` + pid + `' data-player-name='` + name + `'>` + name + `</div>
-                  <div class="breakout-player-meta">${{team}} • ${{pos}}</div>
+                  <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
                 </div>
                 <div class="breakout-score-badge" style="background: ${{scoreColor}};">
                   ${{score}}
@@ -7413,10 +7414,35 @@ def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
         from utils.utils import load_players_index, load_model_value_table
+        from dashboard_services.api import get_effective_scoring_settings
+        from dashboard_services.platform_api import sync_league_globals
         import json
         import os
         import glob
         import re
+
+        # Get league context
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season", datetime.now().year))
+
+        # Sync league globals if league_id provided
+        if league_id:
+            sync_league_globals(platform, league_id, season)
+            scoring_settings = get_effective_scoring_settings()
+        else:
+            # Default scoring settings if no league context
+            scoring_settings = {
+                "passYards": 0.04,
+                "passTD": 4.0,
+                "passInterceptions": -2.0,
+                "rushYards": 0.1,
+                "rushTD": 6.0,
+                "pointsPerReception": 1.0,
+                "receivingYards": 0.1,
+                "receivingTD": 6.0,
+                "fumbles": -2.0
+            }
 
         players_index = load_players_index() or {}
         player_meta = players_index.get(player_id, {})
@@ -7548,17 +7574,49 @@ def api_player_details(player_id: str):
                 stats = week_stats.get(player_id)
 
                 if stats:
-                    # Player has stats - calculate fantasy points
+                    # Player has stats - calculate fantasy points using league scoring settings
                     pts = 0.0
-                    pts += (stats.get("pass_yd") or 0) * 0.04
-                    pts += (stats.get("pass_td") or 0) * 4
-                    pts += (stats.get("pass_int") or 0) * -2
-                    pts += (stats.get("rush_yd") or 0) * 0.1
-                    pts += (stats.get("rush_td") or 0) * 6
-                    pts += (stats.get("rec") or 0) * 1
-                    pts += (stats.get("rec_yd") or 0) * 0.1
-                    pts += (stats.get("rec_td") or 0) * 6
-                    pts += (stats.get("fum_lost") or 0) * -2
+                    
+                    # Base scoring
+                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
+                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
+                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
+                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
+                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
+                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
+                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
+                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
+                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
+                    
+                    # Yardage bonuses
+                    pass_yds = stats.get("pass_yd") or 0
+                    rush_yds = stats.get("rush_yd") or 0
+                    rec_yds = stats.get("rec_yd") or 0
+                    rush_rec_yds = rush_yds + rec_yds
+                    
+                    # Pass yardage bonuses
+                    if pass_yds >= 400:
+                        pts += scoring_settings.get("bonus_pass_yd_400", 0)
+                    elif pass_yds >= 300:
+                        pts += scoring_settings.get("bonus_pass_yd_300", 0)
+                    
+                    # Rush yardage bonuses
+                    if rush_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_yd_200", 0)
+                    elif rush_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_yd_100", 0)
+                    
+                    # Receiving yardage bonuses
+                    if rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rec_yd_200", 0)
+                    elif rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rec_yd_100", 0)
+                    
+                    # Combined rush/rec yardage bonuses
+                    if rush_rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
+                    elif rush_rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
 
                     game_log = {
                         "week": week_num,

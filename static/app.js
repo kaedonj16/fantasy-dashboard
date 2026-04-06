@@ -1331,7 +1331,7 @@ window.initTradePage = function initTradePage(root = document) {
         metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
       }
 
-      metaEl.innerHTML = metaBits.join(" · ");
+      metaEl.innerHTML = metaBits.join(" • ");
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -3318,6 +3318,17 @@ document.addEventListener('DOMContentLoaded', function() {
 function openPlayerModal(playerId, playerName) {
   console.log('Opening player modal for ID:', playerId, 'Name:', playerName); // Debug: Log player info
   
+  // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const platform = pathParts[0] || 'sleeper';
+  const season = pathParts[1] || new Date().getFullYear();
+  const leagueId = pathParts[2] || null;
+  
+  // Build API URL with league context if available
+  const apiUrl = leagueId 
+    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}`
+    : `/api/player-details/${playerId}`;
+  
   // Create modal overlay
   const overlay = document.createElement('div');
   overlay.className = 'player-modal-overlay';
@@ -3355,7 +3366,7 @@ function openPlayerModal(playerId, playerName) {
   document.body.style.overflow = 'hidden';
 
   // Fetch player data
-  fetch(`/api/player-details/${playerId}`)
+  fetch(apiUrl)
     .then(res => res.json())
     .then(data => {
       console.log('Player modal data received:', data); // Debug: Log received data

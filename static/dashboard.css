@@ -7204,7 +7204,6 @@ img, svg, canvas {
   }
 
   /* Hide desktop utility icons except changelog and dark mode */
-  .nav-utility-bar .league-switcher-wrapper,
   .nav-utility-bar .logout-btn {
     display: none;
   }

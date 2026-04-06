@@ -91,8 +91,10 @@ class ExplainabilityEngine:
             years_exp = details.get('years_exp', 0)
             draft_score = details.get('draft_score')
             age = details.get('age', 0)
+            efficiency_score = details.get('efficiency_score', 0)
+            usage_baseline_score = details.get('usage_baseline_score', 0)
 
-            # Year-based reasons (prime breakout window is years 2-4)
+            # PRIMARY: Year-based reasons (always add if applicable)
             if years_exp == 1:
                 reasons.append("Second-year player (prime breakout window)")
             elif years_exp == 2:
@@ -102,17 +104,21 @@ class ExplainabilityEngine:
             elif years_exp == 0 and age and age < 23:
                 reasons.append("Young player with upside")
 
-            # Draft capital (if available)
-            if draft_score and draft_score > 25:
+            # SECONDARY: Draft capital (add regardless of year match)
+            if draft_score and draft_score > EXPLAIN_READINESS_DRAFT_CAPITAL:
                 round_num = details.get('draft_round')
-                if round_num:
+                if round_num and round_num <= EXPLAIN_READINESS_DRAFT_ROUND_MAX:
                     reasons.append(f"High draft capital (Round {round_num})")
 
-            # Efficiency-based reasons if no year/draft reasons found
-            if not reasons:
-                efficiency_score = details.get('efficiency_score', 0)
-                if efficiency_score > 20:
-                    reasons.append("Strong efficiency metrics")
+            # TERTIARY: Efficiency metrics (add if strong)
+            if efficiency_score > EXPLAIN_READINESS_EFFICIENCY_ELITE:
+                reasons.append("Elite efficiency metrics (yards per opportunity)")
+            elif efficiency_score > EXPLAIN_READINESS_EFFICIENCY_STRONG:
+                reasons.append("Strong efficiency metrics")
+
+            # QUATERNARY: Usage baseline (add if established role)
+            if usage_baseline_score > EXPLAIN_READINESS_USAGE_BASELINE:
+                reasons.append("Established backup opportunity")
 
         # 4. Team environment (if score > threshold)
         if component_scores.get('team_environment', 0) > EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD:

@@ -432,6 +432,26 @@ EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD = 55  # Slightly raised from 50 - only notewo
 EXPLAIN_ROLE_TRAJECTORY_THRESHOLD = 55  # Unchanged
 EXPLAIN_COMPETITION_PENALTY_THRESHOLD = -10  # Unchanged - any significant addition
 
+# Enhanced readiness explanation thresholds
+EXPLAIN_READINESS_EFFICIENCY_ELITE = 30  # Show "Elite efficiency metrics" message
+EXPLAIN_READINESS_EFFICIENCY_STRONG = 20  # Show "Strong efficiency metrics" message
+EXPLAIN_READINESS_USAGE_BASELINE = 15  # Show "Established backup opportunity" message
+EXPLAIN_READINESS_DRAFT_CAPITAL = 25  # Minimum draft score to mention draft capital
+EXPLAIN_READINESS_DRAFT_ROUND_MAX = 3  # Only mention draft capital for rounds 1-3
+
+# Depth Chart Filtering
+DEPTH_CHART_BLOCKING_PENALTY = 0.3  # Multiplier for candidates blocked by established starter
+DEPTH_CHART_AGE_WINDOW = 2  # Years of age difference to consider "similar age"
+DEPTH_CHART_EXCEPTION_OPP_THRESHOLD = 75  # Don't penalize if opportunity score this high
+
+# Top-12 positional thresholds (established starter level)
+TOP_12_PPG_THRESHOLDS = {
+    'QB': 16.0,   # ~QB12 level in PPR
+    'RB': 10.0,   # ~RB12 level in PPR
+    'WR': 11.0,   # ~WR12 level in PPR
+    'TE': 8.0     # ~TE12 level in PPR
+}
+
 # ==============================================================================
 # POSITION-SPECIFIC CONFIGURATIONS
 # ==============================================================================
