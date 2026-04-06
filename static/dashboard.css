@@ -9383,6 +9383,84 @@ img, svg, canvas {
 }
 
 /* ============================================
+   PLAYER RANKINGS PAGE — MOBILE
+   ============================================ */
+@media (max-width: 768px) {
+  #prControls {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  #prControls > div {
+    margin-left: 0 !important;
+  }
+
+  /* Search takes full width */
+  #prControls > div:first-child {
+    max-width: 100% !important;
+  }
+
+  /* Format + Teams on same row */
+  .pr-format-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  /* Position buttons wrap naturally */
+  #prControls .pr-pos-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Sort select full width */
+  #prSort {
+    width: 100%;
+  }
+
+  /* Tighter table grid on mobile: hide Team column */
+  .pr-grid-row {
+    grid-template-columns: 38px 1fr 54px 44px 54px !important;
+  }
+
+  .pr-team {
+    display: none;
+  }
+
+  #prTableHeader span:nth-child(5) {
+    display: none;
+  }
+
+  .pr-name {
+    font-size: 12px;
+  }
+
+  .pr-value {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even tighter: also hide Age column */
+  .pr-grid-row {
+    grid-template-columns: 34px 1fr 52px 52px !important;
+  }
+
+  .pr-age {
+    display: none;
+  }
+
+  #prTableHeader span:nth-child(4) {
+    display: none;
+  }
+
+  .pr-toggle-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+/* ============================================
    PLAYER MODAL
    ============================================ */
 .player-modal-overlay {

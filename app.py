@@ -5771,49 +5771,62 @@ def page_players(platform: str, season: int, league_id: str):
       <div class="card-body" style="padding-top:0;">
 
         <!-- Controls -->
-        <div id="prControls" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:16px 0 12px;">
+        <div id="prControls" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:16px 0 14px;border-bottom:1px solid var(--border);margin-bottom:12px;">
 
           <!-- Search -->
-          <div style="position:relative;flex:1;min-width:180px;max-width:340px;">
+          <div style="position:relative;flex:1;min-width:180px;max-width:320px;">
             <input id="prSearch" type="text" placeholder="Search players…"
-              style="width:100%;padding:8px 12px 8px 34px;border-radius:8px;
+              autocomplete="off"
+              style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
                      border:1px solid var(--border);background:var(--card-bg);
                      color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
             <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
                          color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
-            <div id="prSearchDropdown"
-              style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;
-                     background:var(--card);border:1px solid var(--border);border-radius:8px;
-                     box-shadow:0 8px 24px rgba(0,0,0,0.15);z-index:9000;
-                     max-height:320px;overflow-y:auto;"></div>
+            <button id="prSearchClear" onclick="prClearSearch()"
+              style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                     background:none;border:none;cursor:pointer;color:var(--text-muted);
+                     font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
           </div>
 
           <!-- League type toggle -->
-          <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-            <button id="pr1qbBtn" class="pr-league-btn active" onclick="prSetLeagueType('1qb')"
-              style="padding:7px 13px;font-size:12px;font-weight:600;border:none;cursor:pointer;
-                     background:var(--accent);color:#fff;transition:background 0.15s,color 0.15s;">1QB</button>
-            <button id="prSfBtn" class="pr-league-btn" onclick="prSetLeagueType('sf')"
-              style="padding:7px 13px;font-size:12px;font-weight:600;border:none;cursor:pointer;
-                     background:var(--card-bg);color:var(--text-muted);transition:background 0.15s,color 0.15s;">SF</button>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Format</span>
+            <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+              <button id="pr1qbBtn" class="pr-toggle-btn active" onclick="prSetLeagueType('1qb')">1QB</button>
+              <button id="prSfBtn"  class="pr-toggle-btn"        onclick="prSetLeagueType('sf')">SF</button>
+            </div>
+          </div>
+
+          <!-- League size -->
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Teams</span>
+            <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+              <button class="pr-toggle-btn pr-size-btn" data-size="8"  onclick="prSetSize(8)">8</button>
+              <button class="pr-toggle-btn pr-size-btn active" data-size="10" onclick="prSetSize(10)">10</button>
+              <button class="pr-toggle-btn pr-size-btn" data-size="12" onclick="prSetSize(12)">12</button>
+              <button class="pr-toggle-btn pr-size-btn" data-size="14" onclick="prSetSize(14)">14</button>
+            </div>
           </div>
 
           <!-- Position filters -->
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="pr-pos-btn active" data-pos="ALL" onclick="prSetPos('ALL')">All</button>
-            <button class="pr-pos-btn" data-pos="QB" onclick="prSetPos('QB')">QB</button>
-            <button class="pr-pos-btn" data-pos="RB" onclick="prSetPos('RB')">RB</button>
-            <button class="pr-pos-btn" data-pos="WR" onclick="prSetPos('WR')">WR</button>
-            <button class="pr-pos-btn" data-pos="TE" onclick="prSetPos('TE')">TE</button>
-            <button class="pr-pos-btn" data-pos="PICK" onclick="prSetPos('PICK')">Picks</button>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Position</span>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;">
+              <button class="pr-pos-btn active" data-pos="ALL"  onclick="prTogglePos('ALL')">All</button>
+              <button class="pr-pos-btn"        data-pos="QB"   onclick="prTogglePos('QB')">QB</button>
+              <button class="pr-pos-btn"        data-pos="RB"   onclick="prTogglePos('RB')">RB</button>
+              <button class="pr-pos-btn"        data-pos="WR"   onclick="prTogglePos('WR')">WR</button>
+              <button class="pr-pos-btn"        data-pos="TE"   onclick="prTogglePos('TE')">TE</button>
+              <button class="pr-pos-btn"        data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            </div>
           </div>
 
           <!-- Sort -->
-          <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
-            <span style="font-size:12px;color:var(--text-muted);font-weight:500;">Sort:</span>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-left:auto;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Sort</span>
             <select id="prSort" onchange="prRender()"
               style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                     background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;">
+                     background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
               <option value="rank">Rank</option>
               <option value="value">Value</option>
               <option value="age">Age (youngest)</option>
@@ -5833,7 +5846,7 @@ def page_players(platform: str, season: int, league_id: str):
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:44px 1fr 60px 54px 54px 64px;
+             grid-template-columns:44px 1fr 64px 50px 50px 64px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -5852,7 +5865,7 @@ def page_players(platform: str, season: int, league_id: str):
         <!-- Empty state -->
         <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
           <div style="font-size:24px;margin-bottom:8px;">🔍</div>
-          No players match your search
+          No players match your filters
         </div>
 
       </div>
@@ -5861,26 +5874,17 @@ def page_players(platform: str, season: int, league_id: str):
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 44px 1fr 60px 54px 54px 64px;
+        grid-template-columns: 44px 1fr 64px 50px 50px 64px;
         align-items: center;
         gap: 0;
       }
       .pr-player-row {
         padding: 9px 12px;
-        border-radius: 8px;
         cursor: pointer;
         transition: background 0.12s ease;
       }
-      .pr-player-row:hover {
-        background: var(--accent-soft);
-      }
-      .pr-player-row + .pr-player-row {
-        border-top: 1px solid var(--border);
-        border-radius: 0;
-      }
-      .pr-player-row:last-child {
-        border-radius: 0 0 8px 8px;
-      }
+      .pr-player-row:hover { background: var(--accent-soft); }
+      .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       .pr-rank {
         font-size: 12px;
         font-weight: 700;
@@ -5894,6 +5898,7 @@ def page_players(platform: str, season: int, league_id: str):
         align-items: center;
         gap: 5px;
         flex-wrap: wrap;
+        min-width: 0;
       }
       .pr-pos-cell {
         text-align: center;
@@ -5906,7 +5911,7 @@ def page_players(platform: str, season: int, league_id: str):
         font-size: 12px;
         color: var(--text-muted);
       }
-      .pr-pick {
+      .pr-team {
         text-align: right;
         font-size: 11px;
         color: var(--text-muted);
@@ -5918,7 +5923,7 @@ def page_players(platform: str, season: int, league_id: str):
         color: var(--accent);
       }
       .pr-pos-btn {
-        padding: 5px 12px;
+        padding: 5px 11px;
         border-radius: 999px;
         border: 1px solid var(--border);
         background: var(--card-bg);
@@ -5933,28 +5938,32 @@ def page_players(platform: str, season: int, league_id: str):
         color: #fff;
         border-color: var(--accent);
       }
-      .pr-search-dropdown-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 9px 12px;
+      .pr-toggle-btn {
+        padding: 6px 13px;
+        font-size: 12px;
+        font-weight: 600;
+        border: none;
         cursor: pointer;
-        transition: background 0.1s;
-        gap: 8px;
+        background: var(--card-bg);
+        color: var(--text-muted);
+        transition: background 0.12s, color 0.12s;
+        min-height: 34px;
       }
-      .pr-search-dropdown-item:hover { background: var(--accent-soft); }
-      .pr-search-dropdown-item + .pr-search-dropdown-item { border-top: 1px solid var(--border); }
-      .pr-search-item-left { display:flex;flex-direction:column;gap:2px;min-width:0; }
-      .pr-search-item-name { font-size:13px;font-weight:600;color:var(--text); }
-      .pr-search-item-meta { font-size:11px;color:var(--text-muted); }
-      .pr-search-item-value { font-size:13px;font-weight:700;color:var(--accent);flex-shrink:0; }
+      .pr-toggle-btn.active {
+        background: var(--accent);
+        color: #fff;
+      }
+      .pr-toggle-btn + .pr-toggle-btn {
+        border-left: 1px solid var(--border);
+      }
     </style>
 
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
       var prLeagueType = '1qb';
-      var prPosFilter = 'ALL';
+      var prLeagueSize = 10;
+      var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
 
@@ -5982,7 +5991,14 @@ def page_players(platform: str, season: int, league_id: str):
       }
 
       function prGetValue(p) {
-        const base = prLeagueType === 'sf' ? (Number(p.sf_value || p.value || 0)) : Number(p.value || 0);
+        let base;
+        if (prLeagueType === 'sf') {
+          const key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
+          base = Number(p[key] ?? p.sf_value ?? p.value ?? 0);
+        } else {
+          const key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
+          base = Number(p[key] ?? p.value ?? 0);
+        }
         return Math.round(base * 10) / 10;
       }
 
@@ -6001,62 +6017,100 @@ def page_players(platform: str, season: int, league_id: str):
 
       function prSetLeagueType(type) {
         prLeagueType = type;
-        document.getElementById('pr1qbBtn').style.background = type === '1qb' ? 'var(--accent)' : 'var(--card-bg)';
-        document.getElementById('pr1qbBtn').style.color    = type === '1qb' ? '#fff' : 'var(--text-muted)';
-        document.getElementById('prSfBtn').style.background = type === 'sf' ? 'var(--accent)' : 'var(--card-bg)';
-        document.getElementById('prSfBtn').style.color    = type === 'sf' ? '#fff' : 'var(--text-muted)';
+        document.getElementById('pr1qbBtn').classList.toggle('active', type === '1qb');
+        document.getElementById('prSfBtn').classList.toggle('active', type === 'sf');
         prRender();
       }
 
-      function prSetPos(pos) {
-        prPosFilter = pos;
-        document.querySelectorAll('.pr-pos-btn').forEach(b => {
-          b.classList.toggle('active', b.getAttribute('data-pos') === pos);
+      function prSetSize(size) {
+        prLeagueSize = size;
+        document.querySelectorAll('.pr-size-btn').forEach(b => {
+          b.classList.toggle('active', Number(b.getAttribute('data-size')) === size);
         });
         prRender();
       }
 
-      // Sort and filter players, then render rows
+      // Multi-select position toggle
+      function prTogglePos(pos) {
+        if (pos === 'ALL') {
+          prPosFilters.clear();
+        } else {
+          if (prPosFilters.has(pos)) {
+            prPosFilters.delete(pos);
+          } else {
+            prPosFilters.add(pos);
+          }
+        }
+        // Sync button states
+        document.querySelectorAll('.pr-pos-btn').forEach(b => {
+          const p = b.getAttribute('data-pos');
+          if (p === 'ALL') {
+            b.classList.toggle('active', prPosFilters.size === 0);
+          } else {
+            b.classList.toggle('active', prPosFilters.has(p));
+          }
+        });
+        prRender();
+      }
+
+      function prClearSearch() {
+        document.getElementById('prSearch').value = '';
+        prSearchQuery = '';
+        document.getElementById('prSearchClear').style.display = 'none';
+        prRender();
+      }
+
+      // Build overall rank map keyed by player id (ranked by current value)
+      function prBuildRankMap() {
+        const ranked = prAllPlayers
+          .filter(p => p.position !== 'PICK')
+          .slice()
+          .sort((a, b) => prGetValue(b) - prGetValue(a));
+        return new Map(ranked.map((p, i) => [String(p.id), i + 1]));
+      }
+
+      // Sort and filter players, then render rows into the main table
       function prRender() {
         if (!prLoaded) return;
-        const query = prSearchQuery;
         const sortBy = document.getElementById('prSort').value;
-
-        // If there's a search query use search dropdown instead of main list
-        if (query.length > 0) {
-          renderSearchDropdown(query);
-        } else {
-          document.getElementById('prSearchDropdown').style.display = 'none';
-        }
 
         let players = prAllPlayers.slice();
 
-        // Position filter
-        if (prPosFilter !== 'ALL') {
-          players = players.filter(p => p.position === prPosFilter);
+        // Position filter (multi-select)
+        if (prPosFilters.size > 0) {
+          players = players.filter(p => prPosFilters.has(p.position));
         }
 
-        // Sort
-        players.sort((a, b) => {
-          if (sortBy === 'value') {
-            return prGetValue(b) - prGetValue(a);
-          } else if (sortBy === 'age') {
-            const ageA = a.age != null ? a.age : 99;
-            const ageB = b.age != null ? b.age : 99;
-            return ageA - ageB;
-          } else if (sortBy === 'pos_rank') {
-            const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
-            const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
-            return rA - rB;
-          } else {
-            // rank: sort by value (same as rank order set on load)
-            return prGetValue(b) - prGetValue(a);
-          }
-        });
+        // Search filter — fuzzy match, sort by score when query present
+        if (prSearchQuery.length > 0) {
+          const scored = players
+            .map(p => ({
+              p,
+              score: Math.max(prFuzzyScore(p.name, prSearchQuery), prFuzzyScore(p.search_name, prSearchQuery))
+            }))
+            .filter(x => x.score > 0)
+            .sort((a, b) => b.score !== a.score ? b.score - a.score : prGetValue(b.p) - prGetValue(a.p));
+          players = scored.map(x => x.p);
+        } else {
+          // Normal sort when no search query
+          players.sort((a, b) => {
+            if (sortBy === 'value') {
+              return prGetValue(b) - prGetValue(a);
+            } else if (sortBy === 'age') {
+              return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+            } else if (sortBy === 'pos_rank') {
+              const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
+              const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
+              return rA - rB;
+            } else {
+              return prGetValue(b) - prGetValue(a);
+            }
+          });
+        }
 
-        const list = document.getElementById('prList');
-        const empty = document.getElementById('prEmpty');
-        const count = document.getElementById('prCount');
+        const list   = document.getElementById('prList');
+        const empty  = document.getElementById('prEmpty');
+        const count  = document.getElementById('prCount');
         const header = document.getElementById('prTableHeader');
 
         if (players.length === 0) {
@@ -6072,12 +6126,7 @@ def page_players(platform: str, season: int, league_id: str):
         count.style.display = 'block';
         count.textContent = players.length + ' player' + (players.length !== 1 ? 's' : '');
 
-        // Build overall rank map (by 1qb value)
-        const ranked = prAllPlayers
-          .filter(p => p.position !== 'PICK')
-          .slice()
-          .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
-        const rankMap = new Map(ranked.map((p, i) => [String(p.id), i + 1]));
+        const rankMap = prBuildRankMap();
 
         list.innerHTML = '';
         players.forEach((p, idx) => {
@@ -6087,109 +6136,48 @@ def page_players(platform: str, season: int, league_id: str):
           row.setAttribute('data-player-name', p.name || '');
 
           const displayRank = p.position === 'PICK' ? '' : (rankMap.get(String(p.id)) || (idx + 1));
-          const posRank = prLeagueType === 'sf' ? (p.sf_pos_rank_label || p.pos_rank_label || p.position) : (p.pos_rank_label || p.position);
+          const posRank = prLeagueType === 'sf'
+            ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
+            : (p.pos_rank_label || p.position);
           const age = p.age != null ? Number(p.age).toFixed(1) : '—';
           const val = prGetValue(p);
 
           let badges = '';
-          if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
+          if (prIsRookie(p.id))   badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
 
           row.innerHTML =
-            '<span class="pr-rank">' + (displayRank ? '#' + displayRank : '—') + '</span>' +
-            '<span class="pr-name">' + (p.name || 'Unknown') + badges + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-name">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
-            '<span class="pr-age">' + (p.position === 'PICK' ? '—' : age) + '</span>' +
-            '<span class="pr-pick" style="text-align:right;font-size:12px;color:var(--text-muted);">' + (p.team || '—') + '</span>' +
+            '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
+            '<span class="pr-team">'  + (p.team || '—') + '</span>' +
             '<span class="pr-value">' + prFormatValue(val) + '</span>';
 
           list.appendChild(row);
         });
 
-        // Activate player modal clicks
-        if (typeof initGlobalPlayerModals === 'function') initGlobalPlayerModals();
-      }
-
-      // Search dropdown (like trade calc)
-      function renderSearchDropdown(query) {
-        const dd = document.getElementById('prSearchDropdown');
-        const matches = prAllPlayers
-          .map(p => ({
-            p,
-            score: Math.max(prFuzzyScore(p.name, query), prFuzzyScore(p.search_name, query))
-          }))
-          .filter(x => x.score > 0)
-          .sort((a, b) => {
-            if (b.score !== a.score) return b.score - a.score;
-            return prGetValue(b.p) - prGetValue(a.p);
-          })
-          .slice(0, 20)
-          .map(x => x.p);
-
-        dd.innerHTML = '';
-        if (!matches.length) {
-          dd.style.display = 'none';
-          return;
-        }
-
-        matches.forEach(p => {
-          const item = document.createElement('div');
-          item.className = 'pr-search-dropdown-item player-clickable';
-          item.setAttribute('data-player-id', p.id);
-          item.setAttribute('data-player-name', p.name || '');
-
-          const posRank = prLeagueType === 'sf' ? (p.sf_pos_rank_label || p.pos_rank_label || p.position) : (p.pos_rank_label || p.position);
-          const age = p.age != null ? Number(p.age).toFixed(1) + ' yrs' : '';
-          const val = prGetValue(p);
-
-          let badges = '';
-          if (prIsRookie(p.id)) badges += ' <span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsBreakout(p.id)) badges += ' <span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
-
-          const meta = [posRank, p.team, age].filter(Boolean).join(' • ') + badges;
-
-          item.innerHTML =
-            '<div class="pr-search-item-left">' +
-              '<div class="pr-search-item-name">' + (p.name || 'Unknown') + '</div>' +
-              '<div class="pr-search-item-meta">' + meta + '</div>' +
-            '</div>' +
-            '<div class="pr-search-item-value">' + prFormatValue(val) + '</div>';
-
-          dd.appendChild(item);
-        });
-
-        dd.style.display = 'block';
         if (typeof initGlobalPlayerModals === 'function') initGlobalPlayerModals();
       }
 
       // Wire up search input
       (function() {
-        const inp = document.getElementById('prSearch');
-        const dd  = document.getElementById('prSearchDropdown');
+        const inp   = document.getElementById('prSearch');
+        const clear = document.getElementById('prSearchClear');
         if (!inp) return;
 
         inp.addEventListener('input', function() {
           prSearchQuery = inp.value.trim();
-          if (prSearchQuery.length === 0) {
-            dd.style.display = 'none';
-          } else {
-            renderSearchDropdown(prSearchQuery);
-          }
-        });
-
-        inp.addEventListener('blur', function() {
-          setTimeout(() => { dd.style.display = 'none'; }, 180);
-        });
-
-        inp.addEventListener('focus', function() {
-          if (prSearchQuery.length > 0) renderSearchDropdown(prSearchQuery);
+          clear.style.display = prSearchQuery.length > 0 ? 'block' : 'none';
+          prRender();
         });
       })();
 
       // Load data
       Promise.all([
         fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
-        fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}))
+        fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
+          .then(r => r.json()).catch(() => ({}))
       ]).then(([players, indicators]) => {
         prIndicators = indicators || {};
         const rawPlayers = Array.isArray(players) ? players : [];
@@ -6197,18 +6185,24 @@ def page_players(platform: str, season: int, league_id: str):
         prAllPlayers = rawPlayers
           .filter(p => p && p.id != null)
           .map(p => ({
-            id: String(p.id),
-            name: p.name || p.full_name || 'Unknown',
-            team: p.team || '',
-            position: String(p.position || '').toUpperCase(),
-            age: p.age != null ? Number(p.age) : null,
-            value: Number(p.value || 0),
-            sf_value: Number(p.sf_value || p.value || 0),
-            pos_rank_label: p.pos_rank_label || '',
-            sf_pos_rank_label: p.sf_pos_rank_label || '',
-            pos_rank: Number(p.pos_rank || 9999),
-            sf_pos_rank: Number(p.sf_pos_rank || 9999),
-            search_name: p.search_name || '',
+            id:               String(p.id),
+            name:             p.name || p.full_name || 'Unknown',
+            team:             p.team || '',
+            position:         String(p.position || '').toUpperCase(),
+            age:              p.age != null ? Number(p.age) : null,
+            value:            Number(p.value    || 0),
+            value_8:          Number(p.value_8  || p.value    || 0),
+            value_12:         Number(p.value_12 || p.value    || 0),
+            value_14:         Number(p.value_14 || p.value    || 0),
+            sf_value:         Number(p.sf_value    || p.value || 0),
+            sf_value_8:       Number(p.sf_value_8  || p.sf_value || p.value || 0),
+            sf_value_12:      Number(p.sf_value_12 || p.sf_value || p.value || 0),
+            sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
+            pos_rank_label:   p.pos_rank_label    || '',
+            sf_pos_rank_label:p.sf_pos_rank_label || '',
+            pos_rank:         Number(p.pos_rank    || 9999),
+            sf_pos_rank:      Number(p.sf_pos_rank || 9999),
+            search_name:      p.search_name || '',
           }))
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position))
           .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));

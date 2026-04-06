@@ -5,6 +5,18 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-04-06",
+        "tag": "new",
+        "text": "Player Rankings: New dedicated page with searchable, filterable player rankings — filter by position (multi-select), league format, team count, and sort by rank, value, age, or positional rank",
+        "link": "/players"
+    },
+    {
+        "date": "2026-04-06",
+        "tag": "feature",
+        "text": "Players Nav Menu: Breakouts and Player Rankings are now grouped under a Players dropdown in the nav bar",
+        "link": "/players"
+    },
+    {
         "date": "2026-04-02",
         "tag": "new",
         "text": "Breakouts Page: Dedicated dashboard for breakout candidates with opportunity projections and scoring",
