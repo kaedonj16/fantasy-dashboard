@@ -398,6 +398,82 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     return row
 
 
+def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
+    """
+    Fetch exact games played per player per season using the CFBD /games/players endpoint.
+
+    The /games/players endpoint returns one game-object per game played, each containing
+    nested team → category → athlete stat rows.  By walking the structure and collecting
+    unique game IDs per player name we get an exact games-played count — far more
+    accurate than the hardcoded default of 12.
+
+    Returns:
+        {player_name_lower: {year: games_played_count}}
+
+    Only skill positions (QB/RB/WR/TE) are tracked.
+    3 API calls total (one per season year) — not one per player.
+    """
+    if not CFBD_KEY:
+        print("[cfbd_gp] No CFBD_API_KEY — skipping games-played lookup")
+        return {}
+
+    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
+
+    _SKILL = {"QB", "RB", "WR", "TE"}
+
+    for yr in years:
+        print(f"[cfbd_gp] Fetching /games/players for {yr}")
+        try:
+            data = _cfbd_get("/games/players", {"year": yr, "seasonType": "regular"}) or []
+        except Exception as exc:
+            print(f"[cfbd_gp] ERROR fetching /games/players for {yr} — {exc}")
+            continue
+
+        if not data:
+            print(f"[cfbd_gp] No data returned for {yr}")
+            continue
+
+        # Each element in `data` is one game.  Structure:
+        # { "id": <game_id>, "teams": [ { "school": {...}, "categories": [
+        #     { "name": "receiving", "types": [
+        #         { "name": "YDS", "athletes": [
+        #             { "name": "Travis Hunter", "id": "...", "stat": "..." }
+        #         ]}
+        #     ]}
+        # ]}]}
+        #
+        # Track: player_name_lower → set of game_ids they appeared in.
+        player_games: Dict[str, set] = {}
+
+        for game_obj in data:
+            game_id = game_obj.get("id")
+            if not game_id:
+                continue
+            for team in (game_obj.get("teams") or []):
+                for category in (team.get("categories") or []):
+                    for stat_type in (category.get("types") or []):
+                        for athlete in (stat_type.get("athletes") or []):
+                            a_name = (athlete.get("name") or "").lower().strip()
+                            if not a_name:
+                                continue
+                            player_games.setdefault(a_name, set()).add(game_id)
+
+        # Convert sets to counts and merge into result
+        count = 0
+        for player_name, game_ids in player_games.items():
+            gp = len(game_ids)
+            if player_name not in result:
+                result[player_name] = {}
+            result[player_name][yr] = gp
+            count += 1
+
+        print(f"[cfbd_gp] {yr}: resolved games-played for {count} players")
+
+    print(f"[cfbd_gp] COMPLETE: {len(result)} players across {len(years)} seasons")
+    return result
+
+
 def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -439,6 +515,15 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
             except Exception as exc:
                 print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}
+
+        # Games-played lookup from /games/players (separate endpoint)
+        print("[cfbd] Fetching games played from /games/players endpoint")
+        try:
+            games_played_map = fetch_cfbd_games_played(draft_year)
+            print(f"[cfbd] Games played resolved for {len(games_played_map)} players")
+        except Exception as exc:
+            print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")
+            games_played_map = {}
 
         # Player season stats — indexed by name and by player ID
         print("[cfbd] Fetching player season stats")
@@ -483,9 +568,9 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
                     rows = by_name.get(yr, {}).get(name, [])
                     if not rows:
                         continue
-                    # games_played not available from CFBD - will default to 12 in scoring
                     try:
-                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, None))
+                        gp = (games_played_map.get(name) or {}).get(yr)
+                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp))
                         # print(name)
                         # print(seasons)
                     except Exception as exc:
@@ -522,6 +607,45 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _ESPN_SEARCH_URL = "https://site.api.espn.com/apis/common/v3/search"
+
+
+def _extract_espn_items(data: dict) -> list:
+    """
+    Handle both ESPN search response shapes:
+      Format A (current):  {"items": [...]}
+      Format B (older):    {"results": [{"contents": [...]}]}
+    Returns a flat list of candidate item dicts.
+    """
+    items = data.get("items") or []
+    if items:
+        return list(items)
+    # Older format: results > contents
+    flat: list = []
+    for result in (data.get("results") or []):
+        flat.extend(result.get("contents") or [])
+    return flat
+
+
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _names_match(item_name: str, query_name: str) -> bool:
+    """
+    Tolerant name comparison: strip common suffixes, normalise
+    hyphens/apostrophes/periods to spaces, and compare case-insensitively.
+    Handles: "Patrick Mahomes II" == "Patrick Mahomes",
+             "Brian Robinson Jr." == "Brian Robinson",
+             "Ja'Marr Chase" == "JaMarr Chase", etc.
+    """
+    def _norm(n: str) -> str:
+        n = n.lower().strip()
+        n = re.sub(r"\.", "", n)                # remove periods entirely (D.J. → DJ)
+        n = re.sub(r"['\-\u2019]", " ", n)     # apostrophes/hyphens → space
+        n = re.sub(r"\s+", " ", n).strip()
+        parts = [p for p in n.split() if p not in _NAME_SUFFIXES]
+        return " ".join(parts)
+
+    return _norm(item_name) == _norm(query_name)
 
 
 def _age_at_date(dob_str: str, ref_year: int, ref_month: int = 4, ref_day: int = 25) -> Optional[float]:
@@ -567,87 +691,93 @@ def fetch_espn_ages(names: List[str], draft_year: int,
             print(f"[espn_ages] Processed {i + 1}/{len(names)} prospects ({len(result)} ages found, {failed_requests} request fails, {no_dob_found} no DOB)")
         
         name_norm = name.lower().strip()
-        data = None
-        
-        try:
-            resp = requests.get(
-                _ESPN_SEARCH_URL,
-                params={"query": name, "sport": "football",
-                        "type": "player", "limit": "5"},
-                headers={"Accept": "application/json"},
-                timeout=10,
-            )
 
-            print(f"[espn_ages] {name}: HTTP {resp.status_code}")
-            resp.raise_for_status()
-            data = resp.json()
-
-        except requests.Timeout:
-            print(f"[espn_ages] {name}: TIMEOUT after 10s")
-            failed_requests += 1
-            time.sleep(delay)
-            continue
-        except requests.HTTPError as exc:
-            if exc.response.status_code == 429:
-                print(f"[espn_ages] {name}: RATE LIMITED (429) — backing off")
-            else:
-                print(f"[espn_ages] {name}: HTTP {exc.response.status_code} - {exc.response.reason}")
-            failed_requests += 1
-            time.sleep(delay * 2)  # Extra delay on errors
-            continue
-        except requests.RequestException as exc:
-            print(f"[espn_ages] {name}: Request failed — {type(exc).__name__}: {exc}")
-            failed_requests += 1
-            time.sleep(delay)
-            continue
-        except Exception as exc:
-            print(f"[espn_ages] {name}: UNEXPECTED ERROR during request — {type(exc).__name__}: {exc}")
-            failed_requests += 1
-            time.sleep(delay)
-            continue
-
+        # Try sport=football first (covers both NFL + CFB entries).
+        # If no DOB found, retry with sport=college-football which sometimes
+        # returns a different result set with DOB populated.
+        sports_to_try = ["football", "college-football"]
         dob: Optional[str] = None
         found_match = False
 
-        # Handle new ESPN API format - items array directly under root
-        try:
-            items = data.get("items", [])
-            if not items:
-                print(f"[espn_ages] {name}: No items in response")
-                
-            for item in items:
-                # ESPN uses "player" type, not "athlete"
-                item_type = item.get("type")
-                if item_type not in ("player", "athlete"):
-                    continue
-                    
-                item_name = (item.get("displayName") or "").lower().strip()
-                if item_name != name_norm:
-                    continue
-                    
-                found_match = True
-                # Prefer college-football entry; fall back to any match
-                league = item.get("league", "")
-                if isinstance(league, dict):
-                    league_name = league.get("name", "")
-                else:
-                    league_name = str(league)
-                    
-                candidate = item.get("dateOfBirth")
-                if candidate:
-                    dob = candidate
-                    print(f"[espn_ages] {name}: Found DOB={dob} (league={league_name})")
-                    if "college" in league_name.lower():
-                        break  # best match found
-                else:
-                    print(f"[espn_ages] {name}: Match found but no dateOfBirth")
-                    
-        except Exception as exc:
-            print(f"[espn_ages] {name}: ERROR parsing ESPN response — {type(exc).__name__}: {exc}")
-            failed_parsing += 1
-            time.sleep(delay)
-            continue
+        for sport_param in sports_to_try:
+            if dob:
+                break  # already resolved from a previous sport attempt
 
+            data = None
+            request_ok = False
+
+            # Up to 2 attempts per sport (retry on empty/network errors)
+            for attempt in range(2):
+                try:
+                    resp = requests.get(
+                        _ESPN_SEARCH_URL,
+                        params={"query": name, "sport": sport_param,
+                                "type": "player", "limit": "5"},
+                        headers={"Accept": "application/json"},
+                        timeout=10,
+                    )
+                    print(f"[espn_ages] {name} ({sport_param}): HTTP {resp.status_code}")
+                    resp.raise_for_status()
+                    data = resp.json()
+                    request_ok = True
+                    break  # successful fetch
+
+                except requests.Timeout:
+                    print(f"[espn_ages] {name}: TIMEOUT (attempt {attempt + 1})")
+                    time.sleep(1.0)
+                except requests.HTTPError as exc:
+                    code = exc.response.status_code
+                    if code == 429:
+                        print(f"[espn_ages] {name}: RATE LIMITED (429) — backing off 2s")
+                        time.sleep(delay * 2)
+                    else:
+                        print(f"[espn_ages] {name}: HTTP {code} {exc.response.reason}")
+                    break  # don't retry on HTTP errors other than timeout
+                except requests.RequestException as exc:
+                    print(f"[espn_ages] {name}: Request error — {type(exc).__name__}: {exc}")
+                    time.sleep(delay)
+                except Exception as exc:
+                    print(f"[espn_ages] {name}: Unexpected error — {type(exc).__name__}: {exc}")
+                    break
+
+            if not request_ok or data is None:
+                failed_requests += 1
+                continue  # try next sport or give up
+
+            # Parse response — handle both ESPN response shapes via helper
+            try:
+                items = _extract_espn_items(data)
+                if not items:
+                    print(f"[espn_ages] {name} ({sport_param}): No items in response")
+                    continue  # try next sport
+
+                for item in items:
+                    item_type = item.get("type")
+                    if item_type not in ("player", "athlete"):
+                        continue
+
+                    item_display = item.get("displayName") or ""
+                    if not _names_match(item_display, name):
+                        continue
+
+                    found_match = True
+                    league = item.get("league", "")
+                    league_name = league.get("name", "") if isinstance(league, dict) else str(league)
+
+                    candidate = item.get("dateOfBirth")
+                    if candidate:
+                        dob = candidate
+                        print(f"[espn_ages] {name}: Found DOB={dob} (league={league_name}, sport={sport_param})")
+                        if "college" in league_name.lower():
+                            break  # best match — prefer CFB entry
+                    else:
+                        print(f"[espn_ages] {name}: Match found but no dateOfBirth (sport={sport_param})")
+
+            except Exception as exc:
+                print(f"[espn_ages] {name}: ERROR parsing ESPN response — {type(exc).__name__}: {exc}")
+                failed_parsing += 1
+
+        # Resolve age from DOB (or record failure)
         if not found_match:
             print(f"[espn_ages] {name}: No matching player found in ESPN results")
             no_dob_found += 1
