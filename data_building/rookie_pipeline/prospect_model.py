@@ -245,22 +245,31 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
             else:
                 conf_qualities.append(_conf_quality(conf))
 
-        # Check if player transferred to significantly weaker conference
+        # Check for conference quality change across transfers
         for i in range(1, len(conf_qualities)):
             prev_quality = conf_qualities[i-1]
             curr_quality = conf_qualities[i]
+            delta = curr_quality - prev_quality  # positive = upgrade, negative = downgrade
 
-            # If conference quality dropped by 20%+ (e.g., Big Ten 1.00 → FBS Ind 0.70)
-            # apply production discount
-            if prev_quality > curr_quality and (prev_quality - curr_quality) >= 0.20:
-                drop_magnitude = (prev_quality - curr_quality) / prev_quality
-                # 15% penalty for 20% drop, up to 35% penalty for major drops (40%+)
-                penalty = min(0.35, drop_magnitude * 0.75)
+            if delta <= -0.20:
+                # Downward transfer: discount stats that may be inflated by weaker competition
+                drop_magnitude = -delta / prev_quality
+                penalty = min(0.35, drop_magnitude * 0.75)   # 15–35% penalty
                 transfer_penalty *= (1.0 - penalty)
-                break  # Only apply once for most significant drop
+                break
+            elif delta >= 0.15:
+                # Upward transfer: producing in a stronger conference is harder —
+                # reward the player (e.g. FCS → SEC and still put up numbers)
+                upgrade_bonus = min(0.12, (delta / prev_quality) * 0.60)  # up to +12%
+                transfer_penalty *= (1.0 + upgrade_bonus)
+                break
 
     if pos not in ("WR", "RB", "QB", "TE"):
         return 40.0
+
+    # With only one season there is nothing to blend — just score it directly.
+    if len(seasons) == 1:
+        return _clip(_score_production_season(ls, pos) * transfer_penalty)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
@@ -282,6 +291,10 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
 def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
+
+    Uses the latest season as the primary signal.  When multiple seasons are
+    available a consistency bonus (±5) is applied: sustained high efficiency
+    across seasons is more predictive than a single-year peak.
     """
     if not seasons:
         return 45.0
@@ -315,12 +328,39 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
         )
 
     elif pos == "TE":
-        ypr   = _safe(ls.get("yds_per_reception"), 9.0)
-        ms    = _safe(ls.get("market_share_yards"))
-        eff   = _scale(ypr, 8.0, 16.0) * 0.65 + _scale(ms, 0.05, 0.30) * 0.35
+        ypr = _safe(ls.get("yds_per_reception"), 9.0)
+        ms  = _safe(ls.get("market_share_yards"))
+        # Catch rate: receptions / targets measures hands + separation reliability.
+        # Only computed when targets is populated (not always available from CFBD).
+        targets = _safe(ls.get("targets"))
+        recs    = _safe(ls.get("receptions"))
+        catch_rate_score = 50.0  # neutral default when targets unknown
+        if targets > 0:
+            catch_rate = recs / targets
+            catch_rate_score = _scale(catch_rate, 0.55, 0.82)  # 55% → 0, 82%+ → 100
+        eff = (
+            _scale(ypr, 8.0, 16.0) * 0.50 +
+            _scale(ms,  0.05, 0.30) * 0.30 +
+            catch_rate_score         * 0.20
+        )
 
     else:
         return 45.0
+
+    # Multi-season consistency bonus: ±5 points based on whether the key
+    # efficiency metric held up across seasons (sustained efficiency > one-year wonder)
+    if len(seasons) >= 2:
+        _KEY = {"WR": "yds_per_reception", "RB": "yds_per_carry",
+                "QB": "yds_per_attempt",   "TE": "yds_per_reception"}
+        key = _KEY.get(pos)
+        if key:
+            vals = [_safe(s.get(key)) for s in seasons if s.get(key) is not None]
+            if len(vals) >= 2:
+                avg_val = sum(vals) / len(vals)
+                latest_val = _safe(ls.get(key))
+                # Bonus if latest ≈ or exceeds multi-year average; penalty if big drop
+                consistency = (latest_val - avg_val) / max(avg_val, 0.1)
+                eff = _clip(eff + _clip(consistency * 10, -5.0, 5.0))
 
     return _clip(eff)
 
@@ -329,7 +369,7 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
 # Updated to reflect modern college football (COVID year, grad transfers, etc.)
 _TYPICAL_AGE = {"QB": 23.5, "RB": 22.0, "WR": 22.5, "TE": 23.0}
 _AGE_ELITE   = {"QB": 22.0, "RB": 20.5, "WR": 21.0, "TE": 21.5}
-_AGE_WORST   = {"QB": 26.5, "RB": 25.0, "WR": 25.5, "TE": 26.0}   # widened — old ranges were too tight
+_AGE_WORST   = {"QB": 27.5, "RB": 25.0, "WR": 25.5, "TE": 26.0}   # QB more lenient — development timelines vary widely
 
 
 def calc_age_score(age: Optional[float], draft_year: int, position: str) -> float:
@@ -415,12 +455,21 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
 # Position-specific weights for athleticism metrics.
 # Reflects NFL scouting priorities: speed matters most for WR, explosiveness for RB,
 # overall athleticism (RAS) for QB, catching radius (vertical) for TE.
+# three_cone / shuttle = agility/change-of-direction, important for WR routes and RB open-field.
 _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
-    "WR": {"forty": 0.40, "vertical": 0.25, "broad": 0.20, "ras": 0.15, "speed_score": 0.35},
-    "RB": {"speed_score": 0.35, "broad": 0.30, "forty": 0.20, "vertical": 0.15, "ras": 0.20},
+    "WR": {"forty": 0.35, "vertical": 0.20, "broad": 0.15, "ras": 0.15,
+           "speed_score": 0.25, "three_cone": 0.10, "shuttle": 0.05},
+    "RB": {"speed_score": 0.30, "broad": 0.25, "forty": 0.15, "vertical": 0.10,
+           "ras": 0.15, "three_cone": 0.05},
     "QB": {"ras": 0.40, "forty": 0.35, "vertical": 0.15, "broad": 0.10},
-    "TE": {"vertical": 0.35, "ras": 0.30, "broad": 0.20, "forty": 0.15},
+    "TE": {"vertical": 0.30, "ras": 0.25, "broad": 0.20, "forty": 0.15,
+           "three_cone": 0.10},
 }
+
+# Maximum athleticism score when metric coverage is sparse.
+# Prevents a single elite metric (e.g. one 4.28 40-time) from yielding a top score
+# when we have no idea about the rest of the athletic profile.
+_ATH_DATA_CAPS = {1: 72, 2: 84, 3: 93}   # n_metrics_present → cap
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -475,6 +524,18 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
         # Elite ~115+, average ~100
         metric_scores["speed_score"] = _scale(ss_raw, 80.0, 130.0)
 
+    # Agility / change-of-direction (three_cone and short_shuttle).
+    # Inverted: lower time = higher score.
+    three_cone = athleticism.get("three_cone")
+    if three_cone:
+        # Elite ~6.45s, average ~7.0s, poor ~7.4s
+        metric_scores["three_cone"] = _scale(_safe(three_cone), 7.40, 6.45)
+
+    shuttle = athleticism.get("short_shuttle")
+    if shuttle:
+        # Elite ~3.95s, average ~4.25s, poor ~4.55s
+        metric_scores["shuttle"] = _scale(_safe(shuttle), 4.55, 3.95)
+
     if not metric_scores:
         return 55.0
 
@@ -488,10 +549,17 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
             weighted_sum += score * w
             total_weight += w
         if total_weight > 0:
-            return _clip(weighted_sum / total_weight)
+            raw = _clip(weighted_sum / total_weight)
+        else:
+            raw = _clip(sum(metric_scores.values()) / len(metric_scores))
+    else:
+        raw = _clip(sum(metric_scores.values()) / len(metric_scores))
 
-    # Fallback: simple average (handles unknown positions)
-    return _clip(sum(metric_scores.values()) / len(metric_scores))
+    # Apply data completeness cap: a single outstanding metric should not yield
+    # an elite athleticism score when the rest of the profile is unknown.
+    n = len(metric_scores)
+    cap = _ATH_DATA_CAPS.get(n, 100)   # 4+ metrics → no cap
+    return _clip(raw, 0.0, float(cap))
 
 
 def calc_competition_score(seasons: List[Dict]) -> float:
@@ -538,14 +606,25 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
 
     - High pass rate for skill players (WR/TE) is better context (more targets)
     - For RBs, high rush rate inflates volume — slight discount applied
-    - Bonus for high team_total_yards (pass-heavy offence enables big numbers)
+    - Uses a recency-weighted average of team pass rate across all seasons
+      (same decay as competition score) so transferred players aren't locked
+      to their latest team's scheme.
     """
     if not seasons:
         return 50.0
 
     pos = position.upper()
-    ls  = _latest_season(seasons) or {}
-    pass_rate = _safe(ls.get("team_pass_rate"), 0.52)
+
+    # Recency-weighted pass rate: most recent season weight 1.0, decaying by 0.2
+    sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0), reverse=True)
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for i, s in enumerate(sorted_seasons):
+        pr = _safe(s.get("team_pass_rate"), 0.52)
+        w  = max(0.2, 1.0 - i * 0.2)
+        weighted_sum += pr * w
+        total_weight += w
+    pass_rate = weighted_sum / total_weight if total_weight > 0 else 0.52
 
     if pos in ("WR", "TE"):
         # More passing = more opportunities; 55-65% pass rate is ideal
