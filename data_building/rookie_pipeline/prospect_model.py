@@ -134,10 +134,93 @@ def _conf_quality(conference: Optional[str]) -> float:
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _score_production_season(season: Dict, pos: str) -> float:
+    """
+    Compute the raw production score (pre-transfer-penalty) for a single season.
+    Returns the weighted component score (0-100).
+    """
+    gp = max(_safe(season.get("games_played"), 12), 1)
+
+    if pos == "WR":
+        rec_yds_pg = _safe(season.get("receiving_yards")) / gp
+        rec_tds_pg = _safe(season.get("receiving_tds"))   / gp
+        dom        = _safe(season.get("dominator_rating"))
+        return (
+            _scale(rec_yds_pg, 40,  120) * 0.45 +
+            _scale(rec_tds_pg, 0.3, 1.0) * 0.30 +
+            _scale(dom,        0.10, 0.45) * 0.25
+        )
+
+    elif pos == "RB":
+        rush_yds_pg = _safe(season.get("rush_yards"))     / gp
+        rec_yds_pg  = _safe(season.get("receiving_yards")) / gp
+        all_yds_pg  = (
+            _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
+        ) / gp
+        tds_pg      = (
+            _safe(season.get("rush_tds")) + _safe(season.get("receiving_tds"))
+        ) / gp
+        dom         = _safe(season.get("dominator_rating"))
+        ypc         = _safe(season.get("yds_per_carry"))
+
+        prod = (
+            _scale(rush_yds_pg, 40,  160) * 0.35 +
+            _scale(all_yds_pg,  50,  180) * 0.25 +
+            _scale(tds_pg,      0.5,  2.0) * 0.25 +
+            _scale(dom,         0.15, 0.70) * 0.15
+        )
+        if rec_yds_pg >= 20:
+            prod = _clip(prod * 1.10)
+        if ypc >= 6.5:
+            prod = _clip(prod * 1.08)
+        if dom >= 0.30:
+            prod = _clip(prod * 1.12)
+        return prod
+
+    elif pos == "QB":
+        pass_yds_pg = _safe(season.get("pass_yards")) / gp
+        tds_pg      = _safe(season.get("pass_tds"))   / gp
+        comp_pct    = _safe(season.get("completion_pct"), 60.0)
+        ypa         = _safe(season.get("yds_per_attempt"), 7.0)
+        td_int      = _safe(season.get("td_int_ratio"),    2.0)
+        prod = (
+            _scale(pass_yds_pg, 180, 380) * 0.30 +
+            _scale(tds_pg,        1.5,  3.5) * 0.25 +
+            _scale(comp_pct,     60.0, 76.0) * 0.20 +
+            _scale(ypa,           6.5,  10.5) * 0.15 +
+            _scale(td_int,        1.5,   6.0) * 0.10
+        )
+        # Mobile QB bonus: rushing production adds significant fantasy value
+        rush_yds_pg    = _safe(season.get("rush_yards")) / gp
+        rush_tds_season = _safe(season.get("rush_tds"))
+        if rush_yds_pg >= 30:
+            prod = _clip(prod * 1.08)   # 8% for QB with meaningful rushing
+        if rush_yds_pg >= 50:
+            prod = _clip(prod * 1.05)   # additional 5% for elite rushing QB
+        if rush_tds_season >= 5:
+            prod = _clip(prod * 1.04)   # bonus for multi-TD rushing QBs
+        return prod
+
+    elif pos == "TE":
+        rec_yds_pg = _safe(season.get("receiving_yards")) / gp
+        rec_tds_pg = _safe(season.get("receiving_tds"))   / gp
+        dom        = _safe(season.get("dominator_rating"))
+        rec_pg     = _safe(season.get("receptions"))       / gp
+        return (
+            _scale(rec_yds_pg, 30,  95)  * 0.40 +
+            _scale(rec_tds_pg, 0.2, 0.8) * 0.30 +
+            _scale(dom,        0.08, 0.30) * 0.15 +
+            _scale(rec_pg,     2.0,  7.0) * 0.15
+        )
+
+    return 40.0
+
+
 def calc_production_score(seasons: List[Dict], position: str) -> float:
     """
     Per-game production vs position-specific elite thresholds.
-    Uses the best single season to capture peak value.
+    Uses a blend of the best season and latest season to capture both
+    peak value and recent performance.
 
     Transfer penalty: Players who transfer to weaker conferences get
     production discounted, as stats may be inflated by weaker competition.
@@ -176,77 +259,21 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
                 transfer_penalty *= (1.0 - penalty)
                 break  # Only apply once for most significant drop
 
-    if pos == "WR":
-        rec_yds_pg = _safe(ls.get("receiving_yards")) / gp
-        rec_tds_pg = _safe(ls.get("receiving_tds"))   / gp
-        dom        = _safe(ls.get("dominator_rating"))
-        # Elite thresholds: ~90 rec-yds/g, 0.7 td/g, 0.30+ dominator
-        prod = (
-            _scale(rec_yds_pg, 40,  120) * 0.45 +
-            _scale(rec_tds_pg, 0.3, 1.0) * 0.30 +
-            _scale(dom,        0.10, 0.45) * 0.25
-        )
-
-    elif pos == "RB":
-        rush_yds_pg = _safe(ls.get("rush_yards"))     / gp
-        rec_yds_pg  = _safe(ls.get("receiving_yards")) / gp
-        all_yds_pg  = (
-            _safe(ls.get("rush_yards")) + _safe(ls.get("receiving_yards"))
-        ) / gp
-        tds_pg      = (
-            _safe(ls.get("rush_tds")) + _safe(ls.get("receiving_tds"))
-        ) / gp
-        dom         = _safe(ls.get("dominator_rating"))
-        ypc         = _safe(ls.get("yds_per_carry"))
-
-        prod = (
-            _scale(rush_yds_pg, 40,  160) * 0.35 +
-            _scale(all_yds_pg,  50,  180) * 0.25 +
-            _scale(tds_pg,      0.5,  2.0) * 0.25 +
-            _scale(dom,         0.15, 0.70) * 0.15
-        )
-
-        # Three-down back bonus: elite RBs with receiving production
-        # 20+ rec yards/game = elite receiving back
-        if rec_yds_pg >= 20:
-            prod = _clip(prod * 1.10)  # 10% bonus for three-down capability
-
-        # Elite efficiency bonus: YPC > 6.5 is exceptional
-        if ypc >= 6.5:
-            prod = _clip(prod * 1.08)  # 8% bonus for elite efficiency
-
-        # Dominator bonus: > 0.30 is generational (Bijan, Saquon level)
-        if dom >= 0.30:
-            prod = _clip(prod * 1.12)  # 12% bonus for elite dominator
-
-    elif pos == "QB":
-        pass_yds_pg = _safe(ls.get("pass_yards")) / gp
-        tds_pg      = _safe(ls.get("pass_tds"))   / gp
-        comp_pct    = _safe(ls.get("completion_pct"), 60.0)
-        ypa         = _safe(ls.get("yds_per_attempt"), 7.0)
-        td_int      = _safe(ls.get("td_int_ratio"),    2.0)
-        prod = (
-            _scale(pass_yds_pg, 180, 380) * 0.30 +
-            _scale(tds_pg,        1.5,  3.5) * 0.25 +
-            _scale(comp_pct,     60.0, 76.0) * 0.20 +
-            _scale(ypa,           6.5,  10.5) * 0.15 +
-            _scale(td_int,        1.5,   6.0) * 0.10
-        )
-
-    elif pos == "TE":
-        rec_yds_pg = _safe(ls.get("receiving_yards")) / gp
-        rec_tds_pg = _safe(ls.get("receiving_tds"))   / gp
-        dom        = _safe(ls.get("dominator_rating"))
-        rec_pg     = _safe(ls.get("receptions"))       / gp
-        prod = (
-            _scale(rec_yds_pg, 30,  95)  * 0.40 +
-            _scale(rec_tds_pg, 0.2, 0.8) * 0.30 +
-            _scale(dom,        0.08, 0.30) * 0.15 +
-            _scale(rec_pg,     2.0,  7.0) * 0.15
-        )
-
-    else:
+    if pos not in ("WR", "RB", "QB", "TE"):
         return 40.0
+
+    # Score latest season and best individual season; blend to reward peak while
+    # still weighting recent output (NFL analysts evaluate both)
+    latest_score = _score_production_season(ls, pos)
+
+    # Find best season by primary volume metric per position
+    _PEAK_KEY = {"WR": "receiving_yards", "RB": "rush_yards", "QB": "pass_yards", "TE": "receiving_yards"}
+    peak_key = _PEAK_KEY[pos]
+    peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
+    best_score = _score_production_season(peak_season, pos)
+
+    # 85% weight on whichever is higher (recent or peak), 15% on the other
+    prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
 
     # Apply transfer penalty to discourage stat inflation from weak competition
     return _clip(prod * transfer_penalty)
@@ -360,18 +387,40 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             growth = (curr_yds - prev_yds) / prev_yds
             traj_score = _clip(_scale(growth, -0.20, 0.60))
 
-    # Youth at breakout
+    # Youth at breakout — use age at the time of the breakout season, not current age.
+    # A player currently 22 who broke out 2 years ago was 20 at breakout.
     youth_bonus = 0.0
     if age is not None:
-        # Exceptional: playing dominant college ball at ≤20 (≤21 for QB)
         young_thresh = 21 if pos == "QB" else 20
-        if age <= young_thresh:
+
+        # Estimate breakout season age by finding the first season above the dom threshold
+        breakout_age = age  # default to current age if we can't determine breakout year
+        if thresh is not None and sorted_s:
+            current_year = _safe(sorted_s[-1].get("season"), 0)
+            for s in sorted_s:
+                s_year = _safe(s.get("season"), 0)
+                if _safe(s.get("dominator_rating")) >= thresh and s_year > 0 and current_year > 0:
+                    breakout_age = age - (current_year - s_year)
+                    break
+
+        if breakout_age <= young_thresh:
             youth_bonus = 15.0
-        elif age <= young_thresh + 1:
+        elif breakout_age <= young_thresh + 1:
             youth_bonus = 7.0
 
     score = dom_score * 0.50 + traj_score * 0.35 + youth_bonus
     return _clip(score)
+
+
+# Position-specific weights for athleticism metrics.
+# Reflects NFL scouting priorities: speed matters most for WR, explosiveness for RB,
+# overall athleticism (RAS) for QB, catching radius (vertical) for TE.
+_ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
+    "WR": {"forty": 0.40, "vertical": 0.25, "broad": 0.20, "ras": 0.15, "speed_score": 0.35},
+    "RB": {"speed_score": 0.35, "broad": 0.30, "forty": 0.20, "vertical": 0.15, "ras": 0.20},
+    "QB": {"ras": 0.40, "forty": 0.35, "vertical": 0.15, "broad": 0.10},
+    "TE": {"vertical": 0.35, "ras": 0.30, "broad": 0.20, "forty": 0.15},
+}
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -380,23 +429,26 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     when data is missing.
 
     RAS (Relative Athletic Score) is the most reliable single signal (0-10).
-    We also compute a speed score = weight * (40-time^4)^-1 (normalized).
+    Uses position-specific metric weights (e.g., 40-time matters more for WR,
+    vertical for TE, speed score for RB).
     """
     if not athleticism:
         return 55.0
 
     pos = position.upper()
-    scores: List[float] = []
+
+    # Compute individual metric scores (each 0-100)
+    metric_scores: Dict[str, float] = {}
 
     # RAS (0-10 → scale to 0-100)
     ras = athleticism.get("ras_score")
     if ras is not None:
-        scores.append(_scale(_safe(ras), 4.0, 10.0))
+        metric_scores["ras"] = _scale(_safe(ras), 4.0, 10.0)
 
-    # 40-yard dash (position-specific thresholds)
-    forty = athleticism.get("forty_yard")
-    if forty:
-        forty = _safe(forty)
+    # 40-yard dash (position-specific thresholds, inverted: faster = higher score)
+    forty_raw = athleticism.get("forty_yard")
+    if forty_raw:
+        forty = _safe(forty_raw)
         thresholds = {
             "WR":  (4.25, 4.65),
             "RB":  (4.30, 4.65),
@@ -404,31 +456,42 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
             "TE":  (4.45, 4.90),
         }
         lo, hi = thresholds.get(pos, (4.30, 4.90))
-        # Invert: faster (lower) → higher score
-        scores.append(_scale(hi - forty, hi - hi, hi - lo))
+        metric_scores["forty"] = _scale(hi - forty, 0.0, hi - lo)
 
     # Vertical jump
     vert = athleticism.get("vertical_inches")
     if vert:
-        scores.append(_scale(_safe(vert), 28.0, 44.0))
+        metric_scores["vertical"] = _scale(_safe(vert), 28.0, 44.0)
 
     # Broad jump
     broad = athleticism.get("broad_jump_in")
     if broad:
-        scores.append(_scale(_safe(broad), 100, 140))
+        metric_scores["broad"] = _scale(_safe(broad), 100, 140)
 
     # Speed score = weight * (40^4)^-1 * normalisation constant
-    forty = athleticism.get("forty_yard")
-    weight = athleticism.get("weight_lbs")
-    if forty and weight:
-        ss_raw = (_safe(weight) * 200) / (_safe(forty) ** 4)
+    weight_lbs = athleticism.get("weight_lbs")
+    if forty_raw and weight_lbs:
+        ss_raw = (_safe(weight_lbs) * 200) / (_safe(forty_raw) ** 4)
         # Elite ~115+, average ~100
-        scores.append(_scale(ss_raw, 80.0, 130.0))
+        metric_scores["speed_score"] = _scale(ss_raw, 80.0, 130.0)
 
-    if not scores:
+    if not metric_scores:
         return 55.0
 
-    return _clip(sum(scores) / len(scores))
+    # Weighted average using position-specific weights
+    pos_weights = _ATH_WEIGHTS.get(pos, {})
+    if pos_weights:
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for metric, score in metric_scores.items():
+            w = pos_weights.get(metric, 0.10)  # small default weight for unlisted metrics
+            weighted_sum += score * w
+            total_weight += w
+        if total_weight > 0:
+            return _clip(weighted_sum / total_weight)
+
+    # Fallback: simple average (handles unknown positions)
+    return _clip(sum(metric_scores.values()) / len(metric_scores))
 
 
 def calc_competition_score(seasons: List[Dict]) -> float:

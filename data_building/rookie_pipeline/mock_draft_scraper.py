@@ -236,9 +236,100 @@ def scrape_consensus_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
     return all_picks
 
 
-def scrape_cbs_sports_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
+CBS_HUB_URL = "https://www.cbssports.com/nfl/draft/mock-draft/"
+
+
+def _discover_cbs_analyst_urls() -> List[tuple]:
+    """
+    Scrape the CBS Sports mock draft hub page to discover all individual analyst mock URLs.
+
+    Returns list of (url, analyst_name) tuples, e.g.:
+    [
+        ("https://www.cbssports.com/nfl/draft/mock-draft/ryan-wilson/", "Ryan Wilson"),
+        ("https://www.cbssports.com/nfl/draft/mock-draft/josh-edwards/", "Josh Edwards"),
+        ...
+    ]
+    Falls back to [(CBS_HUB_URL, "CBS Sports")] if discovery fails.
+    """
+    log.info("[mock_scraper] Discovering CBS Sports analyst mock draft URLs")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-blink-features=AutomationControlled',
+                ]
+            )
+            page = browser.new_page()
+            page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            page.goto(CBS_HUB_URL, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(5000)
+            html_content = page.content()
+            browser.close()
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        analyst_urls: List[tuple] = []
+        seen_slugs: set = set()
+
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href']
+            # Match paths like /nfl/draft/mock-draft/<slug>/ where slug is not empty
+            # Exclude the hub itself and non-analyst paths
+            m = re.match(r'^/nfl/draft/mock-draft/([a-z][a-z0-9\-]+)/?$', href)
+            if not m:
+                continue
+            slug = m.group(1)
+            # Skip generic/non-analyst slugs
+            if slug in ('2025', '2026', '2027', 'nfl', 'consensus', 'mock-draft'):
+                continue
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+
+            full_url = f"https://www.cbssports.com{href}"
+            if not href.endswith('/'):
+                full_url += '/'
+
+            # Derive analyst name from link text or slug
+            link_text = a_tag.get_text(strip=True)
+            if link_text and len(link_text) > 2 and not link_text.isdigit():
+                analyst_name = link_text
+            else:
+                # Convert slug to title case: "ryan-wilson" → "Ryan Wilson"
+                analyst_name = slug.replace('-', ' ').title()
+
+            analyst_urls.append((full_url, analyst_name))
+            log.info("[mock_scraper] Found analyst mock: %s — %s", analyst_name, full_url)
+
+        if analyst_urls:
+            log.info("[mock_scraper] Discovered %d CBS analyst mocks", len(analyst_urls))
+            return analyst_urls
+
+        log.warning("[mock_scraper] No analyst links found on CBS hub page — falling back to hub URL")
+        return [(CBS_HUB_URL, "CBS Sports")]
+
+    except Exception as exc:
+        log.error("[mock_scraper] Failed to discover CBS analyst URLs: %s", exc)
+        return [(CBS_HUB_URL, "CBS Sports")]
+
+
+def scrape_cbs_sports_mock_draft(
+    draft_year: int,
+    url: Optional[str] = None,
+    analyst_name: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Scrape individual mock draft from CBS Sports.
+
+    Args:
+        draft_year: NFL draft year (used for logging/dating picks).
+        url: Specific analyst mock URL. Defaults to the hub URL.
+        analyst_name: Override analyst name. If None, parsed from page <h1>.
 
     Returns list of mock draft entries:
     [
@@ -255,7 +346,8 @@ def scrape_cbs_sports_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
         ...
     ]
     """
-    url = "https://www.cbssports.com/nfl/draft/mock-draft/"
+    if url is None:
+        url = CBS_HUB_URL
     max_retries = 3
     
     for attempt in range(max_retries):
@@ -300,14 +392,16 @@ def scrape_cbs_sports_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
             soup = BeautifulSoup(html_content, 'html.parser')
 
             # Find the analyst name from the page title or heading
-            analyst_name = "CBS Sports"
-            title_elem = soup.find('h1')
-            if title_elem:
-                title_text = title_elem.get_text()
-                # Extract analyst name from title like "Mike Renner's Mock Draft"
-                match = re.match(r"(.+?)'s Mock Draft", title_text)
-                if match:
-                    analyst_name = match.group(1).strip()
+            # Use passed analyst_name if provided, otherwise parse from page
+            if not analyst_name:
+                analyst_name = "CBS Sports"
+                title_elem = soup.find('h1')
+                if title_elem:
+                    title_text = title_elem.get_text()
+                    # Extract analyst name from title like "Mike Renner's Mock Draft"
+                    match = re.match(r"(.+?)'s Mock Draft", title_text)
+                    if match:
+                        analyst_name = match.group(1).strip()
 
             picks = []
 
@@ -449,18 +543,30 @@ def scrape_cbs_sports_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
 
 def scrape_individual_mocks(draft_year: int, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Scrape individual mock drafts from various analysts.
+    Scrape individual mock drafts from all CBS Sports analysts.
 
-    This provides more data points than just the consensus.
+    Discovers all analyst mock draft URLs from the CBS hub page, then scrapes
+    each one individually so the consensus builder receives picks from all analysts.
     """
     all_mocks = []
 
-    # Scrape CBS Sports
+    # Discover all CBS Sports analyst mock URLs
     try:
-        cbs_picks = scrape_cbs_sports_mock_draft(draft_year)
-        all_mocks.extend(cbs_picks)
+        analyst_urls = _discover_cbs_analyst_urls()
     except Exception as exc:
-        log.error("[mock_scraper] Failed to scrape CBS Sports: %s", exc)
+        log.error("[mock_scraper] URL discovery failed, falling back to hub: %s", exc)
+        analyst_urls = [(CBS_HUB_URL, "CBS Sports")]
 
-    log.info("[mock_scraper] Scraped %d total individual mock entries", len(all_mocks))
+    # Scrape each analyst's mock draft
+    for url, name in analyst_urls:
+        try:
+            log.info("[mock_scraper] Scraping CBS mock for analyst: %s (%s)", name, url)
+            picks = scrape_cbs_sports_mock_draft(draft_year, url=url, analyst_name=name)
+            log.info("[mock_scraper] Got %d picks from %s", len(picks), name)
+            all_mocks.extend(picks)
+        except Exception as exc:
+            log.error("[mock_scraper] Failed to scrape CBS mock for %s: %s", name, exc)
+
+    log.info("[mock_scraper] Scraped %d total individual mock entries from %d analysts",
+             len(all_mocks), len(analyst_urls))
     return all_mocks

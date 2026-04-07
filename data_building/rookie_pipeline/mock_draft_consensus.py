@@ -7,6 +7,7 @@ consensus projection per prospect.
 from __future__ import annotations
 
 import logging
+import statistics
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -97,40 +98,73 @@ def build_mock_draft_consensus_from_scraped(
         log.warning("[mock_draft] No scraped picks provided for %d", draft_year)
         return {}
 
-    consensus_map = {}
+    # First pass: bucket all picks per player
+    player_buckets: Dict[str, Dict[str, Any]] = {}
 
     for pick_data in scraped_picks:
         player_name = pick_data.get("player_name", "").strip()
         if not player_name:
             continue
 
-        # Generate player_id
         player_id = f"ROOKIE_{draft_year}_{_slug(player_name)}"
-
-        # For consensus data, we treat each pick as authoritative
-        position = pick_data.get("position", "").upper()
-        school = pick_data.get("school", "")
         pick_num = pick_data.get("projected_pick", 999)
-        round_num = pick_data.get("projected_round", 7)
         mock_date = pick_data.get("mock_date", date.today().isoformat())
+        source_label = pick_data.get("analyst_name") or pick_data.get("source") or f"mock_{mock_date}"
 
-        draft_capital = pick_to_draft_capital_score(pick_num)
+        if player_id not in player_buckets:
+            player_buckets[player_id] = {
+                "player_name": player_name,
+                "position": pick_data.get("position", "").upper(),
+                "school": pick_data.get("school", ""),
+                "pick_nums": [],
+                "mock_sources": [],
+            }
+
+        player_buckets[player_id]["pick_nums"].append(int(pick_num))
+        if source_label not in player_buckets[player_id]["mock_sources"]:
+            player_buckets[player_id]["mock_sources"].append(source_label)
+
+    # Second pass: aggregate into consensus
+    consensus_map: Dict[str, Dict[str, Any]] = {}
+
+    for player_id, bucket in player_buckets.items():
+        pick_nums = sorted(bucket["pick_nums"])
+        n = len(pick_nums)
+
+        projected_pick = int(round(statistics.median(pick_nums)))
+        pick_low = min(pick_nums)
+        pick_high = max(pick_nums)
+
+        if n >= 2:
+            stdev = statistics.stdev(pick_nums)
+            # High variance = low confidence; 0 variance = 100, ±10-pick stdev = ~50
+            confidence = round(max(50.0, 100.0 - stdev * 5.0), 1)
+        else:
+            confidence = 60.0  # single mock — moderate confidence
+
+        projected_round = ((projected_pick - 1) // 32) + 1
+        draft_capital = pick_to_draft_capital_score(projected_pick)
 
         consensus_map[player_id] = {
-            "player_name": player_name,
-            "position": position,
-            "school": school,
-            "projected_round": round_num,
-            "projected_pick": pick_num,
-            "projected_pick_low": pick_num,
-            "projected_pick_high": pick_num,
+            "player_name": bucket["player_name"],
+            "position": bucket["position"],
+            "school": bucket["school"],
+            "projected_round": projected_round,
+            "projected_pick": projected_pick,
+            "projected_pick_low": pick_low,
+            "projected_pick_high": pick_high,
             "projected_draft_capital_score": draft_capital,
-            "num_mocks_used": 1,
-            "consensus_confidence": 95.0,  # Consensus data is high confidence
-            "mock_sources": [f"nfl_mock_db_consensus_{mock_date}"]
+            "num_mocks_used": n,
+            "consensus_confidence": confidence,
+            "mock_sources": bucket["mock_sources"],
         }
 
-    log.info("[mock_draft] Built consensus for %d players from scraped data", len(consensus_map))
+    log.info(
+        "[mock_draft] Built consensus for %d players from %d total picks (avg %.1f mocks/player)",
+        len(consensus_map),
+        sum(len(b["pick_nums"]) for b in player_buckets.values()),
+        sum(len(b["pick_nums"]) for b in player_buckets.values()) / max(len(player_buckets), 1),
+    )
     return consensus_map
 
 
