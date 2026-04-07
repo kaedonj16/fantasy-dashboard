@@ -17,12 +17,9 @@ Individual steps are also exported for targeted refreshes.
 """
 from __future__ import annotations
 
-import logging
 import os
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
-
-log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,10 +68,10 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
                             try:
                                 season_end = datetime.strptime(season_end, '%Y-%m-%d %H:%M:%S').date()
                             except ValueError:
-                                log.warning(f"Unable to parse season_end date: {season_end}")
+                                print(f"Unable to parse season_end date: {season_end}")
                                 season_end = None
                     elif not isinstance(season_end, date):
-                        log.warning(f"Unexpected season_end type: {type(season_end)}")
+                        print(f"Unexpected season_end type: {type(season_end)}")
                         season_end = None
                 
                 if season_end is None or today <= season_end:
@@ -82,7 +79,7 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
             # All classes have ended → return latest + 1
             return int(rows[-1]['draft_class_year']) + 1
     except Exception as exc:
-        log.warning("[pipeline] DB unavailable for active class lookup: %s", exc)
+        print(f"[pipeline] DB unavailable for active class lookup: {exc}")
 
     # Fallback: heuristic
     # NFL Draft is late April. Rookie season ends ≈ wild-card weekend (Jan 12-ish).
@@ -176,17 +173,31 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                          %(source)s)
                     ON CONFLICT (player_id, season, source) DO UPDATE SET
                         games_played       = EXCLUDED.games_played,
-                        receptions         = EXCLUDED.receptions,
-                        receiving_yards    = EXCLUDED.receiving_yards,
-                        receiving_tds      = EXCLUDED.receiving_tds,
-                        rush_yards         = EXCLUDED.rush_yards,
-                        rush_tds           = EXCLUDED.rush_tds,
                         pass_yards         = EXCLUDED.pass_yards,
                         pass_tds           = EXCLUDED.pass_tds,
+                        pass_attempts      = EXCLUDED.pass_attempts,
+                        completions        = EXCLUDED.completions,
+                        interceptions      = EXCLUDED.interceptions,
+                        rush_attempts      = EXCLUDED.rush_attempts,
+                        rush_yards         = EXCLUDED.rush_yards,
+                        rush_tds           = EXCLUDED.rush_tds,
+                        receptions         = EXCLUDED.receptions,
+                        targets            = EXCLUDED.targets,
+                        receiving_yards    = EXCLUDED.receiving_yards,
+                        receiving_tds      = EXCLUDED.receiving_tds,
                         dominator_rating   = EXCLUDED.dominator_rating,
                         market_share_yards = EXCLUDED.market_share_yards,
                         market_share_tds   = EXCLUDED.market_share_tds,
-                        team_pass_rate     = EXCLUDED.team_pass_rate
+                        yds_per_carry      = EXCLUDED.yds_per_carry,
+                        yds_per_reception  = EXCLUDED.yds_per_reception,
+                        yds_per_attempt    = EXCLUDED.yds_per_attempt,
+                        completion_pct     = EXCLUDED.completion_pct,
+                        td_int_ratio       = EXCLUDED.td_int_ratio,
+                        team_pass_rate     = EXCLUDED.team_pass_rate,
+                        team               = EXCLUDED.team,
+                        conference         = EXCLUDED.conference,
+                        team_total_yards   = EXCLUDED.team_total_yards,
+                        team_total_tds     = EXCLUDED.team_total_tds
                     """,
                     {
                         "player_id":         p["player_id"],
@@ -262,42 +273,326 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
     return saved
 
 
+def _slug(name: str) -> str:
+    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'."""
+    import re
+    return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+
+
+def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_year: int, conn) -> int:
+    """
+    Save college stats to rookie_prospect_source_data.
+
+    Args:
+        prospects: List of prospect dicts with player_id
+        cfbd_stats: Dict of {name_lower: [season_dicts]}
+        draft_year: Draft year
+        conn: Database connection
+    """
+    saved = 0
+    with conn.cursor() as cur:
+        for prospect in prospects:
+            name_key = prospect["name"].lower()
+            seasons = cfbd_stats.get(name_key, [])
+
+            for season_data in seasons:
+                try:
+                    # Use savepoint to allow rollback on individual errors
+                    cur.execute("SAVEPOINT save_stats")
+                    cur.execute(
+                        """
+                        INSERT INTO rookie_prospect_source_data
+                            (player_id, season, games_played, pass_yards, pass_tds, pass_attempts,
+                             completions, interceptions, rush_attempts, rush_yards, rush_tds,
+                             receptions, targets, receiving_yards, receiving_tds,
+                             dominator_rating, market_share_yards, market_share_tds,
+                             yds_per_carry, yds_per_reception, yds_per_attempt,
+                             completion_pct, td_int_ratio, team, conference, team_pass_rate,
+                             team_total_yards, team_total_tds, source)
+                        VALUES
+                            (%(player_id)s, %(season)s, %(games_played)s, %(pass_yards)s, %(pass_tds)s,
+                             %(pass_attempts)s, %(completions)s, %(interceptions)s, %(rush_attempts)s,
+                             %(rush_yards)s, %(rush_tds)s, %(receptions)s, %(targets)s,
+                             %(receiving_yards)s, %(receiving_tds)s, %(dominator_rating)s,
+                             %(market_share_yards)s, %(market_share_tds)s, %(yds_per_carry)s,
+                             %(yds_per_reception)s, %(yds_per_attempt)s, %(completion_pct)s,
+                             %(td_int_ratio)s, %(team)s, %(conference)s, %(team_pass_rate)s,
+                             %(team_total_yards)s, %(team_total_tds)s, %(source)s)
+                        ON CONFLICT (player_id, season, source) DO UPDATE SET
+                            games_played = EXCLUDED.games_played,
+                            pass_yards = EXCLUDED.pass_yards,
+                            pass_tds = EXCLUDED.pass_tds,
+                            pass_attempts = EXCLUDED.pass_attempts,
+                            completions = EXCLUDED.completions,
+                            interceptions = EXCLUDED.interceptions,
+                            rush_attempts = EXCLUDED.rush_attempts,
+                            rush_yards = EXCLUDED.rush_yards,
+                            rush_tds = EXCLUDED.rush_tds,
+                            receptions = EXCLUDED.receptions,
+                            targets = EXCLUDED.targets,
+                            receiving_yards = EXCLUDED.receiving_yards,
+                            receiving_tds = EXCLUDED.receiving_tds,
+                            dominator_rating = EXCLUDED.dominator_rating,
+                            market_share_yards = EXCLUDED.market_share_yards,
+                            market_share_tds = EXCLUDED.market_share_tds,
+                            yds_per_carry = EXCLUDED.yds_per_carry,
+                            yds_per_reception = EXCLUDED.yds_per_reception,
+                            yds_per_attempt = EXCLUDED.yds_per_attempt,
+                            completion_pct = EXCLUDED.completion_pct,
+                            td_int_ratio = EXCLUDED.td_int_ratio,
+                            team = EXCLUDED.team,
+                            conference = EXCLUDED.conference,
+                            team_pass_rate = EXCLUDED.team_pass_rate,
+                            team_total_yards = EXCLUDED.team_total_yards,
+                            team_total_tds = EXCLUDED.team_total_tds
+                        """,
+                        {
+                            "player_id": prospect["player_id"],
+                            "season": season_data.get("season"),
+                            "games_played": season_data.get("games_played"),
+                            "pass_yards": season_data.get("pass_yards"),
+                            "pass_tds": season_data.get("pass_tds"),
+                            "pass_attempts": season_data.get("pass_attempts"),
+                            "completions": season_data.get("completions"),
+                            "interceptions": season_data.get("interceptions"),
+                            "rush_attempts": season_data.get("rush_attempts"),
+                            "rush_yards": season_data.get("rush_yards"),
+                            "rush_tds": season_data.get("rush_tds"),
+                            "receptions": season_data.get("receptions"),
+                            "targets": season_data.get("targets"),
+                            "receiving_yards": season_data.get("receiving_yards"),
+                            "receiving_tds": season_data.get("receiving_tds"),
+                            "dominator_rating": season_data.get("dominator_rating"),
+                            "market_share_yards": season_data.get("market_share_yards"),
+                            "market_share_tds": season_data.get("market_share_tds"),
+                            "yds_per_carry": season_data.get("yds_per_carry"),
+                            "yds_per_reception": season_data.get("yds_per_reception"),
+                            "yds_per_attempt": season_data.get("yds_per_attempt"),
+                            "completion_pct": season_data.get("completion_pct"),
+                            "td_int_ratio": season_data.get("td_int_ratio"),
+                            "team": season_data.get("team"),
+                            "conference": season_data.get("conference"),
+                            "team_pass_rate": season_data.get("team_pass_rate"),
+                            "team_total_yards": season_data.get("team_total_yards"),
+                            "team_total_tds": season_data.get("team_total_tds"),
+                            "source": "cfbd",
+                        }
+                    )
+                    cur.execute("RELEASE SAVEPOINT save_stats")
+                    saved += 1
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT save_stats")
+                    print(f"[pipeline] Failed to save stats for {prospect['name']} season {season_data.get('season')}: {exc}")
+    return saved
+
+
+def upsert_prospect_athleticism(prospects: List[Dict], combine_data: Dict, conn) -> int:
+    """
+    Save combine data to rookie_prospect_athleticism.
+
+    Args:
+        prospects: List of prospect dicts with player_id
+        combine_data: Dict of {name_lower: {athleticism: {...}, height_inches, weight_lbs}}
+        conn: Database connection
+    """
+    saved = 0
+    with conn.cursor() as cur:
+        for prospect in prospects:
+            name_key = prospect["name"].lower()
+            data = combine_data.get(name_key, {})
+            ath = data.get("athleticism", {})
+
+            if not ath:
+                continue  # Skip if no athleticism data
+
+            try:
+                # Use savepoint to allow rollback on individual errors
+                cur.execute("SAVEPOINT save_combine")
+                cur.execute(
+                    """
+                    INSERT INTO rookie_prospect_athleticism
+                        (player_id, forty_yard, vertical_inches, broad_jump_in,
+                         three_cone, short_shuttle, bench_reps, source)
+                    VALUES
+                        (%(player_id)s, %(forty_yard)s, %(vertical_inches)s, %(broad_jump_in)s,
+                         %(three_cone)s, %(short_shuttle)s, %(bench_reps)s, 'nflverse')
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        forty_yard = EXCLUDED.forty_yard,
+                        vertical_inches = EXCLUDED.vertical_inches,
+                        broad_jump_in = EXCLUDED.broad_jump_in,
+                        three_cone = EXCLUDED.three_cone,
+                        short_shuttle = EXCLUDED.short_shuttle,
+                        bench_reps = EXCLUDED.bench_reps,
+                        updated_at = now()
+                    """,
+                    {
+                        "player_id": prospect["player_id"],
+                        "forty_yard": ath.get("forty_yard"),
+                        "vertical_inches": ath.get("vertical_inches"),
+                        "broad_jump_in": ath.get("broad_jump_in"),
+                        "three_cone": ath.get("three_cone"),
+                        "short_shuttle": ath.get("short_shuttle"),
+                        "bench_reps": ath.get("bench_reps"),
+                    }
+                )
+                cur.execute("RELEASE SAVEPOINT save_combine")
+                saved += 1
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT save_combine")
+                print(f"[pipeline] Failed to save combine data for {prospect['name']}: {exc}")
+    return saved
+
+
+def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int, conn) -> int:
+    """
+    Save scraped mock draft entries to rookie_mock_draft_entries.
+
+    Args:
+        scraped_picks: List of dicts from scraper with player_name, position, etc.
+        draft_year: Draft year
+        conn: Database connection
+    """
+    saved = 0
+    skipped = 0
+
+    with conn.cursor() as cur:
+        for pick in scraped_picks:
+            player_name = pick.get("player_name", "").strip()
+            if not player_name:
+                continue
+
+            # Generate player_id
+            player_id = f"ROOKIE_{draft_year}_{_slug(player_name)}"
+
+            try:
+                # Use savepoint to allow rollback on individual errors
+                cur.execute("SAVEPOINT save_mock")
+                cur.execute(
+                    """
+                    INSERT INTO rookie_mock_draft_entries
+                        (player_id, draft_class_year, source_name, source_url,
+                         projected_round, projected_pick, mock_date, analyst_name)
+                    SELECT %(player_id)s, %(draft_class_year)s, %(source_name)s, %(source_url)s,
+                           %(projected_round)s, %(projected_pick)s, %(mock_date)s, %(analyst_name)s
+                    WHERE EXISTS (
+                        SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+                    )
+                    ON CONFLICT (player_id, source_name, mock_date) DO UPDATE SET
+                        projected_pick  = EXCLUDED.projected_pick,
+                        projected_round = EXCLUDED.projected_round,
+                        analyst_name    = EXCLUDED.analyst_name
+                    """,
+                    {
+                        "player_id": player_id,
+                        "draft_class_year": draft_year,
+                        "source_name": pick.get("source", "Unknown"),
+                        "source_url": pick.get("source_url"),
+                        "projected_round": pick.get("projected_round"),
+                        "projected_pick": pick.get("projected_pick"),
+                        "mock_date": pick.get("mock_date"),
+                        "analyst_name": pick.get("analyst_name"),
+                    },
+                )
+                if cur.rowcount > 0:
+                    saved += 1
+                else:
+                    skipped += 1
+                cur.execute("RELEASE SAVEPOINT save_mock")
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT save_mock")
+                print(f"[pipeline] Failed to save mock entry for {player_name}: {exc}")
+                skipped += 1
+
+    if skipped > 0:
+        print(f"[pipeline] Skipped {skipped} mock entries (player not in prospects table)")
+
+    return saved
+
+
 def upsert_mock_entries(draft_year: int, conn) -> int:
-    """Write seed mock draft entries to rookie_mock_draft_entries.
+    """Write mock draft entries to rookie_mock_draft_entries.
+
+    Scrapes individual mocks from CBS Sports and other sources, then upserts to DB.
     Only inserts entries whose player_id already exists in rookie_prospects
     (FK constraint) — players not yet persisted are silently skipped.
     """
     from .mock_draft_consensus import get_seed_mocks
-    entries = get_seed_mocks(draft_year)
+    from .mock_draft_scraper import scrape_individual_mocks
+
+    # Get seed mocks (if any)
+    seed_entries = get_seed_mocks(draft_year)
+
+    # Scrape individual analyst mocks
+    scraped_picks = scrape_individual_mocks(draft_year)
+
+    # Convert scraped picks to entry format with player_ids
+    scraped_entries = []
+    for pick in scraped_picks:
+        player_name = pick.get("player_name", "").strip()
+        if not player_name:
+            continue
+
+        # Generate player_id using same format as prospects
+        player_id = f"ROOKIE_{draft_year}_{_slug(player_name)}"
+
+        scraped_entries.append({
+            "player_id": player_id,
+            "source_name": pick.get("source", "Unknown"),
+            "source_url": pick.get("source_url"),
+            "projected_round": pick.get("projected_round"),
+            "projected_pick": pick.get("projected_pick"),
+            "mock_date": pick.get("mock_date"),
+            "analyst_name": pick.get("analyst_name"),
+        })
+
+    # Combine seed and scraped entries
+    all_entries = seed_entries + scraped_entries
+    print(f"[pipeline] Upserting {len(all_entries)} mock entries ({len(seed_entries)} seed + {len(scraped_entries)} scraped)")
+
     saved = 0
+    skipped = 0
+
     with conn.cursor() as cur:
-        for e in entries:
-            cur.execute(
-                """
-                INSERT INTO rookie_mock_draft_entries
-                    (player_id, draft_class_year, source_name,
-                     projected_round, projected_pick, mock_date)
-                SELECT %(player_id)s, %(draft_class_year)s, %(source_name)s,
-                       %(projected_round)s, %(projected_pick)s, %(mock_date)s
-                WHERE EXISTS (
-                    SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+        for e in all_entries:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO rookie_mock_draft_entries
+                        (player_id, draft_class_year, source_name, source_url,
+                         projected_round, projected_pick, mock_date, analyst_name)
+                    SELECT %(player_id)s, %(draft_class_year)s, %(source_name)s, %(source_url)s,
+                           %(projected_round)s, %(projected_pick)s, %(mock_date)s, %(analyst_name)s
+                    WHERE EXISTS (
+                        SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+                    )
+                    ON CONFLICT (player_id, source_name, mock_date) DO UPDATE SET
+                        projected_pick  = EXCLUDED.projected_pick,
+                        projected_round = EXCLUDED.projected_round,
+                        analyst_name    = EXCLUDED.analyst_name
+                    """,
+                    {
+                        "player_id":        e["player_id"],
+                        "draft_class_year": draft_year,
+                        "source_name":      e.get("source_name", "Unknown"),
+                        "source_url":       e.get("source_url"),
+                        "projected_round":  e.get("projected_round"),
+                        "projected_pick":   e.get("projected_pick"),
+                        "mock_date":        e.get("mock_date"),
+                        "analyst_name":     e.get("analyst_name"),
+                    },
                 )
-                ON CONFLICT (player_id, source_name, mock_date) DO UPDATE SET
-                    projected_pick  = EXCLUDED.projected_pick,
-                    projected_round = EXCLUDED.projected_round
-                """,
-                {
-                    "player_id":        e["player_id"],
-                    "draft_class_year": draft_year,
-                    "source_name":      e["source_name"],
-                    "projected_round":  e.get("projected_round",
-                                             1 if (e.get("projected_pick") or 999) <= 32 else
-                                             2 if (e.get("projected_pick") or 999) <= 64 else 3),
-                    "projected_pick":   e.get("projected_pick"),
-                    "mock_date":        e.get("mock_date"),
-                },
-            )
-            saved += 1
+                if cur.rowcount > 0:
+                    saved += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                print(f"[pipeline] Failed to insert mock entry for {e.get('player_id')}: {exc}")
+                skipped += 1
+                continue
+
+    if skipped > 0:
+        print(f"[pipeline] Skipped {skipped} mock entries (player not in prospects table)")
+
     return saved
 
 
@@ -483,50 +778,123 @@ def _norm_name(name: str) -> str:
     return n
 
 
-def _filter_active_nfl_players(prospects: List[Dict]) -> List[Dict]:
+def _filter_active_nfl_players(prospects: List[Dict], draft_year: int) -> List[Dict]:
     """
-    Remove any prospect who is already in the NFL player database.
+    Remove any prospect who was already drafted in a PREVIOUS draft class.
 
-    Uses Sleeper's /players/nfl endpoint (no auth, public API) to get the
-    full player index.  A prospect is filtered out when their normalized name
-    matches a Sleeper player who has years_exp not None OR a non-null team.
+    For the target draft year, we DON'T filter prospects from that class.
+    We only filter veterans who were drafted 2+ years before the target year.
+
+    The goal is to allow seed data for the current/upcoming draft class to work
+    while removing players from much older classes.
+
+    Logic:
+    - Don't filter at all for now - rely on seed data to be accurate
+    - Sleeper may have speculative data (years_exp=0 or 1) for upcoming draft
+    - Better to have duplicates than miss prospects
 
     Name comparison strips generational suffixes (Jr./Sr./II/III) and
     punctuation so 'Harold Fannin Jr.' matches 'Harold Fannin Jr'.
 
     Failures are non-fatal — the full list is returned unchanged.
     """
-    try:
-        from dashboard_services.api import get_nfl_players
-        nfl_players = get_nfl_players()
-    except Exception as exc:
-        log.warning("[pipeline] Could not fetch NFL player index for dedup: %s", exc)
+    # For now, disable filtering completely to allow seed data through
+    # The seed data should be curated to only include relevant prospects
+    print(f"[pipeline] Keeping all {len(prospects)} prospects from seed data (filter disabled)")
+    return prospects
+
+
+def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
+    """
+    Load complete prospect data from database including seasons and athleticism.
+
+    Returns prospects in the format expected by the scoring model:
+    {
+        "player_id": str,
+        "name": str,
+        "position": str,
+        "age": float,
+        "draft_class_year": int,
+        "seasons": [...],
+        "athleticism": {...}
+    }
+    """
+    with conn.cursor() as cur:
+        # Load base prospect data
+        cur.execute("""
+            SELECT player_id, name, position, school, age, height_inches, weight_lbs,
+                   draft_class_year, early_declare
+            FROM rookie_prospects
+            WHERE draft_class_year = %s
+        """, (draft_year,))
+        prospects_rows = cur.fetchall()
+
+        if not prospects_rows:
+            print(f"[pipeline] No prospects found in database for {draft_year}")
+            return []
+
+        prospects = []
+        for row in prospects_rows:
+            prospect = dict(row)
+            prospect.setdefault("seasons", [])
+            prospect.setdefault("athleticism", {})
+            prospects.append(prospect)
+
+        print(f"[pipeline] Loaded {len(prospects)} base prospects from database")
+
+        # Load season stats for all prospects
+        cur.execute("""
+            SELECT player_id, season, games_played,
+                   pass_yards, pass_tds, pass_attempts, completions, interceptions,
+                   rush_attempts, rush_yards, rush_tds,
+                   receptions, targets, receiving_yards, receiving_tds,
+                   dominator_rating, market_share_yards, market_share_tds,
+                   yds_per_carry, yds_per_reception, yds_per_attempt,
+                   completion_pct, td_int_ratio, team, conference, team_pass_rate
+            FROM rookie_prospect_source_data
+            WHERE player_id IN (
+                SELECT player_id FROM rookie_prospects WHERE draft_class_year = %s
+            )
+            ORDER BY player_id, season
+        """, (draft_year,))
+        stats_rows = cur.fetchall()
+
+        # Group stats by player_id
+        stats_by_player: Dict[str, List[Dict]] = {}
+        for stat_row in stats_rows:
+            stat_dict = dict(stat_row)
+            player_id = stat_dict.pop("player_id")
+            stats_by_player.setdefault(player_id, []).append(stat_dict)
+
+        print(f"[pipeline] Loaded {len(stats_rows)} season stat records")
+
+        # Load athleticism for all prospects
+        cur.execute("""
+            SELECT player_id, forty_yard, vertical_inches, broad_jump_in,
+                   three_cone, short_shuttle, bench_reps, speed_score, ras_score
+            FROM rookie_prospect_athleticism
+            WHERE player_id IN (
+                SELECT player_id FROM rookie_prospects WHERE draft_class_year = %s
+            )
+        """, (draft_year,))
+        ath_rows = cur.fetchall()
+
+        # Map athleticism by player_id
+        ath_by_player: Dict[str, Dict] = {}
+        for ath_row in ath_rows:
+            ath_dict = dict(ath_row)
+            player_id = ath_dict.pop("player_id")
+            ath_by_player[player_id] = ath_dict
+
+        print(f"[pipeline] Loaded {len(ath_rows)} athleticism records")
+
+        # Attach stats and athleticism to prospects
+        for prospect in prospects:
+            player_id = prospect["player_id"]
+            prospect["seasons"] = stats_by_player.get(player_id, [])
+            prospect["athleticism"] = ath_by_player.get(player_id, {})
+
         return prospects
-
-    if not nfl_players:
-        return prospects
-
-    # Build a set of normalized names for active/drafted NFL players
-    active_names: set = set()
-    for pid, p in nfl_players.items():
-        name = (
-            p.get("full_name") or
-            " ".join(filter(None, [p.get("first_name"), p.get("last_name")]))
-        ).strip()
-        if not name:
-            continue
-        years_exp = p.get("years_exp")
-        team      = p.get("team")
-        if years_exp is not None or team:
-            active_names.add(_norm_name(name))
-
-    before = len(prospects)
-    filtered = [p for p in prospects if _norm_name(p["name"]) not in active_names]
-    removed = before - len(filtered)
-    if removed:
-        log.info("[pipeline] Filtered %d already-drafted players from prospect list", removed)
-    return filtered
-
 
 
 def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, Any]:
@@ -543,11 +911,21 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
     if draft_year is None:
         draft_year = get_active_rookie_class()
 
-    log.info("[pipeline] Running in-memory pipeline for %d draft class", draft_year)
+    print(f"[pipeline] Running in-memory pipeline for {draft_year} draft class")
 
     prospects    = load_prospects_for_year(draft_year)
-    prospects    = _filter_active_nfl_players(prospects)
+    prospects    = _filter_active_nfl_players(prospects, draft_year)
     consensus    = build_mock_draft_consensus(draft_year)
+
+    # If no prospects but we have mock draft data, create prospects from mocks
+    if not prospects and consensus:
+        print("[pipeline] No prospects found - creating from mock draft data")
+        from .ingestion import prospects_from_mock_draft
+        from .mock_draft_scraper import scrape_consensus_mock_draft
+
+        mock_picks = scrape_consensus_mock_draft(draft_year)
+        prospects = prospects_from_mock_draft(mock_picks, draft_year)
+
     scores       = score_all_prospects(prospects, consensus)
     values       = translate_all(scores, prospects, consensus)
 
@@ -564,44 +942,189 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
 # Public API — full DB path
 # ─────────────────────────────────────────────────────────────────────────────
 
+def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Staged pipeline with DB saves after each step:
+    1. Fetch prospects + bio data → save to rookie_prospects
+    2. Fetch stats → save to rookie_prospect_source_data
+    3. Fetch combine data → save to rookie_prospect_athleticism
+    4. Scrape mock drafts → save to rookie_mock_draft_entries
+    5. Calculate consensus → save to rookie_mock_draft_consensus
+    6. Calculate values → save to rookie_rankings
+    """
+    from dashboard_services.db import get_conn
+    from .ingestion import (
+        fetch_sportradar_prospects,
+        fetch_cfbd_college_stats,
+        fetch_nflverse_combine,
+    )
+    from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
+    from .mock_draft_consensus import build_mock_draft_consensus_from_scraped
+    from .prospect_model import score_all_prospects
+    from .value_translation import translate_all
+
+    if draft_year is None:
+        draft_year = get_active_rookie_class()
+
+    if not _db_available():
+        print("[pipeline] DATABASE_URL not configured — cannot run staged pipeline")
+        return {}
+
+    print("[pipeline] ====== STAGE 1: Fetch Prospects + Bio Data ======")
+
+    # Check for required API keys
+    import os
+    if not os.getenv("SPORTRADAR_API_KEY"):
+        print("[pipeline] SPORTRADAR_API_KEY not set - cannot fetch prospects")
+        print("[pipeline] Please set SPORTRADAR_API_KEY environment variable to continue")
+        return {}
+
+    # Fetch prospects from Sportradar
+    sr_prospects = fetch_sportradar_prospects(draft_year)
+    if not sr_prospects:
+        print("[pipeline] No prospects from Sportradar, cannot continue")
+        return {}
+
+    print(f"[pipeline] Fetched {len(sr_prospects)} prospects from Sportradar")
+
+    # Estimate ages from experience (SR/JR/SO/FR)
+    # ESPN's API doesn't provide DOB for college players, so we use experience instead
+    from .ingestion import _estimate_age
+    for p in sr_prospects:
+        experience = p.get("_experience")
+        if not p.get("age") and experience:
+            p["age"] = _estimate_age(experience, draft_year)
+
+    ages_set = sum(1 for p in sr_prospects if p.get("age"))
+    print(f"[pipeline] Estimated ages for {ages_set}/{len(sr_prospects)} prospects from experience")
+
+    # Save prospects to DB
+    with get_conn() as conn:
+        n_prospects = upsert_prospects(sr_prospects, conn)
+        # Let context manager handle commit
+
+    # Check after transaction completes
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) as count FROM rookie_prospects WHERE draft_class_year = %s", (draft_year,))
+            count_in_db = cur.fetchone()["count"]
+            print(f"[pipeline] DEBUG: Database shows {count_in_db} prospects after transaction")
+
+    print(f"[pipeline] STAGE 1 COMPLETE: Saved {n_prospects} prospects to rookie_prospects")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 2: Fetch College Stats ======")
+
+    cfbd_stats = fetch_cfbd_college_stats(draft_year)
+    print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
+
+    # Save stats to DB
+    with get_conn() as conn:
+        n_stats = upsert_prospect_source_data(sr_prospects, cfbd_stats, draft_year, conn)
+        # Let context manager handle commit
+
+    # Check after transaction completes
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) as count FROM rookie_prospect_source_data")
+            count_in_db = cur.fetchone()["count"]
+            print(f"[pipeline] DEBUG: Database shows {count_in_db} stat records after transaction")
+
+            # Check for non-zero stats
+            cur.execute("""
+                SELECT COUNT(*) as count FROM rookie_prospect_source_data
+                WHERE receiving_yards > 0 OR rush_yards > 0 OR pass_yards > 0
+            """)
+            nonzero_count = cur.fetchone()["count"]
+            print(f"[pipeline] DEBUG: {nonzero_count} stat records have non-zero values")
+
+    print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 3: Fetch Combine Data ======")
+
+    combine_data = fetch_nflverse_combine(draft_year)
+    print(f"[pipeline] Fetched combine data for {len(combine_data)} players")
+
+    # Save combine data to DB
+    with get_conn() as conn:
+        n_combine = upsert_prospect_athleticism(sr_prospects, combine_data, conn)
+
+    print(f"[pipeline] STAGE 3 COMPLETE: Saved {n_combine} records to rookie_prospect_athleticism")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
+
+    # Scrape individual mocks (CBS Sports)
+    individual_mocks = scrape_individual_mocks(draft_year)
+    print(f"[pipeline] Scraped {len(individual_mocks)} individual mock entries")
+
+    # Save mock entries to DB
+    with get_conn() as conn:
+        n_mock_entries = upsert_mock_entries_from_scraped(individual_mocks, draft_year, conn)
+
+    print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
+
+    # Scrape consensus from FantasyPros
+    consensus_picks = scrape_consensus_mock_draft(draft_year)
+    print(f"[pipeline] Scraped {len(consensus_picks)} consensus picks from FantasyPros")
+
+    # Build consensus
+    consensus_map = build_mock_draft_consensus_from_scraped(consensus_picks, draft_year)
+    print(f"[pipeline] Built consensus for {len(consensus_map)} players")
+
+    # Save consensus to DB
+    with get_conn() as conn:
+        n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
+
+    print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
+
+    # Load complete prospect data from database (with seasons and athleticism)
+    with get_conn() as conn:
+        complete_prospects = load_prospects_from_db(draft_year, conn)
+
+    print(f"[pipeline] Loaded {len(complete_prospects)} complete prospects from database")
+
+    # Score prospects
+    scores = score_all_prospects(complete_prospects, consensus_map)
+    print(f"[pipeline] Scored {len(scores)} prospects")
+
+    # Translate to values
+    values = translate_all(scores, complete_prospects, consensus_map)
+    print(f"[pipeline] Calculated values for {len(values)} prospects")
+
+    # Save rankings to DB
+    with get_conn() as conn:
+        n_rankings = upsert_rankings(scores, values, conn)
+
+    print(f"[pipeline] STAGE 6 COMPLETE: Saved {n_rankings} rankings to rookie_rankings")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== PIPELINE COMPLETE ======")
+    print(f"[pipeline] Summary: {n_prospects} prospects, {n_stats} stats, {n_combine} combine, {n_mock_entries} mock entries, {n_consensus} consensus, {n_rankings} rankings")
+
+    return {
+        "draft_year": draft_year,
+        "prospects": complete_prospects,
+        "consensus": consensus_map,
+        "scores": scores,
+        "values": values,
+    }
+
+
 def run_rookie_pipeline(draft_year: Optional[int] = None) -> Dict[str, Any]:
     """
     Full pipeline: ingest → score → translate → persist to DB.
-    Falls back to in-memory mode when DB is unavailable.
+
+    Uses the new staged approach with DB saves after each step.
     """
-    result = run_rookie_pipeline_inmemory(draft_year)
-
-    if not _db_available():
-        log.info("[pipeline] DATABASE_URL not configured — returning in-memory results only")
-        return result
-
-    # Filter mock consensus to only include players that exist in prospects
-    prospect_ids = {p["player_id"] for p in result["prospects"]}
-    filtered_consensus = {pid: data for pid, data in result["consensus"].items() if pid in prospect_ids}
-
-    if len(filtered_consensus) != len(result["consensus"]):
-        filtered_count = len(result["consensus"]) - len(filtered_consensus)
-        log.warning(f"[pipeline] Filtered out {filtered_count} mock consensus entries for players not in prospect data")
-
-    result["consensus"] = filtered_consensus
-
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            n_prospects = upsert_prospects(result["prospects"], conn)
-            n_entries   = upsert_mock_entries(result["draft_year"], conn)
-            n_mocks     = upsert_mock_consensus(result["consensus"], result["draft_year"], conn)
-            n_rankings  = upsert_rankings(result["scores"], result["values"], conn)
-            conn.commit()
-
-        log.info(
-            "[pipeline] Saved %d prospects, %d mock entries, %d consensus, %d rankings for %d class",
-            n_prospects, n_entries, n_mocks, n_rankings, result["draft_year"],
-        )
-    except Exception as exc:
-        log.error("[pipeline] DB save failed: %s", exc)
-
-    return result
+    return run_rookie_pipeline_staged(draft_year)
 
 
 def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
@@ -651,7 +1174,7 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                 return rows
 
             # DB available but tables empty — run the full pipeline to seed them
-            log.info("[pipeline] DB empty for %d — running full pipeline to populate tables", draft_year)
+            print(f"[pipeline] DB empty for {draft_year} - running full pipeline to populate tables")
             run_rookie_pipeline(draft_year)
 
             # Re-query after population
@@ -691,17 +1214,16 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                 return rows
 
         except Exception as exc:
-            log.warning("[pipeline] DB read failed: %s", exc)
+            print(f"[pipeline] DB read failed: {exc}")
 
     # Final fallback to in-memory (DB unavailable or pipeline population also failed)
-    log.info("[pipeline] Falling back to in-memory pipeline for %d", draft_year)
+    print(f"[pipeline] Falling back to in-memory pipeline for {draft_year}")
     result = run_rookie_pipeline_inmemory(draft_year)
     return _merge_inmemory_result(result)
 
 
 def _merge_inmemory_result(result: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Merge in-memory pipeline output into a flat list of row dicts."""
-    from .value_translation import format_draft_capital
 
     prospects_by_id = {p["player_id"]: p for p in result["prospects"]}
     values_by_id    = {v["player_id"]: v for v in result["values"]}

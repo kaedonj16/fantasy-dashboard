@@ -41,15 +41,16 @@ from __future__ import annotations
 
 import csv
 import io
-import logging
 import os
 import re
 import time
+import warnings
 from typing import Any, Dict, List, Optional
 
 import requests
 
-log = logging.getLogger(__name__)
+# Suppress urllib3 SSL warning for LibreSSL compatibility
+warnings.filterwarnings('ignore', message='.*urllib3 v2 only supports OpenSSL.*')
 
 SPORTRADAR_KEY    = os.getenv("SPORTRADAR_API_KEY", "")
 SPORTRADAR_ACCESS = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")   # "trial" or "production"
@@ -94,17 +95,51 @@ def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
     url = f"{_SR_BASE}/{SPORTRADAR_ACCESS}/v1/en/{path}"
     headers = {"x-api-key": SPORTRADAR_KEY, "Accept": "application/json"}
     params  = {"api_key": SPORTRADAR_KEY}
+    
+    print(f"[sportradar] Request: GET {url} (access={SPORTRADAR_ACCESS}, key={SPORTRADAR_KEY[:8] if SPORTRADAR_KEY else 'NONE'}...)")
+    
+    last_error = None
     for attempt in range(retries):
         try:
             resp = requests.get(url, headers=headers, params=params, timeout=20)
+            print(f"[sportradar] Response: HTTP {resp.status_code} for {path}")
             resp.raise_for_status()
             return resp.json()
-        except requests.RequestException as exc:
+        except requests.Timeout as exc:
+            last_error = f"Timeout after 20s"
             wait = 2 ** attempt
-            log.warning("[sportradar] %s attempt %d failed: %s — retrying in %ds",
-                        path, attempt + 1, exc, wait)
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: TIMEOUT — retrying in {wait}s")
             time.sleep(wait)
-    log.error("[sportradar] %s failed after %d attempts", path, retries)
+        except requests.HTTPError as exc:
+            last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
+            if exc.response.status_code == 401:
+                print(f"[sportradar] {path} FAILED: Authentication error (401) — check SPORTRADAR_API_KEY")
+                return None
+            elif exc.response.status_code == 403:
+                print(f"[sportradar] {path} FAILED: Forbidden (403) — check API key permissions or access level (current: {SPORTRADAR_ACCESS})")
+                return None
+            elif exc.response.status_code == 404:
+                print(f"[sportradar] {path} FAILED: Not found (404) — invalid path or year")
+                return None
+            elif exc.response.status_code == 429:
+                wait = 2 ** attempt
+                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — retrying in {wait}s")
+                time.sleep(wait)
+            else:
+                wait = 2 ** attempt
+                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} — retrying in {wait}s")
+                time.sleep(wait)
+        except requests.RequestException as exc:
+            last_error = f"Request failed: {type(exc).__name__}: {exc}"
+            wait = 2 ** attempt
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} — retrying in {wait}s")
+            time.sleep(wait)
+        except Exception as exc:
+            last_error = f"Unexpected error: {type(exc).__name__}: {exc}"
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: UNEXPECTED ERROR — {last_error}")
+            return None
+    
+    print(f"[sportradar] {path} FAILED after {retries} attempts — Last error: {last_error}")
     return None
 
 
@@ -125,50 +160,92 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
         three_cone, short_shuttle
     Also includes height_inches and weight_lbs as fallback bio fields.
     """
+    print(f"[nflverse] Starting combine data fetch for draft year {draft_year}")
+    print(f"[nflverse] URL: {_NFLVERSE_COMBINE_URL}")
+    
     try:
+        print("[nflverse] Downloading combine.csv from NFLVerse")
         resp = requests.get(_NFLVERSE_COMBINE_URL, timeout=30)
         resp.raise_for_status()
+        print(f"[nflverse] Downloaded {len(resp.text)} bytes")
+    except requests.Timeout:
+        print("[nflverse] FAILED: Download timeout after 30s — NFLVerse may be slow or unreachable")
+        return {}
+    except requests.HTTPError as exc:
+        print(f"[nflverse] FAILED: HTTP {exc.response.status_code} ({exc.response.reason}) — URL may have changed or GitHub rate limit")
+        return {}
     except requests.RequestException as exc:
-        log.warning("[nflverse] combine.csv download failed: %s", exc)
+        print(f"[nflverse] FAILED: Network error — {type(exc).__name__}: {exc}")
+        return {}
+    except Exception as exc:
+        print(f"[nflverse] FAILED: Unexpected error — {type(exc).__name__}: {exc}")
         return {}
 
     results: Dict[str, Dict[str, Any]] = {}
     reader = csv.DictReader(io.StringIO(resp.text))
-    for row in reader:
-        # draft_year column is the year they were drafted
-        row_year = _safe_int(row.get("draft_year") or row.get("season"))
-        if row_year != draft_year:
-            continue
+    total_rows = 0
+    matching_rows = 0
+    parse_errors = 0
+    
+    try:
+        for row in reader:
+            total_rows += 1
+            # draft_year column is the year they were drafted
+            try:
+                row_year = _safe_int(row.get("draft_year") or row.get("season"))
+            except Exception as exc:
+                print(f"[nflverse] Parse error for draft_year in row {total_rows}: {exc}")
+                parse_errors += 1
+                continue
+                
+            if row_year != draft_year:
+                continue
 
-        name = (row.get("player_name") or "").strip().lower()
-        if not name:
-            continue
+            matching_rows += 1
+            name = (row.get("player_name") or "").strip().lower()
+            if not name:
+                print(f"[nflverse] Skipping row {total_rows}: no player_name")
+                continue
 
-        def _csv_float(col):
-            v = row.get(col, "").strip()
-            return _safe(v) if v and v != "NA" else None
+            try:
+                def _csv_float(col):
+                    v = row.get(col, "").strip()
+                    return _safe(v) if v and v != "NA" else None
 
-        def _csv_int(col):
-            v = row.get(col, "").strip()
-            return _safe_int(v) if v and v != "NA" else None
+                def _csv_int(col):
+                    v = row.get(col, "").strip()
+                    return _safe_int(v) if v and v != "NA" else None
 
-        ath: Dict[str, Any] = {}
-        if (v := _csv_float("forty"))        is not None: ath["forty_yard"]      = v
-        if (v := _csv_float("vertical"))     is not None: ath["vertical_inches"] = v
-        if (v := _csv_float("broad_jump"))   is not None: ath["broad_jump_in"]   = v
-        if (v := _csv_int("bench"))          is not None: ath["bench_reps"]      = v
-        if (v := _csv_float("cone"))         is not None: ath["three_cone"]      = v
-        if (v := _csv_float("shuttle"))      is not None: ath["short_shuttle"]   = v
+                ath: Dict[str, Any] = {}
+                if (v := _csv_float("forty"))        is not None: ath["forty_yard"]      = v
+                if (v := _csv_float("vertical"))     is not None: ath["vertical_inches"] = v
+                if (v := _csv_float("broad_jump"))   is not None: ath["broad_jump_in"]   = v
+                if (v := _csv_int("bench"))          is not None: ath["bench_reps"]      = v
+                if (v := _csv_float("cone"))         is not None: ath["three_cone"]      = v
+                if (v := _csv_float("shuttle"))      is not None: ath["short_shuttle"]   = v
 
-        # Height is "6-2" format in nflverse; weight is integer lbs
-        results[name] = {
-            "athleticism":    ath,
-            "height_inches":  _parse_height(row.get("ht")),
-            "weight_lbs":     _csv_int("wt"),
-        }
+                # Height is "6-2" format in nflverse; weight is integer lbs
+                height = _parse_height(row.get("ht"))
+                weight = _csv_int("wt")
+                
+                results[name] = {
+                    "athleticism":    ath,
+                    "height_inches":  height,
+                    "weight_lbs":     weight,
+                }
+            except Exception as exc:
+                print(f"[nflverse] Parse error for player '{name or 'UNKNOWN'}' in row {total_rows}: {exc}")
+                parse_errors += 1
+                continue
+    except csv.Error as exc:
+        print(f"[nflverse] FAILED: CSV parsing error at row {total_rows} — {exc}")
+        return results  # Return what we have so far
+    except Exception as exc:
+        print(f"[nflverse] FAILED: Unexpected error during CSV processing — {type(exc).__name__}: {exc}")
+        return results
 
-    log.info("[nflverse] Loaded combine data for %d prospects in %d class",
-             len(results), draft_year)
+    print(f"[nflverse] Loaded combine data for {len(results)} prospects for {draft_year} ({total_rows} total rows, {parse_errors} parse errors)")
+    print(f"[nflverse] Found {matching_rows} matching rows for {draft_year} in combine data")
     return results
 
 
@@ -181,17 +258,51 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
 def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Optional[Any]:
     url = f"{CFBD_BASE}{path}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
+    
+    print(f"[cfbd] Request: GET {url} (params={params}, key={CFBD_KEY[:8] if CFBD_KEY else 'NONE'}...)")
+    
+    last_error = None
     for attempt in range(retries):
         try:
             resp = requests.get(url, headers=headers, params=params or {}, timeout=15)
+            print(f"[cfbd] Response: HTTP {resp.status_code} for {path}")
             resp.raise_for_status()
             return resp.json()
-        except requests.RequestException as exc:
+        except requests.Timeout:
+            last_error = "Timeout after 15s"
             wait = 2 ** attempt
-            log.warning("[cfbd] %s attempt %d failed: %s — retrying in %ds",
-                        path, attempt + 1, exc, wait)
+            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: TIMEOUT — retrying in {wait}s")
             time.sleep(wait)
-    log.error("[cfbd] %s failed after %d attempts", path, retries)
+        except requests.HTTPError as exc:
+            last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
+            if exc.response.status_code == 401:
+                print(f"[cfbd] {path} FAILED: Authentication error (401) — check CFBD_API_KEY is valid")
+                return None
+            elif exc.response.status_code == 403:
+                print(f"[cfbd] {path} FAILED: Forbidden (403) — API key may not have required permissions")
+                return None
+            elif exc.response.status_code == 404:
+                print(f"[cfbd] {path} FAILED: Not found (404) — invalid endpoint or parameters: {params}")
+                return None
+            elif exc.response.status_code == 429:
+                wait = 2 ** attempt * 2
+                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — backing off {wait}s")
+                time.sleep(wait)
+            else:
+                wait = 2 ** attempt
+                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} — retrying in {wait}s")
+                time.sleep(wait)
+        except requests.RequestException as exc:
+            last_error = f"Request failed: {type(exc).__name__}"
+            wait = 2 ** attempt
+            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} — retrying in {wait}s")
+            time.sleep(wait)
+        except Exception as exc:
+            last_error = f"Unexpected error: {type(exc).__name__}: {exc}"
+            print(f"[cfbd] {path} FAILED: UNEXPECTED ERROR — {last_error}")
+            return None
+    
+    print(f"[cfbd] {path} FAILED after {retries} attempts — Last error: {last_error}")
     return None
 
 
@@ -206,23 +317,52 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
         "receptions": 0, "targets": 0, "receiving_yards": 0, "receiving_tds": 0,
         "team": None, "conference": None,
     }
+    # CFBD API uses abbreviated statType values (e.g., "YDS", "TD", "REC")
+    # NOT full names like "passingYards" or "receivingYards"
     stat_map = {
-        "passingYards": "pass_yards", "passingTDs": "pass_tds",
-        "passAttempts": "pass_attempts", "passCompletions": "completions",
-        "interceptions": "interceptions",
-        "rushingYards": "rush_yards", "rushingTDs": "rush_tds",
-        "rushingAttempts": "rush_attempts",
-        "receivingYards": "receiving_yards", "receivingTDs": "receiving_tds",
-        "receptions": "receptions",
+        # Passing stats (category: "passing")
+        "YDS": "pass_yards",
+        "TD": "pass_tds",
+        "ATT": "pass_attempts",
+        "COMPLETIONS": "completions",
+        "INT": "interceptions",
+        # Rushing stats (category: "rushing")
+        "CAR": "rush_attempts",
+        # Receiving stats (category: "receiving")
+        "REC": "receptions",
     }
+
+    # Track stats by category to handle duplicate stat types (e.g., "YDS" exists for passing/rushing/receiving)
     for s in raw_stats:
-        k = s.get("statName", "")
-        if k in stat_map:
-            row[stat_map[k]] = (row.get(stat_map[k]) or 0) + (_safe_int(s.get("stat")) or 0)
+        category = s.get("category", "").lower()
+        stat_type = s.get("statType", "")  # CFBD uses "statType" (camelCase), not "stat_type"
+        stat_value = _safe_int(s.get("stat")) or 0
+
+        # Map stat_type to our field, considering category for ambiguous types
+        if stat_type == "YDS":
+            if category == "passing":
+                row["pass_yards"] = (row.get("pass_yards") or 0) + stat_value
+            elif category == "rushing":
+                row["rush_yards"] = (row.get("rush_yards") or 0) + stat_value
+            elif category == "receiving":
+                row["receiving_yards"] = (row.get("receiving_yards") or 0) + stat_value
+        elif stat_type == "TD":
+            if category == "passing":
+                row["pass_tds"] = (row.get("pass_tds") or 0) + stat_value
+            elif category == "rushing":
+                row["rush_tds"] = (row.get("rush_tds") or 0) + stat_value
+            elif category == "receiving":
+                row["receiving_tds"] = (row.get("receiving_tds") or 0) + stat_value
+        elif stat_type in stat_map:
+            row[stat_map[stat_type]] = (row.get(stat_map[stat_type]) or 0) + stat_value
+
+        # Always capture team/conference from any record
         row["team"]       = row["team"]       or s.get("team")
         row["conference"] = row["conference"] or s.get("conference")
 
-    ts       = team_stats.get(row.get("team", ""), {})
+    team_name = row.get("team", "")
+    ts = team_stats.get(team_name, {})
+
     rush_att = row["rush_attempts"] or 0
     rush_yds = row["rush_yards"]    or 0
     rec_yds  = row["receiving_yards"] or 0
@@ -254,7 +394,7 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     if t_yds > 0: dom += (p_yds / t_yds) * 0.65
     if t_tds > 0: dom += (p_tds / t_tds) * 0.35
     row["dominator_rating"] = round(dom, 4) if (t_yds or t_tds) else None
-
+    # print(row)
     return row
 
 
@@ -264,75 +404,104 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
     Returns {player_name_lower: [season_dict, ...]} sorted oldest→newest.
     Requires CFBD_API_KEY env var; returns {} silently if not set.
     """
+    print(f"[cfbd] Starting college stats fetch for draft year {draft_year}")
+    
     if not CFBD_KEY:
+        print("[cfbd] No CFBD_API_KEY set — skipping college stats")
         return {}
 
     years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    print(f"[cfbd] Fetching college stats for years: {years}")
 
-    # Team season totals for market share / dominator calculation
-    team_stats: Dict[int, Dict] = {}
-    for yr in years:
-        data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
-        if not data:
-            team_stats[yr] = {}
-            continue
-        teams: Dict[str, Dict] = {}
-        for row in data:
-            t = row.get("team", "")
-            teams.setdefault(t, {})[row.get("statName", "")] = _safe(row.get("statValue"), 0)
-        for t, s in teams.items():
-            pa = s.get("passAttempts", 0) or 0
-            ra = s.get("rushingAttempts", 0) or 0
-            total = pa + ra
-            s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
-        team_stats[yr] = teams
-
-    # Player usage (games played)
-    usage: Dict[int, Dict[int, int]] = {}   # {yr: {player_id: games}}
-    for yr in years:
-        data = _cfbd_get("/player/usage", {"year": yr, "seasonType": "regular"}) or []
-        usage[yr] = {
-            int(r["id"]): _safe_int(r.get("games"))
-            for r in data if r.get("id") is not None
-        }
-
-    # Player season stats — indexed by name and by player ID
-    by_name: Dict[int, Dict[str, List]] = {}   # {yr: {name_lower: [rows]}}
-    by_id:   Dict[int, Dict[int, List]] = {}   # {yr: {player_id: [rows]}}
-    for yr in years:
-        data = _cfbd_get("/stats/player/season",
-                         {"year": yr, "seasonType": "regular"}) or []
-        bn: Dict[str, List] = {}
-        bi: Dict[int, List] = {}
-        for row in data:
-            n  = (row.get("player") or "").lower()
-            pid = _safe_int(row.get("playerId"))
-            if n:   bn.setdefault(n, []).append(row)
-            if pid: bi.setdefault(pid, []).append(row)
-        by_name[yr] = bn
-        by_id[yr]   = bi
-
-    # Collapse into per-player season lists keyed by lowercase name
-    all_names: set = set()
-    for yr in years:
-        all_names.update(by_name[yr].keys())
-
-    result: Dict[str, List[Dict]] = {}
-    for name in all_names:
-        seasons = []
+    try:
+        # Team season totals for market share / dominator calculation
+        print("[cfbd] Fetching team season totals for market share calculation")
+        team_stats: Dict[int, Dict] = {}
         for yr in years:
-            rows = by_name[yr].get(name, [])
-            if not rows:
+            print(f"[cfbd] Fetching team stats for {yr}")
+            data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
+            if not data:
+                print(f"[cfbd] No team stats data for {yr}")
+                team_stats[yr] = {}
                 continue
-            pid = _safe_int(rows[0].get("playerId"))
-            gp  = usage[yr].get(pid) if pid else None
-            seasons.append(_build_cfbd_season(rows, team_stats[yr], yr, gp))
-        if seasons:
-            seasons.sort(key=lambda s: s["season"])
-            result[name] = seasons
+            try:
+                teams: Dict[str, Dict] = {}
+                for row in data:
+                    t = row.get("team", "")
+                    teams.setdefault(t, {})[row.get("statName", "")] = _safe(row.get("statValue"), 0)
+                for t, s in teams.items():
+                    pa = s.get("passAttempts", 0) or 0
+                    ra = s.get("rushingAttempts", 0) or 0
+                    total = pa + ra
+                    s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
+                team_stats[yr] = teams
+                print(f"[cfbd] Loaded team stats for {yr}: {len(teams)} teams")
+            except Exception as exc:
+                print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
+                team_stats[yr] = {}
 
-    log.info("[cfbd] Loaded stats for %d players (draft class %d)", len(result), draft_year)
-    return result
+        # Player season stats — indexed by name and by player ID
+        print("[cfbd] Fetching player season stats")
+        by_name: Dict[int, Dict[str, List]] = {}   # {yr: {name_lower: [rows]}}
+        by_id:   Dict[int, Dict[int, List]] = {}   # {yr: {player_id: [rows]}}
+        for yr in years:
+            print(f"[cfbd] Fetching player stats for {yr}")
+            try:
+                data = _cfbd_get("/stats/player/season",
+                                 {"year": yr, "seasonType": "regular"}) or []
+                bn: Dict[str, List] = {}
+                bi: Dict[int, List] = {}
+                for row in data:
+                    n  = (row.get("player") or "").lower()
+                    pid = _safe_int(row.get("playerId"))
+                    position = (row.get("position") or "").upper()
+                    
+                    if position not in {"QB", "WR", "RB", "TE"}:
+                        continue
+                    
+                    if n:   bn.setdefault(n, []).append(row)
+                    if pid: bi.setdefault(pid, []).append(row)
+                by_name[yr] = bn
+                by_id[yr]   = bi
+                print(f"[cfbd] Loaded player stats for {yr}: {len(bn)} players")
+            except Exception as exc:
+                print(f"[cfbd] ERROR loading player stats for {yr} — {type(exc).__name__}: {exc}")
+                by_name[yr] = {}
+                by_id[yr] = {}
+
+        # Collapse into per-player season lists keyed by lowercase name
+        print("[cfbd] Building player season summaries")
+        all_names: set = set()
+        for yr in years:
+            all_names.update(by_name[yr].keys())
+
+        result: Dict[str, List[Dict]] = {}
+        for name in all_names:
+            try:
+                seasons = []
+                for yr in years:
+                    rows = by_name.get(yr, {}).get(name, [])
+                    if not rows:
+                        continue
+                    # games_played not available from CFBD - will default to 12 in scoring
+                    try:
+                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, None))
+                        # print(name)
+                        # print(seasons)
+                    except Exception as exc:
+                        print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
+                if seasons:
+                    seasons.sort(key=lambda s: s["season"])
+                    result[name] = seasons
+            except Exception as exc:
+                print(f"[cfbd] ERROR processing player '{name}' — {type(exc).__name__}: {exc}")
+
+        print(f"[cfbd] COMPLETE: Loaded stats for {len(result)} players (draft class {draft_year})")
+        return result
+        
+    except Exception as exc:
+        print(f"[cfbd] FAILED: Unexpected error fetching college stats for {draft_year} — {type(exc).__name__}: {exc}")
+        return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -386,54 +555,121 @@ def fetch_espn_ages(names: List[str], draft_year: int,
         delay:       seconds to sleep between requests (default 0.25 s)
     """
     result: Dict[str, float] = {}
-    for name in names:
+    failed_requests = 0
+    failed_parsing = 0
+    no_dob_found = 0
+    
+    print(f"[espn_ages] Starting age lookup for {len(names)} prospects (draft_year={draft_year})")
+    print(f"[espn_ages] URL: {_ESPN_SEARCH_URL}")
+    
+    for i, name in enumerate(names):
+        if (i + 1) % 25 == 0:
+            print(f"[espn_ages] Processed {i + 1}/{len(names)} prospects ({len(result)} ages found, {failed_requests} request fails, {no_dob_found} no DOB)")
+        
+        name_norm = name.lower().strip()
+        data = None
+        
         try:
             resp = requests.get(
                 _ESPN_SEARCH_URL,
                 params={"query": name, "sport": "football",
-                        "type": "athlete", "limit": "5"},
+                        "type": "player", "limit": "5"},
                 headers={"Accept": "application/json"},
                 timeout=10,
             )
+
+            print(f"[espn_ages] {name}: HTTP {resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
+
+        except requests.Timeout:
+            print(f"[espn_ages] {name}: TIMEOUT after 10s")
+            failed_requests += 1
+            time.sleep(delay)
+            continue
+        except requests.HTTPError as exc:
+            if exc.response.status_code == 429:
+                print(f"[espn_ages] {name}: RATE LIMITED (429) — backing off")
+            else:
+                print(f"[espn_ages] {name}: HTTP {exc.response.status_code} - {exc.response.reason}")
+            failed_requests += 1
+            time.sleep(delay * 2)  # Extra delay on errors
+            continue
         except requests.RequestException as exc:
-            log.debug("[espn_ages] request failed for %r: %s", name, exc)
+            print(f"[espn_ages] {name}: Request failed — {type(exc).__name__}: {exc}")
+            failed_requests += 1
+            time.sleep(delay)
+            continue
+        except Exception as exc:
+            print(f"[espn_ages] {name}: UNEXPECTED ERROR during request — {type(exc).__name__}: {exc}")
+            failed_requests += 1
             time.sleep(delay)
             continue
 
-        name_norm = name.lower().strip()
         dob: Optional[str] = None
+        found_match = False
 
-        for group in data.get("results", []):
-            for item in group.get("contents", []):
-                if item.get("type") != "athlete":
+        # Handle new ESPN API format - items array directly under root
+        try:
+            items = data.get("items", [])
+            if not items:
+                print(f"[espn_ages] {name}: No items in response")
+                
+            for item in items:
+                # ESPN uses "player" type, not "athlete"
+                item_type = item.get("type")
+                if item_type not in ("player", "athlete"):
                     continue
+                    
                 item_name = (item.get("displayName") or "").lower().strip()
                 if item_name != name_norm:
                     continue
+                    
+                found_match = True
                 # Prefer college-football entry; fall back to any match
-                league = (item.get("league") or {}).get("name", "")
+                league = item.get("league", "")
+                if isinstance(league, dict):
+                    league_name = league.get("name", "")
+                else:
+                    league_name = str(league)
+                    
                 candidate = item.get("dateOfBirth")
                 if candidate:
                     dob = candidate
-                    if "college" in league.lower():
-                        break       # best match found
+                    print(f"[espn_ages] {name}: Found DOB={dob} (league={league_name})")
+                    if "college" in league_name.lower():
+                        break  # best match found
+                else:
+                    print(f"[espn_ages] {name}: Match found but no dateOfBirth")
+                    
+        except Exception as exc:
+            print(f"[espn_ages] {name}: ERROR parsing ESPN response — {type(exc).__name__}: {exc}")
+            failed_parsing += 1
+            time.sleep(delay)
+            continue
 
-        if dob:
-            age = _age_at_date(dob, draft_year)
-            if age is not None:
-                result[name_norm] = age
-                log.debug("[espn_ages] %s  DOB=%s  age=%.2f", name, dob, age)
-            else:
-                log.debug("[espn_ages] %s  DOB=%s unparseable", name, dob)
+        if not found_match:
+            print(f"[espn_ages] {name}: No matching player found in ESPN results")
+            no_dob_found += 1
+        elif not dob:
+            print(f"[espn_ages] {name}: Match found but no DOB available")
+            no_dob_found += 1
         else:
-            log.debug("[espn_ages] %s  no DOB found", name)
+            try:
+                age = _age_at_date(dob, draft_year)
+                if age is not None:
+                    result[name_norm] = age
+                    print(f"[espn_ages] {name}: SUCCESS — DOB={dob} → age={age:.2f}")
+                else:
+                    print(f"[espn_ages] {name}: DOB={dob} is unparseable")
+                    failed_parsing += 1
+            except Exception as exc:
+                print(f"[espn_ages] {name}: ERROR calculating age from DOB={dob} — {exc}")
+                failed_parsing += 1
 
         time.sleep(delay)
 
-    log.info("[espn_ages] Resolved ages for %d / %d prospects",
-             len(result), len(names))
+    print(f"[espn_ages] COMPLETE: {len(result)}/{len(names)} ages resolved ({failed_requests} request fails, {no_dob_found} no DOB, {failed_parsing} parse errors)")
     return result
 
 
@@ -507,45 +743,59 @@ def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
     NOT present: age/DOB, combine measurements, college stats.
     Those come from the seed dataset when a name match is found.
     """
-    name = (
-        raw.get("name") or
-        " ".join(filter(None, [raw.get("first_name"), raw.get("last_name")]))
-    ).strip()
-    if not name:
+    try:
+        name = (
+            raw.get("name") or
+            " ".join(filter(None, [raw.get("first_name"), raw.get("last_name")]))
+        ).strip()
+        if not name:
+            print(f"[sportradar] Skipping prospect: no name found (raw keys: {list(raw.keys())})")
+            return None
+
+        position = (raw.get("position") or "").upper()
+        
+        # Filter to only include QB, RB, WR, TE positions
+        if position not in {"QB", "RB", "WR", "TE"}:
+            return None
+        
+        school = raw.get("team_name")
+
+        conf_obj = raw.get("conference") or {}
+        conference = conf_obj.get("name") if isinstance(conf_obj, dict) else conf_obj
+
+        # birth_place is "City, ST, USA" — no DOB available from this endpoint
+        birth_place = raw.get("birth_place") or ""
+        state = None
+        if birth_place:
+            parts = [p.strip() for p in birth_place.split(",")]
+            if len(parts) >= 2:
+                state = parts[1]   # e.g. "GA"
+
+        height = _safe_int(raw.get("height"))
+        weight = _safe_int(raw.get("weight"))
+        experience = raw.get("experience")
+
+        return {
+            "player_id":        f"ROOKIE_{draft_year}_{_slug(name)}",
+            "name":             name,
+            "position":         position,
+            "school":           school,
+            "age":              None,   # filled from combine or estimated from experience
+            "height_inches":    height,
+            "weight_lbs":       weight,
+            "state":            state,
+            "draft_class_year": draft_year,
+            "early_declare":    False,
+            "seasons":          [],     # filled from CFBD stats or seed
+            "athleticism":      {},     # filled from NFLVerse combine or seed
+            "source":           "sportradar",
+            # Internal fields used during merge — stripped before normalization
+            "_conference":      conference,
+            "_experience":      experience,  # SR/JR/SO/FR for age estimation
+        }
+    except Exception as exc:
+        print(f"[sportradar] ERROR parsing prospect: {raw.get('name', 'UNKNOWN')} — {type(exc).__name__}: {exc}")
         return None
-
-    position = (raw.get("position") or "").upper()
-    school   = raw.get("team_name")
-
-    conf_obj    = raw.get("conference") or {}
-    conference  = conf_obj.get("name") if isinstance(conf_obj, dict) else conf_obj
-
-    # birth_place is "City, ST, USA" — no DOB available from this endpoint
-    birth_place = raw.get("birth_place") or ""
-    state = None
-    if birth_place:
-        parts = [p.strip() for p in birth_place.split(",")]
-        if len(parts) >= 2:
-            state = parts[1]   # e.g. "GA"
-
-    return {
-        "player_id":        f"ROOKIE_{draft_year}_{_slug(name)}",
-        "name":             name,
-        "position":         position,
-        "school":           school,
-        "age":              None,   # filled from combine or estimated from experience
-        "height_inches":    _safe_int(raw.get("height")),
-        "weight_lbs":       _safe_int(raw.get("weight")),
-        "state":            state,
-        "draft_class_year": draft_year,
-        "early_declare":    False,
-        "seasons":          [],     # filled from CFBD stats or seed
-        "athleticism":      {},     # filled from NFLVerse combine or seed
-        "source":           "sportradar",
-        # Internal fields used during merge — stripped before normalization
-        "_conference":      conference,
-        "_experience":      raw.get("experience"),  # SR/JR/SO/FR for age estimation
-    }
 
 
 def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
@@ -557,27 +807,50 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
     Age, combine, and stats are not provided by this endpoint and must be
     merged from the seed dataset or other sources.
     """
+    print(f"[sportradar] Starting prospect fetch for draft year {draft_year}")
+    print(f"[sportradar] API key present: {'YES' if SPORTRADAR_KEY else 'NO'}")
+    print(f"[sportradar] Access level: {SPORTRADAR_ACCESS}")
+    
     if not SPORTRADAR_KEY:
-        log.info("[sportradar] No SPORTRADAR_API_KEY set — skipping live fetch")
+        print("[sportradar] FAILED: No SPORTRADAR_API_KEY set — cannot fetch prospects")
         return []
 
-    data = _sportradar_get(f"{draft_year}/prospects.json")
+    try:
+        data = _sportradar_get(f"{draft_year}/prospects.json")
+    except Exception as exc:
+        print(f"[sportradar] FAILED: Unexpected error fetching prospects for {draft_year} — {type(exc).__name__}: {exc}")
+        return []
+        
     if not data:
-        log.warning("[sportradar] No prospect data returned for %d", draft_year)
+        print(f"[sportradar] FAILED: No data returned for {draft_year} — API may be down or key invalid")
         return []
 
     raw_list = data.get("prospects") or (data if isinstance(data, list) else [])
     if not raw_list:
-        log.warning("[sportradar] Empty prospects list for %d", draft_year)
+        print(f"[sportradar] FAILED: Empty prospects list for {draft_year} — response format may have changed")
+        print(f"[sportradar] Response keys: {list(data.keys()) if isinstance(data, dict) else 'N/A (not dict)'}")
         return []
 
+    print(f"[sportradar] Processing {len(raw_list)} raw prospects from API")
     results = []
-    for raw in raw_list:
-        prospect = _parse_sportradar_prospect(raw, draft_year)
-        if prospect:
-            results.append(prospect)
+    filtered_count = 0
+    parse_errors = 0
+    
+    for i, raw in enumerate(raw_list):
+        try:
+            prospect = _parse_sportradar_prospect(raw, draft_year)
+            if prospect:
+                results.append(prospect)
+            else:
+                filtered_count += 1
+        except Exception as exc:
+            print(f"[sportradar] ERROR parsing prospect at index {i} — {type(exc).__name__}: {exc}")
+            parse_errors += 1
+        
+        if (i + 1) % 100 == 0:
+            print(f"[sportradar] Processed {i + 1}/{len(raw_list)} raw prospects ({len(results)} kept, {filtered_count} filtered, {parse_errors} errors)")
 
-    log.info("[sportradar] Fetched %d prospects for %d", len(results), draft_year)
+    print(f"[sportradar] COMPLETE: {len(results)} prospects for {draft_year} (filtered {filtered_count} non-QB/RB/WR/TE, {parse_errors} parse errors)")
     return results
 
 
@@ -592,484 +865,49 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 # 2025 class data is included as the "prior year" class.
 # ─────────────────────────────────────────────────────────────────────────────
 
-SEED_PROSPECTS_2026: List[Dict[str, Any]] = [
-    # ── 2026 Draft Class (2025 college season) ──────────────────────────────
-    # ── WRs ──────────────────────────────────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2026_CARNELL_TATE",
-        "name": "Carnell Tate", "position": "WR", "school": "Ohio State",
-        "age": 20.3, "height_inches": 74, "weight_lbs": 205,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 12, "receptions": 68, "targets": 95,
-             "receiving_yards": 1050, "receiving_tds": 9,
-             "yds_per_reception": 15.4, "dominator_rating": 0.28,
-             "market_share_yards": 0.29, "market_share_tds": 0.35,
-             "team": "Ohio State", "conference": "Big Ten", "team_pass_rate": 0.61},
-            {"season": 2024, "games_played": 13, "receptions": 34, "targets": 52,
-             "receiving_yards": 515, "receiving_tds": 5,
-             "yds_per_reception": 15.1, "dominator_rating": 0.10,
-             "team": "Ohio State", "conference": "Big Ten", "team_pass_rate": 0.62},
-        ],
-        "athleticism": {"forty_yard": 4.42, "vertical_inches": 37.5,
-                        "broad_jump_in": 124, "ras_score": 8.7},
-    },
-    {
-        "player_id": "ROOKIE_2026_ISAIAH_BOND",
-        "name": "Isaiah Bond", "position": "WR", "school": "Texas",
-        "age": 21.1, "height_inches": 72, "weight_lbs": 190,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "receptions": 65, "targets": 92,
-             "receiving_yards": 1105, "receiving_tds": 11,
-             "yds_per_reception": 17.0, "dominator_rating": 0.25,
-             "market_share_yards": 0.27, "market_share_tds": 0.38,
-             "team": "Texas", "conference": "SEC", "team_pass_rate": 0.59},
-            {"season": 2024, "games_played": 12, "receptions": 48, "targets": 72,
-             "receiving_yards": 688, "receiving_tds": 4,
-             "yds_per_reception": 14.3, "dominator_rating": 0.16,
-             "team": "Alabama", "conference": "SEC", "team_pass_rate": 0.57,
-             "transfer_history": "Alabama → Texas"},
-        ],
-        "athleticism": {"forty_yard": 4.32, "vertical_inches": 39.0,
-                        "broad_jump_in": 128, "ras_score": 9.3},
-    },
-    {
-        "player_id": "ROOKIE_2026_JORDAN_HUDSON",
-        "name": "Jordan Hudson", "position": "WR", "school": "UCF",
-        "age": 20.8, "height_inches": 76, "weight_lbs": 215,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 12, "receptions": 78, "targets": 108,
-             "receiving_yards": 1242, "receiving_tds": 12,
-             "yds_per_reception": 15.9, "dominator_rating": 0.42,
-             "market_share_yards": 0.45, "market_share_tds": 0.52,
-             "team": "UCF", "conference": "Big 12", "team_pass_rate": 0.62},
-            {"season": 2024, "games_played": 13, "receptions": 47, "targets": 68,
-             "receiving_yards": 743, "receiving_tds": 6,
-             "yds_per_reception": 15.8, "dominator_rating": 0.28,
-             "team": "UCF", "conference": "Big 12", "team_pass_rate": 0.60},
-        ],
-        "athleticism": {"forty_yard": 4.44, "vertical_inches": 36.0,
-                        "broad_jump_in": 119, "ras_score": 8.1},
-    },
-    {
-        "player_id": "ROOKIE_2026_EMEKA_EGBUKA",
-        "name": "Emeka Egbuka", "position": "WR", "school": "Ohio State",
-        "age": 23.1, "height_inches": 73, "weight_lbs": 205,
-        "draft_class_year": 2026,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "receptions": 72, "targets": 98,
-             "receiving_yards": 935, "receiving_tds": 8,
-             "yds_per_reception": 13.0, "dominator_rating": 0.24,
-             "market_share_yards": 0.26, "market_share_tds": 0.31,
-             "team": "Ohio State", "conference": "Big Ten", "team_pass_rate": 0.61},
-            {"season": 2024, "games_played": 15, "receptions": 81, "targets": 110,
-             "receiving_yards": 1011, "receiving_tds": 10,
-             "yds_per_reception": 12.5, "dominator_rating": 0.20,
-             "team": "Ohio State", "conference": "Big Ten", "team_pass_rate": 0.62},
-        ],
-        "athleticism": {"forty_yard": 4.39, "ras_score": 9.0},
-    },
-    # ── RBs ──────────────────────────────────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2026_JEREMIYAH_LOVE",
-        "name": "Jeremiyah Love", "position": "RB", "school": "Wisconsin",
-        "age": 20.1, "height_inches": 70, "weight_lbs": 205,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "rush_attempts": 285,
-             "rush_yards": 1705, "rush_tds": 19, "receptions": 22,
-             "receiving_yards": 198, "receiving_tds": 1,
-             "yds_per_carry": 5.98, "dominator_rating": 0.58,
-             "market_share_yards": 0.60, "market_share_tds": 0.70,
-             "team": "Wisconsin", "conference": "Big Ten", "team_pass_rate": 0.43},
-            {"season": 2024, "games_played": 13, "rush_attempts": 173,
-             "rush_yards": 1069, "rush_tds": 16, "receptions": 15,
-             "receiving_yards": 121, "receiving_tds": 0,
-             "yds_per_carry": 6.18, "dominator_rating": 0.42,
-             "team": "Wisconsin", "conference": "Big Ten", "team_pass_rate": 0.44},
-        ],
-        "athleticism": {"forty_yard": 4.40, "vertical_inches": 39.0,
-                        "broad_jump_in": 128, "ras_score": 9.4},
-    },
-    {
-        "player_id": "ROOKIE_2026_OLLIE_GORDON",
-        "name": "Ollie Gordon", "position": "RB", "school": "Oklahoma State",
-        "age": 21.8, "height_inches": 73, "weight_lbs": 220,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 12, "rush_attempts": 238,
-             "rush_yards": 1380, "rush_tds": 14, "receptions": 28,
-             "receiving_yards": 265, "receiving_tds": 2,
-             "yds_per_carry": 5.80, "dominator_rating": 0.52,
-             "market_share_yards": 0.54, "market_share_tds": 0.64,
-             "team": "Oklahoma State", "conference": "Big 12", "team_pass_rate": 0.48},
-            {"season": 2024, "games_played": 13, "rush_attempts": 285,
-             "rush_yards": 1732, "rush_tds": 21, "receptions": 33,
-             "receiving_yards": 330, "receiving_tds": 1,
-             "yds_per_carry": 6.08, "dominator_rating": 0.63,
-             "team": "Oklahoma State", "conference": "Big 12", "team_pass_rate": 0.46},
-        ],
-        "athleticism": {"forty_yard": 4.46, "vertical_inches": 36.5,
-                        "broad_jump_in": 121, "ras_score": 8.5},
-    },
-    {
-        "player_id": "ROOKIE_2026_JORDAN_JAMES",
-        "name": "Jordan James", "position": "RB", "school": "Oregon",
-        "age": 21.3, "height_inches": 70, "weight_lbs": 213,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "rush_attempts": 255,
-             "rush_yards": 1445, "rush_tds": 13, "receptions": 18,
-             "receiving_yards": 142, "receiving_tds": 1,
-             "yds_per_carry": 5.67, "dominator_rating": 0.45,
-             "market_share_yards": 0.48, "market_share_tds": 0.52,
-             "team": "Oregon", "conference": "Big Ten", "team_pass_rate": 0.59},
-            {"season": 2024, "games_played": 14, "rush_attempts": 193,
-             "rush_yards": 1138, "rush_tds": 11, "receptions": 12,
-             "receiving_yards": 94, "receiving_tds": 0,
-             "yds_per_carry": 5.90, "dominator_rating": 0.32,
-             "team": "Oregon", "conference": "Pac-12", "team_pass_rate": 0.60},
-        ],
-        "athleticism": {"forty_yard": 4.49, "vertical_inches": 36.0,
-                        "ras_score": 7.9},
-    },
-    # ── QBs ──────────────────────────────────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2026_JALEN_MILROE",
-        "name": "Jalen Milroe", "position": "QB", "school": "Alabama",
-        "age": 22.1, "height_inches": 74, "weight_lbs": 225,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "pass_yards": 3580,
-             "pass_tds": 28, "pass_attempts": 385, "completions": 238,
-             "interceptions": 9, "rush_yards": 718, "rush_tds": 12,
-             "yds_per_attempt": 9.30, "completion_pct": 61.8,
-             "td_int_ratio": 3.11, "dominator_rating": 0.58,
-             "team": "Alabama", "conference": "SEC", "team_pass_rate": 0.56},
-            {"season": 2024, "games_played": 13, "pass_yards": 2834,
-             "pass_tds": 23, "pass_attempts": 319, "completions": 187,
-             "interceptions": 6, "rush_yards": 531, "rush_tds": 12,
-             "yds_per_attempt": 8.88, "completion_pct": 58.6,
-             "td_int_ratio": 3.83,
-             "team": "Alabama", "conference": "SEC", "team_pass_rate": 0.57},
-        ],
-        "athleticism": {"forty_yard": 4.52, "vertical_inches": 35.0,
-                        "ras_score": 7.6},
-    },
-    {
-        "player_id": "ROOKIE_2026_QUINN_EWERS",
-        "name": "Quinn Ewers", "position": "QB", "school": "Texas",
-        "age": 21.9, "height_inches": 75, "weight_lbs": 206,
-        "draft_class_year": 2026, "early_declare": True,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "pass_yards": 3845,
-             "pass_tds": 32, "pass_attempts": 398, "completions": 268,
-             "interceptions": 8, "rush_yards": 145, "rush_tds": 3,
-             "yds_per_attempt": 9.66, "completion_pct": 67.3,
-             "td_int_ratio": 4.00, "dominator_rating": 0.53,
-             "team": "Texas", "conference": "SEC", "team_pass_rate": 0.59},
-            {"season": 2024, "games_played": 11, "pass_yards": 2665,
-             "pass_tds": 22, "pass_attempts": 297, "completions": 194,
-             "interceptions": 6,
-             "yds_per_attempt": 8.97, "completion_pct": 65.3,
-             "td_int_ratio": 3.67,
-             "team": "Texas", "conference": "Big 12", "team_pass_rate": 0.60},
-        ],
-        "athleticism": {"forty_yard": 4.74, "ras_score": 4.8},
-    },
-    # ── TEs ──────────────────────────────────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2026_COLSTON_LOVELAND",
-        "name": "Colston Loveland", "position": "TE", "school": "Michigan",
-        "age": 23.0, "height_inches": 77, "weight_lbs": 248,
-        "draft_class_year": 2026,
-        "seasons": [
-            {"season": 2025, "games_played": 13, "receptions": 64, "targets": 85,
-             "receiving_yards": 715, "receiving_tds": 7,
-             "yds_per_reception": 11.2, "dominator_rating": 0.24,
-             "market_share_yards": 0.26, "market_share_tds": 0.32,
-             "team": "Michigan", "conference": "Big Ten", "team_pass_rate": 0.47},
-            {"season": 2024, "games_played": 13, "receptions": 56, "targets": 76,
-             "receiving_yards": 582, "receiving_tds": 8,
-             "yds_per_reception": 10.4, "dominator_rating": 0.18,
-             "team": "Michigan", "conference": "Big Ten", "team_pass_rate": 0.45},
-        ],
-        "athleticism": {"forty_yard": 4.59, "ras_score": 8.1},
-    },
-]
-
-SEED_PROSPECTS_2025: List[Dict[str, Any]] = [
-    # 2025 draft class — already played their rookie season
-    {
-        "player_id": "ROOKIE_2025_TRAVIS_HUNTER",
-        "name": "Travis Hunter", "position": "WR", "school": "Colorado",
-        "age": 21.4, "height_inches": 72, "weight_lbs": 188,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 12, "receptions": 96, "targets": 130,
-             "receiving_yards": 1258, "receiving_tds": 15,
-             "yds_per_reception": 13.1, "dominator_rating": 0.35,
-             "market_share_yards": 0.36, "market_share_tds": 0.55,
-             "team": "Colorado", "conference": "Big 12", "team_pass_rate": 0.63},
-        ],
-        "athleticism": {"forty_yard": 4.38, "ras_score": 8.4},
-    },
-    {
-        "player_id": "ROOKIE_2025_ASHTON_JEANTY",
-        "name": "Ashton Jeanty", "position": "RB", "school": "Boise State",
-        "age": 21.3, "height_inches": 68, "weight_lbs": 215,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "rush_attempts": 374,
-             "rush_yards": 2601, "rush_tds": 29, "receptions": 16,
-             "receiving_yards": 149, "receiving_tds": 2,
-             "yds_per_carry": 6.96, "dominator_rating": 0.72,
-             "market_share_yards": 0.73, "market_share_tds": 0.85,
-             "team": "Boise State", "conference": "Mountain West", "team_pass_rate": 0.38},
-        ],
-        "athleticism": {"forty_yard": 4.48, "ras_score": 8.6},
-    },
-    {
-        "player_id": "ROOKIE_2025_CAM_WARD",
-        "name": "Cam Ward", "position": "QB", "school": "Miami",
-        "age": 23.2, "height_inches": 74, "weight_lbs": 220,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "pass_yards": 4313,
-             "pass_tds": 39, "pass_attempts": 444, "completions": 316,
-             "interceptions": 7,
-             "yds_per_attempt": 9.71, "completion_pct": 71.2,
-             "td_int_ratio": 5.57,
-             "team": "Miami", "conference": "ACC", "team_pass_rate": 0.62},
-        ],
-        "athleticism": {"forty_yard": 4.62, "ras_score": 5.8},
-    },
-    {
-        "player_id": "ROOKIE_2025_TETAIROA_MCMILLAN",
-        "name": "Tetairoa McMillan", "position": "WR", "school": "Arizona",
-        "age": 21.2, "height_inches": 77, "weight_lbs": 219,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 12, "receptions": 84, "targets": 118,
-             "receiving_yards": 1319, "receiving_tds": 8,
-             "yds_per_reception": 15.7, "dominator_rating": 0.38,
-             "market_share_yards": 0.40, "market_share_tds": 0.44,
-             "team": "Arizona", "conference": "Big 12", "team_pass_rate": 0.58},
-        ],
-        "athleticism": {"forty_yard": 4.45, "ras_score": 9.2},
-    },
-    {
-        "player_id": "ROOKIE_2025_TYLER_WARREN",
-        "name": "Tyler Warren", "position": "TE", "school": "Penn State",
-        "age": 22.6, "height_inches": 77, "weight_lbs": 258,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 14, "receptions": 104, "targets": 138,
-             "receiving_yards": 1233, "receiving_tds": 8,
-             "yds_per_reception": 11.9, "dominator_rating": 0.30,
-             "team": "Penn State", "conference": "Big Ten", "team_pass_rate": 0.58},
-        ],
-        "athleticism": {"forty_yard": 4.65, "ras_score": 7.4},
-    },
-    # Harold Fannin Jr. — declared early from Bowling Green, drafted 2025
-    {
-        "player_id": "ROOKIE_2025_HAROLD_FANNIN",
-        "name": "Harold Fannin Jr", "position": "TE", "school": "Bowling Green",
-        "age": 22.4, "height_inches": 77, "weight_lbs": 252,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "receptions": 116, "targets": 151,
-             "receiving_yards": 1496, "receiving_tds": 10,
-             "yds_per_reception": 12.9, "dominator_rating": 0.56,
-             "market_share_yards": 0.57, "market_share_tds": 0.67,
-             "team": "Bowling Green", "conference": "MAC", "team_pass_rate": 0.66},
-            {"season": 2023, "games_played": 12, "receptions": 76, "targets": 101,
-             "receiving_yards": 965, "receiving_tds": 10,
-             "yds_per_reception": 12.7, "dominator_rating": 0.42,
-             "market_share_yards": 0.43, "market_share_tds": 0.56,
-             "team": "Bowling Green", "conference": "MAC", "team_pass_rate": 0.63},
-        ],
-        "athleticism": {"forty_yard": 4.61, "ras_score": 7.6},
-    },
-    # ── Additional 2025 draft class (QBs) ────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2025_SHEDEUR_SANDERS",
-        "name": "Shedeur Sanders", "position": "QB", "school": "Colorado",
-        "age": 23.0, "height_inches": 74, "weight_lbs": 215,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 12, "pass_yards": 4134,
-             "pass_tds": 37, "pass_attempts": 494, "completions": 355,
-             "interceptions": 10, "rush_yards": 92, "rush_tds": 2,
-             "yds_per_attempt": 8.37, "completion_pct": 71.9,
-             "td_int_ratio": 3.70, "dominator_rating": 0.54,
-             "team": "Colorado", "conference": "Big 12", "team_pass_rate": 0.67},
-            {"season": 2023, "games_played": 12, "pass_yards": 3230,
-             "pass_tds": 27, "pass_attempts": 385, "completions": 270,
-             "interceptions": 5, "rush_yards": 161, "rush_tds": 4,
-             "yds_per_attempt": 8.39, "completion_pct": 70.1,
-             "td_int_ratio": 5.40,
-             "team": "Colorado", "conference": "Pac-12", "team_pass_rate": 0.65},
-        ],
-        "athleticism": {"forty_yard": 4.65, "ras_score": 6.2},
-    },
-    {
-        "player_id": "ROOKIE_2025_DILLON_GABRIEL",
-        "name": "Dillon Gabriel", "position": "QB", "school": "Oregon",
-        "age": 24.5, "height_inches": 71, "weight_lbs": 200,
-        "draft_class_year": 2025,
-        "seasons": [
-            {"season": 2024, "games_played": 14, "pass_yards": 3943,
-             "pass_tds": 37, "pass_attempts": 441, "completions": 322,
-             "interceptions": 6, "rush_yards": 245, "rush_tds": 4,
-             "yds_per_attempt": 8.94, "completion_pct": 73.0,
-             "td_int_ratio": 6.17, "dominator_rating": 0.51,
-             "team": "Oregon", "conference": "Big Ten", "team_pass_rate": 0.62},
-            {"season": 2023, "games_played": 13, "pass_yards": 3660,
-             "pass_tds": 30, "pass_attempts": 402, "completions": 284,
-             "interceptions": 9,
-             "yds_per_attempt": 9.10, "completion_pct": 70.6,
-             "td_int_ratio": 3.33,
-             "team": "Oklahoma", "conference": "Big 12", "team_pass_rate": 0.63},
-        ],
-        "athleticism": {"forty_yard": 4.70, "ras_score": 3.8},
-    },
-    # ── Additional 2025 draft class (RBs) ────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2025_OMARION_HAMPTON",
-        "name": "Omarion Hampton", "position": "RB", "school": "UNC",
-        "age": 21.5, "height_inches": 71, "weight_lbs": 220,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "rush_attempts": 265,
-             "rush_yards": 1660, "rush_tds": 15, "receptions": 36,
-             "receiving_yards": 290, "receiving_tds": 2,
-             "yds_per_carry": 6.26, "dominator_rating": 0.55,
-             "market_share_yards": 0.57, "market_share_tds": 0.71,
-             "team": "UNC", "conference": "ACC", "team_pass_rate": 0.49},
-            {"season": 2023, "games_played": 12, "rush_attempts": 214,
-             "rush_yards": 1346, "rush_tds": 15, "receptions": 22,
-             "receiving_yards": 183, "receiving_tds": 2,
-             "yds_per_carry": 6.29, "dominator_rating": 0.48,
-             "team": "UNC", "conference": "ACC", "team_pass_rate": 0.50},
-        ],
-        "athleticism": {"forty_yard": 4.41, "vertical_inches": 38.5,
-                        "broad_jump_in": 126, "ras_score": 8.9},
-    },
-    {
-        "player_id": "ROOKIE_2025_QUINSHON_JUDKINS",
-        "name": "Quinshon Judkins", "position": "RB", "school": "Ohio State",
-        "age": 21.2, "height_inches": 70, "weight_lbs": 213,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 15, "rush_attempts": 182,
-             "rush_yards": 1060, "rush_tds": 12, "receptions": 19,
-             "receiving_yards": 142, "receiving_tds": 1,
-             "yds_per_carry": 5.82, "dominator_rating": 0.28,
-             "market_share_yards": 0.30, "market_share_tds": 0.43,
-             "team": "Ohio State", "conference": "Big Ten", "team_pass_rate": 0.57},
-            {"season": 2023, "games_played": 12, "rush_attempts": 231,
-             "rush_yards": 1282, "rush_tds": 17, "receptions": 15,
-             "receiving_yards": 101, "receiving_tds": 0,
-             "yds_per_carry": 5.55, "dominator_rating": 0.45,
-             "team": "Ole Miss", "conference": "SEC", "team_pass_rate": 0.48,
-             "transfer_history": "Ole Miss → Ohio State"},
-        ],
-        "athleticism": {"forty_yard": 4.47, "vertical_inches": 36.0,
-                        "ras_score": 8.1},
-    },
-    # ── Additional 2025 draft class (WRs) ────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2025_LUTHER_BURDEN",
-        "name": "Luther Burden III", "position": "WR", "school": "Missouri",
-        "age": 21.0, "height_inches": 71, "weight_lbs": 208,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "receptions": 86, "targets": 118,
-             "receiving_yards": 1212, "receiving_tds": 9,
-             "yds_per_reception": 14.1, "dominator_rating": 0.35,
-             "market_share_yards": 0.37, "market_share_tds": 0.47,
-             "team": "Missouri", "conference": "SEC", "team_pass_rate": 0.57},
-            {"season": 2023, "games_played": 13, "receptions": 50, "targets": 73,
-             "receiving_yards": 765, "receiving_tds": 6,
-             "yds_per_reception": 15.3, "dominator_rating": 0.22,
-             "team": "Missouri", "conference": "SEC", "team_pass_rate": 0.56},
-        ],
-        "athleticism": {"forty_yard": 4.38, "vertical_inches": 40.0,
-                        "broad_jump_in": 130, "ras_score": 9.4},
-    },
-    {
-        "player_id": "ROOKIE_2025_MATTHEW_GOLDEN",
-        "name": "Matthew Golden", "position": "WR", "school": "Texas",
-        "age": 21.4, "height_inches": 71, "weight_lbs": 190,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "receptions": 57, "targets": 80,
-             "receiving_yards": 987, "receiving_tds": 9,
-             "yds_per_reception": 17.3, "dominator_rating": 0.23,
-             "market_share_yards": 0.25, "market_share_tds": 0.35,
-             "team": "Texas", "conference": "SEC", "team_pass_rate": 0.60},
-            {"season": 2023, "games_played": 13, "receptions": 44, "targets": 64,
-             "receiving_yards": 652, "receiving_tds": 8,
-             "yds_per_reception": 14.8, "dominator_rating": 0.18,
-             "team": "Houston", "conference": "Big 12", "team_pass_rate": 0.57,
-             "transfer_history": "Houston → Texas"},
-        ],
-        "athleticism": {"forty_yard": 4.29, "vertical_inches": 38.5,
-                        "broad_jump_in": 127, "ras_score": 9.6},
-    },
-    {
-        "player_id": "ROOKIE_2025_JAYDEN_HIGGINS",
-        "name": "Jayden Higgins", "position": "WR", "school": "Iowa State",
-        "age": 22.5, "height_inches": 77, "weight_lbs": 215,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "receptions": 68, "targets": 96,
-             "receiving_yards": 1074, "receiving_tds": 11,
-             "yds_per_reception": 15.8, "dominator_rating": 0.30,
-             "market_share_yards": 0.32, "market_share_tds": 0.48,
-             "team": "Iowa State", "conference": "Big 12", "team_pass_rate": 0.55},
-            {"season": 2023, "games_played": 12, "receptions": 52, "targets": 76,
-             "receiving_yards": 801, "receiving_tds": 7,
-             "yds_per_reception": 15.4, "dominator_rating": 0.24,
-             "team": "Iowa State", "conference": "Big 12", "team_pass_rate": 0.52},
-        ],
-        "athleticism": {"forty_yard": 4.49, "vertical_inches": 36.0,
-                        "ras_score": 8.0},
-    },
-    # ── Additional 2025 draft class (TEs) ────────────────────────────────────
-    {
-        "player_id": "ROOKIE_2025_MASON_TAYLOR",
-        "name": "Mason Taylor", "position": "TE", "school": "LSU",
-        "age": 21.8, "height_inches": 77, "weight_lbs": 245,
-        "draft_class_year": 2025, "early_declare": True,
-        "seasons": [
-            {"season": 2024, "games_played": 13, "receptions": 61, "targets": 83,
-             "receiving_yards": 665, "receiving_tds": 5,
-             "yds_per_reception": 10.9, "dominator_rating": 0.20,
-             "market_share_yards": 0.21, "market_share_tds": 0.28,
-             "team": "LSU", "conference": "SEC", "team_pass_rate": 0.56},
-            {"season": 2023, "games_played": 13, "receptions": 44, "targets": 62,
-             "receiving_yards": 475, "receiving_tds": 3,
-             "yds_per_reception": 10.8, "dominator_rating": 0.14,
-             "team": "LSU", "conference": "SEC", "team_pass_rate": 0.55},
-        ],
-        "athleticism": {"forty_yard": 4.68, "ras_score": 6.9},
-    },
-]
-
-SEED_BY_YEAR: Dict[int, List[Dict]] = {
-    2025: SEED_PROSPECTS_2025,
-    2026: SEED_PROSPECTS_2026,
-}
-
 
 def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
     """Return the curated seed dataset for a given draft year."""
-    return SEED_BY_YEAR.get(draft_year, [])
+    return []
 
+
+def prospects_from_mock_draft(mock_picks: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Create minimal prospect records from mock draft data.
+
+    This is used as a fallback when no seed data or API data is available.
+    """
+    prospects = []
+    seen_players = set()
+
+    for pick in mock_picks:
+        player_name = pick.get("player_name", "").strip()
+        if not player_name or player_name in seen_players:
+            continue
+
+        seen_players.add(player_name)
+
+        # Generate player_id
+        player_id = f"ROOKIE_{draft_year}_{_slug(player_name)}"
+
+        prospects.append({
+            "player_id": player_id,
+            "name": player_name,
+            "position": pick.get("position", ""),
+            "school": pick.get("school", ""),
+            "draft_class_year": draft_year,
+            "age": None,
+            "height_inches": None,
+            "weight_lbs": None,
+            "hometown": None,
+            "state": None,
+            "early_declare": False,
+            "transfer_history": None,
+            "headshot_url": None,
+        })
+
+    print(f"[ingestion] Created {len(prospects)} prospects from mock draft data")
+    return prospects
 
 def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -1120,88 +958,158 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
 
     Age priority: ESPN DOB lookup → seed value → Sportradar experience estimate
     """
-    seed = get_seed_prospects(draft_year)
+    print(f"[ingestion] Starting prospect loading for draft year {draft_year}")
+    print(f"[ingestion] SPORTRADAR_API_KEY present: {'YES' if SPORTRADAR_KEY else 'NO'}")
+    print(f"[ingestion] CFBD_API_KEY present: {'YES' if CFBD_KEY else 'NO'}")
+    
+    try:
+        seed = get_seed_prospects(draft_year) or []
+    except Exception as exc:
+        print(f"[ingestion] ERROR loading seed prospects — {type(exc).__name__}: {exc}")
+        seed = []
+    print(f"[ingestion] Loaded {len(seed)} seed prospects")
 
     # ── No Sportradar key — use seed only ────────────────────────────────────
     if not SPORTRADAR_KEY:
-        log.info("[ingestion] Using seed data: %d prospects for %d", len(seed), draft_year)
+        print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set — returning seed data only ({len(seed)} prospects)")
         return [normalize_prospect(p) for p in seed]
 
     # ── Fetch from all live sources ───────────────────────────────────────────
-    sr_prospects = fetch_sportradar_prospects(draft_year)
-    if not sr_prospects:
-        log.warning("[ingestion] Sportradar returned no data for %d — using seed", draft_year)
+    print(f"[ingestion] Fetching Sportradar prospects for {draft_year}")
+    try:
+        sr_prospects = fetch_sportradar_prospects(draft_year)
+    except Exception as exc:
+        print(f"[ingestion] ERROR fetching Sportradar prospects — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] Falling back to seed data ({len(seed)} prospects)")
         return [normalize_prospect(p) for p in seed]
+    
+    if not sr_prospects:
+        print(f"[ingestion] FAILED: Sportradar returned no data for {draft_year} — using seed ({len(seed)} prospects)")
+        return [normalize_prospect(p) for p in seed]
+    
+    print(f"[ingestion] Sportradar returned {len(sr_prospects)} prospects")
 
     # ESPN age lookup for all Sportradar prospects (no key required)
-    espn_ages = fetch_espn_ages([p["name"] for p in sr_prospects], draft_year)
+    print(f"[ingestion] Starting ESPN age lookup for {len(sr_prospects)} prospects")
+    try:
+        espn_ages = fetch_espn_ages([p["name"] for p in sr_prospects], draft_year)
+    except Exception as exc:
+        print(f"[ingestion] ERROR in ESPN age lookup — {type(exc).__name__}: {exc}")
+        espn_ages = {}
+    print(f"[ingestion] ESPN ages resolved for {len(espn_ages)} prospects")
 
-    combine_data = fetch_nflverse_combine(draft_year)         # always attempted
-    cfbd_stats   = fetch_cfbd_college_stats(draft_year)       # only if CFBD_KEY set
+    print(f"[ingestion] Fetching NFLverse combine data for {draft_year}")
+    try:
+        combine_data = fetch_nflverse_combine(draft_year)
+    except Exception as exc:
+        print(f"[ingestion] ERROR fetching NFLverse combine data — {type(exc).__name__}: {exc}")
+        combine_data = {}
+    print(f"[ingestion] NFLverse combine data loaded for {len(combine_data)} prospects")
+    
+    print(f"[ingestion] Fetching CFBD college stats for {draft_year}")
+    try:
+        cfbd_stats = fetch_cfbd_college_stats(draft_year)
+    except Exception as exc:
+        print(f"[ingestion] ERROR fetching CFBD stats — {type(exc).__name__}: {exc}")
+        cfbd_stats = {}
+    print(f"[ingestion] CFBD stats loaded for {len(cfbd_stats)} prospects")
 
-    seed_by_name = {p["name"].lower(): p for p in seed}
+    try:
+        seed_by_name = {p["name"].lower(): p for p in seed}
+    except Exception as exc:
+        print(f"[ingestion] ERROR building seed lookup — {type(exc).__name__}: {exc}")
+        seed_by_name = {}
+    
+    print(f"[ingestion] Starting enrichment of {len(sr_prospects)} Sportradar prospects")
 
     enriched: List[Dict] = []
-    for sr in sr_prospects:
-        name_key = sr["name"].lower()
-        seed_p   = seed_by_name.get(name_key)
-        nflv     = combine_data.get(name_key, {})
-        cfbd_seasons = cfbd_stats.get(name_key)
+    enrichment_errors = 0
+    
+    for i, sr in enumerate(sr_prospects):
+        try:
+            name_key = sr["name"].lower()
+            seed_p   = seed_by_name.get(name_key)
+            nflv     = combine_data.get(name_key, {})
+            cfbd_seasons = cfbd_stats.get(name_key)
 
-        # Start with Sportradar bio
-        p: Dict[str, Any] = {
-            "player_id":        sr["player_id"],
-            "name":             sr["name"],
-            "position":         sr["position"],
-            "school":           sr["school"] or (seed_p or {}).get("school"),
-            "height_inches":    sr["height_inches"] or nflv.get("height_inches") or (seed_p or {}).get("height_inches"),
-            "weight_lbs":       sr["weight_lbs"]    or nflv.get("weight_lbs")    or (seed_p or {}).get("weight_lbs"),
-            "state":            sr.get("state"),
-            "draft_class_year": draft_year,
-            "early_declare":    (seed_p or {}).get("early_declare", False),
-            "transfer_history": (seed_p or {}).get("transfer_history"),
-            "source":           "sportradar",
-        }
+            # Start with Sportradar bio
+            p: Dict[str, Any] = {
+                "player_id":        sr["player_id"],
+                "name":             sr["name"],
+                "position":         sr["position"],
+                "school":           sr["school"] or (seed_p or {}).get("school"),
+                "height_inches":    sr["height_inches"] or nflv.get("height_inches") or (seed_p or {}).get("height_inches"),
+                "weight_lbs":       sr["weight_lbs"]    or nflv.get("weight_lbs")    or (seed_p or {}).get("weight_lbs"),
+                "state":            sr.get("state"),
+                "draft_class_year": draft_year,
+                "early_declare":    (seed_p or {}).get("early_declare", False),
+                "transfer_history": (seed_p or {}).get("transfer_history"),
+                "source":           "sportradar",
+            }
 
-        # ── Age: ESPN DOB (exact) → seed → experience estimate ───────────────
-        p["age"] = (
-            espn_ages.get(name_key) or
-            (seed_p or {}).get("age") or
-            _estimate_age(sr.get("_experience"), draft_year)
-        )
+            # ── Age: ESPN DOB (exact) → seed → experience estimate ───────────────
+            try:
+                p["age"] = (
+                    espn_ages.get(name_key) or
+                    (seed_p or {}).get("age") or
+                    _estimate_age(sr.get("_experience"), draft_year)
+                )
+            except Exception as exc:
+                print(f"[ingestion] ERROR calculating age for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                p["age"] = None
 
-        # ── Athleticism / combine ─────────────────────────────────────────────
-        seed_ath  = (seed_p or {}).get("athleticism") or {}
-        nflv_ath  = nflv.get("athleticism") or {}
-        # NFLVerse is authoritative for combine; seed fills any remaining gaps
-        p["athleticism"] = {**seed_ath, **nflv_ath}
+            # ── Athleticism / combine ─────────────────────────────────────────────
+            try:
+                seed_ath  = (seed_p or {}).get("athleticism") or {}
+                nflv_ath  = nflv.get("athleticism") or {}
+                # NFLVerse is authoritative for combine; seed fills any remaining gaps
+                p["athleticism"] = {**seed_ath, **nflv_ath}
+            except Exception as exc:
+                print(f"[ingestion] ERROR merging athleticism for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                p["athleticism"] = {}
 
-        # ── College stats ─────────────────────────────────────────────────────
-        if cfbd_seasons:
-            p["seasons"] = cfbd_seasons
-        elif seed_p and seed_p.get("seasons"):
-            p["seasons"] = seed_p["seasons"]
-        elif sr.get("_conference"):
-            # New player with no stats — inject conference so competition score works
-            p["seasons"] = [{"season": draft_year - 1, "conference": sr["_conference"]}]
-        else:
-            p["seasons"] = []
+            # ── College stats ─────────────────────────────────────────────────────
+            try:
+                if cfbd_seasons:
+                    p["seasons"] = cfbd_seasons
+                elif seed_p and seed_p.get("seasons"):
+                    p["seasons"] = seed_p["seasons"]
+                elif sr.get("_conference"):
+                    # New player with no stats — inject conference so competition score works
+                    p["seasons"] = [{"season": draft_year - 1, "conference": sr["_conference"]}]
+                else:
+                    p["seasons"] = []
+            except Exception as exc:
+                print(f"[ingestion] ERROR setting seasons for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                p["seasons"] = []
 
-        enriched.append(p)
+            enriched.append(p)
+        except Exception as exc:
+            print(f"[ingestion] ERROR enriching prospect '{sr.get('name', 'UNKNOWN')}' (index {i}) — {type(exc).__name__}: {exc}")
+            enrichment_errors += 1
+        
+        if len(enriched) % 50 == 0:
+            print(f"[ingestion] Enriched {len(enriched)}/{len(sr_prospects)} prospects ({enrichment_errors} errors)")
 
     # Seed players not returned by Sportradar
-    sr_names  = {p["name"].lower() for p in sr_prospects}
-    seed_only = [p for p in seed if p["name"].lower() not in sr_names]
-    if seed_only:
-        log.info("[ingestion] %d seed prospects not in Sportradar — appending", len(seed_only))
+    try:
+        sr_names  = {p["name"].lower() for p in sr_prospects}
+        seed_only = [p for p in seed if p["name"].lower() not in sr_names]
+        if seed_only:
+            print(f"[ingestion] {len(seed_only)} seed prospects not in Sportradar — appending")
+    except Exception as exc:
+        print(f"[ingestion] ERROR processing seed-only prospects — {type(exc).__name__}: {exc}")
+        seed_only = []
 
     final = enriched + seed_only
-    log.info(
-        "[ingestion] %d total prospects for %d  "
-        "(Sportradar: %d | combine: %d matched | CFBD stats: %d matched | seed-only: %d)",
-        len(final), draft_year,
-        len(enriched), sum(1 for p in enriched if p.get("athleticism")),
-        sum(1 for p in enriched if cfbd_stats.get(p["name"].lower())),
-        len(seed_only),
+    print(
+        f"[ingestion] COMPLETE: {len(final)} total prospects for {draft_year}  "
+        f"(Sportradar: {len(enriched)} | combine: {sum(1 for p in enriched if p.get('athleticism'))} matched | CFBD stats: {sum(1 for p in enriched if cfbd_stats.get(p['name'].lower()))} matched | seed-only: {len(seed_only)} | enrichment errors: {enrichment_errors})"
     )
-    return [normalize_prospect(p) for p in final]
+    
+    try:
+        return [normalize_prospect(p) for p in final]
+    except Exception as exc:
+        print(f"[ingestion] ERROR normalizing prospects — {type(exc).__name__}: {exc}")
+        # Return unnormalized data as fallback
+        return final

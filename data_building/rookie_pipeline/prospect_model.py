@@ -4,18 +4,21 @@ Prospect evaluation model — position-aware, multi-factor scoring.
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
 Component weights:
-    production_score             22 %   core stat volume relative to peers
-    efficiency_score             15 %   per-attempt / per-target efficiency
-    age_score                    12 %   age-adjusted production; youth premium
+    projected_draft_capital_score 30 %   NFL draft position (position-weighted)
+                                         RB/WR/TE: 1.20-1.25x (early picks are gold)
+                                         QB: 0.65x (top picks common, less predictive)
+    production_score             18 %   college production volume (elite producers translate)
+    athleticism_score            12 %   combine / speed score / RAS
     breakout_profile_score       10 %   early-career dominance trajectory
-    athleticism_score            10 %   combine / speed score / RAS
-    competition_score             8 %   conference + opponent quality
-    environment_adjustment        5 %   team scheme / usage context
-    durability_score              5 %   games missed, injury history
-    projected_draft_capital_score 13 %   from mock_draft_consensus; important
-                                         supplement but not the sole driver
+    efficiency_score             10 %   per-attempt / per-target efficiency
+    competition_score             8 %   conference + opponent quality (Notre Dame: 0.94)
+    age_score                     6 %   age-adjusted production; youth premium
+    environment_adjustment        3 %   team scheme / usage context
+    durability_score              3 %   games missed, injury history
     ──────────────────────────────────
     Total                       100 %
+
+Position-weighted draft capital + day 3 penalty (pick > 64: 0.80x)
 
 Position-specific adjustments are baked into each scorer to handle the
 different stat profiles of QB / RB / WR / TE.
@@ -76,20 +79,46 @@ def _career_seasons(seasons: List[Dict]) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 CONF_QUALITY: Dict[str, float] = {
+    # Power 2
     "SEC":               1.00,
-    "Big Ten":           0.96,
-    "Big 12":            0.88,
-    "ACC":               0.85,
-    "Pac-12":            0.83,
-    "Mountain West":     0.73,   # was 0.60 — legitimate mid-major that produces NFL talent
-    "American":          0.68,   # was 0.58
-    "Sun Belt":          0.62,   # was 0.52
-    "MAC":               0.58,   # was 0.50
-    "CUSA":              0.54,   # was 0.48
-    "FBS Independents":  0.75,   # Notre Dame / BYU tier
+    "Big Ten":           1.00,
+
+    # Upper Power Tier
+    "Big 12":            0.90,
+    "ACC":               0.88,
+
+    # Legacy Pac (if still used)
+    "Pac-12":            0.89,   # slightly above ACC historically
+
+    # Elite Independent
+    "Notre Dame":        0.94,
+
+    # Top G5
+    "American":          0.78,
+
+    # Mid G5
+    "Mountain West":     0.70,
+    "Sun Belt":          0.66,
+
+    # Lower G5
+    "MAC":               0.60,
+    "CUSA":              0.56,
+
+    # Independents (non-ND)
+    "BYU":               0.84,
+    "Army":              0.68,
+    "Liberty":           0.66,
+    "UMass":             0.60,
+    "New Mexico State":  0.60,
+
+    # Fallback bucket
+    "FBS Independents":  0.70,
+
+    # FCS
+    "FCS":               0.48,
 }
 
-DEFAULT_CONF_QUALITY = 0.62     # was 0.55
+DEFAULT_CONF_QUALITY = 0.62
 
 
 def _conf_quality(conference: Optional[str]) -> float:
@@ -109,6 +138,9 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
     """
     Per-game production vs position-specific elite thresholds.
     Uses the best single season to capture peak value.
+
+    Transfer penalty: Players who transfer to weaker conferences get
+    production discounted, as stats may be inflated by weaker competition.
     """
     if not seasons:
         return 40.0  # neutral when no data
@@ -116,6 +148,33 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
     pos = position.upper()
     ls  = _latest_season(seasons) or {}
     gp  = max(_safe(ls.get("games_played"), 12), 1)
+
+    # Check for conference downgrade (transfer to weaker competition)
+    transfer_penalty = 1.0
+    if len(seasons) >= 2:
+        sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0))
+        conf_qualities = []
+        for season in sorted_seasons:
+            conf = season.get("conference", "")
+            team = season.get("team", "") or ""
+            if "notre dame" in team.lower():
+                conf_qualities.append(0.94)
+            else:
+                conf_qualities.append(_conf_quality(conf))
+
+        # Check if player transferred to significantly weaker conference
+        for i in range(1, len(conf_qualities)):
+            prev_quality = conf_qualities[i-1]
+            curr_quality = conf_qualities[i]
+
+            # If conference quality dropped by 20%+ (e.g., Big Ten 1.00 → FBS Ind 0.70)
+            # apply production discount
+            if prev_quality > curr_quality and (prev_quality - curr_quality) >= 0.20:
+                drop_magnitude = (prev_quality - curr_quality) / prev_quality
+                # 15% penalty for 20% drop, up to 35% penalty for major drops (40%+)
+                penalty = min(0.35, drop_magnitude * 0.75)
+                transfer_penalty *= (1.0 - penalty)
+                break  # Only apply once for most significant drop
 
     if pos == "WR":
         rec_yds_pg = _safe(ls.get("receiving_yards")) / gp
@@ -130,6 +189,7 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
 
     elif pos == "RB":
         rush_yds_pg = _safe(ls.get("rush_yards"))     / gp
+        rec_yds_pg  = _safe(ls.get("receiving_yards")) / gp
         all_yds_pg  = (
             _safe(ls.get("rush_yards")) + _safe(ls.get("receiving_yards"))
         ) / gp
@@ -137,12 +197,27 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
             _safe(ls.get("rush_tds")) + _safe(ls.get("receiving_tds"))
         ) / gp
         dom         = _safe(ls.get("dominator_rating"))
+        ypc         = _safe(ls.get("yds_per_carry"))
+
         prod = (
             _scale(rush_yds_pg, 40,  160) * 0.35 +
             _scale(all_yds_pg,  50,  180) * 0.25 +
             _scale(tds_pg,      0.5,  2.0) * 0.25 +
             _scale(dom,         0.15, 0.70) * 0.15
         )
+
+        # Three-down back bonus: elite RBs with receiving production
+        # 20+ rec yards/game = elite receiving back
+        if rec_yds_pg >= 20:
+            prod = _clip(prod * 1.10)  # 10% bonus for three-down capability
+
+        # Elite efficiency bonus: YPC > 6.5 is exceptional
+        if ypc >= 6.5:
+            prod = _clip(prod * 1.08)  # 8% bonus for elite efficiency
+
+        # Dominator bonus: > 0.30 is generational (Bijan, Saquon level)
+        if dom >= 0.30:
+            prod = _clip(prod * 1.12)  # 12% bonus for elite dominator
 
     elif pos == "QB":
         pass_yds_pg = _safe(ls.get("pass_yards")) / gp
@@ -173,7 +248,8 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
     else:
         return 40.0
 
-    return _clip(prod)
+    # Apply transfer penalty to discourage stat inflation from weak competition
+    return _clip(prod * transfer_penalty)
 
 
 def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
@@ -358,12 +434,39 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
 def calc_competition_score(seasons: List[Dict]) -> float:
     """
     Conference quality + implied opponent strength.
-    Uses the best-conference season to avoid penalising transfers.
+    Recent seasons are weighted more heavily to reflect current competition level.
     """
     if not seasons:
         return 55.0
-    best_quality = max(_conf_quality(s.get("conference")) for s in seasons)
-    return _clip(_scale(best_quality, 0.45, 1.00))
+
+    # Sort seasons by year (most recent first)
+    sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0), reverse=True)
+    
+    # Calculate weighted average with recent seasons weighted more heavily
+    total_weight = 0.0
+    weighted_quality = 0.0
+    
+    for i, season in enumerate(sorted_seasons):
+        conf = season.get("conference", "")
+        team = season.get("team", "") or ""
+
+        # Determine quality for this season
+        if "notre dame" in team.lower():
+            quality = 0.94
+        else:
+            quality = _conf_quality(conf)
+        
+        # Weight: most recent season gets highest weight, decreasing over time
+        # Weights: 1.0, 0.8, 0.6, 0.4, 0.2 for up to 5 seasons
+        weight = max(0.2, 1.0 - (i * 0.2))
+        
+        weighted_quality += quality * weight
+        total_weight += weight
+    
+    # Use weighted average instead of just best season
+    avg_quality = weighted_quality / total_weight if total_weight > 0 else 0.0
+    
+    return _clip(_scale(avg_quality, 0.45, 1.00))
 
 
 def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
@@ -445,15 +548,15 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 WEIGHTS = {
-    "production":      0.22,
-    "efficiency":      0.15,
-    "age":             0.12,
-    "breakout":        0.10,
-    "athleticism":     0.10,
-    "competition":     0.08,
-    "environment":     0.05,
-    "durability":      0.05,
-    "draft_capital":   0.13,
+    "production":      0.18,    # College production matters - elite producers translate
+    "efficiency":      0.10,    # Efficiency important but less than volume
+    "age":             0.06,    # Age matters but less predictive
+    "breakout":        0.10,    # Early breakout important
+    "athleticism":     0.12,    # NFL values athleticism
+    "competition":     0.08,    # Competition level matters
+    "environment":     0.03,    # Scheme fit less important
+    "durability":      0.03,    # Durability less important
+    "draft_capital":   0.30,    # NFL draft position is king (position-weighted)
 }
 
 assert abs(sum(WEIGHTS.values()) - 1.0) < 0.001, "Weights must sum to 1.0"
@@ -491,20 +594,59 @@ def score_prospect(
     if draft_capital:
         dc_score = _safe(draft_capital.get("projected_draft_capital_score"), 40.0)
     else:
-        dc_score = 40.0  # neutral fallback — no mocks yet
+        # Default to mid-round 5 pick (~150) when no mock data available
+        # Players without any mock buzz are typically day 3 picks or UDFAs
+        # Pick 150 → ~6 draft capital score (late day 3)
+        from data_building.rookie_pipeline.mock_draft_consensus import pick_to_draft_capital_score
+        dc_score = pick_to_draft_capital_score(150)  # ~6 score for late day 3
+
+    # Position-specific draft capital multipliers
+    # Key insight: QBs go early often, but RB/WR/TE going top-10 is HUGE
+    # WR taken in top 10 = elite prospect, QB taken top 10 = happens every year
+    dc_multiplier = {
+        "WR": 1.25,   # Early WR picks are gold (rare and predictive)
+        "RB": 1.20,   # Early RB picks are premium (high opportunity)
+        "TE": 1.15,   # Early TE picks are valuable (rare to go early)
+        "QB": 0.65,   # QB draft capital less predictive for fantasy (deep position)
+    }.get(pos, 1.00)
+
+    # Apply top-2-rounds bonus/penalty
+    # If projected outside top 2 rounds (pick > 64), apply penalty
+    if draft_capital:
+        projected_pick = draft_capital.get("projected_pick")
+        if projected_pick and projected_pick > 64:
+            # Not in top 2 rounds - reduce draft capital score
+            dc_multiplier *= 0.80  # 20% penalty for day 3 picks
+
+    dc_score_adjusted = _clip(dc_score * dc_multiplier)
 
     prospect_score = (
-        production_score  * WEIGHTS["production"]  +
-        efficiency_score  * WEIGHTS["efficiency"]  +
-        age_score         * WEIGHTS["age"]         +
-        breakout_score    * WEIGHTS["breakout"]    +
-        athleticism_score * WEIGHTS["athleticism"] +
-        competition_score * WEIGHTS["competition"] +
-        environment_score * WEIGHTS["environment"] +
-        durability_score  * WEIGHTS["durability"]  +
-        dc_score          * WEIGHTS["draft_capital"]
+        production_score      * WEIGHTS["production"]  +
+        efficiency_score      * WEIGHTS["efficiency"]  +
+        age_score             * WEIGHTS["age"]         +
+        breakout_score        * WEIGHTS["breakout"]    +
+        athleticism_score     * WEIGHTS["athleticism"] +
+        competition_score     * WEIGHTS["competition"] +
+        environment_score     * WEIGHTS["environment"] +
+        durability_score      * WEIGHTS["durability"]  +
+        dc_score_adjusted     * WEIGHTS["draft_capital"]
     )
-    prospect_score = round(_clip(prospect_score), 2)
+
+    # Generational prospect boost: elite production + elite athleticism + elite draft capital
+    # This is the Bijan Robinson / Saquon Barkley / Ja'Marr Chase tier
+    # Occurs maybe once every 2-3 years
+    is_generational = (
+        pos in ["RB", "WR", "TE"] and
+        production_score >= 70 and
+        athleticism_score >= 75 and
+        dc_score >= 85  # Top-10 pick level
+    )
+
+    if is_generational:
+        prospect_score *= 1.08  # 8% boost for generational prospects
+        prospect_score = _clip(prospect_score)
+
+    prospect_score = round(prospect_score, 2)
 
     # Confidence: based on data availability
     data_fields_present = sum([
