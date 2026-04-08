@@ -298,6 +298,14 @@ def _parse_cbs_hub_sections(html_content: str, draft_year: int) -> List[Dict[str
 
         rows = tbody.find_all("tr")
         picks: List[Dict[str, Any]] = []
+        _SKILL = {"QB", "RB", "WR", "TE"}
+        _POS_RE = re.compile(r'\b(QB|RB|WR|TE)\b', re.IGNORECASE)
+
+        # Debug: log first row structure so we can see position format
+        if rows and sec_idx == 1:
+            first_cells = rows[0].find_all("td")
+            for ci, c in enumerate(first_cells):
+                print(f"[mock_scraper] CBS debug row0 cell[{ci}] classes={c.get('class')} text={c.get_text(' ', strip=True)[:80]!r}")
 
         for row in rows:
             try:
@@ -322,23 +330,31 @@ def _parse_cbs_hub_sections(html_content: str, draft_year: int) -> List[Dict[str
                 if not player_name:
                     continue
 
-                # Position + school from div.player-details
-                # Typical text: "QB • Indiana" or "WR | Colorado" or "QB\nColorado"
+                # ── Position: search the whole row for a skill-position code ──
+                # player-details may contain "WR • Colorado", "Wide Receiver", etc.
+                # Fall back to any td in the row if not found in player cell.
                 position = ""
                 school = ""
                 details_div = player_td.find("div", class_="player-details")
+                search_texts = []
                 if details_div:
-                    details_text = details_div.get_text(" ", strip=True)
-                    # Split on bullet, pipe, dash, or whitespace sequences
-                    parts = re.split(r"\s*[•|\-–]\s*|\s{2,}", details_text)
-                    parts = [p.strip() for p in parts if p.strip()]
-                    if parts:
-                        position = parts[0].upper()
-                    if len(parts) >= 2:
-                        school = parts[1]
+                    search_texts.append(details_div.get_text(" ", strip=True))
+                # Also check every other td as fallback
+                for td in row.find_all("td"):
+                    if td is not player_td:
+                        search_texts.append(td.get_text(strip=True))
 
-                # Filter to skill positions only
-                if position not in {"QB", "RB", "WR", "TE"}:
+                for text in search_texts:
+                    m = _POS_RE.search(text)
+                    if m:
+                        position = m.group(1).upper()
+                        # School is whatever comes before or after the position code
+                        before = text[:m.start()].strip().strip("•|-–,")
+                        after  = text[m.end():].strip().strip("•|-–,")
+                        school = (before or after).strip()
+                        break
+
+                if position not in _SKILL:
                     continue
 
                 projected_round = ((pick_num - 1) // 32) + 1

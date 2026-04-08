@@ -842,7 +842,8 @@ def score_prospect(
     """
     pos      = (prospect.get("position") or "WR").upper()
     seasons  = prospect.get("seasons") or []
-    age      = prospect.get("age")
+    raw_age  = prospect.get("age")
+    age      = float(raw_age) if raw_age is not None else None
     ath      = prospect.get("athleticism") or {}
     dy       = int(prospect.get("draft_class_year") or 2026)
 
