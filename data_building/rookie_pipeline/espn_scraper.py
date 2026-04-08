@@ -114,6 +114,8 @@ def _team_score(item_team: str, query_team: str) -> float:
         return 0.5  # neutral when we don't know team
     qt = query_team.lower().strip()
     it = item_team.lower().strip()
+    if not it:
+        return 0.0  # no team in result — can't confirm
     if qt in it or it in qt:
         return 1.0
     # Partial: last word of query in item (e.g., "Buffaloes" in "Colorado Buffaloes")
@@ -193,10 +195,17 @@ def parse_dob_and_calculate_age(
     dob: Optional[date] = None
     for fmt in _DOB_FORMATS:
         try:
-            dob = datetime.strptime(raw_clean[:len(fmt) + 4], fmt).date()
+            dob = datetime.strptime(raw_clean, fmt).date()
             break
         except ValueError:
-            pass
+            # Also try the first N chars to handle trailing timezone/garbage
+            try:
+                # Only useful for short fixed-length formats (ISO variants)
+                if len(raw_clean) > 10 and "%" not in fmt.replace("%Y", "").replace("%m", "").replace("%d", ""):
+                    dob = datetime.strptime(raw_clean[:10], "%Y-%m-%d").date()
+                    break
+            except ValueError:
+                pass
 
     if dob is None:
         # Last-resort: look for 4-digit year + 1-2 digit month/day
