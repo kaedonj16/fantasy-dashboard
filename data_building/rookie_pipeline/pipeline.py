@@ -1059,30 +1059,33 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 2: Fetch College Stats ======")
 
-    cfbd_stats = fetch_cfbd_college_stats(draft_year)
-    print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
-
-    # Save stats to DB
-    with get_conn() as conn:
-        n_stats = upsert_prospect_source_data(sr_prospects, cfbd_stats, draft_year, conn)
-        # Let context manager handle commit
-
-    # Check after transaction completes
+    # Skip CFBD fetch if we already have non-zero stats in the DB for this class.
+    # CFBD has a strict rate limit (~600 req/hr); college stats don't change once
+    # the season ends, so there's no value in re-fetching on every pipeline run.
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) as count FROM rookie_prospect_source_data")
-            count_in_db = cur.fetchone()["count"]
-            print(f"[pipeline] DEBUG: Database shows {count_in_db} stat records after transaction")
+            cur.execute(
+                """
+                SELECT COUNT(*) as count FROM rookie_prospect_source_data rsd
+                JOIN rookie_prospects rp ON rsd.player_id = rp.player_id
+                WHERE rp.draft_class_year = %s
+                  AND (rsd.receiving_yards > 0 OR rsd.rush_yards > 0 OR rsd.pass_yards > 0)
+                """,
+                (draft_year,),
+            )
+            existing_stats = cur.fetchone()["count"]
 
-            # Check for non-zero stats
-            cur.execute("""
-                SELECT COUNT(*) as count FROM rookie_prospect_source_data
-                WHERE receiving_yards > 0 OR rush_yards > 0 OR pass_yards > 0
-            """)
-            nonzero_count = cur.fetchone()["count"]
-            print(f"[pipeline] DEBUG: {nonzero_count} stat records have non-zero values")
+    if existing_stats > 0:
+        print(f"[pipeline] STAGE 2 SKIPPED: {existing_stats} non-zero stat records already in DB for {draft_year}")
+        n_stats = 0
+    else:
+        cfbd_stats = fetch_cfbd_college_stats(draft_year)
+        print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
 
-    print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
+        with get_conn() as conn:
+            n_stats = upsert_prospect_source_data(sr_prospects, cfbd_stats, draft_year, conn)
+
+        print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 3: Fetch Combine Data ======")
