@@ -26,7 +26,6 @@ def get_database_url() -> str:
 @contextmanager
 def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
     conn = psycopg.connect(get_database_url(), row_factory=dict_row)
-    print(f"[db] Connection opened: {id(conn)}, autocommit={autocommit}, status={conn.info.transaction_status}")
     try:
         conn.autocommit = autocommit
         yield conn
@@ -40,10 +39,8 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
     except Exception as e:
         print(f"[db] Exception in connection {id(conn)}: {type(e).__name__}: {e}")
         if not autocommit:
-            print(f"[db] Rolling back connection: {id(conn)}")
             conn.rollback()
             print(f"[db] Rollback complete: {id(conn)}")
         raise
     finally:
         conn.close()
-        print(f"[db] Connection closed: {id(conn)}")
