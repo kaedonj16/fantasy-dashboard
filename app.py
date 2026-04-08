@@ -3043,9 +3043,14 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
-    # Calculate Draft Capital Index from pick value table
-    pick_value_table = load_pick_value_table() or {}
-    total_draft_capital = sum(pick_value_table.values())
+    # Build pick-value lookup (PICK entries keyed by their model-values ID)
+    pick_by_key: Dict[str, float] = {
+        str(row["id"]): float(row.get("value") or 0.0)
+        for row in model_value_table
+        if isinstance(row, dict)
+        and str(row.get("position", "")).upper() == "PICK"
+        and row.get("id")
+    }
 
     roster_cards = []
 
@@ -3056,6 +3061,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
         team_picks = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
         pick_count = len(team_picks)
+
+        # Add pick values to total roster value
+        roster_value += _team_pick_value(team_picks, pick_by_key)
 
         first_round_count = 0
         for pk in team_picks:
@@ -3087,7 +3095,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-snapshot-top">
                 <div class="os-snapshot-rank-block">
                   <div class="os-snapshot-team">{team_name}</div>
-                  <div class="os-snapshot-meta">Roster value</div>
+                  <div class="os-snapshot-meta">Total value (players + picks)</div>
                 </div>
                 <div class="os-snapshot-value">{roster_value:.0f}</div>
               </div>
@@ -4909,6 +4917,26 @@ def _weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, i
     return sum(v * w for v, w in zip(used, weights)) / denom
 
 
+def _avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
+    """Average model value of all picks matching season + round prefix."""
+    prefix = f"{season}_{rnd}_"
+    vals = [v for k, v in by_id.items() if k.startswith(prefix)]
+    return (sum(vals) / len(vals)) if vals else 0.0
+
+
+def _team_pick_value(picks: list, by_id: dict) -> float:
+    """Total model value of a team's draft picks (averaged per round bucket)."""
+    total = 0.0
+    for pk in picks:
+        try:
+            season = int(pk.get("season") or 0)
+            rnd = int(pk.get("round") or 0)
+        except (TypeError, ValueError):
+            continue
+        total += _avg_pick_value_for_round(by_id, season, rnd)
+    return total
+
+
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -4922,6 +4950,7 @@ def build_teams_body(ctx: dict) -> str:
     roster_map = ctx["roster_map"]  # mapping roster_id -> team name
     users = ctx["users"]
     platform = ctx["platform"]
+    picks_by_roster = ctx.get("picks_by_roster") or {}
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
@@ -5017,6 +5046,33 @@ def build_teams_body(ctx: dict) -> str:
     for rid in team_meta.keys():
         for pos in POS_ORDER:
             team_pos_values[rid].setdefault(pos, [])
+
+    # ----------------- Compute per-team draft capital value -----------------
+    # by_id already contains PICK entries from model_vals; use it for pick lookups
+    pick_by_key: Dict[str, float] = {
+        str(p["id"]): float(p.get("value") or 0.0)
+        for p in model_vals
+        if isinstance(p, dict) and str(p.get("position", "")).upper() == "PICK" and p.get("id")
+    }
+    team_pick_value: Dict[int, float] = {}
+    for r in rosters:
+        rid = r.get("roster_id")
+        if rid is None:
+            continue
+        team_pick_value[int(rid)] = _team_pick_value(
+            picks_by_roster.get(str(rid), []), pick_by_key
+        )
+
+    pick_series = list(team_pick_value.values())
+    _pick_mean = sum(pick_series) / len(pick_series) if pick_series else 0.0
+    _pick_var = sum((v - _pick_mean) ** 2 for v in pick_series) / len(pick_series) if pick_series else 0.0
+    _pick_std = math.sqrt(_pick_var)
+    team_pick_z: Dict[int, float] = {
+        rid: ((v - _pick_mean) / _pick_std if _pick_std > 0 else 0.0)
+        for rid, v in team_pick_value.items()
+    }
+    pick_z_min = min(team_pick_z.values()) if team_pick_z else 0.0
+    pick_z_max = max(team_pick_z.values()) if team_pick_z else 0.0
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
     team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
@@ -5230,6 +5286,32 @@ def build_teams_body(ctx: dict) -> str:
 
             table_rows.append(main_row)
             table_rows.append(detail_row)
+
+        # Draft Capital row
+        pick_val = team_pick_value.get(rid, 0.0)
+        pick_z = team_pick_z.get(rid, 0.0)
+        if pick_z_max > pick_z_min:
+            pick_pct = 10 + 80 * (pick_z - pick_z_min) / (pick_z_max - pick_z_min)
+        else:
+            pick_pct = 50.0
+        pick_count = len(picks_by_roster.get(str(rid), []))
+        table_rows.append(
+            "<tr class='pos-row pos-picks-row'>"
+            "  <td class='pos-name'>"
+            "    <span style='font-size:11px;opacity:0.7;'>📋</span> PICKS"
+            "  </td>"
+            f"  <td class='pos-count'>{pick_count}</td>"
+            f"  <td class='pos-total'>{pick_val:.1f}</td>"
+            "  <td class='pos-avg'>—</td>"
+            f"  <td class='pos-z'>{pick_z:+.2f}</td>"
+            "  <td class='pos-bar-cell'>"
+            "    <div class='pos-bar-outer'>"
+            f"      <div class='pos-bar-inner' style='width:{pick_pct:.0f}%;background:var(--color-pick,#8b5cf6);'></div>"
+            "    </div>"
+            "  </td>"
+            "  <td class='pos-rank'></td>"
+            "</tr>"
+        )
 
         card_html = (
             "<div class='card team-strength-card'>"
@@ -5804,6 +5886,7 @@ def page_players(platform: str, season: int, league_id: str):
               <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
               <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
               <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+              <button class="pos-pill" data-pos="ROOKIE" onclick="prTogglePos('ROOKIE')">Rookies</button>
             </div>
 
             <!-- Settings button -->
@@ -6253,7 +6336,7 @@ def page_players(platform: str, season: int, league_id: str):
       // Build overall rank map keyed by player id (ranked by current value)
       function prBuildRankMap() {
         const ranked = prAllPlayers
-          .filter(p => p.position !== 'PICK')
+          .filter(p => p.position !== 'PICK' && !p.is_rookie)
           .slice()
           .sort((a, b) => prGetValue(b) - prGetValue(a));
         return new Map(ranked.map((p, i) => [String(p.id), i + 1]));
@@ -6267,8 +6350,15 @@ def page_players(platform: str, season: int, league_id: str):
         let players = prAllPlayers.slice();
 
         // Position filter (multi-select)
-        if (prPosFilters.size > 0) {
-          players = players.filter(p => prPosFilters.has(p.position));
+        if (prPosFilters.has('ROOKIE')) {
+          // Rookie filter: show only rookies
+          players = players.filter(p => p.is_rookie);
+        } else if (prPosFilters.size > 0) {
+          // Specific position filter: exclude rookies unless they match the position
+          players = players.filter(p => !p.is_rookie && prPosFilters.has(p.position));
+        } else {
+          // No filter / ALL: exclude rookies from the main ranked list
+          players = players.filter(p => !p.is_rookie);
         }
 
         // Search filter — fuzzy match, sort by score when query present
@@ -6325,7 +6415,7 @@ def page_players(platform: str, season: int, league_id: str):
           row.setAttribute('data-player-id', p.id);
           row.setAttribute('data-player-name', p.name || '');
 
-          const displayRank = p.position === 'PICK' ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const displayRank = (p.position === 'PICK' || p.is_rookie) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
@@ -6333,7 +6423,8 @@ def page_players(platform: str, season: int, league_id: str):
           const val = prGetValue(p);
 
           let badges = '';
-          if (prIsRookie(p.id))   badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
+          if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
+          else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
 
           row.innerHTML =
@@ -6406,8 +6497,9 @@ def page_players(platform: str, season: int, league_id: str):
             pos_rank:         Number(p.pos_rank    || 9999),
             sf_pos_rank:      Number(p.sf_pos_rank || 9999),
             search_name:      p.search_name || '',
+            is_rookie:        p.is_rookie === true,
           }))
-          .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position))
+          .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
           .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 
         document.getElementById('prLoading').style.display = 'none';
@@ -7352,13 +7444,43 @@ def _sanitize_for_json(obj):
 
 @app.route("/api/league-players")
 def api_league_players():
-    model_value_table = load_model_value_table()
+    model_value_table = list(load_model_value_table() or [])
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    cleaned_players = _sanitize_for_json(model_value_table)
+    # Append active-class rookie prospects so they appear in search / trade calc
+    try:
+        from data_building.rookie_pipeline.pipeline import (
+            get_rookie_rankings_from_db,
+            get_active_rookie_class,
+        )
+        from utils.utils import normalize_name as _nn
+        draft_year = get_active_rookie_class()
+        for r in get_rookie_rankings_from_db(draft_year):
+            name = r.get("name") or ""
+            model_value_table.append({
+                "id": r.get("player_id") or f"rookie_{name}",
+                "name": name,
+                "team": r.get("team") or "FA",
+                "position": r.get("position") or "UNK",
+                "age": r.get("age"),
+                "value":       float(r.get("rookie_value")       or 0),
+                "sf_value":    float(r.get("rookie_sf_value")    or r.get("rookie_value") or 0),
+                "value_8":     float(r.get("rookie_value_8")     or r.get("rookie_value") or 0),
+                "value_12":    float(r.get("rookie_value_12")    or r.get("rookie_value") or 0),
+                "value_14":    float(r.get("rookie_value_14")    or r.get("rookie_value") or 0),
+                "sf_value_8":  float(r.get("rookie_sf_value_8")  or r.get("rookie_sf_value") or 0),
+                "sf_value_12": float(r.get("rookie_sf_value_12") or r.get("rookie_sf_value") or 0),
+                "sf_value_14": float(r.get("rookie_sf_value_14") or r.get("rookie_sf_value") or 0),
+                "pos_rank": None, "pos_rank_label": None,
+                "sf_pos_rank": None, "sf_pos_rank_label": None,
+                "search_name": _nn(name) if name else "",
+                "is_rookie": True,
+            })
+    except Exception as _e:
+        print(f"[api/league-players] rookies skipped: {_e}")
 
-    return jsonify(cleaned_players)
+    return jsonify(_sanitize_for_json(model_value_table))
 
 
 @app.route("/api/teams")
