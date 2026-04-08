@@ -6550,10 +6550,10 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
               <div class="breakout-card-header">
                 <div>
-                  <div class="breakout-player-name player-clickable" data-player-id='` + pid + `' data-player-name='` + name + `'>` + name + `</div>
+                  <div class="breakout-player-name">` + name + `</div>
                   <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
                 </div>
                 <div class="breakout-score-badge" style="background: ${{scoreColor}};">
@@ -6613,9 +6613,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         html += '</div>';
         container.innerHTML = html;
       }}
-      
-      // Initialize global player modals for clickable player names
-      initGlobalPlayerModals();
     </script>
     """
     return render_page("Breakout Candidates", league_id, "breakouts", body_html, platform, season)
