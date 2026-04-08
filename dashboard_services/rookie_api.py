@@ -100,6 +100,9 @@ def rankings():
             )
             result.append(d)
 
+        # Sort: tier ascending, then display_value descending within each tier
+        result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
+
         return jsonify({"draft_class_year": year, "count": len(result), "rankings": result})
 
     except Exception as exc:
