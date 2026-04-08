@@ -477,10 +477,7 @@ def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int,
                     WHERE EXISTS (
                         SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
                     )
-                    ON CONFLICT (player_id, source_name, mock_date, COALESCE(analyst_name, '')) DO UPDATE SET
-                        projected_pick  = EXCLUDED.projected_pick,
-                        projected_round = EXCLUDED.projected_round,
-                        analyst_name    = EXCLUDED.analyst_name
+                    ON CONFLICT DO NOTHING
                     """,
                     {
                         "player_id": player_id,
@@ -565,10 +562,7 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
                     WHERE EXISTS (
                         SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
                     )
-                    ON CONFLICT (player_id, source_name, mock_date, COALESCE(analyst_name, '')) DO UPDATE SET
-                        projected_pick  = EXCLUDED.projected_pick,
-                        projected_round = EXCLUDED.projected_round,
-                        analyst_name    = EXCLUDED.analyst_name
+                    ON CONFLICT DO NOTHING
                     """,
                     {
                         "player_id":        e["player_id"],
