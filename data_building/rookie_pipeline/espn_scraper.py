@@ -46,10 +46,12 @@ except ImportError:
 # ESPN endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SEARCH_URL    = "https://site.api.espn.com/apis/common/v3/search"
-_ATHLETE_URL   = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes/{id}"
-_ATHLETE_CORE  = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes/{id}"
-_PLAYER_PAGE   = "https://www.espn.com/college-football/player/_/id/{id}"
+_SEARCH_URL       = "https://site.api.espn.com/apis/common/v3/search"
+_ATHLETE_URL      = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes/{id}"
+_ATHLETE_CORE     = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes/{id}"
+_PLAYER_PAGE      = "https://www.espn.com/college-football/player/_/id/{id}"
+# Dedicated CFB athlete search — returns athletes directly without needing a type/sport filter
+_CFB_ATHLETE_SEARCH = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes"
 
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -254,78 +256,46 @@ def search_player_on_espn(
         confidence: 0.0–1.0  (combination of name + team match quality)
         espn_id is None when no viable match found.
     """
-    # Try multiple search strategies in order
-    search_configs = [
-        # (sport, type_param)
-        ("college-football", "athlete"),
-        ("college-football", "player"),
-        ("college-football", None),       # no type filter
-        ("football",         "athlete"),  # covers NFL too — useful for drafted players
-    ]
-
     best_id:         Optional[str]  = None
     best_conf:       float          = 0.0
     best_item:       Optional[Dict] = None
     dob_in_search:   Optional[str]  = None
 
-    for sport, type_param in search_configs:
-        params: Dict[str, Any] = {
-            "query": name,
-            "sport": sport,
-            "limit": "10",
-        }
-        if type_param:
-            params["type"] = type_param
-
-        resp = _get(_SEARCH_URL, params=params, headers=_JSON_HEADERS)
-        if resp is None:
-            continue
-
-        try:
-            data = resp.json()
-        except ValueError:
-            continue
-
-        for item in _parse_search_items(data):
-            # Accept items with these type values (ESPN uses both)
+    def _score_items(items: List[Dict]) -> None:
+        nonlocal best_id, best_conf, best_item, dob_in_search
+        for item in items:
             item_type = (item.get("type") or "").lower()
-            if item_type not in ("athlete", "player", ""):
-                if item_type and item_type not in ("athlete", "player"):
-                    # Skip non-player items (news, teams, etc.)
-                    if item_type in ("story", "video", "team", "event", "league"):
-                        continue
+            if item_type in ("story", "video", "team", "event", "league"):
+                continue
 
-            display = item.get("displayName") or item.get("name") or ""
+            display = (
+                item.get("displayName") or item.get("name") or
+                item.get("fullName") or ""
+            )
             if not display:
                 continue
 
             ns = _name_score(display, name)
             if ns < 0.5:
-                continue  # not even a last-name match — skip
+                continue
 
-            # Determine team string from various possible locations in item
             item_team = (
                 (item.get("team") or {}).get("displayName") or
                 (item.get("team") or {}).get("location") or
-                item.get("teamName") or
-                ""
+                item.get("teamName") or ""
             )
             ts = _team_score(item_team, team or "")
 
-            # Prefer college football entries over NFL
             league_name = (
                 (item.get("league") or {}).get("name") or
                 item.get("leagueName") or ""
             ).lower()
             league_bonus = 0.1 if "college" in league_name else 0.0
 
-            # DOB in search result = high signal of a good profile
-            has_dob = bool(item.get("dateOfBirth"))
+            has_dob   = bool(item.get("dateOfBirth"))
             dob_bonus = 0.05 if has_dob else 0.0
 
-            conf = ns * 0.55 + ts * 0.30 + league_bonus + dob_bonus
-            conf = min(conf, 1.0)
-
+            conf = min(ns * 0.55 + ts * 0.30 + league_bonus + dob_bonus, 1.0)
             if conf > best_conf:
                 best_conf  = conf
                 best_id    = str(item.get("id") or item.get("uid") or "")
@@ -333,13 +303,36 @@ def search_player_on_espn(
                 if has_dob:
                     dob_in_search = item["dateOfBirth"]
 
-        # If we already found a high-confidence CFB match with a DOB, stop searching
-        if best_conf >= 0.75 and dob_in_search:
-            break
+    # Strategy 1: general v3 search — no sport/type filter (sport= causes empty results)
+    resp = _get(_SEARCH_URL, params={"query": name, "limit": "10"}, headers=_JSON_HEADERS)
+    if resp is not None:
+        try:
+            _score_items(_parse_search_items(resp.json()))
+        except ValueError:
+            pass
+
+    # Strategy 2: dedicated CFB athlete endpoint — only if Strategy 1 didn't find a clear match
+    if best_conf < 0.75:
+        resp = _get(
+            _CFB_ATHLETE_SEARCH,
+            params={"search": name, "limit": "10"},
+            headers=_JSON_HEADERS,
+        )
+        if resp is not None:
+            try:
+                data  = resp.json()
+                items = data.get("items") or data.get("athletes") or []
+                _score_items(items)
+            except ValueError:
+                pass
 
     # Strip non-numeric prefixes from ESPN UIDs ("s:20~l:23~a:4426354" → "4426354")
     if best_id and "~a:" in best_id:
         best_id = best_id.split("~a:")[-1]
+
+    # Reject near-zero confidence matches (false positives)
+    if best_conf < 0.3:
+        return None, 0.0, None
 
     return best_id, best_conf, best_item
 
