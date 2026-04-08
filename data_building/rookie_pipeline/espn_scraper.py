@@ -31,7 +31,6 @@ _SEARCH_URL = "https://site.api.espn.com/apis/common/v3/search"
 _ATHLETE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes/{id}"
 _ATHLETE_CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes/{id}"
 _PLAYER_PAGE = "https://www.espn.com/college-football/player/_/id/{id}"
-_CFB_ATHLETE_SEARCH = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes"
 
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -145,21 +144,32 @@ def _get(
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, headers=h, timeout=timeout)
+            print(f"[DEBUG] GET {url} params={params} status={resp.status_code}")
 
             if resp.status_code in (400, 401, 403, 404):
+                print(f"[DEBUG] permanent failure: {resp.status_code}")
                 return None
             if resp.status_code == 429:
+                print("[DEBUG] rate limited")
                 time.sleep(2.0 * (attempt + 1))
                 continue
 
             resp.raise_for_status()
             return resp
-        except requests.Timeout:
+
+        except requests.Timeout as e:
+            print(f"[DEBUG] timeout: {url} ({e})")
             time.sleep(1.5 ** attempt)
-        except requests.exceptions.ProxyError:
+
+        except requests.exceptions.ProxyError as e:
+            print(f"[DEBUG] proxy error: {url} ({e})")
             return None
-        except requests.RequestException:
+
+        except requests.RequestException as e:
+            print(f"[DEBUG] request exception: {url} ({e})")
             time.sleep(1.5 ** attempt)
+
+    print(f"[DEBUG] failed after retries: {url}")
     return None
 
 
@@ -213,6 +223,35 @@ def _parse_search_items(data: Dict) -> List[Dict]:
     for result in (data.get("results") or []):
         flat.extend(result.get("contents") or [])
     return flat
+
+
+def _name_variants(name: str) -> List[str]:
+    variants = []
+    clean = name.strip()
+
+    variants.append(clean)
+
+    # remove suffix
+    parts = clean.split()
+    if parts and parts[-1].lower().replace(".", "") in _SUFFIXES:
+        variants.append(" ".join(parts[:-1]))
+
+    # CJ -> C.J.
+    if len(parts) >= 2 and len(parts[0]) == 2 and parts[0].isalpha() and "." not in parts[0]:
+        variants.append(f"{parts[0][0]}.{parts[0][1]}. {' '.join(parts[1:])}")
+
+    # remove punctuation
+    variants.append(re.sub(r"[^\w\s]", "", clean))
+
+    # dedupe
+    out = []
+    seen = set()
+    for v in variants:
+        v = v.strip()
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
 
 
 def search_player_on_espn(
@@ -276,26 +315,21 @@ def search_player_on_espn(
                 best_id = item_id
                 best_item = item
 
-    resp = _get(_SEARCH_URL, params={"query": name, "limit": "10"}, headers=_JSON_HEADERS)
-    if resp is not None:
-        try:
-            _score_items(_parse_search_items(resp.json()))
-        except ValueError:
-            pass
+    for query in _name_variants(name):
+        resp = _get(_SEARCH_URL, params={"query": query, "limit": "10"}, headers=_JSON_HEADERS)
+        if resp is None:
+            continue
 
-    if best_conf < 0.75:
-        resp = _get(
-            _CFB_ATHLETE_SEARCH,
-            params={"search": name, "limit": "10"},
-            headers=_JSON_HEADERS,
-        )
-        if resp is not None:
-            try:
-                data = resp.json()
-                items = data.get("items") or data.get("athletes") or []
-                _score_items(items)
-            except ValueError:
-                pass
+        try:
+            raw = resp.json()
+            items = _parse_search_items(raw)
+            print(f"[DEBUG] query={query} count={raw.get('count')} items_len={len(items)}")
+            _score_items(items)
+        except ValueError:
+            continue
+
+        if best_id:
+            break
 
     if best_conf < 0.30:
         return None, 0.0, None
@@ -376,7 +410,6 @@ def _extract_dob_from_html(player_id: str) -> Optional[str]:
     html = resp.text
     soup = BeautifulSoup(html, "html.parser")
 
-    # embedded JSON keys
     dob_json_re = re.compile(r'"dateOfBirth"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
     for script in soup.find_all("script"):
@@ -389,7 +422,6 @@ def _extract_dob_from_html(player_id: str) -> Optional[str]:
     if m:
         return m.group(1)
 
-    # text fallback
     full_text = soup.get_text(" ", strip=True)
     text_match = re.search(
         r"(?:birthday|born|date of birth|dob)\s*[:\s]+(\d{1,2}/\d{1,2}/\d{4}|\w+ \d{1,2},?\s*\d{4})",
@@ -400,7 +432,6 @@ def _extract_dob_from_html(player_id: str) -> Optional[str]:
         return text_match.group(1)
 
     return None
-
 
 def scrape_player_profile(player_id: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {
@@ -415,14 +446,44 @@ def scrape_player_profile(player_id: str) -> Dict[str, Any]:
         "source": None,
     }
 
-    # 1) best source: athlete APIs
-    api_profile = _extract_profile_from_athlete_api(player_id)
-    result.update({k: v for k, v in api_profile.items() if v is not None})
+    # Step A: athlete API first
+    for url_template in (_ATHLETE_URL, _ATHLETE_CORE):
+        url = url_template.format(id=player_id)
+        resp = _get(url, headers=_JSON_HEADERS)
+        if resp is None:
+            continue
 
-    if result.get("dob"):
-        return result
+        try:
+            data = resp.json()
+        except ValueError:
+            continue
 
-    # 2) fallback: html scrape
+        athlete = data.get("athlete") or data
+
+        result["team"] = (
+            (athlete.get("team") or {}).get("displayName")
+            or (athlete.get("team") or {}).get("location")
+            or athlete.get("teamName")
+            or result["team"]
+        )
+        result["position"] = (
+            (athlete.get("position") or {}).get("abbreviation")
+            or athlete.get("position")
+            or result["position"]
+        )
+        result["height"] = athlete.get("displayHeight") or athlete.get("height") or result["height"]
+        result["weight"] = athlete.get("displayWeight") or athlete.get("weight") or result["weight"]
+
+        raw_dob = athlete.get("dateOfBirth") or data.get("dateOfBirth")
+        if raw_dob:
+            dob_iso, age = parse_dob_and_calculate_age(str(raw_dob))
+            if dob_iso:
+                result["dob"] = dob_iso
+                result["age"] = age
+                result["source"] = "espn_athlete_api"
+                return result
+
+    # Step B: HTML fallback
     raw_dob = _extract_dob_from_html(player_id)
     if raw_dob:
         dob_iso, age = parse_dob_and_calculate_age(raw_dob)
@@ -432,7 +493,6 @@ def scrape_player_profile(player_id: str) -> Dict[str, Any]:
             result["source"] = "espn_html"
 
     return result
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API
@@ -465,6 +525,7 @@ def get_player_age(
     ref = date(draft_year, 4, 25) if draft_year else date.today()
 
     espn_id, search_conf, best_item = search_player_on_espn(name, team, position)
+
     if espn_id is None:
         _CACHE[cache_key] = result
         return result
@@ -473,7 +534,6 @@ def get_player_age(
     result["url"] = _PLAYER_PAGE.format(id=espn_id)
     result["confidence"] = round(search_conf, 2)
 
-    # if search result already carries DOB, use it immediately
     search_dob = best_item.get("dateOfBirth") if best_item else None
     if search_dob:
         dob_iso, age = parse_dob_and_calculate_age(search_dob, ref)
