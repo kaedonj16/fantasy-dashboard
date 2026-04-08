@@ -987,18 +987,40 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     print(f"[pipeline] Fetched {len(sr_prospects)} prospects from Sportradar")
 
-    # Estimate ages from experience (SR/JR/SO/FR)
-    # ESPN's API doesn't provide DOB for college players, so we use experience instead
+    # Estimate ages from experience (SR/JR/SO/FR) — rough fallback when ESPN fails
     from .ingestion import _estimate_age
     for p in sr_prospects:
         experience = p.get("_experience")
         if not p.get("age") and experience:
             p["age"] = _estimate_age(experience, draft_year)
 
-    ages_set = sum(1 for p in sr_prospects if p.get("age"))
-    print(f"[pipeline] Estimated ages for {ages_set}/{len(sr_prospects)} prospects from experience")
+    ages_from_exp = sum(1 for p in sr_prospects if p.get("age"))
+    print(f"[pipeline] Estimated ages for {ages_from_exp}/{len(sr_prospects)} prospects from experience")
 
-    # Save prospects to DB
+    # ESPN exact age lookup — overrides experience estimates with real DOBs.
+    # Must run before upsert_prospects() so the DB gets accurate ages on the first write.
+    print("[pipeline] ====== STAGE 1b: ESPN Age Lookup ======")
+    try:
+        from .espn_scraper import fetch_espn_ages_robust
+        espn_ages = fetch_espn_ages_robust(
+            [p["name"] for p in sr_prospects],
+            draft_year,
+            prospects_meta=sr_prospects,   # school + position for disambiguation
+        )
+        espn_resolved = 0
+        for p in sr_prospects:
+            key = p["name"].lower().strip()
+            if key in espn_ages:
+                p["age"] = espn_ages[key]
+                espn_resolved += 1
+        print(f"[pipeline] ESPN resolved {espn_resolved}/{len(sr_prospects)} ages")
+    except Exception as exc:
+        print(f"[pipeline] ESPN age lookup failed — {type(exc).__name__}: {exc} (using experience estimates)")
+
+    ages_total = sum(1 for p in sr_prospects if p.get("age"))
+    print(f"[pipeline] Total prospects with age set: {ages_total}/{len(sr_prospects)}")
+
+    # Save prospects to DB (age reflects ESPN DOB where available, else experience estimate)
     with get_conn() as conn:
         n_prospects = upsert_prospects(sr_prospects, conn)
         # Let context manager handle commit
