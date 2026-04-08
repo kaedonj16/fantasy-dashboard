@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import statistics
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -20,41 +20,75 @@ def _slug(name: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
 
 
-def pick_to_draft_capital_score(pick: int) -> float:
-    """
-    Convert overall pick number to draft capital score (0-100).
+# ─────────────────────────────────────────────────────────────────────────────
+# Position-adjusted draft capital scoring
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The same pick number means something very different by position.
+#
+# An RB drafted at #8 (Bijan Robinson 2023) is historically extraordinary —
+# RBs almost never go top-10 in the modern era.  A QB drafted at #8 is
+# unremarkable — a top-10 QB happens every year.
+#
+# Each entry is (elite_pick, good_pick, avg_pick, late_pick) representing
+# the pick thresholds that anchor the scoring curve:
+#
+#   pick ≤ elite  →  100  (historically exceptional for this position)
+#   pick ≤ good   →   85  (solid round-1 capital; typical high pick for pos)
+#   pick ≤ avg    →   60  (expected range for the position; round 1-2)
+#   pick ≤ late   →   22  (day-3 territory for this position)
+#   pick > late   →   2   (floor)
+#
+# Anchors calibrated against NFL draft history 2019-2024.
+_POS_PICK_ANCHORS: Dict[str, Tuple[int, int, int, int]] = {
+    #        elite  good   avg   late
+    "QB": (   1,    8,    22,    64),   # QB top-10 expected every year
+    "WR": (   5,   15,    40,    96),   # WR top-5 is rare; #15-35 is normal range
+    "RB": (  10,   25,    55,   120),   # RB top-10 is extraordinary (Bijan-tier)
+    "TE": (  10,   25,    55,   120),   # TE top-10 is rare (Pitts/Hockenson-tier)
+}
+_DEFAULT_ANCHORS = _POS_PICK_ANCHORS["WR"]
 
-    Calibration (1QB dynasty scale):
-      Picks 1-5   → 90-100   (franchise-altering capital)
-      Picks 6-10  → 78-89
-      Picks 11-20 → 62-77
-      Picks 21-32 → 50-61
-      Picks 33-48 → 35-49   (round 2)
-      Picks 49-64 → 22-34
-      Picks 65-96 → 12-21   (round 3)
-      Picks 97+   →  5-11   (day 3)
-      Undrafted   →  0-4
+
+def pick_to_draft_capital_score(pick: int, position: str = "WR") -> float:
+    """
+    Position-adjusted draft capital score (0-100).
+
+    Scores reflect how exceptional the pick is *for that position's historical
+    draft range*, not just the raw pick slot.
+
+    Calibration examples:
+      RB  at  #8  → 100  (Bijan-tier; RBs almost never go top-10)
+      WR  at  #5  → 100  (Chase/Waddle-tier; rare but happens)
+      QB  at  #1  → 100  (expected; franchise QB slot)
+      QB  at  #8  →  85  (strong QB pick; normal range)
+      RB  at #25  →  85  (solid round-1; Josh Jacobs / Najee-tier)
+      WR  at #15  →  85  (typical top-WR range)
+      RB  at #40  →  72  (round-2 RB; CEH / Jonathan Taylor-tier)
+      All at #64+ →  day-3 range (22 and below)
     """
     if pick <= 0:
         return 0.0
-    elif pick <= 5:
-        return 90 + (5 - pick) * 2  # 90-100
-    elif pick <= 10:
-        return 78 + (10 - pick) * 2.2  # 78-89
-    elif pick <= 20:
-        return 62 + (20 - pick) * 1.5  # 62-77
-    elif pick <= 32:
-        return 50 + (32 - pick) * 0.92  # 50-61
-    elif pick <= 48:
-        return 35 + (48 - pick) * 0.88  # 35-49
-    elif pick <= 64:
-        return 22 + (64 - pick) * 0.75  # 22-34
-    elif pick <= 96:
-        return 12 + (96 - pick) * 0.28  # 12-21
-    elif pick <= 150:
-        return 5 + (150 - pick) * 0.11  # 5-11
+
+    pos = (position or "WR").upper()
+    elite_p, good_p, avg_p, late_p = _POS_PICK_ANCHORS.get(pos, _DEFAULT_ANCHORS)
+
+    if pick <= elite_p:
+        return 100.0
+    elif pick <= good_p:
+        t = (pick - elite_p) / (good_p - elite_p)
+        return round(100.0 - t * 15.0, 2)   # 100 → 85
+    elif pick <= avg_p:
+        t = (pick - good_p) / (avg_p - good_p)
+        return round(85.0 - t * 25.0, 2)    # 85 → 60
+    elif pick <= late_p:
+        t = (pick - avg_p) / (late_p - avg_p)
+        return round(60.0 - t * 38.0, 2)    # 60 → 22
+    elif pick <= 220:
+        t = (pick - late_p) / (220 - late_p)
+        return round(max(2.0, 22.0 - t * 20.0), 2)  # 22 → 2
     else:
-        return 2.0  # undrafted
+        return 2.0
 
 
 def build_mock_draft_consensus_from_scraped(
@@ -143,7 +177,7 @@ def build_mock_draft_consensus_from_scraped(
             confidence = 60.0  # single mock — moderate confidence
 
         projected_round = ((projected_pick - 1) // 32) + 1
-        draft_capital = pick_to_draft_capital_score(projected_pick)
+        draft_capital = pick_to_draft_capital_score(projected_pick, bucket["position"])
 
         consensus_map[player_id] = {
             "player_name": bucket["player_name"],

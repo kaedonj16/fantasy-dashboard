@@ -879,26 +879,21 @@ def score_prospect(
     if draft_capital:
         dc_score = _safe(draft_capital.get("projected_draft_capital_score"), 40.0)
     else:
-        # Default to mid-round 5 pick (~150) when no mock data available
-        # Players without any mock buzz are typically day 3 picks or UDFAs
-        # Pick 150 → ~6 draft capital score (late day 3)
+        # Default: no mock coverage → treat like a late day-3 pick for this position
         from data_building.rookie_pipeline.mock_draft_consensus import pick_to_draft_capital_score
-        dc_score = pick_to_draft_capital_score(150)  # ~6 score for late day 3
+        dc_score = pick_to_draft_capital_score(150, pos)
 
-    # Position-specific draft capital multipliers
-    # Key insight: QBs go early often, but RB/WR/TE going top-10 is HUGE
-    # WR taken in top 10 = elite prospect, QB taken top 10 = happens every year
-    dc_multiplier = {
-        "WR": 1.25,   # Early WR picks are gold (rare and predictive)
-        "RB": 1.20,   # Early RB picks are premium (high opportunity)
-        "TE": 1.15,   # Early TE picks are valuable (rare to go early)
-        "QB": 0.65,   # QB draft capital less predictive for fantasy (deep position)
-    }.get(pos, 1.00)
+    # ── QB dynasty discount ─────────────────────────────────────────────────
+    # QB top picks are expected every year and less predictive for dynasty value
+    # than equivalent non-QB picks.  WR/RB/TE rarity premiums are already baked
+    # into the position-specific curves in pick_to_draft_capital_score().
+    dc_multiplier = 0.65 if pos == "QB" else 1.00
 
-    # Day 3 penalty — tiered by depth (rounds 3-4 vs rounds 5-7).
-    # A pick-222 player should never outscore a pick-8 even with elite college stats.
-    # The penalty is applied to the dc_score *before* the 31% weight multiplies it,
-    # which means the gap between early and late picks is substantial and stable.
+    # ── Day-3 penalty ───────────────────────────────────────────────────────
+    # A pick-200 prospect should never outscore a pick-8 prospect even with
+    # elite college stats.  Tiered by draft depth: rounds 5-7 penalised harder
+    # than rounds 3-4.  Applied after position adjustment so the penalty is
+    # on the already position-calibrated score.
     if draft_capital:
         projected_pick = draft_capital.get("projected_pick")
         if projected_pick and projected_pick > 64:

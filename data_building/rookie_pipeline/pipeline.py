@@ -590,24 +590,195 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
     return saved
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Post-draft: actual pick data
+# ─────────────────────────────────────────────────────────────────────────────
+
+def is_draft_complete(draft_year: int, conn=None) -> bool:
+    """
+    Return True if the NFL Draft for draft_year has already occurred.
+
+    Checks the rookie_active_class table's draft_date first; falls back to
+    comparing today against the historically typical draft date (late April).
+    """
+    today = date.today()
+
+    if conn is not None:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT draft_date FROM rookie_active_class WHERE draft_class_year = %s",
+                    (draft_year,),
+                )
+                row = cur.fetchone()
+            if row and row["draft_date"]:
+                draft_date = row["draft_date"]
+                if isinstance(draft_date, str):
+                    from datetime import datetime as _dt
+                    draft_date = _dt.strptime(draft_date[:10], "%Y-%m-%d").date()
+                return today > draft_date
+        except Exception:
+            pass
+
+    # Fallback: NFL Draft is held in late April (typically April 24–27)
+    typical_draft_end = date(draft_year, 4, 28)
+    return today > typical_draft_end
+
+
+def fetch_nflverse_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Fetch actual NFL draft picks from nflverse open-data CSV.
+
+    Returns list of dicts with keys:
+        player_name, position, pick, round, nfl_team, season
+    Returns [] on failure so the pipeline degrades gracefully.
+    """
+    import csv
+    import io
+    try:
+        import urllib.request
+        url = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/drafts.csv"
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+    except Exception as exc:
+        print(f"[pipeline] Could not fetch nflverse draft CSV: {exc}")
+        return []
+
+    picks = []
+    reader = csv.DictReader(io.StringIO(raw))
+    for row in reader:
+        try:
+            season = int(row.get("season") or 0)
+        except (ValueError, TypeError):
+            continue
+        if season != draft_year:
+            continue
+
+        try:
+            pick_num = int(row.get("pick") or 0)
+            rnd      = int(row.get("round") or 0)
+        except (ValueError, TypeError):
+            continue
+
+        if pick_num <= 0:
+            continue
+
+        picks.append({
+            "player_name": (row.get("full_name") or row.get("pfr_player_name") or "").strip(),
+            "position":    (row.get("position") or "").upper().strip(),
+            "pick":        pick_num,
+            "round":       rnd,
+            "nfl_team":    (row.get("team") or "").strip(),
+            "season":      season,
+        })
+
+    print(f"[pipeline] Fetched {len(picks)} actual {draft_year} draft picks from nflverse")
+    return picks
+
+
+def upsert_actual_draft_picks(picks: List[Dict[str, Any]], draft_year: int, conn) -> int:
+    """
+    Write actual draft results into rookie_prospects
+    (actual_pick, actual_round, actual_nfl_team, draft_confirmed).
+
+    Matches on name fuzzy-equality (lowercased, suffix-stripped).
+    Only updates prospects already in rookie_prospects for this draft class.
+    """
+    import re
+
+    def _norm(name: str) -> str:
+        n = name.lower().strip()
+        n = re.sub(r"[\s,]+(jr\.?|sr\.?|ii|iii|iv|v\.?)$", "", n).strip()
+        return re.sub(r"[^a-z\s]", "", n).strip()
+
+    # Load existing prospects so we can match by name
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_id, name FROM rookie_prospects WHERE draft_class_year = %s",
+            (draft_year,),
+        )
+        existing = {_norm(row["name"]): row["player_id"] for row in cur.fetchall()}
+
+    updated = 0
+    with conn.cursor() as cur:
+        for pick in picks:
+            norm = _norm(pick["player_name"])
+            pid  = existing.get(norm)
+            if not pid:
+                continue   # not a tracked prospect — skip (undrafted / other class)
+
+            cur.execute(
+                """
+                UPDATE rookie_prospects
+                SET actual_pick      = %(pick)s,
+                    actual_round     = %(round)s,
+                    actual_nfl_team  = %(nfl_team)s,
+                    draft_confirmed  = TRUE,
+                    updated_at       = NOW()
+                WHERE player_id = %(player_id)s
+                """,
+                {
+                    "pick":      pick["pick"],
+                    "round":     pick["round"],
+                    "nfl_team":  pick["nfl_team"],
+                    "player_id": pid,
+                },
+            )
+            updated += cur.rowcount
+
+    print(f"[pipeline] Updated actual draft picks for {updated} prospects")
+    return updated
+
+
+def load_actual_picks_from_db(draft_year: int, conn) -> Dict[str, Dict[str, Any]]:
+    """
+    Return a map of player_id → actual pick info for all prospects with confirmed picks.
+    Only returns rows where draft_confirmed = TRUE.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT player_id, position, name,
+                   actual_pick, actual_round, actual_nfl_team
+            FROM   rookie_prospects
+            WHERE  draft_class_year = %s
+              AND  draft_confirmed  = TRUE
+              AND  actual_pick IS NOT NULL
+            """,
+            (draft_year,),
+        )
+        rows = cur.fetchall()
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        result[row["player_id"]] = {
+            "player_id":   row["player_id"],
+            "position":    row["position"] or "WR",
+            "name":        row["name"],
+            "actual_pick": int(row["actual_pick"]),
+            "actual_round":int(row["actual_round"] or ((int(row["actual_pick"]) - 1) // 32) + 1),
+            "nfl_team":    row["actual_nfl_team"],
+        }
+
+    return result
+
+
 def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
     """
     Aggregate per-analyst rows from rookie_mock_draft_entries into a consensus
-    map ready for upsert_mock_consensus / score_all_prospects.
+    map.  If the draft is complete, actual picks overlay the mock consensus
+    with full confidence (100) and is_actual_pick=True.
 
-    After migration 010, each analyst's pick is stored as a separate row.
-    This function groups by player and computes:
-      - projected_pick   : median pick across all analysts
-      - pick_low/high    : min/max analyst picks
-      - num_mocks_used   : number of distinct analyst picks
-      - consensus_confidence: based on pick stdev (less spread = higher confidence)
-      - mock_sources     : list of analyst names
+    Pre-draft: uses mock medians + stdev-based confidence.
+    Post-draft: actual picks replace projections for drafted players; undrafted
+    prospects remain at their final mock consensus with is_actual_pick=False.
 
-    Returns {} if no entries exist for the draft year.
+    Returns {} if no data exists at all.
     """
     from .mock_draft_consensus import pick_to_draft_capital_score
     import json, math
 
+    # ── Step 1: build mock consensus from stored entries ──────────────────────
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -622,7 +793,8 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
                 MAX(e.projected_pick)  AS pick_high,
                 COUNT(*)               AS num_mocks,
                 STDDEV(e.projected_pick) AS pick_stdev,
-                ARRAY_AGG(DISTINCT COALESCE(e.analyst_name, e.source_name) ORDER BY COALESCE(e.analyst_name, e.source_name)) AS sources
+                ARRAY_AGG(DISTINCT COALESCE(e.analyst_name, e.source_name)
+                          ORDER BY COALESCE(e.analyst_name, e.source_name)) AS sources
             FROM rookie_mock_draft_entries e
             JOIN rookie_prospects p ON p.player_id = e.player_id
             WHERE e.draft_class_year = %(year)s
@@ -631,9 +803,6 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             {"year": draft_year},
         )
         rows = cur.fetchall()
-
-    if not rows:
-        return {}
 
     def _int(v, default=0):
         try:
@@ -649,17 +818,14 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
 
     consensus_map: Dict[str, Dict] = {}
     for row in rows:
-        # rows are dict-like (psycopg3 row_factory); use key access directly
         pid         = row["player_id"]
         median_pick = _int(row["median_pick"], 300)
         pick_low    = _int(row["pick_low"],    median_pick)
         pick_high   = _int(row["pick_high"],   median_pick)
         num_mocks   = _int(row["num_mocks"],   1)
         stdev       = _float(row["pick_stdev"], 0.0)
-        # sources is a postgres array → already a Python list via psycopg3
         sources     = [s for s in (row["sources"] or []) if s]
 
-        # High variance = low confidence; 0 variance = 100, ±10-pick stdev ≈ 50
         if num_mocks >= 2 and stdev > 0:
             confidence = round(max(40.0, 100.0 - stdev * 5.0), 1)
         elif num_mocks == 1:
@@ -667,19 +833,54 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
         else:
             confidence = 100.0
 
+        position = row["position"] or "WR"
         consensus_map[pid] = {
             "player_name":                  row["name"] or pid,
-            "position":                     row["position"] or "",
+            "position":                     position,
             "school":                       row["school"] or "",
             "projected_round":              ((median_pick - 1) // 32) + 1,
             "projected_pick":               median_pick,
             "projected_pick_low":           pick_low,
             "projected_pick_high":          pick_high,
-            "projected_draft_capital_score": pick_to_draft_capital_score(median_pick),
+            "projected_draft_capital_score": pick_to_draft_capital_score(median_pick, position),
             "num_mocks_used":               num_mocks,
             "consensus_confidence":         confidence,
             "mock_sources":                 sources,
+            "is_actual_pick":               False,
         }
+
+    # ── Step 2: overlay actual picks post-draft ────────────────────────────
+    if is_draft_complete(draft_year, conn):
+        actual_picks = load_actual_picks_from_db(draft_year, conn)
+        n_actual = 0
+        for pid, ap in actual_picks.items():
+            position = ap["position"]
+            pick     = ap["actual_pick"]
+            rnd      = ap["actual_round"]
+            dc_score = pick_to_draft_capital_score(pick, position)
+
+            # Overlay on top of mock entry (or create new entry if player
+            # wasn't in any mock — e.g. undrafted players won't appear here)
+            existing = consensus_map.get(pid, {})
+            consensus_map[pid] = {
+                "player_name":                  ap["name"],
+                "position":                     position,
+                "school":                       existing.get("school", ""),
+                "projected_round":              rnd,
+                "projected_pick":               pick,
+                "projected_pick_low":           pick,   # exact — no range
+                "projected_pick_high":          pick,
+                "projected_draft_capital_score": dc_score,
+                "num_mocks_used":               existing.get("num_mocks_used", 0),
+                "consensus_confidence":         100.0,  # actual pick = certainty
+                "mock_sources":                 existing.get("mock_sources", []),
+                "is_actual_pick":               True,
+                "actual_nfl_team":              ap.get("nfl_team"),
+            }
+            n_actual += 1
+
+        if n_actual:
+            print(f"[pipeline] Post-draft: overlaid {n_actual} actual picks (draft complete)")
 
     return consensus_map
 
@@ -1244,6 +1445,24 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
 
     print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 4b: Actual Draft Results (post-draft only) ======")
+
+    with get_conn() as conn:
+        draft_done = is_draft_complete(draft_year, conn)
+
+    if draft_done:
+        print(f"[pipeline] Draft complete — fetching actual {draft_year} picks from nflverse")
+        actual_picks = fetch_nflverse_draft_picks(draft_year)
+        if actual_picks:
+            with get_conn() as conn:
+                n_actual = upsert_actual_draft_picks(actual_picks, draft_year, conn)
+            print(f"[pipeline] STAGE 4b COMPLETE: Stored actual picks for {n_actual} prospects")
+        else:
+            print("[pipeline] STAGE 4b: No actual picks fetched (nflverse data not yet available)")
+    else:
+        print(f"[pipeline] Draft not yet complete for {draft_year} — skipping actual pick fetch")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
