@@ -32,9 +32,10 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # nflverse releases player stats as CSV on GitHub
+# File was renamed: player_stats_{year}.csv → stats_player_reg_{year}.csv
 _NFLVERSE_BASE = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
-    "player_stats/player_stats_{year}.csv"
+    "player_stats/stats_player_reg_{year}.csv"
 )
 
 # nflverse roster data (includes draft info: draft_year, draft_pick, position)
