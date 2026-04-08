@@ -259,12 +259,16 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
 #           team, conference, market share, dominator rating
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Optional[Any]:
+_CFBD_THROTTLE_S = 4.0   # 600 req/hr = 1 per 6s; 4s sleep + ~0.5s latency ≈ 720/hr (safe)
+
+def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Optional[Any]:
     url = f"{CFBD_BASE}{path}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
-    
+
     print(f"[cfbd] Request: GET {url} (params={params}, key={CFBD_KEY[:8] if CFBD_KEY else 'NONE'}...)")
-    
+
+    time.sleep(_CFBD_THROTTLE_S)  # global throttle before every call
+
     last_error = None
     for attempt in range(retries):
         try:
@@ -292,7 +296,15 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Opt
                 print(f"[cfbd] {path} FAILED: Bad Request (400) — invalid parameters: {params}")
                 return None
             elif exc.response.status_code == 429:
-                wait = 2 ** attempt * 2
+                # Respect Retry-After header if present, else exponential back-off
+                retry_after = exc.response.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        wait = int(retry_after) + 1
+                    except (ValueError, TypeError):
+                        wait = 15 * (2 ** attempt)
+                else:
+                    wait = 15 * (2 ** attempt)   # 15s, 30s, 60s, 120s, 240s
                 print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — backing off {wait}s")
                 time.sleep(wait)
             else:
@@ -483,11 +495,20 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     return result
 
 
-def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
+def fetch_cfbd_college_stats(
+    draft_year: int,
+    fetch_games_played: bool = False,
+) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
     Returns {player_name_lower: [season_dict, ...]} sorted oldest→newest.
     Requires CFBD_API_KEY env var; returns {} silently if not set.
+
+    Args:
+        fetch_games_played: If True, fetch exact games-played counts via the
+            /games/players endpoint (51 extra API calls per draft class).
+            Default False to conserve rate-limit budget; per-game rates fall
+            back to assuming 12 games when disabled.
     """
     print(f"[cfbd] Starting college stats fetch for draft year {draft_year}")
     
@@ -525,14 +546,21 @@ def fetch_cfbd_college_stats(draft_year: int) -> Dict[str, List[Dict]]:
                 print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}
 
-        # Games-played lookup from /games/players (separate endpoint)
-        print("[cfbd] Fetching games played from /games/players endpoint")
-        try:
-            games_played_map = fetch_cfbd_games_played(draft_year)
-            print(f"[cfbd] Games played resolved for {len(games_played_map)} players")
-        except Exception as exc:
-            print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")
-            games_played_map = {}
+        # Games-played lookup — skipped by default to conserve rate-limit budget.
+        # It adds 51 API calls per draft class (17 weeks × 3 years) but only
+        # improves per-game rate accuracy; total yards/TDs/dominator_rating are
+        # unaffected.  Pass fetch_games_played=True to enable.
+        games_played_map: Dict[str, Dict[int, int]] = {}
+        if fetch_games_played:
+            print("[cfbd] Fetching games played from /games/players endpoint")
+            try:
+                games_played_map = fetch_cfbd_games_played(draft_year)
+                print(f"[cfbd] Games played resolved for {len(games_played_map)} players")
+            except Exception as exc:
+                print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")
+                games_played_map = {}
+        else:
+            print("[cfbd] Skipping games-played lookup (saves 51 API calls; per-game rates default to 12 games)")
 
         # Player season stats — indexed by name and by player ID
         print("[cfbd] Fetching player season stats")
