@@ -76,23 +76,8 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         </div>
       </div>
 
-      <!-- Row 3: Tier + Sort + Active settings -->
+      <!-- Row 3: Sort + Active settings -->
       <div class="filter-row filter-row-secondary">
-        <div class="filter-sort">
-          <label class="filter-label">Tier</label>
-          <select id="rkTierFilter" onchange="rkRender()"
-            style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                   background:var(--card-bg);color:var(--text);font-size:12px;
-                   cursor:pointer;outline:none;min-height:34px;width:120px;">
-            <option value="0">All Tiers</option>
-            <option value="1">Tier 1 — Elite</option>
-            <option value="2">Tier 2 — Top</option>
-            <option value="3">Tier 3 — Day-1</option>
-            <option value="4">Tier 4 — Day-2</option>
-            <option value="5">Tier 5 — Dev</option>
-            <option value="6">Tier 6 — Flier</option>
-          </select>
-        </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkRender()"
@@ -561,7 +546,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
   function rkRender() {
     if (!rkLoaded) return;
     var sortBy = document.getElementById('rkSort').value;
-    var tierFilter = parseInt(document.getElementById('rkTierFilter').value) || 0;
 
     var players = rkAllPlayers.slice();
 
@@ -570,11 +554,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
       players = players.filter(function(r) {
         return rkPosFilters.has((r.position||'').toUpperCase());
       });
-    }
-
-    // Tier filter
-    if (tierFilter > 0) {
-      players = players.filter(function(r) { return (r.tier||0) === tierFilter; });
     }
 
     // Search
