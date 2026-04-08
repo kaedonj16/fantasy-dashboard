@@ -59,14 +59,45 @@ _CURVE: List[Tuple[float, float]] = [
 ]
 
 
+def _smoothstep(edge0: float, edge1: float, x: float) -> float:
+    """Hermite interpolation — produces an S-curve between 0 and 1."""
+    t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0) if edge1 > edge0 else 0.0))
+    return t * t * (3.0 - 2.0 * t)
+
+
 def _piecewise_value(score: float) -> float:
-    """Interpolate prospect_score → dynasty value using the calibrated curve."""
+    """Interpolate prospect_score → dynasty value using the calibrated curve.
+
+    For scores ≥ 85 (elite tier) a smoothstep replaces linear interpolation
+    so the value curve has a natural S-shape rather than a straight ramp —
+    matching real dynasty market behaviour where elite prospects command
+    exponentially higher prices up to ~95, then gains compress near 100.
+    """
+    score = max(0.0, min(100.0, score))
+
+    # Elite tier: apply smoothstep blending between curve segments above 85
+    ELITE_THRESHOLD = 85.0
+    if score >= ELITE_THRESHOLD:
+        # Find the piecewise value via linear interpolation first
+        linear_val = _piecewise_linear(score)
+        # Also compute what a pure smoothstep from 85→100 would give
+        v85 = _piecewise_linear(ELITE_THRESHOLD)
+        v100 = _CURVE[-1][1]  # 700
+        smooth_val = v85 + (v100 - v85) * _smoothstep(ELITE_THRESHOLD, 100.0, score)
+        # Blend: 40% linear (preserves calibration anchors) + 60% smooth
+        return 0.40 * linear_val + 0.60 * smooth_val
+
+    return _piecewise_linear(score)
+
+
+def _piecewise_linear(score: float) -> float:
+    """Raw piecewise linear interpolation (no smoothing)."""
     score = max(0.0, min(100.0, score))
     for i in range(1, len(_CURVE)):
         s0, v0 = _CURVE[i - 1]
         s1, v1 = _CURVE[i]
         if score <= s1:
-            frac = (score - s0) / (s1 - s0) if s1 > s0 else 0
+            frac = (score - s0) / (s1 - s0) if s1 > s0 else 0.0
             return v0 + frac * (v1 - v0)
     return _CURVE[-1][1]
 
@@ -89,13 +120,31 @@ _POS_ADJ_SF: Dict[str, float] = {
     "TE": -15,
 }
 
-# Scale multipliers by league size
-_SIZE_MULT: Dict[int, float] = {
-    8:  0.85,
-    10: 1.00,
-    12: 1.08,
-    14: 1.15,
-}
+# Scale multipliers for calibrated league sizes (anchors)
+_SIZE_MULT_ANCHORS: List[Tuple[int, float]] = [
+    (6,  0.78),
+    (8,  0.85),
+    (10, 1.00),
+    (12, 1.08),
+    (14, 1.15),
+    (16, 1.20),
+    (20, 1.28),
+]
+
+
+def _size_multiplier(league_size: int) -> float:
+    """Return value multiplier for any league size via linear interpolation."""
+    sizes   = [s for s, _ in _SIZE_MULT_ANCHORS]
+    mults   = [m for _, m in _SIZE_MULT_ANCHORS]
+    if league_size <= sizes[0]:
+        return mults[0]
+    if league_size >= sizes[-1]:
+        return mults[-1]
+    for i in range(1, len(sizes)):
+        if league_size <= sizes[i]:
+            frac = (league_size - sizes[i - 1]) / (sizes[i] - sizes[i - 1])
+            return mults[i - 1] + frac * (mults[i] - mults[i - 1])
+    return 1.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -185,11 +234,24 @@ def translate_score_to_value(
     vsf  = base + _POS_ADJ_SF.get(pos, 0)
     vsf  = max(5, round(vsf, 1))
 
-    # League-size variants
+    # League-size variants (interpolated for any size)
     def _sized(base_v: float, size: int) -> float:
-        return max(5, round(base_v * _SIZE_MULT.get(size, 1.0), 1))
+        return max(5, round(base_v * _size_multiplier(size), 1))
 
     tier_num, tier_label = assign_tier(ps)
+
+    # Confidence-based discount: low-confidence prospects get a haircut on value.
+    # If we barely have data on a player, their upside is speculative.
+    confidence = float(score_dict.get("confidence_score") or 50.0)
+    if confidence < 40:
+        conf_discount = 0.80  # -20%: very limited data
+    elif confidence < 60:
+        conf_discount = 0.90  # -10%: partial data
+    else:
+        conf_discount = 1.00  # full value when data is solid
+
+    v1qb = max(5, round(v1qb * conf_discount, 1))
+    vsf  = max(5, round(vsf  * conf_discount, 1))
 
     # Draft capital display
     dc_label = "Unknown"
@@ -207,14 +269,17 @@ def translate_score_to_value(
         "overall_rank":           score_dict.get("overall_rank"),
         "position_rank":          score_dict.get("position_rank"),
         "prospect_score":         ps,
+        "confidence_score":       confidence,
         "rookie_value":           v1qb,
         "rookie_sf_value":        vsf,
         "rookie_value_8":         _sized(v1qb, 8),
         "rookie_value_12":        _sized(v1qb, 12),
         "rookie_value_14":        _sized(v1qb, 14),
+        "rookie_value_16":        _sized(v1qb, 16),
         "rookie_sf_value_8":      _sized(vsf, 8),
         "rookie_sf_value_12":     _sized(vsf, 12),
         "rookie_sf_value_14":     _sized(vsf, 14),
+        "rookie_sf_value_16":     _sized(vsf, 16),
         "tier":                   tier_num,
         "tier_label":             tier_label,
         "projected_draft_capital": dc_label,
