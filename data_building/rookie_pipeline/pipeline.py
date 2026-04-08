@@ -1239,33 +1239,35 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
 
-    # Scrape individual mocks (CBS Sports)
-    individual_mocks = scrape_individual_mocks(draft_year)
-    print(f"[pipeline] Scraped {len(individual_mocks)} individual mock entries")
+    all_mock_picks: List[Dict] = []
 
-    # Save mock entries to DB
+    # 4a — CBS Sports: individual analyst mocks
+    individual_mocks = scrape_individual_mocks(draft_year)
+    print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
+    all_mock_picks.extend(individual_mocks)
+
+    # 4b — FantasyPros: consensus mock (counts as one analyst "source")
+    fantasypros_picks = scrape_consensus_mock_draft(draft_year)
+    print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
+    for pick in fantasypros_picks:
+        pick.setdefault("source", "FantasyPros")
+        pick.setdefault("analyst_name", "FantasyPros Consensus")
+    all_mock_picks.extend(fantasypros_picks)
+
+    # Save all entries to DB (CBS + FantasyPros in one pass)
     with get_conn() as conn:
-        n_mock_entries = upsert_mock_entries_from_scraped(individual_mocks, draft_year, conn)
+        n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
 
     print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
 
-    # Primary: build consensus by aggregating the per-analyst entries stored
-    # in Stage 4.  After migration 010 each analyst's pick is its own row, so
-    # median/spread/confidence are computed across all analysts.
+    # Aggregate all stored entries (CBS analysts + FantasyPros) into one consensus.
+    # Median pick, spread, and confidence are computed across all sources.
     with get_conn() as conn:
         consensus_map = build_consensus_from_db_entries(draft_year, conn)
-    print(f"[pipeline] Built consensus from DB entries: {len(consensus_map)} players")
-
-    # Fallback: if DB has no entries yet, scrape FantasyPros directly
-    if not consensus_map:
-        print("[pipeline] No DB entries found — falling back to FantasyPros scrape")
-        consensus_picks = scrape_consensus_mock_draft(draft_year)
-        print(f"[pipeline] Scraped {len(consensus_picks)} consensus picks from FantasyPros")
-        consensus_map = build_mock_draft_consensus_from_scraped(consensus_picks, draft_year)
-        print(f"[pipeline] Built consensus for {len(consensus_map)} players")
+    print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
 
     # Save consensus to DB
     with get_conn() as conn:
