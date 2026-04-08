@@ -1124,10 +1124,15 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     
     print(f"[ingestion] Sportradar returned {len(sr_prospects)} prospects")
 
-    # ESPN age lookup for all Sportradar prospects (no key required)
+    # ESPN age lookup — use the robust scraper (search + athlete API + HTML fallback)
     print(f"[ingestion] Starting ESPN age lookup for {len(sr_prospects)} prospects")
     try:
-        espn_ages = fetch_espn_ages([p["name"] for p in sr_prospects], draft_year)
+        from .espn_scraper import fetch_espn_ages_robust
+        espn_ages = fetch_espn_ages_robust(
+            [p["name"] for p in sr_prospects],
+            draft_year,
+            prospects_meta=sr_prospects,   # provides school + position for disambiguation
+        )
     except Exception as exc:
         print(f"[ingestion] ERROR in ESPN age lookup — {type(exc).__name__}: {exc}")
         espn_ages = {}
