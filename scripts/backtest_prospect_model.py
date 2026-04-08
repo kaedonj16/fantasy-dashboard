@@ -633,10 +633,17 @@ def _print_summary(all_rows: List[Dict]) -> None:
     # Best and worst model calls across all years
     has_ppr = [r for r in all_rows if r["ppr_cum"] > 50]
     if has_ppr:
-        # Sort actual performance by ppr_cum, rank-check model
-        actual_sorted  = sorted(has_ppr, key=lambda x: x["ppr_cum"], reverse=True)
-        model_sorted   = sorted(has_ppr, key=lambda x: x["model_score"], reverse=True)
-        model_rank_map = {r["name"]: i + 1 for i, r in enumerate(model_sorted)}
+        # Use PPR per season (avg) for cross-year comparisons.
+        # Cumulative unfairly favours older classes that simply have more seasons
+        # of data — a 2021 player at 250/season looks worse than a 2021 player at
+        # 200/season with 4 years banked.  Per-season average is position-neutral
+        # and class-neutral.
+        for r in has_ppr:
+            r["ppr_avg"] = r["ppr_cum"] / max(r.get("seasons_avail", 1), 1)
+
+        actual_sorted   = sorted(has_ppr, key=lambda x: x["ppr_avg"], reverse=True)
+        model_sorted    = sorted(has_ppr, key=lambda x: x["model_score"], reverse=True)
+        model_rank_map  = {r["name"]: i + 1 for i, r in enumerate(model_sorted)}
         actual_rank_map = {r["name"]: i + 1 for i, r in enumerate(actual_sorted)}
 
         # Best calls: low model_rank AND low actual_rank (both close to 1 = both good)
@@ -651,43 +658,41 @@ def _print_summary(all_rows: List[Dict]) -> None:
             print(
                 f"    {r['draft_year']}  {r['name']:<25} {r['position']:>3}  "
                 f"Model#{mr:>3}  Actual#{ar:>3}  "
-                f"cum={r['ppr_cum']:>7.0f}"
+                f"avg={r['ppr_avg']:>5.0f}/season  peak={r['ppr_peak']:>5.0f}  (n={r.get('seasons_avail', 1)})"
             )
 
-        # Biggest overrates: model ranked HIGH (low number) but actual ranked LOW
-        # actual_rank - model_rank large positive = overrate
+        # Biggest overrates: model ranked HIGH but actual averaged poorly
         overrates = sorted(
             has_ppr,
             key=lambda r: actual_rank_map.get(r["name"], 999) - model_rank_map.get(r["name"], 999),
             reverse=True,
         )[:5]
-        print("\n  ── Model's biggest overrates (model ranked high, actual performed poorly) ──")
+        print("\n  ── Model's biggest overrates (model ranked high, actual averaged poorly) ──")
         for r in overrates[:5]:
             mr = model_rank_map.get(r["name"], 999)
             ar = actual_rank_map.get(r["name"], 999)
-            delta = ar - mr   # positive = actual worse than model expected
+            delta = ar - mr
             print(
                 f"    {r['draft_year']}  {r['name']:<25} {r['position']:>3}  "
-                f"Model#{mr:>3}  Actual#{ar:>3}  (fell {delta:+d} spots)  "
-                f"cum={r['ppr_cum']:>7.0f}"
+                f"Model#{mr:>3}  Actual#{ar:>3}  (fell {delta:+d})  "
+                f"avg={r['ppr_avg']:>5.0f}/season  peak={r['ppr_peak']:>5.0f}  (n={r.get('seasons_avail', 1)})"
             )
 
-        # Biggest underrates: model ranked LOW (high number) but actual ranked HIGH
-        # model_rank - actual_rank large positive = underrate
+        # Biggest underrates: model ranked LOW but actual averaged well
         underrates = sorted(
             has_ppr,
             key=lambda r: model_rank_map.get(r["name"], 999) - actual_rank_map.get(r["name"], 999),
             reverse=True,
         )[:5]
-        print("\n  ── Model's biggest underrates (model ranked low, actual performed well) ──")
+        print("\n  ── Model's biggest underrates (model ranked low, actual averaged well) ──")
         for r in underrates[:5]:
             mr = model_rank_map.get(r["name"], 999)
             ar = actual_rank_map.get(r["name"], 999)
-            delta = mr - ar   # positive = actual better than model expected
+            delta = mr - ar
             print(
                 f"    {r['draft_year']}  {r['name']:<25} {r['position']:>3}  "
-                f"Model#{mr:>3}  Actual#{ar:>3}  (rose {delta:+d} spots)  "
-                f"cum={r['ppr_cum']:>7.0f}"
+                f"Model#{mr:>3}  Actual#{ar:>3}  (rose {delta:+d})  "
+                f"avg={r['ppr_avg']:>5.0f}/season  peak={r['ppr_peak']:>5.0f}  (n={r.get('seasons_avail', 1)})"
             )
 
 
