@@ -343,13 +343,14 @@ def _build_prospect_dicts(
         # Build consensus entry from actual draft pick
         pick = p["draft_pick"] or 300
         consensus_map[player_id] = {
-            "player_id":           player_id,
-            "projected_pick":      pick,
-            "projected_round":     ((pick - 1) // 32) + 1,
-            "projected_pick_low":  max(1, pick - 5),
-            "projected_pick_high": pick + 5,
-            "num_mocks_used":      1,
-            "consensus_confidence": 100.0,  # actual pick = certainty
+            "player_id":                    player_id,
+            "projected_pick":               pick,
+            "projected_round":              ((pick - 1) // 32) + 1,
+            "projected_pick_low":           max(1, pick - 5),
+            "projected_pick_high":          pick + 5,
+            "projected_draft_capital_score": pick_to_draft_capital_score(pick),
+            "num_mocks_used":               1,
+            "consensus_confidence":         100.0,  # actual pick = certainty
         }
 
     return prospects, consensus_map

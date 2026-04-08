@@ -811,16 +811,16 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 WEIGHTS = {
-    "production":      0.20,    # College production volume — strong NFL predictor, up from 0.15
+    "production":      0.18,    # College production volume
     "utilization":     0.05,    # Opportunity share (targets/game, carries/game)
-    "efficiency":      0.08,    # Per-attempt quality (less than volume but additive)
-    "age":             0.07,    # Age-adjusted production; youth premium
-    "breakout":        0.12,    # Early-career dominance trajectory — up from 0.10
-    "athleticism":     0.11,    # Combine / speed score / RAS
+    "efficiency":      0.07,    # Per-attempt quality
+    "age":             0.06,    # Age-adjusted production; youth premium
+    "breakout":        0.10,    # Early-career dominance trajectory
+    "athleticism":     0.10,    # Combine / speed score / RAS
     "competition":     0.08,    # Conference + opponent quality
     "environment":     0.03,    # Team scheme / usage context
     "durability":      0.02,    # Games missed, injury history
-    "draft_capital":   0.24,    # NFL draft position — still #1 signal but less dominant
+    "draft_capital":   0.31,    # NFL draft position is the dominant signal — 32 teams with all-22 film
 }
 
 assert abs(sum(WEIGHTS.values()) - 1.0) < 0.001, "Weights must sum to 1.0"
@@ -876,18 +876,27 @@ def score_prospect(
         "QB": 0.65,   # QB draft capital less predictive for fantasy (deep position)
     }.get(pos, 1.00)
 
-    # Apply Day 3 penalty: picks outside top 2 rounds (pick > 64) are discounted.
-    # Position-specific: QBs frequently go late but still start; RBs/WRs drafted late
-    # rarely become WR1/RB1s; TEs are more position-scarcity resistant.
+    # Day 3 penalty — tiered by depth (rounds 3-4 vs rounds 5-7).
+    # A pick-222 player should never outscore a pick-8 even with elite college stats.
+    # The penalty is applied to the dc_score *before* the 31% weight multiplies it,
+    # which means the gap between early and late picks is substantial and stable.
     if draft_capital:
         projected_pick = draft_capital.get("projected_pick")
         if projected_pick and projected_pick > 64:
-            day3_penalty = {
-                "QB": 0.65,   # Late QBs rarely become starters; major upside compression
-                "WR": 0.80,   # Day 3 WRs have tough path to targets
-                "RB": 0.82,   # Late RBs can hit via workload but odds are worse
-                "TE": 0.90,   # TEs develop slowly; Day 3 still viable
-            }.get(pos, 0.80)
+            if projected_pick > 128:   # rounds 5-7
+                day3_penalty = {
+                    "QB": 0.55,
+                    "WR": 0.65,
+                    "RB": 0.68,
+                    "TE": 0.75,
+                }.get(pos, 0.65)
+            else:                      # rounds 3-4 (pick 65-128)
+                day3_penalty = {
+                    "QB": 0.65,
+                    "WR": 0.78,
+                    "RB": 0.80,
+                    "TE": 0.87,
+                }.get(pos, 0.78)
             dc_multiplier *= day3_penalty
 
     dc_score_adjusted = _clip(dc_score * dc_multiplier)
@@ -925,30 +934,6 @@ def score_prospect(
         elif elite_count >= 1 and elite_dc:
             prospect_score *= 1.03
         prospect_score = _clip(prospect_score)
-
-    # Late-round steal recognition.
-    # Players drafted after pick 100 with strong college production signal have beaten
-    # the odds historically (Stevenson, Nacua, Shaheed, Amon-Ra St. Brown).
-    # The day-3 draft capital penalty is partially offset when college signal is strong.
-    #
-    # Thresholds are position-specific because RB/TE raw stat scales are compressed:
-    # - WR: 72+ production (1,100+ rec yds/yr on a major-program basis)
-    # - RB: 63+ production (1,000 rush yds at 85+ yds/game is elite RB)
-    # - TE: 65+ production (700+ rec yds for TE is outstanding)
-    _steal_prod_thresh = {"WR": 72, "RB": 63, "TE": 65}.get(pos, 72)
-    _steal_ath_thresh  = {"WR": 75, "RB": 72, "TE": 70}.get(pos, 75)
-
-    if pos in ("WR", "RB", "TE") and draft_capital:
-        projected_pick = draft_capital.get("projected_pick", 0)
-        if projected_pick and projected_pick > 100:
-            if production_score >= _steal_prod_thresh and (
-                athleticism_score >= _steal_ath_thresh or breakout_score >= 68
-            ):
-                # Partial reversal of the day-3 penalty: ~8% lift for validated profiles
-                prospect_score = _clip(prospect_score * 1.08)
-            elif production_score >= _steal_prod_thresh:
-                # Strong producer with late draft slot — floor bump
-                prospect_score = _clip(prospect_score * 1.05)
 
     prospect_score = round(prospect_score, 2)
 
