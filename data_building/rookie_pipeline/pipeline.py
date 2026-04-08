@@ -121,7 +121,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                     name             = EXCLUDED.name,
                     position         = EXCLUDED.position,
                     school           = EXCLUDED.school,
-                    age              = EXCLUDED.age,
+                    age              = COALESCE(EXCLUDED.age, rookie_prospects.age),
                     height_inches    = EXCLUDED.height_inches,
                     weight_lbs       = EXCLUDED.weight_lbs,
                     early_declare    = EXCLUDED.early_declare,
@@ -997,25 +997,50 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     ages_from_exp = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Estimated ages for {ages_from_exp}/{len(sr_prospects)} prospects from experience")
 
-    # ESPN exact age lookup — overrides experience estimates with real DOBs.
-    # Must run before upsert_prospects() so the DB gets accurate ages on the first write.
-    print("[pipeline] ====== STAGE 1b: ESPN Age Lookup ======")
-    try:
-        from .espn_scraper import fetch_espn_ages_robust
-        espn_ages = fetch_espn_ages_robust(
-            [p["name"] for p in sr_prospects],
-            draft_year,
-            prospects_meta=sr_prospects,   # school + position for disambiguation
-        )
-        espn_resolved = 0
-        for p in sr_prospects:
-            key = p["name"].lower().strip()
-            if key in espn_ages:
-                p["age"] = espn_ages[key]
-                espn_resolved += 1
-        print(f"[pipeline] ESPN resolved {espn_resolved}/{len(sr_prospects)} ages")
-    except Exception as exc:
-        print(f"[pipeline] ESPN age lookup failed — {type(exc).__name__}: {exc} (using experience estimates)")
+    # Age lookup — ESPN first, PlayerProfiler fallback.
+    # Only fetches for prospects that don't already have an age in the DB.
+    print("[pipeline] ====== STAGE 1b: Age Lookup (ESPN → PlayerProfiler) ======")
+
+    # Pre-populate ages from DB so we skip prospects we already know
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT name, age FROM rookie_prospects "
+                "WHERE draft_class_year = %s AND age IS NOT NULL",
+                (draft_year,),
+            )
+            _db_ages = {row["name"].lower().strip(): row["age"] for row in cur.fetchall()}
+
+    _preloaded = 0
+    for p in sr_prospects:
+        if not p.get("age"):
+            db_age = _db_ages.get(p["name"].lower().strip())
+            if db_age is not None:
+                p["age"] = db_age
+                _preloaded += 1
+    print(f"[pipeline] Pre-loaded {_preloaded} ages from DB ({len(_db_ages)} total on record)")
+
+    _missing = [p["name"] for p in sr_prospects if not p.get("age")]
+    print(f"[pipeline] {len(_missing)} prospects still need age lookup")
+
+    if _missing:
+        try:
+            from .espn_scraper import fetch_espn_ages_robust
+            age_map = fetch_espn_ages_robust(_missing, draft_year, prospects_meta=sr_prospects)
+            if not age_map:
+                print("[pipeline] ESPN returned 0 ages — trying PlayerProfiler fallback")
+                from .playerprofiler_scraper import fetch_playerprofiler_ages
+                age_map = fetch_playerprofiler_ages(_missing, draft_year, prospects_meta=sr_prospects)
+
+            _resolved = 0
+            for p in sr_prospects:
+                key = p["name"].lower().strip()
+                if key in age_map:
+                    p["age"] = age_map[key]
+                    _resolved += 1
+            print(f"[pipeline] Resolved {_resolved}/{len(_missing)} missing ages")
+        except Exception as exc:
+            print(f"[pipeline] Age lookup failed — {type(exc).__name__}: {exc} (continuing without ages)")
 
     ages_total = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Total prospects with age set: {ages_total}/{len(sr_prospects)}")
