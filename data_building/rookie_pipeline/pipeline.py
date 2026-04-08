@@ -614,7 +614,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             SELECT
                 e.player_id,
                 e.draft_class_year,
-                p.full_name,
+                p.name,
                 p.position,
                 p.school,
                 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.projected_pick) AS median_pick,
@@ -626,7 +626,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             FROM rookie_mock_draft_entries e
             LEFT JOIN rookie_prospects p ON p.player_id = e.player_id
             WHERE e.draft_class_year = %(year)s
-            GROUP BY e.player_id, e.draft_class_year, p.full_name, p.position, p.school
+            GROUP BY e.player_id, e.draft_class_year, p.name, p.position, p.school
             """,
             {"year": draft_year},
         )
@@ -656,7 +656,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             confidence = 100.0
 
         consensus_map[pid] = {
-            "player_name":                  r.get("full_name") or pid,
+            "player_name":                  r.get("name") or pid,
             "position":                     r.get("position") or "",
             "school":                       r.get("school") or "",
             "projected_round":              ((median_pick - 1) // 32) + 1,
