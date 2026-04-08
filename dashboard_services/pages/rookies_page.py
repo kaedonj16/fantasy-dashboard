@@ -87,7 +87,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           <select id="rkTierFilter" onchange="rkRender()"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                    background:var(--card-bg);color:var(--text);font-size:12px;
-                   cursor:pointer;outline:none;min-height:34px;">
+                   cursor:pointer;outline:none;min-height:34px;width:120px;">
             <option value="0">All Tiers</option>
             <option value="1">Tier 1 — Elite</option>
             <option value="2">Tier 2 — Top</option>
@@ -102,7 +102,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           <select id="rkSort" onchange="rkRender()"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                    background:var(--card-bg);color:var(--text);font-size:12px;
-                   cursor:pointer;outline:none;min-height:34px;">
+                   cursor:pointer;outline:none;min-height:34px;width:140px;">
             <option value="rank">Overall Rank</option>
             <option value="value">Value</option>
             <option value="score">Prospect Score</option>
