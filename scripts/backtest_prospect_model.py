@@ -120,16 +120,20 @@ def _load_combine_athleticism(draft_year: int) -> Dict[str, Dict[str, Any]]:
             except (TypeError, ValueError):
                 return None
 
+        # Keys must match what calc_athleticism_score() reads:
+        #   forty_yard, vertical_inches, broad_jump_in, three_cone, short_shuttle,
+        #   ras_score, weight_lbs
+        # nflverse combine CSV uses: forty, vertical, broad_jump, cone, shuttle
         result[name] = {
-            "forty_yard":   _f("forty_yard") or _f("forty"),
-            "vertical":     _f("vertical"),
-            "broad_jump":   _f("broad_jump"),
-            "bench_reps":   _f("bench_reps") or _f("bench"),
-            "three_cone":   _f("three_cone"),
-            "shuttle":      _f("shuttle"),
-            "ras_score":    _f("ras_score"),
-            "height_inches":_f("ht") or _f("height"),
-            "weight_lbs":   _f("wt") or _f("weight"),
+            "forty_yard":     _f("forty_yard") or _f("forty"),
+            "vertical_inches":_f("vertical"),          # was wrongly keyed as "vertical"
+            "broad_jump_in":  _f("broad_jump"),        # was wrongly keyed as "broad_jump"
+            "bench_reps":     _f("bench_reps") or _f("bench"),
+            "three_cone":     _f("three_cone") or _f("cone"),   # CSV column is "cone"
+            "short_shuttle":  _f("shuttle"),            # was wrongly keyed as "shuttle"
+            "ras_score":      _f("ras_score"),
+            "height_inches":  _f("ht") or _f("height"),
+            "weight_lbs":     _f("wt") or _f("weight"),
         }
     return result
 
@@ -474,6 +478,28 @@ def _print_summary(all_rows: List[Dict]) -> None:
             print("  ~ Weak positive correlation — draft capital dominates")
         else:
             print("  ✗ Low/no correlation — model needs calibration")
+
+    # ── Per-position Pearson r (skill positions only) ──────────────────────────
+    # Cross-position mixing distorts r: QBs score high PPR but model discounts
+    # them via POSITION_FANTASY_MULT=0.90 and dc_multiplier=0.65. Separating
+    # by position shows the true within-group predictive accuracy.
+    print(f"\n  Per-position Pearson r (model score vs cum PPR):")
+    print(f"  {'Pos':>4}  {'n':>4}  {'Pearson-r':>9}  signal")
+    print(f"  {'-'*4}  {'-'*4}  {'-'*9}  {'-'*30}")
+    for pos in ("WR", "RB", "TE", "QB"):
+        pos_rows = [r for r in all_rows if r["position"] == pos and r["ppr_cum"] > 0]
+        if len(pos_rows) < 5:
+            continue
+        px = [r["model_score"] for r in pos_rows]
+        py = [r["ppr_cum"] for r in pos_rows]
+        r_pos = _pearson_r(px, py)
+        signal = (
+            "strong" if r_pos > 0.45 else
+            "moderate" if r_pos > 0.28 else
+            "weak" if r_pos > 0.10 else
+            "noise"
+        )
+        print(f"  {pos:>4}  {len(pos_rows):>4}  {r_pos:>+9.3f}  {signal}")
 
     print()
 

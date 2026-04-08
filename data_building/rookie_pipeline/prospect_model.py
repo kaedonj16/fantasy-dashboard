@@ -811,16 +811,16 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 WEIGHTS = {
-    "production":      0.15,    # College production volume (elite producers translate)
+    "production":      0.20,    # College production volume — strong NFL predictor, up from 0.15
     "utilization":     0.05,    # Opportunity share (targets/game, carries/game)
     "efficiency":      0.08,    # Per-attempt quality (less than volume but additive)
-    "age":             0.06,    # Age-adjusted production; youth premium
-    "breakout":        0.10,    # Early-career dominance trajectory
-    "athleticism":     0.12,    # Combine / speed score / RAS
+    "age":             0.07,    # Age-adjusted production; youth premium
+    "breakout":        0.12,    # Early-career dominance trajectory — up from 0.10
+    "athleticism":     0.11,    # Combine / speed score / RAS
     "competition":     0.08,    # Conference + opponent quality
     "environment":     0.03,    # Team scheme / usage context
-    "durability":      0.03,    # Games missed, injury history
-    "draft_capital":   0.30,    # NFL draft position is king (position-weighted)
+    "durability":      0.02,    # Games missed, injury history
+    "draft_capital":   0.24,    # NFL draft position — still #1 signal but less dominant
 }
 
 assert abs(sum(WEIGHTS.values()) - 1.0) < 0.001, "Weights must sum to 1.0"
@@ -925,6 +925,22 @@ def score_prospect(
         elif elite_count >= 1 and elite_dc:
             prospect_score *= 1.03
         prospect_score = _clip(prospect_score)
+
+    # Late-round steal recognition.
+    # Players drafted after pick 100 who show elite college production (score ≥ 72)
+    # AND elite athleticism (≥ 75) or elite breakout (≥ 72) have beaten the odds
+    # historically (Amon-Ra St. Brown, Rhamondre Stevenson, etc.).
+    # The day-3 draft capital penalty is partially offset for these profiles since
+    # the college signal is strong enough to override the late-pick prior.
+    if pos in ("WR", "RB", "TE") and draft_capital:
+        projected_pick = draft_capital.get("projected_pick", 0)
+        if projected_pick and projected_pick > 100:
+            if production_score >= 72 and (athleticism_score >= 75 or breakout_score >= 72):
+                # Partial reversal of the day-3 penalty: ~8% lift for validated profiles
+                prospect_score = _clip(prospect_score * 1.08)
+            elif production_score >= 78:
+                # Dominant producer with late draft slot — floor bump
+                prospect_score = _clip(prospect_score * 1.05)
 
     prospect_score = round(prospect_score, 2)
 
