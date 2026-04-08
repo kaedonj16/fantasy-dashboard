@@ -3458,12 +3458,11 @@ function openPlayerModal(playerId, playerName) {
       // Breakout profile link (shown when player has a breakout score)
       if (isBreakoutPlayer) {
         bodyHTML += `
-          <div style="margin-bottom:12px;">
+          <div style="margin-bottom:16px;text-align:right;">
             <button id="playerModalBreakoutBtn"
-              style="width:100%;padding:10px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);
-                     color:#10b981;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;
-                     display:flex;align-items:center;justify-content:center;gap:6px;">
-              🔥 View Breakout Profile →
+              style="background:none;border:none;cursor:pointer;font-size:12px;
+                     color:#10b981;opacity:0.75;padding:0;font-weight:500;">
+              🔥 Breakout candidate — view analysis →
             </button>
           </div>
         `;
