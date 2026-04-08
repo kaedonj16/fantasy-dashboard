@@ -565,33 +565,43 @@ def _print_summary(all_rows: List[Dict]) -> None:
             if r.get("has_cfbd"):
                 overall_valid_cfbd.append((r["model_score"], r["ppr_cum"]))
 
-    # Overall Pearson r between model score and ppr_cum
-    if len(overall_valid) >= 10:
-        xs = [x for x, _ in overall_valid]
-        ys = [y for _, y in overall_valid]
-        r_overall = _pearson_r(xs, ys)
-        print(f"\n  Overall Pearson r (model score vs cum PPR, all years): {r_overall:+.3f}")
-        if r_overall > 0.5:
-            print("  ✓ Strong positive correlation — model is predictive")
-        elif r_overall > 0.3:
-            print("  ~ Moderate positive correlation — model has signal")
-        elif r_overall > 0.1:
-            print("  ~ Weak positive correlation — draft capital dominates")
-        else:
-            print("  ✗ Low/no correlation — model needs calibration")
+    # ── Pearson r by data-completeness tier ────────────────────────────────────
+    # 2024 has only 1 NFL season; 2023 has 2.  Including them pools clean signal
+    # with noisy early data, deflating the overall r.  Show r at each tier so
+    # the model's real predictive quality is visible.
+    print()
+    tiers = [
+        ("≥3 complete seasons (2021–2022)", lambda r: r["draft_year"] <= 2022 and r["ppr_cum"] > 0),
+        ("≥2 complete seasons (2021–2023)", lambda r: r["draft_year"] <= 2023 and r["ppr_cum"] > 0),
+        ("all years incl. partial (2021–2024)", lambda r: r["ppr_cum"] > 0),
+    ]
+    print(f"  {'Data tier':<42}  {'n':>4}  {'Pearson-r':>9}")
+    print(f"  {'-'*42}  {'-'*4}  {'-'*9}")
+    for label, pred in tiers:
+        subset = [r for r in all_rows if pred(r)]
+        if len(subset) < 10:
+            continue
+        xs = [r["model_score"] for r in subset]
+        ys = [r["ppr_cum"] for r in subset]
+        rv = _pearson_r(xs, ys)
+        flag = "✓" if rv > 0.45 else ("~" if rv > 0.30 else "✗")
+        print(f"  {label:<42}  {len(subset):>4}  {rv:>+9.3f}  {flag}")
 
-    # Show r for players WITH college stats vs WITHOUT (shows the CFBD impact)
+    # Show CFBD lift
     if len(overall_valid_cfbd) >= 5:
         xs_c = [x for x, _ in overall_valid_cfbd]
         ys_c = [y for _, y in overall_valid_cfbd]
         r_cfbd = _pearson_r(xs_c, ys_c)
-        rest   = [(x, y) for x, y in overall_valid if (x, y) not in overall_valid_cfbd]
-        r_no_cfbd = _pearson_r([x for x, _ in rest], [y for _, y in rest]) if len(rest) >= 5 else float("nan")
-        print(f"  Players WITH college stats (n={len(overall_valid_cfbd)}): r={r_cfbd:+.3f}")
+        rest_pairs = [(x, y) for (x, y) in overall_valid
+                      if (x, y) not in set(overall_valid_cfbd)]
+        r_no_cfbd = (
+            _pearson_r([x for x, _ in rest_pairs], [y for _, y in rest_pairs])
+            if len(rest_pairs) >= 5 else float("nan")
+        )
+        print(f"\n  CFBD college stats coverage:")
+        print(f"    WITH stats  (n={len(overall_valid_cfbd)}): r={r_cfbd:+.3f}")
         if not math.isnan(r_no_cfbd):
-            print(f"  Players WITHOUT college stats (n={len(rest)}): r={r_no_cfbd:+.3f}")
-            lift = r_cfbd - r_no_cfbd
-            print(f"  College stats lift on r: {lift:+.3f}")
+            print(f"    WITHOUT stats (n={len(rest_pairs)}): r={r_no_cfbd:+.3f}  lift={r_cfbd - r_no_cfbd:+.3f}")
 
     # ── Per-position Pearson r (skill positions only) ──────────────────────────
     # Cross-position mixing distorts r: QBs score high PPR but model discounts

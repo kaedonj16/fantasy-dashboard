@@ -927,19 +927,27 @@ def score_prospect(
         prospect_score = _clip(prospect_score)
 
     # Late-round steal recognition.
-    # Players drafted after pick 100 who show elite college production (score ≥ 72)
-    # AND elite athleticism (≥ 75) or elite breakout (≥ 72) have beaten the odds
-    # historically (Amon-Ra St. Brown, Rhamondre Stevenson, etc.).
-    # The day-3 draft capital penalty is partially offset for these profiles since
-    # the college signal is strong enough to override the late-pick prior.
+    # Players drafted after pick 100 with strong college production signal have beaten
+    # the odds historically (Stevenson, Nacua, Shaheed, Amon-Ra St. Brown).
+    # The day-3 draft capital penalty is partially offset when college signal is strong.
+    #
+    # Thresholds are position-specific because RB/TE raw stat scales are compressed:
+    # - WR: 72+ production (1,100+ rec yds/yr on a major-program basis)
+    # - RB: 63+ production (1,000 rush yds at 85+ yds/game is elite RB)
+    # - TE: 65+ production (700+ rec yds for TE is outstanding)
+    _steal_prod_thresh = {"WR": 72, "RB": 63, "TE": 65}.get(pos, 72)
+    _steal_ath_thresh  = {"WR": 75, "RB": 72, "TE": 70}.get(pos, 75)
+
     if pos in ("WR", "RB", "TE") and draft_capital:
         projected_pick = draft_capital.get("projected_pick", 0)
         if projected_pick and projected_pick > 100:
-            if production_score >= 72 and (athleticism_score >= 75 or breakout_score >= 72):
+            if production_score >= _steal_prod_thresh and (
+                athleticism_score >= _steal_ath_thresh or breakout_score >= 68
+            ):
                 # Partial reversal of the day-3 penalty: ~8% lift for validated profiles
                 prospect_score = _clip(prospect_score * 1.08)
-            elif production_score >= 78:
-                # Dominant producer with late draft slot — floor bump
+            elif production_score >= _steal_prod_thresh:
+                # Strong producer with late draft slot — floor bump
                 prospect_score = _clip(prospect_score * 1.05)
 
     prospect_score = round(prospect_score, 2)
