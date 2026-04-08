@@ -3129,6 +3129,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close menu when clicking a nav link
     navPillsContainer.querySelectorAll('.nav-pill').forEach(pill => {
       pill.addEventListener('click', function() {
+        if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger — keep hamburger open
         navPillsContainer.classList.remove('nav-open');
         navToggle.textContent = '☰';
       });

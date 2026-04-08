@@ -323,11 +323,20 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     }
     .filter-positions {
       justify-content: center;
+      gap: 6px;
+    }
+    .pos-pill {
+      padding: 8px 14px;
+      font-size: 12px;
     }
     .active-settings-indicator {
       justify-content: center;
       order: -1;
       width: 100%;
+    }
+    .filter-row-secondary {
+      flex-wrap: wrap;
+      gap: 8px;
     }
   }
 

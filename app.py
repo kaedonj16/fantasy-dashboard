@@ -6261,10 +6261,23 @@ def page_players(platform: str, season: int, league_id: str):
         }
         .filter-positions {
           justify-content: center;
+          gap: 6px;
+        }
+        .pos-pill {
+          padding: 8px 14px;
+          font-size: 12px;
         }
         .active-settings-indicator {
           justify-content: center;
           order: -1;
+          width: 100%;
+        }
+        .filter-row-secondary {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .filter-sort,
+        .filter-sort select {
           width: 100%;
         }
       }

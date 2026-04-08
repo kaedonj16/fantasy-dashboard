@@ -498,7 +498,7 @@ ul {
 
 .nav-pill-dropdown-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
   background: var(--card);
@@ -739,6 +739,15 @@ ul {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+@media (max-width: 768px) {
+  .breakout-filter-btn {
+    padding: 10px 16px;
+    flex: 1;
+    min-width: 60px;
+    text-align: center;
+  }
 }
 
 /* Settings Gear Dropdown */
