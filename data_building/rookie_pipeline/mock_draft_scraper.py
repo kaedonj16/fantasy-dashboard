@@ -239,334 +239,194 @@ def scrape_consensus_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
 CBS_HUB_URL = "https://www.cbssports.com/nfl/draft/mock-draft/"
 
 
-def _discover_cbs_analyst_urls() -> List[tuple]:
+def _parse_cbs_hub_sections(html_content: str, draft_year: int) -> List[Dict[str, Any]]:
     """
-    Scrape the CBS Sports mock draft hub page to discover all individual analyst mock URLs.
+    Parse all MockDraft-column sections from the CBS Sports hub page.
 
-    Returns list of (url, analyst_name) tuples, e.g.:
-    [
-        ("https://www.cbssports.com/nfl/draft/mock-draft/ryan-wilson/", "Ryan Wilson"),
-        ("https://www.cbssports.com/nfl/draft/mock-draft/josh-edwards/", "Josh Edwards"),
-        ...
-    ]
-    Falls back to [(CBS_HUB_URL, "CBS Sports")] if discovery fails.
+    Structure (from DevTools):
+      div[data-component="draftTable"]
+        div.SectionLayout--2col
+          section.MockDraft-column  ← one per analyst (typically 6)
+            div.MockDraft-columnTop
+              div.MockDraft-author
+                div.HeadshotAndName
+                  div.HeadshotAndName-name
+                    a.HeadshotAndName-link  ← analyst name
+            section.table-base-container.table-base-mock-draft
+              div.scrollable-table
+                div.scroll-container
+                  table.table-base
+                    tbody
+                      tr
+                        td.cell-rank          ← pick number
+                        td.cell-trade
+                        td (team)
+                        td.cell-player-info
+                          a.cell-bold-text    ← player name
+                          div.player-details  ← position / school
     """
-    log.info("[mock_scraper] Discovering CBS Sports analyst mock draft URLs")
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-blink-features=AutomationControlled',
-                ]
-            )
-            page = browser.new_page()
-            page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-            page.goto(CBS_HUB_URL, wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(5000)
-            html_content = page.content()
-            browser.close()
+    soup = BeautifulSoup(html_content, "html.parser")
+    all_picks: List[Dict[str, Any]] = []
 
-        soup = BeautifulSoup(html_content, 'html.parser')
+    # Find the draft table container
+    draft_table_div = soup.find("div", attrs={"data-component": "draftTable"})
+    if not draft_table_div:
+        print("[mock_scraper] CBS: could not find div[data-component='draftTable']")
+        return []
 
-        analyst_urls: List[tuple] = []
-        seen_slugs: set = set()
+    sections = draft_table_div.find_all("section", class_="MockDraft-column")
+    print(f"[mock_scraper] CBS: found {len(sections)} MockDraft-column sections")
 
-        for a_tag in soup.find_all('a', href=True):
-            href = a_tag['href']
-            # Match paths like /nfl/draft/mock-draft/<slug>/ where slug is not empty
-            # Exclude the hub itself and non-analyst paths
-            m = re.match(r'^/nfl/draft/mock-draft/([a-z][a-z0-9\-]+)/?$', href)
-            if not m:
-                continue
-            slug = m.group(1)
-            # Skip generic/non-analyst slugs
-            if slug in ('2025', '2026', '2027', 'nfl', 'consensus', 'mock-draft'):
-                continue
-            if slug in seen_slugs:
-                continue
-            seen_slugs.add(slug)
+    for sec_idx, section in enumerate(sections, 1):
+        # ── Analyst name ──────────────────────────────────────────────────────
+        analyst_name = "CBS Sports"
+        author_div = section.find("div", class_="MockDraft-author")
+        if author_div:
+            name_link = author_div.find("a", class_="HeadshotAndName-link")
+            if name_link:
+                analyst_name = name_link.get_text(strip=True)
 
-            full_url = f"https://www.cbssports.com{href}"
-            if not href.endswith('/'):
-                full_url += '/'
+        # ── Picks table ───────────────────────────────────────────────────────
+        table = section.find("table", class_="table-base")
+        if not table:
+            print(f"[mock_scraper] CBS section {sec_idx} ({analyst_name}): no table found, skipping")
+            continue
 
-            # Derive analyst name from link text or slug
-            link_text = a_tag.get_text(strip=True)
-            if link_text and len(link_text) > 2 and not link_text.isdigit():
-                analyst_name = link_text
-            else:
-                # Convert slug to title case: "ryan-wilson" → "Ryan Wilson"
-                analyst_name = slug.replace('-', ' ').title()
+        tbody = table.find("tbody")
+        if not tbody:
+            continue
 
-            analyst_urls.append((full_url, analyst_name))
-            log.info("[mock_scraper] Found analyst mock: %s — %s", analyst_name, full_url)
+        rows = tbody.find_all("tr")
+        picks: List[Dict[str, Any]] = []
 
-        if analyst_urls:
-            log.info("[mock_scraper] Discovered %d CBS analyst mocks", len(analyst_urls))
-            return analyst_urls
+        for row in rows:
+            try:
+                # Pick number
+                rank_td = row.find("td", class_="cell-rank")
+                if not rank_td:
+                    continue
+                pick_text = rank_td.get_text(strip=True)
+                if not pick_text.isdigit():
+                    continue
+                pick_num = int(pick_text)
 
-        log.warning("[mock_scraper] No analyst links found on CBS hub page — falling back to hub URL")
-        return [(CBS_HUB_URL, "CBS Sports")]
-
-    except Exception as exc:
-        log.error("[mock_scraper] Failed to discover CBS analyst URLs: %s", exc)
-        return [(CBS_HUB_URL, "CBS Sports")]
-
-
-def scrape_cbs_sports_mock_draft(
-    draft_year: int,
-    url: Optional[str] = None,
-    analyst_name: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Scrape individual mock draft from CBS Sports.
-
-    Args:
-        draft_year: NFL draft year (used for logging/dating picks).
-        url: Specific analyst mock URL. Defaults to the hub URL.
-        analyst_name: Override analyst name. If None, parsed from page <h1>.
-
-    Returns list of mock draft entries:
-    [
-        {
-            "player_name": "Fernando Mendoza",
-            "position": "QB",
-            "school": "Indiana",
-            "projected_pick": 1,
-            "projected_round": 1,
-            "mock_date": "2026-04-06",
-            "source": "CBS Sports",
-            "analyst_name": "Mike Renner"
-        },
-        ...
-    ]
-    """
-    if url is None:
-        url = CBS_HUB_URL
-    max_retries = 3
-    
-    for attempt in range(max_retries):
-        try:
-            log.info("[mock_scraper] Scraping CBS Sports mock draft from %s (attempt %d/%d)", url, attempt + 1, max_retries)
-
-            # Use Playwright to handle JavaScript-rendered content
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=[
-                        '--no-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-web-security',
-                        '--disable-features=VizDisplayCompositor'
-                    ]
-                )
-                page = browser.new_page()
-                
-                # Set user agent to avoid bot detection
-                page.set_extra_http_headers({
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                })
-
-                # Try different wait strategies with increased timeout
-                try:
-                    # First try with 'domcontentloaded' (faster than 'load')
-                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                except Exception:
-                    # Fallback to 'networkidle' if domcontentloaded fails
-                    log.warning("[mock_scraper] domcontentloaded failed, trying networkidle")
-                    page.goto(url, wait_until="networkidle", timeout=60000)
-                
-                # Wait a bit more for dynamic content to load
-                page.wait_for_timeout(8000)
-
-                html_content = page.content()
-                browser.close()
-
-            # Parse with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'html.parser')
-
-            # Find the analyst name from the page title or heading
-            # Use passed analyst_name if provided, otherwise parse from page
-            if not analyst_name:
-                analyst_name = "CBS Sports"
-                title_elem = soup.find('h1')
-                if title_elem:
-                    title_text = title_elem.get_text()
-                    # Extract analyst name from title like "Mike Renner's Mock Draft"
-                    match = re.match(r"(.+?)'s Mock Draft", title_text)
-                    if match:
-                        analyst_name = match.group(1).strip()
-
-            picks = []
-
-            # Find all table rows
-            rows = soup.find_all('tr')
-            log.info("[mock_scraper] Found %d total rows", len(rows))
-
-            for row in rows:
-                try:
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) < 5:
-                        continue
-
-                    # Cell 0: Pick number
-                    pick_text = cells[0].get_text(strip=True)
-                    if not pick_text or not pick_text.isdigit():
-                        continue
-
-                    pick_num = int(pick_text)
-
-                    # Skip if pick number is unrealistic (> 300 picks would be unusual)
-                    if pick_num > 300:
-                        continue
-
-                    # Cell 3: Player name + school (e.g., "Fernando MendozaIndiana, Jr")
-                    # Cell 4: Position
-                    player_cell = cells[3].get_text(strip=True)
-                    position = cells[4].get_text(strip=True)
-
-                    if not player_cell or not position:
-                        continue
-
-                    # Filter to only offensive skill positions
-                    skill_positions = {'QB', 'RB', 'WR', 'TE'}
-                    if position not in skill_positions:
-                        log.debug("[mock_scraper] Skipping row - position '%s' not in QB/RB/WR/TE",
-                                 position)
-                        continue
-
-                    # Parse player name and school from format: "PlayerNameSchool, Year"
-                    # First, split by comma to separate the year
-                    parts = player_cell.split(',')
-                    if len(parts) >= 1:
-                        name_school = parts[0].strip()
-
-                        # Handle schools with parentheses like "Miami (Fla.)"
-                        # Look for pattern: Name + School + optional (Abbreviation)
-                        # E.g., "Rueben Bain Jr.Miami (Fla.)" -> "Rueben Bain Jr." + "Miami (Fla.)"
-
-                        # Try to find split between name and school
-                        # Pattern 1: lowercase letter followed by uppercase letter
-                        # This handles "Fernando MendozaIndiana" or "Mansoor DelaneLSU"
-                        split_match = re.search(r'([a-z\.])([A-Z])', name_school)
-
-                        if split_match:
-                            split_idx = split_match.end(1)
-                            player_name = name_school[:split_idx].strip()
-                            school_part = name_school[split_idx:].strip()
-
-                            # Handle schools like "Miami (Fla.)"
-                            # The school might have parentheses that we want to keep
-                            school = school_part
-                        else:
-                            # Fallback: assume last 1-3 words are school
-                            # Handle parenthesized abbreviations
-                            paren_match = re.search(r'\([^)]+\)$', name_school)
-                            if paren_match:
-                                # Has trailing parentheses - likely part of school name
-                                # Find the word before the parentheses
-                                before_paren = name_school[:paren_match.start()].strip()
-                                words = before_paren.split()
-                                if len(words) >= 3:
-                                    # Last word before parens is school base, e.g., "Miami"
-                                    player_name = ' '.join(words[:-1])
-                                    school = words[-1] + ' ' + paren_match.group()
-                                else:
-                                    player_name = before_paren
-                                    school = paren_match.group()
-                            else:
-                                # No parentheses
-                                words = name_school.split()
-                                if len(words) >= 3:
-                                    # Check if last two words look like a school (e.g., "Ohio State")
-                                    if len(words) >= 4 and words[-2][0].isupper() and words[-1][0].isupper():
-                                        player_name = ' '.join(words[:-2])
-                                        school = ' '.join(words[-2:])
-                                    else:
-                                        player_name = ' '.join(words[:-1])
-                                        school = words[-1]
-                                else:
-                                    player_name = name_school
-                                    school = "Unknown"
-                    else:
-                        player_name = player_cell
-                        school = "Unknown"
-
-                    # Validate player name (should have at least 2 words for first + last name)
-                    name_words = player_name.split()
-                    if len(name_words) < 2:
-                        log.debug("[mock_scraper] Skipping - invalid player name '%s'", player_name)
-                        continue
-
-                    # Calculate round from pick number
-                    projected_round = ((pick_num - 1) // 32) + 1
-
-                    picks.append({
-                        "player_name": player_name,
-                        "position": position,
-                        "school": school,
-                        "projected_pick": pick_num,
-                        "projected_round": projected_round,
-                        "mock_date": date.today().isoformat(),
-                        "source": "CBS Sports",
-                        "analyst_name": analyst_name
-                    })
-
-                except Exception as e:
-                    log.debug("[mock_scraper] Failed to parse CBS row: %s", e)
+                # Player info cell
+                player_td = row.find("td", class_="cell-player-info")
+                if not player_td:
                     continue
 
-            log.info("[mock_scraper] Successfully scraped %d picks from CBS Sports", len(picks))
-            return picks
+                name_tag = player_td.find("a", class_="cell-bold-text")
+                if not name_tag:
+                    continue
+                player_name = name_tag.get_text(strip=True)
+                if not player_name:
+                    continue
 
-        except Exception as exc:
-            log.warning("[mock_scraper] Attempt %d failed: %s", attempt + 1, exc)
-            if attempt == max_retries - 1:
-                # Last attempt failed, return empty list
-                log.error("[mock_scraper] All %d attempts failed for CBS Sports, giving up", max_retries)
-                return []
-            else:
-                # Wait before retrying (exponential backoff)
-                import time
-                wait_time = min(30, (2 ** attempt) * 5)  # 5, 10, 20 seconds max
-                log.info("[mock_scraper] Waiting %d seconds before retry...", wait_time)
-                time.sleep(wait_time)
-    
-    return []  # Fallback
+                # Position + school from div.player-details
+                # Typical text: "QB • Indiana" or "WR | Colorado" or "QB\nColorado"
+                position = ""
+                school = ""
+                details_div = player_td.find("div", class_="player-details")
+                if details_div:
+                    details_text = details_div.get_text(" ", strip=True)
+                    # Split on bullet, pipe, dash, or whitespace sequences
+                    parts = re.split(r"\s*[•|\-–]\s*|\s{2,}", details_text)
+                    parts = [p.strip() for p in parts if p.strip()]
+                    if parts:
+                        position = parts[0].upper()
+                    if len(parts) >= 2:
+                        school = parts[1]
+
+                # Filter to skill positions only
+                if position not in {"QB", "RB", "WR", "TE"}:
+                    continue
+
+                projected_round = ((pick_num - 1) // 32) + 1
+                picks.append({
+                    "player_name":    player_name,
+                    "position":       position,
+                    "school":         school,
+                    "projected_pick": pick_num,
+                    "projected_round": projected_round,
+                    "mock_date":      date.today().isoformat(),
+                    "source":         "CBS Sports",
+                    "analyst_name":   analyst_name,
+                })
+
+            except Exception as exc:
+                log.debug("[mock_scraper] CBS row parse error: %s", exc)
+                continue
+
+        print(f"[mock_scraper] CBS section {sec_idx} ({analyst_name}): {len(picks)} skill-position picks")
+        all_picks.extend(picks)
+
+    return all_picks
 
 
 def scrape_individual_mocks(draft_year: int, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Scrape individual mock drafts from all CBS Sports analysts.
+    Scrape all individual mock drafts from the CBS Sports hub page.
 
-    Discovers all analyst mock draft URLs from the CBS hub page, then scrapes
-    each one individually so the consensus builder receives picks from all analysts.
+    The hub page (CBS_HUB_URL) contains six MockDraft-column sections, each
+    with a complete mock from a different analyst. We load the page once and
+    parse all sections — no need to navigate to individual analyst pages.
     """
-    all_mocks = []
+    print(f"[mock_scraper] CBS: loading hub page {CBS_HUB_URL}")
+    max_retries = 3
 
-    # Discover all CBS Sports analyst mock URLs
-    try:
-        analyst_urls = _discover_cbs_analyst_urls()
-    except Exception as exc:
-        log.error("[mock_scraper] URL discovery failed, falling back to hub: %s", exc)
-        analyst_urls = [(CBS_HUB_URL, "CBS Sports")]
-
-    # Scrape each analyst's mock draft
-    for url, name in analyst_urls:
+    for attempt in range(1, max_retries + 1):
         try:
-            log.info("[mock_scraper] Scraping CBS mock for analyst: %s (%s)", name, url)
-            picks = scrape_cbs_sports_mock_draft(draft_year, url=url, analyst_name=name)
-            log.info("[mock_scraper] Got %d picks from %s", len(picks), name)
-            all_mocks.extend(picks)
-        except Exception as exc:
-            log.error("[mock_scraper] Failed to scrape CBS mock for %s: %s", name, exc)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-web-security",
+                        "--disable-features=VizDisplayCompositor",
+                    ],
+                )
+                page = browser.new_page()
+                page.set_extra_http_headers({
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    )
+                })
+                try:
+                    page.goto(CBS_HUB_URL, wait_until="domcontentloaded", timeout=45000)
+                except Exception:
+                    log.warning("[mock_scraper] CBS domcontentloaded timed out, trying networkidle")
+                    page.goto(CBS_HUB_URL, wait_until="networkidle", timeout=60000)
 
-    log.info("[mock_scraper] Scraped %d total individual mock entries from %d analysts",
-             len(all_mocks), len(analyst_urls))
-    return all_mocks
+                page.wait_for_timeout(8000)
+                html_content = page.content()
+                browser.close()
+
+            print(f"[mock_scraper] CBS: retrieved {len(html_content)} bytes (attempt {attempt})")
+            picks = _parse_cbs_hub_sections(html_content, draft_year)
+
+            if picks:
+                print(f"[mock_scraper] CBS: {len(picks)} total skill-position picks from hub")
+                return picks
+
+            print(f"[mock_scraper] CBS attempt {attempt}: 0 picks parsed — retrying")
+            time.sleep(2 ** attempt)
+
+        except PlaywrightTimeout as exc:
+            print(f"[mock_scraper] CBS attempt {attempt}: timeout — {exc}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+        except PlaywrightError as exc:
+            print(f"[mock_scraper] CBS attempt {attempt}: Playwright error — {exc}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+        except Exception as exc:
+            print(f"[mock_scraper] CBS attempt {attempt}: {type(exc).__name__}: {exc}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+
+    print("[mock_scraper] CBS: all retries exhausted — returning empty list")
+    return []
