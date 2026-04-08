@@ -3762,153 +3762,13 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // Fetch and render advanced metrics
+      // Fetch and render advanced metrics (season-selectable)
       const advancedSection = document.getElementById('advancedMetricsSection');
       if (advancedSection) {
-        // Extract league context for API call
         const path = window.location.pathname;
         const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
         const leagueId = match ? match[3] : null;
-
-        fetch(`/api/player-advanced-metrics/${playerId}?league_id=${leagueId}`)
-          .then(res => res.json())
-          .then(metricsData => {
-            if (metricsData.error || metricsData.premium_required) {
-              // Hide the section if no data or premium required
-              advancedSection.style.display = 'none';
-              return;
-            }
-
-            const metrics = metricsData.metrics || {};
-            const position = metricsData.position;
-
-            let metricsHTML = '<div class="player-modal-stats-grid">';
-
-            // Role Score (universal metric)
-            if (metrics.role_score != null) {
-              const roleScore = metrics.role_score.toFixed(1);
-              const roleGrade = getRoleGrade(metrics.role_score);
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Role Score</div>
-                  <div class="player-modal-stat-value">${roleScore} <span style="font-size: 12px; color: var(--text-muted);">${roleGrade}</span></div>
-                </div>
-              `;
-            }
-
-            // Snap Share
-            if (metrics.snap_share != null) {
-              const snapPct = (metrics.snap_share * 100).toFixed(1);
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Snap Share</div>
-                  <div class="player-modal-stat-value">${snapPct}%</div>
-                </div>
-              `;
-            }
-
-            // Position-specific metrics
-            if (position === 'QB') {
-              if (metrics.yards_per_attempt != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Attempt</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_attempt.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.completion_rate != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Completion %</div>
-                    <div class="player-modal-stat-value">${(metrics.completion_rate * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            } else if (position === 'RB') {
-              if (metrics.yards_per_carry != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Carry</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_carry.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.opportunity_share != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Opportunity Share</div>
-                    <div class="player-modal-stat-value">${metrics.opportunity_share.toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            } else if (position === 'WR' || position === 'TE') {
-              if (metrics.yards_per_target != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Target</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_target.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.catch_rate != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Catch Rate</div>
-                    <div class="player-modal-stat-value">${(metrics.catch_rate * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-              if (metrics.target_share != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Target Share</div>
-                    <div class="player-modal-stat-value">${(metrics.target_share * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            }
-
-            // Red Zone Usage (for skill positions)
-            if (metrics.red_zone_usage != null && position !== 'QB') {
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">RZ Usage/Game</div>
-                  <div class="player-modal-stat-value">${metrics.red_zone_usage.toFixed(1)}</div>
-                </div>
-              `;
-            }
-
-            // Efficiency Trend (with arrow indicator)
-            if (metrics.efficiency_trend != null) {
-              const trend = metrics.efficiency_trend;
-              const trendIcon = trend > 5 ? '↗️' : trend < -5 ? '↘️' : '→';
-              const trendColor = trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : 'var(--text-muted)';
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Efficiency Trend</div>
-                  <div class="player-modal-stat-value" style="color: ${trendColor};">${trendIcon} ${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</div>
-                </div>
-              `;
-            }
-
-            metricsHTML += '</div>';
-
-            // Add "as of" date if available
-            if (metricsData.as_of_date) {
-              metricsHTML += `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;">As of ${metricsData.as_of_date}</div>`;
-            }
-
-            advancedSection.innerHTML = `
-              <div class="player-modal-section-title">Advanced Metrics</div>
-              ${metricsHTML}
-            `;
-          })
-          .catch(err => {
-            console.error('Error loading advanced metrics:', err);
-            // Hide section on error
-            advancedSection.style.display = 'none';
-          });
+        loadAdvancedMetrics(playerId, leagueId, null);
       }
     })
     .catch(err => {
@@ -3929,6 +3789,180 @@ function getRoleGrade(roleScore) {
   if (roleScore >= 50) return 'Average';
   if (roleScore >= 40) return 'Below Avg';
   return 'Limited';
+}
+
+function loadAdvancedMetrics(playerId, leagueId, season) {
+  const section = document.getElementById('advancedMetricsSection');
+  if (!section) return;
+
+  // Show spinner while loading
+  section.innerHTML = `
+    <div class="player-modal-section-title">Advanced Metrics</div>
+    <div class="player-modal-loading" style="padding: 20px;">
+      <div class="loading-spinner" style="width: 20px; height: 20px;"></div>
+    </div>
+  `;
+
+  const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
+  const seasonParam = season != null ? `&season=${season}` : '';
+  const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
+
+  fetch(url)
+    .then(res => res.json())
+    .then(metricsData => {
+      if (metricsData.error || metricsData.premium_required) {
+        section.style.display = 'none';
+        return;
+      }
+
+      const availableSeasons = metricsData.available_seasons || [];
+      const activeSeason = metricsData.season;
+
+      // Season pills (only shown when more than one season has data)
+      let pillsHTML = '';
+      if (availableSeasons.length > 1) {
+        pillsHTML = '<div class="adv-metrics-season-pills">';
+        availableSeasons.forEach(yr => {
+          const activeClass = yr === activeSeason ? ' active' : '';
+          pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${yr})">${yr}</button>`;
+        });
+        pillsHTML += '</div>';
+      }
+
+      section.innerHTML = `
+        <div class="player-modal-section-title">Advanced Metrics</div>
+        ${pillsHTML}
+        ${buildAdvancedMetricsHTML(metricsData)}
+      `;
+    })
+    .catch(err => {
+      console.error('Error loading advanced metrics:', err);
+      section.style.display = 'none';
+    });
+}
+
+function buildAdvancedMetricsHTML(metricsData) {
+  const metrics = metricsData.metrics || {};
+  const position = metricsData.position;
+
+  let html = '<div class="player-modal-stats-grid">';
+
+  // Role Score (universal metric)
+  if (metrics.role_score != null) {
+    const roleScore = metrics.role_score.toFixed(1);
+    const roleGrade = getRoleGrade(metrics.role_score);
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Role Score</div>
+        <div class="player-modal-stat-value">${roleScore} <span style="font-size: 12px; color: var(--text-muted);">${roleGrade}</span></div>
+      </div>
+    `;
+  }
+
+  // Snap Share
+  if (metrics.snap_share != null) {
+    const snapPct = (metrics.snap_share * 100).toFixed(1);
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Snap Share</div>
+        <div class="player-modal-stat-value">${snapPct}%</div>
+      </div>
+    `;
+  }
+
+  // Position-specific metrics
+  if (position === 'QB') {
+    if (metrics.yards_per_attempt != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Attempt</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_attempt.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.completion_rate != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Completion %</div>
+          <div class="player-modal-stat-value">${(metrics.completion_rate * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  } else if (position === 'RB') {
+    if (metrics.yards_per_carry != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Carry</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_carry.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.opportunity_share != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Opportunity Share</div>
+          <div class="player-modal-stat-value">${metrics.opportunity_share.toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  } else if (position === 'WR' || position === 'TE') {
+    if (metrics.yards_per_target != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Target</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_target.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.catch_rate != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Catch Rate</div>
+          <div class="player-modal-stat-value">${(metrics.catch_rate * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+    if (metrics.target_share != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Target Share</div>
+          <div class="player-modal-stat-value">${(metrics.target_share * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  }
+
+  // Red Zone Usage (for skill positions)
+  if (metrics.red_zone_usage != null && position !== 'QB') {
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">RZ Usage/Game</div>
+        <div class="player-modal-stat-value">${metrics.red_zone_usage.toFixed(1)}</div>
+      </div>
+    `;
+  }
+
+  // Efficiency Trend (with arrow indicator)
+  if (metrics.efficiency_trend != null) {
+    const trend = metrics.efficiency_trend;
+    const trendIcon = trend > 5 ? '↗️' : trend < -5 ? '↘️' : '→';
+    const trendColor = trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : 'var(--text-muted)';
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Efficiency Trend</div>
+        <div class="player-modal-stat-value" style="color: ${trendColor};">${trendIcon} ${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</div>
+      </div>
+    `;
+  }
+
+  html += '</div>';
+
+  // "As of" date footer
+  if (metricsData.as_of_date) {
+    html += `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;">As of ${metricsData.as_of_date}</div>`;
+  }
+
+  return html;
 }
 
 function toggleGameLogYear(year) {

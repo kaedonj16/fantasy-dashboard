@@ -7943,32 +7943,63 @@ def api_player_advanced_metrics(player_id: str):
     """
     Get advanced efficiency metrics for a specific player.
 
-    PREMIUM FEATURE - Requires active subscription.
+    Query params:
+        season: NFL season year (e.g. 2025). Omit to use the default season
+                (current season during regular season, most recent with data
+                during offseason).
 
     Returns:
         {
             "player_id": "123",
             "position": "WR",
+            "season": 2025,
+            "available_seasons": [2025, 2024],
             "metrics": {
                 "yards_per_target": 8.5,
                 "catch_rate": 0.72,
-                "yards_per_reception": 11.8,
-                "yards_per_carry": 4.2,
-                "snap_share": 0.78,
-                "opportunity_share": 8.5,
-                "red_zone_usage": 2.1,
-                "role_score": 67.3,
-                "usage_trend": 15.2,
-                "efficiency_trend": 8.7
+                ...
             },
             "as_of_date": "2025-01-15"
         }
     """
     try:
-        from data_building.advanced_metrics import get_player_metrics
+        from data_building.advanced_metrics import (
+            get_player_metrics,
+            get_player_metrics_by_season,
+            get_available_seasons_for_player,
+        )
 
-        # Advanced metrics are now available to all users (no premium check)
-        metrics = get_player_metrics(str(player_id))
+        # Determine default season from NFL state
+        nfl_state = get_nfl_state() or {}
+        nfl_season = int(nfl_state.get("season") or datetime.now().year)
+        is_offseason = (nfl_state.get("season_type") or "").lower() == "off"
+
+        # Parse requested season from query param
+        requested_season = request.args.get("season")
+        if requested_season:
+            try:
+                requested_season = int(requested_season)
+            except (ValueError, TypeError):
+                requested_season = None
+
+        # Get all seasons with data for this player
+        available_seasons = get_available_seasons_for_player(str(player_id))
+
+        # Choose target season: explicit request → current (if in-season) → most recent
+        if requested_season:
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            target_season = nfl_season
+        elif available_seasons:
+            target_season = available_seasons[0]  # most recent season with data
+        else:
+            target_season = nfl_season
+
+        # Fetch metrics for the target season (or fall back to latest row)
+        if available_seasons:
+            metrics = get_player_metrics_by_season(str(player_id), target_season)
+        else:
+            metrics = get_player_metrics(str(player_id))
 
         if not metrics:
             return jsonify({
@@ -7976,17 +8007,20 @@ def api_player_advanced_metrics(player_id: str):
                 "error": "No metrics available for this player"
             }), 404
 
-        # Extract date and clean up metrics
+        # Extract and clean metadata fields
         as_of_date = str(metrics.pop("as_of_date", None))
-        metrics.pop("id", None)  # Remove internal ID
+        season_val = metrics.pop("season", target_season)
+        metrics.pop("id", None)
 
         return jsonify({
             "player_id": str(player_id),
             "position": metrics.get("position"),
+            "season": season_val,
+            "available_seasons": available_seasons,
             "metrics": {
                 k: float(v) if v is not None else None
                 for k, v in metrics.items()
-                if k != "player_id" and k != "position"
+                if k not in ("player_id", "position")
             },
             "as_of_date": as_of_date,
         })

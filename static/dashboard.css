@@ -9888,6 +9888,41 @@ img, svg, canvas {
 }
 
 /* ============================================
+   Advanced Metrics Season Pills
+   ============================================ */
+
+.adv-metrics-season-pills {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.adv-season-pill {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  line-height: 1.5;
+}
+
+.adv-season-pill:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.adv-season-pill.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+/* ============================================
    Team Modal Styles
    ============================================ */
 

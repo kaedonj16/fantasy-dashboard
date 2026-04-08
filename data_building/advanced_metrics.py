@@ -69,6 +69,35 @@ def init_advanced_metrics_db():
                 ON player_advanced_metrics (as_of_date, role_score DESC);
         """)
 
+        # Add season column if it doesn't exist yet (migration)
+        conn.execute("""
+            ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS season INTEGER;
+        """)
+
+        # Backfill season from as_of_date for any rows that are missing it.
+        # Regular season runs Sep–Dec of year Y and Jan of year Y+1, so:
+        #   Jan–Feb  → season = year - 1  (e.g. 2026-01 → 2025 season)
+        #   Sep–Dec  → season = year      (e.g. 2025-10 → 2025 season)
+        # Mar–Aug rows won't exist (cron skips offseason), but we handle them
+        # conservatively as the prior season.
+        conn.execute("""
+            UPDATE player_advanced_metrics
+            SET season = CASE
+                WHEN EXTRACT(MONTH FROM as_of_date) <= 2
+                    THEN EXTRACT(YEAR FROM as_of_date)::INTEGER - 1
+                ELSE EXTRACT(YEAR FROM as_of_date)::INTEGER
+            END
+            WHERE season IS NULL;
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_adv_metrics_player_season
+                ON player_advanced_metrics (player_id, season, as_of_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_adv_metrics_season
+                ON player_advanced_metrics (season, as_of_date DESC);
+        """)
+
 
 def calculate_receiving_metrics(usage: Dict[str, float]) -> Dict[str, Optional[float]]:
     """Calculate receiving efficiency metrics."""
@@ -260,22 +289,28 @@ def calculate_player_metrics(
     }
 
 
-def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str):
+def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, season: Optional[int] = None):
     """
     Save calculated metrics to database for a specific date.
 
     Args:
         metrics_list: List of metric dicts from calculate_player_metrics()
         as_of_date: Date string (YYYY-MM-DD)
+        season: NFL season year (e.g. 2025). If None, inferred from as_of_date.
     """
     init_advanced_metrics_db()
+
+    if season is None:
+        from datetime import datetime as _dt
+        _d = _dt.strptime(as_of_date, "%Y-%m-%d")
+        season = _d.year - 1 if _d.month <= 2 else _d.year
 
     with get_conn() as conn:
         for metrics in metrics_list:
             # Upsert: update if exists, insert if not
             conn.execute("""
                 INSERT INTO player_advanced_metrics (
-                    player_id, as_of_date, position,
+                    player_id, as_of_date, season, position,
                     yards_per_target, catch_rate, yards_per_reception, target_quality_score,
                     yards_per_carry, yards_per_touch, rush_td_rate,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
@@ -283,7 +318,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str):
                     role_score, usage_trend, efficiency_trend
                 )
                 VALUES (
-                    %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
@@ -292,6 +327,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str):
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
+                    season = EXCLUDED.season,
                     position = EXCLUDED.position,
                     yards_per_target = EXCLUDED.yards_per_target,
                     catch_rate = EXCLUDED.catch_rate,
@@ -311,7 +347,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str):
                     usage_trend = EXCLUDED.usage_trend,
                     efficiency_trend = EXCLUDED.efficiency_trend
             """, (
-                metrics["player_id"], as_of_date, metrics["position"],
+                metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
                 metrics.get("yards_per_reception"), metrics.get("target_quality_score"),
                 metrics.get("yards_per_carry"), metrics.get("yards_per_touch"),
@@ -324,7 +360,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str):
                 metrics.get("efficiency_trend")
             ))
 
-    print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date}")
+    print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
 
 
 def calculate_trends(player_id: str, current_date: str, lookback_days: int = 14) -> Dict[str, Optional[float]]:
@@ -403,6 +439,47 @@ def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Opti
             """, (player_id,)).fetchone()
 
         return dict(row) if row else None
+
+
+def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve the most recent advanced metrics snapshot for a player in a given season.
+
+    Args:
+        player_id: Sleeper player ID
+        season: NFL season year (e.g. 2025)
+
+    Returns:
+        Dict with all metrics or None if not found
+    """
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT * FROM player_advanced_metrics
+            WHERE player_id = %s AND season = %s
+            ORDER BY as_of_date DESC
+            LIMIT 1
+        """, (player_id, season)).fetchone()
+        return dict(row) if row else None
+
+
+def get_available_seasons_for_player(player_id: str) -> List[int]:
+    """
+    Return a list of seasons (descending) for which metrics exist for this player.
+
+    Args:
+        player_id: Sleeper player ID
+
+    Returns:
+        List of season years, e.g. [2025, 2024]
+    """
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT season
+            FROM player_advanced_metrics
+            WHERE player_id = %s AND season IS NOT NULL
+            ORDER BY season DESC
+        """, (player_id,)).fetchall()
+        return [row["season"] for row in rows]
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

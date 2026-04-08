@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from dashboard_services.api import get_nfl_state
 from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse
@@ -21,6 +21,7 @@ def build_daily_advanced_metrics():
         nfl_state = get_nfl_state() or {}
         season_type = str(nfl_state.get("season_type", "")).lower().strip()
         is_offseason = season_type == "off"
+        current_season = int(nfl_state.get("season") or datetime.now().year)
 
         players_with_games = sum(1 for p in usage_table if p.get("usage", {}).get("games", 0) > 0)
 
@@ -46,7 +47,7 @@ def build_daily_advanced_metrics():
 
         if metrics_list:
             today = date.today().isoformat()
-            save_metrics_snapshot(metrics_list, today)
+            save_metrics_snapshot(metrics_list, today, season=current_season)
             print(f"[cron] Advanced metrics: {len(metrics_list)} processed, {failed_count} failed")
         else:
             print("[cron] No advanced metrics calculated")
