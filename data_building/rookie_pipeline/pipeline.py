@@ -1023,7 +1023,7 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     _missing = [p["name"] for p in sr_prospects if not p.get("age")]
     print(f"[pipeline] {len(_missing)} prospects still need age lookup")
 
-    if _missing:
+    if len(_missing) > 50:
         try:
             print("[pipeline] Retrieving PlayerProfiler ages")
             from .playerprofiler_scraper import fetch_playerprofiler_ages
