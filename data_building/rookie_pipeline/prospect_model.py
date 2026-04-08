@@ -199,11 +199,16 @@ def _score_production_season(season: Dict, pos: str) -> float:
         comp_pct    = _safe(season.get("completion_pct"), 60.0)
         ypa         = _safe(season.get("yds_per_attempt"), 7.0)
         td_int      = _safe(season.get("td_int_ratio"),    2.0)
+        # Efficiency-first QB scoring: YPA and completion% predict NFL translation
+        # better than raw college volume, which varies wildly by scheme.
+        # Air-Raid QBs inflate volume stats; pro-style systems suppress them.
+        # Volume scale lowered (150-330) so conservative offenses aren't penalised
+        # for running 20-play-action drives; efficiency (YPA, comp%) gets 50% weight.
         prod = (
-            _scale(pass_yds_pg, 180, 380) * 0.30 +
-            _scale(tds_pg,        1.5,  3.5) * 0.25 +
-            _scale(comp_pct,     60.0, 76.0) * 0.20 +
-            _scale(ypa,           6.5,  10.5) * 0.15 +
+            _scale(pass_yds_pg, 150, 330) * 0.20 +
+            _scale(tds_pg,        1.5,  3.5) * 0.20 +
+            _scale(comp_pct,     60.0, 76.0) * 0.25 +
+            _scale(ypa,           6.5,  10.5) * 0.25 +
             _scale(td_int,        1.5,   6.0) * 0.10
         )
         # Mobile QB bonus: rushing production adds significant fantasy value
