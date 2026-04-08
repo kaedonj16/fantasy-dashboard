@@ -1098,6 +1098,19 @@ def rewrite_value_table_with_model() -> Path:
         except Exception as e:
             print(f"[ERROR] Failed to load engine_values: {e}")
 
+    # Load base 10-team engine values for blending with FC vendor values (1QB)
+    engine_1qb_map: dict[str, float] = {}
+    if engine_values_path.exists():
+        try:
+            engine_df_base = pd.read_csv(engine_values_path)
+            for _, row in engine_df_base.iterrows():
+                pid = str(row.get("player_id"))
+                eng_val = row.get("engine_value_10")
+                if pid and pd.notna(eng_val):
+                    engine_1qb_map[pid] = float(eng_val)
+        except Exception as e:
+            print(f"[ERROR] Failed to load engine_1qb_map: {e}")
+
     # Load value_2qb from dynastyprocess (need to match by name+team)
     dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
     if not dp_df.empty:
@@ -1158,9 +1171,14 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        # CRITICAL FIX: Use vendor value directly if available, else ML model
-        if pid in vendor_values:
+        # Blend FC vendor value (60%) + engine value (40%) when both available.
+        # Falls back to FC-only or engine-only when one source is missing.
+        if pid in vendor_values and pid in engine_1qb_map:
+            final_value = 0.6 * vendor_values[pid] + 0.4 * engine_1qb_map[pid]
+        elif pid in vendor_values:
             final_value = vendor_values[pid]
+        elif pid in engine_1qb_map:
+            final_value = engine_1qb_map[pid]
         else:
             final_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
@@ -1176,12 +1194,6 @@ def rewrite_value_table_with_model() -> Path:
         position = player.get("position")
         if position != "QB":
             sf_value = max(sf_value, final_value)
-
-        # Position-specific adjustments: TEs capped at ~800
-        if position == "TE":
-            # Apply 1.35x multiplier to TEs (allows top TEs to reach ~800), then cap
-            final_value = min(final_value * 1.35, 800.0)
-            sf_value = min(sf_value * 1.35, 800.0)
 
         age = player.get("age")
         if age is None and row is not None:
