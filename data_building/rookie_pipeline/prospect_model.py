@@ -80,53 +80,67 @@ def _career_seasons(seasons: List[Dict]) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 CONF_QUALITY: Dict[str, float] = {
-    # Power 2
-    "SEC":               1.00,
-    "Big Ten":           1.00,
+    # Power 2 — abbreviations and full names (CFBD returns full names)
+    "SEC":                       1.00,
+    "Southeastern":              1.00,   # "Southeastern Conference"
+    "Big Ten":                   1.00,
+    "Big 10":                    1.00,
 
     # Upper Power Tier
-    "Big 12":            0.90,
-    "ACC":               0.88,
+    "Big 12":                    0.90,
+    "Big Twelve":                0.90,
+    "ACC":                       0.88,
+    "Atlantic Coast":            0.88,   # "Atlantic Coast Conference"
 
     # Legacy Pac (if still used)
-    "Pac-12":            0.89,   # slightly above ACC historically
+    "Pac-12":                    0.89,
+    "Pac 12":                    0.89,
+    "Pacific-12":                0.89,
+
+    # Power 4 (2024+ Big 12 expansion / new branding)
+    "Big East":                  0.82,
 
     # Elite Independent
-    "Notre Dame":        0.94,
+    "Notre Dame":                0.94,
 
     # Top G5
-    "American":          0.78,
+    "American":                  0.78,
+    "American Athletic":         0.78,
 
     # Mid G5
-    "Mountain West":     0.70,
-    "Sun Belt":          0.66,
+    "Mountain West":             0.70,
+    "Sun Belt":                  0.66,
 
     # Lower G5
-    "MAC":               0.60,
-    "CUSA":              0.56,
+    "MAC":                       0.60,
+    "Mid-American":              0.60,
+    "CUSA":                      0.56,
+    "Conference USA":            0.56,
 
     # Independents (non-ND)
-    "BYU":               0.84,
-    "Army":              0.68,
-    "Liberty":           0.66,
-    "UMass":             0.60,
-    "New Mexico State":  0.60,
+    "BYU":                       0.84,
+    "Army":                      0.68,
+    "Liberty":                   0.66,
+    "UMass":                     0.60,
+    "New Mexico State":          0.60,
 
     # Fallback bucket
-    "FBS Independents":  0.70,
+    "FBS Independents":          0.70,
+    "FBS Independent":           0.70,
 
     # FCS
-    "FCS":               0.48,
+    "FCS":                       0.48,
 }
 
-DEFAULT_CONF_QUALITY = 0.62
+DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
 
 
 def _conf_quality(conference: Optional[str]) -> float:
     if not conference:
         return DEFAULT_CONF_QUALITY
+    conf_lower = conference.lower()
     for k, v in CONF_QUALITY.items():
-        if k.lower() in conference.lower():
+        if k.lower() in conf_lower:
             return v
     return DEFAULT_CONF_QUALITY
 
@@ -923,19 +937,22 @@ def score_prospect(
     # Tiered by how many elite markers align: production, athleticism, draft capital.
     # Only applies to non-QB skill positions (fantasy value ceiling clearer).
     #
-    # Tier 3 (8% boost): all three elite — Ja'Marr Chase / Bijan Robinson tier
-    # Tier 2 (5% boost): two of three elite — solid top-10 calibre
-    # Tier 1 (3% boost): one elite marker + draft capital — high-upside prospect
+    # Tier 3 (10% boost): all three elite — Ja'Marr Chase / Bijan Robinson tier
+    # Tier 2 (7% boost):  two of three elite + draft capital — solid top-10 calibre
+    # Tier 1 (3% boost):  one elite marker + draft capital — high-upside prospect
+    #
+    # elite_dc threshold at 75 (≈ pick 12–15) rather than 85 so that a clear
+    # top-15 pick with elite college production qualifies for the Tier 2 boost.
     if pos in ("WR", "RB", "TE"):
         elite_prod = production_score >= 72
         elite_ath  = athleticism_score >= 78
-        elite_dc   = dc_score >= 85  # Top-10 pick
+        elite_dc   = dc_score >= 75   # pick ~12-15 or better
 
         elite_count = sum([elite_prod, elite_ath, elite_dc])
         if elite_count >= 3:
-            prospect_score *= 1.08
+            prospect_score *= 1.10
         elif elite_count == 2 and elite_dc:
-            prospect_score *= 1.05
+            prospect_score *= 1.07
         elif elite_count >= 1 and elite_dc:
             prospect_score *= 1.03
         prospect_score = _clip(prospect_score)

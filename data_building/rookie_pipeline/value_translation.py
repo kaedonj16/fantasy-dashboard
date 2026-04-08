@@ -154,26 +154,27 @@ def assign_tier(prospect_score: float) -> Tuple[int, str]:
     """
     Return (tier_number, tier_label) based on overall prospect_score.
 
-    Calibrated so top round-1 skill players (Bijan, J Love, Chase) land Tier 1
-    even when college stats or combine data are unavailable pre-draft.
+    Calibrated so elite skill players (Bijan, J Love, Chase) land Tier 1.
+    Tiers are anchored against the full scoring model where elite prospects
+    (elite stats + top-10 draft capital) typically score 88–96.
 
     Tiers:
-        1 — Elite Prospect      (≥ 67)   top-10 RB/WR/TE picks; elite profiles
-        2 — Top Prospect        (54–66)  solid round-1; QBs; early day-2 upside
-        3 — Day-2 Upside        (43–53)  round-2 picks; strong developmental floor
-        4 — Developmental       (35–42)  round-3/4; high variance, low floor
-        5 — Deep Flier          (26–34)  day-3 / UDFA with one standout trait
-        6 — Low Priority        (< 26)   minimal dynasty value
+        1 — Elite Prospect      (≥ 82)   Bijan/Chase/JLove tier; top-8 skill pick + elite stats
+        2 — Top Prospect        (68–81)  solid round-1; QBs; early top-20 picks
+        3 — Day-2 Upside        (55–67)  round-2 picks; strong developmental floor
+        4 — Developmental       (44–54)  round-3/4; high variance, low floor
+        5 — Deep Flier          (33–43)  day-3 / UDFA with one standout trait
+        6 — Low Priority        (< 33)   minimal dynasty value
     """
-    if prospect_score >= 67:
+    if prospect_score >= 82:
         return 1, "Elite Prospect"
-    if prospect_score >= 54:
+    if prospect_score >= 68:
         return 2, "Top Prospect"
-    if prospect_score >= 43:
+    if prospect_score >= 55:
         return 3, "Day-2 Upside"
-    if prospect_score >= 35:
+    if prospect_score >= 44:
         return 4, "Developmental"
-    if prospect_score >= 26:
+    if prospect_score >= 33:
         return 5, "Deep Flier"
     return 6, "Low Priority"
 
