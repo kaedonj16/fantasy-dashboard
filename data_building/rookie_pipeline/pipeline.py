@@ -624,7 +624,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
                 STDDEV(e.projected_pick) AS pick_stdev,
                 ARRAY_AGG(DISTINCT COALESCE(e.analyst_name, e.source_name) ORDER BY COALESCE(e.analyst_name, e.source_name)) AS sources
             FROM rookie_mock_draft_entries e
-            LEFT JOIN rookie_prospects p ON p.player_id = e.player_id
+            JOIN rookie_prospects p ON p.player_id = e.player_id
             WHERE e.draft_class_year = %(year)s
             GROUP BY e.player_id, e.draft_class_year, p.name, p.position, p.school
             """,
@@ -719,11 +719,14 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
                      projected_pick_low, projected_pick_high,
                      projected_draft_capital_score, num_mocks_used,
                      consensus_confidence, mock_sources, calculated_at)
-                VALUES
-                    (%(player_id)s, %(draft_class_year)s, %(projected_round)s,
-                     %(projected_pick)s, %(projected_pick_low)s, %(projected_pick_high)s,
-                     %(projected_draft_capital_score)s, %(num_mocks_used)s,
-                     %(consensus_confidence)s, %(mock_sources)s::jsonb, NOW())
+                SELECT
+                    %(player_id)s, %(draft_class_year)s, %(projected_round)s,
+                    %(projected_pick)s, %(projected_pick_low)s, %(projected_pick_high)s,
+                    %(projected_draft_capital_score)s, %(num_mocks_used)s,
+                    %(consensus_confidence)s, %(mock_sources)s::jsonb, NOW()
+                WHERE EXISTS (
+                    SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+                )
                 ON CONFLICT (player_id) DO UPDATE SET
                     projected_round               = EXCLUDED.projected_round,
                     projected_pick                = EXCLUDED.projected_pick,
