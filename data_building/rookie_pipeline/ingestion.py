@@ -284,6 +284,9 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 3) -> Opt
             elif exc.response.status_code == 404:
                 print(f"[cfbd] {path} FAILED: Not found (404) — invalid endpoint or parameters: {params}")
                 return None
+            elif exc.response.status_code == 400:
+                print(f"[cfbd] {path} FAILED: Bad Request (400) — invalid parameters: {params}")
+                return None
             elif exc.response.status_code == 429:
                 wait = 2 ** attempt * 2
                 print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — backing off {wait}s")
@@ -400,72 +403,74 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
 
 def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     """
-    Fetch exact games played per player per season using the CFBD /games/players endpoint.
+    Fetch exact games played per player per season via CFBD /games/players endpoint.
 
-    The /games/players endpoint returns one game-object per game played, each containing
-    nested team → category → athlete stat rows.  By walking the structure and collecting
-    unique game IDs per player name we get an exact games-played count — far more
-    accurate than the hardcoded default of 12.
+    The endpoint requires `year` + `week` — it does NOT accept a season-level query
+    with just `year` + `seasonType`.  We loop weeks 1-17 and aggregate unique game
+    IDs per player, giving an exact games-played count rather than the default 12.
 
     Returns:
         {player_name_lower: {year: games_played_count}}
 
-    Only skill positions (QB/RB/WR/TE) are tracked.
-    3 API calls total (one per season year) — not one per player.
+    ~51 API calls total (17 weeks × 3 years) with 0.2s rate-limit sleep ≈ ~10s.
+    Empty weeks (bye weeks, season end) are skipped automatically.
     """
     if not CFBD_KEY:
         print("[cfbd_gp] No CFBD_API_KEY — skipping games-played lookup")
         return {}
 
-    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    years   = [draft_year - 1, draft_year - 2, draft_year - 3]
     result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
 
-    _SKILL = {"QB", "RB", "WR", "TE"}
-
     for yr in years:
-        print(f"[cfbd_gp] Fetching /games/players for {yr}")
-        try:
-            data = _cfbd_get("/games/players", {"year": yr, "seasonType": "regular"}) or []
-        except Exception as exc:
-            print(f"[cfbd_gp] ERROR fetching /games/players for {yr} — {exc}")
-            continue
+        print(f"[cfbd_gp] Fetching /games/players week-by-week for {yr}")
+        player_games: Dict[str, set] = {}   # name_lower → set of game_ids
+        empty_streak = 0
 
-        if not data:
-            print(f"[cfbd_gp] No data returned for {yr}")
-            continue
-
-        # Each element in `data` is one game.  Structure:
-        # { "id": <game_id>, "teams": [ { "school": {...}, "categories": [
-        #     { "name": "receiving", "types": [
-        #         { "name": "YDS", "athletes": [
-        #             { "name": "Travis Hunter", "id": "...", "stat": "..." }
-        #         ]}
-        #     ]}
-        # ]}]}
-        #
-        # Track: player_name_lower → set of game_ids they appeared in.
-        player_games: Dict[str, set] = {}
-
-        for game_obj in data:
-            game_id = game_obj.get("id")
-            if not game_id:
+        for week in range(1, 18):   # weeks 1-17 covers FBS regular season
+            try:
+                data = _cfbd_get(
+                    "/games/players",
+                    {"year": yr, "week": week, "seasonType": "regular"},
+                    retries=2,
+                ) or []
+            except Exception as exc:
+                print(f"[cfbd_gp] Week {week} error: {exc}")
                 continue
-            for team in (game_obj.get("teams") or []):
-                for category in (team.get("categories") or []):
-                    for stat_type in (category.get("types") or []):
-                        for athlete in (stat_type.get("athletes") or []):
-                            a_name = (athlete.get("name") or "").lower().strip()
-                            if not a_name:
-                                continue
-                            player_games.setdefault(a_name, set()).add(game_id)
 
-        # Convert sets to counts and merge into result
+            if not data:
+                empty_streak += 1
+                if empty_streak >= 3:
+                    # 3 consecutive empty weeks = season has ended; stop early
+                    break
+                continue
+
+            empty_streak = 0
+
+            # Each element in `data` is one game.  Structure:
+            # { "id": <game_id>, "teams": [ { "categories": [
+            #     { "name": "receiving", "types": [
+            #         { "athletes": [ { "name": "Travis Hunter", ... } ] }
+            #     ]}
+            # ]}]}
+            for game_obj in data:
+                game_id = game_obj.get("id")
+                if not game_id:
+                    continue
+                for team in (game_obj.get("teams") or []):
+                    for category in (team.get("categories") or []):
+                        for stat_type in (category.get("types") or []):
+                            for athlete in (stat_type.get("athletes") or []):
+                                a_name = (athlete.get("name") or "").lower().strip()
+                                if a_name:
+                                    player_games.setdefault(a_name, set()).add(game_id)
+
+            time.sleep(0.2)   # light rate-limiting between week calls
+
+        # Convert game-id sets → counts and store
         count = 0
         for player_name, game_ids in player_games.items():
-            gp = len(game_ids)
-            if player_name not in result:
-                result[player_name] = {}
-            result[player_name][yr] = gp
+            result.setdefault(player_name, {})[yr] = len(game_ids)
             count += 1
 
         print(f"[cfbd_gp] {yr}: resolved games-played for {count} players")
