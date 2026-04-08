@@ -1101,7 +1101,7 @@ window.initTradePage = function initTradePage(root = document) {
           breakoutsContent?.classList.add("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
-            moversSub.textContent = "Top 5 breakout candidates by database score";
+            moversSub.textContent = "Top 5 breakouts from Breakout Engine ";
           }
           // Hide day filters for breakouts
           if (dayFilters) {
@@ -4288,15 +4288,6 @@ function _renderBkModalContent(data, playerId) {
   });
   html += `</div>`;
 
-  // ── Key reasons ───────────────────────────────────────────────────────────
-  if (reasons.length > 0) {
-    html += `<div class="bk-section-title">Why This Breakout?</div>`;
-    html += `<div class="bk-reasons">`;
-    reasons.forEach(r => {
-      html += `<div class="bk-reason-item"><span class="bk-reason-bullet">▸</span>${r}</div>`;
-    });
-    html += `</div>`;
-  }
 
   // ── Context boxes ─────────────────────────────────────────────────────────
   if (txnSummary) {

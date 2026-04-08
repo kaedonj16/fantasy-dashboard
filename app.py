@@ -934,8 +934,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings", "page_players",  "players",  False),
-        ("Breakouts",       "page_breakouts","breakouts", False),
-        ("Rookies",         "page_rookies",  "rookies",   False),
+        ("Rookie Rankings", "page_rookies",  "rookies",   False),
+        ("Breakout Engine", "page_breakouts","breakouts", False),
     ], ["players", "breakouts", "rookies"]))
     nav_pills.append(nav_pill("History", "page_history", "history"))
 
@@ -3099,7 +3099,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-snapshot-top">
                 <div class="os-snapshot-rank-block">
                   <div class="os-snapshot-team">{team_name}</div>
-                  <div class="os-snapshot-meta">Total value (players + picks)</div>
+                  <div class="os-snapshot-meta">Total value</div>
                 </div>
                 <div class="os-snapshot-value">{roster_value:.0f}</div>
               </div>
@@ -3131,6 +3131,20 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     roster_leader = roster_cards[0]["team_name"] if roster_cards else "N/A"
     highest_roster_value = f"{roster_cards[0]['roster_value']:.0f}" if roster_cards else "0"
+    
+    # Calculate total draft capital across all rosters
+    total_draft_capital = 0.0
+    for roster in rosters:
+        roster_id = str(roster.get("roster_id"))
+        player_ids = [str(pid) for pid in (roster.get("players") or [])]
+        roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
+        team_picks = picks_by_roster.get(roster_id, []) if isinstance(picks_by_roster, dict) else []
+        pick_count = len(team_picks)
+        
+        # Add pick values to total roster value
+        roster_value += _team_pick_value(team_picks, pick_by_key)
+        
+        total_draft_capital += roster_value
 
     rostered_ids = {
         str(pid)
@@ -6570,7 +6584,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central">
       <div class="card-header">
-        <h2>Breakout Candidates</h2>
+        <h2>Breakout Engine</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
         </div>
@@ -6748,7 +6762,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       }}
     </script>
     """
-    return render_page("Breakout Candidates", league_id, "breakouts", body_html, platform, season)
+    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")

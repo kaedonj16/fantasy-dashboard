@@ -447,7 +447,7 @@ ul {
   font-size: 13px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
   white-space: nowrap;
 }
@@ -474,6 +474,8 @@ ul {
 .nav-pill-dropdown-wrapper {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 
 .nav-pill-dropdown-wrapper .nav-pill {
@@ -1108,6 +1110,7 @@ html[data-theme="dark"] img[src*="logout.png"] {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: flex-end;
 }
 
 .nav-pills-bottom {
@@ -2421,7 +2424,7 @@ thead th {
 }
 
 .otc-filter-chip {
-  padding: 6px 11px;
+  padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--row);
@@ -2463,7 +2466,7 @@ thead th {
 .otc-filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
   margin-bottom: 14px;
 }
 

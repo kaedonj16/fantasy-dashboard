@@ -343,7 +343,7 @@ def build_trade_calculator_body(
             <div id="breakoutsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div class="otc-mini-section-title">Breakout Candidates</div>
+                  <div class="otc-mini-section-title">Breakouts</div>
                   <a href="{breakouts_url}" class="{breakouts_link_class}" style="font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 500;">{breakouts_link_text}</a>
                 </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
