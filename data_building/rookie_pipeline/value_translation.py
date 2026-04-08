@@ -107,7 +107,7 @@ def _piecewise_linear(score: float) -> float:
 
 # Additive adjustments on top of base value
 _POS_ADJ_1QB: Dict[str, float] = {
-    "QB": -30,   # QBs have lower 1QB dynasty ceiling pre-draft
+    "QB": -20,   # QBs have lower 1QB dynasty ceiling; -20 keeps QB3/QB4 viable
     "RB":  0,
     "WR": +10,
     "TE": -15,

@@ -890,7 +890,10 @@ def score_prospect(
     # TE gets an additional 0.82x discount: TE draft capital is less predictive
     # than RB/WR because the college-to-NFL translation is harder at the position
     # (contested catches → YAC role, blocking duties, late development curves).
-    dc_multiplier = {"QB": 0.65, "TE": 0.82}.get(pos, 1.00)
+    # QB: 0.72x — top picks are expected every year, less predictive in dynasty
+    # than equivalent non-QB capital.  The flat position curve already discounts
+    # mid-round QB picks; the multiplier adds a modest additional adjustment.
+    dc_multiplier = {"QB": 0.72, "TE": 0.82}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # A pick-200 prospect should never outscore a pick-8 prospect even with
