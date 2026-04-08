@@ -3063,7 +3063,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         pick_count = len(team_picks)
 
         # Add pick values to total roster value
-        roster_value += _team_pick_value(team_picks, pick_by_key)
+        league_id_str = str(ctx.get("league_id") or "")
+        roster_value += _team_pick_value(
+            team_picks, pick_by_key,
+            platform=platform, league_id=league_id_str, season=_safe_int(season, 0),
+        )
 
         first_round_count = 0
         for pk in team_picks:
@@ -4924,16 +4928,50 @@ def _avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
     return (sum(vals) / len(vals)) if vals else 0.0
 
 
-def _team_pick_value(picks: list, by_id: dict) -> float:
-    """Total model value of a team's draft picks (averaged per round bucket)."""
+def _team_pick_value(
+    picks: list,
+    by_id: dict,
+    platform: str = None,
+    league_id: str = None,
+    season: int = None,
+) -> float:
+    """
+    Total model value of a team's draft picks.
+
+    When platform/league_id/season are provided, resolves the exact draft
+    slot for each pick by looking up the original owner's previous-season
+    standings (via resolve_exact_pick_slot). Falls back to the round-average
+    when the slot cannot be determined (e.g. picks 2+ years out).
+    """
     total = 0.0
     for pk in picks:
         try:
-            season = int(pk.get("season") or 0)
+            pk_season = int(pk.get("season") or 0)
             rnd = int(pk.get("round") or 0)
         except (TypeError, ValueError):
             continue
-        total += _avg_pick_value_for_round(by_id, season, rnd)
+
+        exact_slot = None
+        if platform and league_id and season and pk.get("original_owner"):
+            pick_for_slot = {
+                "season": pk_season,
+                "round": rnd,
+                "previous_owner_id": pk.get("original_owner"),
+            }
+            try:
+                exact_slot = resolve_exact_pick_slot(platform, league_id, season, pick_for_slot)
+            except Exception:
+                pass
+
+        if exact_slot:
+            key = f"{pk_season}_{rnd}_{exact_slot:02d}"
+            val = by_id.get(key)
+            if val is not None:
+                total += val
+                continue
+
+        # Fall back to round average when exact slot is unknown
+        total += _avg_pick_value_for_round(by_id, pk_season, rnd)
     return total
 
 
@@ -4951,6 +4989,8 @@ def build_teams_body(ctx: dict) -> str:
     users = ctx["users"]
     platform = ctx["platform"]
     picks_by_roster = ctx.get("picks_by_roster") or {}
+    league_id = str(ctx.get("league_id") or "")
+    current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
@@ -5060,7 +5100,8 @@ def build_teams_body(ctx: dict) -> str:
         if rid is None:
             continue
         team_pick_value[int(rid)] = _team_pick_value(
-            picks_by_roster.get(str(rid), []), pick_by_key
+            picks_by_roster.get(str(rid), []), pick_by_key,
+            platform=platform, league_id=league_id, season=current_season,
         )
 
     pick_series = list(team_pick_value.values())
