@@ -754,6 +754,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
     }
+    if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-rookie">PROSPECT</span>');
+    }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
     }
@@ -1127,6 +1130,8 @@ window.initTradePage = function initTradePage(root = document) {
       sf_value: Number(p.sf_value || p.value || 0),
       pos_rank_label: p.pos_rank_label || "",
       sf_pos_rank_label: p.sf_pos_rank_label || "",
+      is_rookie: p.is_rookie === true,
+      search_name: p.search_name || "",
     };
   }
 
@@ -1150,7 +1155,7 @@ window.initTradePage = function initTradePage(root = document) {
         ...players
           .filter(p => p && typeof p === "object" && p.id != null)
           .map(normalizePlayerRow)
-          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position)),
+          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
         ...picks,
       ].sort((a, b) => {
         const vb = Number(b.value || 0);
@@ -1195,8 +1200,9 @@ window.initTradePage = function initTradePage(root = document) {
       .filter(p => {
         const pos = String(p.position || "").toUpperCase();
         if (activePosFilter === "ALL") return true;
+        if (activePosFilter === "ROOKIE") return !!p.is_rookie;
         if (activePosFilter === "PICK") return pos === "PICK";
-        return pos === activePosFilter;
+        return pos === activePosFilter && !p.is_rookie;
       })
       .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 

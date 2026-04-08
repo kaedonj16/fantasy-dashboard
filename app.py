@@ -7216,7 +7216,28 @@ def get_model_value_table_cached():
     now = time.time()
     if _MODEL_VALUE_CACHE is not None and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL:
         return _MODEL_VALUE_CACHE
-    tbl = load_model_value_table() or []
+    tbl = list(load_model_value_table() or [])
+
+    # Append rookie prospects (mirrors /api/league-players logic)
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        from utils.utils import normalize_name as _nn
+        draft_year = get_active_rookie_class()
+        for r in get_rookie_rankings_from_db(draft_year):
+            name = r.get("name") or ""
+            tbl.append({
+                "id": r.get("player_id") or f"rookie_{name}",
+                "name": name,
+                "team": r.get("team") or "FA",
+                "position": r.get("position") or "UNK",
+                "age": r.get("age"),
+                "value":    float(r.get("rookie_value") or 0),
+                "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                "is_rookie": True,
+            })
+    except Exception as e:
+        print(f"[model-value-cache] rookies skipped: {e}")
+
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl

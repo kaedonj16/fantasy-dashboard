@@ -368,6 +368,7 @@ def build_trade_calculator_body(
               <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
               <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
               <button class="otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
+              <button class="otc-filter-chip pos-filter" data-pos="ROOKIE">Rookies</button>
             </div>
 
             <div id="allPlayersList" class="otc-values-list">
