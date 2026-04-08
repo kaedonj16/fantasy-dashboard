@@ -887,7 +887,10 @@ def score_prospect(
     # QB top picks are expected every year and less predictive for dynasty value
     # than equivalent non-QB picks.  WR/RB/TE rarity premiums are already baked
     # into the position-specific curves in pick_to_draft_capital_score().
-    dc_multiplier = 0.65 if pos == "QB" else 1.00
+    # TE gets an additional 0.82x discount: TE draft capital is less predictive
+    # than RB/WR because the college-to-NFL translation is harder at the position
+    # (contested catches → YAC role, blocking duties, late development curves).
+    dc_multiplier = {"QB": 0.65, "TE": 0.82}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # A pick-200 prospect should never outscore a pick-8 prospect even with
