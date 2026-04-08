@@ -75,6 +75,9 @@ def rankings():
         if pos:
             rows = [r for r in rows if (r.get("position") or "").upper() == pos]
 
+        # Limit to top 60
+        rows = rows[:60]
+
         # Build response list with value field chosen by league settings
         result = []
         for r in rows:
