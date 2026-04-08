@@ -572,7 +572,8 @@ ul {
     padding: 12px;
     border-radius: 8px;
     font-size: 14px;
-    justify-content: space-between;
+    display: flex;
+    justify-content: center;
   }
 
   .nav-pill-dropdown-menu {

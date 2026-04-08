@@ -5964,7 +5964,6 @@ def page_players(platform: str, season: int, league_id: str):
               <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
               <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
               <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
-              <button class="pos-pill" data-pos="ROOKIE" onclick="prTogglePos('ROOKIE')">Rookies</button>
             </div>
 
             <!-- Settings button -->
@@ -6754,16 +6753,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   <span style="font-weight: 500; flex: 1;">${{label}}</span>
                   <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
-
-                <!-- Key Reasons -->
-                ${{reasonsList.length > 0 ? `
-                  <div class="breakout-section">
-                    <div class="breakout-section-title">Why This Breakout?</div>
-                    <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
-                      ${{reasonsList.map(r => `<li>${{r}}</li>`).join('')}}
-                    </ul>
-                  </div>
-                ` : ''}}
 
                 <!-- Component Scores -->
                 <div class="breakout-section">

@@ -19,10 +19,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           Dynasty prospect rankings — production, athleticism, and draft capital combined
         </div>
       </div>
-      <div id="classYearBadge"
-        style="padding:4px 12px;background:var(--accent-soft);color:var(--accent);
-               border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;
-               align-self:flex-start;"></div>
     </div>
   </div>
 
@@ -798,7 +794,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     .then(function(r){ return r.json(); })
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
-      document.getElementById('classYearBadge').textContent = rkDraftYear + ' Draft Class';
       document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Rookie Rankings';
 
       return fetch('/api/rookies/rankings?year=' + rkDraftYear);
