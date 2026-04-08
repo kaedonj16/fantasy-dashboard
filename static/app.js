@@ -3369,7 +3369,10 @@ function openPlayerModal(playerId, playerName) {
           <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
         </div>
       </div>
-      <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <span id="playerModalBreakoutSlot"></span>
+        <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+      </div>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="player-modal-loading">
@@ -3455,17 +3458,26 @@ function openPlayerModal(playerId, playerName) {
       // Build modal body
       let bodyHTML = '';
 
-      // Breakout profile link (shown when player has a breakout score)
+      // Breakout button in header slot (shown when player has a breakout score)
       if (isBreakoutPlayer) {
-        bodyHTML += `
-          <div style="margin-bottom:16px;text-align:right;">
-            <button id="playerModalBreakoutBtn"
-              style="background:none;border:none;cursor:pointer;font-size:12px;
-                     color:#10b981;opacity:0.75;padding:0;font-weight:500;">
-              🔥 Breakout candidate — view analysis →
-            </button>
-          </div>
-        `;
+        const slot = document.getElementById('playerModalBreakoutSlot');
+        if (slot) {
+          const bkHeaderBtn = document.createElement('button');
+          bkHeaderBtn.id = 'playerModalBreakoutBtn';
+          bkHeaderBtn.textContent = '🔥 Breakout Analysis';
+          bkHeaderBtn.style.cssText = `
+            background: rgba(16,185,129,0.1);
+            border: 1px solid rgba(16,185,129,0.3);
+            color: #10b981;
+            border-radius: 7px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+          `;
+          slot.appendChild(bkHeaderBtn);
+        }
       }
 
       // Stats section
@@ -3674,14 +3686,12 @@ function openPlayerModal(playerId, playerName) {
 
       document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
 
-      // Wire up breakout profile button (avoids inline onclick with special chars)
+      // Wire up breakout header button
       const bkBtn = document.getElementById('playerModalBreakoutBtn');
       if (bkBtn) {
-        const capturedId   = playerId;
-        const capturedName = playerName;
         bkBtn.addEventListener('click', () => {
           closePlayerModal();
-          openBreakoutModal(capturedId, capturedName);
+          openBreakoutModal(playerId, playerName);
         });
       }
 
