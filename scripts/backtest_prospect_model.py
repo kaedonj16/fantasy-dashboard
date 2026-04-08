@@ -24,6 +24,10 @@ import sys
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+from pandas import read_csv
+
+from utils.utils import read_json
+
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -162,7 +166,10 @@ def _build_nfl_ppr_per_player(
 
     for offset in range(nfl_data_years):
         nfl_yr = draft_year + offset
-        stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
+        if nfl_yr == 2025:
+            read_csv("cache/stats_player_reg_2025.csv")
+        else:
+            stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
 
         # Accumulate PPR per gsis_id for this season (stats are weekly)
         yr_pts: Dict[str, float] = {}

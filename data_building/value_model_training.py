@@ -1136,7 +1136,7 @@ def rewrite_value_table_with_model() -> Path:
 
         # Blend: 50% FC, 35% DP 2QB, 15% SF Engine
         if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            sf_value = (0.50 * fc_val_norm) + (0.35 * dp_2qb_norm) + (0.15 * sf_eng_val)
+            sf_value = (0.35 * fc_val_norm) + (0.35 * dp_2qb_norm) + (0.3 * sf_eng_val)
 
             # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
             # In Superflex, elite QBs should be valued like elite RBs/WRs

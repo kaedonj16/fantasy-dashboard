@@ -351,12 +351,12 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
         eff = _scale(ypr, 9.0, 18.0) * 0.60 + _scale(ms, 0.10, 0.45) * 0.40
 
     elif pos == "RB":
-        ypc   = _safe(ls.get("yds_per_carry"), 4.5)
+        ypc   = _safe(ls.get("yds_per_carry"), 4.25)
         ms    = _safe(ls.get("market_share_yards"))
         ypr   = _safe(ls.get("yds_per_reception"), 7.0)
         eff   = (
-            _scale(ypc,  3.5,  7.5)  * 0.55 +
-            _scale(ms,   0.20, 0.75) * 0.25 +
+            _scale(ypc,  3.5,  7.0)  * 0.55 +
+            _scale(ms,   0.10, 0.45) * 0.25 +
             _scale(ypr,  5.0, 12.0)  * 0.20
         )
 
