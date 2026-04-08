@@ -1068,6 +1068,28 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     combine_data = fetch_nflverse_combine(draft_year)
     print(f"[pipeline] Fetched combine data for {len(combine_data)} players")
 
+    # Back-fill ages for prospects ESPN missed using NFLVerse combine birthdate
+    from datetime import date as _date
+    from .espn_scraper import parse_dob_and_calculate_age as _parse_dob
+    _ref = _date(draft_year, 4, 25)
+    _combine_ages = 0
+    for p in sr_prospects:
+        if p.get("age"):
+            continue  # already resolved by ESPN in Stage 1b
+        key = p["name"].lower().strip()
+        bd  = (combine_data.get(key) or {}).get("birthdate")
+        if bd:
+            _, age = _parse_dob(bd, _ref)
+            if age:
+                p["age"] = age
+                _combine_ages += 1
+    if _combine_ages:
+        print(f"[pipeline] Resolved {_combine_ages} ages from NFLVerse combine birthdate")
+        with get_conn() as conn:
+            upsert_prospects(sr_prospects, conn)
+    else:
+        print("[pipeline] No additional ages from combine birthdate")
+
     # Save combine data to DB
     with get_conn() as conn:
         n_combine = upsert_prospect_athleticism(sr_prospects, combine_data, conn)

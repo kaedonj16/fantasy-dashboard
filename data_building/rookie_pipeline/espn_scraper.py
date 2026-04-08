@@ -520,6 +520,20 @@ def fetch_espn_ages_robust(
 
     result: Dict[str, float] = {}
 
+    print(f"[espn] Starting age lookup for {len(names)} prospects (draft_year={draft_year})")
+
+    # Quick connectivity test — skip entire loop if ESPN is unreachable
+    _probe = _get(_SEARCH_URL, params={"query": "Travis Hunter", "limit": "3"})
+    if _probe is None:
+        print("[espn] WARNING: ESPN API unreachable — skipping age lookup (combine data is fallback)")
+        return {}
+    try:
+        _probe_items = len(_parse_search_items(_probe.json()))
+        print(f"[espn] Connectivity OK — test query returned {_probe_items} items")
+    except ValueError:
+        print("[espn] WARNING: ESPN returned unparseable response — skipping")
+        return {}
+
     for name in names:
         nk = _norm_name(name)
         meta = meta_by_name.get(nk, {})

@@ -227,11 +227,15 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 # Height is "6-2" format in nflverse; weight is integer lbs
                 height = _parse_height(row.get("ht"))
                 weight = _csv_int("wt")
-                
+
+                raw_bd = (row.get("birthdate") or row.get("birth_date") or "").strip()
+                birthdate = raw_bd if raw_bd and raw_bd not in ("NA", "na", "") else None
+
                 results[name] = {
                     "athleticism":    ath,
                     "height_inches":  height,
                     "weight_lbs":     weight,
+                    "birthdate":      birthdate,
                 }
             except Exception as exc:
                 print(f"[nflverse] Parse error for player '{name or 'UNKNOWN'}' in row {total_rows}: {exc}")
