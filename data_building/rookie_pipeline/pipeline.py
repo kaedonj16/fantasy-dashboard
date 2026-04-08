@@ -631,57 +631,33 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             {"year": draft_year},
         )
         rows = cur.fetchall()
-        cols = [d[0] for d in cur.description]
 
     if not rows:
         return {}
 
+    def _int(v, default=0):
+        try:
+            return int(round(float(v))) if v is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    def _float(v, default=0.0):
+        try:
+            return float(v) if v is not None else default
+        except (TypeError, ValueError):
+            return default
+
     consensus_map: Dict[str, Dict] = {}
     for row in rows:
-        r = dict(zip(cols, row))
-        pid          = r["player_id"]
-        
-        # Handle potential data type issues with defensive programming
-        try:
-            median_pick_raw = r["median_pick"]
-            if median_pick_raw is None:
-                median_pick = 300
-            elif isinstance(median_pick_raw, str):
-                # If it's a string that looks like a number, convert it
-                median_pick = int(round(float(median_pick_raw))) if median_pick_raw.replace('.','',1).isdigit() else 300
-            else:
-                median_pick = int(round(float(median_pick_raw)))
-        except (ValueError, TypeError):
-            median_pick = 300
-            
-        # Handle all numeric fields with defensive programming
-        def safe_int(value, default=0):
-            try:
-                if value is None:
-                    return default
-                elif isinstance(value, str):
-                    return int(float(value)) if value.replace('.','',1).isdigit() else default
-                else:
-                    return int(float(value))
-            except (ValueError, TypeError):
-                return default
-        
-        def safe_float(value, default=0.0):
-            try:
-                if value is None:
-                    return default
-                elif isinstance(value, str):
-                    return float(value) if value.replace('.','',1).isdigit() else default
-                else:
-                    return float(value)
-            except (ValueError, TypeError):
-                return default
-        
-        pick_low     = safe_int(r["pick_low"], median_pick)
-        pick_high    = safe_int(r["pick_high"], median_pick)
-        num_mocks    = safe_int(r["num_mocks"], 1)
-        stdev        = safe_float(r["pick_stdev"], 0.0)
-        sources      = [s for s in (r["sources"] or []) if s]
+        # rows are dict-like (psycopg3 row_factory); use key access directly
+        pid         = row["player_id"]
+        median_pick = _int(row["median_pick"], 300)
+        pick_low    = _int(row["pick_low"],    median_pick)
+        pick_high   = _int(row["pick_high"],   median_pick)
+        num_mocks   = _int(row["num_mocks"],   1)
+        stdev       = _float(row["pick_stdev"], 0.0)
+        # sources is a postgres array → already a Python list via psycopg3
+        sources     = [s for s in (row["sources"] or []) if s]
 
         # High variance = low confidence; 0 variance = 100, ±10-pick stdev ≈ 50
         if num_mocks >= 2 and stdev > 0:
@@ -692,9 +668,9 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             confidence = 100.0
 
         consensus_map[pid] = {
-            "player_name":                  r.get("name") or pid,
-            "position":                     r.get("position") or "",
-            "school":                       r.get("school") or "",
+            "player_name":                  row["name"] or pid,
+            "position":                     row["position"] or "",
+            "school":                       row["school"] or "",
             "projected_round":              ((median_pick - 1) // 32) + 1,
             "projected_pick":               median_pick,
             "projected_pick_low":           pick_low,
