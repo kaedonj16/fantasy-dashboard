@@ -515,6 +515,16 @@ ul {
   display: block;
 }
 
+/* Show dropdown on hover (desktop only) */
+@media (min-width: 769px) {
+  .nav-pill-dropdown-wrapper:hover .nav-pill-dropdown-menu {
+    display: block;
+  }
+  .nav-pill-dropdown-wrapper:hover .nav-pill-chevron {
+    transform: rotate(180deg);
+  }
+}
+
 .nav-pill-dropdown-item {
   display: flex;
   align-items: center;

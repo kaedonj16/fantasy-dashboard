@@ -843,9 +843,32 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             cls = "nav-pill active" if key == active else "nav-pill"
             return f"<a class='{cls}' href='{href}'>{label}</a>"
 
+        def simple_dropdown(label: str, items: list, active_keys: list) -> str:
+            is_active = active in active_keys
+            btn_cls = "nav-pill active" if is_active else "nav-pill"
+            item_html = ""
+            for item_label, href, item_key in items:
+                item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
+                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+            return (
+                f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
+                f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+                f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+                f"  </button>"
+                f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+                f"    {item_html}"
+                f"  </div>"
+                f"</div>"
+            )
+
         pills = [
             simple_pill("Home", "/", "home"),
             simple_pill("Trade Calc", "/trade", "trade"),
+            simple_dropdown("Players", [
+                ("Player Rankings", "/players", "players"),
+                ("Breakouts", "/breakouts", "breakouts"),
+                ("Rookies", "/rookies", "rookies"),
+            ], ["players", "breakouts", "rookies"]),
             simple_pill("FAQ", "/faq", "faq"),
             simple_pill("Privacy", "/privacy", "privacy"),
             simple_pill("Support the site", "/support", "support"),
@@ -6763,6 +6786,28 @@ def page_breakouts(platform: str, season: int, league_id: str):
     </script>
     """
     return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
+
+
+# Guest-accessible versions of content pages (no league required)
+@app.route("/players")
+def page_players_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_players(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/breakouts")
+def page_breakouts_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_breakouts(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/rookies")
+def page_rookies_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_rookies(platform="sleeper", season=current_season, league_id=None)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")

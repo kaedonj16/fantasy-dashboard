@@ -1178,7 +1178,7 @@ def rewrite_value_table_with_model() -> Path:
         elif pid in vendor_values:
             final_value = vendor_values[pid]
         elif pid in engine_1qb_map:
-            final_value = engine_1qb_map[pid]
+            final_value = 0.0  # FC absence = no dynasty consensus; engine alone is insufficient
         else:
             final_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
