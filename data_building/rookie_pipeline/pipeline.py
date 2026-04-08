@@ -709,49 +709,58 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
 
 
 def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn) -> int:
+    import json as _json
     saved = 0
+    skipped = 0
     with conn.cursor() as cur:
         for pid, c in consensus_map.items():
-            cur.execute(
-                """
-                INSERT INTO rookie_mock_draft_consensus
-                    (player_id, draft_class_year, projected_round, projected_pick,
-                     projected_pick_low, projected_pick_high,
-                     projected_draft_capital_score, num_mocks_used,
-                     consensus_confidence, mock_sources, calculated_at)
-                SELECT
-                    %(player_id)s, %(draft_class_year)s, %(projected_round)s,
-                    %(projected_pick)s, %(projected_pick_low)s, %(projected_pick_high)s,
-                    %(projected_draft_capital_score)s, %(num_mocks_used)s,
-                    %(consensus_confidence)s, %(mock_sources)s::jsonb, NOW()
-                WHERE EXISTS (
-                    SELECT 1 FROM rookie_prospects WHERE player_id = %(player_id)s
+            try:
+                cur.execute("SAVEPOINT save_consensus")
+                cur.execute(
+                    """
+                    INSERT INTO rookie_mock_draft_consensus
+                        (player_id, draft_class_year, projected_round, projected_pick,
+                         projected_pick_low, projected_pick_high,
+                         projected_draft_capital_score, num_mocks_used,
+                         consensus_confidence, mock_sources, calculated_at)
+                    VALUES
+                        (%(player_id)s, %(draft_class_year)s, %(projected_round)s,
+                         %(projected_pick)s, %(projected_pick_low)s, %(projected_pick_high)s,
+                         %(projected_draft_capital_score)s, %(num_mocks_used)s,
+                         %(consensus_confidence)s, %(mock_sources)s::jsonb, NOW())
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        projected_round               = EXCLUDED.projected_round,
+                        projected_pick                = EXCLUDED.projected_pick,
+                        projected_pick_low            = EXCLUDED.projected_pick_low,
+                        projected_pick_high           = EXCLUDED.projected_pick_high,
+                        projected_draft_capital_score = EXCLUDED.projected_draft_capital_score,
+                        num_mocks_used                = EXCLUDED.num_mocks_used,
+                        consensus_confidence          = EXCLUDED.consensus_confidence,
+                        mock_sources                  = EXCLUDED.mock_sources::jsonb,
+                        calculated_at                 = NOW()
+                    """,
+                    {
+                        "player_id":                    pid,
+                        "draft_class_year":             draft_year,
+                        "projected_round":              c.get("projected_round"),
+                        "projected_pick":               c.get("projected_pick"),
+                        "projected_pick_low":           c.get("projected_pick_low"),
+                        "projected_pick_high":          c.get("projected_pick_high"),
+                        "projected_draft_capital_score":c.get("projected_draft_capital_score"),
+                        "num_mocks_used":               c.get("num_mocks_used"),
+                        "consensus_confidence":         c.get("consensus_confidence"),
+                        "mock_sources":                 _json.dumps(c.get("mock_sources") or []),
+                    },
                 )
-                ON CONFLICT (player_id) DO UPDATE SET
-                    projected_round               = EXCLUDED.projected_round,
-                    projected_pick                = EXCLUDED.projected_pick,
-                    projected_pick_low            = EXCLUDED.projected_pick_low,
-                    projected_pick_high           = EXCLUDED.projected_pick_high,
-                    projected_draft_capital_score = EXCLUDED.projected_draft_capital_score,
-                    num_mocks_used                = EXCLUDED.num_mocks_used,
-                    consensus_confidence          = EXCLUDED.consensus_confidence,
-                    mock_sources                  = EXCLUDED.mock_sources::jsonb,
-                    calculated_at                 = NOW()
-                """,
-                {
-                    "player_id":                    pid,
-                    "draft_class_year":             draft_year,
-                    "projected_round":              c.get("projected_round"),
-                    "projected_pick":               c.get("projected_pick"),
-                    "projected_pick_low":           c.get("projected_pick_low"),
-                    "projected_pick_high":          c.get("projected_pick_high"),
-                    "projected_draft_capital_score":c.get("projected_draft_capital_score"),
-                    "num_mocks_used":               c.get("num_mocks_used"),
-                    "consensus_confidence":         c.get("consensus_confidence"),
-                    "mock_sources":                 str(c.get("mock_sources", [])).replace("'", '"'),
-                },
-            )
-            saved += 1
+                cur.execute("RELEASE SAVEPOINT save_consensus")
+                saved += cur.rowcount
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT save_consensus")
+                print(f"[pipeline] Failed to upsert consensus for {pid}: {exc}")
+                skipped += 1
+
+    if skipped:
+        print(f"[pipeline] Skipped {skipped} consensus entries (see errors above)")
     return saved
 
 
@@ -1267,6 +1276,13 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # Median pick, spread, and confidence are computed across all sources.
     with get_conn() as conn:
         consensus_map = build_consensus_from_db_entries(draft_year, conn)
+
+    if consensus_map:
+        sample = list(consensus_map.items())[:3]
+        for pid, c in sample:
+            print(f"[pipeline]   sample: {pid} pick={c.get('projected_pick')} mocks={c.get('num_mocks_used')} sources={c.get('mock_sources')}")
+    else:
+        print("[pipeline]   WARNING: consensus_map is empty — check rookie_mock_draft_entries has rows for this year")
     print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
 
     # Save consensus to DB
