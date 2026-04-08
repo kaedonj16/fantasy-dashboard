@@ -590,6 +590,88 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
     return saved
 
 
+def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
+    """
+    Aggregate per-analyst rows from rookie_mock_draft_entries into a consensus
+    map ready for upsert_mock_consensus / score_all_prospects.
+
+    After migration 010, each analyst's pick is stored as a separate row.
+    This function groups by player and computes:
+      - projected_pick   : median pick across all analysts
+      - pick_low/high    : min/max analyst picks
+      - num_mocks_used   : number of distinct analyst picks
+      - consensus_confidence: based on pick stdev (less spread = higher confidence)
+      - mock_sources     : list of analyst names
+
+    Returns {} if no entries exist for the draft year.
+    """
+    from .mock_draft_consensus import pick_to_draft_capital_score
+    import json, math
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                e.player_id,
+                e.draft_class_year,
+                p.full_name,
+                p.position,
+                p.school,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.projected_pick) AS median_pick,
+                MIN(e.projected_pick)  AS pick_low,
+                MAX(e.projected_pick)  AS pick_high,
+                COUNT(*)               AS num_mocks,
+                STDDEV(e.projected_pick) AS pick_stdev,
+                ARRAY_AGG(DISTINCT COALESCE(e.analyst_name, e.source_name) ORDER BY COALESCE(e.analyst_name, e.source_name)) AS sources
+            FROM rookie_mock_draft_entries e
+            LEFT JOIN rookie_prospects p ON p.player_id = e.player_id
+            WHERE e.draft_class_year = %(year)s
+            GROUP BY e.player_id, e.draft_class_year, p.full_name, p.position, p.school
+            """,
+            {"year": draft_year},
+        )
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+
+    if not rows:
+        return {}
+
+    consensus_map: Dict[str, Dict] = {}
+    for row in rows:
+        r = dict(zip(cols, row))
+        pid          = r["player_id"]
+        median_pick  = int(round(float(r["median_pick"] or 300)))
+        pick_low     = int(r["pick_low"]  or median_pick)
+        pick_high    = int(r["pick_high"] or median_pick)
+        num_mocks    = int(r["num_mocks"] or 1)
+        stdev        = float(r["pick_stdev"] or 0)
+        sources      = [s for s in (r["sources"] or []) if s]
+
+        # High variance = low confidence; 0 variance = 100, ±10-pick stdev ≈ 50
+        if num_mocks >= 2 and stdev > 0:
+            confidence = round(max(40.0, 100.0 - stdev * 5.0), 1)
+        elif num_mocks == 1:
+            confidence = 55.0
+        else:
+            confidence = 100.0
+
+        consensus_map[pid] = {
+            "player_name":                  r.get("full_name") or pid,
+            "position":                     r.get("position") or "",
+            "school":                       r.get("school") or "",
+            "projected_round":              ((median_pick - 1) // 32) + 1,
+            "projected_pick":               median_pick,
+            "projected_pick_low":           pick_low,
+            "projected_pick_high":          pick_high,
+            "projected_draft_capital_score": pick_to_draft_capital_score(median_pick),
+            "num_mocks_used":               num_mocks,
+            "consensus_confidence":         confidence,
+            "mock_sources":                 sources,
+        }
+
+    return consensus_map
+
+
 def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn) -> int:
     saved = 0
     with conn.cursor() as cur:
@@ -1131,13 +1213,20 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
 
-    # Scrape consensus from FantasyPros
-    consensus_picks = scrape_consensus_mock_draft(draft_year)
-    print(f"[pipeline] Scraped {len(consensus_picks)} consensus picks from FantasyPros")
+    # Primary: build consensus by aggregating the per-analyst entries stored
+    # in Stage 4.  After migration 010 each analyst's pick is its own row, so
+    # median/spread/confidence are computed across all analysts.
+    with get_conn() as conn:
+        consensus_map = build_consensus_from_db_entries(draft_year, conn)
+    print(f"[pipeline] Built consensus from DB entries: {len(consensus_map)} players")
 
-    # Build consensus
-    consensus_map = build_mock_draft_consensus_from_scraped(consensus_picks, draft_year)
-    print(f"[pipeline] Built consensus for {len(consensus_map)} players")
+    # Fallback: if DB has no entries yet, scrape FantasyPros directly
+    if not consensus_map:
+        print("[pipeline] No DB entries found — falling back to FantasyPros scrape")
+        consensus_picks = scrape_consensus_mock_draft(draft_year)
+        print(f"[pipeline] Scraped {len(consensus_picks)} consensus picks from FantasyPros")
+        consensus_map = build_mock_draft_consensus_from_scraped(consensus_picks, draft_year)
+        print(f"[pipeline] Built consensus for {len(consensus_map)} players")
 
     # Save consensus to DB
     with get_conn() as conn:
