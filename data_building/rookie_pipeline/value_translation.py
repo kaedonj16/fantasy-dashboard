@@ -7,13 +7,12 @@ beside veterans and picks on the existing 0-999 valuation scale.
 Calibration anchors (1QB, 10-team, PPR):
     prospect_score  dynasty_value   comparable
     ──────────────  ─────────────   ──────────────────────────────────
-    ≥ 90            550 – 680       Elite #1 overall pick (rare)
-    80 – 89         400 – 549       Mid-lottery skill prospect
-    70 – 79         270 – 399       Late-1st / early-2nd pick
-    60 – 69         160 – 269       Day-2 upside play
-    50 – 59         85  – 159       Day-2 depth / raw prospect
-    40 – 49         40  – 84        Day-3 developmental
-    < 40             10 – 39        UDFA / late flier
+    ≥ 80            400 – 680       Elite T1 (Bijan, Chase, J Love type)
+    70 – 79         270 – 399       Strong T1 (Hunter, Waddle type)
+    60 – 69         160 – 269       T2 solid day-1 pick
+    50 – 59         85  – 159       T2/T3 day-2 upside
+    40 – 49         40  – 84        T3/T4 developmental
+    < 40             10 – 39        T5/T6 deep flier / UDFA
 
 SF adjustments:
     - QBs  get +80 to +120 (scarcity + 2-QB starting roles)
@@ -155,25 +154,28 @@ def assign_tier(prospect_score: float) -> Tuple[int, str]:
     """
     Return (tier_number, tier_label) based on overall prospect_score.
 
+    Calibrated so top round-1 skill players (Bijan, J Love, Chase) land Tier 1
+    even when college stats or combine data are unavailable pre-draft.
+
     Tiers:
-        1 — Elite Prospect      (≥ 85)
-        2 — Top Prospect        (75–84)
-        3 — Day-1 Pick          (65–74)
-        4 — Day-2 Upside        (55–64)
-        5 — Developmental       (42–54)
-        6 — Late Flier          (< 42)
+        1 — Elite Prospect      (≥ 67)   top-10 RB/WR/TE picks; elite profiles
+        2 — Top Prospect        (54–66)  solid round-1; QBs; early day-2 upside
+        3 — Day-2 Upside        (43–53)  round-2 picks; strong developmental floor
+        4 — Developmental       (35–42)  round-3/4; high variance, low floor
+        5 — Deep Flier          (26–34)  day-3 / UDFA with one standout trait
+        6 — Low Priority        (< 26)   minimal dynasty value
     """
-    if prospect_score >= 85:
+    if prospect_score >= 67:
         return 1, "Elite Prospect"
-    if prospect_score >= 75:
+    if prospect_score >= 54:
         return 2, "Top Prospect"
-    if prospect_score >= 65:
-        return 3, "Day-1 Pick"
-    if prospect_score >= 55:
-        return 4, "Day-2 Upside"
-    if prospect_score >= 42:
-        return 5, "Developmental"
-    return 6, "Late Flier"
+    if prospect_score >= 43:
+        return 3, "Day-2 Upside"
+    if prospect_score >= 35:
+        return 4, "Developmental"
+    if prospect_score >= 26:
+        return 5, "Deep Flier"
+    return 6, "Low Priority"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

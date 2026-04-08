@@ -242,7 +242,7 @@ def _score_production_season(season: Dict, pos: str) -> float:
             elif rz_rate >= 6.0: prod = _clip(prod * 1.04)
         return prod
 
-    return 40.0
+    return 52.0
 
 
 def calc_production_score(seasons: List[Dict], position: str) -> float:
@@ -255,7 +255,7 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
     production discounted, as stats may be inflated by weaker competition.
     """
     if not seasons:
-        return 40.0  # neutral when no data
+        return 52.0  # pre-draft neutral: unknown ≠ bad
 
     pos = position.upper()
     ls  = _latest_season(seasons) or {}
@@ -326,7 +326,7 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
     across seasons is more predictive than a single-year peak.
     """
     if not seasons:
-        return 45.0
+        return 52.0  # pre-draft neutral: unknown ≠ bad
 
     pos = position.upper()
     ls  = _latest_season(seasons) or {}
@@ -374,7 +374,7 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
         )
 
     else:
-        return 45.0
+        return 52.0
 
     # Multi-season consistency bonus: ±5 points based on whether the key
     # efficiency metric held up across seasons (sustained efficiency > one-year wonder)
@@ -429,7 +429,7 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
     - Is dominator_rating above the breakout threshold?
     """
     if not seasons or len(seasons) < 1:
-        return 40.0
+        return 52.0
 
     pos = position.upper()
     sorted_s = sorted(seasons, key=lambda s: _safe(s.get("season"), 0))
