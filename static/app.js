@@ -3988,8 +3988,12 @@ function addBreakoutBadgesToTeamsPage() {
   }, 1000);
 }
 
+let _globalPlayerModalsReady = false;
 function initGlobalPlayerModals() {
-  // Attach click handlers to all elements with player data
+  // Guard: only attach the delegated listener once
+  if (_globalPlayerModalsReady) return;
+  _globalPlayerModalsReady = true;
+
   document.addEventListener('click', function(e) {
     const target = e.target.closest('[data-player-id]');
     if (target && target.dataset.playerId) {
@@ -4198,31 +4202,30 @@ function closeBkModal() {
 }
 
 function _renderBkModalContent(data, playerId) {
-  const name = data.player_name || 'Unknown';
-  const team = data.team || '';
-  const pos  = data.position || '';
+  const name  = data.player_name || 'Unknown';
+  const team  = data.team || '';
+  const pos   = data.position || '';
   const score = parseFloat(data.breakout_opportunity_score || 0).toFixed(1);
 
-  // Update modal title
+  // Update modal title and meta
   const nameEl = document.getElementById('bkModalName');
   if (nameEl) nameEl.textContent = name;
+  const metaParts = [pos, team].filter(Boolean);
+  if (data.phase) metaParts.push(data.phase);
+  document.getElementById('bkModalMeta').textContent = metaParts.join(' · ');
 
   const breakoutType = data.breakout_type || {};
   const emoji  = breakoutType.emoji || '📊';
   const label  = breakoutType.profile_label || 'Breakout Candidate';
   const driver = breakoutType.primary_driver || 'balanced';
 
+  // Score colour
   let scoreColor = '#10b981';
   if (score < 50) scoreColor = '#3b82f6';
   if (score < 40) scoreColor = '#f59e0b';
   if (score < 30) scoreColor = '#6b7280';
 
-  // Update meta line
-  const metaParts = [pos, team].filter(Boolean);
-  if (data.phase) metaParts.push(data.phase);
-  document.getElementById('bkModalMeta').textContent = metaParts.join(' · ');
-
-  // Key reasons — bullet lines
+  // Key reasons
   const reasons = (data.key_reasons || '').split('\n')
     .filter(r => r.trim() && r.startsWith('•'))
     .map(r => r.substring(1).trim());
@@ -4230,89 +4233,74 @@ function _renderBkModalContent(data, playerId) {
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
 
+  // ── Score header ──────────────────────────────────────────────────────────
   let html = `
-    <!-- Score header -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-      <div style="padding:10px 16px;border-radius:8px;background:${scoreColor}22;border:1px solid ${scoreColor}44;
-                  flex:1;text-align:center;min-width:100px;">
-        <div style="font-size:11px;color:${scoreColor};font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Breakout Score</div>
-        <div style="font-size:24px;font-weight:700;color:${scoreColor};margin-top:4px;">${score}</div>
+    <div class="bk-score-header">
+      <div class="bk-overall-score" style="background:${scoreColor}1a;border:1px solid ${scoreColor}55;">
+        <div class="bk-overall-score-label" style="color:${scoreColor};">Breakout Score</div>
+        <div class="bk-overall-score-value" style="color:${scoreColor};">${score}</div>
       </div>
-      <div style="padding:10px 16px;border-radius:8px;background:var(--card-bg);border:1px solid var(--border);
-                  flex:2;min-width:160px;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:28px;">${emoji}</span>
+      <div class="bk-type-badge">
+        <span class="bk-type-emoji">${emoji}</span>
         <div>
-          <div style="font-weight:600;font-size:14px;">${label}</div>
-          <div style="font-size:12px;color:var(--text-muted);text-transform:capitalize;">${driver} driven</div>
+          <div class="bk-type-label">${label}</div>
+          <div class="bk-type-driver">${driver} driven</div>
         </div>
-      </div>
-    </div>
-
-    <!-- Component scores -->
-    <div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Component Breakdown</div>
-    <div class="rk-score-grid" style="margin-bottom:16px;">
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Opportunity</div>
-        <div class="rk-score-card-val" style="color:#10b981;">${parseFloat(data.opportunity_opened_score||0).toFixed(1)}</div>
-      </div>
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Competition</div>
-        <div class="rk-score-card-val" style="color:#3b82f6;">${parseFloat(data.competition_removed_score||0).toFixed(1)}</div>
-      </div>
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Team Env.</div>
-        <div class="rk-score-card-val">${parseFloat(data.team_environment_score||0).toFixed(1)}</div>
-      </div>
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Readiness</div>
-        <div class="rk-score-card-val" style="color:#8b5cf6;">${parseFloat(data.player_readiness_score||0).toFixed(1)}</div>
-      </div>
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Role Trajectory</div>
-        <div class="rk-score-card-val">${parseFloat(data.role_trajectory_score||0).toFixed(1)}</div>
-      </div>
-      <div class="rk-score-card">
-        <div class="rk-score-card-label">Confidence</div>
-        <div class="rk-score-card-val" style="color:var(--text-muted);">${parseFloat(data.confidence_score||0).toFixed(0)}%</div>
       </div>
     </div>
   `;
 
-  if (reasons.length > 0) {
+  // ── Component breakdown ───────────────────────────────────────────────────
+  const components = [
+    { label: 'Opportunity',      val: data.opportunity_opened_score,  color: '#10b981' },
+    { label: 'Competition',      val: data.competition_removed_score, color: '#3b82f6' },
+    { label: 'Team Env.',        val: data.team_environment_score,    color: null      },
+    { label: 'Readiness',        val: data.player_readiness_score,    color: '#8b5cf6' },
+    { label: 'Role Trajectory',  val: data.role_trajectory_score,     color: null      },
+    { label: 'Confidence',       val: data.confidence_score,          color: '#6b7280', suffix: '%' },
+  ];
+
+  html += `<div class="bk-section-title">Component Breakdown</div>`;
+  html += `<div class="bk-components-grid">`;
+  components.forEach(c => {
+    const v    = parseFloat(c.val || 0).toFixed(c.suffix ? 0 : 1);
+    const col  = c.color ? `style="color:${c.color};"` : '';
     html += `
-    <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Why This Breakout?</div>
-      <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">
-        ${reasons.map(r => `<div style="padding:2px 0;">• ${r}</div>`).join('')}
-      </div>
-    </div>
-    `;
+      <div class="bk-component-card">
+        <div class="bk-component-label">${c.label}</div>
+        <div class="bk-component-value" ${col}>${v}${c.suffix || ''}</div>
+      </div>`;
+  });
+  html += `</div>`;
+
+  // ── Key reasons ───────────────────────────────────────────────────────────
+  if (reasons.length > 0) {
+    html += `<div class="bk-section-title">Why This Breakout?</div>`;
+    html += `<div class="bk-reasons">`;
+    reasons.forEach(r => {
+      html += `<div class="bk-reason-item"><span class="bk-reason-bullet">▸</span>${r}</div>`;
+    });
+    html += `</div>`;
   }
 
+  // ── Context boxes ─────────────────────────────────────────────────────────
   if (txnSummary) {
     html += `
-    <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Vacated Opportunity</div>
-      <div style="font-size:13px;color:var(--text-muted);line-height:1.6;padding:10px;background:var(--card-bg);border-radius:6px;border:1px solid var(--border);">${txnSummary}</div>
-    </div>
+      <div class="bk-section-title">Vacated Opportunity</div>
+      <div class="bk-context-box">${txnSummary}</div>
     `;
   }
-
   if (addedCompSumm) {
     html += `
-    <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Added Competition</div>
-      <div style="font-size:13px;color:var(--text-muted);line-height:1.6;padding:10px;background:var(--card-bg);border-radius:6px;border:1px solid var(--border);">${addedCompSumm}</div>
-    </div>
+      <div class="bk-section-title">Added Competition</div>
+      <div class="bk-context-box competition">${addedCompSumm}</div>
     `;
   }
 
+  // ── Footer CTA ────────────────────────────────────────────────────────────
   html += `
-    <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border);">
-      <button id="bkViewProfileBtn"
-        style="width:100%;padding:10px;background:var(--accent-soft);border:1px solid var(--accent);
-               color:var(--accent);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;
-               transition:all .12s;">
+    <div class="bk-footer">
+      <button id="bkViewProfileBtn" class="bk-profile-btn">
         View Full Player Profile →
       </button>
     </div>
@@ -4320,7 +4308,7 @@ function _renderBkModalContent(data, playerId) {
 
   document.getElementById('bkModalBody').innerHTML = html;
 
-  // Wire up the profile button after injecting HTML (avoids inline onclick escaping issues)
+  // Wire button after DOM injection (avoids escaping issues)
   const profileBtn = document.getElementById('bkViewProfileBtn');
   if (profileBtn) {
     profileBtn.addEventListener('click', () => {
