@@ -6260,12 +6260,15 @@ def page_players(platform: str, season: int, league_id: str):
           max-width: 100%;
         }
         .filter-positions {
-          justify-content: center;
-          gap: 6px;
+          justify-content: flex-start;
+          gap: 5px;
         }
         .pos-pill {
-          padding: 8px 14px;
-          font-size: 12px;
+          padding: 6px 10px;
+          font-size: 11px;
+        }
+        .filter-label {
+          white-space: nowrap;
         }
         .active-settings-indicator {
           justify-content: center;

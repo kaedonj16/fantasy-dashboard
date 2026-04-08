@@ -3134,6 +3134,16 @@ document.addEventListener('DOMContentLoaded', function() {
         navToggle.textContent = '☰';
       });
     });
+
+    // Close hamburger when clicking a Players sub-menu item
+    navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(item => {
+      item.addEventListener('click', function() {
+        navPillsContainer.classList.remove('nav-open');
+        navToggle.textContent = '☰';
+        const wrapper = document.getElementById('playersNavDropdown');
+        if (wrapper) wrapper.classList.remove('open');
+      });
+    });
   }
 });
 

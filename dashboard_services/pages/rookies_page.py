@@ -454,13 +454,16 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     #rookieControls { flex-direction: column; align-items: stretch !important; }
     #rookieControls > div { margin-left: 0 !important; }
     #rookieControls > div:first-child { max-width: 100% !important; }
-    .rk-grid-row { grid-template-columns: 34px 1fr 48px 42px 58px !important; }
+    /* Show: rank | name | pos | draft | value — hide age and score */
+    .rk-grid-row { grid-template-columns: 34px 1fr 46px 56px 54px !important; }
     .rk-score, #rkHeader span:nth-child(6) { display: none; }
+    .rk-age,   #rkHeader span:nth-child(4) { display: none; }
     .rk-row { padding: 8px 10px; }
   }
   @media (max-width: 480px) {
-    .rk-grid-row { grid-template-columns: 30px 1fr 44px 54px !important; }
-    .rk-age, #rkHeader span:nth-child(4) { display: none; }
+    /* Show: rank | name | pos | value — also hide draft */
+    .rk-grid-row { grid-template-columns: 30px 1fr 44px 52px !important; }
+    .rk-draft, #rkHeader span:nth-child(5) { display: none; }
     .rk-draft { font-size: 10px; }
   }
 </style>
