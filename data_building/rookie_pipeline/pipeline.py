@@ -1025,12 +1025,9 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     if _missing:
         try:
-            from .espn_scraper import fetch_espn_ages_robust
-            age_map = fetch_espn_ages_robust(_missing, draft_year, prospects_meta=sr_prospects)
-            if not age_map:
-                print("[pipeline] ESPN returned 0 ages — trying PlayerProfiler fallback")
-                from .playerprofiler_scraper import fetch_playerprofiler_ages
-                age_map = fetch_playerprofiler_ages(_missing, draft_year, prospects_meta=sr_prospects)
+            print("[pipeline] Retrieving PlayerProfiler ages")
+            from .playerprofiler_scraper import fetch_playerprofiler_ages
+            age_map = fetch_playerprofiler_ages(_missing)
 
             _resolved = 0
             for p in sr_prospects:

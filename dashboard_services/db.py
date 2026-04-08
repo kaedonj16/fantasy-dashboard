@@ -31,7 +31,6 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
         conn.autocommit = autocommit
         yield conn
         if not autocommit:
-            print(f"[db] About to commit connection: {id(conn)}, status={conn.info.transaction_status}")
             try:
                 conn.commit()
                 print(f"[db] Commit complete: {id(conn)}, status={conn.info.transaction_status}")
@@ -46,6 +45,5 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
             print(f"[db] Rollback complete: {id(conn)}")
         raise
     finally:
-        print(f"[db] Closing connection: {id(conn)}, status={conn.info.transaction_status}")
         conn.close()
         print(f"[db] Connection closed: {id(conn)}")

@@ -403,6 +403,8 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     """
     if age is None:
         return 50.0  # neutral default
+    # Convert decimal to float if needed
+    age = float(age)
     pos = position.upper()
     elite = _AGE_ELITE.get(pos, 21.5)
     worst = _AGE_WORST.get(pos, 26.0)

@@ -75,7 +75,8 @@ def _fetch_pp_html(slug: str, timeout: int = 30_000) -> Optional[str]:
             Error as PWError,
         )
     except ImportError:
-        return None  # Playwright not installed
+        print("[pp] Playwright not available - PlayerProfiler scraper disabled")
+        return None
 
     url = _PP_BASE.format(slug=slug)
     html: Optional[str] = None
@@ -211,8 +212,6 @@ def _extract_age_from_pp_html(html: str) -> Optional[float]:
 
 def fetch_playerprofiler_ages(
     names: List[str],
-    draft_year: int,
-    prospects_meta: Optional[List[Dict[str, Any]]] = None,
     delay: float = 0.5,
 ) -> Dict[str, float]:
     """
@@ -254,7 +253,6 @@ def fetch_playerprofiler_ages(
                 if age is not None:
                     result[name.lower().strip()] = age
                     found += 1
-                    print(f"[pp] {name}: age={age:.2f}")
                 else:
                     no_age += 1
 
