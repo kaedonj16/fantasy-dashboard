@@ -40,6 +40,7 @@ from data_building.rookie_pipeline.mock_draft_consensus import (
     build_mock_draft_consensus,
     pick_to_draft_capital_score,
 )
+from data_building.rookie_pipeline.ingestion import fetch_cfbd_college_stats
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
@@ -197,6 +198,72 @@ def _build_nfl_ppr_per_player(
 # Step 4 – Build prospect dicts for the scorer
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 3 – Load CFBD college stats
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _normalize_name(name: str) -> str:
+    """
+    Lowercase and strip suffixes/punctuation for fuzzy name matching between
+    nflverse (full_name) and CFBD (player) name fields.
+
+    Examples:
+      "Travis Etienne Jr." → "travis etienne"
+      "Wan'Dale Robinson"  → "wandale robinson"
+      "Bijan Robinson"     → "bijan robinson"
+    """
+    import re
+    name = name.lower().strip()
+    # Remove generational suffixes
+    name = re.sub(r"\b(jr|sr|ii|iii|iv|v)\.?\s*$", "", name).strip()
+    # Remove punctuation that differs between sources (apostrophes, hyphens, periods)
+    name = re.sub(r"['\-\.]", "", name)
+    # Collapse whitespace
+    name = re.sub(r"\s+", " ", name).strip()
+    return name
+
+
+def _load_cfbd_college_stats(
+    draft_year: int,
+    draft_class: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Fetch CFBD college stats for `draft_year` and match by name to the nflverse
+    draft class.  Returns {player_id: [season_dict, ...]} using the prospect's
+    player_id (gsis_id or name-slug) as key.
+
+    Gracefully returns {} if CFBD_API_KEY is not set or the API is unreachable.
+    """
+    print(f"[backtest]   Fetching CFBD college stats for {draft_year} class…")
+    cfbd_raw = fetch_cfbd_college_stats(draft_year)
+    if not cfbd_raw:
+        print("[backtest]   CFBD returned no data (key missing or API unreachable)")
+        return {}
+
+    print(f"[backtest]   CFBD returned stats for {len(cfbd_raw)} players")
+
+    # Build a normalised-name → player_id map from the draft class
+    pid_by_norm: Dict[str, str] = {}
+    for p in draft_class:
+        pid  = p["gsis_id"] or p["name"].lower().replace(" ", "-")
+        norm = _normalize_name(p["name"])
+        pid_by_norm[norm] = pid
+
+    # Match CFBD names → player_ids
+    result: Dict[str, List[Dict]] = {}
+    matched = 0
+    for cfbd_name, seasons in cfbd_raw.items():
+        norm = _normalize_name(cfbd_name)
+        pid  = pid_by_norm.get(norm)
+        if pid:
+            result[pid] = seasons
+            matched += 1
+
+    print(f"[backtest]   Matched {matched}/{len(cfbd_raw)} CFBD players to draft class "
+          f"({matched}/{len(draft_class)} draftees have college stats)")
+    return result
+
+
 def _age_at_draft(birth_date_str: str, draft_year: int) -> Optional[float]:
     """Calculate age on draft day (≈ April 25)."""
     if not birth_date_str:
@@ -217,13 +284,22 @@ def _build_prospect_dicts(
     draft_class: List[Dict[str, Any]],
     athleticism: Dict[str, Dict[str, Any]],
     draft_year: int,
+    college_stats: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     """
     Convert raw draft-class entries into the format expected by score_all_prospects.
     Also returns a consensus_map with actual draft picks as projected_pick.
 
+    Args:
+        college_stats: {player_id: [season_dict, ...]} from _load_cfbd_college_stats.
+                       When provided, activates 52% of the model that otherwise
+                       defaults to neutral (production, breakout, competition, etc.).
+
     Returns: (prospects, consensus_map)
     """
+    if college_stats is None:
+        college_stats = {}
+
     prospects: List[Dict[str, Any]] = []
     consensus_map: Dict[str, Dict[str, Any]] = {}
 
@@ -238,32 +314,41 @@ def _build_prospect_dicts(
 
         age = _age_at_draft(p["birth_date"], draft_year)
 
+        # College seasons from CFBD (already in the format score_all_prospects expects)
+        seasons = college_stats.get(player_id, [])
+
+        # Extract conference from most recent CFBD season (improves competition_score)
+        conference = None
+        if seasons:
+            latest = max(seasons, key=lambda s: s.get("season", 0))
+            conference = latest.get("conference")
+
         prospect = {
-            "player_id":       player_id,
-            "name":            p["name"],
-            "position":        p["position"],
-            "school":          p["college"],
-            "conference":      None,   # not available from nflverse roster
+            "player_id":        player_id,
+            "name":             p["name"],
+            "position":         p["position"],
+            "school":           p["college"],
+            "conference":       conference,
             "draft_class_year": draft_year,
-            "age":             age,
-            "height_inches":   height,
-            "weight_lbs":      weight,
-            "early_declare":   False,
+            "age":              age,
+            "height_inches":    height,
+            "weight_lbs":       weight,
+            "early_declare":    False,
             "transfer_history": False,
-            "seasons":         [],     # no college stats in this simplified backtest
-            "athleticism":     ath,
+            "seasons":          seasons,
+            "athleticism":      ath,
         }
         prospects.append(prospect)
 
         # Build consensus entry from actual draft pick
         pick = p["draft_pick"] or 300
         consensus_map[player_id] = {
-            "player_id":          player_id,
-            "projected_pick":     pick,
-            "projected_round":    ((pick - 1) // 32) + 1,
-            "projected_pick_low": max(1, pick - 5),
+            "player_id":           player_id,
+            "projected_pick":      pick,
+            "projected_round":     ((pick - 1) // 32) + 1,
+            "projected_pick_low":  max(1, pick - 5),
             "projected_pick_high": pick + 5,
-            "num_mocks_used":     1,
+            "num_mocks_used":      1,
             "consensus_confidence": 100.0,  # actual pick = certainty
         }
 
@@ -293,7 +378,15 @@ def _run_draft_class_backtest(
     athleticism = _load_combine_athleticism(draft_year)
     print(f"[backtest]   Combine data for {len(athleticism)} players")
 
-    prospects, consensus_map = _build_prospect_dicts(draft_class, athleticism, draft_year)
+    college_stats = _load_cfbd_college_stats(draft_year, draft_class)
+
+    prospects, consensus_map = _build_prospect_dicts(
+        draft_class, athleticism, draft_year, college_stats
+    )
+
+    n_with_stats = sum(1 for p in prospects if p.get("seasons"))
+    print(f"[backtest]   {n_with_stats}/{len(prospects)} prospects have college stats "
+          f"({'full model' if n_with_stats > 0 else 'draft capital + athleticism only'})")
 
     print(f"[backtest]   Scoring {len(prospects)} prospects…")
     scores = score_all_prospects(prospects, consensus_map)
@@ -335,6 +428,8 @@ def _run_draft_class_backtest(
             "ppr_peak":         ppr.get("ppr_peak", 0.0),
             "ppr_cum":          ppr.get("ppr_cum", 0.0),
             "seasons_avail":    ppr.get("seasons_available", 0),
+            "has_cfbd":         bool(p_by_id.get(pid, {}).get("seasons")),
+            "breakout_score":   sc["breakout_profile_score"],
         })
 
     return rows
@@ -444,8 +539,9 @@ def _print_summary(all_rows: List[Dict]) -> None:
         by_year.setdefault(r["draft_year"], []).append(r)
 
     overall_valid: List[Tuple[float, float]] = []  # (model_score, ppr_cum)
-    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'Spearman-ρ':>10}  {'Top5 hit rate':>14}")
-    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*10}  {'-'*14}")
+    overall_valid_cfbd: List[Tuple[float, float]] = []  # only rows with CFBD data
+    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  {'Spearman-ρ':>10}  {'Top5 hit':>8}")
+    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}")
 
     for yr in sorted(by_year.keys()):
         rows = by_year[yr]
@@ -453,16 +549,21 @@ def _print_summary(all_rows: List[Dict]) -> None:
         rc = _rank_corr(rows, "ppr_cum")
         rc_str = f"{rc:+.3f}" if not math.isnan(rc) else "  n/a"
 
+        cfbd_n = sum(1 for r in rows if r.get("has_cfbd"))
+        cfbd_pct = f"{cfbd_n/len(rows)*100:.0f}%" if rows else "n/a"
+
         # Top-5 hit rate: how many of model's top 5 are in actual top 10?
         top5_model   = {r["name"] for r in rows[:5]}
         top10_actual = {r["name"] for r in sorted(with_data, key=lambda x: x["ppr_cum"], reverse=True)[:10]}
         hit_n = len(top5_model & top10_actual)
         hit_str = f"{hit_n}/5" if with_data else "n/a"
 
-        print(f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {rc_str:>10}  {hit_str:>14}")
+        print(f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}")
 
         for r in with_data:
             overall_valid.append((r["model_score"], r["ppr_cum"]))
+            if r.get("has_cfbd"):
+                overall_valid_cfbd.append((r["model_score"], r["ppr_cum"]))
 
     # Overall Pearson r between model score and ppr_cum
     if len(overall_valid) >= 10:
@@ -478,6 +579,19 @@ def _print_summary(all_rows: List[Dict]) -> None:
             print("  ~ Weak positive correlation — draft capital dominates")
         else:
             print("  ✗ Low/no correlation — model needs calibration")
+
+    # Show r for players WITH college stats vs WITHOUT (shows the CFBD impact)
+    if len(overall_valid_cfbd) >= 5:
+        xs_c = [x for x, _ in overall_valid_cfbd]
+        ys_c = [y for _, y in overall_valid_cfbd]
+        r_cfbd = _pearson_r(xs_c, ys_c)
+        rest   = [(x, y) for x, y in overall_valid if (x, y) not in overall_valid_cfbd]
+        r_no_cfbd = _pearson_r([x for x, _ in rest], [y for _, y in rest]) if len(rest) >= 5 else float("nan")
+        print(f"  Players WITH college stats (n={len(overall_valid_cfbd)}): r={r_cfbd:+.3f}")
+        if not math.isnan(r_no_cfbd):
+            print(f"  Players WITHOUT college stats (n={len(rest)}): r={r_no_cfbd:+.3f}")
+            lift = r_cfbd - r_no_cfbd
+            print(f"  College stats lift on r: {lift:+.3f}")
 
     # ── Per-position Pearson r (skill positions only) ──────────────────────────
     # Cross-position mixing distorts r: QBs score high PPR but model discounts
