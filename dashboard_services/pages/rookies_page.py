@@ -30,9 +30,8 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
     <!-- Controls -->
     <div class="filter-controls-container">
-      <!-- Row 1: Primary filters -->
-      <div class="filter-row filter-row-primary">
-        <!-- Search -->
+      <!-- Row 1: Search -->
+      <div class="filter-row">
         <div class="filter-search">
           <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
             style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
@@ -45,8 +44,10 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:16px;padding:2px;">&#x2715;</button>
         </div>
+      </div>
 
-        <!-- Position filters -->
+      <!-- Row 2: Position pills + Settings button -->
+      <div class="filter-row rk-pills-row">
         <div class="filter-positions">
           <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
           <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
@@ -54,14 +55,11 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           <button class="pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
           <button class="pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
         </div>
-
-        <!-- Settings button with collapsible panel -->
-        <div style="position:relative;">
+        <div class="rk-settings-wrapper">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
             ⚙️ Settings
           </button>
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
-            <!-- League Format section -->
             <div class="settings-section">
               <span class="settings-section-label">League Format</span>
               <div class="settings-toggle-group">
@@ -69,7 +67,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                 <button class="settings-toggle" data-value="sf" onclick="rkSetLeague('sf')">SF</button>
               </div>
             </div>
-            <!-- League Size section -->
             <div class="settings-section">
               <span class="settings-section-label">League Size</span>
               <div class="settings-toggle-group">
@@ -83,10 +80,9 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         </div>
       </div>
 
-      <!-- Row 2: Secondary filters -->
+      <!-- Row 3: Tier + Sort + Active settings -->
       <div class="filter-row filter-row-secondary">
-        <!-- Tier filter -->
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div class="filter-sort">
           <label class="filter-label">Tier</label>
           <select id="rkTierFilter" onchange="rkRender()"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
@@ -101,8 +97,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
             <option value="6">Tier 6 — Flier</option>
           </select>
         </div>
-
-        <!-- Sort dropdown -->
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkRender()"
@@ -116,8 +110,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
             <option value="pick">Draft Pick</option>
           </select>
         </div>
-
-        <!-- Active settings indicator -->
         <div id="rkActiveSettings" class="active-settings-indicator">
           <span class="active-setting-tag">10-Team</span>
           <span class="active-setting-tag">1QB</span>
@@ -185,14 +177,19 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     gap: 10px;
     flex-wrap: wrap;
   }
-  .filter-row-primary {
-    gap: 12px;
-  }
   .filter-search {
     position: relative;
     flex: 1;
-    min-width: 200px;
-    max-width: 400px;
+    min-width: 0;
+  }
+  .rk-pills-row {
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 12px;
+  }
+  .rk-settings-wrapper {
+    position: relative;
+    flex-shrink: 0;
   }
   .filter-positions {
     display: flex;
@@ -314,25 +311,8 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
   /* Mobile responsive */
   @media (max-width: 768px) {
-    .filter-row-primary {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .filter-search {
-      max-width: 100%;
-    }
-    .filter-positions {
-      justify-content: center;
-      gap: 6px;
-    }
-    .pos-pill {
-      padding: 8px 14px;
-      font-size: 12px;
-    }
-    .active-settings-indicator {
-      justify-content: center;
-      order: -1;
-      width: 100%;
+    .rk-pills-row {
+      flex-wrap: wrap;
     }
     .filter-row-secondary {
       flex-wrap: wrap;
@@ -451,9 +431,6 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
   /* Mobile */
   @media (max-width: 768px) {
-    #rookieControls { flex-direction: column; align-items: stretch !important; }
-    #rookieControls > div { margin-left: 0 !important; }
-    #rookieControls > div:first-child { max-width: 100% !important; }
     /* Show: rank | name | pos | draft | value — hide age and score */
     .rk-grid-row { grid-template-columns: 34px 1fr 46px 56px 54px !important; }
     .rk-score, #rkHeader span:nth-child(6) { display: none; }
