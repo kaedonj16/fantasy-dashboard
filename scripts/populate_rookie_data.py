@@ -45,6 +45,9 @@ def main():
         run_rookie_pipeline,
         get_active_rookie_class
     )
+    from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
+        run_rookie_evaluation_pipeline,
+    )
 
     if args.all:
         years = [2025, 2026]
@@ -66,11 +69,18 @@ def main():
 
         try:
             result = run_rookie_pipeline(year)
+            eval_result = run_rookie_evaluation_pipeline(year)
 
             print(f"✅ Success! {year} draft class populated:")
             print(f"   • {len(result.get('prospects', []))} prospects")
             print(f"   • {len(result.get('scores', {}))} scored")
             print(f"   • {len(result.get('values', {}))} values calculated")
+            print(
+                "   • Rookie evaluation snapshots: "
+                f"{eval_result.get('profile_count', 0)} profiles, "
+                f"db_metrics_rows={eval_result.get('db_metrics_rows', 0)}, "
+                f"db_profiles_rows={eval_result.get('db_profiles_rows', 0)}"
+            )
 
             if result.get('consensus'):
                 print(f"   • {len(result['consensus'])} mock draft consensus entries")
