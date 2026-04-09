@@ -32,7 +32,6 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
         if not autocommit:
             try:
                 conn.commit()
-                print(f"[db] Commit complete: {id(conn)}, status={conn.info.transaction_status}")
             except Exception as commit_error:
                 print(f"[db] COMMIT FAILED for {id(conn)}: {commit_error}")
                 raise

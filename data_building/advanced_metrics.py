@@ -193,71 +193,189 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
     }
 
 
+from typing import Dict, Optional
+
+
+def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
+
+
+def _safe(v: Optional[float], default: float = 0.0) -> float:
+    try:
+        if v is None:
+            return default
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _norm(
+    value: float,
+    low: float,
+    high: float,
+    *,
+    cap_low: bool = True,
+    cap_high: bool = True,
+) -> float:
+    if high <= low:
+        return 0.0
+
+    x = (value - low) / (high - low)
+
+    if cap_low:
+        x = max(0.0, x)
+    if cap_high:
+        x = min(1.0, x)
+
+    return x
+
+
+def _sample_confidence(games: float) -> float:
+    """
+    Soft confidence multiplier.
+    Keeps small samples from dominating, but does not crush ceilings.
+    """
+    if games <= 0:
+        return 0.0
+    return _clip(games / 10.0, 0.35, 1.0)
+
+
 def calculate_role_score(
-        usage: Dict[str, float],
-        position: str,
-        receiving_metrics: Dict[str, Optional[float]],
-        rushing_metrics: Dict[str, Optional[float]],
-        passing_metrics: Dict[str, Optional[float]],
+    usage: Dict[str, float],
+    position: str,
+    receiving_metrics: Dict[str, Optional[float]],
+    rushing_metrics: Dict[str, Optional[float]],
+    passing_metrics: Dict[str, Optional[float]],
 ) -> Optional[float]:
     """
-    Calculate a composite role score (0-100) indicating player's overall value.
+    Calculate a role/opportunity score from 0-100.
 
-    Combines:
-    - Usage volume (snap %, touches)
-    - Efficiency (yards per touch, catch rate, etc.)
-    - Red zone involvement
-    - Position-specific weights
+    What it measures:
+    - How much the player is actually used in their offense
+    - Volume first, efficiency second
+    - High-value usage (red zone) matters
+    - Position-specific scoring
+    - Nonlinear dropoff so middling / low-usage players fall faster
     """
-    snap_pct = usage.get("avg_off_snap_pct", 0) or 0
-    games = usage.get("games", 0) or 0
+    snap_pct = _safe(usage.get("avg_off_snap_pct"))
+    games = _safe(usage.get("games"))
 
-    if games == 0 or snap_pct == 0:
+    if games <= 0 or snap_pct <= 0:
         return None
 
-    score = 0.0
+    avg_targets = _safe(usage.get("avg_targets"))
+    avg_carries = _safe(usage.get("avg_carries"))
+    rec_rz_tgt_pg = _safe(usage.get("rec_rz_tgt_pg"))
+    rush_rz_att_pg = _safe(usage.get("rush_rz_att_pg"))
+
+    ypt = _safe(receiving_metrics.get("yards_per_target"))
+    catch_rate = _safe(receiving_metrics.get("catch_rate"))
+    rec_td_rate = _safe(receiving_metrics.get("td_rate"))
+
+    ypc = _safe(rushing_metrics.get("yards_per_carry"))
+    rush_td_rate = _safe(rushing_metrics.get("td_rate"))
+
+    pass_att = _safe(usage.get("avg_pass_att"))
+    qb_rush_att = _safe(usage.get("avg_carries"))
+    ypa = _safe(passing_metrics.get("yards_per_attempt"))
+    pass_td_rate = _safe(passing_metrics.get("td_rate"))
+    int_rate = _safe(passing_metrics.get("int_rate"))
+
+    sample_mult = _sample_confidence(games)
 
     if position == "QB":
-        # QB: Passing volume + efficiency
-        pass_att = usage.get("avg_pass_att", 0) or 0
-        ypa = passing_metrics.get("yards_per_attempt") or 0
-        td_rate = passing_metrics.get("td_rate") or 0
+        snap_score = _norm(snap_pct, 55, 100) ** 1.05
+        att_score = _norm(pass_att, 18, 40) ** 1.20
+        rush_score = _norm(qb_rush_att, 0, 8) ** 1.15
+        ypa_score = _norm(ypa, 5.5, 8.8)
+        td_score = _norm(pass_td_rate, 0.02, 0.08)
+        int_penalty = _norm(int_rate, 0.01, 0.05) if int_rate > 0 else 0.0
 
-        score = (pass_att * 0.5) + (ypa * 3) + (td_rate * 10) + (snap_pct * 0.3)
+        base = (
+            snap_score * 0.20 +
+            att_score * 0.42 +
+            rush_score * 0.12 +
+            ypa_score * 0.14 +
+            td_score * 0.17
+        )
+        base -= int_penalty * 0.05
 
     elif position == "RB":
-        # RB: Rushing + receiving volume + efficiency
-        carries = usage.get("avg_carries", 0) or 0
-        targets = usage.get("avg_targets", 0) or 0
-        ypc = rushing_metrics.get("yards_per_carry") or 0
-        ypt = yards_per_target = receiving_metrics.get("yards_per_target") or 0
-        rz_usage = usage.get("rush_rz_att_pg", 0) + usage.get("rec_rz_tgt_pg", 0)
+        weighted_opps = avg_carries + (avg_targets * 1.6)
+        high_value_usage = rush_rz_att_pg + (rec_rz_tgt_pg * 1.25)
 
-        score = (
-                (carries * 0.8) +
-                (targets * 1.2) +  # Pass-catching RBs more valuable
-                (ypc * 2) +
-                (ypt * 1.5) +
-                (rz_usage * 5) +
-                (snap_pct * 0.4)
+        snap_score = _norm(snap_pct, 20, 85) ** 1.10
+        opp_score = _norm(weighted_opps, 5, 24) ** 1.35
+        carry_score = _norm(avg_carries, 3, 20) ** 1.20
+        target_score = _norm(avg_targets, 1, 7) ** 1.20
+        rz_score = _norm(high_value_usage, 0.1, 4.0) ** 1.15
+
+        ypc_score = _norm(ypc, 3.5, 5.5)
+        ypt_score = _norm(ypt, 4.5, 9.0)
+        rush_td_score = _norm(rush_td_rate, 0.01, 0.06) if rush_td_rate > 0 else 0.0
+        rec_td_score = _norm(rec_td_rate, 0.02, 0.12) if rec_td_rate > 0 else 0.0
+
+        base = (
+            snap_score * 0.18 +
+            opp_score * 0.30 +
+            carry_score * 0.16 +
+            target_score * 0.14 +
+            rz_score * 0.14 +
+            ypc_score * 0.04 +
+            ypt_score * 0.02 +
+            rush_td_score * 0.015 +
+            rec_td_score * 0.005
         )
 
-    elif position in ("WR", "TE"):
-        # WR/TE: Target volume + efficiency + red zone
-        targets = usage.get("avg_targets", 0) or 0
-        ypt = receiving_metrics.get("yards_per_target") or 0
-        catch_rate = receiving_metrics.get("catch_rate") or 0
-        rz_targets = usage.get("rec_rz_tgt_pg", 0) or 0
+    elif position == "WR":
+        snap_score = _norm(snap_pct, 35, 95) ** 1.10
+        target_score = _norm(avg_targets, 2.5, 11.5) ** 1.35
+        rz_score = _norm(rec_rz_tgt_pg, 0.1, 2.5) ** 1.20
+        catch_score = _norm(catch_rate, 0.50, 0.78)
+        ypt_score = _norm(ypt, 6.0, 11.0)
 
-        score = (
-                (targets * 1.5) +
-                (ypt * 3) +
-                (catch_rate * 20) +
-                (rz_targets * 6) +
-                (snap_pct * 0.3)
+        base = (
+            snap_score * 0.22 +
+            target_score * 0.42 +
+            rz_score * 0.16 +
+            catch_score * 0.08 +
+            ypt_score * 0.12
         )
 
-    return min(score, 100.0)  # Cap at 100
+    elif position == "TE":
+        snap_score = _norm(snap_pct, 35, 90) ** 1.10
+        target_score = _norm(avg_targets, 2.0, 8.5) ** 1.30
+        rz_score = _norm(rec_rz_tgt_pg, 0.05, 1.8) ** 1.20
+        catch_score = _norm(catch_rate, 0.55, 0.82)
+        ypt_score = _norm(ypt, 5.5, 9.5)
+
+        base = (
+            snap_score * 0.24 +
+            target_score * 0.38 +
+            rz_score * 0.18 +
+            catch_score * 0.10 +
+            ypt_score * 0.10
+        )
+
+    else:
+        return None
+
+    base = _clip(base, 0.0, 1.0)
+
+    # keep the dropoff
+    base = base ** 1.25
+
+    # rescale more generously so elite/great scores are reachable
+    base = base / 0.68
+
+    base = _clip(base, 0.0, 1.0)
+
+    score = base * 100.0
+
+    # very light sample effect
+    score *= (0.94 + 0.06 * sample_mult)
+
+    return round(_clip(score, 0.0, 100.0), 1)
 
 
 def calculate_player_metrics(
