@@ -341,63 +341,6 @@ def search_player_on_espn(
 # Athlete/profile extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_profile_from_athlete_api(player_id: str) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
-        "dob": None,
-        "age": None,
-        "team": None,
-        "position": None,
-        "height": None,
-        "weight": None,
-        "source": None,
-    }
-
-    for url_template in (_ATHLETE_URL, _ATHLETE_CORE):
-        url = url_template.format(id=player_id)
-        resp = _get(url, headers=_JSON_HEADERS)
-        if resp is None:
-            continue
-
-        try:
-            data = resp.json()
-        except ValueError:
-            continue
-
-        athlete = data.get("athlete") or data
-
-        team = (
-            (athlete.get("team") or {}).get("displayName")
-            or (athlete.get("team") or {}).get("location")
-            or athlete.get("teamName")
-        )
-        position = (
-            (athlete.get("position") or {}).get("abbreviation")
-            or athlete.get("position")
-        )
-        height = athlete.get("displayHeight") or athlete.get("height")
-        weight = athlete.get("displayWeight") or athlete.get("weight")
-        raw_dob = athlete.get("dateOfBirth") or data.get("dateOfBirth")
-
-        if team and not result["team"]:
-            result["team"] = team
-        if position and not result["position"]:
-            result["position"] = position
-        if height and not result["height"]:
-            result["height"] = height
-        if weight and not result["weight"]:
-            result["weight"] = weight
-
-        if raw_dob:
-            dob_iso, age = parse_dob_and_calculate_age(str(raw_dob))
-            if dob_iso:
-                result["dob"] = dob_iso
-                result["age"] = age
-                result["source"] = "espn_athlete_api"
-                return result
-
-    return result
-
-
 def _extract_dob_from_html(player_id: str) -> Optional[str]:
     if not _BS4:
         return None

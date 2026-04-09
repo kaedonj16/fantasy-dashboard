@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -129,9 +128,3 @@ def read_json_file(path: Path) -> Optional[Dict[str, Any]]:
     except (OSError, json.JSONDecodeError):
         return None
 
-
-def env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
