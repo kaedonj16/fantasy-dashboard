@@ -112,6 +112,20 @@ class BreakoutEngine:
         self.usage_cache = load_all_player_usage(season - 1)
         self.db_cache = batch_load_all_breakout_data(season)
         self.team_stats_cache = load_all_team_stats(season)
+
+        # Warn once if DB data is unavailable (avoids per-player log spam)
+        has_db_data = bool(
+            self.db_cache['vacated'] or
+            self.db_cache['departures'] or
+            self.db_cache['arrivals']
+        )
+        if not has_db_data:
+            print(
+                f"[BreakoutEngine] WARNING: No DB competition data for season {season}. "
+                "opportunity_opened, competition_removed, and competition_added scores will "
+                "all be 0. Run the roster-changes pipeline to populate the database."
+            )
+
         print(f"[BreakoutEngine] Data loaded: {len(self.usage_cache)} players, "
               f"{len(self.db_cache['vacated'])} vacated opportunities, "
               f"{len(self.team_stats_cache)} teams")
@@ -192,13 +206,21 @@ class BreakoutEngine:
         is_drafted_rookie = player.get('is_rookie', False) or player.get('draft_year') == self.season
         draft_capital = player.get('draft_capital')
 
+        # Optional enrichment signals (callers may supply these)
+        injury_status = player.get('injury_status')          # 'healthy'|'questionable'|'ir'|etc.
+        injury_history = player.get('injury_history')        # {'games_missed_last_season': int, 'chronic': bool}
+        air_yards_data = player.get('air_yards_data')        # {'vacated_air_yards': int, 'avg_depth_of_target': float}
+        coaching_changes = player.get('coaching_changes')    # {'new_oc': bool, 'oc_prior_pass_rate': float, ...}
+        qb_change_data = player.get('qb_change_data')        # {'qb_changed': bool, 'change_type': str, ...}
+
         # Calculate all component scores
         component_scores = {}
         component_details = {}
-        # 1. Opportunity Opened (with cache)
+        # 1. Opportunity Opened (with cache + air yards quality signal)
         score, details = calculate_opportunity_opened_score(
             player_id, team, position, self.season,
-            vacated_cache=self.db_cache['vacated']
+            vacated_cache=self.db_cache['vacated'],
+            air_yards_data=air_yards_data
         )
         component_scores['opportunity_opened'] = score
         component_details['opportunity_opened'] = details
@@ -219,18 +241,22 @@ class BreakoutEngine:
         component_scores['competition_added_penalty'] = score
         component_details['competition_added_penalty'] = details
 
-        # 4. Team Environment (with cache)
+        # 4. Team Environment (with cache + coaching/QB change signals)
         score, details = calculate_team_environment_score(
             team, position, self.season,
-            team_stats_cache=self.team_stats_cache
+            team_stats_cache=self.team_stats_cache,
+            coaching_changes=coaching_changes,
+            qb_change_data=qb_change_data
         )
         component_scores['team_environment'] = score
         component_details['team_environment'] = details
 
-        # 5. Player Readiness
+        # 5. Player Readiness (with injury signals)
         score, details = calculate_player_readiness_score(
             player_id, position, self.season, player_metadata, prev_usage,
-            is_drafted_rookie, draft_capital
+            is_drafted_rookie, draft_capital,
+            injury_status=injury_status,
+            injury_history=injury_history
         )
         component_scores['player_readiness'] = score
         component_details['player_readiness'] = details
@@ -304,7 +330,7 @@ class BreakoutEngine:
                 'catch_rate': prev_usage.get('catch_rate')
             }
 
-        # Get LLM-based projection
+        # Get projection — uses LLM selectively for top candidates (score >= 70)
         projection = project_player_stats(
             player_info={
                 'position': position,
@@ -313,7 +339,8 @@ class BreakoutEngine:
             },
             previous_usage=prev_usage,
             efficiency_metrics=efficiency_metrics,
-            role_change=role_change
+            role_change=role_change,
+            breakout_score=aggregate_score,
         )
 
         # Extract projected usage for role classification

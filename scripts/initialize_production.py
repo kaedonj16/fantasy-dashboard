@@ -23,8 +23,8 @@ def main():
         print("STEP 1: DATABASE INITIALIZATION")
         print("=" * 60)
 
-        from scripts.run_migrations import run_all_migrations
-        run_all_migrations()
+        from scripts.run_migrations import run_migrations
+        run_migrations()
         print("✅ Database migrations completed")
 
         # Step 2: Initialize breakout opportunity database

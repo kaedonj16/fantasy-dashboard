@@ -30,10 +30,16 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
         conn.autocommit = autocommit
         yield conn
         if not autocommit:
-            conn.commit()
-    except Exception:
+            try:
+                conn.commit()
+            except Exception as commit_error:
+                print(f"[db] COMMIT FAILED for {id(conn)}: {commit_error}")
+                raise
+    except Exception as e:
+        print(f"[db] Exception in connection {id(conn)}: {type(e).__name__}: {e}")
         if not autocommit:
             conn.rollback()
+            print(f"[db] Rollback complete: {id(conn)}")
         raise
     finally:
         conn.close()

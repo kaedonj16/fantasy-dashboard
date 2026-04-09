@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from dashboard_services.api import get_nfl_state
 from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse
@@ -21,6 +21,7 @@ def build_daily_advanced_metrics():
         nfl_state = get_nfl_state() or {}
         season_type = str(nfl_state.get("season_type", "")).lower().strip()
         is_offseason = season_type == "off"
+        current_season = int(nfl_state.get("season") or datetime.now().year)
 
         players_with_games = sum(1 for p in usage_table if p.get("usage", {}).get("games", 0) > 0)
 
@@ -46,7 +47,7 @@ def build_daily_advanced_metrics():
 
         if metrics_list:
             today = date.today().isoformat()
-            save_metrics_snapshot(metrics_list, today)
+            save_metrics_snapshot(metrics_list, today, season=current_season)
             print(f"[cron] Advanced metrics: {len(metrics_list)} processed, {failed_count} failed")
         else:
             print("[cron] No advanced metrics calculated")
@@ -59,87 +60,59 @@ def build_daily_advanced_metrics():
 
 def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
     """
-    Calculate breakout candidates using new modular workflow with smart data management.
+    Calculate breakout candidates using the upgraded BreakoutEngine.
+
+    This uses the new multi-component scoring system with:
+    - Opportunity opened signals
+    - Competition removed/added tracking
+    - Player readiness scoring
+    - Team environment analysis
+    - Role trajectory (in-season)
     """
-    from data_building.breakout_workflow import run_modular_breakout_workflow
-    from data_building.breakout_data_manager import BreakoutDataManager
-    
-    # Initialize data manager
-    data_manager = BreakoutDataManager()
+    from datetime import date as date_module
+    from data_building.breakout_engine.calculate_breakouts_with_real_data import main as calculate_breakouts
 
     season_type = str(nfl_state.get("season_type", "")).lower().strip()
-    should_run = (
-            season_type in ["off", "pre"] or
-            (season_type == "regular" and week <= 9)
-    )
 
-    if not should_run:
-        print(f"[cron] Breakout calculations skipped - season_type={season_type}, week={week}")
+    # Determine if we should run based on season phase
+    # Run year-round but more frequently during key periods
+    should_run = True
+
+    # Skip during playoffs (Jan 1 - Mar 14) unless explicitly needed
+    today = date_module.today()
+    if today.month == 1 or today.month == 2 or (today.month == 3 and today.day < 15):
+        print(f"[cron] Breakout calculations skipped - playoff/early offseason period")
         return
 
-    # Check if data needs refreshing
-    needs_refresh = data_manager.needs_refresh()
-    should_refresh_for_changes, refresh_reason = data_manager.should_refresh_for_changes()
-    
-    if not needs_refresh and not should_refresh_for_changes:
-        print(f"[cron] Breakout data fresh, skipping refresh")
-        return
+    print(f"[cron] Starting breakout calculations for season={season}, week={week}, type={season_type}")
 
-    print(f"[cron] Starting breakout calculations for season={season}, week={week}")
-    if should_refresh_for_changes:
-        print(f"[cron] Reason: {refresh_reason}")
+    try:
+        # Run the new BreakoutEngine
+        result = calculate_breakouts()
 
-    # Clean up previous day's data for fresh calculations
-    from dashboard_services.db import get_conn
-    with get_conn() as conn:
-        deleted_scores = conn.execute("""
-            DELETE FROM breakout_opportunity_scores 
-            WHERE season = %s AND as_of_date = CURRENT_DATE
-        """, (season,)).rowcount
+        print(f"[cron] Breakout scoring completed:")
+        print(f"  - Season: {result.get('season', season)}")
+        print(f"  - Phase: {result.get('phase', 'unknown')}")
+        print(f"  - Players analyzed: {result.get('players_loaded', 0)}")
+        print(f"  - Raw candidates: {result.get('raw_candidates', 0)}")
+        print(f"  - Filtered candidates: {result.get('filtered_candidates', 0)}")
+        print(f"  - Scores saved: {result.get('saved_count', 0)}")
 
-        deleted_projections = conn.execute("""
-            DELETE FROM projected_opportunity 
-            WHERE season = %s AND calculated_at::date = CURRENT_DATE
-        """, (season,)).rowcount
+        # Show filter summary if available
+        filter_summary = result.get('filter_summary', {})
+        if filter_summary:
+            print(f"  - Filter breakdown:")
+            print(f"    • Excluded stars: {filter_summary.get('excluded_star', 0)}")
+            print(f"    • Excluded true dust: {filter_summary.get('excluded_true_dust', 0)}")
+            print(f"    • Excluded age: {filter_summary.get('excluded_age', 0)}")
+            print(f"    • Ideal breakout band: {filter_summary.get('ideal_breakout_band', 0)}")
+            print(f"    • Viable small role: {filter_summary.get('viable_small_role', 0)}")
+            print(f"    • Longshot: {filter_summary.get('longshot', 0)}")
 
-        deleted_changes = conn.execute("""
-            DELETE FROM roster_changes 
-            WHERE season = %s AND created_at::date = CURRENT_DATE
-        """, (season,)).rowcount
-
-        deleted_vacated = conn.execute("""
-            DELETE FROM vacated_opportunity 
-            WHERE season = %s AND calculated_at::date = CURRENT_DATE
-        """, (season,)).rowcount
-
-        conn.commit()
-        total_cleaned = deleted_scores + deleted_projections + deleted_changes + deleted_vacated
-        if total_cleaned > 0:
-            print(f"[cron] Cleaned {total_cleaned} previous records")
-
-    # Run the modular workflow
-    success = run_modular_breakout_workflow(season, week, nfl_state)
-
-    if success:
-        print(f"[cron] Breakout workflow completed successfully")
-        
-        # Show freshness report
-        freshness_report = data_manager.get_data_freshness_report()
-        print(f"[cron] Data freshness: Scores {freshness_report['scores']['days_old']} days old, Projections {freshness_report['projections']['days_old']} days old")
-        
-        # Show any auto-calculations that were performed
-        if freshness_report.get('auto_calculations'):
-            print(f"[cron] Auto-calculations performed:")
-            for calc in freshness_report['auto_calculations']:
-                print(f"  - {calc}")
-    else:
-        print(f"[cron] Breakout workflow failed, attempting force refresh...")
-        
-        # Force refresh as fallback
-        force_results = data_manager.force_refresh_all_data()
-        print(f"[cron] Force refresh results:")
-        for data_type, result in force_results.items():
-            print(f"  - {data_type}: {result}")
+    except Exception as e:
+        print(f"[cron] Breakout calculations failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def main():

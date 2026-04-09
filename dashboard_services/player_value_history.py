@@ -261,27 +261,16 @@ def load_latest_value_snapshot(source: str = "model") -> list[dict]:
     # Enrich with age from players_index
     try:
         from utils.utils import load_players_index
-        from datetime import datetime
+        from dashboard_services.service import age_from_bday
         players_index = load_players_index() or {}
         for player in players:
             pid = str(player.get("id") or player.get("player_id") or "")
-            age = None
             if pid and pid != "" and pid in players_index:
-                # Try to get age directly
-                age = players_index[pid].get("age")
-                # If not available, calculate from birthday
-                if age is None:
-                    bday_str = players_index[pid].get("bDay")
-                    if bday_str:
-                        try:
-                            # Parse birthday (format: "M/D/YYYY")
-                            bday = datetime.strptime(bday_str, "%m/%d/%Y")
-                            today = datetime.now()
-                            age = today.year - bday.year - ((today.month, today.day) < (bday.month, bday.day))
-                            age = float(age) + (today.month - bday.month + (today.day - bday.day) / 30) / 12
-                        except Exception:
-                            pass
-            player["age"] = age
+                # Use age_from_bday function for consistent 1 decimal place precision
+                bday_str = players_index[pid].get("bDay")
+                player["age"] = age_from_bday(bday_str)
+            else:
+                player["age"] = None
     except Exception as e:
         print(f"[load_latest_value_snapshot] Failed to enrich ages: {e}")
         for player in players:

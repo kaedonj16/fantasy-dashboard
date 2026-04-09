@@ -297,6 +297,90 @@ PHASE_CERTAINTY = {
 }
 
 # ==============================================================================
+# INJURY STATUS MODIFIER - Thresholds
+# ==============================================================================
+
+# Current injury status penalties applied to player_readiness_score
+INJURY_STATUS_PENALTIES = {
+    'healthy': 0,
+    'probable': -2,
+    'questionable': -5,
+    'doubtful': -12,
+    'out': -18,
+    'ir': -22,
+    'pup': -22,
+    'nfi': -20,
+    'dnr': -10,  # Did Not Return (in-game)
+}
+
+# Injury history discount: games missed last season
+INJURY_HISTORY_GAMES_MISSED_MODERATE = 4   # 4-7 games missed
+INJURY_HISTORY_GAMES_MISSED_SEVERE = 8     # 8+ games missed
+INJURY_HISTORY_MODERATE_PENALTY = -5
+INJURY_HISTORY_SEVERE_PENALTY = -12
+
+# ==============================================================================
+# AIR YARDS / TARGET QUALITY - Thresholds
+# ==============================================================================
+
+# Average depth of target tiers for WR/TE opportunity quality bonus
+AIR_YARDS_ELITE_ADOT = 12.0   # Deep threat (12+ yards per target avg)
+AIR_YARDS_GOOD_ADOT = 9.0     # Intermediate
+AIR_YARDS_AVERAGE_ADOT = 6.5  # Short / underneath
+
+# Max bonus for elite air yards vacated (added to opportunity_opened_score)
+AIR_YARDS_ELITE_BONUS = 15
+AIR_YARDS_GOOD_BONUS = 8
+AIR_YARDS_AVERAGE_BONUS = 3
+
+# Vacated air yards maximum for normalization (elite WR1 seasons)
+MAX_VACATED_AIR_YARDS = 1800  # ~1800 vacated air yards = max bonus
+
+# ==============================================================================
+# COACHING / OC CHANGE SIGNAL - Thresholds
+# ==============================================================================
+
+# Scheme tendencies for new OC (affects WR/TE vs RB)
+OC_PASS_HEAVY_THRESHOLD = 0.58   # Pass rate >= 58% = pass-heavy system
+OC_RUN_HEAVY_THRESHOLD = 0.44    # Pass rate <= 44% = run-heavy system
+
+# WR/TE bonuses / penalties from OC change
+OC_PASS_HEAVY_WR_BONUS = 8
+OC_RUN_HEAVY_WR_PENALTY = -6
+OC_UNKNOWN_WR_NEUTRAL = 0
+
+# RB bonuses / penalties from OC change (opposite direction)
+OC_RUN_HEAVY_RB_BONUS = 8
+OC_PASS_HEAVY_RB_PENALTY = -4
+
+# HC change (smaller effect, adds uncertainty)
+HC_CHANGE_UNCERTAINTY_PENALTY = -3  # Uncertainty until scheme is known
+
+# ==============================================================================
+# QB DOWNGRADE / UPGRADE SIGNAL - Thresholds
+# ==============================================================================
+
+# Applied to WR/TE team_environment_score when QB situation changes
+QB_UPGRADE_WR_BONUS = 10    # Elite QB replacing good QB, etc.
+QB_DOWNGRADE_WR_PENALTY = -14  # Starting QB lost, replaced by inferior option
+QB_LATERAL_CHANGE = 0
+
+# QB tier definitions (passer rating proxies)
+QB_TIER_ELITE_RATING = 100    # 100+ passer rating = elite
+QB_TIER_GOOD_RATING = 92      # 92+ = good
+QB_TIER_AVERAGE_RATING = 84   # 84+ = average
+QB_TIER_POOR_RATING = 0       # below 84 = poor
+
+# Passer rating penalty/bonus deltas for WR/TE team environment
+QB_TIER_WR_SCORES = {
+    'elite': 10,
+    'good': 5,
+    'average': 0,
+    'poor': -8,
+    'unknown': 0,
+}
+
+# ==============================================================================
 # DIRECTIONAL TREND - Thresholds
 # ==============================================================================
 
@@ -340,12 +424,33 @@ QB_STARTER_SNAP = 0.70  # 70%+ snaps = "QB1"
 MAX_KEY_REASONS = 5
 
 # Component score thresholds to include in explanation
-EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD = 60
-EXPLAIN_COMPETITION_REMOVED_THRESHOLD = 50
-EXPLAIN_PLAYER_READINESS_THRESHOLD = 70
-EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD = 70
-EXPLAIN_ROLE_TRAJECTORY_THRESHOLD = 60
-EXPLAIN_COMPETITION_PENALTY_THRESHOLD = -20
+# Lowered thresholds to provide more detailed explanations for most candidates
+EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD = 30  # Lowered from 40 - captures moderate opportunities
+EXPLAIN_COMPETITION_REMOVED_THRESHOLD = 20  # Lowered from 30 - any meaningful departure
+EXPLAIN_PLAYER_READINESS_THRESHOLD = 45  # Lowered from 50 - captures most viable candidates
+EXPLAIN_TEAM_ENVIRONMENT_THRESHOLD = 55  # Slightly raised from 50 - only noteworthy teams
+EXPLAIN_ROLE_TRAJECTORY_THRESHOLD = 55  # Unchanged
+EXPLAIN_COMPETITION_PENALTY_THRESHOLD = -10  # Unchanged - any significant addition
+
+# Enhanced readiness explanation thresholds
+EXPLAIN_READINESS_EFFICIENCY_ELITE = 30  # Show "Elite efficiency metrics" message
+EXPLAIN_READINESS_EFFICIENCY_STRONG = 20  # Show "Strong efficiency metrics" message
+EXPLAIN_READINESS_USAGE_BASELINE = 15  # Show "Established backup opportunity" message
+EXPLAIN_READINESS_DRAFT_CAPITAL = 25  # Minimum draft score to mention draft capital
+EXPLAIN_READINESS_DRAFT_ROUND_MAX = 3  # Only mention draft capital for rounds 1-3
+
+# Depth Chart Filtering
+DEPTH_CHART_BLOCKING_PENALTY = 0.3  # Multiplier for candidates blocked by established starter
+DEPTH_CHART_AGE_WINDOW = 2  # Years of age difference to consider "similar age"
+DEPTH_CHART_EXCEPTION_OPP_THRESHOLD = 75  # Don't penalize if opportunity score this high
+
+# Top-12 positional thresholds (established starter level)
+TOP_12_PPG_THRESHOLDS = {
+    'QB': 16.0,   # ~QB12 level in PPR
+    'RB': 10.0,   # ~RB12 level in PPR
+    'WR': 11.0,   # ~WR12 level in PPR
+    'TE': 8.0     # ~TE12 level in PPR
+}
 
 # ==============================================================================
 # POSITION-SPECIFIC CONFIGURATIONS

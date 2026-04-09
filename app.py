@@ -139,6 +139,22 @@ try:
 except Exception as e:
     print(f"[value-history] init skipped: {e}")
 
+# Register breakout detection API routes
+try:
+    from dashboard_services.breakout_api import register_breakout_routes
+    register_breakout_routes(app)
+    print("[breakout-api] Breakout API endpoints registered")
+except Exception as e:
+    print(f"[breakout-api] Registration skipped: {e}")
+
+# Register rookie prospect API routes
+try:
+    from dashboard_services.rookie_api import register_rookie_routes
+    register_rookie_routes(app)
+    print("[rookie-api] Rookie API endpoints registered")
+except Exception as e:
+    print(f"[rookie-api] Registration skipped: {e}")
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -827,9 +843,32 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             cls = "nav-pill active" if key == active else "nav-pill"
             return f"<a class='{cls}' href='{href}'>{label}</a>"
 
+        def simple_dropdown(label: str, items: list, active_keys: list) -> str:
+            is_active = active in active_keys
+            btn_cls = "nav-pill active" if is_active else "nav-pill"
+            item_html = ""
+            for item_label, href, item_key in items:
+                item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
+                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+            return (
+                f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
+                f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+                f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+                f"  </button>"
+                f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+                f"    {item_html}"
+                f"  </div>"
+                f"</div>"
+            )
+
         pills = [
             simple_pill("Home", "/", "home"),
             simple_pill("Trade Calc", "/trade", "trade"),
+            simple_dropdown("Players", [
+                ("Player Rankings", "/players", "players"),
+                ("Breakouts", "/breakouts", "breakouts"),
+                ("Rookies", "/rookies", "rookies"),
+            ], ["players", "breakouts", "rookies"]),
             simple_pill("FAQ", "/faq", "faq"),
             simple_pill("Privacy", "/privacy", "privacy"),
             simple_pill("Support the site", "/support", "support"),
@@ -876,6 +915,33 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
+    def nav_pill_dropdown(label: str, items: list, active_keys: list) -> str:
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled)."""
+        is_active = active in active_keys
+        btn_cls = "nav-pill active" if is_active else "nav-pill"
+        item_html = ""
+        for item_label, endpoint, item_key, disabled in items:
+            if disabled:
+                item_html += (
+                    f"<span class='nav-pill-dropdown-item disabled'>"
+                    f"{item_label} <span style='font-size:10px;margin-left:4px;'>Soon</span>"
+                    f"</span>"
+                )
+            else:
+                href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
+                item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
+                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+        return (
+            f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
+            f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+            f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+            f"  </button>"
+            f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+            f"    {item_html}"
+            f"  </div>"
+            f"</div>"
+        )
+
     # Generate dashboard URL for logo link
     dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
 
@@ -889,7 +955,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
-    nav_pills.append(nav_pill("Breakouts", "page_breakouts", "breakouts"))
+    nav_pills.append(nav_pill_dropdown("Players", [
+        ("Player Rankings", "page_players",  "players",  False),
+        ("Rookie Rankings", "page_rookies",  "rookies",   False),
+        ("Breakout Engine", "page_breakouts","breakouts", False),
+    ], ["players", "breakouts", "rookies"]))
     nav_pills.append(nav_pill("History", "page_history", "history"))
 
     # Standings and Graphs remain in-season only
@@ -2996,9 +3066,14 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
-    # Calculate Draft Capital Index from pick value table
-    pick_value_table = load_pick_value_table() or {}
-    total_draft_capital = sum(pick_value_table.values())
+    # Build pick-value lookup (PICK entries keyed by their model-values ID)
+    pick_by_key: Dict[str, float] = {
+        str(row["id"]): float(row.get("value") or 0.0)
+        for row in model_value_table
+        if isinstance(row, dict)
+        and str(row.get("position", "")).upper() == "PICK"
+        and row.get("id")
+    }
 
     roster_cards = []
 
@@ -3009,6 +3084,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
         team_picks = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
         pick_count = len(team_picks)
+
+        # Add pick values to total roster value
+        league_id_str = str(ctx.get("league_id") or "")
+        roster_value += _team_pick_value(
+            team_picks, pick_by_key,
+            platform=platform, league_id=league_id_str, season=_safe_int(season, 0),
+        )
 
         first_round_count = 0
         for pk in team_picks:
@@ -3040,7 +3122,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-snapshot-top">
                 <div class="os-snapshot-rank-block">
                   <div class="os-snapshot-team">{team_name}</div>
-                  <div class="os-snapshot-meta">Roster value</div>
+                  <div class="os-snapshot-meta">Total value</div>
                 </div>
                 <div class="os-snapshot-value">{roster_value:.0f}</div>
               </div>
@@ -3072,6 +3154,20 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     roster_leader = roster_cards[0]["team_name"] if roster_cards else "N/A"
     highest_roster_value = f"{roster_cards[0]['roster_value']:.0f}" if roster_cards else "0"
+    
+    # Calculate total draft capital across all rosters
+    total_draft_capital = 0.0
+    for roster in rosters:
+        roster_id = str(roster.get("roster_id"))
+        player_ids = [str(pid) for pid in (roster.get("players") or [])]
+        roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
+        team_picks = picks_by_roster.get(roster_id, []) if isinstance(picks_by_roster, dict) else []
+        pick_count = len(team_picks)
+        
+        # Add pick values to total roster value
+        roster_value += _team_pick_value(team_picks, pick_by_key)
+        
+        total_draft_capital += roster_value
 
     rostered_ids = {
         str(pid)
@@ -4862,6 +4958,60 @@ def _weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, i
     return sum(v * w for v, w in zip(used, weights)) / denom
 
 
+def _avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
+    """Average model value of all picks matching season + round prefix."""
+    prefix = f"{season}_{rnd}_"
+    vals = [v for k, v in by_id.items() if k.startswith(prefix)]
+    return (sum(vals) / len(vals)) if vals else 0.0
+
+
+def _team_pick_value(
+    picks: list,
+    by_id: dict,
+    platform: str = None,
+    league_id: str = None,
+    season: int = None,
+) -> float:
+    """
+    Total model value of a team's draft picks.
+
+    When platform/league_id/season are provided, resolves the exact draft
+    slot for each pick by looking up the original owner's previous-season
+    standings (via resolve_exact_pick_slot). Falls back to the round-average
+    when the slot cannot be determined (e.g. picks 2+ years out).
+    """
+    total = 0.0
+    for pk in picks:
+        try:
+            pk_season = int(pk.get("season") or 0)
+            rnd = int(pk.get("round") or 0)
+        except (TypeError, ValueError):
+            continue
+
+        exact_slot = None
+        if platform and league_id and season and pk.get("original_owner"):
+            pick_for_slot = {
+                "season": pk_season,
+                "round": rnd,
+                "previous_owner_id": pk.get("original_owner"),
+            }
+            try:
+                exact_slot = resolve_exact_pick_slot(platform, league_id, season, pick_for_slot)
+            except Exception:
+                pass
+
+        if exact_slot:
+            key = f"{pk_season}_{rnd}_{exact_slot:02d}"
+            val = by_id.get(key)
+            if val is not None:
+                total += val
+                continue
+
+        # Fall back to round average when exact slot is unknown
+        total += _avg_pick_value_for_round(by_id, pk_season, rnd)
+    return total
+
+
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -4875,6 +5025,9 @@ def build_teams_body(ctx: dict) -> str:
     roster_map = ctx["roster_map"]  # mapping roster_id -> team name
     users = ctx["users"]
     platform = ctx["platform"]
+    picks_by_roster = ctx.get("picks_by_roster") or {}
+    league_id = str(ctx.get("league_id") or "")
+    current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
@@ -4970,6 +5123,34 @@ def build_teams_body(ctx: dict) -> str:
     for rid in team_meta.keys():
         for pos in POS_ORDER:
             team_pos_values[rid].setdefault(pos, [])
+
+    # ----------------- Compute per-team draft capital value -----------------
+    # by_id already contains PICK entries from model_vals; use it for pick lookups
+    pick_by_key: Dict[str, float] = {
+        str(p["id"]): float(p.get("value") or 0.0)
+        for p in model_vals
+        if isinstance(p, dict) and str(p.get("position", "")).upper() == "PICK" and p.get("id")
+    }
+    team_pick_value: Dict[int, float] = {}
+    for r in rosters:
+        rid = r.get("roster_id")
+        if rid is None:
+            continue
+        team_pick_value[int(rid)] = _team_pick_value(
+            picks_by_roster.get(str(rid), []), pick_by_key,
+            platform=platform, league_id=league_id, season=current_season,
+        )
+
+    pick_series = list(team_pick_value.values())
+    _pick_mean = sum(pick_series) / len(pick_series) if pick_series else 0.0
+    _pick_var = sum((v - _pick_mean) ** 2 for v in pick_series) / len(pick_series) if pick_series else 0.0
+    _pick_std = math.sqrt(_pick_var)
+    team_pick_z: Dict[int, float] = {
+        rid: ((v - _pick_mean) / _pick_std if _pick_std > 0 else 0.0)
+        for rid, v in team_pick_value.items()
+    }
+    pick_z_min = min(team_pick_z.values()) if team_pick_z else 0.0
+    pick_z_max = max(team_pick_z.values()) if team_pick_z else 0.0
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
     team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
@@ -5183,6 +5364,32 @@ def build_teams_body(ctx: dict) -> str:
 
             table_rows.append(main_row)
             table_rows.append(detail_row)
+
+        # Draft Capital row
+        pick_val = team_pick_value.get(rid, 0.0)
+        pick_z = team_pick_z.get(rid, 0.0)
+        if pick_z_max > pick_z_min:
+            pick_pct = 10 + 80 * (pick_z - pick_z_min) / (pick_z_max - pick_z_min)
+        else:
+            pick_pct = 50.0
+        pick_count = len(picks_by_roster.get(str(rid), []))
+        table_rows.append(
+            "<tr class='pos-row pos-picks-row'>"
+            "  <td class='pos-name'>"
+            "    <span style='font-size:11px;opacity:0.7;'>📋</span> PICKS"
+            "  </td>"
+            f"  <td class='pos-count'>{pick_count}</td>"
+            f"  <td class='pos-total'>{pick_val:.1f}</td>"
+            "  <td class='pos-avg'>—</td>"
+            f"  <td class='pos-z'>{pick_z:+.2f}</td>"
+            "  <td class='pos-bar-cell'>"
+            "    <div class='pos-bar-outer'>"
+            f"      <div class='pos-bar-inner' style='width:{pick_pct:.0f}%;background:var(--color-pick,#8b5cf6);'></div>"
+            "    </div>"
+            "  </td>"
+            "  <td class='pos-rank'></td>"
+            "</tr>"
+        )
 
         card_html = (
             "<div class='card team-strength-card'>"
@@ -5718,13 +5925,704 @@ def page_graphs(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
 
+@app.route("/<platform>/<int:season>/<league_id>/players")
+def page_players(platform: str, season: int, league_id: str):
+    """Player Rankings page — searchable, filterable, sortable list of all players."""
+    body_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Player Rankings</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          All players ranked by dynasty value — search, filter, and sort to explore
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:0;">
+
+        <!-- Controls -->
+        <div class="filter-controls-container">
+          <!-- Row 1: Primary filters -->
+          <div class="filter-row filter-row-primary">
+            <!-- Search -->
+            <div class="filter-search">
+              <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
+                style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                       border:1px solid var(--border);background:var(--card-bg);
+                       color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
+                           color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+              <button id="prSearchClear" onclick="prClearSearch()"
+                style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                       background:none;border:none;cursor:pointer;color:var(--text-muted);
+                       font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
+            </div>
+
+            <!-- Position filters -->
+            <div class="filter-positions">
+              <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+              <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+              <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+              <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+              <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+              <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            </div>
+
+            <!-- Settings button -->
+            <div style="position:relative;">
+              <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
+                ⚙️ Settings
+              </button>
+
+              <!-- Settings panel (hidden by default) -->
+              <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
+                <div class="settings-section">
+                  <span class="settings-section-label">League Format</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
+                    <button class="settings-toggle" data-value="sf" onclick="prSetLeagueType('sf')">SF</button>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <span class="settings-section-label">League Size</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle" data-value="8" onclick="prSetSize(8)">8</button>
+                    <button class="settings-toggle active" data-value="10" onclick="prSetSize(10)">10</button>
+                    <button class="settings-toggle" data-value="12" onclick="prSetSize(12)">12</button>
+                    <button class="settings-toggle" data-value="14" onclick="prSetSize(14)">14</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Secondary filters -->
+          <div class="filter-row filter-row-secondary">
+            <!-- Sort dropdown -->
+            <div class="filter-sort">
+              <label class="filter-label">Sort by</label>
+              <select id="prSort" onchange="prRender()"
+                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
+                <option value="rank">Rank</option>
+                <option value="value">Value</option>
+                <option value="age">Age (youngest)</option>
+                <option value="pos_rank">Pos Rank</option>
+              </select>
+            </div>
+
+            <!-- Active settings indicator -->
+            <div id="prActiveSettings" class="active-settings-indicator">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="prLoading" style="text-align:center;padding:40px;color:var(--text-muted);">
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+          Loading players…
+        </div>
+
+        <!-- Player count -->
+        <div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+
+        <!-- Table header -->
+        <div id="prTableHeader" style="display:none;
+             grid-template-columns:44px 1fr 64px 50px 50px 64px;
+             gap:0;padding:6px 12px;border-radius:6px;
+             background:var(--accent-soft);font-size:11px;
+             font-weight:700;color:var(--accent);letter-spacing:0.04em;
+             text-transform:uppercase;" class="pr-grid-row">
+          <span>#</span>
+          <span>Player</span>
+          <span style="text-align:center;">Pos</span>
+          <span style="text-align:center;">Age</span>
+          <span style="text-align:right;">Team</span>
+          <span style="text-align:right;">Value</span>
+        </div>
+
+        <!-- Player rows -->
+        <div id="prList"></div>
+
+        <!-- Empty state -->
+        <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
+          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+          No players match your filters
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .pr-grid-row {
+        display: grid;
+        grid-template-columns: 44px 1fr 64px 50px 50px 64px;
+        align-items: center;
+        gap: 0;
+      }
+      .pr-player-row {
+        padding: 9px 12px;
+        cursor: pointer;
+        transition: background 0.12s ease;
+      }
+      .pr-player-row:hover { background: var(--accent-soft); }
+      .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
+      .pr-rank {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-muted);
+      }
+      .pr-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+      .pr-pos-cell {
+        text-align: center;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+      }
+      .pr-age {
+        text-align: center;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .pr-team {
+        text-align: right;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .pr-value {
+        text-align: right;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      /* Filter Controls */
+      .filter-controls-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 0 14px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 12px;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .filter-row-primary {
+        gap: 12px;
+      }
+      .filter-row-secondary {
+        padding-top: 4px;
+      }
+      .filter-search {
+        position: relative;
+        flex: 1;
+        min-width: 200px;
+        max-width: 400px;
+      }
+      .filter-positions {
+        display: flex;
+        gap: 3px;
+        flex-wrap: wrap;
+      }
+      .pos-pill {
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.12s;
+        white-space: nowrap;
+      }
+      .pos-pill.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .filter-settings-btn {
+        padding: 7px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: all 0.12s;
+      }
+      .filter-settings-btn:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .filter-settings-panel {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 8px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        padding: 16px;
+        min-width: 260px;
+        z-index: 1000;
+      }
+      .settings-section {
+        margin-bottom: 16px;
+      }
+      .settings-section:last-of-type {
+        margin-bottom: 0;
+      }
+      .settings-section-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 8px;
+      }
+      .settings-toggle-group {
+        display: flex;
+        gap: 6px;
+      }
+      .settings-toggle {
+        flex: 1;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      .settings-toggle.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .active-settings-indicator {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .active-setting-tag {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .filter-sort {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .filter-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      /* Mobile responsive */
+      @media (max-width: 768px) {
+        .filter-row-primary {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .filter-search {
+          max-width: 100%;
+        }
+        .filter-positions {
+          justify-content: flex-start;
+          gap: 5px;
+        }
+        .pos-pill {
+          padding: 6px 10px;
+          font-size: 11px;
+        }
+        .filter-label {
+          white-space: nowrap;
+        }
+        .active-settings-indicator {
+          justify-content: center;
+          order: -1;
+          width: 100%;
+        }
+        .filter-row-secondary {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .filter-sort,
+        .filter-sort select {
+          width: 100%;
+        }
+      }
+    </style>
+
+    <script>
+      var prAllPlayers = [];
+      var prIndicators = {};
+      var prLeagueType = '1qb';
+      var prLeagueSize = 10;
+      var prPosFilters = new Set();   // empty = All
+      var prSearchQuery = '';
+      var prLoaded = false;
+
+      // ---- Fuzzy search (mirrors trade calc logic) ----
+      function prFuzzyScore(name, query) {
+        if (!name || !query) return 0;
+        const n = name.toLowerCase(), q = query.toLowerCase();
+        if (n.includes(q)) return 100 + (100 - n.indexOf(q));
+        const nw = n.split(/[\\s\\-]+/), qw = q.split(/\\s+/).filter(Boolean);
+        if (qw.length > 1) {
+          if (qw.every((qx, i) => nw.slice(i).some(w => w.startsWith(qx)))) return 70;
+        }
+        if (nw.some(w => w.startsWith(q))) return 60;
+        if (q.length >= 4) {
+          for (let i = 0; i < q.length; i++) {
+            const del = q.slice(0, i) + q.slice(i + 1);
+            if (n.includes(del)) return 40;
+            for (const c of 'abcdefghijklmnopqrstuvwxyz') {
+              const sub = q.slice(0, i) + c + q.slice(i + 1);
+              if (n.includes(sub) && sub !== q) return 30;
+            }
+          }
+        }
+        return 0;
+      }
+
+      function prGetValue(p) {
+        let base;
+        if (prLeagueType === 'sf') {
+          const key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
+          base = Number(p[key] ?? p.sf_value ?? p.value ?? 0);
+        } else {
+          const key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
+          base = Number(p[key] ?? p.value ?? 0);
+        }
+        return Math.round(base * 10) / 10;
+      }
+
+      function prFormatValue(v) {
+        if (!v || v <= 0) return '-';
+        return v.toFixed(1);
+      }
+
+      function prIsRookie(id) {
+        return prIndicators.rookies && prIndicators.rookies.includes(String(id));
+      }
+
+      function prIsBreakout(id) {
+        return prIndicators.breakouts && prIndicators.breakouts.includes(String(id));
+      }
+
+      // Settings panel toggle
+      function prToggleSettings() {
+        const panel = document.getElementById('prSettingsPanel');
+        const btn = document.getElementById('prSettingsBtn');
+        if (!panel || !btn) return;
+
+        const isOpen = panel.style.display === 'block';
+        panel.style.display = isOpen ? 'none' : 'block';
+        btn.classList.toggle('active', !isOpen);
+      }
+
+      // Update active settings indicator tags
+      function updateSettingsIndicator() {
+        const indicator = document.getElementById('prActiveSettings');
+        if (!indicator) return;
+
+        const sizeTag = indicator.querySelector('.active-setting-tag:first-child');
+        const formatTag = indicator.querySelector('.active-setting-tag:last-child');
+
+        if (sizeTag) sizeTag.textContent = prLeagueSize + '-Team';
+        if (formatTag) formatTag.textContent = prLeagueType.toUpperCase();
+      }
+
+      function prSetLeagueType(type) {
+        prLeagueType = type;
+
+        // Update settings panel toggles
+        document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
+          const section = btn.closest('.settings-section');
+          if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
+            btn.classList.toggle('active', btn.getAttribute('data-value') === type);
+          }
+        });
+
+        updateSettingsIndicator();
+        prRender();
+      }
+
+      function prSetSize(size) {
+        prLeagueSize = size;
+
+        // Update settings panel toggles
+        document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
+          const section = btn.closest('.settings-section');
+          if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
+            const btnSize = parseInt(btn.getAttribute('data-value'));
+            btn.classList.toggle('active', btnSize === size);
+          }
+        });
+
+        updateSettingsIndicator();
+        prRender();
+      }
+
+      // Multi-select position toggle
+      function prTogglePos(pos) {
+        if (pos === 'ALL') {
+          prPosFilters.clear();
+        } else {
+          if (prPosFilters.has(pos)) {
+            prPosFilters.delete(pos);
+          } else {
+            prPosFilters.add(pos);
+          }
+        }
+        // Sync button states
+        document.querySelectorAll('.pos-pill').forEach(b => {
+          const p = b.getAttribute('data-pos');
+          if (p === 'ALL') {
+            b.classList.toggle('active', prPosFilters.size === 0);
+          } else {
+            b.classList.toggle('active', prPosFilters.has(p));
+          }
+        });
+        prRender();
+      }
+
+      function prClearSearch() {
+        document.getElementById('prSearch').value = '';
+        prSearchQuery = '';
+        document.getElementById('prSearchClear').style.display = 'none';
+        prRender();
+      }
+
+      // Build overall rank map keyed by player id (ranked by current value)
+      function prBuildRankMap() {
+        const ranked = prAllPlayers
+          .filter(p => p.position !== 'PICK' && !p.is_rookie)
+          .slice()
+          .sort((a, b) => prGetValue(b) - prGetValue(a));
+        return new Map(ranked.map((p, i) => [String(p.id), i + 1]));
+      }
+
+      // Sort and filter players, then render rows into the main table
+      function prRender() {
+        if (!prLoaded) return;
+        const sortBy = document.getElementById('prSort').value;
+
+        let players = prAllPlayers.slice();
+
+        // Position filter (multi-select)
+        if (prPosFilters.has('ROOKIE')) {
+          // Rookie filter: show only rookies
+          players = players.filter(p => p.is_rookie);
+        } else if (prPosFilters.size > 0) {
+          // Specific position filter: exclude rookies unless they match the position
+          players = players.filter(p => !p.is_rookie && prPosFilters.has(p.position));
+        } else {
+          // No filter / ALL: exclude rookies from the main ranked list
+          players = players.filter(p => !p.is_rookie);
+        }
+
+        // Search filter — fuzzy match, sort by score when query present
+        if (prSearchQuery.length > 0) {
+          const scored = players
+            .map(p => ({
+              p,
+              score: Math.max(prFuzzyScore(p.name, prSearchQuery), prFuzzyScore(p.search_name, prSearchQuery))
+            }))
+            .filter(x => x.score > 0)
+            .sort((a, b) => b.score !== a.score ? b.score - a.score : prGetValue(b.p) - prGetValue(a.p));
+          players = scored.map(x => x.p);
+        } else {
+          // Normal sort when no search query
+          players.sort((a, b) => {
+            if (sortBy === 'value') {
+              return prGetValue(b) - prGetValue(a);
+            } else if (sortBy === 'age') {
+              return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+            } else if (sortBy === 'pos_rank') {
+              const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
+              const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
+              return rA - rB;
+            } else {
+              return prGetValue(b) - prGetValue(a);
+            }
+          });
+        }
+
+        const list   = document.getElementById('prList');
+        const empty  = document.getElementById('prEmpty');
+        const count  = document.getElementById('prCount');
+        const header = document.getElementById('prTableHeader');
+
+        if (players.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          header.style.display = 'none';
+          count.style.display = 'none';
+          return;
+        }
+
+        empty.style.display = 'none';
+        header.style.display = 'grid';
+        count.style.display = 'block';
+        count.textContent = players.length + ' player' + (players.length !== 1 ? 's' : '');
+
+        const rankMap = prBuildRankMap();
+
+        list.innerHTML = '';
+        players.forEach((p, idx) => {
+          const row = document.createElement('div');
+          row.className = 'pr-player-row pr-grid-row player-clickable';
+          row.setAttribute('data-player-id', p.id);
+          row.setAttribute('data-player-name', p.name || '');
+
+          const displayRank = (p.position === 'PICK' || p.is_rookie) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const posRank = prLeagueType === 'sf'
+            ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
+            : (p.pos_rank_label || p.position);
+          const age = p.age != null ? Number(p.age).toFixed(1) : '—';
+          const val = prGetValue(p);
+
+          let badges = '';
+          if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
+          else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
+          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+
+          row.innerHTML =
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-name">'  + (p.name || 'Unknown') + badges + '</span>' +
+            '<span class="pr-pos-cell">' + posRank + '</span>' +
+            '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
+            '<span class="pr-team">'  + (p.team || '—') + '</span>' +
+            '<span class="pr-value">' + prFormatValue(val) + '</span>';
+
+          list.appendChild(row);
+        });
+
+        if (typeof initGlobalPlayerModals === 'function') initGlobalPlayerModals();
+      }
+
+      // Wire up search input
+      (function() {
+        const inp   = document.getElementById('prSearch');
+        const clear = document.getElementById('prSearchClear');
+        if (!inp) return;
+
+        inp.addEventListener('input', function() {
+          prSearchQuery = inp.value.trim();
+          clear.style.display = prSearchQuery.length > 0 ? 'block' : 'none';
+          prRender();
+        });
+      })();
+
+      // Close settings panel when clicking outside
+      document.addEventListener('click', function(e) {
+        const panel = document.getElementById('prSettingsPanel');
+        const btn = document.getElementById('prSettingsBtn');
+
+        if (panel && btn && panel.style.display === 'block') {
+          if (!panel.contains(e.target) && !btn.contains(e.target)) {
+            panel.style.display = 'none';
+            btn.classList.remove('active');
+          }
+        }
+      });
+
+      // Load data
+      Promise.all([
+        fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
+        fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
+          .then(r => r.json()).catch(() => ({}))
+      ]).then(([players, indicators]) => {
+        prIndicators = indicators || {};
+        const rawPlayers = Array.isArray(players) ? players : [];
+
+        prAllPlayers = rawPlayers
+          .filter(p => p && p.id != null)
+          .map(p => ({
+            id:               String(p.id),
+            name:             p.name || p.full_name || 'Unknown',
+            team:             p.team || '',
+            position:         String(p.position || '').toUpperCase(),
+            age:              p.age != null ? Number(p.age) : null,
+            value:            Number(p.value    || 0),
+            value_8:          Number(p.value_8  || p.value    || 0),
+            value_12:         Number(p.value_12 || p.value    || 0),
+            value_14:         Number(p.value_14 || p.value    || 0),
+            sf_value:         Number(p.sf_value    || p.value || 0),
+            sf_value_8:       Number(p.sf_value_8  || p.sf_value || p.value || 0),
+            sf_value_12:      Number(p.sf_value_12 || p.sf_value || p.value || 0),
+            sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
+            pos_rank_label:   p.pos_rank_label    || '',
+            sf_pos_rank_label:p.sf_pos_rank_label || '',
+            pos_rank:         Number(p.pos_rank    || 9999),
+            sf_pos_rank:      Number(p.sf_pos_rank || 9999),
+            search_name:      p.search_name || '',
+            is_rookie:        p.is_rookie === true,
+          }))
+          .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
+          .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+
+        document.getElementById('prLoading').style.display = 'none';
+        prLoaded = true;
+        prRender();
+      }).catch(err => {
+        console.error('Error loading player rankings:', err);
+        document.getElementById('prLoading').innerHTML =
+          '<div style="color:#ef4444;">Failed to load players. Please refresh.</div>';
+      });
+    </script>
+    """
+    return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/rookies")
+def page_rookies(platform: str, season: int, league_id: str):
+    """Rookie prospect rankings page — active class auto-detected."""
+    from dashboard_services.pages.rookies_page import build_rookies_body
+    body_html = build_rookies_body(platform, season, league_id)
+    return render_page("Rookie Rankings", league_id, "rookies", body_html, platform, season)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
     body_html = f"""
     <div class="card central">
       <div class="card-header">
-        <h2>Breakout Candidates</h2>
+        <h2>Breakout Engine</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
         </div>
@@ -5760,11 +6658,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
 
-      // Fetch breakout candidates on page load
-      fetch('/api/offseason-breakout-candidates?season={season}&min_score=25')
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
+      fetch('/api/breakout/candidates?season={season}&min_score=25')
         .then(res => res.json())
         .then(data => {{
-          breakoutCandidates = data || [];
+          breakoutCandidates = (data && data.candidates) || [];
           document.getElementById('breakoutsLoading').style.display = 'none';
 
           if (breakoutCandidates.length === 0) {{
@@ -5807,37 +6705,41 @@ def page_breakouts(platform: str, season: int, league_id: str):
         let html = '<div class="breakout-grid">';
 
         filtered.forEach(candidate => {{
-          const name = candidate.name || 'Unknown';
+          const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
-          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '?';
-          const score = candidate.breakout_score ? candidate.breakout_score.toFixed(1) : '0';
-          const context = candidate.context || '';
-          const departed = Array.isArray(candidate.departed_players) ? candidate.departed_players : [];
-          const pid = candidate.player_id || ''; // Extract player ID for clickable functionality
+          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '-';
+          const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
+          const pid = candidate.player_id || '';
 
-          // Get projection increases
-          const increases = candidate.increases || {{}};
-          const targetsInc = increases.targets || 0;
-          const carriesInc = increases.carries || 0;
+          // Breakout type classification
+          const breakoutType = candidate.breakout_type || {{}};
+          const emoji = breakoutType.emoji || '📊';
+          const label = breakoutType.profile_label || 'Breakout Candidate';
+          const driver = breakoutType.primary_driver || 'balanced';
 
-          // Breakout factors
-          const factors = candidate.projection_factors || {{}};
-          const snapShareInc = (candidate.snap_share_increase || 0) * 100; // Convert to percentage
-          const oppShareInc = (candidate.opportunity_share_increase || 0) * 100; // Convert to percentage
-          const youthBonus = factors.youth_experience_bonus || 0;
+          // Component scores
+          const oppScore = parseFloat(candidate.opportunity_opened_score || 0).toFixed(1);
+          const readyScore = parseFloat(candidate.player_readiness_score || 0).toFixed(1);
+          const confScore = parseFloat(candidate.confidence_score || 0).toFixed(1);
+          const teamEnv = parseFloat(candidate.team_environment_score || 0).toFixed(1);
 
-          // Score badge color
-          let scoreColor = '#10b981'; // green for high scores
-          if (score < 40) scoreColor = '#f59e0b'; // amber for medium
-          if (score < 30) scoreColor = '#6b7280'; // gray for low
+          // Key reasons (from engine)
+          const reasons = candidate.key_reasons || '';
+          const reasonsList = reasons.split('\\n').filter(r => r.trim() && r.startsWith('•')).map(r => r.substring(1).trim());
+
+          // Score badge color based on score ranges
+          let scoreColor = '#10b981'; // green (50+)
+          if (score < 50) scoreColor = '#3b82f6'; // blue (40-49)
+          if (score < 40) scoreColor = '#f59e0b'; // amber (30-39)
+          if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
               <div class="breakout-card-header">
                 <div>
-                  <div class="breakout-player-name player-clickable" data-player-id='` + pid + `' data-player-name='` + name + `'>` + name + `</div>
-                  <div class="breakout-player-meta">${{team}} • ${{pos}} • ${{age}} yrs</div>
+                  <div class="breakout-player-name">` + name + `</div>
+                  <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
                 </div>
                 <div class="breakout-score-badge" style="background: ${{scoreColor}};">
                   ${{score}}
@@ -5845,31 +6747,39 @@ def page_breakouts(platform: str, season: int, league_id: str):
               </div>
 
               <div class="breakout-card-body">
-                ${{context ? `<div class="breakout-context">${{context}}</div>` : ''}}
-
-                ${{departed.length > 0 ? `
-                  <div class="breakout-section">
-                    <div class="breakout-section-title">Departed Players</div>
-                    <div class="breakout-departed">${{departed.join(', ')}}</div>
-                  </div>
-                ` : ''}}
-
-                <div class="breakout-section">
-                  <div class="breakout-section-title">Projected Increases</div>
-                  <div class="breakout-stats-row">
-                    ${{targetsInc > 0 ? `<span class="breakout-stat">+${{targetsInc}} targets</span>` : ''}}
-                    ${{carriesInc > 0 ? `<span class="breakout-stat">+${{carriesInc}} carries</span>` : ''}}
-                    ${{snapShareInc > 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snap</span>` : ''}}
-                    ${{snapShareInc > 0 && snapShareInc <= 1 ? `<span class="breakout-stat">+${{snapShareInc.toFixed(1)}}% snaps</span>` : ''}}
-                    ${{oppShareInc > 0 ? `<span class="breakout-stat">+${{oppShareInc.toFixed(1)}}% opportunity</span>` : ''}}
-                  </div>
+                <!-- Breakout Type Badge -->
+                <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
+                  <span style="font-size: 20px;">${{emoji}}</span>
+                  <span style="font-weight: 500; flex: 1;">${{label}}</span>
+                  <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
 
-                ${{youthBonus > 0 ? `
-                  <div class="breakout-youth-bonus">
-                    ⭐ Youth/Experience Bonus: +${{youthBonus.toFixed(1)}}
+                <!-- Component Scores -->
+                <div class="breakout-section">
+                  <div class="breakout-section-title">Component Breakdown</div>
+                  <div class="breakout-components" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
+                    ${{driver === 'opportunity' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Opportunity</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #10b981;">${{oppScore}}</div>
+                      </div>
+                    ` : ''}}
+                    ${{driver === 'readiness' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Talent/Readiness</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #3b82f6;">${{readyScore}}</div>
+                      </div>
+                    ` : ''}}
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Team Environment</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{teamEnv}}</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Confidence</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{confScore}}%</div>
+                    </div>
                   </div>
-                ` : ''}}
+                </div>
               </div>
             </div>
           `;
@@ -5878,12 +6788,31 @@ def page_breakouts(platform: str, season: int, league_id: str):
         html += '</div>';
         container.innerHTML = html;
       }}
-      
-      // Initialize global player modals for clickable player names
-      initGlobalPlayerModals();
     </script>
     """
-    return render_page("Breakout Candidates", league_id, "breakouts", body_html, platform, season)
+    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
+
+
+# Guest-accessible versions of content pages (no league required)
+@app.route("/players")
+def page_players_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_players(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/breakouts")
+def page_breakouts_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_breakouts(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/rookies")
+def page_rookies_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_rookies(platform="sleeper", season=current_season, league_id=None)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")
@@ -6351,7 +7280,28 @@ def get_model_value_table_cached():
     now = time.time()
     if _MODEL_VALUE_CACHE is not None and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL:
         return _MODEL_VALUE_CACHE
-    tbl = load_model_value_table() or []
+    tbl = list(load_model_value_table() or [])
+
+    # Append rookie prospects (mirrors /api/league-players logic)
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        from utils.utils import normalize_name as _nn
+        draft_year = get_active_rookie_class()
+        for r in get_rookie_rankings_from_db(draft_year):
+            name = r.get("name") or ""
+            tbl.append({
+                "id": r.get("player_id") or f"rookie_{name}",
+                "name": name,
+                "team": r.get("team") or "FA",
+                "position": r.get("position") or "UNK",
+                "age": r.get("age"),
+                "value":    float(r.get("rookie_value") or 0),
+                "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                "is_rookie": True,
+            })
+    except Exception as e:
+        print(f"[model-value-cache] rookies skipped: {e}")
+
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl
@@ -6620,13 +7570,43 @@ def _sanitize_for_json(obj):
 
 @app.route("/api/league-players")
 def api_league_players():
-    model_value_table = load_model_value_table()
+    model_value_table = list(load_model_value_table() or [])
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    cleaned_players = _sanitize_for_json(model_value_table)
+    # Append active-class rookie prospects so they appear in search / trade calc
+    try:
+        from data_building.rookie_pipeline.pipeline import (
+            get_rookie_rankings_from_db,
+            get_active_rookie_class,
+        )
+        from utils.utils import normalize_name as _nn
+        draft_year = get_active_rookie_class()
+        for r in get_rookie_rankings_from_db(draft_year):
+            name = r.get("name") or ""
+            model_value_table.append({
+                "id": r.get("player_id") or f"rookie_{name}",
+                "name": name,
+                "team": r.get("team") or "FA",
+                "position": r.get("position") or "UNK",
+                "age": r.get("age"),
+                "value":       float(r.get("rookie_value")       or 0),
+                "sf_value":    float(r.get("rookie_sf_value")    or r.get("rookie_value") or 0),
+                "value_8":     float(r.get("rookie_value_8")     or r.get("rookie_value") or 0),
+                "value_12":    float(r.get("rookie_value_12")    or r.get("rookie_value") or 0),
+                "value_14":    float(r.get("rookie_value_14")    or r.get("rookie_value") or 0),
+                "sf_value_8":  float(r.get("rookie_sf_value_8")  or r.get("rookie_sf_value") or 0),
+                "sf_value_12": float(r.get("rookie_sf_value_12") or r.get("rookie_sf_value") or 0),
+                "sf_value_14": float(r.get("rookie_sf_value_14") or r.get("rookie_sf_value") or 0),
+                "pos_rank": None, "pos_rank_label": None,
+                "sf_pos_rank": None, "sf_pos_rank_label": None,
+                "search_name": _nn(name) if name else "",
+                "is_rookie": True,
+            })
+    except Exception as _e:
+        print(f"[api/league-players] rookies skipped: {_e}")
 
-    return jsonify(cleaned_players)
+    return jsonify(_sanitize_for_json(model_value_table))
 
 
 @app.route("/api/teams")
@@ -6963,32 +7943,63 @@ def api_player_advanced_metrics(player_id: str):
     """
     Get advanced efficiency metrics for a specific player.
 
-    PREMIUM FEATURE - Requires active subscription.
+    Query params:
+        season: NFL season year (e.g. 2025). Omit to use the default season
+                (current season during regular season, most recent with data
+                during offseason).
 
     Returns:
         {
             "player_id": "123",
             "position": "WR",
+            "season": 2025,
+            "available_seasons": [2025, 2024],
             "metrics": {
                 "yards_per_target": 8.5,
                 "catch_rate": 0.72,
-                "yards_per_reception": 11.8,
-                "yards_per_carry": 4.2,
-                "snap_share": 0.78,
-                "opportunity_share": 8.5,
-                "red_zone_usage": 2.1,
-                "role_score": 67.3,
-                "usage_trend": 15.2,
-                "efficiency_trend": 8.7
+                ...
             },
             "as_of_date": "2025-01-15"
         }
     """
     try:
-        from data_building.advanced_metrics import get_player_metrics
+        from data_building.advanced_metrics import (
+            get_player_metrics,
+            get_player_metrics_by_season,
+            get_available_seasons_for_player,
+        )
 
-        # Advanced metrics are now available to all users (no premium check)
-        metrics = get_player_metrics(str(player_id))
+        # Determine default season from NFL state
+        nfl_state = get_nfl_state() or {}
+        nfl_season = int(nfl_state.get("season") or datetime.now().year)
+        is_offseason = (nfl_state.get("season_type") or "").lower() == "off"
+
+        # Parse requested season from query param
+        requested_season = request.args.get("season")
+        if requested_season:
+            try:
+                requested_season = int(requested_season)
+            except (ValueError, TypeError):
+                requested_season = None
+
+        # Get all seasons with data for this player
+        available_seasons = get_available_seasons_for_player(str(player_id))
+
+        # Choose target season: explicit request → current (if in-season) → most recent
+        if requested_season:
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            target_season = nfl_season
+        elif available_seasons:
+            target_season = available_seasons[0]  # most recent season with data
+        else:
+            target_season = nfl_season
+
+        # Fetch metrics for the target season (or fall back to latest row)
+        if available_seasons:
+            metrics = get_player_metrics_by_season(str(player_id), target_season)
+        else:
+            metrics = get_player_metrics(str(player_id))
 
         if not metrics:
             return jsonify({
@@ -6996,17 +8007,20 @@ def api_player_advanced_metrics(player_id: str):
                 "error": "No metrics available for this player"
             }), 404
 
-        # Extract date and clean up metrics
+        # Extract and clean metadata fields
         as_of_date = str(metrics.pop("as_of_date", None))
-        metrics.pop("id", None)  # Remove internal ID
+        season_val = metrics.pop("season", target_season)
+        metrics.pop("id", None)
 
         return jsonify({
             "player_id": str(player_id),
             "position": metrics.get("position"),
+            "season": season_val,
+            "available_seasons": available_seasons,
             "metrics": {
                 k: float(v) if v is not None else None
                 for k, v in metrics.items()
-                if k != "player_id" and k != "position"
+                if k not in ("player_id", "position")
             },
             "as_of_date": as_of_date,
         })
@@ -7384,10 +8398,35 @@ def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
         from utils.utils import load_players_index, load_model_value_table
+        from dashboard_services.api import get_effective_scoring_settings
+        from dashboard_services.platform_api import sync_league_globals
         import json
         import os
         import glob
         import re
+
+        # Get league context
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season", datetime.now().year))
+
+        # Sync league globals if league_id provided
+        if league_id:
+            sync_league_globals(platform, league_id, season)
+            scoring_settings = get_effective_scoring_settings()
+        else:
+            # Default scoring settings if no league context
+            scoring_settings = {
+                "passYards": 0.04,
+                "passTD": 4.0,
+                "passInterceptions": -2.0,
+                "rushYards": 0.1,
+                "rushTD": 6.0,
+                "pointsPerReception": 1.0,
+                "receivingYards": 0.1,
+                "receivingTD": 6.0,
+                "fumbles": -2.0
+            }
 
         players_index = load_players_index() or {}
         player_meta = players_index.get(player_id, {})
@@ -7519,17 +8558,49 @@ def api_player_details(player_id: str):
                 stats = week_stats.get(player_id)
 
                 if stats:
-                    # Player has stats - calculate fantasy points
+                    # Player has stats - calculate fantasy points using league scoring settings
                     pts = 0.0
-                    pts += (stats.get("pass_yd") or 0) * 0.04
-                    pts += (stats.get("pass_td") or 0) * 4
-                    pts += (stats.get("pass_int") or 0) * -2
-                    pts += (stats.get("rush_yd") or 0) * 0.1
-                    pts += (stats.get("rush_td") or 0) * 6
-                    pts += (stats.get("rec") or 0) * 1
-                    pts += (stats.get("rec_yd") or 0) * 0.1
-                    pts += (stats.get("rec_td") or 0) * 6
-                    pts += (stats.get("fum_lost") or 0) * -2
+                    
+                    # Base scoring
+                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
+                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
+                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
+                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
+                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
+                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
+                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
+                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
+                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
+                    
+                    # Yardage bonuses
+                    pass_yds = stats.get("pass_yd") or 0
+                    rush_yds = stats.get("rush_yd") or 0
+                    rec_yds = stats.get("rec_yd") or 0
+                    rush_rec_yds = rush_yds + rec_yds
+                    
+                    # Pass yardage bonuses
+                    if pass_yds >= 400:
+                        pts += scoring_settings.get("bonus_pass_yd_400", 0)
+                    elif pass_yds >= 300:
+                        pts += scoring_settings.get("bonus_pass_yd_300", 0)
+                    
+                    # Rush yardage bonuses
+                    if rush_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_yd_200", 0)
+                    elif rush_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_yd_100", 0)
+                    
+                    # Receiving yardage bonuses
+                    if rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rec_yd_200", 0)
+                    elif rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rec_yd_100", 0)
+                    
+                    # Combined rush/rec yardage bonuses
+                    if rush_rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
+                    elif rush_rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
 
                     game_log = {
                         "week": week_num,

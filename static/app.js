@@ -754,6 +754,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
     }
+    if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-rookie">PROSPECT</span>');
+    }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
     }
@@ -1098,7 +1101,7 @@ window.initTradePage = function initTradePage(root = document) {
           breakoutsContent?.classList.add("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
-            moversSub.textContent = "Top 5 breakout candidates by database score";
+            moversSub.textContent = "Top 5 breakouts from Breakout Engine ";
           }
           // Hide day filters for breakouts
           if (dayFilters) {
@@ -1127,6 +1130,8 @@ window.initTradePage = function initTradePage(root = document) {
       sf_value: Number(p.sf_value || p.value || 0),
       pos_rank_label: p.pos_rank_label || "",
       sf_pos_rank_label: p.sf_pos_rank_label || "",
+      is_rookie: p.is_rookie === true,
+      search_name: p.search_name || "",
     };
   }
 
@@ -1150,7 +1155,7 @@ window.initTradePage = function initTradePage(root = document) {
         ...players
           .filter(p => p && typeof p === "object" && p.id != null)
           .map(normalizePlayerRow)
-          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position)),
+          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
         ...picks,
       ].sort((a, b) => {
         const vb = Number(b.value || 0);
@@ -1195,8 +1200,9 @@ window.initTradePage = function initTradePage(root = document) {
       .filter(p => {
         const pos = String(p.position || "").toUpperCase();
         if (activePosFilter === "ALL") return true;
+        if (activePosFilter === "ROOKIE") return !!p.is_rookie;
         if (activePosFilter === "PICK") return pos === "PICK";
-        return pos === activePosFilter;
+        return pos === activePosFilter && !p.is_rookie;
       })
       .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 
@@ -1331,7 +1337,7 @@ window.initTradePage = function initTradePage(root = document) {
         metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
       }
 
-      metaEl.innerHTML = metaBits.join(" · ");
+      metaEl.innerHTML = metaBits.join(" • ");
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -3123,11 +3129,40 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close menu when clicking a nav link
     navPillsContainer.querySelectorAll('.nav-pill').forEach(pill => {
       pill.addEventListener('click', function() {
+        if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger — keep hamburger open
         navPillsContainer.classList.remove('nav-open');
         navToggle.textContent = '☰';
       });
     });
+
+    // Close hamburger when clicking a Players sub-menu item
+    navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(item => {
+      item.addEventListener('click', function() {
+        navPillsContainer.classList.remove('nav-open');
+        navToggle.textContent = '☰';
+        const wrapper = document.getElementById('playersNavDropdown');
+        if (wrapper) wrapper.classList.remove('open');
+      });
+    });
   }
+});
+
+// Players nav dropdown toggle
+function togglePlayersNav(e) {
+  e.stopPropagation();
+  const wrapper = document.getElementById('playersNavDropdown');
+  if (!wrapper) return;
+  wrapper.classList.toggle('open');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Close players nav dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('playersNavDropdown');
+    if (wrapper && !wrapper.contains(e.target)) {
+      wrapper.classList.remove('open');
+    }
+  });
 });
 
 // Card collapse toggle functionality
@@ -3318,6 +3353,17 @@ document.addEventListener('DOMContentLoaded', function() {
 function openPlayerModal(playerId, playerName) {
   console.log('Opening player modal for ID:', playerId, 'Name:', playerName); // Debug: Log player info
   
+  // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const platform = pathParts[0] || 'sleeper';
+  const season = pathParts[1] || new Date().getFullYear();
+  const leagueId = pathParts[2] || null;
+  
+  // Build API URL with league context if available
+  const apiUrl = leagueId 
+    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}`
+    : `/api/player-details/${playerId}`;
+  
   // Create modal overlay
   const overlay = document.createElement('div');
   overlay.className = 'player-modal-overlay';
@@ -3340,7 +3386,10 @@ function openPlayerModal(playerId, playerName) {
           <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
         </div>
       </div>
-      <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <span id="playerModalBreakoutSlot"></span>
+        <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+      </div>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="player-modal-loading">
@@ -3355,7 +3404,7 @@ function openPlayerModal(playerId, playerName) {
   document.body.style.overflow = 'hidden';
 
   // Fetch player data
-  fetch(`/api/player-details/${playerId}`)
+  fetch(apiUrl)
     .then(res => res.json())
     .then(data => {
       console.log('Player modal data received:', data); // Debug: Log received data
@@ -3413,8 +3462,8 @@ function openPlayerModal(playerId, playerName) {
         badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
       }
 
-      // Update player name with badges (badges appear before name)
-      document.querySelector('.player-modal-name').innerHTML = `${badges}${playerName || 'Unknown Player'}`;
+      // Update player name with badges (badges appear after name)
+      document.querySelector('.player-modal-name').innerHTML = `${playerName || 'Unknown Player'}${badges}`;
 
       // Update meta
       const metaParts = [];
@@ -3425,6 +3474,28 @@ function openPlayerModal(playerId, playerName) {
 
       // Build modal body
       let bodyHTML = '';
+
+      // Breakout button in header slot (shown when player has a breakout score)
+      if (isBreakoutPlayer) {
+        const slot = document.getElementById('playerModalBreakoutSlot');
+        if (slot) {
+          const bkHeaderBtn = document.createElement('button');
+          bkHeaderBtn.id = 'playerModalBreakoutBtn';
+          bkHeaderBtn.textContent = '🔥 Breakout Analysis';
+          bkHeaderBtn.style.cssText = `
+            background: rgba(16,185,129,0.1);
+            border: 1px solid rgba(16,185,129,0.3);
+            color: #10b981;
+            border-radius: 7px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+          `;
+          slot.appendChild(bkHeaderBtn);
+        }
+      }
 
       // Stats section
       if (data.stats) {
@@ -3632,6 +3703,15 @@ function openPlayerModal(playerId, playerName) {
 
       document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
 
+      // Wire up breakout header button
+      const bkBtn = document.getElementById('playerModalBreakoutBtn');
+      if (bkBtn) {
+        bkBtn.addEventListener('click', () => {
+          closePlayerModal();
+          openBreakoutModal(playerId, playerName);
+        });
+      }
+
       // Render value history chart if data exists
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
@@ -3682,153 +3762,13 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // Fetch and render advanced metrics
+      // Fetch and render advanced metrics (season-selectable)
       const advancedSection = document.getElementById('advancedMetricsSection');
       if (advancedSection) {
-        // Extract league context for API call
         const path = window.location.pathname;
         const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
         const leagueId = match ? match[3] : null;
-
-        fetch(`/api/player-advanced-metrics/${playerId}?league_id=${leagueId}`)
-          .then(res => res.json())
-          .then(metricsData => {
-            if (metricsData.error || metricsData.premium_required) {
-              // Hide the section if no data or premium required
-              advancedSection.style.display = 'none';
-              return;
-            }
-
-            const metrics = metricsData.metrics || {};
-            const position = metricsData.position;
-
-            let metricsHTML = '<div class="player-modal-stats-grid">';
-
-            // Role Score (universal metric)
-            if (metrics.role_score != null) {
-              const roleScore = metrics.role_score.toFixed(1);
-              const roleGrade = getRoleGrade(metrics.role_score);
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Role Score</div>
-                  <div class="player-modal-stat-value">${roleScore} <span style="font-size: 12px; color: var(--text-muted);">${roleGrade}</span></div>
-                </div>
-              `;
-            }
-
-            // Snap Share
-            if (metrics.snap_share != null) {
-              const snapPct = (metrics.snap_share * 100).toFixed(1);
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Snap Share</div>
-                  <div class="player-modal-stat-value">${snapPct}%</div>
-                </div>
-              `;
-            }
-
-            // Position-specific metrics
-            if (position === 'QB') {
-              if (metrics.yards_per_attempt != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Attempt</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_attempt.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.completion_rate != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Completion %</div>
-                    <div class="player-modal-stat-value">${(metrics.completion_rate * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            } else if (position === 'RB') {
-              if (metrics.yards_per_carry != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Carry</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_carry.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.opportunity_share != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Opportunity Share</div>
-                    <div class="player-modal-stat-value">${metrics.opportunity_share.toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            } else if (position === 'WR' || position === 'TE') {
-              if (metrics.yards_per_target != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Yards/Target</div>
-                    <div class="player-modal-stat-value">${metrics.yards_per_target.toFixed(1)}</div>
-                  </div>
-                `;
-              }
-              if (metrics.catch_rate != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Catch Rate</div>
-                    <div class="player-modal-stat-value">${(metrics.catch_rate * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-              if (metrics.target_share != null) {
-                metricsHTML += `
-                  <div class="player-modal-stat-card">
-                    <div class="player-modal-stat-label">Target Share</div>
-                    <div class="player-modal-stat-value">${(metrics.target_share * 100).toFixed(1)}%</div>
-                  </div>
-                `;
-              }
-            }
-
-            // Red Zone Usage (for skill positions)
-            if (metrics.red_zone_usage != null && position !== 'QB') {
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">RZ Usage/Game</div>
-                  <div class="player-modal-stat-value">${metrics.red_zone_usage.toFixed(1)}</div>
-                </div>
-              `;
-            }
-
-            // Efficiency Trend (with arrow indicator)
-            if (metrics.efficiency_trend != null) {
-              const trend = metrics.efficiency_trend;
-              const trendIcon = trend > 5 ? '↗️' : trend < -5 ? '↘️' : '→';
-              const trendColor = trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : 'var(--text-muted)';
-              metricsHTML += `
-                <div class="player-modal-stat-card">
-                  <div class="player-modal-stat-label">Efficiency Trend</div>
-                  <div class="player-modal-stat-value" style="color: ${trendColor};">${trendIcon} ${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</div>
-                </div>
-              `;
-            }
-
-            metricsHTML += '</div>';
-
-            // Add "as of" date if available
-            if (metricsData.as_of_date) {
-              metricsHTML += `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;">As of ${metricsData.as_of_date}</div>`;
-            }
-
-            advancedSection.innerHTML = `
-              <div class="player-modal-section-title">Advanced Metrics</div>
-              ${metricsHTML}
-            `;
-          })
-          .catch(err => {
-            console.error('Error loading advanced metrics:', err);
-            // Hide section on error
-            advancedSection.style.display = 'none';
-          });
+        loadAdvancedMetrics(playerId, leagueId, null);
       }
     })
     .catch(err => {
@@ -3849,6 +3789,180 @@ function getRoleGrade(roleScore) {
   if (roleScore >= 50) return 'Average';
   if (roleScore >= 40) return 'Below Avg';
   return 'Limited';
+}
+
+function loadAdvancedMetrics(playerId, leagueId, season) {
+  const section = document.getElementById('advancedMetricsSection');
+  if (!section) return;
+
+  // Show spinner while loading
+  section.innerHTML = `
+    <div class="player-modal-section-title">Advanced Metrics</div>
+    <div class="player-modal-loading" style="padding: 20px;">
+      <div class="loading-spinner" style="width: 20px; height: 20px;"></div>
+    </div>
+  `;
+
+  const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
+  const seasonParam = season != null ? `&season=${season}` : '';
+  const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
+
+  fetch(url)
+    .then(res => res.json())
+    .then(metricsData => {
+      if (metricsData.error || metricsData.premium_required) {
+        section.style.display = 'none';
+        return;
+      }
+
+      const availableSeasons = metricsData.available_seasons || [];
+      const activeSeason = metricsData.season;
+
+      // Season pills (only shown when more than one season has data)
+      let pillsHTML = '';
+      if (availableSeasons.length > 1) {
+        pillsHTML = '<div class="adv-metrics-season-pills">';
+        availableSeasons.forEach(yr => {
+          const activeClass = yr === activeSeason ? ' active' : '';
+          pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${yr})">${yr}</button>`;
+        });
+        pillsHTML += '</div>';
+      }
+
+      section.innerHTML = `
+        <div class="player-modal-section-title">Advanced Metrics</div>
+        ${pillsHTML}
+        ${buildAdvancedMetricsHTML(metricsData)}
+      `;
+    })
+    .catch(err => {
+      console.error('Error loading advanced metrics:', err);
+      section.style.display = 'none';
+    });
+}
+
+function buildAdvancedMetricsHTML(metricsData) {
+  const metrics = metricsData.metrics || {};
+  const position = metricsData.position;
+
+  let html = '<div class="player-modal-stats-grid">';
+
+  // Role Score (universal metric)
+  if (metrics.role_score != null) {
+    const roleScore = metrics.role_score.toFixed(1);
+    const roleGrade = getRoleGrade(metrics.role_score);
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Role Score</div>
+        <div class="player-modal-stat-value">${roleScore} <span style="font-size: 12px; color: var(--text-muted);">${roleGrade}</span></div>
+      </div>
+    `;
+  }
+
+  // Snap Share
+  if (metrics.snap_share != null) {
+    const snapPct = (metrics.snap_share * 100).toFixed(1);
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Snap Share</div>
+        <div class="player-modal-stat-value">${snapPct}%</div>
+      </div>
+    `;
+  }
+
+  // Position-specific metrics
+  if (position === 'QB') {
+    if (metrics.yards_per_attempt != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Attempt</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_attempt.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.completion_rate != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Completion %</div>
+          <div class="player-modal-stat-value">${(metrics.completion_rate * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  } else if (position === 'RB') {
+    if (metrics.yards_per_carry != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Carry</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_carry.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.opportunity_share != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Opportunity Share</div>
+          <div class="player-modal-stat-value">${metrics.opportunity_share.toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  } else if (position === 'WR' || position === 'TE') {
+    if (metrics.yards_per_target != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Yards/Target</div>
+          <div class="player-modal-stat-value">${metrics.yards_per_target.toFixed(1)}</div>
+        </div>
+      `;
+    }
+    if (metrics.catch_rate != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Catch Rate</div>
+          <div class="player-modal-stat-value">${(metrics.catch_rate * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+    if (metrics.target_share != null) {
+      html += `
+        <div class="player-modal-stat-card">
+          <div class="player-modal-stat-label">Target Share</div>
+          <div class="player-modal-stat-value">${(metrics.target_share * 100).toFixed(1)}%</div>
+        </div>
+      `;
+    }
+  }
+
+  // Red Zone Usage (for skill positions)
+  if (metrics.red_zone_usage != null && position !== 'QB') {
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">RZ Usage/Game</div>
+        <div class="player-modal-stat-value">${metrics.red_zone_usage.toFixed(1)}</div>
+      </div>
+    `;
+  }
+
+  // Efficiency Trend (with arrow indicator)
+  if (metrics.efficiency_trend != null) {
+    const trend = metrics.efficiency_trend;
+    const trendIcon = trend > 5 ? '↗️' : trend < -5 ? '↘️' : '→';
+    const trendColor = trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : 'var(--text-muted)';
+    html += `
+      <div class="player-modal-stat-card">
+        <div class="player-modal-stat-label">Efficiency Trend</div>
+        <div class="player-modal-stat-value" style="color: ${trendColor};">${trendIcon} ${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</div>
+      </div>
+    `;
+  }
+
+  html += '</div>';
+
+  // "As of" date footer
+  if (metricsData.as_of_date) {
+    html += `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;">As of ${metricsData.as_of_date}</div>`;
+  }
+
+  return html;
 }
 
 function toggleGameLogYear(year) {
@@ -3934,8 +4048,12 @@ function addBreakoutBadgesToTeamsPage() {
   }, 1000);
 }
 
+let _globalPlayerModalsReady = false;
 function initGlobalPlayerModals() {
-  // Attach click handlers to all elements with player data
+  // Guard: only attach the delegated listener once
+  if (_globalPlayerModalsReady) return;
+  _globalPlayerModalsReady = true;
+
   document.addEventListener('click', function(e) {
     const target = e.target.closest('[data-player-id]');
     if (target && target.dataset.playerId) {
@@ -4065,6 +4183,190 @@ async function loadGlobalPlayerIndicators() {
 // Global isBreakout function
 function isBreakout(playerId) {
   return globalPlayerIndicators.breakouts && globalPlayerIndicators.breakouts.includes(String(playerId));
+}
+
+// =============================================================================
+// BREAKOUT MODAL
+// =============================================================================
+
+function openBreakoutModal(playerId, playerName) {
+  // Remove any existing breakout modal
+  const existing = document.getElementById('bkModalOverlay');
+  if (existing) existing.remove();
+
+  const displayName = playerName || 'Breakout Profile';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'bkModalOverlay';
+  overlay.className = 'player-modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeBkModal();
+  });
+
+  const modal = document.createElement('div');
+  modal.className = 'player-modal';
+  modal.id = 'bkModal';
+  modal.innerHTML = `
+    <div class="player-modal-header">
+      <div class="player-modal-title-section">
+        <h2 class="player-modal-name" id="bkModalName">${displayName}</h2>
+        <div class="player-modal-meta" id="bkModalMeta">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+        </div>
+      </div>
+      <button class="player-modal-close" onclick="closeBkModal()">×</button>
+    </div>
+    <div class="player-modal-body" id="bkModalBody">
+      <div class="player-modal-loading">
+        <div class="loading-spinner"></div>
+        <div>Loading breakout data...</div>
+      </div>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  // Extract season from URL
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const season = pathParts[1] || new Date().getFullYear();
+
+  fetch(`/api/breakout/player/${playerId}?season=${season}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById('bkModalBody').innerHTML = `
+          <div class="player-modal-loading">
+            <div style="color:#ef4444;font-weight:500;">No breakout data found</div>
+            <div style="font-size:13px;color:var(--text-muted);">This player has no breakout score for the current season.</div>
+          </div>
+        `;
+        return;
+      }
+      _renderBkModalContent(data, playerId);
+    })
+    .catch(() => {
+      document.getElementById('bkModalBody').innerHTML = `
+        <div class="player-modal-loading">
+          <div style="color:#ef4444;">Failed to load breakout data</div>
+        </div>
+      `;
+    });
+}
+
+function closeBkModal() {
+  const overlay = document.getElementById('bkModalOverlay');
+  if (overlay) overlay.remove();
+  document.body.style.overflow = '';
+}
+
+function _renderBkModalContent(data, playerId) {
+  const name  = data.player_name || 'Unknown';
+  const team  = data.team || '';
+  const pos   = data.position || '';
+  const score = parseFloat(data.breakout_opportunity_score || 0).toFixed(1);
+
+  // Update modal title and meta
+  const nameEl = document.getElementById('bkModalName');
+  if (nameEl) nameEl.textContent = name;
+  const metaParts = [pos, team].filter(Boolean);
+  if (data.phase) metaParts.push(data.phase);
+  document.getElementById('bkModalMeta').textContent = metaParts.join(' · ');
+
+  const breakoutType = data.breakout_type || {};
+  const emoji  = breakoutType.emoji || '📊';
+  const label  = breakoutType.profile_label || 'Breakout Candidate';
+  const driver = breakoutType.primary_driver || 'balanced';
+
+  // Score colour
+  let scoreColor = '#10b981';
+  if (score < 50) scoreColor = '#3b82f6';
+  if (score < 40) scoreColor = '#f59e0b';
+  if (score < 30) scoreColor = '#6b7280';
+
+  // Key reasons
+  const reasons = (data.key_reasons || '').split('\n')
+    .filter(r => r.trim() && r.startsWith('•'))
+    .map(r => r.substring(1).trim());
+
+  const txnSummary    = data.vacated_usage_summary || '';
+  const addedCompSumm = data.added_competition_summary || '';
+
+  // ── Score header ──────────────────────────────────────────────────────────
+  let html = `
+    <div class="bk-score-header">
+      <div class="bk-overall-score" style="background:${scoreColor}1a;border:1px solid ${scoreColor}55;">
+        <div class="bk-overall-score-label" style="color:${scoreColor};">Breakout Score</div>
+        <div class="bk-overall-score-value" style="color:${scoreColor};">${score}</div>
+      </div>
+      <div class="bk-type-badge">
+        <span class="bk-type-emoji">${emoji}</span>
+        <div>
+          <div class="bk-type-label">${label}</div>
+          <div class="bk-type-driver">${driver} driven</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ── Component breakdown ───────────────────────────────────────────────────
+  const components = [
+    { label: 'Opportunity',      val: data.opportunity_opened_score,  color: '#10b981' },
+    { label: 'Competition',      val: data.competition_removed_score, color: '#3b82f6' },
+    { label: 'Team Env.',        val: data.team_environment_score,    color: null      },
+    { label: 'Readiness',        val: data.player_readiness_score,    color: '#8b5cf6' },
+    { label: 'Role Trajectory',  val: data.role_trajectory_score,     color: null      },
+    { label: 'Confidence',       val: data.confidence_score,          color: '#6b7280', suffix: '%' },
+  ];
+
+  html += `<div class="bk-section-title">Component Breakdown</div>`;
+  html += `<div class="bk-components-grid">`;
+  components.forEach(c => {
+    const v    = parseFloat(c.val || 0).toFixed(c.suffix ? 0 : 1);
+    const col  = c.color ? `style="color:${c.color};"` : '';
+    html += `
+      <div class="bk-component-card">
+        <div class="bk-component-label">${c.label}</div>
+        <div class="bk-component-value" ${col}>${v}${c.suffix || ''}</div>
+      </div>`;
+  });
+  html += `</div>`;
+
+
+  // ── Context boxes ─────────────────────────────────────────────────────────
+  if (txnSummary) {
+    html += `
+      <div class="bk-section-title">Vacated Opportunity</div>
+      <div class="bk-context-box">${txnSummary}</div>
+    `;
+  }
+  if (addedCompSumm) {
+    html += `
+      <div class="bk-section-title">Added Competition</div>
+      <div class="bk-context-box competition">${addedCompSumm}</div>
+    `;
+  }
+
+  // ── Footer CTA ────────────────────────────────────────────────────────────
+  html += `
+    <div class="bk-footer">
+      <button id="bkViewProfileBtn" class="bk-profile-btn">
+        View Full Player Profile →
+      </button>
+    </div>
+  `;
+
+  document.getElementById('bkModalBody').innerHTML = html;
+
+  // Wire button after DOM injection (avoids escaping issues)
+  const profileBtn = document.getElementById('bkViewProfileBtn');
+  if (profileBtn) {
+    profileBtn.addEventListener('click', () => {
+      closeBkModal();
+      openPlayerModal(playerId, name);
+    });
+  }
 }
 
 function renderTeamDetails(data) {

@@ -12,7 +12,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 231.9,
-    "opp_rush_yds_pg": 126.9
+    "opp_rush_yds_pg": 126.9,
+    "points_pg": 20.9,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "ATL": {
     "teamId": "2",
@@ -27,7 +30,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 200.4,
-    "opp_rush_yds_pg": 126.2
+    "opp_rush_yds_pg": 126.2,
+    "points_pg": 20.8,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "BAL": {
     "teamId": "3",
@@ -42,7 +48,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 247.9,
-    "opp_rush_yds_pg": 106.6
+    "opp_rush_yds_pg": 106.6,
+    "points_pg": 24.9,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "BUF": {
     "teamId": "4",
@@ -57,7 +66,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 165.9,
-    "opp_rush_yds_pg": 133.6
+    "opp_rush_yds_pg": 133.6,
+    "points_pg": 28.3,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "CAR": {
     "teamId": "5",
@@ -72,7 +84,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 209.0,
-    "opp_rush_yds_pg": 122.9
+    "opp_rush_yds_pg": 122.9,
+    "points_pg": 19.0,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "CHI": {
     "teamId": "6",
@@ -87,7 +102,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 232.3,
-    "opp_rush_yds_pg": 131.4
+    "opp_rush_yds_pg": 131.4,
+    "points_pg": 25.7,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "CIN": {
     "teamId": "7",
@@ -102,7 +120,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 235.1,
-    "opp_rush_yds_pg": 147.1
+    "opp_rush_yds_pg": 147.1,
+    "points_pg": 24.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "CLE": {
     "teamId": "8",
@@ -117,7 +138,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 167.2,
-    "opp_rush_yds_pg": 116.4
+    "opp_rush_yds_pg": 116.4,
+    "points_pg": 16.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "DAL": {
     "teamId": "9",
@@ -132,7 +156,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 251.5,
-    "opp_rush_yds_pg": 125.5
+    "opp_rush_yds_pg": 125.5,
+    "points_pg": 27.7,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "DEN": {
     "teamId": "10",
@@ -147,7 +174,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 184.9,
-    "opp_rush_yds_pg": 98.5
+    "opp_rush_yds_pg": 98.5,
+    "points_pg": 23.2,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "DET": {
     "teamId": "11",
@@ -162,7 +192,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 218.2,
-    "opp_rush_yds_pg": 114.5
+    "opp_rush_yds_pg": 114.5,
+    "points_pg": 28.3,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "GB": {
     "teamId": "12",
@@ -177,7 +210,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 202.9,
-    "opp_rush_yds_pg": 116.3
+    "opp_rush_yds_pg": 116.3,
+    "points_pg": 23.2,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "HOU": {
     "teamId": "13",
@@ -192,7 +228,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 179.3,
-    "opp_rush_yds_pg": 92.7
+    "opp_rush_yds_pg": 92.7,
+    "points_pg": 23.7,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "IND": {
     "teamId": "14",
@@ -207,7 +246,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 247.9,
-    "opp_rush_yds_pg": 101.9
+    "opp_rush_yds_pg": 101.9,
+    "points_pg": 27.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "JAX": {
     "teamId": "15",
@@ -222,7 +264,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 220.4,
-    "opp_rush_yds_pg": 85.2
+    "opp_rush_yds_pg": 85.2,
+    "points_pg": 27.7,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "KC": {
     "teamId": "16",
@@ -237,7 +282,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 195.8,
-    "opp_rush_yds_pg": 105.7
+    "opp_rush_yds_pg": 105.7,
+    "points_pg": 21.3,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "LAC": {
     "teamId": "18",
@@ -252,7 +300,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 182.9,
-    "opp_rush_yds_pg": 107.6
+    "opp_rush_yds_pg": 107.6,
+    "points_pg": 20.6,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "LAR": {
     "teamId": "19",
@@ -267,7 +318,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 225.6,
-    "opp_rush_yds_pg": 110.1
+    "opp_rush_yds_pg": 110.1,
+    "points_pg": 30.0,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "LV": {
     "teamId": "17",
@@ -282,7 +336,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 201.0,
-    "opp_rush_yds_pg": 116.8
+    "opp_rush_yds_pg": 116.8,
+    "points_pg": 14.2,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "MIA": {
     "teamId": "20",
@@ -297,7 +354,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 216.4,
-    "opp_rush_yds_pg": 132.4
+    "opp_rush_yds_pg": 132.4,
+    "points_pg": 20.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "MIN": {
     "teamId": "21",
@@ -312,7 +372,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 158.5,
-    "opp_rush_yds_pg": 124.1
+    "opp_rush_yds_pg": 124.1,
+    "points_pg": 20.2,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "NE": {
     "teamId": "22",
@@ -327,7 +390,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 185.7,
-    "opp_rush_yds_pg": 99.2
+    "opp_rush_yds_pg": 99.2,
+    "points_pg": 26.5,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "NO": {
     "teamId": "23",
@@ -342,7 +408,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 179.2,
-    "opp_rush_yds_pg": 120.6
+    "opp_rush_yds_pg": 120.6,
+    "points_pg": 18.0,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "NYG": {
     "teamId": "24",
@@ -357,7 +426,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 214.2,
-    "opp_rush_yds_pg": 145.3
+    "opp_rush_yds_pg": 145.3,
+    "points_pg": 22.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "NYJ": {
     "teamId": "25",
@@ -372,7 +444,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 216.1,
-    "opp_rush_yds_pg": 139.5
+    "opp_rush_yds_pg": 139.5,
+    "points_pg": 17.6,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "PHI": {
     "teamId": "27",
@@ -387,7 +462,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 195.1,
-    "opp_rush_yds_pg": 121.7
+    "opp_rush_yds_pg": 121.7,
+    "points_pg": 22.1,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "PIT": {
     "teamId": "26",
@@ -402,7 +480,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 244.9,
-    "opp_rush_yds_pg": 115.9
+    "opp_rush_yds_pg": 115.9,
+    "points_pg": 22.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "SEA": {
     "teamId": "29",
@@ -417,7 +498,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 202.1,
-    "opp_rush_yds_pg": 93.0
+    "opp_rush_yds_pg": 93.0,
+    "points_pg": 29.2,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "SF": {
     "teamId": "28",
@@ -432,7 +516,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 222.3,
-    "opp_rush_yds_pg": 113.1
+    "opp_rush_yds_pg": 113.1,
+    "points_pg": 24.5,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "TB": {
     "teamId": "30",
@@ -447,7 +534,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 238.2,
-    "opp_rush_yds_pg": 99.1
+    "opp_rush_yds_pg": 99.1,
+    "points_pg": 22.4,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "TEN": {
     "teamId": "31",
@@ -462,7 +552,10 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 230.5,
-    "opp_rush_yds_pg": 114.6
+    "opp_rush_yds_pg": 114.6,
+    "points_pg": 16.7,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   },
   "WSH": {
     "teamId": "32",
@@ -477,6 +570,9 @@
     "pass_td_pg": 0.0,
     "rush_td_pg": 0.0,
     "opp_pass_yds_pg": 242.5,
-    "opp_rush_yds_pg": 141.5
+    "opp_rush_yds_pg": 141.5,
+    "points_pg": 20.9,
+    "red_zone_trips_pg": 0.0,
+    "sacks_allowed_pg": 0.0
   }
 }

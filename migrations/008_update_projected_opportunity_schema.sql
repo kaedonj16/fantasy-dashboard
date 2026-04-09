@@ -20,7 +20,16 @@ ADD COLUMN IF NOT EXISTS carry_increase INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS snap_share_increase NUMERIC DEFAULT 0.0,
 ADD COLUMN IF NOT EXISTS opportunity_share_increase NUMERIC DEFAULT 0.0;
 
--- Step 2: Migrate data from old columns to new columns (if any data exists)
+-- Step 2: Add baseline columns if they don't exist (for fresh databases)
+ALTER TABLE projected_opportunity
+ADD COLUMN IF NOT EXISTS baseline_targets INT DEFAULT 0,
+ADD COLUMN IF NOT EXISTS baseline_carries INT DEFAULT 0,
+ADD COLUMN IF NOT EXISTS baseline_snap_share NUMERIC DEFAULT 0.0,
+ADD COLUMN IF NOT EXISTS projected_targets INT DEFAULT 0,
+ADD COLUMN IF NOT EXISTS projected_carries INT DEFAULT 0,
+ADD COLUMN IF NOT EXISTS projected_snap_share NUMERIC DEFAULT 0.0;
+
+-- Step 3: Migrate data from old columns to new columns (if any data exists)
 UPDATE projected_opportunity
 SET prev_season_targets = baseline_targets,
     prev_season_carries = baseline_carries,
@@ -30,11 +39,11 @@ WHERE prev_season_targets = 0
   AND prev_season_snap_share = 0
   AND baseline_targets IS NOT NULL;
 
--- Step 3: Keep old columns for backward compatibility (don't drop them)
+-- Step 4: Keep old columns for backward compatibility (don't drop them)
 -- The columns baseline_targets, baseline_carries, baseline_snap_share,
 -- projected_targets, projected_carries, projected_snap_share remain
 
--- Step 4: Add comment for documentation
+-- Step 5: Add comment for documentation
 COMMENT ON TABLE projected_opportunity IS
 'Player opportunity projections based on roster changes and breakout scores.
 Contains both baseline (prev_season_*) and projected values with deltas (*_increase).';

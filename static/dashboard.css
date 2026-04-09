@@ -447,7 +447,7 @@ ul {
   font-size: 13px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
   white-space: nowrap;
 }
@@ -468,6 +468,128 @@ ul {
 
 .nav-pill:hover {
   transform: translateY(-1px);
+}
+
+/* ---- Players nav dropdown ---- */
+.nav-pill-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.nav-pill-dropdown-wrapper .nav-pill {
+  cursor: pointer;
+  border: none;
+  gap: 4px;
+  user-select: none;
+}
+
+.nav-pill-chevron {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.nav-pill-dropdown-wrapper.open .nav-pill-chevron {
+  transform: rotate(180deg);
+}
+
+.nav-pill-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  min-width: 160px;
+  z-index: 9999;
+  overflow: hidden;
+  display: none;
+}
+
+.nav-pill-dropdown-wrapper.open .nav-pill-dropdown-menu {
+  display: block;
+}
+
+/* Show dropdown on hover (desktop only) */
+@media (min-width: 769px) {
+  .nav-pill-dropdown-wrapper:hover .nav-pill-dropdown-menu {
+    display: block;
+  }
+  .nav-pill-dropdown-wrapper:hover .nav-pill-chevron {
+    transform: rotate(180deg);
+  }
+}
+
+.nav-pill-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+}
+
+.nav-pill-dropdown-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.nav-pill-dropdown-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-pill-dropdown-item.disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.nav-pill-dropdown-item + .nav-pill-dropdown-item {
+  border-top: 1px solid var(--border);
+}
+
+/* Mobile: dropdown appears inline in expanded menu */
+@media (max-width: 768px) {
+  .nav-pill-dropdown-wrapper {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .nav-pill-dropdown-wrapper .nav-pill {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .nav-pill-dropdown-menu {
+    position: static;
+    transform: none;
+    left: auto;
+    top: auto;
+    box-shadow: none;
+    border-radius: 8px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .nav-pill-dropdown-wrapper.open .nav-pill-dropdown-menu {
+    display: block;
+  }
 }
 
 .refresh-icon {
@@ -618,6 +740,15 @@ ul {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+@media (max-width: 768px) {
+  .breakout-filter-btn {
+    padding: 10px 16px;
+    flex: 1;
+    min-width: 60px;
+    text-align: center;
+  }
 }
 
 /* Settings Gear Dropdown */
@@ -999,6 +1130,7 @@ html[data-theme="dark"] img[src*="logout.png"] {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: flex-end;
 }
 
 .nav-pills-bottom {
@@ -2312,7 +2444,7 @@ thead th {
 }
 
 .otc-filter-chip {
-  padding: 6px 11px;
+  padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--row);
@@ -2354,7 +2486,7 @@ thead th {
 .otc-filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
   margin-bottom: 14px;
 }
 
@@ -7204,7 +7336,6 @@ img, svg, canvas {
   }
 
   /* Hide desktop utility icons except changelog and dark mode */
-  .nav-utility-bar .league-switcher-wrapper,
   .nav-utility-bar .logout-btn {
     display: none;
   }
@@ -9275,6 +9406,84 @@ img, svg, canvas {
 }
 
 /* ============================================
+   PLAYER RANKINGS PAGE — MOBILE
+   ============================================ */
+@media (max-width: 768px) {
+  #prControls {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  #prControls > div {
+    margin-left: 0 !important;
+  }
+
+  /* Search takes full width */
+  #prControls > div:first-child {
+    max-width: 100% !important;
+  }
+
+  /* Format + Teams on same row */
+  .pr-format-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  /* Position buttons wrap naturally */
+  #prControls .pr-pos-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Sort select full width */
+  #prSort {
+    width: 100%;
+  }
+
+  /* Tighter table grid on mobile: hide Team column */
+  .pr-grid-row {
+    grid-template-columns: 38px 1fr 54px 44px 54px !important;
+  }
+
+  .pr-team {
+    display: none;
+  }
+
+  #prTableHeader span:nth-child(5) {
+    display: none;
+  }
+
+  .pr-name {
+    font-size: 12px;
+  }
+
+  .pr-value {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even tighter: also hide Age column */
+  .pr-grid-row {
+    grid-template-columns: 34px 1fr 52px 52px !important;
+  }
+
+  .pr-age {
+    display: none;
+  }
+
+  #prTableHeader span:nth-child(4) {
+    display: none;
+  }
+
+  .pr-toggle-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+/* ============================================
    PLAYER MODAL
    ============================================ */
 .player-modal-overlay {
@@ -9676,6 +9885,41 @@ img, svg, canvas {
 
 .game-log-no-stats td:first-child {
   background-color: #f9fafb;
+}
+
+/* ============================================
+   Advanced Metrics Season Pills
+   ============================================ */
+
+.adv-metrics-season-pills {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.adv-season-pill {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  line-height: 1.5;
+}
+
+.adv-season-pill:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.adv-season-pill.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
 }
 
 /* ============================================
@@ -10115,6 +10359,213 @@ img, svg, canvas {
   }
 
   .player-modal-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================
+   BREAKOUT MODAL
+   ============================================ */
+
+#bkModal {
+  border-top: 3px solid #10b981;
+  max-width: 680px;
+}
+
+#bkModal .player-modal-header {
+  background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, transparent 55%);
+}
+
+.bk-score-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.bk-overall-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  border-radius: 12px;
+  min-width: 120px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.bk-overall-score-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.bk-overall-score-value {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.bk-type-badge {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.bk-type-emoji {
+  font-size: 32px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.bk-type-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.bk-type-driver {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.bk-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bk-components-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.bk-component-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+
+.bk-component-card:hover {
+  border-color: #10b981;
+}
+
+.bk-component-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+.bk-component-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bk-reasons {
+  margin-bottom: 20px;
+}
+
+.bk-reason-item {
+  display: flex;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.bk-reason-item:last-child {
+  border-bottom: none;
+}
+
+.bk-reason-bullet {
+  color: #10b981;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.bk-context-box {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-left: 3px solid #10b981;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin-bottom: 16px;
+}
+
+.bk-context-box.competition {
+  border-left-color: #ef4444;
+}
+
+.bk-footer {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.bk-profile-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.bk-profile-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .bk-score-header {
+    flex-direction: column;
+  }
+  .bk-overall-score {
+    flex-direction: row;
+    min-width: unset;
+    justify-content: space-between;
+    padding: 12px 16px;
+  }
+  .bk-overall-score-value {
+    font-size: 28px;
+  }
+  .bk-components-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }

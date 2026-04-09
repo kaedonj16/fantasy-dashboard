@@ -258,6 +258,39 @@ def load_model_value_table():
         except Exception as e:
             print(f"[load_model_value_table] Failed to load from database: {e}")
 
+    # Zero out players absent from FantasyCalc — FC omission signals no dynasty value.
+    # (Handles pre-built JSON that pre-dates the training-script fix.)
+    if result:
+        try:
+            import csv as _csv
+            from pathlib import Path as _Path
+            _data_dir = _Path(__file__).parent.parent / "data"
+            _fc_files = sorted(_data_dir.glob("fantasycalc_api_values_*.csv"))
+            if _fc_files:
+                _fc_ids: set = set()
+                with open(_fc_files[-1], newline="") as _f:
+                    for _row in _csv.DictReader(_f):
+                        _sid = str(_row.get("sleeper_id") or "").strip()
+                        if _sid:
+                            _fc_ids.add(_sid)
+                if _fc_ids:
+                    _value_keys = (
+                        "value", "sf_value",
+                        "value_8", "value_12", "value_14",
+                        "sf_value_8", "sf_value_12", "sf_value_14",
+                    )
+                    for _p in result:
+                        if not isinstance(_p, dict):
+                            continue
+                        if _p.get("position") == "PICK":
+                            continue
+                        if str(_p.get("id") or "") not in _fc_ids:
+                            for _k in _value_keys:
+                                if _k in _p:
+                                    _p[_k] = 0.0
+        except Exception as _e:
+            print(f"[load_model_value_table] FC filter skipped: {_e}")
+
     return result
 
 
