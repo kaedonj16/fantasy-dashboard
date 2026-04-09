@@ -5,25 +5,19 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
-        "date": "2026-04-06",
+        "date": "2026-04-09",
         "tag": "new",
         "text": "Rookie Rankings: Full prospect evaluation system — production, athleticism, draft capital, and dynasty value for the active draft class",
         "link": "/rookies"
     },
     {
-        "date": "2026-04-06",
+        "date": "2026-04-09",
         "tag": "new",
         "text": "Player Rankings: New dedicated page with searchable, filterable player rankings — filter by position (multi-select), league format, team count, and sort by rank, value, age, or positional rank",
         "link": "/players"
     },
     {
-        "date": "2026-04-06",
-        "tag": "feature",
-        "text": "Players Nav Menu: Breakouts, Player Rankings, and Rookies are now grouped under a Players dropdown in the nav bar",
-        "link": "/players"
-    },
-    {
-        "date": "2026-04-02",
+        "date": "2026-04-09",
         "tag": "new",
         "text": "Breakouts Page: Dedicated dashboard for breakout candidates with opportunity projections and scoring",
         "link": "/breakouts"
@@ -31,13 +25,13 @@ CHANGELOG = [
     {
         "date": "2026-04-01",
         "tag": "feature",
-        "text": "Dark Mode: Toggle between light and dark themes with your preference saved automatically",
+        "text": "Advanced Metrics: View role scores, snap share, and efficiency stats in player modals",
         "link": "/dashboard"
     },
     {
         "date": "2026-04-01",
         "tag": "feature",
-        "text": "Advanced Metrics: View role scores, snap share, and efficiency stats in player modals",
+        "text": "Dark Mode: Toggle between light and dark themes with your preference saved automatically",
         "link": "/dashboard"
     },
     {
