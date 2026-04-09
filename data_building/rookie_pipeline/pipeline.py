@@ -887,6 +887,13 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
 
 def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn) -> int:
     import json as _json
+    from decimal import Decimal as _Decimal
+
+    def _safe_dumps(obj):
+        if isinstance(obj, _Decimal):
+            return int(obj) if obj == obj.to_integral_value() else float(obj)
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
     saved = 0
     skipped = 0
     with conn.cursor() as cur:
@@ -926,7 +933,7 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
                         "projected_draft_capital_score":c.get("projected_draft_capital_score"),
                         "num_mocks_used":               c.get("num_mocks_used"),
                         "consensus_confidence":         c.get("consensus_confidence"),
-                        "mock_sources":                 _json.dumps(c.get("mock_sources") or []),
+                        "mock_sources":                 _json.dumps(c.get("mock_sources") or [], default=_safe_dumps),
                     },
                 )
                 cur.execute("RELEASE SAVEPOINT save_consensus")

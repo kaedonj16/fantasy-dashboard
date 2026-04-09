@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from data_building.paths import DATA_DIR
+
+
+def _json_default(obj):
+    """
+    Custom JSON serializer for types json.dumps can't handle natively.
+    Mirrors the encoder in dashboard_services/db.py for consistency.
+    """
+    if isinstance(obj, Decimal):
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if isinstance(obj, (_dt.datetime, _dt.date)):
+        return obj.isoformat()
+    if isinstance(obj, set):
+        return list(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 UTC = timezone.utc
@@ -90,7 +106,7 @@ class RookieDiskCache:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = dict(payload)
         data["cached_at"] = utc_now_iso()
-        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        path.write_text(json.dumps(data, indent=2, sort_keys=True, default=_json_default), encoding="utf-8")
         return path
 
 
@@ -99,7 +115,7 @@ def write_rookie_snapshot(file_prefix: str, as_of_date: str, payload: Dict[str, 
     dated = DATA_DIR / f"{file_prefix}_{as_of_date}.json"
     latest = DATA_DIR / f"{file_prefix}_latest.json"
 
-    text = json.dumps(payload, indent=2, sort_keys=True)
+    text = json.dumps(payload, indent=2, sort_keys=True, default=_json_default)
     dated.write_text(text, encoding="utf-8")
     latest.write_text(text, encoding="utf-8")
     return dated, latest
