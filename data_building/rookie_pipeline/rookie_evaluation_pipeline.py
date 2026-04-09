@@ -73,12 +73,14 @@ def _source_for_metric(
     if cache_hit.payload and not cache_hit.is_stale:
         payload = cache_hit.payload.get("metric_payload")
         if payload and payload.get("value") is not None:
+            print(f"[rookie_eval] cache_fresh  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_fresh"
 
     try:
         fetched = source.fetch_player_season_metrics(player, season_record, [metric])
         payload = fetched.get(metric.name)
         if payload and payload.get("value") is not None:
+            print(f"[rookie_eval] fetched      player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name} conf={payload.get('confidence')}")
             cache.write(
                 source.source_name,
                 season,
@@ -91,12 +93,15 @@ def _source_for_metric(
                 },
             )
             return payload, "fetched_live"
+        else:
+            print(f"[rookie_eval] no_value     player={player_key} season={season} metric={metric.name} source={source.source_name} fetched={list(fetched.keys()) if fetched else '[]'}")
     except Exception as exc:
-        print(f"[rookie_eval] source_error metric={metric.name} source={source.source_name} player={player_key}: {exc}")
+        print(f"[rookie_eval] source_error  player={player_key} season={season} metric={metric.name} source={source.source_name}: {type(exc).__name__}: {exc}")
 
     if cache_hit.payload:
         payload = cache_hit.payload.get("metric_payload")
         if payload and payload.get("value") is not None:
+            print(f"[rookie_eval] cache_stale  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_stale_fallback"
 
     return None, "missing"
@@ -148,6 +153,7 @@ def run_rookie_evaluation_pipeline(
         metrics_by_season: Dict[int, Dict[str, Dict[str, Any]]] = defaultdict(dict)
         missing: Dict[str, Dict[str, Any]] = {}
 
+        print(f"[rookie_eval] --- player={player.get('name')} pid={pid} pos={player.get('position')} seasons={[s for s, _ in _iter_player_seasons(player, year)]}")
         for season, season_record in _iter_player_seasons(player, year):
             for metric in metrics_specs:
                 resolved_payload = None

@@ -81,6 +81,7 @@ def _fetch_pp_html(slug: str, timeout: int = 30_000) -> Optional[str]:
     url = _PP_BASE.format(slug=slug)
     html: Optional[str] = None
 
+    print(f"[pp] Fetching {url} (timeout={timeout}ms)")
     with sync_playwright() as p:
         browser = None
         try:
@@ -93,11 +94,16 @@ def _fetch_pp_html(slug: str, timeout: int = 30_000) -> Optional[str]:
                 ],
             )
             page = browser.new_page()
+            print(f"[pp] goto {url}")
             page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            print(f"[pp] domcontentloaded — waiting 2s for Next.js hydration")
             page.wait_for_timeout(2000)  # let Next.js hydrate
             html = page.content()
-        except (PWTimeout, PWError):
-            pass
+            print(f"[pp] Retrieved HTML ({len(html)} bytes) from {url}")
+        except PWTimeout:
+            print(f"[pp] TIMEOUT loading {url} after {timeout}ms")
+        except PWError as exc:
+            print(f"[pp] Playwright error loading {url}: {exc}")
         finally:
             if browser:
                 browser.close()
