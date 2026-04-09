@@ -8,6 +8,7 @@ from data_building.rookie_pipeline.draft_market_sources import (
     build_draft_market_for_player,
     fetch_draft_market_entries,
 )
+from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db
 from data_building.rookie_pipeline.ingestion import load_prospects_for_year
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
 from data_building.rookie_pipeline.rookie_profile_builder import build_rookie_profile
@@ -182,12 +183,28 @@ def run_rookie_evaluation_pipeline(
 
     metrics_file, _ = write_rookie_snapshot("rookie_advanced_metrics", as_of, metrics_snapshot)
     profiles_file, _ = write_rookie_snapshot("rookie_profiles", as_of, profiles_snapshot)
+    db_result = {"db_metrics_rows": 0, "db_profiles_rows": 0, "db_runs_rows": 0}
+    try:
+        db_result = save_rookie_evaluation_to_db(
+            as_of_date=as_of,
+            draft_class_year=year,
+            by_player_metrics=by_player_metrics,
+            rookie_profiles=rookie_profiles,
+            run_metadata={
+                "log_summary": dict(logs),
+                "missing_breakdown": {k: dict(v) for k, v in missing_metric_reasons.items()},
+                "generated_at": utc_now_iso(),
+            },
+        )
+    except Exception as exc:
+        print(f"[rookie_eval] database_save_failed class={year}: {exc}")
 
     print(
         "[rookie_eval] complete "
         f"class={year} prospects={len(rookie_profiles)} "
         f"direct={logs.get('metrics_direct', 0)} derived={logs.get('metrics_derived', 0)} "
-        f"unavailable={logs.get('metrics_unavailable', 0)}"
+        f"unavailable={logs.get('metrics_unavailable', 0)} "
+        f"db_profiles={db_result.get('db_profiles_rows', 0)}"
     )
 
     return {
@@ -196,4 +213,5 @@ def run_rookie_evaluation_pipeline(
         "profiles_file": str(profiles_file),
         "log_summary": dict(logs),
         "profile_count": len(rookie_profiles),
+        **db_result,
     }
