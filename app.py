@@ -5376,7 +5376,7 @@ def build_teams_body(ctx: dict) -> str:
         table_rows.append(
             "<tr class='pos-row pos-picks-row'>"
             "  <td class='pos-name'>"
-            "    <span style='font-size:11px;opacity:0.7;'>📋</span> PICKS"
+            "    <span style='font-size:11px;opacity:0.7;'></span> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
