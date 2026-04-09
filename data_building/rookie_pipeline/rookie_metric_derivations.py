@@ -16,6 +16,14 @@ CONFERENCE_SOS = {
     "mac": 0.74,
 }
 
+# Assumed target-per-route baselines by position for route-run proxies.
+# These are empirical averages from college data; adjust as better data arrives.
+_TPRR_BASELINE: Dict[str, float] = {
+    "WR": 0.28,
+    "TE": 0.35,
+    "RB": 0.22,
+}
+
 
 def _get_num(stats: Dict[str, Any], key: str) -> Optional[float]:
     val = stats.get(key)
@@ -76,3 +84,173 @@ def derive_true_early_declare(player: Dict[str, Any]) -> Optional[bool]:
     if class_year.startswith("SR"):
         return False
     return bool(early)
+
+
+# ---------------------------------------------------------------------------
+# Proxy derivations (added to cover more metrics when PFF/SIS unavailable)
+# ---------------------------------------------------------------------------
+
+
+def derive_routes_run_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
+    """
+    Estimate total routes run for a season when play-level route data is unavailable.
+
+    Assumption: targets per route (tprr) are roughly constant by position at the
+    college level. Dividing total targets by the position tprr baseline gives an
+    estimate of total routes run.
+
+    Baselines (empirical averages):
+      WR  ≈ 0.28 targets/route
+      TE  ≈ 0.35 targets/route
+      RB  ≈ 0.22 targets/route
+
+    Formula: routes_run ≈ total_targets / tprr_baseline
+    Requires: targets (season total), games_played ≥ 4.
+    Confidence: 0.40 — rough positional proxy, not play-level data.
+    """
+    pos = (position or "").upper()
+    baseline = _TPRR_BASELINE.get(pos)
+    if baseline is None:
+        return None
+
+    targets = _get_num(stats, "targets")
+    games = _get_num(stats, "games_played")
+    if targets is None or games is None or games < 4:
+        return None
+
+    return round(targets / baseline, 1)
+
+
+def derive_yprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
+    """
+    Estimate yards per route run (YPRR) using receiving yards and estimated routes.
+
+    Formula: yprr ≈ receiving_yards / derive_routes_run_proxy(stats, position)
+    This is a compound proxy — accuracy compounds the uncertainty of routes_run_proxy.
+    Requires: receiving_yards, and the same constraints as derive_routes_run_proxy.
+    Confidence: 0.35 — compound proxy; treat as directional only.
+    """
+    routes = derive_routes_run_proxy(stats, position)
+    if routes is None or routes <= 0:
+        return None
+
+    rec_yards = _get_num(stats, "receiving_yards")
+    if rec_yards is None:
+        return None
+
+    return round(rec_yards / routes, 3)
+
+
+def derive_tprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
+    """
+    Estimate targets per route run (TPRR) using targets and estimated routes.
+
+    Formula: tprr ≈ targets / derive_routes_run_proxy(stats, position)
+    For WR/TE/RB. The result should be close to the position baseline used to
+    derive routes_run_proxy, so this mainly validates internal consistency and
+    catches outlier targets shares.
+    Confidence: 0.35 — compound proxy.
+    """
+    routes = derive_routes_run_proxy(stats, position)
+    if routes is None or routes <= 0:
+        return None
+
+    targets = _get_num(stats, "targets")
+    if targets is None:
+        return None
+
+    return round(targets / routes, 4)
+
+
+def derive_yac_per_att_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for yards after contact per rushing attempt (RBs only).
+
+    PFF's true YAC requires contact-point tracking. As a college proxy we map
+    yards-per-carry (YPC) above a threshold carry quality baseline onto the YAC
+    range [0, 5.0].
+
+    Formula: max(0, min(5.0, (ypc - 2.5) * 0.65))
+    Calibration: elite YAC≈3.5–4.5 corresponds to YPC≈7–9, baseline YAC≈1.5
+    corresponds to YPC≈4.8.
+    Requires: yds_per_carry, rush_attempts ≥ 20.
+    Confidence: 0.40 — systematic proxy; treats all YPC gains as equally contact-driven.
+    """
+    ypc = _get_num(stats, "yds_per_carry")
+    attempts = _get_num(stats, "rush_attempts")
+    if ypc is None or attempts is None or attempts < 20:
+        return None
+
+    return round(max(0.0, min(5.0, (ypc - 2.5) * 0.65)), 3)
+
+
+def derive_mtf_per_att_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for missed tackles forced per rushing attempt (RBs only).
+
+    PFF's mtf/att requires per-play contact data. We approximate it from YPC
+    using a similar slope to explosive_run_rate but scaled to missed-tackle
+    rate shape (typical elite: 0.20–0.30, average: 0.12–0.18).
+
+    Formula: max(0, min(0.30, (ypc - 3.0) / 12))
+    Requires: yds_per_carry, rush_attempts ≥ 20.
+    Confidence: 0.30 — very rough; use only as relative ordinal proxy.
+    """
+    ypc = _get_num(stats, "yds_per_carry")
+    attempts = _get_num(stats, "rush_attempts")
+    if ypc is None or attempts is None or attempts < 20:
+        return None
+
+    return round(max(0.0, min(0.30, (ypc - 3.0) / 12.0)), 4)
+
+
+def derive_adjusted_comp_pct_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for PFF's adjusted completion percentage (QBs only).
+
+    PFF's metric strips drops and adjusts for difficulty of attempt (aDOT).
+    As a proxy we start with raw completion_pct and apply a light TD/INT ratio
+    quality multiplier: better decision-making inflates slightly, poor INT rate
+    deflates slightly.
+
+    Formula:
+      multiplier = min(1.12, max(0.88, 1 + (td_int_ratio - 2.0) * 0.03))
+      adjusted_comp_pct = completion_pct * multiplier
+
+    Where td_int_ratio = 2.0 is treated as average (no adjustment).
+    Requires: completion_pct, pass_attempts ≥ 50.
+    Confidence: 0.60 — raw completion_pct is reliable; multiplier adds minor signal.
+    """
+    comp_pct = _get_num(stats, "completion_pct")
+    pass_att = _get_num(stats, "pass_attempts")
+    if comp_pct is None or pass_att is None or pass_att < 50:
+        return None
+
+    td_int_ratio = _get_num(stats, "td_int_ratio")
+    if td_int_ratio is not None:
+        multiplier = min(1.12, max(0.88, 1.0 + (td_int_ratio - 2.0) * 0.03))
+    else:
+        multiplier = 1.0
+
+    return round(comp_pct * multiplier, 2)
+
+
+def derive_twp_rate_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for turnover-worthy play rate (QBs only).
+
+    PFF's TWP rate counts all plays that should have resulted in a turnover
+    (including near-interceptions). As a direct proxy we use raw interception
+    rate (INT / pass_attempts * 100), which is the most accessible public
+    equivalent.
+
+    Formula: (interceptions / pass_attempts) * 100
+    Requires: interceptions, pass_attempts ≥ 50.
+    Confidence: 0.65 — direct measurable stat, not PFF-adjusted but strongly correlated.
+    """
+    interceptions = _get_num(stats, "interceptions")
+    pass_att = _get_num(stats, "pass_attempts")
+    if interceptions is None or pass_att is None or pass_att < 50:
+        return None
+
+    return round((interceptions / pass_att) * 100.0, 3)

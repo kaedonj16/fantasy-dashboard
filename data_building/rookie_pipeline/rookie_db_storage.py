@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+import json
 from datetime import date
+from decimal import Decimal
 from typing import Any, Dict, List
 
 from psycopg.types.json import Json
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Decimal objects by converting them to floats."""
+    
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 def _db_available() -> bool:
@@ -72,7 +83,10 @@ def save_rookie_evaluation_to_db(
     snapshot_dt = date.fromisoformat(as_of_date)
 
     with get_conn() as conn:
+        # Initialize rookie eval tables and ensure advanced metrics has rookie eval columns
         init_rookie_eval_tables(conn)
+        from data_building.advanced_metrics import _add_rookie_eval_columns
+        _add_rookie_eval_columns(conn)
         missing_by_player = {
             p.get("player_id"): ((p.get("rookie_profile") or {}).get("missing") or {})
             for p in rookie_profiles
@@ -100,8 +114,8 @@ def save_rookie_evaluation_to_db(
                             player_id,
                             int(season),
                             "rookie_eval",
-                            Json(metrics),
-                            Json(missing_metrics),
+                            Json(json.dumps(metrics, cls=DecimalEncoder)),
+                            Json(json.dumps(missing_metrics, cls=DecimalEncoder)),
                         ),
                     )
                     metrics_rows += 1
@@ -121,7 +135,7 @@ def save_rookie_evaluation_to_db(
                         profile_json = EXCLUDED.profile_json,
                         updated_at = NOW()
                     """,
-                    (snapshot_dt, draft_class_year, player_id, Json(profile)),
+                    (snapshot_dt, draft_class_year, player_id, Json(json.dumps(profile, cls=DecimalEncoder))),
                 )
                 profile_rows += 1
 
@@ -136,12 +150,57 @@ def save_rookie_evaluation_to_db(
                     run_metadata = EXCLUDED.run_metadata,
                     created_at = NOW()
                 """,
-                (snapshot_dt, draft_class_year, Json(run_metadata)),
+                (snapshot_dt, draft_class_year, Json(json.dumps(run_metadata, cls=DecimalEncoder))),
             )
             run_rows = 1
+
+    # Bridge profiles into player_advanced_metrics so model training can use
+    # rookie evaluation fields as features.
+    bridge_result = bridge_to_advanced_metrics(as_of_date, draft_class_year, rookie_profiles)
 
     return {
         "db_metrics_rows": metrics_rows,
         "db_profiles_rows": profile_rows,
         "db_runs_rows": run_rows,
+        "db_bridge_rows": bridge_result,
     }
+
+
+def bridge_to_advanced_metrics(
+    as_of_date: str,
+    draft_class_year: int,
+    profiles: List[Dict],
+) -> Dict[str, int]:
+    """
+    Bridge rookie evaluation profiles into player_advanced_metrics.
+
+    Calls merge_rookie_profiles_to_advanced_metrics from advanced_metrics.py
+    so that rookie_eval_* columns in player_advanced_metrics are populated.
+    These columns are then available as features in value_model_training.py.
+
+    Args:
+        as_of_date:        ISO date string (YYYY-MM-DD).
+        draft_class_year:  Draft class year (e.g. 2026).
+        profiles:          List of rookie profile dicts from evaluation pipeline.
+
+    Returns:
+        {"updated": n, "inserted": n, "skipped": n}
+    """
+    if not profiles or not _db_available():
+        return {"updated": 0, "inserted": 0, "skipped": 0}
+
+    try:
+        from data_building.advanced_metrics import merge_rookie_profiles_to_advanced_metrics
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            result = merge_rookie_profiles_to_advanced_metrics(profiles, as_of_date, conn=conn)
+        print(
+            f"[rookie_db_storage] bridge_to_advanced_metrics class={draft_class_year} "
+            f"updated={result.get('updated')} inserted={result.get('inserted')} "
+            f"skipped={result.get('skipped')}"
+        )
+        return result
+    except Exception as exc:
+        print(f"[rookie_db_storage] bridge_to_advanced_metrics failed: {exc}")
+        return {"updated": 0, "inserted": 0, "skipped": 0, "error": str(exc)}

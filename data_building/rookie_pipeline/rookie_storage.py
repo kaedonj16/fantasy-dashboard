@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -11,6 +12,15 @@ from data_building.paths import DATA_DIR
 
 
 UTC = timezone.utc
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Decimal objects by converting them to floats."""
+    
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 def utc_now_iso() -> str:
@@ -90,7 +100,7 @@ class RookieDiskCache:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = dict(payload)
         data["cached_at"] = utc_now_iso()
-        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        path.write_text(json.dumps(data, indent=2, sort_keys=True, cls=DecimalEncoder), encoding="utf-8")
         return path
 
 
@@ -99,7 +109,7 @@ def write_rookie_snapshot(file_prefix: str, as_of_date: str, payload: Dict[str, 
     dated = DATA_DIR / f"{file_prefix}_{as_of_date}.json"
     latest = DATA_DIR / f"{file_prefix}_latest.json"
 
-    text = json.dumps(payload, indent=2, sort_keys=True)
+    text = json.dumps(payload, indent=2, sort_keys=True, cls=DecimalEncoder)
     dated.write_text(text, encoding="utf-8")
     latest.write_text(text, encoding="utf-8")
     return dated, latest
