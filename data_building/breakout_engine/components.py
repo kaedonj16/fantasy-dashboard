@@ -14,7 +14,7 @@ All functions return (score: float, details: Dict) tuples.
 """
 
 from datetime import date, timedelta
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from . import config as _cfg  # explicit module alias — avoids polluting this namespace
 # Re-export every constant used in this file so call sites don't change.
