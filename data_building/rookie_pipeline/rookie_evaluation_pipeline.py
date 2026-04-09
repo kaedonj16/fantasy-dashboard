@@ -10,6 +10,7 @@ from data_building.rookie_pipeline.draft_market_sources import (
 )
 from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db
 from data_building.rookie_pipeline.ingestion import load_prospects_for_year
+from data_building.rookie_pipeline.pipeline import load_prospects_from_db
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
 from data_building.rookie_pipeline.rookie_profile_builder import build_rookie_profile
 from data_building.rookie_pipeline.rookie_source_registry import build_rookie_source_registry
@@ -25,6 +26,28 @@ def _iter_player_seasons(player: Dict[str, Any], fallback_season: int):
     for season_record in seasons:
         season = int(season_record.get("season") or fallback_season)
         yield season, season_record
+
+
+def _load_eval_prospects(draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Load prospects for rookie eval, preferring DB-backed staged prospect data.
+
+    Why:
+      - `load_prospects_for_year` depends on external APIs/seed files.
+      - evaluation should still produce values when the prospects are already
+        populated in Postgres via `scripts.populate_rookie_data` / pipeline jobs.
+    """
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            db_prospects = load_prospects_from_db(draft_year, conn)
+            if db_prospects:
+                return db_prospects
+    except Exception as exc:
+        print(f"[rookie_eval] db_prospect_load_failed class={draft_year}: {exc}")
+
+    return load_prospects_for_year(draft_year) or []
 
 
 def _missing_payload(metric: RookieMetricSpec, reason: str) -> Dict[str, Any]:
@@ -93,7 +116,7 @@ def run_rookie_evaluation_pipeline(
     """
     year = int(draft_year or date.today().year)
     as_of = as_of_date or date.today().isoformat()
-    prospects = load_prospects_for_year(year) or []
+    prospects = _load_eval_prospects(year)
     if player_limit:
         prospects = prospects[: max(0, int(player_limit))]
 
