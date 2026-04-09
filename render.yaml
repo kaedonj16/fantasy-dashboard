@@ -4,7 +4,7 @@ services:
     name: brfantasy
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
     startCommand: python startup.py
     envVars:
       - key: PYTHON_VERSION
