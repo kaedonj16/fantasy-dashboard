@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+import datetime
+from decimal import Decimal
 from typing import Any, Dict, List
 
 from psycopg.types.json import Json
@@ -14,6 +15,33 @@ def _db_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _to_json_safe(obj: Any) -> Any:
+    """
+    Recursively convert types that are not JSON-serializable.
+
+    psycopg returns PostgreSQL NUMERIC columns as decimal.Decimal.
+    Dates and datetimes also need to be stringified.  Everything else
+    that isn't a basic JSON type is cast to str so serialisation never
+    raises TypeError.
+    """
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    if isinstance(obj, Decimal):
+        # Preserve integer precision where possible
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    # bool must be checked before int (bool is subclass of int in Python)
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (int, float, str, type(None))):
+        return obj
+    # Fallback: cast to str so we never crash
+    return str(obj)
 
 
 def init_rookie_eval_tables(conn) -> None:
@@ -100,8 +128,8 @@ def save_rookie_evaluation_to_db(
                             player_id,
                             int(season),
                             "rookie_eval",
-                            Json(metrics),
-                            Json(missing_metrics),
+                            Json(_to_json_safe(metrics)),
+                            Json(_to_json_safe(missing_metrics)),
                         ),
                     )
                     metrics_rows += 1
@@ -121,7 +149,7 @@ def save_rookie_evaluation_to_db(
                         profile_json = EXCLUDED.profile_json,
                         updated_at = NOW()
                     """,
-                    (snapshot_dt, draft_class_year, player_id, Json(profile)),
+                    (snapshot_dt, draft_class_year, player_id, Json(_to_json_safe(profile))),
                 )
                 profile_rows += 1
 
@@ -136,7 +164,7 @@ def save_rookie_evaluation_to_db(
                     run_metadata = EXCLUDED.run_metadata,
                     created_at = NOW()
                 """,
-                (snapshot_dt, draft_class_year, Json(run_metadata)),
+                (snapshot_dt, draft_class_year, Json(_to_json_safe(run_metadata))),
             )
             run_rows = 1
 
