@@ -58,6 +58,81 @@ def build_daily_advanced_metrics():
         traceback.print_exc()
 
 
+def build_daily_rookie_data():
+    """
+    Run the rookie pipeline for the active draft class (today only).
+    """
+    from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
+
+    try:
+        year = get_active_rookie_class()
+        print(f"[cron] Running rookie pipeline for {year} draft class...")
+        result = run_rookie_pipeline(year)
+        print(
+            f"[cron] Rookie data updated: {len(result.get('prospects', []))} prospects, "
+            f"{len(result.get('scores', {}))} scored, {len(result.get('values', {}))} values"
+        )
+    except Exception as e:
+        print(f"[cron] Rookie pipeline failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def backfill_historical_advanced_metrics():
+    """
+    Backfill advanced metrics for seasons 2022-2025.
+    Safe to re-run — uses upsert logic.
+    """
+    from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
+    from data_building.external_data.sleeper_usage import build_usage_map_for_season
+    from utils.utils import load_players_index
+
+    seasons = [2022, 2023, 2024, 2025]
+    print(f"[cron] Backfilling advanced metrics for seasons: {seasons}")
+
+    players_index = load_players_index() or {}
+    if not players_index:
+        print("[cron] Could not load players index, skipping backfill")
+        return
+
+    for season in seasons:
+        try:
+            print(f"[cron] Backfill season {season}...")
+            usage_map = build_usage_map_for_season(season, weeks=range(1, 19))
+            metrics_list = []
+            skipped = 0
+            failed = 0
+
+            for pid, usage in usage_map.items():
+                if usage.get("games", 0) == 0:
+                    skipped += 1
+                    continue
+                meta = players_index.get(pid) or players_index.get(str(pid)) or {}
+                pos = meta.get("pos") or meta.get("position")
+                if pos not in ("QB", "RB", "WR", "TE"):
+                    skipped += 1
+                    continue
+                try:
+                    metrics_list.append(calculate_player_metrics(str(pid), usage, pos))
+                except Exception as e:
+                    print(f"[cron]   [warn] player {pid}: {e}")
+                    failed += 1
+
+            if metrics_list:
+                as_of_date = f"{season + 1}-01-10"
+                save_metrics_snapshot(metrics_list, as_of_date, season=season)
+                print(f"[cron]   Season {season}: saved {len(metrics_list)} players (skipped={skipped}, failed={failed})")
+            else:
+                print(f"[cron]   Season {season}: no metrics to save (skipped={skipped}, failed={failed})")
+
+        except Exception as e:
+            print(f"[cron] Backfill season {season} failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print("[cron] Historical advanced metrics backfill complete")
+
+
 def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
     """
     Calculate breakout candidates using the upgraded BreakoutEngine.
@@ -125,6 +200,8 @@ def main():
     try:
         build_daily_data(season, week)
         build_daily_advanced_metrics()
+        backfill_historical_advanced_metrics()
+        build_daily_rookie_data()
 
         from data_building.build_daily_value_table import build_daily_model_values
         build_daily_model_values()
