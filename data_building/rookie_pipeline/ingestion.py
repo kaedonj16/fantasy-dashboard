@@ -333,7 +333,7 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
         "pass_yards": 0, "pass_tds": 0, "pass_attempts": 0,
         "completions": 0, "interceptions": 0,
         "rush_attempts": 0, "rush_yards": 0, "rush_tds": 0,
-        "receptions": 0, "targets": 0, "receiving_yards": 0, "receiving_tds": 0,
+        "receptions": 0, "targets": None, "receiving_yards": 0, "receiving_tds": 0,
         "team": None, "conference": None,
     }
     # CFBD API uses abbreviated statType values (e.g., "YDS", "TD", "REC")

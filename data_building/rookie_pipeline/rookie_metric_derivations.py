@@ -24,6 +24,15 @@ _TPRR_BASELINE: Dict[str, float] = {
     "RB": 0.22,
 }
 
+# Fallback reception-per-route baselines for when targets are unavailable.
+# CFBD does not expose target counts; receptions are the best public substitute.
+# Derived from: typical college catch rate (~62% WR, ~66% TE, ~72% RB) × tprr baseline.
+_RPRR_BASELINE: Dict[str, float] = {
+    "WR": 0.17,   # ~1 catch per 5.9 routes
+    "TE": 0.23,   # ~1 catch per 4.3 routes
+    "RB": 0.16,   # ~1 catch per 6.3 routes
+}
+
 
 def _get_num(stats: Dict[str, Any], key: str) -> Optional[float]:
     val = stats.get(key)
@@ -95,30 +104,35 @@ def derive_routes_run_proxy(stats: Dict[str, Any], position: str) -> Optional[fl
     """
     Estimate total routes run for a season when play-level route data is unavailable.
 
-    Assumption: targets per route (tprr) are roughly constant by position at the
-    college level. Dividing total targets by the position tprr baseline gives an
-    estimate of total routes run.
+    Primary path (when targets available):
+      routes_run ≈ targets / tprr_baseline
+      WR ≈ 0.28, TE ≈ 0.35, RB ≈ 0.22 targets/route
 
-    Baselines (empirical averages):
-      WR  ≈ 0.28 targets/route
-      TE  ≈ 0.35 targets/route
-      RB  ≈ 0.22 targets/route
+    Fallback path (CFBD does not expose targets; receptions used instead):
+      routes_run ≈ receptions / rprr_baseline
+      WR ≈ 0.17, TE ≈ 0.23, RB ≈ 0.16 receptions/route
+      Confidence drops to 0.30 (extra indirection through catch rate assumption).
 
-    Formula: routes_run ≈ total_targets / tprr_baseline
-    Requires: targets (season total), games_played ≥ 4.
-    Confidence: 0.40 — rough positional proxy, not play-level data.
+    Requires: games_played ≥ 4, and either targets > 0 or receptions > 0.
     """
     pos = (position or "").upper()
-    baseline = _TPRR_BASELINE.get(pos)
-    if baseline is None:
-        return None
-
-    targets = _get_num(stats, "targets")
     games = _get_num(stats, "games_played")
-    if targets is None or games is None or games < 4 or targets <= 0:
+    if games is None or games < 4:
         return None
 
-    return round(targets / baseline, 1)
+    # Primary: targets (future-proof for any source that provides them)
+    tprr_base = _TPRR_BASELINE.get(pos)
+    targets = _get_num(stats, "targets")
+    if tprr_base is not None and targets is not None and targets > 0:
+        return round(targets / tprr_base, 1)
+
+    # Fallback: receptions (always available from CFBD)
+    rprr_base = _RPRR_BASELINE.get(pos)
+    receptions = _get_num(stats, "receptions")
+    if rprr_base is not None and receptions is not None and receptions > 0:
+        return round(receptions / rprr_base, 1)
+
+    return None
 
 
 def derive_yprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
@@ -126,9 +140,10 @@ def derive_yprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
     Estimate yards per route run (YPRR) using receiving yards and estimated routes.
 
     Formula: yprr ≈ receiving_yards / derive_routes_run_proxy(stats, position)
-    This is a compound proxy — accuracy compounds the uncertainty of routes_run_proxy.
-    Requires: receiving_yards, and the same constraints as derive_routes_run_proxy.
-    Confidence: 0.35 — compound proxy; treat as directional only.
+    Routes are estimated from targets when available, or receptions as a fallback
+    (see derive_routes_run_proxy). Compound proxy — uncertainty compounds.
+    Requires: receiving_yards, and same constraints as derive_routes_run_proxy.
+    Confidence: 0.35 targets-path / 0.28 receptions-path — directional only.
     """
     routes = derive_routes_run_proxy(stats, position)
     if routes is None or routes <= 0:

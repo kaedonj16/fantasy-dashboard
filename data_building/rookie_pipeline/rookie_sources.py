@@ -192,9 +192,11 @@ class DerivedRookieMetricsSource(RookieSource):
             "player_level_sos": 0.55,
             "performance_vs_top_defenses": 0.40,
             "true_early_declare": 0.80,
-            "routes_run": 0.40,
-            "yprr": 0.35,
-            "tprr": 0.35,
+            # routes_run/yprr/tprr use receptions fallback when targets absent (CFBD)
+            # → lower confidence than the targets-path to reflect extra indirection
+            "routes_run": 0.30,
+            "yprr": 0.28,
+            "tprr": 0.28,
             "yac_per_att": 0.40,
             "mtf_per_att": 0.30,
             "adjusted_comp_pct": 0.60,
