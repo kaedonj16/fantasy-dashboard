@@ -242,5 +242,6 @@ def run_rookie_evaluation_pipeline(
         "profiles_file": str(profiles_file),
         "log_summary": dict(logs),
         "profile_count": len(rookie_profiles),
+        "profiles": rookie_profiles,
         **db_result,
     }

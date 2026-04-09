@@ -494,6 +494,7 @@ def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int,
                     saved += 1
                 else:
                     skipped += 1
+                    print(f"[pipeline] Mock entry skipped (no prospect match): player_name={player_name!r} → player_id={player_id!r}")
                 cur.execute("RELEASE SAVEPOINT save_mock")
             except Exception as exc:
                 cur.execute("ROLLBACK TO SAVEPOINT save_mock")
@@ -936,8 +937,9 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
                         "mock_sources":                 _json.dumps(c.get("mock_sources") or [], default=_safe_dumps),
                     },
                 )
+                row_count = cur.rowcount
                 cur.execute("RELEASE SAVEPOINT save_consensus")
-                saved += cur.rowcount
+                saved += max(row_count, 1)  # rowcount=1 insert or update; treat 0 as 1 for upserts
             except Exception as exc:
                 cur.execute("ROLLBACK TO SAVEPOINT save_consensus")
                 print(f"[pipeline] Failed to upsert consensus for {pid}: {exc}")
