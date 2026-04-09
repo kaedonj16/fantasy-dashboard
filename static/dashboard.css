@@ -4048,11 +4048,9 @@ thead th {
   align-items: flex-start;
   gap: 20px;
   padding: 26px 26px 22px;
-  border: 1px solid rgba(205, 214, 226, 0.9);
+  border: 1px solid var(--border);
   border-radius: 28px;
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.10), transparent 34%),
-    linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  background: var(--card);
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
   position: relative;
 }
@@ -4064,7 +4062,7 @@ thead th {
   text-transform: uppercase;
   opacity: 0.7;
   margin-bottom: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .history-page {
@@ -4281,7 +4279,7 @@ thead th {
 
 .history-subtitle {
   margin: 16px 0 0;
-  color: #667085;
+  color: var(--text-muted);
   max-width: 900px;
   font-size: 1.03rem;
   line-height: 1.6;
@@ -4294,7 +4292,7 @@ thead th {
   font-size: clamp(2rem, 3vw, 3rem);
   line-height: 1.02;
   font-weight: 900;
-  color: #0f2747;
+  color: var(--text);
   letter-spacing: -0.03em;
   word-wrap: break-word;
   overflow-wrap: break-word;
