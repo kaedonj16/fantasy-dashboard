@@ -8018,7 +8018,7 @@ def api_player_advanced_metrics(player_id: str):
             "season": season_val,
             "available_seasons": available_seasons,
             "metrics": {
-                k: float(v) if v is not None else None
+                k: (float(v) if v is not None and not isinstance(v, (datetime, date)) else (str(v) if isinstance(v, (datetime, date)) else None))
                 for k, v in metrics.items()
                 if k not in ("player_id", "position")
             },
