@@ -102,6 +102,15 @@ class ProspectSeasonStatsSource(RookieSource):
     ) -> Dict[str, Dict[str, Any]]:
         out: Dict[str, Dict[str, Any]] = {}
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
+        player_key = player.get("player_id") or player.get("name") or "unknown"
+
+        # Dump every non-None field from the season record so we can see exactly
+        # what the CFBD/DB source is giving us vs. what we have to estimate.
+        raw_fields = {k: v for k, v in season_record.items() if v is not None}
+        print(
+            f"[source_raw] player={player_key} season={season} "
+            f"pos={player.get('position')} raw_fields={raw_fields}"
+        )
 
         for metric in requested_metrics:
             # --- direct field map ---
@@ -110,6 +119,7 @@ class ProspectSeasonStatsSource(RookieSource):
                 field, confidence = entry if isinstance(entry, tuple) else (entry, 0.70)
                 raw_value = season_record.get(field)
                 if raw_value is not None:
+                    print(f"[direct_hit]  player={player_key} season={season} metric={metric.name} field={field} value={raw_value!r}")
                     out[metric.name] = base_metric_payload(
                         value=raw_value,
                         season=season,
@@ -118,6 +128,8 @@ class ProspectSeasonStatsSource(RookieSource):
                         source_url=self.source_url,
                         confidence=confidence,
                     )
+                else:
+                    print(f"[direct_miss] player={player_key} season={season} metric={metric.name} field={field} → None in season_record")
                 continue
 
             # --- inline computation map ---
@@ -127,6 +139,7 @@ class ProspectSeasonStatsSource(RookieSource):
                 except Exception:
                     computed = None
                 if computed is not None:
+                    print(f"[inline_hit]  player={player_key} season={season} metric={metric.name} value={computed!r}")
                     out[metric.name] = base_metric_payload(
                         value=computed,
                         season=season,
@@ -188,16 +201,41 @@ class DerivedRookieMetricsSource(RookieSource):
             "twp_rate": 0.65,
         }
 
+        player_key = player.get("player_id") or player.get("name") or "unknown"
+
         for metric in requested_metrics:
             fn = handlers.get(metric.name)
             if not fn:
                 continue
             try:
                 value = fn()
-            except Exception:
+            except Exception as exc:
+                print(f"[derive_error] player={player_key} season={season} metric={metric.name}: {type(exc).__name__}: {exc}")
                 value = None
             if value is None:
+                # Log which inputs were present/missing for this derivation
+                _DERIVE_INPUTS = {
+                    "routes_run":  ["targets", "games_played"],
+                    "yprr":        ["receiving_yards", "targets", "games_played"],
+                    "tprr":        ["targets", "games_played"],
+                    "yac_per_att": ["yds_per_carry", "rush_attempts"],
+                    "mtf_per_att": ["yds_per_carry", "rush_attempts"],
+                    "adjusted_comp_pct": ["completion_pct", "pass_attempts", "td_int_ratio"],
+                    "twp_rate":    ["interceptions", "pass_attempts"],
+                    "explosive_run_rate": ["yds_per_carry", "rush_attempts"],
+                    "player_level_sos":   ["conference"],
+                    "performance_vs_top_defenses": ["dominator_rating", "market_share_yards", "conference"],
+                    "true_early_declare": [],
+                }
+                needed = _DERIVE_INPUTS.get(metric.name, [])
+                missing_inputs = [f for f in needed if season_record.get(f) is None]
+                present_inputs = {f: season_record.get(f) for f in needed if season_record.get(f) is not None}
+                print(
+                    f"[derive_null] player={player_key} season={season} metric={metric.name} "
+                    f"present={present_inputs} missing_inputs={missing_inputs}"
+                )
                 continue
+            print(f"[derive_ok]   player={player_key} season={season} metric={metric.name} value={value!r}")
             out[metric.name] = base_metric_payload(
                 value=value,
                 season=season,
