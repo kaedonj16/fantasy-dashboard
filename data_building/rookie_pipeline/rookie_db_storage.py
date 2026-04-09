@@ -17,20 +17,14 @@ def _db_available() -> bool:
 
 
 def init_rookie_eval_tables(conn) -> None:
-    """Create rookie evaluation snapshot tables if they do not already exist."""
+    """Ensure rookie evaluation storage exists on the existing rookie tables."""
     with conn.cursor() as cur:
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS rookie_advanced_metrics_snapshots (
-                snapshot_date DATE NOT NULL,
-                draft_class_year INTEGER NOT NULL,
-                player_id TEXT NOT NULL,
-                season INTEGER NOT NULL,
-                metrics_json JSONB NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                PRIMARY KEY (snapshot_date, draft_class_year, player_id, season)
-            );
+            ALTER TABLE rookie_prospect_source_data
+            ADD COLUMN IF NOT EXISTS rookie_eval_metrics JSONB,
+            ADD COLUMN IF NOT EXISTS rookie_eval_missing JSONB,
+            ADD COLUMN IF NOT EXISTS rookie_eval_updated_at TIMESTAMP;
             """
         )
         cur.execute(
@@ -79,22 +73,36 @@ def save_rookie_evaluation_to_db(
 
     with get_conn() as conn:
         init_rookie_eval_tables(conn)
+        missing_by_player = {
+            p.get("player_id"): ((p.get("rookie_profile") or {}).get("missing") or {})
+            for p in rookie_profiles
+            if p.get("player_id")
+        }
 
         with conn.cursor() as cur:
             for player_id, seasons in by_player_metrics.items():
                 for season, metrics in (seasons or {}).items():
+                    missing_metrics = missing_by_player.get(player_id) or {}
+
                     cur.execute(
                         """
-                        INSERT INTO rookie_advanced_metrics_snapshots
-                            (snapshot_date, draft_class_year, player_id, season, metrics_json, updated_at)
+                        INSERT INTO rookie_prospect_source_data
+                            (player_id, season, source, rookie_eval_metrics, rookie_eval_missing, rookie_eval_updated_at)
                         VALUES
                             (%s, %s, %s, %s, %s, NOW())
-                        ON CONFLICT (snapshot_date, draft_class_year, player_id, season)
+                        ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
-                            metrics_json = EXCLUDED.metrics_json,
-                            updated_at = NOW()
+                            rookie_eval_metrics = EXCLUDED.rookie_eval_metrics,
+                            rookie_eval_missing = EXCLUDED.rookie_eval_missing,
+                            rookie_eval_updated_at = NOW()
                         """,
-                        (snapshot_dt, draft_class_year, player_id, int(season), Json(metrics)),
+                        (
+                            player_id,
+                            int(season),
+                            "rookie_eval",
+                            Json(metrics),
+                            Json(missing_metrics),
+                        ),
                     )
                     metrics_rows += 1
 
