@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from psycopg.types.json import Json
 
@@ -44,6 +44,31 @@ def _to_json_safe(obj: Any) -> Any:
     return str(obj)
 
 
+def _metric_value(metrics: Dict[str, Any], name: str) -> Optional[float]:
+    """Extract the scalar numeric value from a metric payload dict, or None."""
+    entry = (metrics or {}).get(name)
+    if not isinstance(entry, dict):
+        return None
+    val = entry.get("value")
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bool_metric_value(metrics: Dict[str, Any], name: str) -> Optional[bool]:
+    """Extract the scalar boolean value from a metric payload dict, or None."""
+    entry = (metrics or {}).get(name)
+    if not isinstance(entry, dict):
+        return None
+    val = entry.get("value")
+    if val is None:
+        return None
+    return bool(val)
+
+
 def init_rookie_eval_tables(conn) -> None:
     """Ensure rookie evaluation storage exists on the existing rookie tables."""
     with conn.cursor() as cur:
@@ -52,7 +77,19 @@ def init_rookie_eval_tables(conn) -> None:
             ALTER TABLE rookie_prospect_source_data
             ADD COLUMN IF NOT EXISTS rookie_eval_metrics JSONB,
             ADD COLUMN IF NOT EXISTS rookie_eval_missing JSONB,
-            ADD COLUMN IF NOT EXISTS rookie_eval_updated_at TIMESTAMP;
+            ADD COLUMN IF NOT EXISTS rookie_eval_updated_at TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS eval_routes_run NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_yprr NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_tprr NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_yac_per_att NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_mtf_per_att NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_explosive_run_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_adjusted_comp_pct NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_twp_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_player_level_sos NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_perf_vs_top_def NUMERIC,
+            ADD COLUMN IF NOT EXISTS eval_true_early_declare BOOLEAN,
+            ADD COLUMN IF NOT EXISTS eval_snap_counts NUMERIC;
             """
         )
         cur.execute(
@@ -97,7 +134,7 @@ def save_rookie_evaluation_to_db(
     metrics_rows = 0
     profile_rows = 0
     run_rows = 0
-    snapshot_dt = date.fromisoformat(as_of_date)
+    snapshot_dt = datetime.date.fromisoformat(as_of_date)
 
     with get_conn() as conn:
         init_rookie_eval_tables(conn)
@@ -115,14 +152,33 @@ def save_rookie_evaluation_to_db(
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data
-                            (player_id, season, source, rookie_eval_metrics, rookie_eval_missing, rookie_eval_updated_at)
+                            (player_id, season, source,
+                             rookie_eval_metrics, rookie_eval_missing, rookie_eval_updated_at,
+                             eval_routes_run, eval_yprr, eval_tprr,
+                             eval_yac_per_att, eval_mtf_per_att, eval_explosive_run_rate,
+                             eval_adjusted_comp_pct, eval_twp_rate,
+                             eval_player_level_sos, eval_perf_vs_top_def,
+                             eval_true_early_declare, eval_snap_counts)
                         VALUES
-                            (%s, %s, %s, %s, %s, NOW())
+                            (%s, %s, %s, %s, %s, NOW(),
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
-                            rookie_eval_metrics = EXCLUDED.rookie_eval_metrics,
-                            rookie_eval_missing = EXCLUDED.rookie_eval_missing,
-                            rookie_eval_updated_at = NOW()
+                            rookie_eval_metrics     = EXCLUDED.rookie_eval_metrics,
+                            rookie_eval_missing     = EXCLUDED.rookie_eval_missing,
+                            rookie_eval_updated_at  = NOW(),
+                            eval_routes_run         = EXCLUDED.eval_routes_run,
+                            eval_yprr               = EXCLUDED.eval_yprr,
+                            eval_tprr               = EXCLUDED.eval_tprr,
+                            eval_yac_per_att        = EXCLUDED.eval_yac_per_att,
+                            eval_mtf_per_att        = EXCLUDED.eval_mtf_per_att,
+                            eval_explosive_run_rate = EXCLUDED.eval_explosive_run_rate,
+                            eval_adjusted_comp_pct  = EXCLUDED.eval_adjusted_comp_pct,
+                            eval_twp_rate           = EXCLUDED.eval_twp_rate,
+                            eval_player_level_sos   = EXCLUDED.eval_player_level_sos,
+                            eval_perf_vs_top_def    = EXCLUDED.eval_perf_vs_top_def,
+                            eval_true_early_declare = EXCLUDED.eval_true_early_declare,
+                            eval_snap_counts        = EXCLUDED.eval_snap_counts
                         """,
                         (
                             player_id,
@@ -130,6 +186,18 @@ def save_rookie_evaluation_to_db(
                             "rookie_eval",
                             Json(_to_json_safe(metrics)),
                             Json(_to_json_safe(missing_metrics)),
+                            _metric_value(metrics, "routes_run"),
+                            _metric_value(metrics, "yprr"),
+                            _metric_value(metrics, "tprr"),
+                            _metric_value(metrics, "yac_per_att"),
+                            _metric_value(metrics, "mtf_per_att"),
+                            _metric_value(metrics, "explosive_run_rate"),
+                            _metric_value(metrics, "adjusted_comp_pct"),
+                            _metric_value(metrics, "twp_rate"),
+                            _metric_value(metrics, "player_level_sos"),
+                            _metric_value(metrics, "performance_vs_top_defenses"),
+                            _bool_metric_value(metrics, "true_early_declare"),
+                            _metric_value(metrics, "snap_counts"),
                         ),
                     )
                     metrics_rows += 1
