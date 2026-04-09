@@ -59,6 +59,20 @@ def _missing_payload(metric: RookieMetricSpec, reason: str) -> Dict[str, Any]:
     }
 
 
+# Proxy metrics where a value of exactly 0 is meaningless (no data, not truly zero).
+# The derivation functions now return None for these; cached 0s are stale artifacts.
+_REJECT_ZERO_METRICS = frozenset({"routes_run", "yprr", "tprr"})
+
+
+def _cache_value_valid(metric_name: str, value) -> bool:
+    """Return False if the cached value should be treated as missing."""
+    if value is None:
+        return False
+    if metric_name in _REJECT_ZERO_METRICS and value == 0:
+        return False
+    return True
+
+
 def _source_for_metric(
     metric: RookieMetricSpec,
     player: Dict[str, Any],
@@ -72,7 +86,7 @@ def _source_for_metric(
 
     if cache_hit.payload and not cache_hit.is_stale:
         payload = cache_hit.payload.get("metric_payload")
-        if payload and payload.get("value") is not None:
+        if payload and _cache_value_valid(metric.name, payload.get("value")):
             print(f"[rookie_eval] cache_fresh  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_fresh"
 
@@ -100,7 +114,7 @@ def _source_for_metric(
 
     if cache_hit.payload:
         payload = cache_hit.payload.get("metric_payload")
-        if payload and payload.get("value") is not None:
+        if payload and _cache_value_valid(metric.name, payload.get("value")):
             print(f"[rookie_eval] cache_stale  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_stale_fallback"
 

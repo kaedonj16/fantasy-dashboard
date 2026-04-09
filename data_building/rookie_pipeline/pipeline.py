@@ -1165,6 +1165,7 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
             WHERE player_id IN (
                 SELECT player_id FROM rookie_prospects WHERE draft_class_year = %s
             )
+            AND source != 'rookie_eval'
             ORDER BY player_id, season
         """, (draft_year,))
         stats_rows = cur.fetchall()
