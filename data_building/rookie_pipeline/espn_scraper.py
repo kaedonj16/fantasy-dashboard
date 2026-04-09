@@ -144,8 +144,6 @@ def _get(
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, headers=h, timeout=timeout)
-            print(f"[DEBUG] GET {url} params={params} status={resp.status_code}")
-
             if resp.status_code in (400, 401, 403, 404):
                 print(f"[DEBUG] permanent failure: {resp.status_code}")
                 return None
