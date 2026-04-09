@@ -3,12 +3,28 @@ NFL calendar phase detection and phase-based weighting logic.
 
 Detects the current phase of the NFL calendar (offseason, post-draft, in-season, etc.)
 and provides appropriate component score weights for each phase.
+
+Environment variables:
+    NFL_DRAFT_DATE: Override the draft boundary used for post_free_agency / post_draft
+                    phase detection. Format: MMDD (e.g. "0424" for April 24).
+                    Defaults to "0425" (April 25) when not set.
 """
 
+import os
 from datetime import date
 from typing import Dict
 
 from .config import PHASE_WEIGHTS
+
+# Read draft date override once at import time.
+# The NFL draft shifts by a day or two each year; set NFL_DRAFT_DATE=MMDD in
+# your environment to avoid hard-coding it here.
+_draft_date_str = os.environ.get("NFL_DRAFT_DATE", "0425")
+try:
+    _DRAFT_MONTH = int(_draft_date_str[:2])
+    _DRAFT_DAY = int(_draft_date_str[2:])
+except (ValueError, IndexError):
+    _DRAFT_MONTH, _DRAFT_DAY = 4, 25  # safe default
 
 
 class PhaseDetector:
@@ -73,14 +89,14 @@ class PhaseDetector:
         if month <= 2:
             return 'offseason'
 
-        # Post-free agency: March - late April
+        # Post-free agency: March - eve of NFL draft
         elif month == 3:
             return 'post_free_agency'
-        elif month == 4 and day < 25:
+        elif month == _DRAFT_MONTH and day < _DRAFT_DAY:
             return 'post_free_agency'
 
-        # Post-draft: Late April - July
-        elif month == 4 and day >= 25:
+        # Post-draft: NFL draft day through July
+        elif month == _DRAFT_MONTH and day >= _DRAFT_DAY:
             return 'post_draft'
         elif month in [5, 6, 7]:
             return 'post_draft'

@@ -39,23 +39,10 @@ window.addEventListener('load', function() {
   }, 300);
 });
 
-// Force scroll to top after a short delay to catch any delayed scrolls
+// One deferred scroll-to-top covers any late-rendering layout shifts
+// (lazy fonts, images). The synchronous call above handles the immediate case.
 setTimeout(function() {
   window.scrollTo(0, 0);
-  document.documentElement.scrollTop = 0;
-  document.body.scrollTop = 0;
-}, 0);
-
-setTimeout(function() {
-  window.scrollTo(0, 0);
-  document.documentElement.scrollTop = 0;
-  document.body.scrollTop = 0;
-}, 50);
-
-setTimeout(function() {
-  window.scrollTo(0, 0);
-  document.documentElement.scrollTop = 0;
-  document.body.scrollTop = 0;
 }, 100);
 
 // ------------------------------------------------------------

@@ -92,10 +92,20 @@ CONF_QUALITY: Dict[str, float] = {
     "ACC":                       0.88,
     "Atlantic Coast":            0.88,   # "Atlantic Coast Conference"
 
-    # Legacy Pac (if still used)
+    # Pac-12 dissolved after 2023 season; strings may still appear in historical data
     "Pac-12":                    0.89,
     "Pac 12":                    0.89,
     "Pacific-12":                0.89,
+
+    # 2024+ conference realignment — former Pac-12 schools
+    # Oregon, Washington, UCLA, USC → Big Ten (already scored 1.00 above)
+    # Arizona, Arizona State, Colorado, Utah, UCF, BYU, Cincinnati, Houston,
+    # Iowa State, Kansas, Kansas State, Oklahoma State, TCU, Texas Tech,
+    # West Virginia → Big 12 (already scored 0.90 above)
+    # Stanford, Cal, SMU, Stanford → ACC (already scored 0.88 above)
+    # Washington State, Oregon State → Pac-12 remnant / now independent ~G5
+    "Pac-12 remnant":            0.75,
+    "Mountain West":             0.70,  # absorbed several former Pac schools
 
     # Power 4 (2024+ Big 12 expansion / new branding)
     "Big East":                  0.82,
@@ -134,8 +144,42 @@ CONF_QUALITY: Dict[str, float] = {
 
 DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
 
+# School-level overrides for cases where the conference string is ambiguous,
+# stale (e.g. Pac-12 era records), or missing entirely.
+# Maps school name (lowercase, partial match) → quality factor.
+SCHOOL_CONF_OVERRIDE: Dict[str, float] = {
+    # Former Pac-12 schools that moved to Big Ten in 2024
+    "oregon":         1.00,
+    "washington":     1.00,
+    "ucla":           1.00,
+    "usc":            1.00,
+    # Former Pac-12 schools that moved to Big 12 in 2024
+    "arizona":        0.90,
+    "utah":           0.90,
+    "colorado":       0.90,
+    # Former Pac-12 schools that moved to ACC in 2024
+    "stanford":       0.88,
+    "california":     0.88,
+    "cal ":           0.88,
+    # Pac-12 remnant (Washington State, Oregon State — independent-ish)
+    "washington state": 0.75,
+    "oregon state":     0.75,
+}
 
-def _conf_quality(conference: Optional[str]) -> float:
+
+def _conf_quality(conference: Optional[str], school: Optional[str] = None) -> float:
+    """
+    Return the competition-quality multiplier for a given conference string.
+
+    Falls back to a school-level override when the conference string is stale
+    or ambiguous (e.g. historical Pac-12 records after conference realignment).
+    """
+    if school:
+        school_lower = school.lower()
+        for k, v in SCHOOL_CONF_OVERRIDE.items():
+            if k in school_lower:
+                return v
+
     if not conference:
         return DEFAULT_CONF_QUALITY
     conf_lower = conference.lower()

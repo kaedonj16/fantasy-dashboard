@@ -4,13 +4,17 @@ import os
 
 from openai import OpenAI
 
-_AI_CLIENT = None
+_AI_CLIENT: OpenAI | None = None
 
 
 def get_ai_client() -> OpenAI:
     global _AI_CLIENT
     if _AI_CLIENT is None:
-        _AI_CLIENT = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        _AI_CLIENT = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            max_retries=3,      # retry transient 5xx / rate-limit responses
+            timeout=30.0,       # per-request timeout in seconds
+        )
     return _AI_CLIENT
 
 

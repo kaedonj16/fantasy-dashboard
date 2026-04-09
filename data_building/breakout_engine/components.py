@@ -16,7 +16,64 @@ All functions return (score: float, details: Dict) tuples.
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
-from .config import *
+from . import config as _cfg  # explicit module alias — avoids polluting this namespace
+# Re-export every constant used in this file so call sites don't change.
+# Add new ones here when config.py grows; remove this block if you migrate to
+# cfg.CONSTANT_NAME references throughout.
+from .config import (
+    MAX_VACATED_TARGETS_WR_TE, MAX_VACATED_CARRIES_RB, MAX_VACATED_TARGETS_RB,
+    QB_STARTER_SNAP_THRESHOLD, MAX_SNAP_SHARE_BONUS,
+    MAX_VACATED_AIR_YARDS,
+    AIR_YARDS_ELITE_ADOT, AIR_YARDS_GOOD_ADOT, AIR_YARDS_AVERAGE_ADOT,
+    AIR_YARDS_ELITE_BONUS, AIR_YARDS_GOOD_BONUS, AIR_YARDS_AVERAGE_BONUS,
+    HIGH_THREAT_MULTIPLIER, MEDIUM_THREAT_MULTIPLIER,
+    HIGH_THREAT_MAX_POINTS, MEDIUM_THREAT_MAX_POINTS, LOW_THREAT_MAX_POINTS,
+    FA_HIGH_THREAT_TARGETS, FA_MEDIUM_THREAT_TARGETS,
+    FA_HIGH_THREAT_CARRIES, FA_MEDIUM_THREAT_CARRIES,
+    FA_HIGH_THREAT_PENALTY, FA_MEDIUM_THREAT_PENALTY, FA_LOW_THREAT_PENALTY,
+    DRAFT_PENALTY_ROUND_1, DRAFT_PENALTY_ROUND_2,
+    DRAFT_PENALTY_ROUND_3, DRAFT_PENALTY_ROUND_4_PLUS,
+    ELITE_PLAYS_PER_GAME, PACE_SCORE_MAX, PACE_BASELINE,
+    PASS_RATE_SCORE_MAX, HIGH_PASS_RATE, BALANCED_PASS_RATE,
+    ELITE_YARDS_PER_GAME, GOOD_YARDS_PER_GAME, AVERAGE_YARDS_PER_GAME,
+    ELITE_OFFENSE_SCORE, GOOD_OFFENSE_SCORE, AVERAGE_OFFENSE_SCORE, BELOW_AVERAGE_OFFENSE_SCORE,
+    ELITE_PASS_TD_PER_GAME, GOOD_PASS_TD_PER_GAME,
+    QB_ELITE_BONUS, QB_GOOD_BONUS, QB_AVERAGE_BONUS,
+    OC_PASS_HEAVY_THRESHOLD, OC_RUN_HEAVY_THRESHOLD,
+    OC_PASS_HEAVY_WR_BONUS, OC_RUN_HEAVY_WR_PENALTY, OC_UNKNOWN_WR_NEUTRAL,
+    OC_RUN_HEAVY_RB_BONUS, OC_PASS_HEAVY_RB_PENALTY,
+    HC_CHANGE_UNCERTAINTY_PENALTY,
+    QB_UPGRADE_WR_BONUS, QB_DOWNGRADE_WR_PENALTY, QB_LATERAL_CHANGE,
+    QB_TIER_ELITE_RATING, QB_TIER_GOOD_RATING, QB_TIER_AVERAGE_RATING, QB_TIER_POOR_RATING,
+    QB_TIER_WR_SCORES,
+    SECOND_YEAR_SCORE, THIRD_YEAR_SCORE, ROOKIE_SCORE, VETERAN_SCORE,
+    YOUNG_AGE_THRESHOLD, VETERAN_AGE_THRESHOLD,
+    WR_ELITE_YARDS_PER_TARGET, WR_GOOD_YARDS_PER_TARGET, WR_AVERAGE_YARDS_PER_TARGET,
+    WR_ELITE_CATCH_RATE, WR_GOOD_CATCH_RATE, WR_AVERAGE_CATCH_RATE,
+    RB_ELITE_YARDS_PER_CARRY, RB_GOOD_YARDS_PER_CARRY, RB_AVERAGE_YARDS_PER_CARRY,
+    RB_ELITE_YARDS_PER_TARGET, RB_GOOD_YARDS_PER_TARGET,
+    EFFICIENCY_YPT_MAX, EFFICIENCY_CATCH_RATE_MAX, EFFICIENCY_YPC_MAX, EFFICIENCY_RECEIVING_RB_MAX,
+    WR_ESTABLISHED_TARGETS, WR_BACKUP_TARGETS, WR_ROTATION_TARGETS,
+    RB_ESTABLISHED_CARRIES, RB_BACKUP_CARRIES, RB_ROTATION_CARRIES,
+    ESTABLISHED_USAGE_SCORE, BACKUP_USAGE_SCORE, ROTATION_USAGE_SCORE, MINIMAL_USAGE_SCORE,
+    DEFAULT_LOOKBACK_DAYS,
+    SNAP_ELITE_INCREASE, SNAP_GOOD_INCREASE, SNAP_MODERATE_INCREASE, SNAP_TREND_MAX,
+    OPP_ELITE_INCREASE, OPP_GOOD_INCREASE, OPP_MODERATE_INCREASE, OPP_TREND_MAX,
+    RZ_ELITE_INCREASE, RZ_GOOD_INCREASE, RZ_TREND_MAX,
+    ROLE_ELITE_IMPROVEMENT, ROLE_GOOD_IMPROVEMENT, ROLE_MODERATE_IMPROVEMENT, ROLE_IMPROVEMENT_MAX,
+    OFFSEASON_NEUTRAL_SCORE,
+    FULL_SEASON_GAMES, FULL_SEASON_TOUCHES, HALF_SEASON_GAMES, HALF_SEASON_TOUCHES,
+    QUARTER_SEASON_GAMES, QUARTER_SEASON_TOUCHES,
+    SAMPLE_FULL_SCORE, SAMPLE_HALF_SCORE, SAMPLE_QUARTER_SCORE, SAMPLE_MINIMAL_SCORE, SAMPLE_ROOKIE_SCORE,
+    HAS_EFFICIENCY_DATA_SCORE, HAS_ADVANCED_METRICS_SCORE, HAS_USAGE_HISTORY_SCORE,
+    VERY_CONSISTENT_VARIANCE, CONSISTENT_VARIANCE, MODERATE_VARIANCE,
+    CONSISTENCY_HIGH_SCORE, CONSISTENCY_GOOD_SCORE, CONSISTENCY_MODERATE_SCORE, CONSISTENCY_LOW_SCORE,
+    PHASE_CERTAINTY, INJURY_STATUS_PENALTIES,
+    INJURY_HISTORY_GAMES_MISSED_MODERATE, INJURY_HISTORY_GAMES_MISSED_SEVERE,
+    INJURY_HISTORY_MODERATE_PENALTY, INJURY_HISTORY_SEVERE_PENALTY,
+    TREND_RISING_THRESHOLD, TREND_FALLING_THRESHOLD, SCORE_CHANGE_RISING,
+    COMPONENT_SCORE_MIN, COMPONENT_SCORE_MAX, COMPETITION_PENALTY_MAX,
+)
 from .db_helpers import (
     get_vacated_opportunity,
     get_departures_by_team_position,
@@ -156,12 +213,17 @@ def _position_sample_confidence(position: str, usage: Dict) -> float:
 def _build_player_baseline(position: str, player_prev_usage: Dict) -> Dict:
     """
     Stabilized baseline for comparing competition and role changes.
+
+    The floor_role prevents extreme low-confidence shrinkage for players with
+    documented games played, but is NOT applied to players with zero recorded
+    games — that would falsely inflate scores for data-absent players.
     """
     targets = _safe_float(player_prev_usage.get("targets", 0))
     carries = _safe_float(player_prev_usage.get("carries", 0))
     routes = _safe_float(player_prev_usage.get("routes", 0))
     snap_share = _safe_float(player_prev_usage.get("snap_share", 0))
-    games = max(_safe_float(player_prev_usage.get("games", 0)), 1.0)
+    raw_games = _safe_float(player_prev_usage.get("games", 0))
+    games = max(raw_games, 1.0)
     pass_attempts = _safe_float(
         player_prev_usage.get("pass_attempts", player_prev_usage.get("attempts", 0)),
         0
@@ -179,7 +241,13 @@ def _build_player_baseline(position: str, player_prev_usage: Dict) -> Dict:
     else:
         floor_role = 15.0
 
-    stabilized_role = max(raw_role * confidence, floor_role)
+    # Only apply the floor when the player has actual games on record.
+    # Without this guard, a player with zero data gets a non-zero stabilized
+    # score that artificially competes with players who have real usage history.
+    if raw_games > 0:
+        stabilized_role = max(raw_role * confidence, floor_role)
+    else:
+        stabilized_role = raw_role * confidence
 
     return {
         "targets": round(targets, 1),

@@ -21,8 +21,8 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
         'competition_removed': 0.20,  # High - who left matters most
         'competition_added_penalty': 0.10,  # Low - signings still happening
         'team_environment': 0.15,
-        'player_readiness': 0.25,  # High - historical data important
-        'role_trajectory': 0.1,  # Low - no recent in-season data
+        'player_readiness': 0.20,  # High - historical data important (was 0.25; reduced to keep sum=1.0)
+        'role_trajectory': 0.10,  # Low - no recent in-season data
         'confidence': 0.05
     },
     'post_free_agency': {

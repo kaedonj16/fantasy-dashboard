@@ -53,6 +53,13 @@ def _smoothstep01(x: float) -> float:
 
 
 def _normalize_by_pos(values_by_pid: Dict[str, float], pos_by_pid: Dict[str, str]) -> Dict[str, float]:
+    """
+    Normalize each player's raw score to [0, 1] within their position group.
+
+    Uses 5th/95th percentile bounds rather than min/max to prevent a single
+    outlier season from compressing the entire position scale. Players whose
+    raw score falls outside the clipped bounds are clamped to [0, 1].
+    """
     by_pos: Dict[str, list[float]] = {}
     for pid, val in values_by_pid.items():
         pos = pos_by_pid.get(pid)
@@ -65,8 +72,16 @@ def _normalize_by_pos(values_by_pid: Dict[str, float], pos_by_pid: Dict[str, str
         if not vals:
             bounds[pos] = (0.0, 1.0)
             continue
-        vmin = min(vals)
-        vmax = max(vals)
+        sorted_vals = sorted(vals)
+        n = len(sorted_vals)
+        if n < 4:
+            # Too few players to percentile-clip; fall back to full range
+            vmin, vmax = sorted_vals[0], sorted_vals[-1]
+        else:
+            p5_idx = max(0, int(0.05 * n))
+            p95_idx = min(n - 1, int(0.95 * n))
+            vmin = sorted_vals[p5_idx]
+            vmax = sorted_vals[p95_idx]
         if vmax <= vmin:
             vmax = vmin + 1.0
         bounds[pos] = (vmin, vmax)
@@ -120,7 +135,20 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
 
 
 def horizon_age_factor(pos: str, age: Optional[float]) -> float:
-    """3-year dynasty horizon age factor."""
+    """
+    3-year dynasty horizon age factor.
+
+    Weights the next three seasons front-loaded toward year 3 (0.20 / 0.35 / 0.45)
+    to emphasize where a player's value will land at trade/hold decision time.
+
+    The ^1.10 exponent applies a mild convex penalty: players whose weighted
+    average is already below 1.0 (i.e. declining or very young) are pushed
+    slightly further down, while players near their peak (base ≈ 1.0) are
+    barely affected. This captures the idea that age-curve risk compounds over
+    a 3-year window more than a single-season snapshot would suggest.
+    Empirically calibrated against dynasty ADP data; revisit if the underlying
+    _age_factor peaks are re-tuned.
+    """
     if age is None:
         age = 26.0
 
@@ -698,6 +726,8 @@ def build_value_table_for_usage(
         league_type: str = "1QB",
         include_confidence: bool = False,
         num_teams: int = NUM_TEAMS,
+        starters: Optional[Dict[str, int]] = None,
+        replacement_mult: Optional[Dict[str, float]] = None,
 ):
     """
     Dynasty value formula using:
@@ -715,10 +745,19 @@ def build_value_table_for_usage(
     Args:
       league_type: "1QB" (default), "Superflex", or "2QB"
       include_confidence: if True, returns (value_table, confidence_table) instead of just value_table
+      num_teams: number of teams in the league (default 10)
+      starters: per-position starter counts, e.g. {"QB": 2, "RB": 2, "WR": 3, "TE": 1}.
+                Defaults to the module-level STARTERS (1QB, 2RB, 2WR, 1TE).
+      replacement_mult: per-position scarcity multiplier applied to starter_slots to find
+                        the replacement-level index. Defaults to module-level REPLACEMENT_MULT.
 
     Returns:
       Dict[player_id, value_0_to_999_9], or tuple of (values, confidences) when include_confidence=True
     """
+    # Resolve league-format parameters; allow per-call overrides for superflex/2QB/12-team
+    _starters = starters if starters is not None else STARTERS
+    _replacement_mult = replacement_mult if replacement_mult is not None else REPLACEMENT_MULT
+
     lst = load_usage_table()
     if not isinstance(lst, list):
         raise ValueError("usage table must be a list of player objects")
@@ -1139,8 +1178,8 @@ def build_value_table_for_usage(
 
         lst_sorted = sorted(lst_pos, key=lambda x: x[1], reverse=True)
 
-        starter_slots = STARTERS[pos] * num_teams
-        replacement_idx = int(starter_slots * REPLACEMENT_MULT[pos])
+        starter_slots = _starters[pos] * num_teams
+        replacement_idx = int(starter_slots * _replacement_mult[pos])
         replacement_idx = max(0, min(replacement_idx, len(lst_sorted) - 1))
         starter_idx = max(0, min(starter_slots - 1, len(lst_sorted) - 1))
         elite_idx = max(0, min(elite_cutoffs[pos] - 1, len(lst_sorted) - 1))

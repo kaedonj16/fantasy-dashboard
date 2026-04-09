@@ -27,22 +27,18 @@
   }
 }
 
+/* firePulse / icePulse: use opacity + subtle scale instead of box-shadow
+   animation. Animating box-shadow forces GPU repaint on every frame; animating
+   opacity runs entirely on the compositor layer and is ~3× cheaper. The
+   static glow shadows are defined on the elements themselves (see below). */
 @keyframes firePulse {
-  0%, 100% {
-    box-shadow: 0 0 10px rgba(249,115,22,.45), 0 0 24px rgba(251,146,60,.25), inset 0 0 12px rgba(251,146,60,.4);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(249,115,22,.6), 0 0 32px rgba(251,146,60,.35), inset 0 0 14px rgba(251,146,60,.5);
-  }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%       { opacity: 1.00; transform: scale(1.005); }
 }
 
 @keyframes icePulse {
-  0%, 100% {
-    box-shadow: 0 0 10px rgba(56,189,248,.35), 0 0 24px rgba(147,197,253,.2), inset 0 0 12px rgba(147,197,253,.3);
-  }
-  50% {
-    box-shadow: 0 0 18px rgba(56,189,248,.5), 0 0 36px rgba(147,197,253,.35), inset 0 0 14px rgba(147,197,253,.4);
-  }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%       { opacity: 1.00; transform: scale(1.005); }
 }
 
 @keyframes tick-scroll {
@@ -102,6 +98,13 @@
   --max-content: 1400px;
   --weakest: #fef2f2;
   --strongest: #ecfdf3;
+  /* Delta / trend indicators */
+  --delta-up: #31c36b;
+  --delta-down: #e05656;
+  --delta-flat: #9ca3af;
+  /* Status / feedback */
+  --error-text: #fecaca;
+  --text-faint: #555;
 }
 
 :root[data-theme="dark"] {
@@ -124,6 +127,13 @@
   --loss: #f87171;
   --weakest: #703a3a;
   --strongest: #2d4a39;
+  /* Delta / trend indicators — slightly brighter in dark mode */
+  --delta-up: #4ade80;
+  --delta-down: #f87171;
+  --delta-flat: #9ca3af;
+  /* Status / feedback */
+  --error-text: #fca5a5;
+  --text-faint: #9ca3af;
 }
 
 /* ============================================
@@ -5015,27 +5025,27 @@ thead th {
 }
 
 .delta-down {
-  color: #e05656;
+  color: var(--delta-down);
 }
 
 .delta-flat {
-  color: #9ca3af;
+  color: var(--delta-flat);
 }
 
 .delta-up {
-  color: #31c36b;
+  color: var(--delta-up);
 }
 
 .error-message {
   margin-top: 8px;
   font-size: 13px;
-  color: #fecaca;
+  color: var(--error-text);
 }
 
 .home-card .error-message {
   margin-top: 8px;
   font-size: 13px;
-  color: #fecaca;
+  color: var(--error-text);
 }
 
 .m-team .avatar {
@@ -5059,7 +5069,7 @@ thead th {
 .faq-item p {
   margin-top: 6px;
   font-size: 14px;
-  color: #555;
+  color: var(--text-faint);
 }
 
 .faq-item summary {

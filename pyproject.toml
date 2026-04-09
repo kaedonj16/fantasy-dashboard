@@ -1,0 +1,23 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E = pycodestyle errors, F = pyflakes, I = isort, N = pep8 naming
+select = ["E", "F", "I", "N"]
+ignore = [
+    "E501",   # line too long — handled by formatter, not linter
+    "N802",   # function name should be lowercase — some internal helpers use _CamelCase
+    "N803",   # argument name should be lowercase
+    "N806",   # variable in function should be lowercase
+    "F401",   # imported but unused — re-exports in __init__.py trigger this
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dashboard_services", "data_building", "utils"]
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
