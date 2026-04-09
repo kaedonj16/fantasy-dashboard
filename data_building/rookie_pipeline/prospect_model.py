@@ -259,7 +259,29 @@ def _score_production_season(season: Dict, pos: str) -> float:
     return 52.0
 
 
-def calc_production_score(seasons: List[Dict], position: str) -> float:
+def _eval_metric_value(eval_metrics: Optional[Dict], name: str, min_confidence: float = 0.0):
+    """
+    Safely extract a metric value from an eval_metrics dict.
+
+    eval_metrics has the shape: {metric_name: {value: ..., confidence: ..., ...}}
+    Returns None if metric absent, None value, or confidence below threshold.
+    """
+    if not eval_metrics:
+        return None
+    entry = eval_metrics.get(name)
+    if not isinstance(entry, dict):
+        return None
+    confidence = entry.get("confidence") or 0.0
+    if confidence < min_confidence:
+        return None
+    return entry.get("value")
+
+
+def calc_production_score(
+    seasons: List[Dict],
+    position: str,
+    eval_metrics: Optional[Dict] = None,
+) -> float:
     """
     Per-game production vs position-specific elite thresholds.
     Uses a blend of the best season and latest season to capture both
@@ -267,6 +289,12 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
 
     Transfer penalty: Players who transfer to weaker conferences get
     production discounted, as stats may be inflated by weaker competition.
+
+    eval_metrics (optional): If the evaluation pipeline produced yprr/yac_per_att
+    metrics, these are used to apply a confidence-weighted production adjustment:
+    - WR/TE: yprr proxy ≥ 1.8 boosts score; < 1.2 deflates slightly (±15% max)
+    - RB:    yac_per_att proxy adjusts production ±10%
+    The adjustment is capped intentionally to prevent proxies from dominating.
     """
     if not seasons:
         return 52.0  # pre-draft neutral: unknown ≠ bad
@@ -328,16 +356,49 @@ def calc_production_score(seasons: List[Dict], position: str) -> float:
     prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
 
     # Apply transfer penalty to discourage stat inflation from weak competition
-    return _clip(prod * transfer_penalty)
+    prod = _clip(prod * transfer_penalty)
+
+    # ── Eval-metric blending ─────────────────────────────────────────────────
+    # When evaluation pipeline metrics are available, apply a confidence-weighted
+    # adjustment.  Each adjustment is intentionally small (±10–15%) so that low-
+    # confidence proxies don't override the primary stat-based score.
+    pos = position.upper()
+    if eval_metrics and pos in ("WR", "TE"):
+        yprr = _eval_metric_value(eval_metrics, "yprr", min_confidence=0.30)
+        if yprr is not None:
+            # 1.8 yprr ≈ strong college producer; 1.2 ≈ below average
+            yprr_adj = min(1.15, max(0.85, float(yprr) / 1.8))
+            confidence = (eval_metrics.get("yprr") or {}).get("confidence", 0.35)
+            blend = 0.80 + 0.20 * confidence  # max 20% weight from this proxy
+            prod = _clip(prod * (blend + (1.0 - blend) * yprr_adj))
+
+    elif eval_metrics and pos == "RB":
+        yac = _eval_metric_value(eval_metrics, "yac_per_att", min_confidence=0.35)
+        if yac is not None:
+            # 2.5 yac ≈ average RB; 4.0 ≈ elite contact runner
+            yac_adj = min(1.10, max(0.90, float(yac) / 2.5))
+            confidence = (eval_metrics.get("yac_per_att") or {}).get("confidence", 0.40)
+            blend = 0.85 + 0.15 * confidence
+            prod = _clip(prod * (blend + (1.0 - blend) * yac_adj))
+
+    return prod
 
 
-def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
+def calc_efficiency_score(
+    seasons: List[Dict],
+    position: str,
+    eval_metrics: Optional[Dict] = None,
+) -> float:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
 
     Uses the latest season as the primary signal.  When multiple seasons are
     available a consistency bonus (±5) is applied: sustained high efficiency
     across seasons is more predictive than a single-year peak.
+
+    eval_metrics (optional): When available and confidence is sufficient:
+    - QB: adjusted_comp_pct replaces raw completion_pct; twp_rate supplements td_int
+    - WR/TE: tprr proxy supplements yds_per_reception via a soft blend
     """
     if not seasons:
         return 52.0  # pre-draft neutral: unknown ≠ bad
@@ -349,6 +410,12 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
         ypr = _safe(ls.get("yds_per_reception"), 10.0)
         ms  = _safe(ls.get("market_share_yards"))
         eff = _scale(ypr, 9.0, 18.0) * 0.60 + _scale(ms, 0.10, 0.45) * 0.40
+        # Supplement with tprr proxy when available (target share per route)
+        tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
+        if tprr is not None:
+            tprr_score = _scale(float(tprr), 0.18, 0.42)  # 0.18 → low, 0.42 → elite
+            tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
+            eff = eff * (1.0 - 0.10 * tprr_conf) + tprr_score * (0.10 * tprr_conf)
 
     elif pos == "RB":
         ypc   = _safe(ls.get("yds_per_carry"), 4.25)
@@ -362,12 +429,30 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
 
     elif pos == "QB":
         ypa   = _safe(ls.get("yds_per_attempt"), 7.0)
-        cpct  = _safe(ls.get("completion_pct"),  62.0)
         td_int= _safe(ls.get("td_int_ratio"),     2.0)
+
+        # Use adjusted_comp_pct from eval pipeline when available and confident;
+        # otherwise fall back to raw completion_pct from college stats.
+        adj_cpct = _eval_metric_value(eval_metrics, "adjusted_comp_pct", min_confidence=0.55)
+        if adj_cpct is not None:
+            cpct = _safe(adj_cpct, 62.0)
+        else:
+            cpct = _safe(ls.get("completion_pct"), 62.0)
+
+        # twp_rate proxy (interception rate) can supplement td_int signal.
+        # Lower twp_rate → better decision-making → slightly boost td_int weight.
+        twp = _eval_metric_value(eval_metrics, "twp_rate", min_confidence=0.55)
+        if twp is not None:
+            # twp_rate in [0, 5]; lower is better.  Treat as mild modifier on td_int score.
+            twp_penalty = _clip(float(twp) / 5.0, 0.0, 1.0)  # 0 = great, 1 = bad
+            td_int_mod = td_int * (1.0 + 0.15 * (1.0 - twp_penalty))
+        else:
+            td_int_mod = td_int
+
         eff   = (
-            _scale(ypa,   6.5, 10.5) * 0.45 +
-            _scale(cpct, 60.0, 76.0) * 0.30 +
-            _scale(td_int, 1.5,  7.0) * 0.25
+            _scale(ypa,      6.5, 10.5) * 0.45 +
+            _scale(cpct,    60.0, 76.0) * 0.30 +
+            _scale(td_int_mod, 1.5, 7.0) * 0.25
         )
 
     elif pos == "TE":
@@ -386,6 +471,12 @@ def calc_efficiency_score(seasons: List[Dict], position: str) -> float:
             _scale(ms,  0.05, 0.30) * 0.30 +
             catch_rate_score         * 0.20
         )
+        # Supplement with tprr proxy when available
+        tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
+        if tprr is not None:
+            tprr_score = _scale(float(tprr), 0.22, 0.48)
+            tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
+            eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
     else:
         return 52.0
@@ -866,9 +957,13 @@ def score_prospect(
     ath      = prospect.get("athleticism") or {}
     dy       = int(prospect.get("draft_class_year") or 2026)
 
-    production_score    = calc_production_score(seasons, pos)
+    # _eval_metrics is attached by the pipeline orchestration (pipeline.py) when
+    # the evaluation pipeline has run first.  Shape: {metric_name: metric_payload}.
+    eval_metrics: Optional[Dict] = prospect.get("_eval_metrics") or None
+
+    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics)
     utilization_score   = calc_utilization_score(seasons, pos)
-    efficiency_score    = calc_efficiency_score(seasons, pos)
+    efficiency_score    = calc_efficiency_score(seasons, pos, eval_metrics=eval_metrics)
     age_score           = calc_age_score(age, dy, pos)
     breakout_score      = calc_breakout_score(seasons, age, pos)
     athleticism_score   = calc_athleticism_score(ath, pos)

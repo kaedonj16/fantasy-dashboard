@@ -1495,6 +1495,34 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     print(f"[pipeline] Loaded {len(complete_prospects)} complete prospects from database")
 
+    # ── Attach evaluation pipeline metrics before scoring ────────────────────
+    # The evaluation pipeline (rookie_evaluation_pipeline.py) derives proxy
+    # metrics (yprr, tprr, yac_per_att, adjusted_comp_pct, etc.) from college
+    # stats.  Attaching them to prospect dicts as _eval_metrics lets
+    # score_all_prospects use them when available via confidence-weighted blending.
+    #
+    # Lazy import avoids circular dependency (rookie_evaluation_pipeline imports
+    # load_prospects_from_db from this module).
+    try:
+        from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
+            run_rookie_evaluation_pipeline,
+        )
+        eval_result = run_rookie_evaluation_pipeline(draft_year)
+        eval_profiles_by_id: Dict[str, Dict] = {
+            p["player_id"]: (p.get("rookie_profile") or {}).get("metrics") or {}
+            for p in (eval_result.get("profiles") or [])
+            if p.get("player_id")
+        }
+        attached = 0
+        for prospect in complete_prospects:
+            pid = prospect.get("player_id")
+            if pid and pid in eval_profiles_by_id:
+                prospect["_eval_metrics"] = eval_profiles_by_id[pid]
+                attached += 1
+        print(f"[pipeline] Attached eval metrics to {attached}/{len(complete_prospects)} prospects")
+    except Exception as _eval_exc:
+        print(f"[pipeline] WARNING: Could not attach eval metrics before scoring: {_eval_exc}")
+
     # Score prospects
     scores = score_all_prospects(complete_prospects, consensus_map)
     print(f"[pipeline] Scored {len(scores)} prospects")

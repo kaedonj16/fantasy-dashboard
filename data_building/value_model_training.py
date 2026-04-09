@@ -203,7 +203,9 @@ def load_advanced_metrics_df() -> pd.DataFrame:
 
             latest_date = latest["max_date"]
 
-            # Load all metrics for latest date
+            # Load all metrics for latest date, including rookie evaluation columns.
+            # rookie_eval_* columns are null for established NFL players (default 0 in model)
+            # and populated for current draft-class prospects.
             rows = conn.execute("""
                 SELECT
                     player_id,
@@ -223,7 +225,25 @@ def load_advanced_metrics_df() -> pd.DataFrame:
                     red_zone_usage,
                     role_score,
                     usage_trend,
-                    efficiency_trend
+                    efficiency_trend,
+                    -- Rookie evaluation columns (null for non-rookies; filled with 0 below)
+                    rookie_eval_routes_run,
+                    rookie_eval_yprr,
+                    rookie_eval_tprr,
+                    rookie_eval_yac_per_att,
+                    rookie_eval_mtf_per_att,
+                    rookie_eval_explosive_run_rate,
+                    rookie_eval_adjusted_comp_pct,
+                    rookie_eval_twp_rate,
+                    rookie_eval_player_level_sos,
+                    rookie_eval_perf_vs_top_def,
+                    CASE WHEN rookie_eval_true_early_declare THEN 1 ELSE 0 END
+                        AS rookie_eval_true_early_declare_flag,
+                    rookie_eval_draft_class_year,
+                    rookie_eval_completeness,
+                    rookie_eval_prospect_score,
+                    CASE WHEN rookie_eval_is_rookie THEN 1 ELSE 0 END
+                        AS rookie_eval_is_rookie_flag
                 FROM player_advanced_metrics
                 WHERE as_of_date = %s
             """, (latest_date,)).fetchall()
@@ -776,6 +796,25 @@ def train_trade_value_model(
         "role_score",
         "usage_trend",
         "efficiency_trend",
+        # ── Rookie evaluation features ─────────────────────────────────────────
+        # Derived / proxied from college stats for current draft-class prospects.
+        # Non-rookies have these as 0 (null-filled below); the model learns that
+        # is_rookie=1 combined with a high prospect_score signals upside value.
+        "rookie_eval_routes_run",
+        "rookie_eval_yprr",
+        "rookie_eval_tprr",
+        "rookie_eval_yac_per_att",
+        "rookie_eval_mtf_per_att",
+        "rookie_eval_explosive_run_rate",
+        "rookie_eval_adjusted_comp_pct",
+        "rookie_eval_twp_rate",
+        "rookie_eval_player_level_sos",
+        "rookie_eval_perf_vs_top_def",
+        "rookie_eval_true_early_declare_flag",   # 0/1 (BOOLEAN → int in query)
+        "rookie_eval_draft_class_year",
+        "rookie_eval_completeness",
+        "rookie_eval_prospect_score",
+        "rookie_eval_is_rookie_flag",             # 0/1 (BOOLEAN → int in query)
     ]
 
     for col in (
@@ -797,6 +836,14 @@ def train_trade_value_model(
     df_model = df.dropna(subset=["position"]).copy()
     if df_model.empty:
         raise ValueError("[value_model] No rows remain after requiring position.")
+
+    # Rookie eval columns are null for established NFL players.
+    # Fill with 0 so the imputer treats them as "not applicable" rather than missing.
+    # The is_rookie_flag column (0/1) lets the model distinguish the two groups.
+    _rookie_eval_cols = [c for c in numeric_cols if c.startswith("rookie_eval_")]
+    for col in _rookie_eval_cols:
+        if col in df_model.columns:
+            df_model[col] = df_model[col].fillna(0)
 
     for col in numeric_cols:
         df_model[col] = pd.to_numeric(df_model[col], errors="coerce")

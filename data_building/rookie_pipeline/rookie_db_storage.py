@@ -140,8 +140,53 @@ def save_rookie_evaluation_to_db(
             )
             run_rows = 1
 
+    # Bridge profiles into player_advanced_metrics so model training can use
+    # rookie evaluation fields as features.
+    bridge_result = bridge_to_advanced_metrics(as_of_date, draft_class_year, rookie_profiles)
+
     return {
         "db_metrics_rows": metrics_rows,
         "db_profiles_rows": profile_rows,
         "db_runs_rows": run_rows,
+        "db_bridge_rows": bridge_result,
     }
+
+
+def bridge_to_advanced_metrics(
+    as_of_date: str,
+    draft_class_year: int,
+    profiles: List[Dict],
+) -> Dict[str, int]:
+    """
+    Bridge rookie evaluation profiles into player_advanced_metrics.
+
+    Calls merge_rookie_profiles_to_advanced_metrics from advanced_metrics.py
+    so that rookie_eval_* columns in player_advanced_metrics are populated.
+    These columns are then available as features in value_model_training.py.
+
+    Args:
+        as_of_date:        ISO date string (YYYY-MM-DD).
+        draft_class_year:  Draft class year (e.g. 2026).
+        profiles:          List of rookie profile dicts from evaluation pipeline.
+
+    Returns:
+        {"updated": n, "inserted": n, "skipped": n}
+    """
+    if not profiles or not _db_available():
+        return {"updated": 0, "inserted": 0, "skipped": 0}
+
+    try:
+        from data_building.advanced_metrics import merge_rookie_profiles_to_advanced_metrics
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            result = merge_rookie_profiles_to_advanced_metrics(profiles, as_of_date, conn=conn)
+        print(
+            f"[rookie_db_storage] bridge_to_advanced_metrics class={draft_class_year} "
+            f"updated={result.get('updated')} inserted={result.get('inserted')} "
+            f"skipped={result.get('skipped')}"
+        )
+        return result
+    except Exception as exc:
+        print(f"[rookie_db_storage] bridge_to_advanced_metrics failed: {exc}")
+        return {"updated": 0, "inserted": 0, "skipped": 0, "error": str(exc)}

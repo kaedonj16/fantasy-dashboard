@@ -4,10 +4,17 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
 from data_building.rookie_pipeline.rookie_metric_derivations import (
+    derive_adjusted_comp_pct_proxy,
     derive_explosive_run_rate,
+    derive_mtf_per_att_proxy,
     derive_performance_vs_top_defenses,
     derive_player_level_sos,
+    derive_routes_run_proxy,
+    derive_tprr_proxy,
     derive_true_early_declare,
+    derive_twp_rate_proxy,
+    derive_yac_per_att_proxy,
+    derive_yprr_proxy,
 )
 from data_building.rookie_pipeline.rookie_storage import utc_now_iso
 
@@ -52,13 +59,39 @@ class RookieSource:
 
 
 class ProspectSeasonStatsSource(RookieSource):
-    """Direct source from normalized college season tables."""
+    """
+    Direct source from normalized college season tables (rookie_prospect_source_data).
+
+    DIRECT_MAP entries are tuples of (source_field, confidence) or plain strings
+    (source_field only, default confidence 0.70). Entries with a callable value
+    receive the season_record and return (computed_value, confidence).
+    """
 
     source_name = "rookie_prospect_source_data"
     source_type = "api"
 
-    DIRECT_MAP = {
-        "snap_counts": "games_played",
+    # metric_name → source field name (or callable for inline computation)
+    # Each entry is (field_or_callable, confidence)
+    DIRECT_MAP: Dict[str, Any] = {
+        "snap_counts": ("games_played", 0.70),
+        # adjusted_comp_pct: raw completion_pct is a solid direct proxy (QB only)
+        "adjusted_comp_pct": ("completion_pct", 0.65),
+    }
+
+    # Inline calculations where we need more than one field
+    # key → callable(season_record) → Optional[float]
+    _INLINE: Dict[str, Any] = {
+        # twp_rate proxy: INT / pass_attempts * 100 (QB only)
+        "twp_rate": lambda sr: (
+            round((float(sr["interceptions"]) / float(sr["pass_attempts"])) * 100.0, 3)
+            if sr.get("interceptions") is not None
+            and sr.get("pass_attempts") is not None
+            and float(sr.get("pass_attempts", 0)) >= 50
+            else None
+        ),
+    }
+    _INLINE_CONFIDENCE: Dict[str, float] = {
+        "twp_rate": 0.55,
     }
 
     def fetch_player_season_metrics(
@@ -71,8 +104,11 @@ class ProspectSeasonStatsSource(RookieSource):
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
 
         for metric in requested_metrics:
+            # --- direct field map ---
             if metric.name in self.DIRECT_MAP:
-                raw_value = season_record.get(self.DIRECT_MAP[metric.name])
+                entry = self.DIRECT_MAP[metric.name]
+                field, confidence = entry if isinstance(entry, tuple) else (entry, 0.70)
+                raw_value = season_record.get(field)
                 if raw_value is not None:
                     out[metric.name] = base_metric_payload(
                         value=raw_value,
@@ -80,13 +116,36 @@ class ProspectSeasonStatsSource(RookieSource):
                         source_name=self.source_name,
                         source_type=self.source_type,
                         source_url=self.source_url,
-                        confidence=0.7,
+                        confidence=confidence,
+                    )
+                continue
+
+            # --- inline computation map ---
+            if metric.name in self._INLINE:
+                try:
+                    computed = self._INLINE[metric.name](season_record)
+                except Exception:
+                    computed = None
+                if computed is not None:
+                    out[metric.name] = base_metric_payload(
+                        value=computed,
+                        season=season,
+                        source_name=self.source_name,
+                        source_type=self.source_type,
+                        source_url=self.source_url,
+                        confidence=self._INLINE_CONFIDENCE.get(metric.name, 0.55),
                     )
 
         return out
 
 
 class DerivedRookieMetricsSource(RookieSource):
+    """
+    Derives rookie evaluation metrics from available college stats using
+    deterministic formulas. See rookie_metric_derivations.py for each formula,
+    its assumptions, and its stated confidence level.
+    """
+
     source_name = "rookie_metric_derivations"
     source_type = "derived"
 
@@ -98,25 +157,45 @@ class DerivedRookieMetricsSource(RookieSource):
     ) -> Dict[str, Dict[str, Any]]:
         out: Dict[str, Dict[str, Any]] = {}
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
+        position = (player.get("position") or "").upper()
 
         handlers = {
+            # --- existing derivations ---
             "explosive_run_rate": lambda: derive_explosive_run_rate(season_record),
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
             "true_early_declare": lambda: derive_true_early_declare(player),
+            # --- new proxy derivations ---
+            "routes_run": lambda: derive_routes_run_proxy(season_record, position),
+            "yprr": lambda: derive_yprr_proxy(season_record, position),
+            "tprr": lambda: derive_tprr_proxy(season_record, position),
+            "yac_per_att": lambda: derive_yac_per_att_proxy(season_record),
+            "mtf_per_att": lambda: derive_mtf_per_att_proxy(season_record),
+            "adjusted_comp_pct": lambda: derive_adjusted_comp_pct_proxy(season_record),
+            "twp_rate": lambda: derive_twp_rate_proxy(season_record),
         }
         confidences = {
             "explosive_run_rate": 0.45,
             "player_level_sos": 0.55,
-            "performance_vs_top_defenses": 0.4,
-            "true_early_declare": 0.8,
+            "performance_vs_top_defenses": 0.40,
+            "true_early_declare": 0.80,
+            "routes_run": 0.40,
+            "yprr": 0.35,
+            "tprr": 0.35,
+            "yac_per_att": 0.40,
+            "mtf_per_att": 0.30,
+            "adjusted_comp_pct": 0.60,
+            "twp_rate": 0.65,
         }
 
         for metric in requested_metrics:
             fn = handlers.get(metric.name)
             if not fn:
                 continue
-            value = fn()
+            try:
+                value = fn()
+            except Exception:
+                value = None
             if value is None:
                 continue
             out[metric.name] = base_metric_payload(
