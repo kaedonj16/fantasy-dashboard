@@ -200,8 +200,6 @@ def main():
     try:
         build_daily_data(season, week)
         build_daily_advanced_metrics()
-        backfill_historical_advanced_metrics()
-        build_daily_rookie_data()
 
         from data_building.build_daily_value_table import build_daily_model_values
         build_daily_model_values()
