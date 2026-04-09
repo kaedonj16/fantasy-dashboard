@@ -115,7 +115,7 @@ def derive_routes_run_proxy(stats: Dict[str, Any], position: str) -> Optional[fl
 
     targets = _get_num(stats, "targets")
     games = _get_num(stats, "games_played")
-    if targets is None or games is None or games < 4:
+    if targets is None or games is None or games < 4 or targets <= 0:
         return None
 
     return round(targets / baseline, 1)
