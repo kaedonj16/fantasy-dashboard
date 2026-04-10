@@ -226,8 +226,13 @@ class DerivedRookieMetricsSource(RookieSource):
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
             "true_early_declare": lambda: (
+<<<<<<< HEAD
+                print(f"[rookie_sources] Calling derive_true_early_declare for player: {player.get('name', 'Unknown')}"),
+                derive_true_early_declare(player)
+=======
                 print(f"[DEBUG] true_early_declare handler executing for player: {player.get('name', 'unknown')}") 
                 or self._get_sportradar_season_count_and_derive_early_declare(player)
+>>>>>>> main
             ),
             # --- new proxy derivations ---
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
@@ -288,7 +293,7 @@ class DerivedRookieMetricsSource(RookieSource):
                 #     f"present={present_inputs} missing_inputs={missing_inputs}"
                 # )
                 continue
-            print(f"[derive_ok]   player={player_key} season={season} metric={metric.name} value={value!r}")
+            # print(f"[derive_ok]   player={player_key} season={season} metric={metric.name} value={value!r}")
             out[metric.name] = base_metric_payload(
                 value=value,
                 season=season,

@@ -494,7 +494,6 @@ def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int,
                     saved += 1
                 else:
                     skipped += 1
-                    print(f"[pipeline] Mock entry skipped (no prospect match): player_name={player_name!r} → player_id={player_id!r}")
                 cur.execute("RELEASE SAVEPOINT save_mock")
             except Exception as exc:
                 cur.execute("ROLLBACK TO SAVEPOINT save_mock")
@@ -1505,12 +1504,30 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # Fetch prospects from Sportradar (skip if no key)
     sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
     if not sr_prospects:
+<<<<<<< HEAD
+        print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
+        try:
+            from .ingestion import prospects_from_mock_draft
+            from .mock_draft_scraper import scrape_consensus_mock_draft
+            
+            mock_picks = scrape_consensus_mock_draft(draft_year)
+            sr_prospects = prospects_from_mock_draft(mock_picks, draft_year)
+            print(f"[pipeline] Created {len(sr_prospects)} prospects from mock draft data")
+        except Exception as exc:
+            print(f"[pipeline] Failed to create prospects from mock data: {exc}")
+            return {}
+        
+        if not sr_prospects:
+            print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
+            return {}
+=======
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
         # Fall back: score from whatever is already in the DB
         return _score_from_db(draft_year, get_conn)
+>>>>>>> main
 
-    print(f"[pipeline] Fetched {len(sr_prospects)} prospects from Sportradar")
+    print(f"[pipeline] Loaded {len(sr_prospects)} prospects")
 
     # Deduplicate prospects with name variations (e.g., "K.C. Concepcion" == "KC Concepcion")
     sr_prospects = _deduplicate_prospects(sr_prospects)
@@ -1700,12 +1717,7 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         consensus_map = build_consensus_from_db_entries(draft_year, conn)
 
     if consensus_map:
-        sample = list(consensus_map.items())[:3]
-        for pid, c in sample:
-            print(f"[pipeline]   sample: {pid} pick={c.get('projected_pick')} mocks={c.get('num_mocks_used')} sources={c.get('mock_sources')}")
-    else:
-        print("[pipeline]   WARNING: consensus_map is empty — check rookie_mock_draft_entries has rows for this year")
-    print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
+        print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
 
     # Save consensus to DB
     with get_conn() as conn:
