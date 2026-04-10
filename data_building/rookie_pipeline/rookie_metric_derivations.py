@@ -84,39 +84,6 @@ def derive_performance_vs_top_defenses(stats: Dict[str, Any]) -> Optional[float]
     return round(max(0.0, min(100.0, base * (0.75 + 0.25 * sos) * 100.0)), 2)
 
 
-<<<<<<< HEAD
-def derive_true_early_declare(player: Dict[str, Any]) -> Optional[bool]:
-    """True if player has 3+ seasons of data AND explicitly early declared."""
-    player_name = player.get("name", "Unknown")
-    early = player.get("early_declare")
-    print(f"[derive_true_early_declare] player={player_name} early_declare={early}")
-    
-    if early is None:
-        print(f"[derive_true_early_declare] player={player_name} -> None (early_declare is None)")
-        return None
-    if not early:
-        print(f"[derive_true_early_declare] player={player_name} -> False (early_declare=False)")
-        return False
-    
-    # Check if player has 3+ seasons of data
-    seasons = player.get("seasons", [])
-    season_count = len(seasons)
-    print(f"[derive_true_early_declare] player={player_name} seasons_count={season_count}")
-    if season_count < 3:
-        print(f"[derive_true_early_declare] player={player_name} -> False (only {season_count} seasons)")
-        return False
-    
-    # Also ensure they're not a senior
-    class_year = str(player.get("class_year") or player.get("experience") or "").upper()
-    print(f"[derive_true_early_declare] player={player_name} class_year={class_year}")
-    if class_year.startswith("SR"):
-        print(f"[derive_true_early_declare] player={player_name} -> False (senior class)")
-        return False
-    
-    result = True
-    print(f"[derive_true_early_declare] player={player_name} -> {result} (all conditions met)")
-    return result
-=======
 def derive_true_early_declare(player: Dict[str, Any], sportradar_season_count: Optional[int] = None) -> Optional[bool]:
     """
     True if explicitly early declare AND has exactly 3 seasons of data (not more).
@@ -146,7 +113,6 @@ def derive_true_early_declare(player: Dict[str, Any], sportradar_season_count: O
         return False
     
     return bool(early)
->>>>>>> main
 
 
 # ---------------------------------------------------------------------------

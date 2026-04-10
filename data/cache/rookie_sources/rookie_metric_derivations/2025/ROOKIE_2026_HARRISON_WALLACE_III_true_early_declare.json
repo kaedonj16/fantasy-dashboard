@@ -1,5 +1,5 @@
 {
-  "cached_at": "2026-04-10T14:31:41Z",
+  "cached_at": "2026-04-10T16:06:03Z",
   "metric": "true_early_declare",
   "metric_payload": {
     "confidence": 0.8,
@@ -7,7 +7,7 @@
     "source_name": "rookie_metric_derivations",
     "source_type": "derived",
     "source_url": null,
-    "updated_at": "2026-04-10T14:31:41Z",
+    "updated_at": "2026-04-10T16:06:03Z",
     "value": false
   },
   "player_id": "ROOKIE_2026_HARRISON_WALLACE_III",

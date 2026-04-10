@@ -274,9 +274,9 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
 
 
 def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'."""
+    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
     import re
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_year: int, conn) -> int:
@@ -1504,7 +1504,6 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # Fetch prospects from Sportradar (skip if no key)
     sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
     if not sr_prospects:
-<<<<<<< HEAD
         print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
         try:
             from .ingestion import prospects_from_mock_draft
@@ -1520,12 +1519,10 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         if not sr_prospects:
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
-=======
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
         # Fall back: score from whatever is already in the DB
         return _score_from_db(draft_year, get_conn)
->>>>>>> main
 
     print(f"[pipeline] Loaded {len(sr_prospects)} prospects")
 
@@ -1780,8 +1777,8 @@ def run_rookie_pipeline(draft_year: Optional[int] = None) -> Dict[str, Any]:
 
 def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
     """
-    Fetch persisted rankings from the database.  Falls back to in-memory pipeline
-    if DB is unavailable or empty.
+    Fetch persisted rankings from the database.  Returns an empty list if no
+    data exists for the requested year — does not auto-run the pipeline.
     """
     # Ensure draft_year is an integer
     draft_year = int(draft_year)
@@ -1824,53 +1821,13 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
             if rows:
                 return rows
 
-            # DB available but tables empty — run the full pipeline to seed them
-            print(f"[pipeline] DB empty for {draft_year} - running full pipeline to populate tables")
-            run_rookie_pipeline(draft_year)
-
-            # Re-query after population
-            with get_conn() as conn2:
-                with conn2.cursor() as cur2:
-                    cur2.execute(
-                        """
-                        SELECT
-                            rr.player_id, rr.draft_class_year,
-                            rp.name, rp.position, rp.school, rp.age,
-                            rp.height_inches, rp.weight_lbs,
-                            rp.early_declare, rp.transfer_history,
-                            rr.overall_rank, rr.position_rank,
-                            rr.prospect_score, rr.rookie_value, rr.rookie_sf_value,
-                            rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
-                            rr.rookie_sf_value_8, rr.rookie_sf_value_12, rr.rookie_sf_value_14,
-                            rr.tier, rr.tier_label, rr.key_reasons,
-                            rr.production_score, rr.efficiency_score, rr.age_score,
-                            rr.breakout_profile_score, rr.athleticism_score,
-                            rr.competition_score, rr.projected_draft_capital_score,
-                            rr.confidence_score, rr.calculated_at,
-                            rmc.projected_round, rmc.projected_pick,
-                            rmc.projected_pick_low, rmc.projected_pick_high,
-                            rmc.num_mocks_used, rmc.consensus_confidence,
-                            rpa.forty_yard, rpa.ras_score
-                        FROM   rookie_rankings rr
-                        JOIN   rookie_prospects rp  ON rp.player_id = rr.player_id
-                        LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
-                        LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
-                        WHERE  rr.draft_class_year = %s
-                        ORDER  BY rr.overall_rank
-                        """,
-                        (draft_year,),
-                    )
-                    rows = cur2.fetchall()
-            if rows:
-                return rows
+            print(f"[pipeline] No rankings in DB for draft_year={draft_year}")
+            return []
 
         except Exception as exc:
             print(f"[pipeline] DB read failed: {exc}")
 
-    # Final fallback to in-memory (DB unavailable or pipeline population also failed)
-    print(f"[pipeline] Falling back to in-memory pipeline for {draft_year}")
-    result = run_rookie_pipeline_inmemory(draft_year)
-    return _merge_inmemory_result(result)
+    return []
 
 
 def _merge_inmemory_result(result: Dict[str, Any]) -> List[Dict[str, Any]]:

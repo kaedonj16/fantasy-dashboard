@@ -226,13 +226,9 @@ class DerivedRookieMetricsSource(RookieSource):
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
             "true_early_declare": lambda: (
-<<<<<<< HEAD
-                print(f"[rookie_sources] Calling derive_true_early_declare for player: {player.get('name', 'Unknown')}"),
-                derive_true_early_declare(player)
-=======
+
                 print(f"[DEBUG] true_early_declare handler executing for player: {player.get('name', 'unknown')}") 
                 or self._get_sportradar_season_count_and_derive_early_declare(player)
->>>>>>> main
             ),
             # --- new proxy derivations ---
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
@@ -376,6 +372,7 @@ class SportradarNCAAFBSource(RookieSource):
 
         from data_building.rookie_pipeline.rookie_metric_derivations import (
             _TPRR_BASELINE,
+            _RPRR_BASELINE,
         )
 
         out: Dict[str, Dict[str, Any]] = {}
@@ -385,8 +382,16 @@ class SportradarNCAAFBSource(RookieSource):
 
         baseline = _TPRR_BASELINE.get(pos)
         routes_estimated: Optional[float] = None
+        _via_receptions = False
         if baseline and targets is not None and targets > 0:
             routes_estimated = round(targets / baseline, 1)
+
+        if routes_estimated is None:
+            receptions = sr_stats.get("receptions") or 0
+            rprr_base = _RPRR_BASELINE.get(pos)
+            if rprr_base and receptions > 0:
+                routes_estimated = round(receptions / rprr_base, 1)
+                _via_receptions = True
 
         player_key = player.get("player_id") or name
 
@@ -396,35 +401,35 @@ class SportradarNCAAFBSource(RookieSource):
             if metric.name == "routes_run":
                 if routes_estimated is not None:
                     print(f"[sr_ncaa_src] ok player={player_key} season={season} metric=routes_run "
-                          f"targets={targets} baseline={baseline} value={routes_estimated}")
+                          f"targets={targets} via_receptions={_via_receptions} value={routes_estimated}")
                     payload = base_metric_payload(
                         value=routes_estimated,
                         season=season,
                         source_name=self.source_name,
                         source_type=self.source_type,
                         source_url=None,
-                        confidence=self._METRIC_CONF["routes_run"],
+                        confidence=0.45 if _via_receptions else self._METRIC_CONF["routes_run"],
                     )
 
             elif metric.name == "yprr":
                 if routes_estimated and routes_estimated > 0:
                     yprr = round(rec_yards / routes_estimated, 3)
                     print(f"[sr_ncaa_src] ok player={player_key} season={season} metric=yprr "
-                          f"rec_yards={rec_yards} routes={routes_estimated} value={yprr}")
+                          f"rec_yards={rec_yards} routes={routes_estimated} via_receptions={_via_receptions} value={yprr}")
                     payload = base_metric_payload(
                         value=yprr,
                         season=season,
                         source_name=self.source_name,
                         source_type=self.source_type,
                         source_url=None,
-                        confidence=self._METRIC_CONF["yprr"],
+                        confidence=0.40 if _via_receptions else self._METRIC_CONF["yprr"],
                     )
 
             elif metric.name == "tprr":
-                # tprr = targets / routes; routes derived from targets → result ≈ baseline
-                # Only emit this when targets are real and routes are estimated from them,
-                # as a sanity-check metric with low confidence.
-                if routes_estimated and routes_estimated > 0 and targets is not None:
+                # tprr = targets / routes; routes derived from targets → result ≈ baseline.
+                # Suppress when using receptions fallback: receptions / routes_from_receptions
+                # would just recover the catch-rate baseline, not a meaningful target rate.
+                if not _via_receptions and routes_estimated and routes_estimated > 0 and targets is not None:
                     tprr = round(targets / routes_estimated, 4)
                     if tprr > 0:
                         payload = base_metric_payload(

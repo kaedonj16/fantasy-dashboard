@@ -58,22 +58,46 @@ def build_daily_advanced_metrics():
         traceback.print_exc()
 
 
-def build_daily_rookie_data():
+def build_weekly_rookie_data(state: dict) -> None:
     """
-    Run the rookie pipeline for the active draft class (today only).
+    Run the full rookie pipeline (eval metrics + scoring) once a week during
+    the offseason.
+
+    Fires only when:
+      - Today is Sunday
+      - NFL season_type is "off" or "pre" (skipped during reg/post season)
     """
+    from datetime import date as _date
+    today = _date.today()
+
+    if today.weekday() != 6:  # 0=Mon … 6=Sun
+        return
+
+    season_type = str(state.get("season_type", "")).lower().strip()
+    if season_type in ("reg", "post"):
+        print(f"[cron] Rookie weekly run skipped — season_type={season_type!r}")
+        return
+
     from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
+    from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
 
     try:
         year = get_active_rookie_class()
-        print(f"[cron] Running rookie pipeline for {year} draft class...")
+        print(f"[cron] Weekly rookie refresh — {year} draft class (season_type={season_type!r})")
+
+        eval_result = run_rookie_evaluation_pipeline(year)
+        print(
+            f"[cron] Eval pipeline: {eval_result.get('profile_count', 0)} profiles, "
+            f"db_metrics_rows={eval_result.get('db_metrics_rows', 0)}"
+        )
+
         result = run_rookie_pipeline(year)
         print(
-            f"[cron] Rookie data updated: {len(result.get('prospects', []))} prospects, "
+            f"[cron] Scoring pipeline: {len(result.get('prospects', []))} prospects, "
             f"{len(result.get('scores', {}))} scored, {len(result.get('values', {}))} values"
         )
     except Exception as e:
-        print(f"[cron] Rookie pipeline failed: {e}")
+        print(f"[cron] Weekly rookie refresh failed: {e}")
         import traceback
         traceback.print_exc()
 
@@ -216,6 +240,7 @@ def main():
 
         # build_daily_market_pulse()
         build_daily_breakout_candidates(season, week, state)
+        build_weekly_rookie_data(state)
 
         print(f"[cron] Daily run completed - Season {season}, Week {week}")
 

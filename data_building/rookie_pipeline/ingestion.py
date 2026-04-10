@@ -68,8 +68,8 @@ _NFLVERSE_COMBINE_URL = (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'."""
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
+    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 def _safe(v, default=None):

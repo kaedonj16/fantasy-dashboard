@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 
 
 def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'."""
+    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
     import re
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

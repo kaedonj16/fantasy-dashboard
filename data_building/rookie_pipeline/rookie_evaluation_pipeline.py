@@ -8,7 +8,7 @@ from data_building.rookie_pipeline.draft_market_sources import (
     build_draft_market_for_player,
     fetch_draft_market_entries,
 )
-from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db
+from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db, backfill_bio_from_sportradar
 from data_building.rookie_pipeline.ingestion import load_prospects_for_year
 from data_building.rookie_pipeline.pipeline import load_prospects_from_db
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
@@ -147,10 +147,40 @@ def run_rookie_evaluation_pipeline(
     sportradar_index = build_sportradar_ncaa_index(prospect_names)
     print(f"[rookie_eval] Sportradar index built with {len(sportradar_index) if sportradar_index else 0} players")
 
+    # Backfill height/weight from Sportradar NCAA profiles into rookie_prospects where NULL
+    bio_updates: Dict[str, Dict[str, Any]] = {}
+    sr_seasons_seeded = 0
+    for p in prospects:
+        pid  = p.get("player_id", "")
+        name = p.get("name", "")
+        if not pid or not name:
+            continue
+        bio = sportradar_index.get_bio(name)
+        if bio:
+            bio_updates[pid] = bio
+        # Inject historical seasons from the Sportradar NCAA index that are not
+        # already in the player's source_data.  Covers two cases:
+        #   1. Prospect was added from mock draft → seasons: []
+        #   2. Prospect has a 2026 placeholder row but no actual college seasons
+        # Only inject past seasons — the draft year itself has no college data yet.
+        existing_years = {int(s.get("season")) for s in p.get("seasons", []) if s.get("season")}
+        sr_seasons = sportradar_index.get_all_seasons(name)
+        missing = {yr: rec for yr, rec in sr_seasons.items() if yr < year and yr not in existing_years}
+        if missing:
+            p.setdefault("seasons", [])
+            p["seasons"] = p["seasons"] + [{"season": yr, **rec} for yr, rec in sorted(missing.items())]
+            sr_seasons_seeded += 1
+    if bio_updates:
+        n = backfill_bio_from_sportradar(bio_updates)
+        print(f"[rookie_eval] bio_backfilled={n} players updated with height/weight")
+    if sr_seasons_seeded:
+        print(f"[rookie_eval] sr_seasons_seeded={sr_seasons_seeded} prospects had seasons injected from Sportradar NCAA index")
+
     sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 
     by_player_metrics: Dict[str, Dict[int, Dict[str, Dict[str, Any]]]] = {}
     rookie_profiles: List[Dict[str, Any]] = []
+    raw_seasons_by_player: Dict[str, Dict[int, Dict[str, Any]]] = {}
     logs = Counter()
     missing_metric_reasons: Dict[str, Counter] = defaultdict(Counter)
 
@@ -168,9 +198,11 @@ def run_rookie_evaluation_pipeline(
 
         pid = reconciled.player_id
         metrics_by_season: Dict[int, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+        raw_seasons_for_player: Dict[int, Dict[str, Any]] = {}
         missing: Dict[str, Dict[str, Any]] = {}
 
         for season, season_record in _iter_player_seasons(player, year):
+            raw_seasons_for_player[season] = season_record
             raw_fields = {k: v for k, v in season_record.items() if v is not None}
             for metric in metrics_specs:
                 resolved_payload = None
@@ -210,6 +242,7 @@ def run_rookie_evaluation_pipeline(
         )
         rookie_profiles.append(profile)
         by_player_metrics[pid] = dict(metrics_by_season)
+        raw_seasons_by_player[pid] = raw_seasons_for_player
 
     metrics_snapshot = {
         "as_of_date": as_of,
@@ -236,6 +269,7 @@ def run_rookie_evaluation_pipeline(
             draft_class_year=year,
             by_player_metrics=by_player_metrics,
             rookie_profiles=rookie_profiles,
+            raw_seasons_by_player=raw_seasons_by_player,
             run_metadata={
                 "log_summary": dict(logs),
                 "missing_breakdown": {k: dict(v) for k, v in missing_metric_reasons.items()},

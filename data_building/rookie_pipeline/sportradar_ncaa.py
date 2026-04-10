@@ -82,12 +82,7 @@ def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
 
     for attempt in range(retries):
         try:
-<<<<<<< HEAD
-            print(f"[sr_ncaa] GET {url} (access={access}, key={api_key[:8]}...)")
-            resp = requests.get(url, headers=headers, timeout=25)
-=======
             resp = requests.get(url, headers=headers, params=params, timeout=25)
->>>>>>> main
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 429:
@@ -139,10 +134,7 @@ def _fetch_teams() -> List[Dict]:
         return []
 
     teams: List[Dict] = []
-<<<<<<< HEAD
-    for division in divisions:
-        for conf in division.get("conferences", []):
-=======
+
     for division in data.get("divisions", []):
         div_name = division.get("name", "")
         # Only process I-A (FBS) and I-AA (FCS) divisions
@@ -160,7 +152,6 @@ def _fetch_teams() -> List[Dict]:
                 conferences.extend(subdivision.get("conferences", []))
         
         for conf in conferences:
->>>>>>> main
             conf_name = conf.get("name", "")
             for team in conf.get("teams", []):
                 tid = team.get("id")
@@ -173,11 +164,8 @@ def _fetch_teams() -> List[Dict]:
                         "conference": conf_name,
                     })
 
-<<<<<<< HEAD
-    print(f"[sr_ncaa] teams_hierarchy: {len(teams)} FBS teams total")
-=======
+
     print(f"[sr_ncaa] teams_hierarchy: {len(teams)} teams")
->>>>>>> main
     _cache_write("teams_hierarchy", teams)
     return teams
 
@@ -227,11 +215,8 @@ def build_roster_index() -> Dict[str, str]:
 
     teams = _fetch_teams()
     if not teams:
-<<<<<<< HEAD
-        print("[sr_ncaa] No teams found, cannot build roster index")
-=======
+
         print(f"[sr_ncaa] No teams found during _fetch_teams()")
->>>>>>> main
         return {}
     
     index: Dict[str, str] = {}
@@ -241,10 +226,7 @@ def build_roster_index() -> Dict[str, str]:
         roster = _fetch_team_roster(tid)
         if not roster:
             continue
-<<<<<<< HEAD
-        
-=======
->>>>>>> main
+
         for player in roster:
             raw_name = player.get("name", "")
             pid = player.get("id")
@@ -406,11 +388,24 @@ class SportradarNCAAIndex:
     passed into SportradarNCAAFBSource.
     """
 
-    def __init__(self, data: Dict[str, Dict[int, Dict[str, Any]]]):
+    def __init__(
+        self,
+        data: Dict[str, Dict[int, Dict[str, Any]]],
+        bio: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         self._data = data
+        self._bio = bio or {}
 
     def get_season_stats(self, name: str, year: int) -> Optional[Dict[str, Any]]:
         return self._data.get(_normalize_name(name), {}).get(year)
+
+    def get_bio(self, name: str) -> Optional[Dict[str, Any]]:
+        """Return {height_inches, weight_lbs} from the player's Sportradar profile, or None."""
+        return self._bio.get(_normalize_name(name))
+
+    def get_all_seasons(self, name: str) -> Dict[int, Dict[str, Any]]:
+        """Return all available {year: season_record} dicts for this player, or {}."""
+        return self._data.get(_normalize_name(name), {})
 
     def __len__(self) -> int:
         return len(self._data)
@@ -438,6 +433,7 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
         return SportradarNCAAIndex({})
 
     data: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    bio: Dict[str, Dict[str, Any]] = {}
     found = not_found = 0
 
     for name in names:
@@ -455,7 +451,16 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
 
         seasons = normalize_profile(raw)
         data[_normalize_name(name)] = seasons
+
+        h = raw.get("height")
+        w = raw.get("weight")
+        if h is not None or w is not None:
+            bio[_normalize_name(name)] = {
+                "height_inches": int(h) if h is not None else None,
+                "weight_lbs":    int(w) if w is not None else None,
+            }
+
         found += 1
 
     print(f"[sr_ncaa] index built: {found} found, {not_found} not found")
-    return SportradarNCAAIndex(data)
+    return SportradarNCAAIndex(data, bio)
