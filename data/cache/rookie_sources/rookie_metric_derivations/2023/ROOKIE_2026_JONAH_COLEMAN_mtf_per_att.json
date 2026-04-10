@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T22:08:28Z",
+  "metric": "mtf_per_att",
+  "metric_payload": {
+    "confidence": 0.3,
+    "season": 2023,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T22:08:28Z",
+    "value": 0.3
+  },
+  "player_id": "ROOKIE_2026_JONAH_COLEMAN",
+  "season": 2023
+}

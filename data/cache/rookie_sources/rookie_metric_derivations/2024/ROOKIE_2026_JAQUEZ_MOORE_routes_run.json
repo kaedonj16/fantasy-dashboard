@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-10T00:00:34Z",
+  "metric": "routes_run",
+  "metric_payload": {
+    "confidence": 0.3,
+    "season": 2024,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-10T00:00:34Z",
+    "value": 12.5
+  },
+  "player_id": "ROOKIE_2026_JAQUEZ_MOORE",
+  "season": 2024
+}

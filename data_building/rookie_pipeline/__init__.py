@@ -7,4 +7,5 @@ Modules:
     prospect_model       - multi-factor scoring model (position-aware)
     value_translation    - map prospect scores to dynasty dollar values
     pipeline             - orchestration: ingest → score → save
+    rookie_evaluation_pipeline - rookie-specific advanced metric snapshots
 """

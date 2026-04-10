@@ -144,13 +144,9 @@ def _get(
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, headers=h, timeout=timeout)
-            print(f"[DEBUG] GET {url} params={params} status={resp.status_code}")
-
             if resp.status_code in (400, 401, 403, 404):
-                print(f"[DEBUG] permanent failure: {resp.status_code}")
-                return None
+                                return None
             if resp.status_code == 429:
-                print("[DEBUG] rate limited")
                 time.sleep(2.0 * (attempt + 1))
                 continue
 
@@ -158,19 +154,15 @@ def _get(
             return resp
 
         except requests.Timeout as e:
-            print(f"[DEBUG] timeout: {url} ({e})")
-            time.sleep(1.5 ** attempt)
+                        time.sleep(1.5 ** attempt)
 
         except requests.exceptions.ProxyError as e:
-            print(f"[DEBUG] proxy error: {url} ({e})")
-            return None
+                        return None
 
         except requests.RequestException as e:
-            print(f"[DEBUG] request exception: {url} ({e})")
-            time.sleep(1.5 ** attempt)
+                        time.sleep(1.5 ** attempt)
 
-    print(f"[DEBUG] failed after retries: {url}")
-    return None
+        return None
 
 
 def parse_dob_and_calculate_age(
@@ -323,7 +315,6 @@ def search_player_on_espn(
         try:
             raw = resp.json()
             items = _parse_search_items(raw)
-            print(f"[DEBUG] query={query} count={raw.get('count')} items_len={len(items)}")
             _score_items(items)
         except ValueError:
             continue
@@ -340,63 +331,6 @@ def search_player_on_espn(
 # ─────────────────────────────────────────────────────────────────────────────
 # Athlete/profile extraction
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _extract_profile_from_athlete_api(player_id: str) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
-        "dob": None,
-        "age": None,
-        "team": None,
-        "position": None,
-        "height": None,
-        "weight": None,
-        "source": None,
-    }
-
-    for url_template in (_ATHLETE_URL, _ATHLETE_CORE):
-        url = url_template.format(id=player_id)
-        resp = _get(url, headers=_JSON_HEADERS)
-        if resp is None:
-            continue
-
-        try:
-            data = resp.json()
-        except ValueError:
-            continue
-
-        athlete = data.get("athlete") or data
-
-        team = (
-            (athlete.get("team") or {}).get("displayName")
-            or (athlete.get("team") or {}).get("location")
-            or athlete.get("teamName")
-        )
-        position = (
-            (athlete.get("position") or {}).get("abbreviation")
-            or athlete.get("position")
-        )
-        height = athlete.get("displayHeight") or athlete.get("height")
-        weight = athlete.get("displayWeight") or athlete.get("weight")
-        raw_dob = athlete.get("dateOfBirth") or data.get("dateOfBirth")
-
-        if team and not result["team"]:
-            result["team"] = team
-        if position and not result["position"]:
-            result["position"] = position
-        if height and not result["height"]:
-            result["height"] = height
-        if weight and not result["weight"]:
-            result["weight"] = weight
-
-        if raw_dob:
-            dob_iso, age = parse_dob_and_calculate_age(str(raw_dob))
-            if dob_iso:
-                result["dob"] = dob_iso
-                result["age"] = age
-                result["source"] = "espn_athlete_api"
-                return result
-
-    return result
-
 
 def _extract_dob_from_html(player_id: str) -> Optional[str]:
     if not _BS4:

@@ -98,6 +98,204 @@ def init_advanced_metrics_db():
                 ON player_advanced_metrics (season, as_of_date DESC);
         """)
 
+        # Add rookie evaluation columns (safe migration — all nullable)
+        _add_rookie_eval_columns(conn)
+
+
+def _add_rookie_eval_columns(conn) -> None:
+    """
+    Add rookie_eval_* columns to player_advanced_metrics if they don't exist.
+
+    All columns are nullable so existing NFL-player rows are unaffected.
+    Safe to call repeatedly (ADD COLUMN IF NOT EXISTS).
+    """
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS rookie_eval_routes_run         NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_yprr               NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_tprr               NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_yac_per_att        NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_mtf_per_att        NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_explosive_run_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_adjusted_comp_pct  NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_twp_rate           NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_player_level_sos   NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_perf_vs_top_def    NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_true_early_declare BOOLEAN,
+            ADD COLUMN IF NOT EXISTS rookie_eval_draft_class_year   INTEGER,
+            ADD COLUMN IF NOT EXISTS rookie_eval_completeness       NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_prospect_score     NUMERIC,
+            ADD COLUMN IF NOT EXISTS rookie_eval_is_rookie          BOOLEAN;
+    """)
+
+
+def _extract_metric_value(metrics: Dict, metric_name: str):
+    """Safely pull the scalar value from a metric payload dict."""
+    entry = metrics.get(metric_name)
+    if not isinstance(entry, dict):
+        return None
+    return entry.get("value")
+
+
+def merge_rookie_profiles_to_advanced_metrics(
+    profiles: List[Dict],
+    as_of_date: str,
+    conn=None,
+) -> Dict[str, int]:
+    """
+    Upsert rookie evaluation metrics from profile snapshots into
+    player_advanced_metrics so they are available as model-training features.
+
+    For each profile:
+    - Extracts the latest-season values of each rookie_eval_* metric.
+    - If a row already exists (player_id, as_of_date), updates only the
+      rookie_eval_* columns (leaves NFL-side columns untouched).
+    - If no row exists yet (prospect not yet drafted / in usage table),
+      inserts a minimal row with position + rookie_eval columns; all
+      NFL-side metrics remain NULL.
+
+    Processes in batches of 25 to keep memory low (Render constraint).
+
+    Args:
+        profiles:   List of rookie profile dicts from run_rookie_evaluation_pipeline.
+        as_of_date: ISO date string (YYYY-MM-DD).
+        conn:       Optional existing psycopg connection; acquires one if None.
+
+    Returns:
+        {"updated": n, "inserted": n, "skipped": n}
+    """
+    if not profiles:
+        return {"updated": 0, "inserted": 0, "skipped": 0}
+
+    def _run(db_conn):
+        updated = inserted = skipped = 0
+        batch_size = 25
+
+        for i in range(0, len(profiles), batch_size):
+            batch = profiles[i : i + batch_size]
+            for profile in batch:
+                player_id = (
+                    profile.get("sleeper_id")
+                    or profile.get("player_id")
+                )
+                if not player_id:
+                    skipped += 1
+                    continue
+
+                rp = profile.get("rookie_profile") or {}
+                metrics = rp.get("metrics") or {}
+
+                # Pull latest values for each rookie_eval column
+                rv = {
+                    "routes_run":         _extract_metric_value(metrics, "routes_run"),
+                    "yprr":               _extract_metric_value(metrics, "yprr"),
+                    "tprr":               _extract_metric_value(metrics, "tprr"),
+                    "yac_per_att":        _extract_metric_value(metrics, "yac_per_att"),
+                    "mtf_per_att":        _extract_metric_value(metrics, "mtf_per_att"),
+                    "explosive_run_rate": _extract_metric_value(metrics, "explosive_run_rate"),
+                    "adjusted_comp_pct":  _extract_metric_value(metrics, "adjusted_comp_pct"),
+                    "twp_rate":           _extract_metric_value(metrics, "twp_rate"),
+                    "player_level_sos":   _extract_metric_value(metrics, "player_level_sos"),
+                    "perf_vs_top_def":    _extract_metric_value(metrics, "performance_vs_top_defenses"),
+                    "true_early_declare": _extract_metric_value(metrics, "true_early_declare"),
+                }
+                draft_class_year = profile.get("draft_class_year") or rp.get("draft_class_year")
+                completeness = rp.get("completeness")
+                prospect_score = profile.get("prospect_score")
+                position = (profile.get("position") or "").upper() or None
+
+                # Check if row already exists
+                row = db_conn.execute(
+                    "SELECT 1 FROM player_advanced_metrics WHERE player_id = %s AND as_of_date = %s",
+                    (str(player_id), as_of_date),
+                ).fetchone()
+
+                if row:
+                    db_conn.execute(
+                        """
+                        UPDATE player_advanced_metrics SET
+                            rookie_eval_routes_run         = %s,
+                            rookie_eval_yprr               = %s,
+                            rookie_eval_tprr               = %s,
+                            rookie_eval_yac_per_att        = %s,
+                            rookie_eval_mtf_per_att        = %s,
+                            rookie_eval_explosive_run_rate = %s,
+                            rookie_eval_adjusted_comp_pct  = %s,
+                            rookie_eval_twp_rate           = %s,
+                            rookie_eval_player_level_sos   = %s,
+                            rookie_eval_perf_vs_top_def    = %s,
+                            rookie_eval_true_early_declare = %s,
+                            rookie_eval_draft_class_year   = %s,
+                            rookie_eval_completeness       = %s,
+                            rookie_eval_prospect_score     = %s,
+                            rookie_eval_is_rookie          = TRUE
+                        WHERE player_id = %s AND as_of_date = %s
+                        """,
+                        (
+                            rv["routes_run"], rv["yprr"], rv["tprr"],
+                            rv["yac_per_att"], rv["mtf_per_att"], rv["explosive_run_rate"],
+                            rv["adjusted_comp_pct"], rv["twp_rate"],
+                            rv["player_level_sos"], rv["perf_vs_top_def"],
+                            rv["true_early_declare"],
+                            draft_class_year, completeness, prospect_score,
+                            str(player_id), as_of_date,
+                        ),
+                    )
+                    updated += 1
+                else:
+                    # INSERT minimal row: prospects not yet in usage table
+                    db_conn.execute(
+                        """
+                        INSERT INTO player_advanced_metrics (
+                            player_id, as_of_date, position,
+                            rookie_eval_routes_run, rookie_eval_yprr, rookie_eval_tprr,
+                            rookie_eval_yac_per_att, rookie_eval_mtf_per_att,
+                            rookie_eval_explosive_run_rate, rookie_eval_adjusted_comp_pct,
+                            rookie_eval_twp_rate, rookie_eval_player_level_sos,
+                            rookie_eval_perf_vs_top_def, rookie_eval_true_early_declare,
+                            rookie_eval_draft_class_year, rookie_eval_completeness,
+                            rookie_eval_prospect_score, rookie_eval_is_rookie
+                        ) VALUES (
+                            %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE
+                        )
+                        ON CONFLICT (player_id, as_of_date) DO UPDATE SET
+                            rookie_eval_routes_run         = EXCLUDED.rookie_eval_routes_run,
+                            rookie_eval_yprr               = EXCLUDED.rookie_eval_yprr,
+                            rookie_eval_tprr               = EXCLUDED.rookie_eval_tprr,
+                            rookie_eval_yac_per_att        = EXCLUDED.rookie_eval_yac_per_att,
+                            rookie_eval_mtf_per_att        = EXCLUDED.rookie_eval_mtf_per_att,
+                            rookie_eval_explosive_run_rate = EXCLUDED.rookie_eval_explosive_run_rate,
+                            rookie_eval_adjusted_comp_pct  = EXCLUDED.rookie_eval_adjusted_comp_pct,
+                            rookie_eval_twp_rate           = EXCLUDED.rookie_eval_twp_rate,
+                            rookie_eval_player_level_sos   = EXCLUDED.rookie_eval_player_level_sos,
+                            rookie_eval_perf_vs_top_def    = EXCLUDED.rookie_eval_perf_vs_top_def,
+                            rookie_eval_true_early_declare = EXCLUDED.rookie_eval_true_early_declare,
+                            rookie_eval_draft_class_year   = EXCLUDED.rookie_eval_draft_class_year,
+                            rookie_eval_completeness       = EXCLUDED.rookie_eval_completeness,
+                            rookie_eval_prospect_score     = EXCLUDED.rookie_eval_prospect_score,
+                            rookie_eval_is_rookie          = TRUE
+                        """,
+                        (
+                            str(player_id), as_of_date, position,
+                            rv["routes_run"], rv["yprr"], rv["tprr"],
+                            rv["yac_per_att"], rv["mtf_per_att"], rv["explosive_run_rate"],
+                            rv["adjusted_comp_pct"], rv["twp_rate"],
+                            rv["player_level_sos"], rv["perf_vs_top_def"],
+                            rv["true_early_declare"],
+                            draft_class_year, completeness, prospect_score,
+                        ),
+                    )
+                    inserted += 1
+
+        return {"updated": updated, "inserted": inserted, "skipped": skipped}
+
+    if conn is not None:
+        return _run(conn)
+
+    with get_conn() as db_conn:
+        return _run(db_conn)
+
 
 def calculate_receiving_metrics(usage: Dict[str, float]) -> Dict[str, Optional[float]]:
     """Calculate receiving efficiency metrics."""

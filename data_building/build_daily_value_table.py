@@ -62,6 +62,26 @@ def build_daily_data(season: int, week: int):
     write_usage_table_snapshot(season, weeks=weeks_to_fetch)
     enrich_all_team_info(season)
     enrich_teams_index_with_rushing(Path(path_teams_index()))
+
+    # Rookie evaluation snapshots (prospect-focused, draft-class aware)
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
+
+        draft_class_year = get_active_rookie_class()
+        rookie_result = run_rookie_evaluation_pipeline(draft_class_year)
+        db_res = rookie_result.get("db_result") or {}
+        bridge = db_res.get("db_bridge_rows") or {}
+        print(
+            "[build_daily_data] Rookie evaluation updated "
+            f"class={rookie_result.get('draft_class_year')} "
+            f"profiles={rookie_result.get('profile_count')} "
+            f"bridge_updated={bridge.get('updated', 0)} "
+            f"bridge_inserted={bridge.get('inserted', 0)}"
+        )
+    except Exception as exc:
+        print(f"[build_daily_data] Rookie evaluation pipeline failed: {exc}")
+
     export_engine_values()
 
 

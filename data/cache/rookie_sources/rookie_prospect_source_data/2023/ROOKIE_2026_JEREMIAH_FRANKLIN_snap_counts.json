@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T21:28:28Z",
+  "metric": "snap_counts",
+  "metric_payload": {
+    "confidence": 0.7,
+    "season": 2023,
+    "source_name": "rookie_prospect_source_data",
+    "source_type": "api",
+    "source_url": null,
+    "updated_at": "2026-04-09T21:28:28Z",
+    "value": 8
+  },
+  "player_id": "ROOKIE_2026_JEREMIAH_FRANKLIN",
+  "season": 2023
+}

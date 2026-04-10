@@ -494,6 +494,7 @@ def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int,
                     saved += 1
                 else:
                     skipped += 1
+                    print(f"[pipeline] Mock entry skipped (no prospect match): player_name={player_name!r} → player_id={player_id!r}")
                 cur.execute("RELEASE SAVEPOINT save_mock")
             except Exception as exc:
                 cur.execute("ROLLBACK TO SAVEPOINT save_mock")
@@ -887,6 +888,13 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
 
 def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn) -> int:
     import json as _json
+    from decimal import Decimal as _Decimal
+
+    def _safe_dumps(obj):
+        if isinstance(obj, _Decimal):
+            return int(obj) if obj == obj.to_integral_value() else float(obj)
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
     saved = 0
     skipped = 0
     with conn.cursor() as cur:
@@ -926,11 +934,12 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
                         "projected_draft_capital_score":c.get("projected_draft_capital_score"),
                         "num_mocks_used":               c.get("num_mocks_used"),
                         "consensus_confidence":         c.get("consensus_confidence"),
-                        "mock_sources":                 _json.dumps(c.get("mock_sources") or []),
+                        "mock_sources":                 _json.dumps(c.get("mock_sources") or [], default=_safe_dumps),
                     },
                 )
+                row_count = cur.rowcount
                 cur.execute("RELEASE SAVEPOINT save_consensus")
-                saved += cur.rowcount
+                saved += max(row_count, 1)  # rowcount=1 insert or update; treat 0 as 1 for upserts
             except Exception as exc:
                 cur.execute("ROLLBACK TO SAVEPOINT save_consensus")
                 print(f"[pipeline] Failed to upsert consensus for {pid}: {exc}")
@@ -1069,14 +1078,103 @@ def _norm_name(name: str) -> str:
     Normalize a player name for dedup comparison.
     Lowercases, strips punctuation, removes common generational suffixes
     so 'Harold Fannin Jr.' == 'Harold Fannin Jr' == 'Harold Fannin'.
+    Also handles period normalization: 'K.C. Concepcion' == 'KC Concepcion' == 'K C Concepcion'.
     """
     import re
     n = name.lower().strip()
+    # Remove periods from initials (K.C. -> KC, K. C. -> K C)
+    n = re.sub(r'\.', '', n)
     # Remove trailing generational suffixes (jr, sr, ii, iii, iv, v)
     n = re.sub(r'[\s,]+(jr\.?|sr\.?|ii|iii|iv|v\.?)$', '', n).strip()
-    # Strip any remaining punctuation
+    # Strip any remaining punctuation except spaces
     n = re.sub(r'[^a-z\s]', '', n).strip()
+    # Normalize multiple spaces to single space
+    n = re.sub(r'\s+', ' ', n)
+    # Remove spaces between single-letter initials (K C -> KC)
+    n = re.sub(r'\b([a-z])\s+([a-z])\b', r'\1\2', n)
     return n
+
+
+def _deduplicate_prospects(prospects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Remove duplicate prospects that have name variations.
+    
+    Keeps the most complete record (with more data fields) when duplicates are found.
+    """
+        
+    # Group prospects by normalized name
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for prospect in prospects:
+        norm_name = _norm_name(prospect.get("name", ""))
+        if not norm_name:
+            continue
+        groups.setdefault(norm_name, []).append(prospect)
+    
+    # Find duplicates and merge them
+    deduped = []
+    duplicates_found = 0
+    
+    for norm_name, group in groups.items():
+        if len(group) == 1:
+            # No duplicate, keep as-is
+            deduped.append(group[0])
+        else:
+            # Found duplicates, merge them
+            duplicates_found += len(group) - 1
+            merged = _merge_duplicate_prospects(group)
+            deduped.append(merged)
+    
+    return deduped
+
+
+def _merge_duplicate_prospects(duplicates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Merge multiple prospect records for the same player.
+    
+    Strategy: Keep the record with the most complete data, then fill in missing fields
+    from other records.
+    """
+    if not duplicates:
+        return {}
+    
+    # Sort by completeness (more non-None fields = more complete)
+    def completeness_score(p: Dict[str, Any]) -> int:
+        score = 0
+        for key, value in p.items():
+            if value is not None and value != "" and value != []:
+                score += 1
+        return score
+    
+    sorted_duplicates = sorted(duplicates, key=completeness_score, reverse=True)
+    merged = dict(sorted_duplicates[0])  # Start with most complete record
+    
+    # Fill in missing fields from other records
+    for other in sorted_duplicates[1:]:
+        for key, value in other.items():
+            if key == "name":
+                # Keep the original name from the most complete record
+                continue
+            elif merged.get(key) in [None, "", []] and value not in [None, "", []]:
+                merged[key] = value
+            elif key == "seasons" and isinstance(value, list):
+                # Merge seasons data
+                existing_seasons = merged.get("seasons", [])
+                merged_seasons = existing_seasons.copy()
+                for season in value:
+                    season_year = season.get("season")
+                    if season_year and not any(s.get("season") == season_year for s in existing_seasons):
+                        merged_seasons.append(season)
+                merged["seasons"] = merged_seasons
+            elif key == "athleticism" and isinstance(value, dict):
+                # Merge athleticism data
+                existing_ath = merged.get("athleticism", {})
+                merged_ath = dict(existing_ath)
+                for ath_key, ath_value in value.items():
+                    if ath_value is not None and existing_ath.get(ath_key) is None:
+                        merged_ath[ath_key] = ath_value
+                merged["athleticism"] = merged_ath
+    
+    return merged
 
 
 def _filter_active_nfl_players(prospects: List[Dict], draft_year: int) -> List[Dict]:
@@ -1156,6 +1254,7 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
             WHERE player_id IN (
                 SELECT player_id FROM rookie_prospects WHERE draft_class_year = %s
             )
+            AND source != 'rookie_eval'
             ORDER BY player_id, season
         """, (draft_year,))
         stats_rows = cur.fetchall()
@@ -1287,6 +1386,9 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         return {}
 
     print(f"[pipeline] Fetched {len(sr_prospects)} prospects from Sportradar")
+
+    # Deduplicate prospects with name variations (e.g., "K.C. Concepcion" == "KC Concepcion")
+    sr_prospects = _deduplicate_prospects(sr_prospects)
 
     # Estimate ages from experience (SR/JR/SO/FR) — rough fallback when ESPN fails
     from .ingestion import _estimate_age
@@ -1494,6 +1596,34 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         complete_prospects = load_prospects_from_db(draft_year, conn)
 
     print(f"[pipeline] Loaded {len(complete_prospects)} complete prospects from database")
+
+    # ── Attach evaluation pipeline metrics before scoring ────────────────────
+    # The evaluation pipeline (rookie_evaluation_pipeline.py) derives proxy
+    # metrics (yprr, tprr, yac_per_att, adjusted_comp_pct, etc.) from college
+    # stats.  Attaching them to prospect dicts as _eval_metrics lets
+    # score_all_prospects use them when available via confidence-weighted blending.
+    #
+    # Lazy import avoids circular dependency (rookie_evaluation_pipeline imports
+    # load_prospects_from_db from this module).
+    try:
+        from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
+            run_rookie_evaluation_pipeline,
+        )
+        eval_result = run_rookie_evaluation_pipeline(draft_year)
+        eval_profiles_by_id: Dict[str, Dict] = {
+            p["player_id"]: (p.get("rookie_profile") or {}).get("metrics") or {}
+            for p in (eval_result.get("profiles") or [])
+            if p.get("player_id")
+        }
+        attached = 0
+        for prospect in complete_prospects:
+            pid = prospect.get("player_id")
+            if pid and pid in eval_profiles_by_id:
+                prospect["_eval_metrics"] = eval_profiles_by_id[pid]
+                attached += 1
+        print(f"[pipeline] Attached eval metrics to {attached}/{len(complete_prospects)} prospects")
+    except Exception as _eval_exc:
+        print(f"[pipeline] WARNING: Could not attach eval metrics before scoring: {_eval_exc}")
 
     # Score prospects
     scores = score_all_prospects(complete_prospects, consensus_map)
