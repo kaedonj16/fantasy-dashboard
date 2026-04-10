@@ -106,8 +106,6 @@ def _source_for_metric(
                 },
             )
             return payload, "fetched_live"
-        else:
-            print(f"[rookie_eval] no_value     player={player_key} season={season} metric={metric.name} source={source.source_name} fetched={list(fetched.keys()) if fetched else '[]'}")
     except Exception as exc:
         print(f"[rookie_eval] source_error  player={player_key} season={season} metric={metric.name} source={source.source_name}: {type(exc).__name__}: {exc}")
 
@@ -172,7 +170,6 @@ def run_rookie_evaluation_pipeline(
 
         for season, season_record in _iter_player_seasons(player, year):
             raw_fields = {k: v for k, v in season_record.items() if v is not None}
-            print(f"[source_raw] player={pid} season={season} pos={player.get('position')} raw_fields={raw_fields}")
             for metric in metrics_specs:
                 resolved_payload = None
                 resolution_mode = "missing"

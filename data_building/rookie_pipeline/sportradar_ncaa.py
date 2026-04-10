@@ -77,14 +77,13 @@ def _sr_get(path: str, retries: int = 4) -> Optional[Any]:
     access = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")
     url = f"{_SR_BASE}/{access}/v7/{_SR_LANG}/{path}"
     headers = {"accept": "application/json", "x-api-key": api_key}
-    params = {"api_key": api_key}
 
     time.sleep(_THROTTLE_S)
 
     for attempt in range(retries):
         try:
             print(f"[sr_ncaa] GET {url} (access={access}, key={api_key[:8]}...)")
-            resp = requests.get(url, headers=headers, params=params, timeout=25)
+            resp = requests.get(url, headers=headers, timeout=25)
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 429:
@@ -122,29 +121,35 @@ def _fetch_teams() -> List[Dict]:
     """Return [{id, name, market, alias, conference}] for all FBS teams."""
     cached = _cache_read("teams_hierarchy")
     if cached is not None:
+        print(f"[sr_ncaa] Teams loaded from cache: {len(cached)} teams")
         return cached
 
-    data = _sr_get("teams/hierarchy.json")
+    data = _sr_get("league/hierarchy.json")
     if not data:
+        print("[sr_ncaa] No data returned from API")
+        return []
+
+    divisions = data.get("divisions", [])
+    if not divisions:
+        print("[sr_ncaa] No divisions found in API response")
         return []
 
     teams: List[Dict] = []
-    for division in data.get("divisions", []):
-        for subdivision in division.get("subdivisions", []):
-            for conf in subdivision.get("conferences", []):
-                conf_name = conf.get("name", "")
-                for team in conf.get("teams", []):
-                    tid = team.get("id")
-                    if tid:
-                        teams.append({
-                            "id":         tid,
-                            "name":       team.get("name", ""),
-                            "market":     team.get("market", ""),
-                            "alias":      team.get("alias", ""),
-                            "conference": conf_name,
-                        })
+    for division in divisions:
+        for conf in division.get("conferences", []):
+            conf_name = conf.get("name", "")
+            for team in conf.get("teams", []):
+                tid = team.get("id")
+                if tid:
+                    teams.append({
+                        "id":         tid,
+                        "name":       team.get("name", ""),
+                        "market":     team.get("market", ""),
+                        "alias":      team.get("alias", ""),
+                        "conference": conf_name,
+                    })
 
-    print(f"[sr_ncaa] teams_hierarchy: {len(teams)} FBS teams")
+    print(f"[sr_ncaa] teams_hierarchy: {len(teams)} FBS teams total")
     _cache_write("teams_hierarchy", teams)
     return teams
 
@@ -159,7 +164,7 @@ def _fetch_team_roster(team_id: str) -> List[Dict]:
     if cached is not None:
         return cached
 
-    data = _sr_get(f"teams/{team_id}/roster.json")
+    data = _sr_get(f"teams/{team_id}/full_roster.json")
     if not data:
         return []
 
@@ -194,12 +199,16 @@ def build_roster_index() -> Dict[str, str]:
 
     teams = _fetch_teams()
     if not teams:
+        print("[sr_ncaa] No teams found, cannot build roster index")
         return {}
 
     index: Dict[str, str] = {}
     for i, team in enumerate(teams):
         tid = team["id"]
         roster = _fetch_team_roster(tid)
+        if not roster:
+            continue
+        
         for player in roster:
             raw_name = player.get("name", "")
             pid = player.get("id")
@@ -411,7 +420,6 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
         seasons = normalize_profile(raw)
         data[_normalize_name(name)] = seasons
         found += 1
-        print(f"[sr_ncaa] ok name={name!r} seasons={sorted(seasons.keys())}")
 
     print(f"[sr_ncaa] index built: {found} found, {not_found} not found")
     return SportradarNCAAIndex(data)

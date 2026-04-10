@@ -184,7 +184,10 @@ class DerivedRookieMetricsSource(RookieSource):
             "explosive_run_rate": lambda: derive_explosive_run_rate(season_record),
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
-            "true_early_declare": lambda: derive_true_early_declare(player),
+            "true_early_declare": lambda: (
+                print(f"[rookie_sources] Calling derive_true_early_declare for player: {player.get('name', 'Unknown')}"),
+                derive_true_early_declare(player)
+            ),
             # --- new proxy derivations ---
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
             "yprr": lambda: derive_yprr_proxy(season_record, position),
@@ -239,12 +242,12 @@ class DerivedRookieMetricsSource(RookieSource):
                 needed = _DERIVE_INPUTS.get(metric.name, [])
                 missing_inputs = [f for f in needed if season_record.get(f) is None]
                 present_inputs = {f: season_record.get(f) for f in needed if season_record.get(f) is not None}
-                print(
-                    f"[derive_null] player={player_key} season={season} metric={metric.name} "
-                    f"present={present_inputs} missing_inputs={missing_inputs}"
-                )
+                # print(
+                #     f"[derive_null] player={player_key} season={season} metric={metric.name} "
+                #     f"present={present_inputs} missing_inputs={missing_inputs}"
+                # )
                 continue
-            print(f"[derive_ok]   player={player_key} season={season} metric={metric.name} value={value!r}")
+            # print(f"[derive_ok]   player={player_key} season={season} metric={metric.name} value={value!r}")
             out[metric.name] = base_metric_payload(
                 value=value,
                 season=season,
