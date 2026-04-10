@@ -118,12 +118,33 @@ def init_rookie_eval_tables(conn) -> None:
         )
 
 
+def _raw_int(stats: Dict[str, Any], name: str) -> Optional[int]:
+    val = stats.get(name)
+    if val is None:
+        return None
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def _raw_float(stats: Dict[str, Any], name: str) -> Optional[float]:
+    val = stats.get(name)
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
 def save_rookie_evaluation_to_db(
     as_of_date: str,
     draft_class_year: int,
     by_player_metrics: Dict[str, Dict[int, Dict[str, Dict[str, Any]]]],
     rookie_profiles: List[Dict[str, Any]],
     run_metadata: Dict[str, Any],
+    raw_seasons_by_player: Optional[Dict[str, Dict[int, Dict[str, Any]]]] = None,
 ) -> Dict[str, int]:
     """Persist rookie advanced metrics and profiles snapshots to Postgres."""
     if not _db_available():
@@ -148,6 +169,7 @@ def save_rookie_evaluation_to_db(
             for player_id, seasons in by_player_metrics.items():
                 for season, metrics in (seasons or {}).items():
                     missing_metrics = missing_by_player.get(player_id) or {}
+                    raw = (raw_seasons_by_player or {}).get(player_id, {}).get(season, {})
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data
@@ -157,10 +179,16 @@ def save_rookie_evaluation_to_db(
                              eval_yac_per_att, eval_mtf_per_att, eval_explosive_run_rate,
                              eval_adjusted_comp_pct, eval_twp_rate,
                              eval_player_level_sos, eval_perf_vs_top_def,
-                             eval_true_early_declare, games_played, targets)
+                             eval_true_early_declare, games_played, targets,
+                             receptions, receiving_yards, receiving_tds,
+                             rush_attempts, rush_yards, rush_tds,
+                             pass_attempts, pass_yards, pass_tds, completions, interceptions,
+                             yds_per_carry, yds_per_reception, yds_per_attempt,
+                             completion_pct, td_int_ratio)
                         VALUES
                             (%s, %s, %s, %s, %s, NOW(),
-                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
                             rookie_eval_metrics     = EXCLUDED.rookie_eval_metrics,
@@ -178,7 +206,23 @@ def save_rookie_evaluation_to_db(
                             eval_perf_vs_top_def    = EXCLUDED.eval_perf_vs_top_def,
                             eval_true_early_declare = EXCLUDED.eval_true_early_declare,
                             games_played            = EXCLUDED.games_played,
-                            targets                 = EXCLUDED.targets
+                            targets                 = EXCLUDED.targets,
+                            receptions      = COALESCE(rookie_prospect_source_data.receptions,      EXCLUDED.receptions),
+                            receiving_yards = COALESCE(rookie_prospect_source_data.receiving_yards, EXCLUDED.receiving_yards),
+                            receiving_tds   = COALESCE(rookie_prospect_source_data.receiving_tds,   EXCLUDED.receiving_tds),
+                            rush_attempts   = COALESCE(rookie_prospect_source_data.rush_attempts,   EXCLUDED.rush_attempts),
+                            rush_yards      = COALESCE(rookie_prospect_source_data.rush_yards,      EXCLUDED.rush_yards),
+                            rush_tds        = COALESCE(rookie_prospect_source_data.rush_tds,        EXCLUDED.rush_tds),
+                            pass_attempts   = COALESCE(rookie_prospect_source_data.pass_attempts,   EXCLUDED.pass_attempts),
+                            pass_yards      = COALESCE(rookie_prospect_source_data.pass_yards,      EXCLUDED.pass_yards),
+                            pass_tds        = COALESCE(rookie_prospect_source_data.pass_tds,        EXCLUDED.pass_tds),
+                            completions     = COALESCE(rookie_prospect_source_data.completions,     EXCLUDED.completions),
+                            interceptions   = COALESCE(rookie_prospect_source_data.interceptions,   EXCLUDED.interceptions),
+                            yds_per_carry   = COALESCE(rookie_prospect_source_data.yds_per_carry,   EXCLUDED.yds_per_carry),
+                            yds_per_reception = COALESCE(rookie_prospect_source_data.yds_per_reception, EXCLUDED.yds_per_reception),
+                            yds_per_attempt = COALESCE(rookie_prospect_source_data.yds_per_attempt, EXCLUDED.yds_per_attempt),
+                            completion_pct  = COALESCE(rookie_prospect_source_data.completion_pct,  EXCLUDED.completion_pct),
+                            td_int_ratio    = COALESCE(rookie_prospect_source_data.td_int_ratio,    EXCLUDED.td_int_ratio)
                         """,
                         (
                             player_id,
@@ -199,6 +243,23 @@ def save_rookie_evaluation_to_db(
                             _bool_metric_value(metrics, "true_early_declare"),
                             _metric_value(metrics, "games_played"),
                             _metric_value(metrics, "targets"),
+                            # Raw production stats from Sportradar/source season record
+                            _raw_int(raw, "receptions"),
+                            _raw_int(raw, "receiving_yards"),
+                            _raw_int(raw, "receiving_tds"),
+                            _raw_int(raw, "rush_attempts"),
+                            _raw_int(raw, "rush_yards"),
+                            _raw_int(raw, "rush_tds"),
+                            _raw_int(raw, "pass_attempts"),
+                            _raw_int(raw, "pass_yards"),
+                            _raw_int(raw, "pass_tds"),
+                            _raw_int(raw, "completions"),
+                            _raw_int(raw, "interceptions"),
+                            _raw_float(raw, "yds_per_carry"),
+                            _raw_float(raw, "yds_per_reception"),
+                            _raw_float(raw, "yds_per_attempt"),
+                            _raw_float(raw, "completion_pct"),
+                            _raw_float(raw, "td_int_ratio"),
                         ),
                     )
                     metrics_rows += 1

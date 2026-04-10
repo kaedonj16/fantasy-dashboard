@@ -180,6 +180,7 @@ def run_rookie_evaluation_pipeline(
 
     by_player_metrics: Dict[str, Dict[int, Dict[str, Dict[str, Any]]]] = {}
     rookie_profiles: List[Dict[str, Any]] = []
+    raw_seasons_by_player: Dict[str, Dict[int, Dict[str, Any]]] = {}
     logs = Counter()
     missing_metric_reasons: Dict[str, Counter] = defaultdict(Counter)
 
@@ -197,9 +198,11 @@ def run_rookie_evaluation_pipeline(
 
         pid = reconciled.player_id
         metrics_by_season: Dict[int, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+        raw_seasons_for_player: Dict[int, Dict[str, Any]] = {}
         missing: Dict[str, Dict[str, Any]] = {}
 
         for season, season_record in _iter_player_seasons(player, year):
+            raw_seasons_for_player[season] = season_record
             raw_fields = {k: v for k, v in season_record.items() if v is not None}
             for metric in metrics_specs:
                 resolved_payload = None
@@ -239,6 +242,7 @@ def run_rookie_evaluation_pipeline(
         )
         rookie_profiles.append(profile)
         by_player_metrics[pid] = dict(metrics_by_season)
+        raw_seasons_by_player[pid] = raw_seasons_for_player
 
     metrics_snapshot = {
         "as_of_date": as_of,
@@ -265,6 +269,7 @@ def run_rookie_evaluation_pipeline(
             draft_class_year=year,
             by_player_metrics=by_player_metrics,
             rookie_profiles=rookie_profiles,
+            raw_seasons_by_player=raw_seasons_by_player,
             run_metadata={
                 "log_summary": dict(logs),
                 "missing_breakdown": {k: dict(v) for k, v in missing_metric_reasons.items()},
