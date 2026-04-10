@@ -89,7 +89,7 @@ def init_rookie_eval_tables(conn) -> None:
             ADD COLUMN IF NOT EXISTS eval_player_level_sos NUMERIC,
             ADD COLUMN IF NOT EXISTS eval_perf_vs_top_def NUMERIC,
             ADD COLUMN IF NOT EXISTS eval_true_early_declare BOOLEAN,
-            ADD COLUMN IF NOT EXISTS eval_snap_counts NUMERIC;
+            ADD COLUMN IF NOT EXISTS games_played NUMERIC;
             """
         )
         cur.execute(
@@ -148,7 +148,6 @@ def save_rookie_evaluation_to_db(
             for player_id, seasons in by_player_metrics.items():
                 for season, metrics in (seasons or {}).items():
                     missing_metrics = missing_by_player.get(player_id) or {}
-
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data
@@ -158,10 +157,10 @@ def save_rookie_evaluation_to_db(
                              eval_yac_per_att, eval_mtf_per_att, eval_explosive_run_rate,
                              eval_adjusted_comp_pct, eval_twp_rate,
                              eval_player_level_sos, eval_perf_vs_top_def,
-                             eval_true_early_declare, eval_snap_counts)
+                             eval_true_early_declare, games_played, targets)
                         VALUES
                             (%s, %s, %s, %s, %s, NOW(),
-                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
                             rookie_eval_metrics     = EXCLUDED.rookie_eval_metrics,
@@ -178,12 +177,13 @@ def save_rookie_evaluation_to_db(
                             eval_player_level_sos   = EXCLUDED.eval_player_level_sos,
                             eval_perf_vs_top_def    = EXCLUDED.eval_perf_vs_top_def,
                             eval_true_early_declare = EXCLUDED.eval_true_early_declare,
-                            eval_snap_counts        = EXCLUDED.eval_snap_counts
+                            games_played            = EXCLUDED.games_played,
+                            targets                 = EXCLUDED.targets
                         """,
                         (
                             player_id,
                             int(season),
-                            "rookie_eval",
+                            "cfbd",
                             Json(_to_json_safe(metrics)),
                             Json(_to_json_safe(missing_metrics)),
                             _metric_value(metrics, "routes_run"),
@@ -197,7 +197,8 @@ def save_rookie_evaluation_to_db(
                             _metric_value(metrics, "player_level_sos"),
                             _metric_value(metrics, "performance_vs_top_defenses"),
                             _bool_metric_value(metrics, "true_early_declare"),
-                            _metric_value(metrics, "snap_counts"),
+                            _metric_value(metrics, "games_played"),
+                            _metric_value(metrics, "targets"),
                         ),
                     )
                     metrics_rows += 1
@@ -236,53 +237,10 @@ def save_rookie_evaluation_to_db(
             )
             run_rows = 1
 
-    # Bridge profiles into player_advanced_metrics so model training can use
-    # rookie evaluation fields as features.
-    bridge_result = bridge_to_advanced_metrics(as_of_date, draft_class_year, rookie_profiles)
-
     return {
         "db_metrics_rows": metrics_rows,
         "db_profiles_rows": profile_rows,
         "db_runs_rows": run_rows,
-        "db_bridge_rows": bridge_result,
     }
 
 
-def bridge_to_advanced_metrics(
-    as_of_date: str,
-    draft_class_year: int,
-    profiles: List[Dict],
-) -> Dict[str, int]:
-    """
-    Bridge rookie evaluation profiles into player_advanced_metrics.
-
-    Calls merge_rookie_profiles_to_advanced_metrics from advanced_metrics.py
-    so that rookie_eval_* columns in player_advanced_metrics are populated.
-    These columns are then available as features in value_model_training.py.
-
-    Args:
-        as_of_date:        ISO date string (YYYY-MM-DD).
-        draft_class_year:  Draft class year (e.g. 2026).
-        profiles:          List of rookie profile dicts from evaluation pipeline.
-
-    Returns:
-        {"updated": n, "inserted": n, "skipped": n}
-    """
-    if not profiles or not _db_available():
-        return {"updated": 0, "inserted": 0, "skipped": 0}
-
-    try:
-        from data_building.advanced_metrics import merge_rookie_profiles_to_advanced_metrics
-        from dashboard_services.db import get_conn
-
-        with get_conn() as conn:
-            result = merge_rookie_profiles_to_advanced_metrics(profiles, as_of_date, conn=conn)
-        print(
-            f"[rookie_db_storage] bridge_to_advanced_metrics class={draft_class_year} "
-            f"updated={result.get('updated')} inserted={result.get('inserted')} "
-            f"skipped={result.get('skipped')}"
-        )
-        return result
-    except Exception as exc:
-        print(f"[rookie_db_storage] bridge_to_advanced_metrics failed: {exc}")
-        return {"updated": 0, "inserted": 0, "skipped": 0, "error": str(exc)}

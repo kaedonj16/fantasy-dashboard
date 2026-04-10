@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from data_building.rookie_pipeline.rookie_metric_derivations import (
     derive_adjusted_comp_pct_proxy,
@@ -169,6 +169,44 @@ class DerivedRookieMetricsSource(RookieSource):
     source_name = "rookie_metric_derivations"
     source_type = "derived"
 
+    def __init__(self, sportradar_index=None):
+        # sportradar_index is a SportradarNCAAIndex or None
+        self._sportradar_index = sportradar_index
+
+    def _get_sportradar_season_count_and_derive_early_declare(self, player: Dict[str, Any]) -> Optional[bool]:
+        """Set early_declare flag based on season count and determine early declaration."""
+        if self._sportradar_index is None:
+            # No Sportradar index available, fallback to original behavior
+            print(f"[DEBUG] No Sportradar index for {player.get('name')}")
+            return derive_true_early_declare(player)
+        
+        name = player.get("name", "")
+        if not name:
+            print(f"[DEBUG] No name for player")
+            return derive_true_early_declare(player)
+        
+        # Get season data from Sportradar index
+        from data_building.rookie_pipeline.sportradar_ncaa import _normalize_name
+        normalized_name = _normalize_name(name)
+        seasons_data = self._sportradar_index._data.get(normalized_name, {})
+        
+        season_count = len(seasons_data.keys())
+        class_year = player.get("class_year") or player.get("experience", "")
+        
+        # Set early_declare flag based on season count
+        # Exactly 3 seasons = early declare, anything else = not early declare
+        early_declare_flag = (season_count == 3)
+        
+        print(f"[DEBUG] {name}: seasons={season_count}, set early_declare={early_declare_flag}, class_year={class_year}")
+        
+        # Update player dict with the calculated flag
+        player_with_flag = player.copy()
+        player_with_flag["early_declare"] = early_declare_flag
+        
+        result = derive_true_early_declare(player_with_flag, season_count)
+        print(f"[DEBUG] {name}: true_early_declare result = {result}")
+        return result
+
     def fetch_player_season_metrics(
         self,
         player: Dict[str, Any],
@@ -178,6 +216,9 @@ class DerivedRookieMetricsSource(RookieSource):
         out: Dict[str, Dict[str, Any]] = {}
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
         position = (player.get("position") or "").upper()
+        
+        # Debug: Show what metrics are being requested
+        metric_names = [m.name for m in requested_metrics]
 
         handlers = {
             # --- existing derivations ---
@@ -185,8 +226,13 @@ class DerivedRookieMetricsSource(RookieSource):
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
             "true_early_declare": lambda: (
+<<<<<<< HEAD
                 print(f"[rookie_sources] Calling derive_true_early_declare for player: {player.get('name', 'Unknown')}"),
                 derive_true_early_declare(player)
+=======
+                print(f"[DEBUG] true_early_declare handler executing for player: {player.get('name', 'unknown')}") 
+                or self._get_sportradar_season_count_and_derive_early_declare(player)
+>>>>>>> main
             ),
             # --- new proxy derivations ---
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
@@ -285,11 +331,18 @@ class SportradarNCAAFBSource(RookieSource):
         "yprr":       0.58,
         "tprr":       0.40,
         "snap_counts": 0.85,
+        "games_played": 0.90,
+        "targets":    0.95,
     }
 
     def __init__(self, index=None):
         # index is a SportradarNCAAIndex or None
         self._index = index
+        self._cache: Dict[Tuple[str, int], Dict[str, Any]] = {}  # (name, season) -> stats
+        if index is None:
+            print(f"[sportradar_ncaa] No index provided - likely no API key or index build failed")
+        else:
+            print(f"[sportradar_ncaa] Index provided with {len(index)} players")
 
     def fetch_player_season_metrics(
         self,
@@ -297,14 +350,27 @@ class SportradarNCAAFBSource(RookieSource):
         season_record: Dict[str, Any],
         requested_metrics: Iterable[RookieMetricSpec],
     ) -> Dict[str, Dict[str, Any]]:
+        player_key = player.get("player_id") or player.get("name") or "unknown"
+        season = int(season_record.get("season") or player.get("draft_class_year") or 0)
+
         if self._index is None:
+            print(f"[sportradar_ncaa] no index available, returning empty dict")
             return {}
 
         name = player.get("name", "")
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
         pos = (player.get("position") or "").upper()
-
-        sr_stats = self._index.get_season_stats(name, season)
+        
+        # Check cache first
+        cache_key = (name, season)
+        cache_hit = cache_key in self._cache
+        if cache_hit:
+            sr_stats = self._cache[cache_key]
+        else:
+            sr_stats = self._index.get_season_stats(name, season)
+            self._cache[cache_key] = sr_stats  # Cache even if None to avoid repeated calls
+            print(f"[sportradar_ncaa] CACHE MISS: Extracted {name} season {season}")
+            
         if not sr_stats:
             return {}
 
@@ -381,6 +447,28 @@ class SportradarNCAAFBSource(RookieSource):
                         confidence=self._METRIC_CONF["snap_counts"],
                     )
 
+            elif metric.name == "games_played":
+                if games is not None:
+                    payload = base_metric_payload(
+                        value=games,
+                        season=season,
+                        source_name=self.source_name,
+                        source_type=self.source_type,
+                        source_url=None,
+                        confidence=self._METRIC_CONF.get("games_played", 0.8),
+                    )
+
+            elif metric.name == "targets":
+                if targets is not None:
+                    payload = base_metric_payload(
+                        value=targets,
+                        season=season,
+                        source_name=self.source_name,
+                        source_type=self.source_type,
+                        source_url=None,
+                        confidence=self._METRIC_CONF["targets"],
+                    )
+
             if payload:
                 out[metric.name] = payload
 
@@ -411,7 +499,10 @@ def rookie_metric_specs() -> List[RookieMetricSpec]:
         RookieMetricSpec("player_level_sos", "CFBData advanced team stats"),
         RookieMetricSpec("performance_vs_top_defenses", "CFBData game-level stats"),
         RookieMetricSpec("snap_counts", "PFF College"),
+        RookieMetricSpec("games_played", "Sportradar NCAAFB"),
+        RookieMetricSpec("targets", "Sportradar NCAAFB"),
         RookieMetricSpec("true_early_declare", "NFL Draft declaration tracker"),
         RookieMetricSpec("injury_flags", "Draft Sharks college injuries"),
     ]
+    print(f"[DEBUG] All available metrics: {[spec.name for spec in specs]}")
     return specs

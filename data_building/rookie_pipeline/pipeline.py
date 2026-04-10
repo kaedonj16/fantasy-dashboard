@@ -376,7 +376,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             "team_total_yards": season_data.get("team_total_yards"),
                             "team_total_tds": season_data.get("team_total_tds"),
                             "source": "cfbd",
-                        }
+                                                    }
                     )
                     cur.execute("RELEASE SAVEPOINT save_stats")
                     saved += 1
@@ -1287,11 +1287,64 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
 
         print(f"[pipeline] Loaded {len(ath_rows)} athleticism records")
 
-        # Attach stats and athleticism to prospects
+        # ── Load eval metrics (primary: snapshots; fallback: per-season rows) ──
+        player_ids_for_class = [p["player_id"] for p in prospects]
+        cur.execute("""
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                profile_json -> 'rookie_profile' -> 'metrics' AS eval_metrics
+            FROM rookie_profiles_snapshots
+            WHERE draft_class_year = %s
+              AND player_id = ANY(%s)
+            ORDER BY player_id, snapshot_date DESC
+        """, (draft_year, player_ids_for_class))
+        snapshot_rows = cur.fetchall()
+
+        eval_by_player: Dict[str, Dict] = {}
+        players_with_snapshot = set()
+        for snap_row in snapshot_rows:
+            pid = snap_row["player_id"]
+            raw = snap_row["eval_metrics"]
+            if isinstance(raw, dict) and raw:
+                eval_by_player[pid] = raw
+                players_with_snapshot.add(pid)
+
+        # Fallback: for players without a snapshot, merge per-season JSONB rows
+        players_needing_fallback = [
+            p["player_id"] for p in prospects
+            if p["player_id"] not in players_with_snapshot
+        ]
+        if players_needing_fallback:
+            cur.execute("""
+                SELECT player_id, season, rookie_eval_metrics
+                FROM rookie_prospect_source_data
+                WHERE player_id = ANY(%s)
+                  AND rookie_eval_metrics IS NOT NULL
+                ORDER BY player_id, season ASC
+            """, (players_needing_fallback,))
+            fallback_rows = cur.fetchall()
+
+            fallback_by_player: Dict[str, Dict] = {}
+            for fb_row in fallback_rows:
+                pid = fb_row["player_id"]
+                season_metrics = fb_row["rookie_eval_metrics"]
+                if isinstance(season_metrics, dict):
+                    fallback_by_player.setdefault(pid, {}).update(season_metrics)
+            eval_by_player.update(fallback_by_player)
+
+        n_eval = sum(1 for v in eval_by_player.values() if v)
+        print(f"[pipeline] Loaded eval metrics for {n_eval}/{len(prospects)} prospects "
+              f"({len(players_with_snapshot)} from snapshots, "
+              f"{n_eval - len(players_with_snapshot)} from fallback rows)")
+
+        # Attach stats, athleticism, and eval metrics to prospects
         for prospect in prospects:
             player_id = prospect["player_id"]
             prospect["seasons"] = stats_by_player.get(player_id, [])
             prospect["athleticism"] = ath_by_player.get(player_id, {})
+            eval_metrics = eval_by_player.get(player_id)
+            if eval_metrics:
+                prospect["_eval_metrics"] = eval_metrics
 
         return prospects
 
@@ -1338,6 +1391,77 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DB-only scoring path (used when ingestion APIs are unavailable)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
+    """
+    Score prospects using data already persisted in the DB.
+
+    Called when Sportradar is unreachable (no key, 403, etc.) but the DB
+    already has prospects, stats, athleticism, and eval metrics from a prior
+    evaluation pipeline run.  Runs Stages 5-6 only:
+      5. Build mock-draft consensus from existing rookie_mock_draft_entries
+      6. Load prospects + eval metrics → score → translate → upsert rankings
+    """
+    from .prospect_model import score_all_prospects
+    from .value_translation import translate_all
+
+    print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
+
+    with get_conn_fn() as conn:
+        existing_prospects = load_prospects_from_db(draft_year, conn)
+
+    if not existing_prospects:
+        print(f"[pipeline] No prospects in DB for {draft_year} — cannot score. "
+              "Run evaluation pipeline and ensure prospects are seeded first.")
+        return {}
+
+    print(f"[pipeline] Found {len(existing_prospects)} prospects in DB for {draft_year}")
+    n_with_eval = sum(1 for p in existing_prospects if p.get("_eval_metrics"))
+    print(f"[pipeline] Eval metrics loaded from DB: {n_with_eval}/{len(existing_prospects)} prospects")
+    if n_with_eval == 0:
+        print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
+
+    # Stage 5: build consensus from stored mock entries
+    print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
+    with get_conn_fn() as conn:
+        consensus_map = build_consensus_from_db_entries(draft_year, conn)
+
+    print(f"[pipeline] Built consensus from {len(consensus_map)} players")
+    if consensus_map:
+        sample = list(consensus_map.items())[:3]
+        for pid, c in sample:
+            print(f"[pipeline]   sample: {pid} pick={c.get('projected_pick')} mocks={c.get('num_mocks_used')}")
+
+    with get_conn_fn() as conn:
+        n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
+    print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records")
+
+    # Stage 6: score + translate + save rankings
+    print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
+    scores = score_all_prospects(existing_prospects, consensus_map)
+    print(f"[pipeline] Scored {len(scores)} prospects")
+
+    values = translate_all(scores, existing_prospects, consensus_map)
+    print(f"[pipeline] Calculated values for {len(values)} prospects")
+
+    with get_conn_fn() as conn:
+        n_rankings = upsert_rankings(scores, values, conn)
+    print(f"[pipeline] STAGE 6 COMPLETE: Saved {n_rankings} rankings to rookie_rankings")
+
+    print("[pipeline] ====== DB-ONLY SCORING COMPLETE ======")
+
+    return {
+        "draft_year": draft_year,
+        "prospects": existing_prospects,
+        "consensus": consensus_map,
+        "scores": scores,
+        "values": values,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public API — full DB path
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1373,14 +1497,14 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     # Check for required API keys
     import os
-    if not os.getenv("SPORTRADAR_API_KEY"):
-        print("[pipeline] SPORTRADAR_API_KEY not set - cannot fetch prospects")
-        print("[pipeline] Please set SPORTRADAR_API_KEY environment variable to continue")
-        return {}
+    _has_sr_key = bool(os.getenv("SPORTRADAR_API_KEY"))
+    if not _has_sr_key:
+        print("[pipeline] SPORTRADAR_API_KEY not set - skipping ingestion, attempting DB-only scoring")
 
-    # Fetch prospects from Sportradar
-    sr_prospects = fetch_sportradar_prospects(draft_year)
+    # Fetch prospects from Sportradar (skip if no key)
+    sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
     if not sr_prospects:
+<<<<<<< HEAD
         print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
         try:
             from .ingestion import prospects_from_mock_draft
@@ -1396,6 +1520,12 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         if not sr_prospects:
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
+=======
+        if _has_sr_key:
+            print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
+        # Fall back: score from whatever is already in the DB
+        return _score_from_db(draft_year, get_conn)
+>>>>>>> main
 
     print(f"[pipeline] Loaded {len(sr_prospects)} prospects")
 
@@ -1604,33 +1734,13 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     print(f"[pipeline] Loaded {len(complete_prospects)} complete prospects from database")
 
-    # ── Attach evaluation pipeline metrics before scoring ────────────────────
-    # The evaluation pipeline (rookie_evaluation_pipeline.py) derives proxy
-    # metrics (yprr, tprr, yac_per_att, adjusted_comp_pct, etc.) from college
-    # stats.  Attaching them to prospect dicts as _eval_metrics lets
-    # score_all_prospects use them when available via confidence-weighted blending.
-    #
-    # Lazy import avoids circular dependency (rookie_evaluation_pipeline imports
-    # load_prospects_from_db from this module).
-    try:
-        from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
-            run_rookie_evaluation_pipeline,
-        )
-        eval_result = run_rookie_evaluation_pipeline(draft_year)
-        eval_profiles_by_id: Dict[str, Dict] = {
-            p["player_id"]: (p.get("rookie_profile") or {}).get("metrics") or {}
-            for p in (eval_result.get("profiles") or [])
-            if p.get("player_id")
-        }
-        attached = 0
-        for prospect in complete_prospects:
-            pid = prospect.get("player_id")
-            if pid and pid in eval_profiles_by_id:
-                prospect["_eval_metrics"] = eval_profiles_by_id[pid]
-                attached += 1
-        print(f"[pipeline] Attached eval metrics to {attached}/{len(complete_prospects)} prospects")
-    except Exception as _eval_exc:
-        print(f"[pipeline] WARNING: Could not attach eval metrics before scoring: {_eval_exc}")
+    # ── Eval metrics were loaded from DB by load_prospects_from_db ─────────
+    # run_rookie_evaluation_pipeline must have been called before this pipeline
+    # (see scripts/populate_rookie_data.py) so metrics are already in the DB.
+    n_with_eval = sum(1 for p in complete_prospects if p.get("_eval_metrics"))
+    print(f"[pipeline] Eval metrics loaded from DB: {n_with_eval}/{len(complete_prospects)} prospects")
+    if n_with_eval == 0:
+        print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
 
     # Score prospects
     scores = score_all_prospects(complete_prospects, consensus_map)
