@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-10T00:00:35Z",
+  "metric": "yprr",
+  "metric_payload": {
+    "confidence": 0.28,
+    "season": 2023,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-10T00:00:35Z",
+    "value": 1.866
+  },
+  "player_id": "ROOKIE_2026_DEVONTE_ROSS",
+  "season": 2023
+}

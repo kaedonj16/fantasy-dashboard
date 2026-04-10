@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T21:23:04Z",
+  "metric": "player_level_sos",
+  "metric_payload": {
+    "confidence": 0.55,
+    "season": 2025,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T21:23:04Z",
+    "value": 0.97
+  },
+  "player_id": "ROOKIE_2026_KAELON_BLACK",
+  "season": 2025
+}

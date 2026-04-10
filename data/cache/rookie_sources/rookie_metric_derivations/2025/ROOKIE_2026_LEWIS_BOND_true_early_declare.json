@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T21:23:04Z",
+  "metric": "true_early_declare",
+  "metric_payload": {
+    "confidence": 0.8,
+    "season": 2025,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T21:23:04Z",
+    "value": false
+  },
+  "player_id": "ROOKIE_2026_LEWIS_BOND",
+  "season": 2025
+}

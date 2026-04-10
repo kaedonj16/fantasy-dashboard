@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T22:08:28Z",
+  "metric": "yac_per_att",
+  "metric_payload": {
+    "confidence": 0.4,
+    "season": 2024,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T22:08:28Z",
+    "value": 3.484
+  },
+  "player_id": "ROOKIE_2026_COLE_PAYTON",
+  "season": 2024
+}

@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T22:08:29Z",
+  "metric": "yac_per_att",
+  "metric_payload": {
+    "confidence": 0.4,
+    "season": 2023,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T22:08:29Z",
+    "value": 1.878
+  },
+  "player_id": "ROOKIE_2026_DIEGO_PAVIA",
+  "season": 2023
+}

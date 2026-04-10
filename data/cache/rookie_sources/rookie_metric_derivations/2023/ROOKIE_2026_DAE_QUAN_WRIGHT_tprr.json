@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-10T00:00:36Z",
+  "metric": "tprr",
+  "metric_payload": {
+    "confidence": 0.28,
+    "season": 2023,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-10T00:00:36Z",
+    "value": 0.0
+  },
+  "player_id": "ROOKIE_2026_DAE_QUAN_WRIGHT",
+  "season": 2023
+}

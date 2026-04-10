@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T22:08:28Z",
+  "metric": "twp_rate",
+  "metric_payload": {
+    "confidence": 0.55,
+    "season": 2024,
+    "source_name": "rookie_prospect_source_data",
+    "source_type": "api",
+    "source_url": null,
+    "updated_at": "2026-04-09T22:08:28Z",
+    "value": 2.299
+  },
+  "player_id": "ROOKIE_2026_KAIDON_SALTER",
+  "season": 2024
+}

@@ -1,0 +1,15 @@
+{
+  "cached_at": "2026-04-09T21:28:28Z",
+  "metric": "explosive_run_rate",
+  "metric_payload": {
+    "confidence": 0.45,
+    "season": 2024,
+    "source_name": "rookie_metric_derivations",
+    "source_type": "derived",
+    "source_url": null,
+    "updated_at": "2026-04-09T21:28:28Z",
+    "value": 0.083
+  },
+  "player_id": "ROOKIE_2026_ANTHONY_HANKERSON",
+  "season": 2024
+}
