@@ -3499,62 +3499,74 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // ── Hero row: 1QB Value (primary) · SF Value · Position Rank ─────────
+      // ── Values + Advanced Metrics ────────────────────────────────────────
       const val1qb = data.stats?.value || 0;
       const valsf  = data.stats?.sf_value || 0;
       const posRankLabel = data.stats?.pos_rank_label || (data.stats?.pos_rank ? `${pos}${data.stats.pos_rank}` : '');
+      const expLabel = data.stats?.years_exp === 0 ? 'Rookie'
+        : data.stats?.years_exp != null ? `${data.stats.years_exp} yr${data.stats.years_exp !== 1 ? 's' : ''}`
+        : '—';
 
-      bodyHTML += `
-        <div class="pm-hero-row">
-          <div class="pm-hero-stat pm-hero-primary">
-            <div class="pm-hero-label">1QB Value</div>
-            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-            <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
-          </div>
-          <div class="pm-hero-stat">
-            <div class="pm-hero-label">SF Value</div>
-            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-            <div class="pm-hero-sub">Superflex</div>
-          </div>
-          ${data.stats?.pos_rank ? `
-          <div class="pm-hero-stat">
+      const thirdValueCard = data.stats?.pos_rank
+        ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Pos Rank</div>
             <div class="pm-hero-val">${posRankLabel || data.stats.pos_rank}</div>
-            <div class="pm-hero-sub">${pos || ''}</div>
-          </div>` : `
-          <div class="pm-hero-stat">
+            <div class="pm-hero-sub">${expLabel}</div>
+          </div>`
+        : `<div class="pm-hero-stat">
             <div class="pm-hero-label">Experience</div>
-            <div class="pm-hero-val">${data.stats?.years_exp != null ? data.stats.years_exp : '—'}</div>
-            <div class="pm-hero-sub">years</div>
-          </div>`}
-        </div>
-      `;
+            <div class="pm-hero-val">${expLabel}</div>
+            <div class="pm-hero-sub">${pos || ''}</div>
+          </div>`;
 
-      // ── Info row: Position · Team · Experience · Age ──────────────────────
-      const infoItems = [];
-      if (pos) infoItems.push({ text: pos, bold: true });
-      if (data.team) infoItems.push({ text: data.team });
-      if (data.stats?.years_exp != null) infoItems.push({ text: data.stats.years_exp === 0 ? 'Rookie' : `${data.stats.years_exp} yrs exp` });
-      if (data.age) infoItems.push({ text: `Age ${data.age.toFixed(1)}` });
-      bodyHTML += `<div class="pm-info-row">` +
-        infoItems.map((item, i) =>
-          (i > 0 ? '<span style="opacity:.35;">·</span>' : '') +
-          (item.bold
-            ? `<span style="font-weight:700;color:var(--text);">${item.text}</span>`
-            : `<span style="color:var(--text-muted);">${item.text}</span>`)
-        ).join('') +
-        `</div>`;
-
-      // ── Advanced Metrics placeholder ──────────────────────────────────────
       if (pos && pos !== 'K' && pos !== 'DEF') {
+        // Skill positions: values on left, async metric bars on right
         bodyHTML += `
           <hr class="pm-section-divider">
           <div id="advancedMetricsSection">
-            <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>
-            <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
-              <div class="loading-spinner" style="width:16px;height:16px;"></div>
-              <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
+            <div class="pm-section-header">
+              <span class="pm-section-label">Advanced Metrics</span>
+              <span id="advMetricsSeasonLabel" style="font-size:11px;color:var(--text-muted);"></span>
             </div>
+            <div id="advMetricsPills"></div>
+            <div class="pm-adv-layout">
+              <div class="pm-adv-values">
+                <div class="pm-hero-stat pm-hero-primary">
+                  <div class="pm-hero-label">1QB Value</div>
+                  <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+                  <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
+                </div>
+                <div class="pm-hero-stat">
+                  <div class="pm-hero-label">SF Value</div>
+                  <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+                  <div class="pm-hero-sub">Superflex</div>
+                </div>
+                ${thirdValueCard}
+              </div>
+              <div id="advancedMetricsContent">
+                <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
+                  <div class="loading-spinner" style="width:16px;height:16px;"></div>
+                  <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // K/DEF: simple hero row, no advanced metrics
+        bodyHTML += `
+          <div class="pm-hero-row" style="margin-top:4px;">
+            <div class="pm-hero-stat pm-hero-primary">
+              <div class="pm-hero-label">1QB Value</div>
+              <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+              <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
+            </div>
+            <div class="pm-hero-stat">
+              <div class="pm-hero-label">SF Value</div>
+              <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+              <div class="pm-hero-sub">Superflex</div>
+            </div>
+            ${thirdValueCard}
           </div>
         `;
       }
@@ -3732,15 +3744,24 @@ function openPlayerModal(playerId, playerName) {
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
-          // Format dates as M/D
-          const formatDate = (dateStr) => {
+          // Format dates as "Jan 10" (parse manually to avoid timezone shifts)
+          const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return `${date.getMonth() + 1}/${date.getDate()}`;
+            const parts = dateStr.split('-');
+            const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           };
 
+          const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
+          const n = xData.length;
+
+          // Show ticks at first, middle, and last points
+          const midIdx = Math.floor((n - 1) / 2);
+          const tickIdxs = n <= 1 ? [0] : n <= 2 ? [0, n - 1] : [0, midIdx, n - 1];
+          const tickvals = [...new Set(tickIdxs.map(i => xData[i]))];
+
           const trace = {
-            x: data.value_history.map(d => formatDate(d.as_of_date)),
+            x: xData,
             y: data.value_history.map(d => d.value),
             type: 'scatter',
             mode: 'lines',
@@ -3756,13 +3777,15 @@ function openPlayerModal(playerId, playerName) {
           const chartHeight = isMobile ? 200 : 250;
 
           const layout = {
-            margin: { l: 40, r: 20, t: 10, b: 40 },
+            margin: { l: 40, r: 20, t: 10, b: 36 },
             height: chartHeight,
             xaxis: {
-              title: 'Date',
               showgrid: false,
               type: 'category',
-              tickangle: isMobile ? -45 : 0
+              tickmode: 'array',
+              tickvals: tickvals,
+              ticktext: tickvals,
+              tickangle: 0,
             },
             yaxis: {
               title: isMobile ? '' : 'Value',
@@ -3778,8 +3801,8 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // Fetch and render advanced metrics (season-selectable)
-      const advancedSection = document.getElementById('advancedMetricsSection');
+      // Fetch and render advanced metrics (bars go into #advancedMetricsContent)
+      const advancedSection = document.getElementById('advancedMetricsContent');
       if (advancedSection) {
         const path = window.location.pathname;
         const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
@@ -3808,12 +3831,11 @@ function getRoleGrade(roleScore) {
 }
 
 function loadAdvancedMetrics(playerId, leagueId, season) {
-  const section = document.getElementById('advancedMetricsSection');
-  if (!section) return;
+  const contentEl = document.getElementById('advancedMetricsContent');
+  if (!contentEl) return;
 
-  // Show spinner while loading
-  section.innerHTML = `
-    <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>
+  // Show spinner in the bars column only (values on the left stay intact)
+  contentEl.innerHTML = `
     <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
       <div class="loading-spinner" style="width:16px;height:16px;"></div>
       <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
@@ -3828,36 +3850,37 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
     .then(res => res.json())
     .then(metricsData => {
       if (metricsData.error || metricsData.premium_required) {
-        section.style.display = 'none';
+        const section = document.getElementById('advancedMetricsSection');
+        if (section) section.style.display = 'none';
         return;
       }
 
       const availableSeasons = metricsData.available_seasons || [];
       const activeSeason = metricsData.season;
 
-      // Season pills (only shown when more than one season has data)
-      let pillsHTML = '';
-      if (availableSeasons.length > 1) {
-        pillsHTML = '<div class="adv-metrics-season-pills">';
+      // Update year label in section header
+      const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
+      if (seasonLabelEl && activeSeason) seasonLabelEl.textContent = activeSeason;
+
+      // Season pills above the layout
+      const pillsEl = document.getElementById('advMetricsPills');
+      if (pillsEl && availableSeasons.length > 1) {
+        let pillsHTML = '<div class="adv-metrics-season-pills">';
         availableSeasons.forEach(yr => {
           const activeClass = yr === activeSeason ? ' active' : '';
           pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
+        pillsEl.innerHTML = pillsHTML;
       }
 
-      section.innerHTML = `
-        <div class="pm-section-header">
-          <span class="pm-section-label">Advanced Metrics</span>
-          ${activeSeason ? `<span style="font-size:11px;color:var(--text-muted);">${activeSeason}</span>` : ''}
-        </div>
-        ${pillsHTML}
-        ${buildAdvancedMetricsHTML(metricsData)}
-      `;
+      // Populate just the bars column
+      contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData);
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
-      section.style.display = 'none';
+      const section = document.getElementById('advancedMetricsSection');
+      if (section) section.style.display = 'none';
     });
 }
 
@@ -3869,7 +3892,7 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   // Role Score (0–100)
   if (metrics.role_score != null) {
-    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1) + ' ' + getRoleGrade(metrics.role_score) });
+    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
   // Snap Share (0–1 → %)
   if (metrics.snap_share != null) {
@@ -3931,11 +3954,12 @@ function buildAdvancedMetricsHTML(metricsData) {
   defs.forEach(m => {
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
+    const subLine = m.sub ? `<div style="font-size:10px;font-weight:500;opacity:.65;line-height:1;">${m.sub}</div>` : '';
     html += `
       <div class="pm-comp-row">
         <span class="pm-comp-label">${m.label}</span>
         <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-        <span class="pm-comp-val" style="color:${color};">${m.display}</span>
+        <div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>
       </div>`;
   });
   html += '</div>';
@@ -4256,13 +4280,16 @@ function _renderBkModalContent(data, playerId) {
   const metaParts = [];
   if (pos)  metaParts.push(`<span style="font-weight:600;color:var(--text);">${pos}</span>`);
   if (team) metaParts.push(`<span>${team}</span>`);
-  if (data.phase) metaParts.push(`<span>${data.phase}</span>`);
+  if (formattedPhase !== '—') metaParts.push(`<span>${formattedPhase}</span>`);
   document.getElementById('bkModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 4px;">·</span>');
 
   const breakoutType = data.breakout_type || {};
   const emoji  = breakoutType.emoji || '📊';
   const label  = breakoutType.profile_label || 'Breakout Candidate';
   const driver = breakoutType.primary_driver || 'balanced';
+  const formattedPhase = data.phase
+    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : '—';
 
   // Score color
   let scoreColor = '#10b981';
@@ -4293,7 +4320,7 @@ function _renderBkModalContent(data, playerId) {
       </div>
       <div class="pm-hero-stat">
         <div class="pm-hero-label">Phase</div>
-        <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1;margin:6px 0 4px;">${data.phase || '—'}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
         <div class="pm-hero-sub">${pos}${pos && team ? ' · ' : ''}${team}</div>
       </div>
     </div>
