@@ -1392,6 +1392,77 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DB-only scoring path (used when ingestion APIs are unavailable)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
+    """
+    Score prospects using data already persisted in the DB.
+
+    Called when Sportradar is unreachable (no key, 403, etc.) but the DB
+    already has prospects, stats, athleticism, and eval metrics from a prior
+    evaluation pipeline run.  Runs Stages 5-6 only:
+      5. Build mock-draft consensus from existing rookie_mock_draft_entries
+      6. Load prospects + eval metrics → score → translate → upsert rankings
+    """
+    from .prospect_model import score_all_prospects
+    from .value_translation import translate_all
+
+    print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
+
+    with get_conn_fn() as conn:
+        existing_prospects = load_prospects_from_db(draft_year, conn)
+
+    if not existing_prospects:
+        print(f"[pipeline] No prospects in DB for {draft_year} — cannot score. "
+              "Run evaluation pipeline and ensure prospects are seeded first.")
+        return {}
+
+    print(f"[pipeline] Found {len(existing_prospects)} prospects in DB for {draft_year}")
+    n_with_eval = sum(1 for p in existing_prospects if p.get("_eval_metrics"))
+    print(f"[pipeline] Eval metrics loaded from DB: {n_with_eval}/{len(existing_prospects)} prospects")
+    if n_with_eval == 0:
+        print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
+
+    # Stage 5: build consensus from stored mock entries
+    print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
+    with get_conn_fn() as conn:
+        consensus_map = build_consensus_from_db_entries(draft_year, conn)
+
+    print(f"[pipeline] Built consensus from {len(consensus_map)} players")
+    if consensus_map:
+        sample = list(consensus_map.items())[:3]
+        for pid, c in sample:
+            print(f"[pipeline]   sample: {pid} pick={c.get('projected_pick')} mocks={c.get('num_mocks_used')}")
+
+    with get_conn_fn() as conn:
+        n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
+    print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records")
+
+    # Stage 6: score + translate + save rankings
+    print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
+    scores = score_all_prospects(existing_prospects, consensus_map)
+    print(f"[pipeline] Scored {len(scores)} prospects")
+
+    values = translate_all(scores, existing_prospects, consensus_map)
+    print(f"[pipeline] Calculated values for {len(values)} prospects")
+
+    with get_conn_fn() as conn:
+        n_rankings = upsert_rankings(scores, values, conn)
+    print(f"[pipeline] STAGE 6 COMPLETE: Saved {n_rankings} rankings to rookie_rankings")
+
+    print("[pipeline] ====== DB-ONLY SCORING COMPLETE ======")
+
+    return {
+        "draft_year": draft_year,
+        "prospects": existing_prospects,
+        "consensus": consensus_map,
+        "scores": scores,
+        "values": values,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public API — full DB path
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1427,16 +1498,17 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     # Check for required API keys
     import os
-    if not os.getenv("SPORTRADAR_API_KEY"):
-        print("[pipeline] SPORTRADAR_API_KEY not set - cannot fetch prospects")
-        print("[pipeline] Please set SPORTRADAR_API_KEY environment variable to continue")
-        return {}
+    _has_sr_key = bool(os.getenv("SPORTRADAR_API_KEY"))
+    if not _has_sr_key:
+        print("[pipeline] SPORTRADAR_API_KEY not set - skipping ingestion, attempting DB-only scoring")
 
-    # Fetch prospects from Sportradar
-    sr_prospects = fetch_sportradar_prospects(draft_year)
+    # Fetch prospects from Sportradar (skip if no key)
+    sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
     if not sr_prospects:
-        print("[pipeline] No prospects from Sportradar, cannot continue")
-        return {}
+        if _has_sr_key:
+            print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
+        # Fall back: score from whatever is already in the DB
+        return _score_from_db(draft_year, get_conn)
 
     print(f"[pipeline] Fetched {len(sr_prospects)} prospects from Sportradar")
 
