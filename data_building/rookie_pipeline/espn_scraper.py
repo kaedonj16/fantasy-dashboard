@@ -145,10 +145,8 @@ def _get(
         try:
             resp = requests.get(url, params=params, headers=h, timeout=timeout)
             if resp.status_code in (400, 401, 403, 404):
-                print(f"[DEBUG] permanent failure: {resp.status_code}")
-                return None
+                                return None
             if resp.status_code == 429:
-                print("[DEBUG] rate limited")
                 time.sleep(2.0 * (attempt + 1))
                 continue
 
@@ -156,19 +154,15 @@ def _get(
             return resp
 
         except requests.Timeout as e:
-            print(f"[DEBUG] timeout: {url} ({e})")
-            time.sleep(1.5 ** attempt)
+                        time.sleep(1.5 ** attempt)
 
         except requests.exceptions.ProxyError as e:
-            print(f"[DEBUG] proxy error: {url} ({e})")
-            return None
+                        return None
 
         except requests.RequestException as e:
-            print(f"[DEBUG] request exception: {url} ({e})")
-            time.sleep(1.5 ** attempt)
+                        time.sleep(1.5 ** attempt)
 
-    print(f"[DEBUG] failed after retries: {url}")
-    return None
+        return None
 
 
 def parse_dob_and_calculate_age(
@@ -321,7 +315,6 @@ def search_player_on_espn(
         try:
             raw = resp.json()
             items = _parse_search_items(raw)
-            print(f"[DEBUG] query={query} count={raw.get('count')} items_len={len(items)}")
             _score_items(items)
         except ValueError:
             continue

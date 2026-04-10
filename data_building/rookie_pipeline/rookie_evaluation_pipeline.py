@@ -88,14 +88,12 @@ def _source_for_metric(
     if cache_hit.payload and not cache_hit.is_stale:
         payload = cache_hit.payload.get("metric_payload")
         if payload and _cache_value_valid(metric.name, payload.get("value")):
-            print(f"[rookie_eval] cache_fresh  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_fresh"
 
     try:
         fetched = source.fetch_player_season_metrics(player, season_record, [metric])
         payload = fetched.get(metric.name)
         if payload and _cache_value_valid(metric.name, payload.get("value")):
-            print(f"[rookie_eval] fetched      player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name} conf={payload.get('confidence')}")
             cache.write(
                 source.source_name,
                 season,
@@ -116,7 +114,6 @@ def _source_for_metric(
     if cache_hit.payload:
         payload = cache_hit.payload.get("metric_payload")
         if payload and _cache_value_valid(metric.name, payload.get("value")):
-            print(f"[rookie_eval] cache_stale  player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name}")
             return payload, "cache_stale_fallback"
 
     return None, "missing"
@@ -149,7 +146,6 @@ def run_rookie_evaluation_pipeline(
     # Build Sportradar NCAAFB index for real target data (no-op if key absent)
     prospect_names = [p.get("name", "") for p in prospects if p.get("name")]
     sportradar_index = build_sportradar_ncaa_index(prospect_names)
-    print(f"[rookie_eval] sportradar_index built: {len(sportradar_index)} prospects")
 
     sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 
@@ -174,7 +170,6 @@ def run_rookie_evaluation_pipeline(
         metrics_by_season: Dict[int, Dict[str, Dict[str, Any]]] = defaultdict(dict)
         missing: Dict[str, Dict[str, Any]] = {}
 
-        print(f"[rookie_eval] --- player={player.get('name')} pid={pid} pos={player.get('position')} seasons={[s for s, _ in _iter_player_seasons(player, year)]}")
         for season, season_record in _iter_player_seasons(player, year):
             raw_fields = {k: v for k, v in season_record.items() if v is not None}
             print(f"[source_raw] player={pid} season={season} pos={player.get('position')} raw_fields={raw_fields}")
