@@ -150,7 +150,7 @@ def derive_yprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
         return None
 
     rec_yards = _get_num(stats, "receiving_yards")
-    if rec_yards is None:
+    if rec_yards is None or rec_yards < 0:
         return None
 
     return round(rec_yards / routes, 3)

@@ -74,14 +74,23 @@ class ProspectSeasonStatsSource(RookieSource):
     # Each entry is (field_or_callable, confidence)
     DIRECT_MAP: Dict[str, Any] = {
         "snap_counts": ("games_played", 0.70),
-        # adjusted_comp_pct: raw completion_pct is a solid direct proxy (QB only)
-        "adjusted_comp_pct": ("completion_pct", 0.65),
     }
+
+    # QB-only metrics — skipped automatically for non-QB positions in fetch_player_season_metrics
+    _QB_ONLY_METRICS = frozenset({"adjusted_comp_pct", "twp_rate"})
 
     # Inline calculations where we need more than one field
     # key → callable(season_record) → Optional[float]
     _INLINE: Dict[str, Any] = {
-        # twp_rate proxy: INT / pass_attempts * 100 (QB only)
+        # adjusted_comp_pct: raw completion_pct direct proxy (QB only, pass_attempts >= 50)
+        "adjusted_comp_pct": lambda sr: (
+            sr.get("completion_pct")
+            if sr.get("completion_pct") is not None
+            and sr.get("pass_attempts") is not None
+            and float(sr.get("pass_attempts", 0)) >= 50
+            else None
+        ),
+        # twp_rate proxy: INT / pass_attempts * 100 (QB only, pass_attempts >= 50)
         "twp_rate": lambda sr: (
             round((float(sr["interceptions"]) / float(sr["pass_attempts"])) * 100.0, 3)
             if sr.get("interceptions") is not None
@@ -91,6 +100,7 @@ class ProspectSeasonStatsSource(RookieSource):
         ),
     }
     _INLINE_CONFIDENCE: Dict[str, float] = {
+        "adjusted_comp_pct": 0.65,
         "twp_rate": 0.55,
     }
 
@@ -103,8 +113,13 @@ class ProspectSeasonStatsSource(RookieSource):
         out: Dict[str, Dict[str, Any]] = {}
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
         player_key = player.get("player_id") or player.get("name") or "unknown"
+        position = (player.get("position") or "").upper()
 
         for metric in requested_metrics:
+            # QB-only metrics must not be populated for other positions
+            if metric.name in self._QB_ONLY_METRICS and position != "QB":
+                continue
+
             # --- direct field map ---
             if metric.name in self.DIRECT_MAP:
                 entry = self.DIRECT_MAP[metric.name]
@@ -176,8 +191,8 @@ class DerivedRookieMetricsSource(RookieSource):
             "tprr": lambda: derive_tprr_proxy(season_record, position),
             "yac_per_att": lambda: derive_yac_per_att_proxy(season_record),
             "mtf_per_att": lambda: derive_mtf_per_att_proxy(season_record),
-            "adjusted_comp_pct": lambda: derive_adjusted_comp_pct_proxy(season_record),
-            "twp_rate": lambda: derive_twp_rate_proxy(season_record),
+            "adjusted_comp_pct": lambda: derive_adjusted_comp_pct_proxy(season_record) if position == "QB" else None,
+            "twp_rate": lambda: derive_twp_rate_proxy(season_record) if position == "QB" else None,
         }
         confidences = {
             "explosive_run_rate": 0.45,
