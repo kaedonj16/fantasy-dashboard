@@ -77,13 +77,14 @@ def _sr_get(path: str, retries: int = 4) -> Optional[Any]:
     access = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")
     url = f"{_SR_BASE}/{access}/v7/{_SR_LANG}/{path}"
     headers = {"accept": "application/json", "x-api-key": api_key}
+    params = {"api_key": api_key}
 
     time.sleep(_THROTTLE_S)
 
     for attempt in range(retries):
         try:
-            print(f"[sr_ncaa] GET {url}")
-            resp = requests.get(url, headers=headers, timeout=25)
+            print(f"[sr_ncaa] GET {url} (access={access}, key={api_key[:8]}...)")
+            resp = requests.get(url, headers=headers, params=params, timeout=25)
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 429:
@@ -91,7 +92,15 @@ def _sr_get(path: str, retries: int = 4) -> Optional[Any]:
                 print(f"[sr_ncaa] rate limited — sleeping {wait}s")
                 time.sleep(wait)
                 continue
-            print(f"[sr_ncaa] HTTP {resp.status_code} for {path}")
+            if resp.status_code in (401, 403):
+                print(
+                    f"[sr_ncaa] HTTP {resp.status_code} for {path} — "
+                    f"NCAAFB product may not be enabled for this API key "
+                    f"(key prefix: {api_key[:8]}..., access={access}). "
+                    f"The NFL Draft and NCAAFB APIs are separate Sportradar products."
+                )
+                return None
+            print(f"[sr_ncaa] HTTP {resp.status_code} for {path} — body: {resp.text[:200]}")
             return None
         except requests.exceptions.Timeout:
             wait = 2 ** attempt
@@ -370,9 +379,13 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
     caching at each step.  Returns a SportradarNCAAIndex for use by
     SportradarNCAAFBSource.
     """
-    if not os.getenv("SPORTRADAR_API_KEY", ""):
+    api_key = os.getenv("SPORTRADAR_API_KEY", "")
+    if not api_key:
         print("[sr_ncaa] SPORTRADAR_API_KEY not set — Sportradar NCAAFB stats skipped")
         return SportradarNCAAIndex({})
+
+    access = os.getenv("SPORTRADAR_ACCESS_LEVEL", "trial")
+    print(f"[sr_ncaa] Starting index build: key={api_key[:8]}... access={access} prospects={len(names)}")
 
     roster_index = build_roster_index()
     if not roster_index:
