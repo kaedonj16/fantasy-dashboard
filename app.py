@@ -6129,7 +6129,6 @@ def page_players(platform: str, season: int, league_id: str):
         position: relative;
         flex: 1;
         min-width: 200px;
-        max-width: 400px;
       }
       .filter-positions {
         display: flex;
@@ -6504,7 +6503,7 @@ def page_players(platform: str, season: int, league_id: str):
         list.innerHTML = '';
         players.forEach((p, idx) => {
           const row = document.createElement('div');
-          row.className = 'pr-player-row pr-grid-row player-clickable';
+          row.className = 'pr-player-row pr-grid-row';
           row.setAttribute('data-player-id', p.id);
           row.setAttribute('data-player-name', p.name || '');
 
@@ -6522,7 +6521,7 @@ def page_players(platform: str, season: int, league_id: str):
 
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
-            '<span class="pr-name">'  + (p.name || 'Unknown') + badges + '</span>' +
+            '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +

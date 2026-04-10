@@ -40,10 +40,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:16px;padding:2px;">&#x2715;</button>
         </div>
-      </div>
-
-      <!-- Row 2: Position pills + Settings button -->
-      <div class="filter-row rk-pills-row">
+        <div class="filter-row rk-pills-row">
         <div class="filter-positions">
           <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
           <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
@@ -75,6 +72,8 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           </div>
         </div>
       </div>
+      </div>
+
 
       <!-- Row 3: Sort + Active settings -->
       <div class="filter-row filter-row-secondary">
@@ -330,6 +329,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
   .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .rk-name:hover { text-decoration: underline; }
   .rk-meta { font-size: 11px; color: var(--text-muted); }
   .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
   .rk-age  { text-align: center; font-size: 12px; color: var(--text-muted); }
@@ -386,7 +386,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
   .rk-modal-body { padding: 16px 24px 24px; }
   .rk-score-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 8px;
     margin-top: 12px;
   }
@@ -405,7 +405,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     margin-bottom: 4px;
   }
   .rk-score-card-val {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--text);
   }
@@ -689,7 +689,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           '<div style="font-size:13px;color:var(--text-muted);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">' +
             '<span>' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
             (r.school ? '<span>• ' + r.school + '</span>' : '') +
-            '<span>• Age ' + age + '</span>' +
+            '<span>• ' + age + 'yrs </span>' +
             (r.draft_class_year ? '<span>• ' + r.draft_class_year + ' Draft</span>' : '') +
           '</div>' +
         '</div>' +
@@ -701,27 +701,27 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">' +
           '<div style="padding:8px 14px;border-radius:8px;background:' + tierColor + '22;' +
                'border:1px solid ' + tierColor + '44;flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:' + tierColor + ';font-weight:700;text-transform:uppercase;">Tier ' + (r.tier||'?') + '</div>' +
-            '<div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px;">' + (r.tier_label||'') + '</div>' +
+            '<div style="font-size:12px;color:' + tierColor + ';font-weight:700;text-transform:uppercase;">Tier ' + (r.tier||'?') + '</div>' +
+            '<div style="font-size:16px;font-weight:600;color:var(--text);margin-top:2px;">' + (r.tier_label||'') + '</div>' +
           '</div>' +
           '<div style="padding:8px 14px;border-radius:8px;background:var(--accent-soft);flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;">Prospect Score</div>' +
+            '<div style="font-size:12px;color:var(--accent);font-weight:700;text-transform:uppercase;">Prospect Score</div>' +
             '<div style="font-size:18px;font-weight:700;color:var(--accent);margin-top:2px;">' + score.toFixed(1) + '</div>' +
           '</div>' +
           '<div style="padding:8px 14px;border-radius:8px;background:var(--card-bg);border:1px solid var(--border);flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Draft Capital</div>' +
-            '<div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px;">' + draftCapLabel + '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Draft Capital</div>' +
+            '<div style="font-size:16px;font-weight:600;color:var(--text);margin-top:2px;">' + draftCapLabel + '</div>' +
           '</div>' +
         '</div>' +
 
         // Bio strip
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:16px;">' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">1QB Value</div><div class="rk-score-card-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">SF Value</div><div class="rk-score-card-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">Height/Wt</div><div class="rk-score-card-val" style="font-size:13px;">' + heightStr + ' / ' + weightStr + '</div></div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px;margin-bottom:16px;">' +
+                  '<div class="rk-score-card"><div class="rk-score-card-label">Height/Wt</div><div class="rk-score-card-val">' + heightStr + ' / ' + weightStr + '</div></div>' +
           '<div class="rk-score-card"><div class="rk-score-card-label">40 Dash</div><div class="rk-score-card-val">' + fortyStr + '</div></div>' +
           '<div class="rk-score-card"><div class="rk-score-card-label">RAS</div><div class="rk-score-card-val">' + rasStr + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">Mock Proj.</div><div class="rk-score-card-val" style="font-size:12px;">' + mocksStr + '</div></div>' +
+          '<div class="rk-score-card"><div class="rk-score-card-label">1QB Value</div><div class="rk-score-card-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div></div>' +
+          '<div class="rk-score-card"><div class="rk-score-card-label">SF Value</div><div class="rk-score-card-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div></div>' +
+          '<div class="rk-score-card"><div class="rk-score-card-label">Mock Proj.</div><div class="rk-score-card-val">' + mocksStr + '</div></div>' +
         '</div>' +
 
         // Component breakdown
