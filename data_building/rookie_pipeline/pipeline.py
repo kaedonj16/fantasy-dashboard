@@ -1504,7 +1504,6 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # Fetch prospects from Sportradar (skip if no key)
     sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
     if not sr_prospects:
-<<<<<<< HEAD
         print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
         try:
             from .ingestion import prospects_from_mock_draft
@@ -1520,12 +1519,10 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         if not sr_prospects:
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
-=======
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
         # Fall back: score from whatever is already in the DB
         return _score_from_db(draft_year, get_conn)
->>>>>>> main
 
     print(f"[pipeline] Loaded {len(sr_prospects)} prospects")
 

@@ -1,7 +1,7 @@
 {
   "as_of_date": "2026-04-10",
   "draft_class_year": 2026,
-  "generated_at": "2026-04-10T14:31:42Z",
+  "generated_at": "2026-04-10T16:06:04Z",
   "log_summary": {
     "cache_fresh": 3403,
     "metrics_derived": 1887,
@@ -80,7 +80,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -163,7 +163,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -246,7 +246,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -331,7 +331,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -414,7 +414,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -515,7 +515,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -582,7 +582,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       },
@@ -674,7 +674,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -784,7 +784,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -878,7 +878,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -961,7 +961,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -1044,7 +1044,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -1138,7 +1138,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -1239,7 +1239,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -1349,7 +1349,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -1461,7 +1461,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -1571,7 +1571,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -1681,7 +1681,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -1748,7 +1748,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -1822,7 +1822,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -1878,7 +1878,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -1963,7 +1963,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -2055,7 +2055,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -2147,7 +2147,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -2232,7 +2232,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -2324,7 +2324,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -2416,7 +2416,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -2483,7 +2483,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -2548,7 +2548,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -2622,7 +2622,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -2689,7 +2689,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -2745,7 +2745,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -2801,7 +2801,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -2904,7 +2904,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -3005,7 +3005,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -3088,7 +3088,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -3110,7 +3110,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -3195,7 +3195,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -3287,7 +3287,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -3379,7 +3379,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -3473,7 +3473,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -3565,7 +3565,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -3648,7 +3648,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -3724,7 +3724,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -3798,7 +3798,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -3872,7 +3872,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -3966,7 +3966,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -4058,7 +4058,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -4150,7 +4150,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -4217,7 +4217,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4273,7 +4273,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4329,7 +4329,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4378,7 +4378,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -4463,7 +4463,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -4546,7 +4546,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -4629,7 +4629,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -4714,7 +4714,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4797,7 +4797,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4880,7 +4880,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -4965,7 +4965,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -5057,7 +5057,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -5158,7 +5158,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -5225,7 +5225,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5281,7 +5281,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5337,7 +5337,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5395,7 +5395,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -5451,7 +5451,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -5516,7 +5516,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -5574,7 +5574,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5630,7 +5630,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5686,7 +5686,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5771,7 +5771,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5854,7 +5854,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5937,7 +5937,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -5959,7 +5959,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -6035,7 +6035,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -6118,7 +6118,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -6201,7 +6201,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -6286,7 +6286,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -6369,7 +6369,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -6452,7 +6452,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -6510,7 +6510,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -6557,7 +6557,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -6604,7 +6604,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -6626,7 +6626,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -6720,7 +6720,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -6830,7 +6830,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -6940,7 +6940,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -7007,7 +7007,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7063,7 +7063,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7119,7 +7119,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7195,7 +7195,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -7278,7 +7278,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -7352,7 +7352,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -7383,7 +7383,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -7459,7 +7459,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -7542,7 +7542,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -7625,7 +7625,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -7710,7 +7710,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7793,7 +7793,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7876,7 +7876,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -7961,7 +7961,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -8044,7 +8044,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -8129,7 +8129,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8212,7 +8212,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8295,7 +8295,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8353,7 +8353,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8409,7 +8409,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8465,7 +8465,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -8541,7 +8541,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -8624,7 +8624,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -8707,7 +8707,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -8819,7 +8819,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -8929,7 +8929,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -9039,7 +9039,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -9133,7 +9133,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9216,7 +9216,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9299,7 +9299,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9402,7 +9402,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -9512,7 +9512,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -9622,7 +9622,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -9716,7 +9716,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9799,7 +9799,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9891,7 +9891,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -9985,7 +9985,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10095,7 +10095,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10205,7 +10205,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10317,7 +10317,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10427,7 +10427,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10546,7 +10546,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -10613,7 +10613,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -10669,7 +10669,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -10725,7 +10725,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -10810,7 +10810,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -10893,7 +10893,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -10976,7 +10976,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -11061,7 +11061,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11153,7 +11153,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11245,7 +11245,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11339,7 +11339,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -11404,7 +11404,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -11469,7 +11469,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -11491,7 +11491,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         }
       }
@@ -11540,7 +11540,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -11596,7 +11596,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -11690,7 +11690,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11791,7 +11791,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11892,7 +11892,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -11950,7 +11950,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -11997,7 +11997,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12053,7 +12053,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12138,7 +12138,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -12221,7 +12221,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -12304,7 +12304,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -12389,7 +12389,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12472,7 +12472,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12555,7 +12555,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12667,7 +12667,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -12768,7 +12768,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12851,7 +12851,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -12909,7 +12909,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -12983,7 +12983,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -13066,7 +13066,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -13169,7 +13169,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -13279,7 +13279,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -13389,7 +13389,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -13483,7 +13483,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -13566,7 +13566,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -13649,7 +13649,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -13734,7 +13734,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -13817,7 +13817,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -13900,7 +13900,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -13985,7 +13985,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -14068,7 +14068,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -14151,7 +14151,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -14236,7 +14236,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -14337,7 +14337,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -14429,7 +14429,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -14505,7 +14505,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       },
@@ -14579,7 +14579,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -14671,7 +14671,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "twp_rate": {
@@ -14774,7 +14774,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -14857,7 +14857,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -14949,7 +14949,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -15034,7 +15034,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -15117,7 +15117,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -15209,7 +15209,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -15276,7 +15276,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15332,7 +15332,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15397,7 +15397,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15455,7 +15455,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15511,7 +15511,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15567,7 +15567,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15652,7 +15652,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -15735,7 +15735,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -15818,7 +15818,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -15903,7 +15903,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -15986,7 +15986,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -16069,7 +16069,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -16172,7 +16172,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -16282,7 +16282,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -16392,7 +16392,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -16486,7 +16486,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "twp_rate": {
@@ -16578,7 +16578,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "twp_rate": {
@@ -16679,7 +16679,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "twp_rate": {
@@ -16746,7 +16746,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -16793,7 +16793,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -16840,7 +16840,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -16925,7 +16925,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -17017,7 +17017,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -17109,7 +17109,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -17221,7 +17221,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -17331,7 +17331,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -17441,7 +17441,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yac_per_att": {
@@ -17472,7 +17472,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -17539,7 +17539,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -17622,7 +17622,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -17705,7 +17705,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -17772,7 +17772,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -17846,7 +17846,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -17920,7 +17920,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -17942,7 +17942,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       }
@@ -18018,7 +18018,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -18101,7 +18101,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -18184,7 +18184,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -18206,7 +18206,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -18273,7 +18273,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18347,7 +18347,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18430,7 +18430,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18515,7 +18515,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18598,7 +18598,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18681,7 +18681,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -18784,7 +18784,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -18894,7 +18894,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -19004,7 +19004,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -19080,7 +19080,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -19154,7 +19154,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -19246,7 +19246,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -19340,7 +19340,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -19423,7 +19423,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -19506,7 +19506,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -19528,7 +19528,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -19622,7 +19622,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -19732,7 +19732,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -19842,7 +19842,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -19936,7 +19936,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20019,7 +20019,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20102,7 +20102,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20151,7 +20151,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       },
@@ -20198,7 +20198,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -20254,7 +20254,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -20339,7 +20339,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20431,7 +20431,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20489,7 +20489,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -20545,7 +20545,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -20601,7 +20601,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -20686,7 +20686,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20769,7 +20769,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20852,7 +20852,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -20874,7 +20874,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -20950,7 +20950,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -21033,7 +21033,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -21116,7 +21116,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -21210,7 +21210,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -21320,7 +21320,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -21439,7 +21439,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -21470,7 +21470,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -21510,7 +21510,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       },
@@ -21557,7 +21557,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -21613,7 +21613,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -21716,7 +21716,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -21826,7 +21826,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -21936,7 +21936,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22030,7 +22030,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -22122,7 +22122,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -22214,7 +22214,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -22245,7 +22245,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       }
@@ -22348,7 +22348,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22458,7 +22458,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22568,7 +22568,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22599,7 +22599,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         }
       }
@@ -22693,7 +22693,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22803,7 +22803,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -22913,7 +22913,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -23007,7 +23007,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -23090,7 +23090,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -23173,7 +23173,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -23258,7 +23258,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23341,7 +23341,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23424,7 +23424,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23509,7 +23509,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23592,7 +23592,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23675,7 +23675,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23733,7 +23733,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23789,7 +23789,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23845,7 +23845,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -23939,7 +23939,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -24040,7 +24040,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -24132,7 +24132,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -24226,7 +24226,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24309,7 +24309,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24392,7 +24392,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24450,7 +24450,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24506,7 +24506,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24562,7 +24562,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -24665,7 +24665,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -24775,7 +24775,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -24885,7 +24885,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -24997,7 +24997,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -25107,7 +25107,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -25201,7 +25201,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -25302,7 +25302,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -25403,7 +25403,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -25497,7 +25497,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -25589,7 +25589,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -25681,7 +25681,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -25766,7 +25766,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -25858,7 +25858,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -25941,7 +25941,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26026,7 +26026,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -26109,7 +26109,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -26192,7 +26192,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         },
         "yprr": {
@@ -26250,7 +26250,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26306,7 +26306,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26362,7 +26362,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26447,7 +26447,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -26539,7 +26539,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -26640,7 +26640,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -26734,7 +26734,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26817,7 +26817,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26900,7 +26900,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -26958,7 +26958,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -27032,7 +27032,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27115,7 +27115,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27173,7 +27173,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27229,7 +27229,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27285,7 +27285,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27370,7 +27370,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27453,7 +27453,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27536,7 +27536,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -27585,7 +27585,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -27632,7 +27632,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27679,7 +27679,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27764,7 +27764,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27847,7 +27847,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -27930,7 +27930,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28006,7 +28006,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -28089,7 +28089,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -28172,7 +28172,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -28203,7 +28203,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       }
@@ -28279,7 +28279,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28362,7 +28362,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28429,7 +28429,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -28503,7 +28503,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -28604,7 +28604,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -28635,7 +28635,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         }
       }
@@ -28711,7 +28711,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28794,7 +28794,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28877,7 +28877,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -28980,7 +28980,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29090,7 +29090,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29200,7 +29200,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29267,7 +29267,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -29323,7 +29323,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -29379,7 +29379,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -29482,7 +29482,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29592,7 +29592,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29702,7 +29702,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -29796,7 +29796,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -29879,7 +29879,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -29962,7 +29962,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -30047,7 +30047,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30130,7 +30130,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30213,7 +30213,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30316,7 +30316,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -30426,7 +30426,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -30536,7 +30536,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -30567,7 +30567,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         }
       }
@@ -30643,7 +30643,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30726,7 +30726,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30809,7 +30809,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -30831,7 +30831,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -30844,7 +30844,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": true
         }
       }
@@ -30911,7 +30911,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -30985,7 +30985,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31068,7 +31068,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31171,7 +31171,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -31281,7 +31281,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -31391,7 +31391,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -31458,7 +31458,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31514,7 +31514,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31579,7 +31579,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31682,7 +31682,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -31792,7 +31792,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -31884,7 +31884,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -31969,7 +31969,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32052,7 +32052,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32135,7 +32135,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32229,7 +32229,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -32321,7 +32321,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -32413,7 +32413,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -32525,7 +32525,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -32635,7 +32635,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yac_per_att": {
@@ -32729,7 +32729,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32812,7 +32812,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32897,7 +32897,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -32980,7 +32980,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -33063,7 +33063,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:42Z",
+          "updated_at": "2026-04-10T16:06:04Z",
           "value": false
         },
         "yprr": {
@@ -33121,7 +33121,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33177,7 +33177,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33233,7 +33233,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33318,7 +33318,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33401,7 +33401,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33484,7 +33484,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33569,7 +33569,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33652,7 +33652,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33735,7 +33735,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -33820,7 +33820,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -33912,7 +33912,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -34004,7 +34004,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -34098,7 +34098,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -34181,7 +34181,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:40Z",
+          "updated_at": "2026-04-10T16:06:02Z",
           "value": false
         },
         "yprr": {
@@ -34284,7 +34284,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -34394,7 +34394,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -34504,7 +34504,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yac_per_att": {
@@ -34535,7 +34535,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -34575,7 +34575,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -34631,7 +34631,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -34687,7 +34687,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -34781,7 +34781,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -34855,7 +34855,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -34877,7 +34877,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -34935,7 +34935,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -34991,7 +34991,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       },
@@ -35065,7 +35065,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "twp_rate": {
@@ -35096,7 +35096,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         }
       }
@@ -35172,7 +35172,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -35255,7 +35255,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -35338,7 +35338,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -35423,7 +35423,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -35506,7 +35506,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -35589,7 +35589,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": true
         },
         "yprr": {
@@ -35674,7 +35674,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -35757,7 +35757,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
@@ -35849,7 +35849,7 @@
           "source_name": "rookie_metric_derivations",
           "source_type": "derived",
           "source_url": null,
-          "updated_at": "2026-04-10T14:31:41Z",
+          "updated_at": "2026-04-10T16:06:03Z",
           "value": false
         },
         "yprr": {
