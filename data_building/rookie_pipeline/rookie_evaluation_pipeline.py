@@ -149,6 +149,7 @@ def run_rookie_evaluation_pipeline(
 
     # Backfill height/weight from Sportradar NCAA profiles into rookie_prospects where NULL
     bio_updates: Dict[str, Dict[str, Any]] = {}
+    sr_seasons_seeded = 0
     for p in prospects:
         pid  = p.get("player_id", "")
         name = p.get("name", "")
@@ -157,9 +158,20 @@ def run_rookie_evaluation_pipeline(
         bio = sportradar_index.get_bio(name)
         if bio:
             bio_updates[pid] = bio
+        # For prospects with no season stats in the DB, inject historical seasons
+        # from the Sportradar NCAA index so the eval loop can score them properly.
+        # Only inject past seasons — the draft year itself has no college stats yet.
+        if not p.get("seasons"):
+            sr_seasons = sportradar_index.get_all_seasons(name)
+            past_seasons = {yr: rec for yr, rec in sr_seasons.items() if yr < year}
+            if past_seasons:
+                p["seasons"] = [{"season": yr, **rec} for yr, rec in sorted(past_seasons.items())]
+                sr_seasons_seeded += 1
     if bio_updates:
         n = backfill_bio_from_sportradar(bio_updates)
         print(f"[rookie_eval] bio_backfilled={n} players updated with height/weight")
+    if sr_seasons_seeded:
+        print(f"[rookie_eval] sr_seasons_seeded={sr_seasons_seeded} prospects had seasons injected from Sportradar NCAA index")
 
     sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 

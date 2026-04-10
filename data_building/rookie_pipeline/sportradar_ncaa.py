@@ -403,6 +403,10 @@ class SportradarNCAAIndex:
         """Return {height_inches, weight_lbs} from the player's Sportradar profile, or None."""
         return self._bio.get(_normalize_name(name))
 
+    def get_all_seasons(self, name: str) -> Dict[int, Dict[str, Any]]:
+        """Return all available {year: season_record} dicts for this player, or {}."""
+        return self._data.get(_normalize_name(name), {})
+
     def __len__(self) -> int:
         return len(self._data)
 
