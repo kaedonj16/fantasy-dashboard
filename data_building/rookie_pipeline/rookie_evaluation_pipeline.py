@@ -14,6 +14,7 @@ from data_building.rookie_pipeline.pipeline import load_prospects_from_db
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
 from data_building.rookie_pipeline.rookie_profile_builder import build_rookie_profile
 from data_building.rookie_pipeline.rookie_source_registry import build_rookie_source_registry
+from data_building.rookie_pipeline.sportradar_ncaa import build_sportradar_ncaa_index
 from data_building.rookie_pipeline.rookie_sources import RookieMetricSpec, rookie_metric_specs
 from data_building.rookie_pipeline.rookie_storage import RookieDiskCache, utc_now_iso, write_rookie_snapshot
 
@@ -140,11 +141,17 @@ def run_rookie_evaluation_pipeline(
         prospects = prospects[: max(0, int(player_limit))]
 
     metrics_specs = rookie_metric_specs()
-    sources = build_rookie_source_registry()
     cache = RookieDiskCache()
 
     identity_index = build_identity_index(prospects)
     draft_entries = fetch_draft_market_entries(year)
+
+    # Build Sportradar NCAAFB index for real target data (no-op if key absent)
+    prospect_names = [p.get("name", "") for p in prospects if p.get("name")]
+    sportradar_index = build_sportradar_ncaa_index(prospect_names)
+    print(f"[rookie_eval] sportradar_index built: {len(sportradar_index)} prospects")
+
+    sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 
     by_player_metrics: Dict[str, Dict[int, Dict[str, Dict[str, Any]]]] = {}
     rookie_profiles: List[Dict[str, Any]] = []
