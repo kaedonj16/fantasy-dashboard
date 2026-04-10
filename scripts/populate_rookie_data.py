@@ -68,19 +68,21 @@ def main():
         print(f"{'='*60}\n")
 
         try:
-            result = run_rookie_pipeline(year)
+            print(f"  Step 1/2: Running evaluation pipeline (computes + saves eval metrics)...")
             eval_result = run_rookie_evaluation_pipeline(year)
 
+            print(f"  Step 2/2: Running main pipeline (reads eval metrics from DB for scoring)...")
+            result = run_rookie_pipeline(year)
+
             print(f"✅ Success! {year} draft class populated:")
-            print(f"   • {len(result.get('prospects', []))} prospects")
-            print(f"   • {len(result.get('scores', {}))} scored")
-            print(f"   • {len(result.get('values', {}))} values calculated")
             print(
-                "   • Rookie evaluation snapshots: "
+                "   • Rookie evaluation: "
                 f"{eval_result.get('profile_count', 0)} profiles, "
                 f"db_metrics_rows={eval_result.get('db_metrics_rows', 0)}, "
                 f"db_profiles_rows={eval_result.get('db_profiles_rows', 0)}"
             )
+            print(f"   • {len(result.get('prospects', []))} prospects scored")
+            print(f"   • {len(result.get('values', {}))} values calculated")
 
             if result.get('consensus'):
                 print(f"   • {len(result['consensus'])} mock draft consensus entries")

@@ -1288,11 +1288,64 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
 
         print(f"[pipeline] Loaded {len(ath_rows)} athleticism records")
 
-        # Attach stats and athleticism to prospects
+        # ── Load eval metrics (primary: snapshots; fallback: per-season rows) ──
+        player_ids_for_class = [p["player_id"] for p in prospects]
+        cur.execute("""
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                profile_json -> 'rookie_profile' -> 'metrics' AS eval_metrics
+            FROM rookie_profiles_snapshots
+            WHERE draft_class_year = %s
+              AND player_id = ANY(%s)
+            ORDER BY player_id, snapshot_date DESC
+        """, (draft_year, player_ids_for_class))
+        snapshot_rows = cur.fetchall()
+
+        eval_by_player: Dict[str, Dict] = {}
+        players_with_snapshot = set()
+        for snap_row in snapshot_rows:
+            pid = snap_row["player_id"]
+            raw = snap_row["eval_metrics"]
+            if isinstance(raw, dict) and raw:
+                eval_by_player[pid] = raw
+                players_with_snapshot.add(pid)
+
+        # Fallback: for players without a snapshot, merge per-season JSONB rows
+        players_needing_fallback = [
+            p["player_id"] for p in prospects
+            if p["player_id"] not in players_with_snapshot
+        ]
+        if players_needing_fallback:
+            cur.execute("""
+                SELECT player_id, season, rookie_eval_metrics
+                FROM rookie_prospect_source_data
+                WHERE player_id = ANY(%s)
+                  AND rookie_eval_metrics IS NOT NULL
+                ORDER BY player_id, season ASC
+            """, (players_needing_fallback,))
+            fallback_rows = cur.fetchall()
+
+            fallback_by_player: Dict[str, Dict] = {}
+            for fb_row in fallback_rows:
+                pid = fb_row["player_id"]
+                season_metrics = fb_row["rookie_eval_metrics"]
+                if isinstance(season_metrics, dict):
+                    fallback_by_player.setdefault(pid, {}).update(season_metrics)
+            eval_by_player.update(fallback_by_player)
+
+        n_eval = sum(1 for v in eval_by_player.values() if v)
+        print(f"[pipeline] Loaded eval metrics for {n_eval}/{len(prospects)} prospects "
+              f"({len(players_with_snapshot)} from snapshots, "
+              f"{n_eval - len(players_with_snapshot)} from fallback rows)")
+
+        # Attach stats, athleticism, and eval metrics to prospects
         for prospect in prospects:
             player_id = prospect["player_id"]
             prospect["seasons"] = stats_by_player.get(player_id, [])
             prospect["athleticism"] = ath_by_player.get(player_id, {})
+            eval_metrics = eval_by_player.get(player_id)
+            if eval_metrics:
+                prospect["_eval_metrics"] = eval_metrics
 
         return prospects
 
@@ -1597,33 +1650,13 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
 
     print(f"[pipeline] Loaded {len(complete_prospects)} complete prospects from database")
 
-    # ── Attach evaluation pipeline metrics before scoring ────────────────────
-    # The evaluation pipeline (rookie_evaluation_pipeline.py) derives proxy
-    # metrics (yprr, tprr, yac_per_att, adjusted_comp_pct, etc.) from college
-    # stats.  Attaching them to prospect dicts as _eval_metrics lets
-    # score_all_prospects use them when available via confidence-weighted blending.
-    #
-    # Lazy import avoids circular dependency (rookie_evaluation_pipeline imports
-    # load_prospects_from_db from this module).
-    try:
-        from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
-            run_rookie_evaluation_pipeline,
-        )
-        eval_result = run_rookie_evaluation_pipeline(draft_year)
-        eval_profiles_by_id: Dict[str, Dict] = {
-            p["player_id"]: (p.get("rookie_profile") or {}).get("metrics") or {}
-            for p in (eval_result.get("profiles") or [])
-            if p.get("player_id")
-        }
-        attached = 0
-        for prospect in complete_prospects:
-            pid = prospect.get("player_id")
-            if pid and pid in eval_profiles_by_id:
-                prospect["_eval_metrics"] = eval_profiles_by_id[pid]
-                attached += 1
-        print(f"[pipeline] Attached eval metrics to {attached}/{len(complete_prospects)} prospects")
-    except Exception as _eval_exc:
-        print(f"[pipeline] WARNING: Could not attach eval metrics before scoring: {_eval_exc}")
+    # ── Eval metrics were loaded from DB by load_prospects_from_db ─────────
+    # run_rookie_evaluation_pipeline must have been called before this pipeline
+    # (see scripts/populate_rookie_data.py) so metrics are already in the DB.
+    n_with_eval = sum(1 for p in complete_prospects if p.get("_eval_metrics"))
+    print(f"[pipeline] Eval metrics loaded from DB: {n_with_eval}/{len(complete_prospects)} prospects")
+    if n_with_eval == 0:
+        print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
 
     # Score prospects
     scores = score_all_prospects(complete_prospects, consensus_map)
