@@ -1,6 +1,9 @@
 # AI Cache
 cache/ai_cache
 
+# Rookie sources
+data/cache
+
 # Python
 __pycache__/
 *.py[cod]
