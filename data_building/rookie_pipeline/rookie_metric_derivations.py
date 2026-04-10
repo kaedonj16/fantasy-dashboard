@@ -171,7 +171,8 @@ def derive_tprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
         return None
 
     targets = _get_num(stats, "targets")
-    if targets is None:
+    # targets=0 means no target data (CFBD never provides targets), not truly zero
+    if targets is None or targets <= 0:
         return None
 
     return round(targets / routes, 4)

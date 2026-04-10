@@ -104,14 +104,6 @@ class ProspectSeasonStatsSource(RookieSource):
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
         player_key = player.get("player_id") or player.get("name") or "unknown"
 
-        # Dump every non-None field from the season record so we can see exactly
-        # what the CFBD/DB source is giving us vs. what we have to estimate.
-        raw_fields = {k: v for k, v in season_record.items() if v is not None}
-        print(
-            f"[source_raw] player={player_key} season={season} "
-            f"pos={player.get('position')} raw_fields={raw_fields}"
-        )
-
         for metric in requested_metrics:
             # --- direct field map ---
             if metric.name in self.DIRECT_MAP:

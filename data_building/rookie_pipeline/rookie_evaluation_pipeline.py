@@ -93,7 +93,7 @@ def _source_for_metric(
     try:
         fetched = source.fetch_player_season_metrics(player, season_record, [metric])
         payload = fetched.get(metric.name)
-        if payload and payload.get("value") is not None:
+        if payload and _cache_value_valid(metric.name, payload.get("value")):
             print(f"[rookie_eval] fetched      player={player_key} season={season} metric={metric.name} value={payload.get('value')!r} source={source.source_name} conf={payload.get('confidence')}")
             cache.write(
                 source.source_name,
@@ -169,6 +169,8 @@ def run_rookie_evaluation_pipeline(
 
         print(f"[rookie_eval] --- player={player.get('name')} pid={pid} pos={player.get('position')} seasons={[s for s, _ in _iter_player_seasons(player, year)]}")
         for season, season_record in _iter_player_seasons(player, year):
+            raw_fields = {k: v for k, v in season_record.items() if v is not None}
+            print(f"[source_raw] player={pid} season={season} pos={player.get('position')} raw_fields={raw_fields}")
             for metric in metrics_specs:
                 resolved_payload = None
                 resolution_mode = "missing"
