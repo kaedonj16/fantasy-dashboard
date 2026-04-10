@@ -406,11 +406,20 @@ class SportradarNCAAIndex:
     passed into SportradarNCAAFBSource.
     """
 
-    def __init__(self, data: Dict[str, Dict[int, Dict[str, Any]]]):
+    def __init__(
+        self,
+        data: Dict[str, Dict[int, Dict[str, Any]]],
+        bio: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         self._data = data
+        self._bio = bio or {}
 
     def get_season_stats(self, name: str, year: int) -> Optional[Dict[str, Any]]:
         return self._data.get(_normalize_name(name), {}).get(year)
+
+    def get_bio(self, name: str) -> Optional[Dict[str, Any]]:
+        """Return {height_inches, weight_lbs} from the player's Sportradar profile, or None."""
+        return self._bio.get(_normalize_name(name))
 
     def __len__(self) -> int:
         return len(self._data)
@@ -438,6 +447,7 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
         return SportradarNCAAIndex({})
 
     data: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    bio: Dict[str, Dict[str, Any]] = {}
     found = not_found = 0
 
     for name in names:
@@ -455,7 +465,16 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
 
         seasons = normalize_profile(raw)
         data[_normalize_name(name)] = seasons
+
+        h = raw.get("height")
+        w = raw.get("weight")
+        if h is not None or w is not None:
+            bio[_normalize_name(name)] = {
+                "height_inches": int(h) if h is not None else None,
+                "weight_lbs":    int(w) if w is not None else None,
+            }
+
         found += 1
 
     print(f"[sr_ncaa] index built: {found} found, {not_found} not found")
-    return SportradarNCAAIndex(data)
+    return SportradarNCAAIndex(data, bio)

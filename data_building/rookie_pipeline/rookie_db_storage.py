@@ -244,3 +244,41 @@ def save_rookie_evaluation_to_db(
     }
 
 
+def backfill_bio_from_sportradar(
+    bio_updates: Dict[str, Dict[str, Any]],
+) -> int:
+    """
+    Update height_inches / weight_lbs on rookie_prospects where currently NULL.
+
+    bio_updates: {player_id: {"height_inches": int|None, "weight_lbs": int|None}}
+    Uses COALESCE so existing values are never overwritten.
+    Returns the number of rows updated.
+    """
+    if not bio_updates or not _db_available():
+        return 0
+
+    from dashboard_services.db import get_conn
+
+    updated = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for player_id, bio in bio_updates.items():
+                h = bio.get("height_inches")
+                w = bio.get("weight_lbs")
+                if h is None and w is None:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE rookie_prospects
+                    SET height_inches = COALESCE(height_inches, %s),
+                        weight_lbs    = COALESCE(weight_lbs,    %s)
+                    WHERE player_id = %s
+                      AND (height_inches IS NULL OR weight_lbs IS NULL)
+                    """,
+                    (h, w, player_id),
+                )
+                updated += cur.rowcount
+        conn.commit()
+    return updated
+
+

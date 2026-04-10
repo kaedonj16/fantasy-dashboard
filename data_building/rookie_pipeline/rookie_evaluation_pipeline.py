@@ -8,7 +8,7 @@ from data_building.rookie_pipeline.draft_market_sources import (
     build_draft_market_for_player,
     fetch_draft_market_entries,
 )
-from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db
+from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db, backfill_bio_from_sportradar
 from data_building.rookie_pipeline.ingestion import load_prospects_for_year
 from data_building.rookie_pipeline.pipeline import load_prospects_from_db
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
@@ -146,6 +146,20 @@ def run_rookie_evaluation_pipeline(
     print(f"[rookie_eval] Building Sportradar index for {len(prospect_names)} prospects")
     sportradar_index = build_sportradar_ncaa_index(prospect_names)
     print(f"[rookie_eval] Sportradar index built with {len(sportradar_index) if sportradar_index else 0} players")
+
+    # Backfill height/weight from Sportradar NCAA profiles into rookie_prospects where NULL
+    bio_updates: Dict[str, Dict[str, Any]] = {}
+    for p in prospects:
+        pid  = p.get("player_id", "")
+        name = p.get("name", "")
+        if not pid or not name:
+            continue
+        bio = sportradar_index.get_bio(name)
+        if bio:
+            bio_updates[pid] = bio
+    if bio_updates:
+        n = backfill_bio_from_sportradar(bio_updates)
+        print(f"[rookie_eval] bio_backfilled={n} players updated with height/weight")
 
     sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 

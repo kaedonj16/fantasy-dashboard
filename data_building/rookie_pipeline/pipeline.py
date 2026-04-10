@@ -274,9 +274,9 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
 
 
 def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'."""
+    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
     import re
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_year: int, conn) -> int:
