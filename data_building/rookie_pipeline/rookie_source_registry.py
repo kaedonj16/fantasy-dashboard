@@ -22,5 +22,5 @@ def build_rookie_source_registry(sportradar_index=None) -> List[RookieSource]:
     return [
         SportradarNCAAFBSource(index=sportradar_index),
         ProspectSeasonStatsSource(),
-        DerivedRookieMetricsSource(),
+        DerivedRookieMetricsSource(sportradar_index=sportradar_index),
     ]

@@ -376,7 +376,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             "team_total_yards": season_data.get("team_total_yards"),
                             "team_total_tds": season_data.get("team_total_tds"),
                             "source": "cfbd",
-                        }
+                                                    }
                     )
                     cur.execute("RELEASE SAVEPOINT save_stats")
                     saved += 1

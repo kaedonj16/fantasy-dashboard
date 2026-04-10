@@ -33,7 +33,7 @@ from data_building.paths import DATA_DIR
 
 _SR_BASE    = "https://api.sportradar.com/ncaafb"
 _SR_LANG    = "en"
-_THROTTLE_S = 1.1   # trial tier: 1 req/sec; 10% buffer
+_THROTTLE_S = 0.5   # trial tier: faster rate to reduce delays
 
 _CACHE_ROOT = DATA_DIR / "cache" / "sportradar_ncaa"
 
@@ -68,7 +68,7 @@ def _cache_write(key: str, data: Any) -> None:
 # HTTP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _sr_get(path: str, retries: int = 4) -> Optional[Any]:
+def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
     """Rate-limited GET against the Sportradar NCAAFB v7 API."""
     api_key = os.getenv("SPORTRADAR_API_KEY", "")
     if not api_key:
@@ -83,7 +83,6 @@ def _sr_get(path: str, retries: int = 4) -> Optional[Any]:
 
     for attempt in range(retries):
         try:
-            print(f"[sr_ncaa] GET {url} (access={access}, key={api_key[:8]}...)")
             resp = requests.get(url, headers=headers, params=params, timeout=25)
             if resp.status_code == 200:
                 return resp.json()
@@ -124,27 +123,41 @@ def _fetch_teams() -> List[Dict]:
     if cached is not None:
         return cached
 
-    data = _sr_get("teams/hierarchy.json")
+    data = _sr_get("league/hierarchy.json")
     if not data:
         return []
 
     teams: List[Dict] = []
     for division in data.get("divisions", []):
-        for subdivision in division.get("subdivisions", []):
-            for conf in subdivision.get("conferences", []):
-                conf_name = conf.get("name", "")
-                for team in conf.get("teams", []):
-                    tid = team.get("id")
-                    if tid:
-                        teams.append({
-                            "id":         tid,
-                            "name":       team.get("name", ""),
-                            "market":     team.get("market", ""),
-                            "alias":      team.get("alias", ""),
-                            "conference": conf_name,
-                        })
+        div_name = division.get("name", "")
+        # Only process I-A (FBS) and I-AA (FCS) divisions
+        if div_name not in ["I-A", "I-AA"]:
+            continue
+            
+        # Handle both structures: conferences directly under division OR under subdivisions
+        conferences = []
+        if division.get("conferences"):
+            # Conferences are directly under division (like I-A)
+            conferences = division.get("conferences", [])
+        elif division.get("subdivisions"):
+            # Conferences are under subdivisions (like I-AA)
+            for subdivision in division.get("subdivisions", []):
+                conferences.extend(subdivision.get("conferences", []))
+        
+        for conf in conferences:
+            conf_name = conf.get("name", "")
+            for team in conf.get("teams", []):
+                tid = team.get("id")
+                if tid:
+                    teams.append({
+                        "id":         tid,
+                        "name":       team.get("name", ""),
+                        "market":     team.get("market", ""),
+                        "alias":      team.get("alias", ""),
+                        "conference": conf_name,
+                    })
 
-    print(f"[sr_ncaa] teams_hierarchy: {len(teams)} FBS teams")
+    print(f"[sr_ncaa] teams_hierarchy: {len(teams)} teams")
     _cache_write("teams_hierarchy", teams)
     return teams
 
@@ -159,7 +172,7 @@ def _fetch_team_roster(team_id: str) -> List[Dict]:
     if cached is not None:
         return cached
 
-    data = _sr_get(f"teams/{team_id}/roster.json")
+    data = _sr_get(f"teams/{team_id}/full_roster.json")
     if not data:
         return []
 
@@ -187,19 +200,23 @@ def build_roster_index() -> Dict[str, str]:
 
     The full scan hits ~130 endpoints; result is cached so it only runs once.
     """
-    cached = _cache_read("roster_index")
-    if cached is not None:
-        print(f"[sr_ncaa] Roster index loaded from cache ({len(cached)} players)")
-        return cached
+    # cached = _cache_read("roster_index")
+    # if cached is not None:
+    #     print(f"[sr_ncaa] Roster index loaded from cache ({len(cached)} players)")
+    #     return cached
 
     teams = _fetch_teams()
     if not teams:
+        print(f"[sr_ncaa] No teams found during _fetch_teams()")
         return {}
-
+    
     index: Dict[str, str] = {}
+    
     for i, team in enumerate(teams):
         tid = team["id"]
         roster = _fetch_team_roster(tid)
+        if not roster:
+            continue
         for player in roster:
             raw_name = player.get("name", "")
             pid = player.get("id")
@@ -218,7 +235,7 @@ def build_roster_index() -> Dict[str, str]:
         if (i + 1) % 25 == 0:
             print(f"[sr_ncaa] Roster scan {i+1}/{len(teams)} — {len(index)} players indexed")
 
-    print(f"[sr_ncaa] Roster index complete: {len(index)} players, {len(teams)} teams")
+    print(f"[sr_ncaa] Roster index complete: {len(index)} players")
     _cache_write("roster_index", index)
     return index
 

@@ -84,14 +84,34 @@ def derive_performance_vs_top_defenses(stats: Dict[str, Any]) -> Optional[float]
     return round(max(0.0, min(100.0, base * (0.75 + 0.25 * sos) * 100.0)), 2)
 
 
-def derive_true_early_declare(player: Dict[str, Any]) -> Optional[bool]:
-    """True if explicitly early declare and non-senior class year when available."""
+def derive_true_early_declare(player: Dict[str, Any], sportradar_season_count: Optional[int] = None) -> Optional[bool]:
+    """
+    True if explicitly early declare AND has exactly 3 seasons of data (not more).
+    
+    Args:
+        player: Player dictionary with basic info
+        sportradar_season_count: Optional season count from Sportradar data (preferred over player.get("seasons"))
+    """
     early = player.get("early_declare")
-    if early is None:
-        return None
+    
+    # Use Sportradar season count if available, otherwise fallback to player seasons
+    if sportradar_season_count is not None:
+        season_count = sportradar_season_count
+    else:
+        seasons = player.get("seasons") or []
+        season_count = len(seasons)
+
+    if season_count > 3:
+        # Player has more than 3 seasons, so not early declare regardless of flag
+        return False
+    
+    if season_count == 3 and early:
+        return True
+
     class_year = str(player.get("class_year") or player.get("experience") or "").upper()
     if class_year.startswith("SR"):
         return False
+    
     return bool(early)
 
 

@@ -85,7 +85,7 @@ def _source_for_metric(
     player_key = player.get("player_id") or player.get("name") or "unknown"
     cache_hit = cache.read(source.source_name, season, f"{player_key}_{metric.name}", source.source_type)
 
-    if cache_hit.payload and not cache_hit.is_stale:
+    if cache_hit.payload and not cache_hit.is_stale and metric.name != "true_early_declare":
         payload = cache_hit.payload.get("metric_payload")
         if payload and _cache_value_valid(metric.name, payload.get("value")):
             return payload, "cache_fresh"
@@ -106,8 +106,6 @@ def _source_for_metric(
                 },
             )
             return payload, "fetched_live"
-        else:
-            print(f"[rookie_eval] no_value     player={player_key} season={season} metric={metric.name} source={source.source_name} fetched={list(fetched.keys()) if fetched else '[]'}")
     except Exception as exc:
         print(f"[rookie_eval] source_error  player={player_key} season={season} metric={metric.name} source={source.source_name}: {type(exc).__name__}: {exc}")
 
@@ -145,7 +143,9 @@ def run_rookie_evaluation_pipeline(
 
     # Build Sportradar NCAAFB index for real target data (no-op if key absent)
     prospect_names = [p.get("name", "") for p in prospects if p.get("name")]
+    print(f"[rookie_eval] Building Sportradar index for {len(prospect_names)} prospects")
     sportradar_index = build_sportradar_ncaa_index(prospect_names)
+    print(f"[rookie_eval] Sportradar index built with {len(sportradar_index) if sportradar_index else 0} players")
 
     sources = build_rookie_source_registry(sportradar_index=sportradar_index)
 
@@ -172,7 +172,6 @@ def run_rookie_evaluation_pipeline(
 
         for season, season_record in _iter_player_seasons(player, year):
             raw_fields = {k: v for k, v in season_record.items() if v is not None}
-            print(f"[source_raw] player={pid} season={season} pos={player.get('position')} raw_fields={raw_fields}")
             for metric in metrics_specs:
                 resolved_payload = None
                 resolution_mode = "missing"
