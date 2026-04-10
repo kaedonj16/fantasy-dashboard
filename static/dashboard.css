@@ -10060,29 +10060,20 @@ img, svg, canvas {
   border-color: #3b82f6;
   color: #3b82f6;
 }
-/* Values + advanced metrics side-by-side */
-.pm-adv-layout {
+/* Advanced metrics + value history side-by-side */
+.pm-metrics-chart-grid {
   display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
   align-items: start;
 }
-.pm-adv-values {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.pm-adv-values .pm-hero-stat {
-  padding: 10px 10px;
-}
-.pm-adv-values .pm-hero-val {
-  font-size: 20px;
+@media (max-width: 700px) {
+  .pm-metrics-chart-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .pm-hero-row { grid-template-columns: 1fr 1fr; }
   .pm-hero-primary { grid-column: 1 / -1; }
   .pm-comp-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
-  .pm-adv-layout { grid-template-columns: 1fr; }
 }
 
 /* ============================================

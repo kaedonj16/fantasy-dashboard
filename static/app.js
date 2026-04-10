@@ -3499,7 +3499,7 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // ── Values + Advanced Metrics ────────────────────────────────────────
+      // ── Hero row ─────────────────────────────────────────────────────────
       const val1qb = data.stats?.value || 0;
       const valsf  = data.stats?.sf_value || 0;
       const posRankLabel = data.stats?.pos_rank_label || (data.stats?.pos_rank ? `${pos}${data.stats.pos_rank}` : '');
@@ -3519,30 +3519,51 @@ function openPlayerModal(playerId, playerName) {
             <div class="pm-hero-sub">${pos || ''}</div>
           </div>`;
 
-      if (pos && pos !== 'K' && pos !== 'DEF') {
-        // Skill positions: values on left, async metric bars on right
-        bodyHTML += `
-          <hr class="pm-section-divider">
-          <div id="advancedMetricsSection">
-            <div class="pm-section-header">
-              <span class="pm-section-label">Advanced Metrics</span>
-              <span id="advMetricsSeasonLabel" style="font-size:11px;color:var(--text-muted);"></span>
-            </div>
-            <div id="advMetricsPills"></div>
-            <div class="pm-adv-layout">
-              <div class="pm-adv-values">
-                <div class="pm-hero-stat pm-hero-primary">
-                  <div class="pm-hero-label">1QB Value</div>
-                  <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-                  <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
-                </div>
-                <div class="pm-hero-stat">
-                  <div class="pm-hero-label">SF Value</div>
-                  <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-                  <div class="pm-hero-sub">Superflex</div>
-                </div>
-                ${thirdValueCard}
+      bodyHTML += `
+        <div class="pm-hero-row">
+          <div class="pm-hero-stat pm-hero-primary">
+            <div class="pm-hero-label">1QB Value</div>
+            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+            <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
+          </div>
+          <div class="pm-hero-stat">
+            <div class="pm-hero-label">SF Value</div>
+            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+            <div class="pm-hero-sub">Superflex</div>
+          </div>
+          ${thirdValueCard}
+        </div>
+      `;
+
+      // ── Info row: Position · Team · Age ──────────────────────────────────
+      const infoItems = [];
+      if (pos) infoItems.push({ text: pos, bold: true });
+      if (data.team) infoItems.push({ text: data.team });
+      if (data.age) infoItems.push({ text: `Age ${data.age.toFixed(1)}` });
+      if (infoItems.length) {
+        bodyHTML += `<div class="pm-info-row">` +
+          infoItems.map((item, i) =>
+            (i > 0 ? '<span style="opacity:.35;">·</span>' : '') +
+            (item.bold
+              ? `<span style="font-weight:700;color:var(--text);">${item.text}</span>`
+              : `<span style="color:var(--text-muted);">${item.text}</span>`)
+          ).join('') + `</div>`;
+      }
+
+      // ── Advanced Metrics + Value History (side by side) ───────────────────
+      const hasMetrics = pos && pos !== 'K' && pos !== 'DEF';
+      const hasChart   = data.value_history && data.value_history.length > 0;
+
+      if (hasMetrics || hasChart) {
+        bodyHTML += `<hr class="pm-section-divider"><div class="pm-metrics-chart-grid">`;
+
+        if (hasMetrics) {
+          bodyHTML += `
+            <div id="advancedMetricsSection">
+              <div class="pm-section-header">
+                <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
               </div>
+              <div id="advMetricsPills"></div>
               <div id="advancedMetricsContent">
                 <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
                   <div class="loading-spinner" style="width:16px;height:16px;"></div>
@@ -3550,36 +3571,23 @@ function openPlayerModal(playerId, playerName) {
                 </div>
               </div>
             </div>
-          </div>
-        `;
-      } else {
-        // K/DEF: simple hero row, no advanced metrics
-        bodyHTML += `
-          <div class="pm-hero-row" style="margin-top:4px;">
-            <div class="pm-hero-stat pm-hero-primary">
-              <div class="pm-hero-label">1QB Value</div>
-              <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-              <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
-            </div>
-            <div class="pm-hero-stat">
-              <div class="pm-hero-label">SF Value</div>
-              <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-              <div class="pm-hero-sub">Superflex</div>
-            </div>
-            ${thirdValueCard}
-          </div>
-        `;
-      }
+          `;
+        } else {
+          bodyHTML += `<div></div>`; // empty left cell so chart stays right
+        }
 
-      // ── Value History ─────────────────────────────────────────────────────
-      if (data.value_history && data.value_history.length > 0) {
-        bodyHTML += `
-          <hr class="pm-section-divider">
-          <div class="player-modal-section">
-            <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-            <div class="player-modal-chart-container" id="playerValueChart"></div>
-          </div>
-        `;
+        if (hasChart) {
+          bodyHTML += `
+            <div>
+              <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
+              <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
+            </div>
+          `;
+        } else {
+          bodyHTML += `<div></div>`;
+        }
+
+        bodyHTML += `</div>`;
       }
 
       // ── Game Logs ─────────────────────────────────────────────────────────
@@ -3776,8 +3784,9 @@ function openPlayerModal(playerId, playerName) {
           const isMobile = window.innerWidth <= 768;
           const chartHeight = isMobile ? 200 : 250;
 
+          const latestDate = xData[n - 1];
           const layout = {
-            margin: { l: 40, r: 20, t: 10, b: 36 },
+            margin: { l: 40, r: 20, t: 30, b: 36 },
             height: chartHeight,
             xaxis: {
               showgrid: false,
@@ -3791,7 +3800,18 @@ function openPlayerModal(playerId, playerName) {
               title: isMobile ? '' : 'Value',
               showgrid: true
             },
-            hovermode: 'x unified'
+            hovermode: 'x unified',
+            annotations: [{
+              text: latestDate,
+              x: 0.5,
+              xref: 'paper',
+              y: 1,
+              yref: 'paper',
+              showarrow: false,
+              font: { size: 11 },
+              xanchor: 'center',
+              yanchor: 'bottom',
+            }]
           };
 
           Plotly.newPlot('playerValueChart', [trace], layout, {
@@ -3802,7 +3822,7 @@ function openPlayerModal(playerId, playerName) {
       }
 
       // Fetch and render advanced metrics (bars go into #advancedMetricsContent)
-      const advancedSection = document.getElementById('advancedMetricsContent');
+      const advancedSection = document.getElementById('advancedMetricsSection');
       if (advancedSection) {
         const path = window.location.pathname;
         const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
@@ -4274,6 +4294,14 @@ function _renderBkModalContent(data, playerId) {
   const score = parseFloat(data.breakout_opportunity_score || 0);
   const scoreStr = score.toFixed(1);
 
+  const breakoutType = data.breakout_type || {};
+  const emoji  = breakoutType.emoji || '📊';
+  const label  = breakoutType.profile_label || 'Breakout Candidate';
+  const driver = breakoutType.primary_driver || 'balanced';
+  const formattedPhase = data.phase
+    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : '—';
+
   // Header: name + meta with dots
   const nameEl = document.getElementById('bkModalName');
   if (nameEl) nameEl.textContent = name;
@@ -4282,14 +4310,6 @@ function _renderBkModalContent(data, playerId) {
   if (team) metaParts.push(`<span>${team}</span>`);
   if (formattedPhase !== '—') metaParts.push(`<span>${formattedPhase}</span>`);
   document.getElementById('bkModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 4px;">·</span>');
-
-  const breakoutType = data.breakout_type || {};
-  const emoji  = breakoutType.emoji || '📊';
-  const label  = breakoutType.profile_label || 'Breakout Candidate';
-  const driver = breakoutType.primary_driver || 'balanced';
-  const formattedPhase = data.phase
-    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    : '—';
 
   // Score color
   let scoreColor = '#10b981';
