@@ -3809,10 +3809,11 @@ function openPlayerModal(playerId, playerName) {
               type: 'category',
               tickmode: 'array',
               tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3], // Include 4 empty positions
-              ticktext: [...ticktext, '', '', '', ''], // Empty labels for added space
+              ticktext: [...ticktext, '', '', ''], // Empty labels for added space
               tickangle: 0,
               tickfont: { size: 11, color: mutedColor },
               fixedrange: true,
+              range: [-(xData.length * 0.3), xData.length + 2], // Center the most recent value
             },
             yaxis: {
               showgrid: true,
