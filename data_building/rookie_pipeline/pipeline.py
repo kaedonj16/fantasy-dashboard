@@ -515,12 +515,17 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
     """
     from .mock_draft_consensus import get_seed_mocks
     from .mock_draft_scraper import scrape_individual_mocks
+    from .pfn_scraper import scrape_pfn_mock_consensus
 
     # Get seed mocks (if any)
     seed_entries = get_seed_mocks(draft_year)
 
     # Scrape individual analyst mocks
     scraped_picks = scrape_individual_mocks(draft_year)
+    
+    # Scrape PFN position consensus data
+    pfn_picks = scrape_pfn_mock_consensus(draft_year)
+    scraped_picks.extend(pfn_picks)
 
     # Convert scraped picks to entry format with player_ids
     scraped_entries = []
@@ -1408,6 +1413,12 @@ def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
     from .value_translation import translate_all
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
+
+    # Stage 4: Scrape mock drafts (including PFN) even in DB-only mode
+    print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
+    with get_conn_fn() as conn:
+        n_mock_entries = upsert_mock_entries(draft_year, conn)
+    print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
 
     with get_conn_fn() as conn:
         existing_prospects = load_prospects_from_db(draft_year, conn)

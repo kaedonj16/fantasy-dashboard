@@ -391,7 +391,11 @@ def _calculate_breakout_age(seasons: List[Dict[str, Any]], current_age: float) -
     # Find the earliest qualifying breakout season
     breakout_season = None
     for season in sorted(seasons, key=lambda s: s.get("season", 0)):
-        if season.get("receiving_yards", 0) > 800 or season.get("rush_yards", 0) > 1000:
+        def _safe_int(value):
+            """Convert value to int, treating None as 0"""
+            return int(value) if value is not None else 0
+        
+        if _safe_int(season.get("receiving_yards")) > 800 or _safe_int(season.get("rush_yards")) > 1000:
             breakout_season = season
             break
 

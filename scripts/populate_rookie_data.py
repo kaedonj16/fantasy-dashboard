@@ -97,12 +97,6 @@ def main():
     print("🎉 Rookie data population complete!")
     print(f"{'='*60}")
 
-    # Show how to access the data
-    print("\nℹ️  Next steps:")
-    print("   • View rookies page: /sleeper/2026/<league_id>/rookies")
-    print("   • API endpoint: /api/rookies/rankings?year=2026")
-    print("   • Refresh anytime: POST /api/rookies/refresh")
-
     return 0
 
 
