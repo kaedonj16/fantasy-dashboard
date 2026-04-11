@@ -1433,10 +1433,14 @@ def score_prospect(
     # Apply benchmark boosts to final score
     prospect_score = apply_benchmark_boost(prospect_score, benchmark_boosts)
 
-    # Add interaction feature bonuses for elite combinations
-    prod_eff_bonus = interaction_features["production_efficiency_interaction"] * 0.03
-    ath_dc_bonus = interaction_features["athleticism_draft_capital_interaction"] * 0.02
-    triple_bonus = interaction_features["triple_interaction"] * 0.05
+    # Add interaction feature bonuses for elite combinations.
+    # Multipliers are intentionally small — the component scores already capture
+    # these signals; the interaction term adds a marginal non-linearity reward
+    # without inflating scores.  At elite component levels (85/85/85/85) the
+    # total additive contribution is ~2 pts, not the ~7 pts it was previously.
+    prod_eff_bonus = interaction_features["production_efficiency_interaction"] * 0.01
+    ath_dc_bonus   = interaction_features["athleticism_draft_capital_interaction"] * 0.005
+    triple_bonus   = interaction_features["triple_interaction"] * 0.01
 
     prospect_score += prod_eff_bonus + ath_dc_bonus + triple_bonus
 
@@ -1444,24 +1448,28 @@ def score_prospect(
     # Tiered by how many elite markers align: production, athleticism, draft capital.
     # Only applies to non-QB skill positions (fantasy value ceiling clearer).
     #
-    # Tier 3 (10% boost): all three elite — Ja'Marr Chase / Bijan Robinson tier
-    # Tier 2 (7% boost):  two of three elite + draft capital — solid top-10 calibre
-    # Tier 1 (3% boost):  one elite marker + draft capital — high-upside prospect
+    # Tier 3 (5% boost): all three elite — Ja'Marr Chase / Bijan Robinson tier
+    # Tier 2 (3% boost): two of three elite + draft capital — top-10 calibre
+    # Tier 1 (1% boost): one elite marker + draft capital — high-upside prospect
     #
-    # elite_dc threshold at 75 (≈ pick 12–15) rather than 85 so that a clear
-    # top-15 pick with elite college production qualifies for the Tier 2 boost.
+    # Thresholds are deliberately strict so that only genuinely exceptional markers
+    # qualify — a production_score of 80 requires near-elite college volume;
+    # athleticism_score of 85 requires a standout combine/RAS profile;
+    # dc_score of 82 maps to roughly a top-10 pick.
+    # This prevents score inflation: a solid R1 pick with average college
+    # production should not trigger the boost.
     if pos in ("WR", "RB", "TE"):
-        elite_prod = production_score >= 72
-        elite_ath  = athleticism_score >= 78
-        elite_dc   = dc_score_adjusted >= 75   # pick ~12-15 or better
+        elite_prod = production_score >= 80
+        elite_ath  = athleticism_score >= 85
+        elite_dc   = dc_score_adjusted >= 82   # ≈ top-10 pick
 
         elite_count = sum([elite_prod, elite_ath, elite_dc])
         if elite_count >= 3:
-            prospect_score *= 1.10
+            prospect_score *= 1.05
         elif elite_count == 2 and elite_dc:
-            prospect_score *= 1.07
-        elif elite_count >= 1 and elite_dc:
             prospect_score *= 1.03
+        elif elite_count >= 1 and elite_dc:
+            prospect_score *= 1.01
         prospect_score = _clip(prospect_score)
 
     prospect_score = round(prospect_score, 2)
