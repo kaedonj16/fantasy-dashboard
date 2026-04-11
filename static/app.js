@@ -3580,7 +3580,10 @@ function openPlayerModal(playerId, playerName) {
           bodyHTML += `
             <div>
               <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-              <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
+              <div style="display:flex;align-items:stretch;gap:0;">
+                <div id="playerValueChart" style="flex:1;min-height:180px;"></div>
+                <div id="playerValueLabel" style="display:flex;flex-direction:column;justify-content:center;padding-left:10px;min-width:60px;"></div>
+              </div>
             </div>
           `;
         } else {
@@ -3752,29 +3755,48 @@ function openPlayerModal(playerId, playerName) {
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
-          // Format dates as "Jan 10" (parse manually to avoid timezone shifts)
+          // Robust date formatters (handle YYYY-MM-DD and YYYY-MM-DDTHH:MM:SS)
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
-            const parts = dateStr.split('-');
-            const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return '';
+            const d = new Date(+m[1], +m[2] - 1, +m[3]);
             return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          };
+          const formatMonthOnly = (dateStr) => {
+            if (!dateStr) return '';
+            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return '';
+            return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-US', { month: 'short' });
           };
 
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
           const n = xData.length;
 
-          // Show ticks at first, middle, and last points
+          // Tight Y-axis range based on actual data
+          const yValues = data.value_history.map(d => d.value);
+          const yMin = Math.min(...yValues);
+          const yMax = Math.max(...yValues);
+          const yRange = yMax - yMin;
+          const yPad = Math.max(yRange * 0.15, 30);
+
+          // Show ticks at first, middle, and last points (month-only labels)
           const midIdx = Math.floor((n - 1) / 2);
           const tickIdxs = n <= 1 ? [0] : n <= 2 ? [0, n - 1] : [0, midIdx, n - 1];
-          const tickvals = [...new Set(tickIdxs.map(i => xData[i]))];
+          const tickvals = tickIdxs.map(i => xData[i]);
+          const ticktext = tickIdxs.map(i => formatMonthOnly(data.value_history[i].as_of_date));
 
           const trace = {
             x: xData,
-            y: data.value_history.map(d => d.value),
+            y: yValues,
             type: 'scatter',
-            mode: 'lines',
+            mode: 'lines+markers',
             name: 'Value',
             line: { color: '#3b82f6', width: 2 },
+            marker: {
+              color: '#3b82f6',
+              size: yValues.map((_, i) => i === n - 1 ? 7 : 0),
+            },
             fill: 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
             hovertemplate: '%{y}<br>%{x}<extra></extra>'
@@ -3782,42 +3804,46 @@ function openPlayerModal(playerId, playerName) {
 
           // Adjust chart height based on screen size
           const isMobile = window.innerWidth <= 768;
-          const chartHeight = isMobile ? 200 : 250;
+          const chartHeight = isMobile ? 180 : 220;
 
-          const latestDate = xData[n - 1];
           const layout = {
-            margin: { l: 40, r: 20, t: 30, b: 36 },
+            margin: { l: 10, r: 10, t: 10, b: 36 },
             height: chartHeight,
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
             xaxis: {
               showgrid: false,
               type: 'category',
               tickmode: 'array',
               tickvals: tickvals,
-              ticktext: tickvals,
+              ticktext: ticktext,
               tickangle: 0,
             },
             yaxis: {
-              title: isMobile ? '' : 'Value',
-              showgrid: true
+              showgrid: false,
+              showticklabels: false,
+              range: [yMin - yPad, yMax + yPad],
             },
             hovermode: 'x unified',
-            annotations: [{
-              text: latestDate,
-              x: 0.5,
-              xref: 'paper',
-              y: 1,
-              yref: 'paper',
-              showarrow: false,
-              font: { size: 11 },
-              xanchor: 'center',
-              yanchor: 'bottom',
-            }]
           };
 
           Plotly.newPlot('playerValueChart', [trace], layout, {
             displayModeBar: false,
             responsive: true
           });
+
+          // Populate right-side value label panel
+          const labelEl = document.getElementById('playerValueLabel');
+          if (labelEl) {
+            const latestVal = yValues[n - 1];
+            const firstVal = yValues[0];
+            const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
+            labelEl.innerHTML = `
+              <div style="font-size:22px;font-weight:700;color:#3b82f6;line-height:1;">${Math.round(latestVal)}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${latestDateStr}</div>
+              ${n > 1 ? `<div style="font-size:12px;color:var(--text-muted);margin-top:8px;">${Math.round(firstVal)}</div>` : ''}
+            `;
+          }
         }
       }
 
