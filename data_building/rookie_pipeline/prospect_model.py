@@ -968,15 +968,15 @@ POSITION_WEIGHTS = {
         "durability": 0.01,
     },
     "WR": {
-        # Draft capital (r=0.72) was the most underweighted WR component.
-        # Breakout (r=0.65) increased — early dominator WRs translate best.
+        # Draft capital (r=0.72) is the strongest WR predictor — weighted highest.
+        # Breakout (r=0.65) reduced to avoid penalizing loaded-team WRs (e.g. Ohio State).
         # Utilization (r=0.45) reduced — target volume is scheme-dependent.
-        "draft_capital": 0.25,
+        "draft_capital": 0.29,
         "production": 0.22,
         "utilization": 0.04,
         "efficiency": 0.10,
         "age": 0.08,
-        "breakout": 0.16,
+        "breakout": 0.12,
         "athleticism": 0.07,
         "competition": 0.07,
         "environment": 0.01,
@@ -1155,7 +1155,7 @@ def draft_capital_multiplier(round_selected: int) -> float:
         Multiplier to apply to draft capital score
     """
     if round_selected == 1:
-        return 1.25
+        return 1.10
     elif round_selected == 2:
         return 1.10
     elif round_selected == 3:
