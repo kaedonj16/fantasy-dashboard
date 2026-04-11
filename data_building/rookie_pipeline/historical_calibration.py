@@ -332,12 +332,12 @@ def _correlate_predictors(
 # Current model weights for reference
 REFINED_POSITION_WEIGHTS = {
     "QB": {
-        "draft_capital": 0.28,
+        "draft_capital": 0.22,
         "production": 0.17,
-        "utilization": 0.03,
+        "utilization": 0.05,
         "efficiency": 0.18,
         "age": 0.08,
-        "breakout": 0.00,
+        "breakout": 0.04,
         "athleticism": 0.10,
         "competition": 0.07,
         "environment": 0.02,
