@@ -358,8 +358,7 @@ class SportradarNCAAFBSource(RookieSource):
         else:
             sr_stats = self._index.get_season_stats(name, season)
             self._cache[cache_key] = sr_stats  # Cache even if None to avoid repeated calls
-            print(f"[sportradar_ncaa] CACHE MISS: Extracted {name} season {season}")
-            
+
         if not sr_stats:
             return {}
 

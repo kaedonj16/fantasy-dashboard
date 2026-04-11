@@ -163,9 +163,9 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         prod = (
-            _scale(rec_yds_pg, 40,  120) * 0.45 +
-            _scale(rec_tds_pg, 0.3, 1.0) * 0.30 +
-            _scale(dom,        0.10, 0.45) * 0.25
+            _scale(rec_yds_pg, 35,  110) * 0.40 +
+            _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
+            _scale(dom,        0.08, 0.40) * 0.30
         )
         # Red zone proxy: TDs per 100 receiving yards — rewards goal-line separators
         if total_rec_yds >= 200:
@@ -187,10 +187,10 @@ def _score_production_season(season: Dict, pos: str) -> float:
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 40,  160) * 0.35 +
-            _scale(all_yds_pg,  50,  180) * 0.25 +
-            _scale(tds_pg,      0.5,  2.0) * 0.25 +
-            _scale(dom,         0.15, 0.70) * 0.15
+            _scale(rush_yds_pg, 35,  140) * 0.30 +
+            _scale(all_yds_pg, 45,  160) * 0.25 +
+            _scale(tds_pg,      0.4,  1.8) * 0.25 +
+            _scale(dom,         0.12, 0.60) * 0.20
         )
         if rec_yds_pg >= 20:
             prod = _clip(prod * 1.10)
@@ -244,16 +244,18 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         prod = (
-            _scale(rec_yds_pg, 30,  95)  * 0.40 +
-            _scale(rec_tds_pg, 0.2, 0.8) * 0.30 +
-            _scale(dom,        0.08, 0.30) * 0.15 +
-            _scale(rec_pg,     2.0,  7.0) * 0.15
+            _scale(rec_yds_pg, 20,  75)  * 0.35 +  # Lowered thresholds for higher scores
+            _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +  # Lowered thresholds for higher scores
+            _scale(dom,        0.05, 0.20) * 0.20 +  # Lowered thresholds for higher scores
+            _scale(rec_pg,     1.0,  5.0) * 0.15   # Lowered reception thresholds
         )
         # Red zone proxy: TE goal-line usage is extremely valuable in NFL
-        if total_rec_yds >= 150:
+        if total_rec_yds >= 200:  # Increased requirement from 150 to 200 yards
             rz_rate = total_rec_tds / total_rec_yds * 100
-            if rz_rate >= 9.0:   prod = _clip(prod * 1.07)
-            elif rz_rate >= 6.0: prod = _clip(prod * 1.04)
+            if rz_rate >= 10.0:  # Increased TD rate requirement from 9.0 to 10.0
+                prod = _clip(prod * 1.05)  # Reduced bonus from 7% to 5%
+            elif rz_rate >= 7.0:  # Increased from 6.0 to 7.0
+                prod = _clip(prod * 1.02)  # Reduced bonus from 4% to 2%
         return prod
 
     return 52.0
@@ -409,7 +411,7 @@ def calc_efficiency_score(
     if pos == "WR":
         ypr = _safe(ls.get("yds_per_reception"), 10.0)
         ms  = _safe(ls.get("market_share_yards"))
-        eff = _scale(ypr, 9.0, 18.0) * 0.60 + _scale(ms, 0.10, 0.45) * 0.40
+        eff = _scale(ypr, 8.5, 17.0) * 0.60 + _scale(ms, 0.08, 0.40) * 0.40
         # Supplement with tprr proxy when available (target share per route)
         tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
         if tprr is not None:
@@ -465,10 +467,10 @@ def calc_efficiency_score(
         catch_rate_score = 50.0  # neutral default when targets unknown
         if targets > 0:
             catch_rate = recs / targets
-            catch_rate_score = _scale(catch_rate, 0.55, 0.82)  # 55% → 0, 82%+ → 100
+            catch_rate_score = _scale(catch_rate, 0.60, 0.85)  # 55% → 0, 82%+ → 100
         eff = (
-            _scale(ypr, 8.0, 16.0) * 0.50 +
-            _scale(ms,  0.05, 0.30) * 0.30 +
+            _scale(ypr, 7.5, 14.0) * 0.50 +
+            _scale(ms,  0.04, 0.25) * 0.30 +
             catch_rate_score         * 0.20
         )
         # Supplement with tprr proxy when available
@@ -501,8 +503,8 @@ def calc_efficiency_score(
 
 # Typical draft-class age by position (age at start of NFL rookie year).
 # Updated to reflect modern college football (COVID year, grad transfers, etc.)
-_TYPICAL_AGE = {"QB": 23.5, "RB": 22.0, "WR": 22.5, "TE": 23.0}
-_AGE_ELITE   = {"QB": 22.0, "RB": 20.5, "WR": 21.0, "TE": 21.5}
+_TYPICAL_AGE = {"QB": 23.0, "RB": 22.5, "WR": 22.5, "TE": 23.0}
+_AGE_ELITE   = {"QB": 21.0, "RB": 20.5, "WR": 21.0, "TE": 20.5}
 _AGE_WORST   = {"QB": 27.5, "RB": 25.0, "WR": 25.5, "TE": 26.0}   # QB more lenient — development timelines vary widely
 
 
@@ -746,7 +748,7 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
             # Fallback: receptions as proxy (underestimates slightly)
             tpg = _safe(ls.get("receptions")) / gp
         # Elite WR: 9+ targets/game; strong: 6+; average: 4
-        return _clip(_scale(tpg, 3.0, 10.0))
+        return _clip(_scale(tpg, 2.5, 10.0))
 
     elif pos == "TE":
         targets = _safe(ls.get("targets"))
@@ -755,7 +757,7 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
         else:
             tpg = _safe(ls.get("receptions")) / gp
         # Elite TE: 7+ targets/game; strong: 4+; average: 2.5
-        return _clip(_scale(tpg, 2.0, 8.0))
+        return _clip(_scale(tpg, 1.5, 8.0))
 
     elif pos == "RB":
         carries  = _safe(ls.get("rush_attempts")) / gp
@@ -920,20 +922,345 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Main scoring function
 # ─────────────────────────────────────────────────────────────────────────────
 
-WEIGHTS = {
-    "production":      0.18,    # College production volume
-    "utilization":     0.05,    # Opportunity share (targets/game, carries/game)
-    "efficiency":      0.07,    # Per-attempt quality
-    "age":             0.06,    # Age-adjusted production; youth premium
-    "breakout":        0.10,    # Early-career dominance trajectory
-    "athleticism":     0.10,    # Combine / speed score / RAS
-    "competition":     0.08,    # Conference + opponent quality
-    "environment":     0.03,    # Team scheme / usage context
-    "durability":      0.02,    # Games missed, injury history
-    "draft_capital":   0.31,    # NFL draft position is the dominant signal — 32 teams with all-22 film
+# Position-specific weights for more realistic evaluation
+POSITION_WEIGHTS = {
+    "QB": {
+        "draft_capital": 0.25,
+        "production": 0.17,
+        "utilization": 0.07,
+        "efficiency": 0.10,
+        "age": 0.06,
+        "breakout": 0.05,
+        "athleticism": 0.10,
+        "competition": 0.07,
+        "environment": 0.06,
+        "durability": 0.03,
+        "experience": 0.04,
+    },
+    "RB": {
+        "draft_capital": 0.22,
+        "production": 0.22,
+        "utilization": 0.10,
+        "efficiency": 0.08,
+        "age": 0.06,
+        "breakout": 0.08,
+        "athleticism": 0.10,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.02,
+    },
+    "WR": {
+        "draft_capital": 0.20,
+        "production": 0.22,
+        "utilization": 0.09,
+        "efficiency": 0.09,
+        "age": 0.06,
+        "breakout": 0.12,
+        "athleticism": 0.08,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.02,
+    },
+    "TE": {
+        "draft_capital": 0.20,
+        "production": 0.26,
+        "utilization": 0.10,
+        "efficiency": 0.08,
+        "age": 0.06,
+        "breakout": 0.08,
+        "athleticism": 0.08,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.02,
+    },
 }
 
-assert abs(sum(WEIGHTS.values()) - 1.0) < 0.001, "Weights must sum to 1.0"
+# Validate that all position weights sum to 1.0
+for pos, weights in POSITION_WEIGHTS.items():
+    assert abs(sum(weights.values()) - 1.0) < 0.001, f"{pos} weights must sum to 1.0, got {sum(weights.values())}"
+
+
+# Enhanced evaluation functions
+# 
+
+from typing import Dict
+
+def calc_loaded_roster_adjustment(
+    team: str,
+    position: str,
+    season: int,
+    production_score: float,
+    market_share: float,
+) -> float:
+    loaded_rosters: Dict[str, Dict[str, Dict[int, int]]] = {
+        "Ohio State": {
+            "WR": {
+                2021: 2,
+                2022: 2,
+                2023: 2,
+                2024: 2,
+                2025: 3,
+            },
+        },
+        "Alabama": {
+            "WR": {
+                2020: 3,
+                2021: 2,
+                2022: 2,
+                2025: 3,
+            },
+            "RB": {
+                2020: 2,
+                2021: 2,
+            },
+        },
+        "Georgia": {
+            "TE": {
+                2021: 2,
+                2022: 2,
+            },
+            "WR": {
+                2024: 2,
+                2025: 2,
+            },
+        },
+        "USC": {
+            "WR": {
+                2022: 2,
+                2024: 2,
+                2025: 2,
+            },
+        },
+        "LSU": {
+            "WR": {
+                2019: 3,
+                2022: 2,
+                2024: 2,
+                2025: 2,
+            },
+        },
+        "Texas": {
+            "WR": {
+                2023: 2,
+                2024: 2,
+                2025: 3,
+            },
+        },
+        "Oregon": {
+            "WR": {
+                2024: 2,
+                2025: 3,
+            },
+            "RB": {
+                2025: 2,
+            },
+        },
+    }
+
+    team = (team or "").strip()
+    position = (position or "").strip().upper()
+
+    if not team or not position:
+        return 1.0
+
+    try:
+        production_score = float(production_score)
+    except (TypeError, ValueError):
+        production_score = 0.0
+
+    try:
+        market_share = float(market_share)
+    except (TypeError, ValueError):
+        market_share = 0.0
+
+    production_score = max(0.0, min(production_score, 100.0))
+    market_share = max(0.0, min(market_share, 1.0))
+
+    room_size = (
+        loaded_rosters.get(team, {})
+        .get(position, {})
+        .get(season, 0)
+    )
+
+    if room_size < 2:
+        return 1.0
+
+    if room_size >= 4:
+        base_bonus = 0.12
+    elif room_size == 3:
+        base_bonus = 0.10
+    else:
+        base_bonus = 0.06
+
+    if market_share >= 0.30:
+        ms_factor = 1.00
+    elif market_share >= 0.24:
+        ms_factor = 0.85
+    elif market_share >= 0.18:
+        ms_factor = 0.60
+    elif market_share >= 0.12:
+        ms_factor = 0.35
+    else:
+        ms_factor = 0.10
+
+    if production_score >= 85:
+        prod_factor = 1.00
+    elif production_score >= 75:
+        prod_factor = 0.80
+    elif production_score >= 65:
+        prod_factor = 0.55
+    elif production_score >= 50:
+        prod_factor = 0.30
+    else:
+        prod_factor = 0.10
+
+    realized_bonus = base_bonus * ((ms_factor * 0.6) + (prod_factor * 0.4))
+    multiplier = 1.0 + realized_bonus
+
+    return min(multiplier, 1.18)
+
+
+def draft_capital_multiplier(round_selected: int) -> float:
+    """
+    Nonlinear draft capital modeling with tiered bonuses.
+    
+    Args:
+        round_selected: Draft round (1-7)
+    
+    Returns:
+        Multiplier to apply to draft capital score
+    """
+    if round_selected == 1:
+        return 1.25
+    elif round_selected == 2:
+        return 1.10
+    elif round_selected == 3:
+        return 1.00
+    elif round_selected <= 5:
+        return 0.85
+    else:
+        return 0.70
+
+
+def calc_experience_score(seasons: List[Dict], position: str) -> float:
+    """
+    Experience metric for quarterbacks to mitigate misses like Trey Lance.
+    
+    Args:
+        seasons: List of season data
+        position: Player position
+    
+    Returns:
+        Experience score (0-100)
+    """
+    if position != "QB":
+        return 0.0
+    
+    # Calculate total games started across all seasons
+    games_started = sum(_safe(s.get("games_started", 0)) for s in seasons)
+    
+    # Normalize to 0-100 scale (40 games = full experience)
+    experience_ratio = min(games_started / 40.0, 1.0)
+    return experience_ratio * 100.0
+
+
+def calc_late_round_upside(draft_capital: Optional[Dict], seasons: List[Dict], position: str) -> float:
+    """
+    Late-round breakout indicator for undervalued players with elite underlying metrics.
+    
+    Args:
+        draft_capital: Draft capital data
+        seasons: List of season data
+        position: Player position
+    
+    Returns:
+        Late-round upside score (0-100)
+    """
+    if not draft_capital:
+        return 0.0
+    
+    projected_round = draft_capital.get("projected_round")
+    if projected_round is None or projected_round < 4:
+        return 0.0
+    
+    # Check for elite underlying metrics
+    if not seasons:
+        return 0.0
+    
+    best_dominator = max([_safe(s.get("dominator_rating", 0)) for s in seasons])
+    dominator_rating = best_dominator
+    
+    # For WR/TE, check yards per route run if available
+    yprr = 0.0
+    if position in ("WR", "TE"):
+        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
+        yprr = best_yprr
+    if position in ("WR", "TE"):
+        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
+        yprr = best_yprr
+    
+    # For WR/TE, check yards per route run if available
+    # For WR/TE, check yards per route run if available
+    yprr = 0.0
+    if position in ("WR", "TE"):
+        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
+        yprr = best_yprr
+    
+    # Late-round upside criteria
+    has_elite_dominator = dominator_rating >= 0.35
+    has_elite_yprr = yprr >= 2.5
+    
+    if has_elite_dominator or has_elite_yprr:
+        # Base upside score for late-round prospects with elite metrics
+        base_score = 75.0
+        
+        # Bonus for having both metrics
+        if has_elite_dominator and has_elite_yprr:
+            base_score = 90.0
+        
+        # Position-specific adjustments
+        if position == "WR":
+            base_score += 5.0  # WRs benefit more from elite efficiency
+        elif position == "RB":
+            base_score += 3.0  # RBs benefit from dominator rating
+        
+        return min(base_score, 100.0)
+    
+    return 0.0
+
+
+def calc_interaction_features(production_score: float, efficiency_score: float, 
+                             athleticism_score: float, draft_capital_score: float) -> Dict[str, float]:
+    """
+    Interaction features between key metrics to capture nuanced signals.
+    
+    Args:
+        production_score: Production component score
+        efficiency_score: Efficiency component score
+        athleticism_score: Athleticism component score
+        draft_capital_score: Draft capital component score
+    
+    Returns:
+        Dictionary of interaction feature scores
+    """
+    # Production-efficiency interaction (high production + high efficiency)
+    prod_eff_interaction = (production_score * efficiency_score) / 100.0
+    
+    # Athleticism-draft capital interaction (elite athlete + high draft capital)
+    ath_dc_interaction = (athleticism_score * draft_capital_score) / 100.0
+    
+    # Production-athleticism interaction (elite producer + elite athlete)
+    prod_ath_interaction = (production_score * athleticism_score) / 100.0
+    
+    # Triple interaction (all three elite)
+    triple_interaction = (production_score * efficiency_score * athleticism_score) / 10000.0
+    
+    return {
+        "production_efficiency_interaction": prod_eff_interaction,
+        "athleticism_draft_capital_interaction": ath_dc_interaction,
+        "production_athleticism_interaction": prod_ath_interaction,
+        "triple_interaction": triple_interaction,
+    }
 
 
 def score_prospect(
@@ -962,6 +1289,18 @@ def score_prospect(
     eval_metrics: Optional[Dict] = prospect.get("_eval_metrics") or None
 
     production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics)
+    
+    # Apply loaded roster adjustment for players on talent-rich teams
+    ls = _latest_season(seasons) or {}
+    team = ls.get("team", "")
+    season = ls.get("season", 0)
+    market_share = _safe(ls.get("market_share_yards"), 0.15)
+    
+    loaded_roster_adjustment = calc_loaded_roster_adjustment(
+        team, pos, season, production_score, market_share
+    )
+    production_score = _clip(production_score * loaded_roster_adjustment)
+    
     utilization_score   = calc_utilization_score(seasons, pos)
     efficiency_score    = calc_efficiency_score(seasons, pos, eval_metrics=eval_metrics)
     age_score           = calc_age_score(age, dy, pos)
@@ -973,10 +1312,18 @@ def score_prospect(
 
     if draft_capital:
         dc_score = _safe(draft_capital.get("projected_draft_capital_score"), 40.0)
+        projected_round = draft_capital.get("projected_round")
     else:
-        # Default: no mock coverage → treat like a late day-3 pick for this position
+        # Default: no mock coverage -> treat like a late day-3 pick for this position
         from data_building.rookie_pipeline.mock_draft_consensus import pick_to_draft_capital_score
         dc_score = pick_to_draft_capital_score(150, pos)
+        projected_round = 6  # Default to late round for no mock coverage
+
+    #  Enhanced draft capital modeling with nonlinear tiered bonuses
+    # Apply round-specific multipliers to capture nonlinear value
+    if projected_round and draft_capital:
+        round_multiplier = draft_capital_multiplier(projected_round)
+        dc_score = _clip(dc_score * round_multiplier)
 
     # ── QB dynasty discount ─────────────────────────────────────────────────
     # QB top picks are expected every year and less predictive for dynasty value
@@ -988,7 +1335,7 @@ def score_prospect(
     # QB: 0.72x — top picks are expected every year, less predictive in dynasty
     # than equivalent non-QB capital.  The flat position curve already discounts
     # mid-round QB picks; the multiplier adds a modest additional adjustment.
-    dc_multiplier = {"QB": 0.72, "TE": 0.82}.get(pos, 1.00)
+    dc_multiplier = {"QB": 0.72, "TE": 0.85}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # A pick-200 prospect should never outscore a pick-8 prospect even with
@@ -1016,18 +1363,70 @@ def score_prospect(
 
     dc_score_adjusted = _clip(dc_score * dc_multiplier)
 
-    prospect_score = (
-        production_score      * WEIGHTS["production"]    +
-        utilization_score     * WEIGHTS["utilization"]   +
-        efficiency_score      * WEIGHTS["efficiency"]    +
-        age_score             * WEIGHTS["age"]           +
-        breakout_score        * WEIGHTS["breakout"]      +
-        athleticism_score     * WEIGHTS["athleticism"]   +
-        competition_score     * WEIGHTS["competition"]   +
-        environment_score     * WEIGHTS["environment"]   +
-        durability_score      * WEIGHTS["durability"]    +
-        dc_score_adjusted     * WEIGHTS["draft_capital"]
+    #  Calculate new enhancement features
+    experience_score = calc_experience_score(seasons, pos)
+    late_round_upside = calc_late_round_upside(draft_capital, seasons, pos)
+    interaction_features = calc_interaction_features(
+        production_score, efficiency_score, athleticism_score, dc_score_adjusted
     )
+
+    # Get position-specific weights
+    pos_weights = POSITION_WEIGHTS.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
+    
+    # Base prospect score with position-specific weights
+    prospect_score = (
+        production_score      * pos_weights["production"]    +
+        utilization_score     * pos_weights["utilization"]   +
+        efficiency_score      * pos_weights["efficiency"]    +
+        age_score             * pos_weights["age"]           +
+        breakout_score        * pos_weights["breakout"]      +
+        athleticism_score     * pos_weights["athleticism"]   +
+        competition_score     * pos_weights["competition"]   +
+        environment_score     * pos_weights["environment"]   +
+        durability_score      * pos_weights["durability"]    +
+        dc_score_adjusted     * pos_weights["draft_capital"]
+    )
+
+    # Add experience score for QBs (uses the experience weight in QB weights)
+    if pos == "QB" and "experience" in pos_weights:
+        prospect_score += experience_score * pos_weights["experience"]
+
+    # Add late-round upside bonus for players with elite underlying metrics
+    if late_round_upside > 0:
+        upside_bonus = late_round_upside * 0.05  # 5% of upside score as bonus
+        prospect_score += upside_bonus
+
+    # Apply benchmark boost system for NFL success predictors
+    from benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost
+    
+    # Get draft pick for benchmark calculations
+    draft_pick = None
+    if draft_capital:
+        draft_pick = draft_capital.get("projected_pick")
+    
+    # Calculate benchmark boosts
+    benchmark_boosts = calc_benchmark_boost(
+        position=pos,
+        age=age,
+        draft_pick=draft_pick,
+        seasons=seasons,
+        athleticism=ath,
+        production_score=production_score,
+        utilization_score=utilization_score,
+        efficiency_score=efficiency_score,
+        competition_score=competition_score,
+        breakout_score=breakout_score
+    )
+    
+    # Apply benchmark boosts to final score
+    prospect_score = apply_benchmark_boost(prospect_score, benchmark_boosts)
+
+    # Add interaction feature bonuses for elite combinations
+    prod_eff_bonus = interaction_features["production_efficiency_interaction"] * 0.03
+    ath_dc_bonus = interaction_features["athleticism_draft_capital_interaction"] * 0.02
+    triple_bonus = interaction_features["triple_interaction"] * 0.05
+
+    prospect_score += prod_eff_bonus + ath_dc_bonus + triple_bonus
 
     # Graduated generational prospect boost.
     # Tiered by how many elite markers align: production, athleticism, draft capital.
@@ -1042,7 +1441,7 @@ def score_prospect(
     if pos in ("WR", "RB", "TE"):
         elite_prod = production_score >= 72
         elite_ath  = athleticism_score >= 78
-        elite_dc   = dc_score >= 75   # pick ~12-15 or better
+        elite_dc   = dc_score_adjusted >= 75   # pick ~12-15 or better
 
         elite_count = sum([elite_prod, elite_ath, elite_dc])
         if elite_count >= 3:
@@ -1092,7 +1491,7 @@ def score_prospect(
         prospect, pos, seasons,
         production_score, utilization_score, efficiency_score, age_score,
         breakout_score, athleticism_score, competition_score,
-        environment_score, durability_score, dc_score, draft_capital,
+        environment_score, durability_score, dc_score_adjusted, draft_capital,
     )
 
     return {
@@ -1107,11 +1506,20 @@ def score_prospect(
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       round(environment_score, 2),
         "durability_score":             round(durability_score, 2),
-        "projected_draft_capital_score":round(dc_score, 2),
+        "projected_draft_capital_score":round(dc_score_adjusted, 2),
         "fantasy_translation_score":    round(fantasy_translation, 2),
         "confidence_score":             confidence_score,
         "prospect_score":               prospect_score,
         "key_reasons":                  reasons,
+        "experience_score":             round(experience_score, 2),
+        "late_round_upside":             round(late_round_upside, 2),
+        "loaded_roster_adjustment":      round(loaded_roster_adjustment, 3),
+        "production_efficiency_interaction": round(interaction_features["production_efficiency_interaction"], 2),
+        "athleticism_draft_capital_interaction": round(interaction_features["athleticism_draft_capital_interaction"], 2),
+        "production_athleticism_interaction": round(interaction_features["production_athleticism_interaction"], 2),
+        "benchmark_boosts":             benchmark_boosts,
+        "total_benchmark_boost":        round(benchmark_boosts.get("total_boost", 0.0), 3),
+        "triple_interaction":           round(interaction_features["triple_interaction"], 2),
     }
 
 

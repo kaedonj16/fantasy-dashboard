@@ -330,17 +330,56 @@ def _correlate_predictors(
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Current model weights for reference
-_CURRENT_WEIGHTS = {
-    "draft_capital":  0.30,
-    "production":     0.15,
-    "utilization":    0.05,
-    "efficiency":     0.08,
-    "age":            0.06,
-    "breakout":       0.10,
-    "athleticism":    0.12,
-    "competition":    0.08,
-    "environment":    0.03,
-    "durability":     0.03,
+REFINED_POSITION_WEIGHTS = {
+    "QB": {
+        "draft_capital": 0.25,
+        "production": 0.17,
+        "utilization": 0.07,
+        "efficiency": 0.10,
+        "age": 0.06,
+        "breakout": 0.05,
+        "athleticism": 0.10,
+        "competition": 0.07,
+        "environment": 0.06,
+        "durability": 0.03,
+        "experience": 0.04,
+    },
+    "RB": {
+        "draft_capital": 0.22,
+        "production": 0.22,
+        "utilization": 0.10,
+        "efficiency": 0.08,
+        "age": 0.06,
+        "breakout": 0.08,
+        "athleticism": 0.10,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.02,
+    },
+    "WR": {
+        "draft_capital": 0.20,
+        "production": 0.21,
+        "utilization": 0.10,
+        "efficiency": 0.10,
+        "age": 0.06,
+        "breakout": 0.12,
+        "athleticism": 0.08,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.01,
+    },
+    "TE": {
+        "draft_capital": 0.22,
+        "production": 0.17,
+        "utilization": 0.09,
+        "efficiency": 0.11,
+        "age": 0.08,
+        "breakout": 0.07,
+        "athleticism": 0.12,
+        "competition": 0.07,
+        "environment": 0.05,
+        "durability": 0.02,
+    },
 }
 
 # Feature → component mapping (CFBD features → prospect_model components)
