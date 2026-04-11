@@ -3522,7 +3522,6 @@ function openPlayerModal(playerId, playerName) {
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-            <div class="pm-hero-sub">${posRankLabel || pos || ''}</div>
           </div>
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
@@ -3739,14 +3738,19 @@ function openPlayerModal(playerId, playerName) {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (!m) return '';
-            const d = new Date(+m[1], +m[2] - 1, +m[3]);
-            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const [, year, month, day] = m;
+            // Use hardcoded month names to avoid locale/timezone issues
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
           };
           const formatMonthOnly = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (!m) return '';
-            return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-US', { month: 'short' });
+            const [, year, month, day] = m;
+            // Use hardcoded month names to avoid locale/timezone issues
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return monthNames[parseInt(month, 10) - 1];
           };
 
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
@@ -4340,12 +4344,10 @@ function _renderBkModalContent(data, playerId) {
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
         <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
         <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
-        <div class="pm-hero-sub">${label}</div>
       </div>
       <div class="pm-hero-stat" style="text-align:left;padding-left:16px;">
         <div class="pm-hero-label">Profile</div>
         <div style="font-size:22px;line-height:1;margin:4px 0;">${emoji}</div>
-        <div class="pm-hero-sub" style="font-weight:600;color:var(--text);">${driver} driven</div>
       </div>
       <div class="pm-hero-stat">
         <div class="pm-hero-label">Phase</div>
