@@ -804,7 +804,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           '<div style="font-size:13px;color:var(--text-muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
             '<span style="font-weight:600;color:var(--text);">' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
             (r.school ? '<span style="opacity:.4;">·</span><span>' + r.school + '</span>' : '') +
-            '<span style="opacity:.4;">·</span><span>Age ' + age + '</span>' +
+            '<span style="opacity:.4;">·</span><span>' + age + ' yrs</span>' +
             (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
           '</div>' +
         '</div>' +

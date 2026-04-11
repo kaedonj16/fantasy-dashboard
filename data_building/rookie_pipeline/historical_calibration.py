@@ -330,17 +330,56 @@ def _correlate_predictors(
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Current model weights for reference
-_CURRENT_WEIGHTS = {
-    "draft_capital":  0.30,
-    "production":     0.15,
-    "utilization":    0.05,
-    "efficiency":     0.08,
-    "age":            0.06,
-    "breakout":       0.10,
-    "athleticism":    0.12,
-    "competition":    0.08,
-    "environment":    0.03,
-    "durability":     0.03,
+REFINED_POSITION_WEIGHTS = {
+    "QB": {
+        "draft_capital": 0.22,
+        "production": 0.17,
+        "utilization": 0.05,
+        "efficiency": 0.18,
+        "age": 0.08,
+        "breakout": 0.04,
+        "athleticism": 0.10,
+        "competition": 0.07,
+        "environment": 0.02,
+        "durability": 0.00,
+        "experience": 0.07,
+    },
+    "RB": {
+        "draft_capital": 0.24,
+        "production": 0.22,
+        "utilization": 0.09,
+        "efficiency": 0.07,
+        "age": 0.09,
+        "breakout": 0.12,
+        "athleticism": 0.10,
+        "competition": 0.05,
+        "environment": 0.01,
+        "durability": 0.01,
+    },
+    "WR": {
+        "draft_capital": 0.29,
+        "production": 0.22,
+        "utilization": 0.04,
+        "efficiency": 0.10,
+        "age": 0.08,
+        "breakout": 0.12,
+        "athleticism": 0.07,
+        "competition": 0.07,
+        "environment": 0.01,
+        "durability": 0.00,
+    },
+    "TE": {
+        "draft_capital": 0.26,
+        "production": 0.18,
+        "utilization": 0.05,
+        "efficiency": 0.12,
+        "age": 0.13,
+        "breakout": 0.05,
+        "athleticism": 0.12,
+        "competition": 0.07,
+        "environment": 0.01,
+        "durability": 0.01,
+    },
 }
 
 # Feature → component mapping (CFBD features → prospect_model components)
@@ -371,6 +410,9 @@ def _recommend_weights(
     recommendations: Dict[str, Dict[str, float]] = {}
 
     for pos, corr in correlations_by_pos.items():
+        # Use position-specific current weights as the baseline for blending
+        curr_weights = REFINED_POSITION_WEIGHTS.get(pos, next(iter(REFINED_POSITION_WEIGHTS.values())))
+
         comp_r: Dict[str, List[float]] = {}
         for feat, r in corr.items():
             comp = _FEATURE_TO_COMPONENT.get(feat)
@@ -381,17 +423,17 @@ def _recommend_weights(
         avg_r = {comp: statistics.mean(rs) for comp, rs in comp_r.items() if rs}
 
         # Fill in missing components with their current weights (no data = keep current)
-        for comp in _CURRENT_WEIGHTS:
+        for comp in curr_weights:
             if comp not in avg_r:
-                avg_r[comp] = _CURRENT_WEIGHTS[comp]
+                avg_r[comp] = curr_weights[comp]
 
         total = sum(avg_r.values()) or 1.0
         calibrated = {comp: round(r / total, 4) for comp, r in avg_r.items()}
 
         # Blend 50/50 current vs data-calibrated (don't over-weight sparse signals)
         blended = {
-            comp: round(0.50 * _CURRENT_WEIGHTS.get(comp, 0.05) + 0.50 * calibrated.get(comp, 0.05), 4)
-            for comp in set(list(_CURRENT_WEIGHTS) + list(calibrated))
+            comp: round(0.50 * curr_weights.get(comp, 0.05) + 0.50 * calibrated.get(comp, 0.05), 4)
+            for comp in set(list(curr_weights) + list(calibrated))
         }
         # Normalise to sum = 1
         total_blended = sum(blended.values()) or 1.0
@@ -400,7 +442,7 @@ def _recommend_weights(
         recommendations[pos] = {
             "calibrated_from_data": calibrated,
             "blended_recommendation": blended,
-            "current": dict(_CURRENT_WEIGHTS),
+            "current": dict(curr_weights),
             "sample_size": len([v for v in correlations_by_pos[pos].values() if v != 0]),
         }
 
@@ -498,5 +540,5 @@ def get_calibrated_weights(
     result = run_calibration(draft_years=draft_years, positions=positions)
     out: Dict[str, Dict[str, float]] = {}
     for pos, rec in result.get("weight_recommendations", {}).items():
-        out[pos] = rec.get("blended_recommendation", dict(_CURRENT_WEIGHTS))
+        out[pos] = rec.get("blended_recommendation", dict(REFINED_POSITION_WEIGHTS.get(pos, {})))
     return out

@@ -254,6 +254,164 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
     return results
 
 
+def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
+    """
+    Process the local combine CSV file and return a name-keyed dict of
+    combine measurements for prospects from `draft_year`.
+
+    Returns {player_name_lower: athleticism_dict}  where athleticism_dict has:
+        forty_yard, vertical_inches, broad_jump_in, bench_reps,
+        three_cone, short_shuttle
+    Also includes height_inches and weight_lbs as fallback bio fields.
+    """
+    import pandas as pd
+    import re
+    from pathlib import Path
+    
+    print(f"[local_combine] Processing local combine CSV for draft year {draft_year}")
+    
+    # Path to the local CSV file
+    csv_path = Path(__file__).parent.parent.parent / "cache" / "Official Times & Measurements - 2026.csv"
+    
+    if not csv_path.exists():
+        print(f"[local_combine] ERROR: CSV file not found at {csv_path}")
+        return {}
+    
+    try:
+        # Read the CSV file with proper header handling
+        df = pd.read_csv(csv_path, header=2)
+        df = df.dropna(axis=1, how='all').dropna(how='all')
+        
+        # Filter for target positions (QB, RB, WR, TE)
+        target_positions = ['QB', 'RB', 'WR', 'TE']
+        filtered_df = df[df['POS'].isin(target_positions)].copy()
+        
+        results: Dict[str, Dict[str, Any]] = {}
+        total_rows = len(filtered_df)
+        matching_rows = 0
+        parse_errors = 0
+        
+        for _, row in filtered_df.iterrows():
+            try:
+                player_name = str(row['PLAYER']).strip()
+                if not player_name or player_name == 'nan':
+                    parse_errors += 1
+                    continue
+                
+                # Clean player name (remove suffixes, convert to lowercase for key)
+                clean_name = re.sub(r'\s+(Jr\.|Sr\.|II|III|IV)$', '', player_name)
+                name_key = clean_name.lower().strip()
+                
+                # Extract combine measurements
+                athleticism = {}
+                
+                # 40-yard dash
+                forty = row.get('40 (O)')
+                if pd.notna(forty) and forty != '':
+                    try:
+                        athleticism['forty_yard'] = float(forty)
+                    except:
+                        pass
+                
+                # Vertical jump (inches)
+                vertical = row.get('VERT')
+                if pd.notna(vertical) and vertical != '':
+                    try:
+                        vert_val = float(vertical)
+                        if vert_val.is_integer():
+                            athleticism['vertical_inches'] = int(vert_val)
+                        else:
+                            athleticism['vertical_inches'] = vert_val
+                    except:
+                        pass
+                
+                # Broad jump (inches)
+                broad = row.get('BROAD')
+                if pd.notna(broad) and broad != '':
+                    try:
+                        athleticism['broad_jump_in'] = int(float(broad))
+                    except:
+                        pass
+                
+                # 3-cone drill
+                three_cone = row.get('3 CONE')
+                if pd.notna(three_cone) and three_cone != '':
+                    try:
+                        athleticism['three_cone'] = float(three_cone)
+                    except:
+                        pass
+                
+                # Short shuttle
+                shuttle = row.get('SHUTTLE')
+                if pd.notna(shuttle) and shuttle != '':
+                    try:
+                        athleticism['short_shuttle'] = float(shuttle)
+                    except:
+                        pass
+                
+                # Bench press
+                bench = row.get('BENCH')
+                if pd.notna(bench) and bench != '':
+                    try:
+                        athleticism['bench_reps'] = int(float(bench))
+                    except:
+                        pass
+                
+                # Height (convert NFL format to inches)
+                height = row.get('HEIGHT')
+                if pd.notna(height) and height != '':
+                    try:
+                        height_str = str(int(float(height)))  # Convert to string without decimal
+                        if len(height_str) == 4 and height_str.isdigit():
+                            # NFL format: first digit = feet, next two digits = inches, last digit = eighths
+                            feet = int(height_str[0])
+                            inches = int(height_str[1:3])
+                            eighths = int(height_str[3])
+                            total_inches = feet * 12 + inches + eighths / 8
+                            athleticism['height_inches'] = total_inches
+                    except:
+                        pass
+                
+                # Weight
+                weight = row.get('WEIGHT')
+                if pd.notna(weight) and weight != '':
+                    try:
+                        athleticism['weight_lbs'] = int(float(weight))
+                    except:
+                        pass
+                
+                # RAS (Relative Athletic Score)
+                ras = row.get('RAS')
+                if pd.notna(ras) and ras != '':
+                    try:
+                        athleticism['ras_score'] = float(ras)
+                    except:
+                        pass
+                
+                # Only add if we have at least one measurement
+                if athleticism:
+                    # Structure the data as expected by upsert_prospect_athleticism
+                    results[name_key] = {
+                        "athleticism": athleticism,
+                        "height_inches": athleticism.get("height_inches"),
+                        "weight_lbs": athleticism.get("weight_lbs")
+                    }
+                    matching_rows += 1
+                
+            except Exception as exc:
+                parse_errors += 1
+                print(f"[local_combine] Parse error for row: {exc}")
+                continue
+        
+        print(f"[local_combine] Processed combine data for {len(results)} prospects for {draft_year} ({total_rows} total rows, {parse_errors} parse errors)")
+        print(f"[local_combine] Found {matching_rows} matching rows with measurements for {draft_year}")
+        return results
+        
+    except Exception as exc:
+        print(f"[local_combine] ERROR: Failed to process CSV file - {type(exc).__name__}: {exc}")
+        return {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Supplementary source 2 — CFBD college stats  (requires CFBD_API_KEY)
 # Provides: per-season receiving/rushing/passing stats, games_played,

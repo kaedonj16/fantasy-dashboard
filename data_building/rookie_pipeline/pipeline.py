@@ -412,10 +412,10 @@ def upsert_prospect_athleticism(prospects: List[Dict], combine_data: Dict, conn)
                     """
                     INSERT INTO rookie_prospect_athleticism
                         (player_id, forty_yard, vertical_inches, broad_jump_in,
-                         three_cone, short_shuttle, bench_reps, source)
+                         three_cone, short_shuttle, bench_reps, ras_score, source)
                     VALUES
                         (%(player_id)s, %(forty_yard)s, %(vertical_inches)s, %(broad_jump_in)s,
-                         %(three_cone)s, %(short_shuttle)s, %(bench_reps)s, 'nflverse')
+                         %(three_cone)s, %(short_shuttle)s, %(bench_reps)s, %(ras_score)s, 'nflverse')
                     ON CONFLICT (player_id) DO UPDATE SET
                         forty_yard = EXCLUDED.forty_yard,
                         vertical_inches = EXCLUDED.vertical_inches,
@@ -423,6 +423,7 @@ def upsert_prospect_athleticism(prospects: List[Dict], combine_data: Dict, conn)
                         three_cone = EXCLUDED.three_cone,
                         short_shuttle = EXCLUDED.short_shuttle,
                         bench_reps = EXCLUDED.bench_reps,
+                        ras_score = EXCLUDED.ras_score,
                         updated_at = now()
                     """,
                     {
@@ -433,6 +434,7 @@ def upsert_prospect_athleticism(prospects: List[Dict], combine_data: Dict, conn)
                         "three_cone": ath.get("three_cone"),
                         "short_shuttle": ath.get("short_shuttle"),
                         "bench_reps": ath.get("bench_reps"),
+                        "ras_score": ath.get("ras_score"),
                     }
                 )
                 cur.execute("RELEASE SAVEPOINT save_combine")
@@ -515,12 +517,17 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
     """
     from .mock_draft_consensus import get_seed_mocks
     from .mock_draft_scraper import scrape_individual_mocks
+    from .pfn_scraper import scrape_pfn_mock_consensus
 
     # Get seed mocks (if any)
     seed_entries = get_seed_mocks(draft_year)
 
     # Scrape individual analyst mocks
     scraped_picks = scrape_individual_mocks(draft_year)
+    
+    # Scrape PFN position consensus data
+    pfn_picks = scrape_pfn_mock_consensus(draft_year)
+    scraped_picks.extend(pfn_picks)
 
     # Convert scraped picks to entry format with player_ids
     scraped_entries = []
@@ -1409,6 +1416,12 @@ def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
 
+    # Stage 4: Scrape mock drafts (including PFN) even in DB-only mode
+    print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
+    with get_conn_fn() as conn:
+        n_mock_entries = upsert_mock_entries(draft_year, conn)
+    print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+
     with get_conn_fn() as conn:
         existing_prospects = load_prospects_from_db(draft_year, conn)
 
@@ -1479,7 +1492,7 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     from .ingestion import (
         fetch_sportradar_prospects,
         fetch_cfbd_college_stats,
-        fetch_nflverse_combine,
+        fetch_local_combine_csv,
     )
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
     from .mock_draft_consensus import build_mock_draft_consensus_from_scraped
@@ -1632,7 +1645,7 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 3: Fetch Combine Data ======")
 
-    combine_data = fetch_nflverse_combine(draft_year)
+    combine_data = fetch_local_combine_csv(draft_year)
     print(f"[pipeline] Fetched combine data for {len(combine_data)} players")
 
     # Back-fill ages for prospects ESPN missed using NFLVerse combine birthdate

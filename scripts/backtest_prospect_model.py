@@ -55,7 +55,7 @@ SKILL_POS    = {"QB", "RB", "WR", "TE"}
 NFL_LOOKBACK = 4   # seasons of NFL data to collect per player
 
 # How many top-N players per draft class to show in the table
-TOP_N_PER_CLASS = 20
+TOP_N_PER_CLASS = 15
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 – Load nflverse roster data to get draft picks
@@ -550,7 +550,7 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
     overall_valid: List[Tuple[float, float]] = []  # (model_score, ppr_cum)
     overall_valid_cfbd: List[Tuple[float, float]] = []  # only rows with CFBD data
-    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  {'Spearman-ρ':>10}  {'Top5 hit':>8}")
+    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  {'Spearman-ρ':>10}  {'Top10 hit':>8}")
     print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}")
 
     for yr in sorted(by_year.keys()):
@@ -562,11 +562,11 @@ def _print_summary(all_rows: List[Dict]) -> None:
         cfbd_n = sum(1 for r in rows if r.get("has_cfbd"))
         cfbd_pct = f"{cfbd_n/len(rows)*100:.0f}%" if rows else "n/a"
 
-        # Top-5 hit rate: how many of model's top 5 are in actual top 10?
-        top5_model   = {r["name"] for r in rows[:5]}
+        # Top-10 hit rate: how many of model.s top 10 are in actual top 10?
+        top10_model   = {r["name"] for r in rows[:10]}
         top10_actual = {r["name"] for r in sorted(with_data, key=lambda x: x["ppr_cum"], reverse=True)[:10]}
-        hit_n = len(top5_model & top10_actual)
-        hit_str = f"{hit_n}/5" if with_data else "n/a"
+        hit_n = len(top10_model & top10_actual)
+        hit_str = f"{hit_n}/10" if with_data else "n/a"
 
         print(f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}")
 

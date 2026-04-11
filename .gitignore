@@ -2,7 +2,7 @@
 cache/ai_cache
 
 # Rookie sources
-data/cache
+data/cache/rookie_sources
 
 # Python
 __pycache__/
