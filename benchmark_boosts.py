@@ -132,34 +132,39 @@ def calc_benchmark_boost(
     if dominator_rating is None:
         dominator_rating = 0.0
     
-    # Position-specific dominator rating thresholds
+    # Position-specific dominator rating thresholds.
+    # Thresholds are calibrated to ~15th percentile (elite), ~35th percentile (strong),
+    # and ~60th percentile (average) of historical college dominator rating distributions.
     if pos == "WR":
-        # WRs have highest dominator rating importance
-        if dominator_rating >= 0.45:  # Elite WR dominator
+        # WRs: elite ≥0.40 (top 15%), strong ≥0.30 (top 35%), average ≥0.20 (top 60%)
+        # Prior 0.45 threshold was too strict — fewer than 5% of WRs achieved it.
+        if dominator_rating >= 0.40:  # Elite WR dominator
             boosts["dominator_boost"] = 0.06  # +6% bonus
-        elif dominator_rating >= 0.35:  # Strong WR dominator
+        elif dominator_rating >= 0.30:  # Strong WR dominator
             boosts["dominator_boost"] = 0.04  # +4% bonus
-        elif dominator_rating >= 0.25:  # Average WR dominator
+        elif dominator_rating >= 0.20:  # Average WR dominator
             boosts["dominator_boost"] = 0.02  # +2% bonus
         else:
             boosts["dominator_boost"] = -0.01  # Penalty for low dominator
     elif pos == "RB":
-        # RBs have high dominator rating importance
-        if dominator_rating >= 0.40:  # Elite RB dominator
+        # RBs: elite ≥0.35 (top 15%), strong ≥0.25 (top 35%), average ≥0.15 (top 60%)
+        # Prior thresholds were 0.05 too high across all tiers.
+        if dominator_rating >= 0.35:  # Elite RB dominator
             boosts["dominator_boost"] = 0.05  # +5% bonus
-        elif dominator_rating >= 0.30:  # Strong RB dominator
+        elif dominator_rating >= 0.25:  # Strong RB dominator
             boosts["dominator_boost"] = 0.03  # +3% bonus
-        elif dominator_rating >= 0.20:  # Average RB dominator
+        elif dominator_rating >= 0.15:  # Average RB dominator
             boosts["dominator_boost"] = 0.01  # +1% bonus
         else:
             boosts["dominator_boost"] = -0.01  # Penalty for low dominator
     elif pos == "TE":
-        # TEs have lower dominator rating importance historically
-        if dominator_rating >= 0.35:  # Elite TE dominator (very strict)
+        # TEs structurally receive fewer college targets, so dominator ratings are lower.
+        # elite ≥0.28 (top 15%), strong ≥0.20 (top 35%), average ≥0.14 (top 60%)
+        if dominator_rating >= 0.28:  # Elite TE dominator
             boosts["dominator_boost"] = 0.04  # +4% bonus
-        elif dominator_rating >= 0.25:  # Strong TE dominator
+        elif dominator_rating >= 0.20:  # Strong TE dominator
             boosts["dominator_boost"] = 0.02  # +2% bonus
-        elif dominator_rating >= 0.18:  # Average TE dominator
+        elif dominator_rating >= 0.14:  # Average TE dominator
             boosts["dominator_boost"] = 0.01  # +1% bonus
         else:
             boosts["dominator_boost"] = -0.01  # Penalty for low dominator
@@ -175,7 +180,7 @@ def calc_benchmark_boost(
             boosts["dominator_boost"] = 0.0  # No penalty for QBs
     
     # 3. EARLY BREAKOUT AGE BOOST (r = 0.65) - STRONG PREDICTOR
-    breakout_age = _calculate_breakout_age(seasons)
+    breakout_age = _calculate_breakout_age(seasons, age)
     if breakout_age:
         if breakout_age <= 20:
             boosts["breakout_age_boost"] = 0.05  # +5% bonus for early breakout (reduced from 10%)
@@ -328,10 +333,11 @@ def calc_benchmark_boost(
         else:
             boosts["elite_profile_boost"] = 0.0  # No bonus for average WRs
     elif pos == "TE":
-        # TEs need highest number of elite benchmarks (strictest requirements)
-        if elite_count >= 6:
+        # TEs use the same tier thresholds as RB/WR — the prior requirement of ≥6 markers
+        # was effectively unreachable (requires 75% of all boost categories to fire at once).
+        if elite_count >= 4:
             boosts["elite_profile_boost"] = 0.04  # +4% bonus for elite TE profile
-        elif elite_count >= 4:
+        elif elite_count >= 2:
             boosts["elite_profile_boost"] = 0.02  # +2% bonus for strong TE profile
         else:
             boosts["elite_profile_boost"] = 0.0  # No bonus for average TEs
@@ -360,9 +366,9 @@ def calc_benchmark_boost(
     # Cap total boost to prevent over-inflation
     total_boost = max(total_boost, -0.05)  # Max -5% penalty (reduced from -8%)
     
-    # TE-specific stricter boost cap
+    # Position-specific boost caps
     if pos == "TE":
-        total_boost = min(total_boost, 0.05)   # Max +5% boost for TEs (very strict)
+        total_boost = min(total_boost, 0.07)   # Max +7% boost for TEs
     else:
         total_boost = min(total_boost, 0.08)   # Max +8% boost for other positions
     
@@ -371,28 +377,34 @@ def calc_benchmark_boost(
     return boosts
 
 
-def _calculate_breakout_age(seasons: List[Dict[str, Any]]) -> Optional[float]:
-    """Calculate the age of a player's breakout season."""
+def _calculate_breakout_age(seasons: List[Dict[str, Any]], current_age: float) -> Optional[float]:
+    """
+    Calculate the player's actual age during their breakout season.
+
+    Finds the first season where receiving yards > 800 or rush yards > 1000,
+    then back-calculates age using the gap between that season and the latest
+    season combined with the player's current age.
+    """
     if not seasons:
         return None
-    
-    # Find the season with the highest production score
+
+    # Find the earliest qualifying breakout season
     breakout_season = None
-    max_production = 0
-    
-    for season in seasons:
-        # Simple breakout detection based on yards/TDs
+    for season in sorted(seasons, key=lambda s: s.get("season", 0)):
         if season.get("receiving_yards", 0) > 800 or season.get("rush_yards", 0) > 1000:
-            production = season.get("receiving_yards", 0) + season.get("rush_yards", 0)
-            if production > max_production:
-                max_production = production
-                breakout_season = season
-    
+            breakout_season = season
+            break
+
     if breakout_season and "season" in breakout_season:
-        # Estimate age based on season year (simplified)
-        season_year = breakout_season["season"]
-        return 2026 - season_year  # Rough age estimate
-    
+        breakout_year = breakout_season["season"]
+        season_years = [s.get("season", 0) for s in seasons if s.get("season")]
+        if not season_years:
+            return None
+        latest_year = max(season_years)
+        if latest_year > 0 and breakout_year > 0:
+            years_since_breakout = latest_year - breakout_year
+            return current_age - years_since_breakout
+
     return None
 
 

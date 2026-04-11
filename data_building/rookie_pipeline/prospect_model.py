@@ -925,53 +925,65 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Position-specific weights for more realistic evaluation
 POSITION_WEIGHTS = {
     "QB": {
-        "draft_capital": 0.25,
-        "production": 0.17,
-        "utilization": 0.07,
-        "efficiency": 0.10,
-        "age": 0.06,
-        "breakout": 0.05,
+        # Efficiency (YPA, comp%, TD:INT) is the strongest QB-specific translator (r≈0.68).
+        # Experience (games started) guards against early-declare misses like Trey Lance.
+        # Volume/scheme metrics (utilization, environment) are weak predictors for QBs.
+        "draft_capital": 0.26,
+        "production": 0.13,
+        "utilization": 0.05,
+        "efficiency": 0.18,
+        "age": 0.08,
+        "breakout": 0.04,
         "athleticism": 0.10,
         "competition": 0.07,
-        "environment": 0.06,
-        "durability": 0.03,
-        "experience": 0.04,
+        "environment": 0.02,
+        "durability": 0.00,
+        "experience": 0.07,
     },
     "RB": {
-        "draft_capital": 0.22,
-        "production": 0.22,
-        "utilization": 0.10,
-        "efficiency": 0.08,
-        "age": 0.06,
-        "breakout": 0.08,
-        "athleticism": 0.10,
-        "competition": 0.07,
-        "environment": 0.05,
-        "durability": 0.02,
-    },
-    "WR": {
-        "draft_capital": 0.20,
+        # Draft capital (r=0.72) and breakout age (r=0.65) are the clearest RB predictors.
+        # Age is especially predictive for RBs who peak young and decline quickly.
+        # Environment and competition are weak predictors for RBs.
+        "draft_capital": 0.24,
         "production": 0.22,
         "utilization": 0.09,
-        "efficiency": 0.09,
-        "age": 0.06,
+        "efficiency": 0.07,
+        "age": 0.09,
         "breakout": 0.12,
-        "athleticism": 0.08,
+        "athleticism": 0.10,
+        "competition": 0.05,
+        "environment": 0.01,
+        "durability": 0.01,
+    },
+    "WR": {
+        # Draft capital (r=0.72) was the most underweighted WR component.
+        # Breakout (r=0.65) increased — early dominator WRs translate best.
+        # Utilization (r=0.45) reduced — target volume is scheme-dependent.
+        "draft_capital": 0.25,
+        "production": 0.22,
+        "utilization": 0.04,
+        "efficiency": 0.10,
+        "age": 0.08,
+        "breakout": 0.16,
+        "athleticism": 0.07,
         "competition": 0.07,
-        "environment": 0.05,
-        "durability": 0.02,
+        "environment": 0.01,
+        "durability": 0.00,
     },
     "TE": {
-        "draft_capital": 0.20,
-        "production": 0.26,
-        "utilization": 0.10,
-        "efficiency": 0.08,
-        "age": 0.06,
-        "breakout": 0.08,
-        "athleticism": 0.08,
+        # Draft capital (r=0.72) and age (TEs develop late; young elite TEs are rare) lead.
+        # Athleticism defines generational TEs; efficiency (YPR + catch rate) is predictive.
+        # College TE production and utilization are less reliable signals due to blocking roles.
+        "draft_capital": 0.26,
+        "production": 0.18,
+        "utilization": 0.05,
+        "efficiency": 0.12,
+        "age": 0.13,
+        "breakout": 0.05,
+        "athleticism": 0.12,
         "competition": 0.07,
-        "environment": 0.05,
-        "durability": 0.02,
+        "environment": 0.01,
+        "durability": 0.01,
     },
 }
 
