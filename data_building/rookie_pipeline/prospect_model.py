@@ -607,6 +607,18 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             raw = (23.0 - breakout_age) / (23.0 - 18.5) * 100.0
             adj_breakout_score = _clip(raw, 0.0, 100.0)
 
+        # Dominance quality gate: the early-age bonus should reflect HOW dominant
+        # the player was, not merely that they cleared the threshold.  A player
+        # barely above threshold (dom ≈ thresh) should not receive the same age
+        # credit as a player who doubled the threshold.
+        # Scale: dom = thresh → 0% credit; dom = 2×thresh → 100% credit.
+        if thresh is not None and thresh > 0 and pos != "QB":
+            if dom > thresh:
+                dominance_factor = min(1.0, (dom / thresh - 1.0))
+                adj_breakout_score *= dominance_factor
+            else:
+                adj_breakout_score = 0.0
+
     score = dom_score * 0.45 + traj_score * 0.35 + adj_breakout_score * 0.20
     return _clip(score)
 
@@ -1451,6 +1463,20 @@ def score_prospect(
     #   75 raw → 81.2  (solid starter)
     #   65 raw → 69.6  (developmental)
     prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+
+    # Thin-sample volume gate: when both production AND utilization fall below
+    # position-typical thresholds, efficiency/athleticism/breakout signals are
+    # based on sparse college evidence and are less reliable.  Penalise the
+    # final score proportionally to the combined deficit.  The gate only fires
+    # when BOTH metrics are below par simultaneously — a player with high
+    # utilization but modest production (e.g. a committee RB) is not penalised.
+    # Maximum penalty: 12% (both metrics at zero).  Example: Sadiq (prod=52.5,
+    # util=43.6) → gate≈0.64 → ~4% penalty.
+    _PROD_GATE = 65.0
+    _UTIL_GATE = 55.0
+    if production_score < _PROD_GATE and utilization_score < _UTIL_GATE:
+        gate = (production_score / _PROD_GATE) * (utilization_score / _UTIL_GATE)
+        prospect_score *= 1.0 - (1.0 - gate) * 0.12
 
     prospect_score = round(prospect_score, 2)
 
