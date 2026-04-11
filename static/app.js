@@ -3580,10 +3580,7 @@ function openPlayerModal(playerId, playerName) {
           bodyHTML += `
             <div>
               <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-              <div style="display:flex;align-items:stretch;gap:0;">
-                <div id="playerValueChart" style="flex:1;min-height:180px;"></div>
-                <div id="playerValueLabel" style="display:flex;flex-direction:column;justify-content:center;padding-left:10px;min-width:60px;"></div>
-              </div>
+              <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
             </div>
           `;
         } else {
@@ -3790,13 +3787,9 @@ function openPlayerModal(playerId, playerName) {
             x: xData,
             y: yValues,
             type: 'scatter',
-            mode: 'lines+markers',
+            mode: 'lines',
             name: 'Value',
-            line: { color: '#3b82f6', width: 2 },
-            marker: {
-              color: '#3b82f6',
-              size: yValues.map((_, i) => i === n - 1 ? 7 : 0),
-            },
+            line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
             fill: 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
             hovertemplate: '%{y}<br>%{x}<extra></extra>'
@@ -3804,10 +3797,11 @@ function openPlayerModal(playerId, playerName) {
 
           // Adjust chart height based on screen size
           const isMobile = window.innerWidth <= 768;
-          const chartHeight = isMobile ? 180 : 220;
+          const chartHeight = isMobile ? 200 : 250;
 
+          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
           const layout = {
-            margin: { l: 10, r: 10, t: 10, b: 36 },
+            margin: { l: 40, r: 20, t: 30, b: 36 },
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
@@ -3820,30 +3814,28 @@ function openPlayerModal(playerId, playerName) {
               tickangle: 0,
             },
             yaxis: {
-              showgrid: false,
+              showgrid: true,
               showticklabels: false,
               range: [yMin - yPad, yMax + yPad],
             },
             hovermode: 'x unified',
+            annotations: [{
+              text: latestDateStr,
+              x: 0.5,
+              xref: 'paper',
+              y: 1,
+              yref: 'paper',
+              showarrow: false,
+              font: { size: 11 },
+              xanchor: 'center',
+              yanchor: 'bottom',
+            }],
           };
 
           Plotly.newPlot('playerValueChart', [trace], layout, {
             displayModeBar: false,
             responsive: true
           });
-
-          // Populate right-side value label panel
-          const labelEl = document.getElementById('playerValueLabel');
-          if (labelEl) {
-            const latestVal = yValues[n - 1];
-            const firstVal = yValues[0];
-            const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
-            labelEl.innerHTML = `
-              <div style="font-size:22px;font-weight:700;color:#3b82f6;line-height:1;">${Math.round(latestVal)}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${latestDateStr}</div>
-              ${n > 1 ? `<div style="font-size:12px;color:var(--text-muted);margin-top:8px;">${Math.round(firstVal)}</div>` : ''}
-            `;
-          }
         }
       }
 
