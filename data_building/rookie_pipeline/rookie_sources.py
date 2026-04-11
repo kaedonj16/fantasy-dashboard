@@ -146,7 +146,6 @@ class ProspectSeasonStatsSource(RookieSource):
                 except Exception:
                     computed = None
                 if computed is not None:
-                    print(f"[inline_hit]  player={player_key} season={season} metric={metric.name} value={computed!r}")
                     out[metric.name] = base_metric_payload(
                         value=computed,
                         season=season,
