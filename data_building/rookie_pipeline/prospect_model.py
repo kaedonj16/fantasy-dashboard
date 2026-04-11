@@ -1470,13 +1470,13 @@ def score_prospect(
     # final score proportionally to the combined deficit.  The gate only fires
     # when BOTH metrics are below par simultaneously — a player with high
     # utilization but modest production (e.g. a committee RB) is not penalised.
-    # Maximum penalty: 12% (both metrics at zero).  Example: Sadiq (prod=52.5,
-    # util=43.6) → gate≈0.64 → ~4% penalty.
+    # Maximum penalty: 22% (both metrics at zero).  Example: Sadiq (prod=52.5,
+    # util=43.6) → gate≈0.64 → ~8% penalty, dropping him ~5-6 points.
     _PROD_GATE = 65.0
     _UTIL_GATE = 55.0
     if production_score < _PROD_GATE and utilization_score < _UTIL_GATE:
         gate = (production_score / _PROD_GATE) * (utilization_score / _UTIL_GATE)
-        prospect_score *= 1.0 - (1.0 - gate) * 0.12
+        prospect_score *= 1.0 - (1.0 - gate) * 0.22
 
     prospect_score = round(prospect_score, 2)
 
