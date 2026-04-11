@@ -911,7 +911,6 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   async function analyzeTrade() {
-    console.log("[DEBUG] analyzeTrade function called");
     const tradeAiBody = root.querySelector("#tradeAiBody");
     const errorBox = root.querySelector("#errorBox");
 
@@ -1133,7 +1132,6 @@ window.initTradePage = function initTradePage(root = document) {
     if (!btn) return;
 
     bindOnce(btn, "clearTradeBtn", "click", () => {
-      console.log("[DEBUG] clearTradeBtn clicked - showing loading state");
       // Show loading state immediately when button is clicked
       const loadingState = root.querySelector("#aiLoadingState");
       const emptyState = root.querySelector("#aiEmptyState");
@@ -1153,7 +1151,6 @@ window.initTradePage = function initTradePage(root = document) {
     if (!btn) return;
 
     bindOnce(btn, "tradeAnalyzeBtn", "click", () => {
-      console.log("[DEBUG] tradeAnalyzeBtn clicked - showing loading state");
       // Show loading state immediately when button is clicked
       const loadingState = root.querySelector("#aiLoadingState");
       const emptyState = root.querySelector("#aiEmptyState");

@@ -1856,6 +1856,9 @@ def normalize_name(name: str) -> str:
         return ""
     s = name.lower()
 
+    # remove periods from initials (K.C. -> KC, K. C. -> K C)
+    s = re.sub(r'\.', '', s)
+    
     # collapse whitespace
     s = re.sub(r"\s+", " ", s).strip()
 

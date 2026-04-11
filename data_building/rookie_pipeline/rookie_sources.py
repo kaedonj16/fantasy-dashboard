@@ -177,7 +177,6 @@ class DerivedRookieMetricsSource(RookieSource):
         """Set early_declare flag based on season count and determine early declaration."""
         if self._sportradar_index is None:
             # No Sportradar index available, fallback to original behavior
-            print(f"[DEBUG] No Sportradar index for {player.get('name')}")
             return derive_true_early_declare(player)
         
         name = player.get("name", "")
@@ -197,14 +196,12 @@ class DerivedRookieMetricsSource(RookieSource):
         # Exactly 3 seasons = early declare, anything else = not early declare
         early_declare_flag = (season_count == 3)
         
-        print(f"[DEBUG] {name}: seasons={season_count}, set early_declare={early_declare_flag}, class_year={class_year}")
-        
+
         # Update player dict with the calculated flag
         player_with_flag = player.copy()
         player_with_flag["early_declare"] = early_declare_flag
         
         result = derive_true_early_declare(player_with_flag, season_count)
-        print(f"[DEBUG] {name}: true_early_declare result = {result}")
         return result
 
     def fetch_player_season_metrics(
@@ -225,11 +222,7 @@ class DerivedRookieMetricsSource(RookieSource):
             "explosive_run_rate": lambda: derive_explosive_run_rate(season_record),
             "player_level_sos": lambda: derive_player_level_sos(season_record),
             "performance_vs_top_defenses": lambda: derive_performance_vs_top_defenses(season_record),
-            "true_early_declare": lambda: (
-
-                print(f"[DEBUG] true_early_declare handler executing for player: {player.get('name', 'unknown')}") 
-                or self._get_sportradar_season_count_and_derive_early_declare(player)
-            ),
+            "true_early_declare": lambda: (self._get_sportradar_season_count_and_derive_early_declare(player)),
             # --- new proxy derivations ---
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
             "yprr": lambda: derive_yprr_proxy(season_record, position),
@@ -509,5 +502,4 @@ def rookie_metric_specs() -> List[RookieMetricSpec]:
         RookieMetricSpec("true_early_declare", "NFL Draft declaration tracker"),
         RookieMetricSpec("injury_flags", "Draft Sharks college injuries"),
     ]
-    print(f"[DEBUG] All available metrics: {[spec.name for spec in specs]}")
     return specs

@@ -5932,7 +5932,7 @@ def page_players(platform: str, season: int, league_id: str):
     <div class="card central">
       <div class="card-header">
         <h2>Player Rankings</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           All players ranked by dynasty value — search, filter, and sort to explore
         </div>
       </div>
@@ -5969,7 +5969,7 @@ def page_players(platform: str, season: int, league_id: str):
             <!-- Settings button -->
             <div style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
-                ⚙️ Settings
+                League️ Settings
               </button>
 
               <!-- Settings panel (hidden by default) -->
@@ -5996,23 +5996,21 @@ def page_players(platform: str, season: int, league_id: str):
 
           <!-- Row 2: Secondary filters -->
           <div class="filter-row filter-row-secondary">
+            <div id="prActiveSettings" class="active-settings-indicator">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
+            </div>
             <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
               <select id="prSort" onchange="prRender()"
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
-                <option value="rank">Rank</option>
+                <option value="rank">Overall Rank</option>
                 <option value="value">Value</option>
-                <option value="age">Age (youngest)</option>
+                <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
               </select>
-            </div>
-
-            <!-- Active settings indicator -->
-            <div id="prActiveSettings" class="active-settings-indicator">
-              <span class="active-setting-tag">10-Team</span>
-              <span class="active-setting-tag">1QB</span>
             </div>
           </div>
         </div>
@@ -6118,6 +6116,7 @@ def page_players(platform: str, season: int, league_id: str):
         align-items: center;
         gap: 10px;
         flex-wrap: wrap;
+        justify-content: space-between;
       }
       .filter-row-primary {
         gap: 12px;
@@ -6129,7 +6128,6 @@ def page_players(platform: str, season: int, league_id: str):
         position: relative;
         flex: 1;
         min-width: 200px;
-        max-width: 400px;
       }
       .filter-positions {
         display: flex;
@@ -6504,7 +6502,7 @@ def page_players(platform: str, season: int, league_id: str):
         list.innerHTML = '';
         players.forEach((p, idx) => {
           const row = document.createElement('div');
-          row.className = 'pr-player-row pr-grid-row player-clickable';
+          row.className = 'pr-player-row pr-grid-row';
           row.setAttribute('data-player-id', p.id);
           row.setAttribute('data-player-name', p.name || '');
 
@@ -6522,7 +6520,7 @@ def page_players(platform: str, season: int, league_id: str):
 
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
-            '<span class="pr-name">'  + (p.name || 'Unknown') + badges + '</span>' +
+            '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +

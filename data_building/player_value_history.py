@@ -271,7 +271,7 @@ def get_player_value_history(
         delta = None if prev_val is None else round(val - prev_val, 1)
         out.append(
             {
-                "as_of_date": r["as_of_date"],
+                "as_of_date": str(r["as_of_date"]),  # ISO string "YYYY-MM-DD"
                 "player_id": r["player_id"],
                 "name": r["name"],
                 "position": r["position"],

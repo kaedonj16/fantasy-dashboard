@@ -15,7 +15,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 id="rookiesTitle">Rookie Rankings</h2>
-        <div id="rookiesSubtitle" style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Dynasty prospect rankings — production, athleticism, and draft capital combined
         </div>
       </div>
@@ -40,10 +40,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:16px;padding:2px;">&#x2715;</button>
         </div>
-      </div>
-
-      <!-- Row 2: Position pills + Settings button -->
-      <div class="filter-row rk-pills-row">
+        <div class="filter-row rk-pills-row">
         <div class="filter-positions">
           <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
           <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
@@ -53,7 +50,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         </div>
         <div class="rk-settings-wrapper">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
-            ⚙️ Settings
+            League️ Settings
           </button>
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
@@ -75,9 +72,15 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
           </div>
         </div>
       </div>
+      </div>
+
 
       <!-- Row 3: Sort + Active settings -->
       <div class="filter-row filter-row-secondary">
+        <div id="rkActiveSettings" class="active-settings-indicator">
+          <span class="active-setting-tag">10-Team</span>
+          <span class="active-setting-tag">1QB</span>
+        </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkRender()"
@@ -87,13 +90,9 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
             <option value="rank">Overall Rank</option>
             <option value="value">Value</option>
             <option value="score">Prospect Score</option>
-            <option value="age">Age (youngest)</option>
+            <option value="age">Age</option>
             <option value="pick">Draft Pick</option>
           </select>
-        </div>
-        <div id="rkActiveSettings" class="active-settings-indicator">
-          <span class="active-setting-tag">10-Team</span>
-          <span class="active-setting-tag">1QB</span>
         </div>
       </div>
     </div>
@@ -157,6 +156,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    justify-content: space-between;
   }
   .filter-search {
     position: relative;
@@ -330,6 +330,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
   .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .rk-name:hover { text-decoration: underline; }
   .rk-meta { font-size: 11px; color: var(--text-muted); }
   .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
   .rk-age  { text-align: center; font-size: 12px; color: var(--text-muted); }
@@ -384,30 +385,132 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     display: flex; align-items: center; justify-content: center;
   }
   .rk-modal-body { padding: 16px 24px 24px; }
-  .rk-score-grid {
+
+  /* Hero row */
+  .rk-hero-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: 1.2fr 1fr 1fr;
     gap: 8px;
-    margin-top: 12px;
+    margin-bottom: 10px;
   }
-  .rk-score-card {
+  .rk-hero-stat {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .rk-hero-primary {
+    background: var(--accent-soft);
+    border-color: transparent;
+  }
+  .rk-hero-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .rk-hero-val {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+  .rk-hero-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Draft + measurables */
+  .rk-info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 9px 14px;
+    margin-bottom: 10px;
+  }
+  .rk-meas-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .rk-meas-cell {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 8px;
     text-align: center;
   }
-  .rk-score-card-label {
+  .rk-meas-label {
     font-size: 10px;
+    font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     margin-bottom: 4px;
   }
-  .rk-score-card-val {
-    font-size: 18px;
+  .rk-meas-val {
+    font-size: 14px;
     font-weight: 700;
     color: var(--text);
+  }
+
+  /* Section divider */
+  .rk-section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 14px 0;
+  }
+
+  /* Component breakdown with bars */
+  .rk-comp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .rk-comp-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 32px;
+    align-items: center;
+    gap: 10px;
+  }
+  .rk-comp-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .rk-comp-bar-wrap {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .rk-comp-bar {
+    height: 100%;
+    border-radius: 3px;
+  }
+  .rk-comp-val {
+    font-size: 12px;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  /* Modal mobile */
+  @media (max-width: 480px) {
+    .rk-hero-row { grid-template-columns: 1fr 1fr; }
+    .rk-hero-primary { grid-column: 1 / -1; }
+    .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
+    .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
   }
 
   /* Mobile */
@@ -632,17 +735,34 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
   // ── Modal ──────────────────────────────────────────────────────────────────
   function rkOpenModal(r) {
-    var modal = document.getElementById('rkModal');
+    var modal   = document.getElementById('rkModal');
     var content = document.getElementById('rkModalContent');
 
     var val1qb = parseFloat(r.rookie_value||0);
     var valsf  = parseFloat(r.rookie_sf_value||0);
     var score  = parseFloat(r.prospect_score||0);
+    var conf   = parseFloat(r.confidence_score||0);
     var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-    var tierColor = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'][r.tier||6];
+    var tier   = r.tier || '?';
+    var tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+    var tierColor  = tierColors[tier] || '#9ca3af';
 
     var reasons = (r.key_reasons||'').split('\\n').filter(function(l){ return l.trim(); });
 
+    // Measurables
+    var ht = r.height_inches;
+    var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
+    var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '—';
+    var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '—';
+    var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '—';
+
+    // Draft info — single consolidated line
+    var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
+    var draftStr = draftCapLabel
+      ? draftCapLabel + (r.num_mocks_used ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
+      : 'Undrafted / Unknown';
+
+    // Component scores (Confidence lives in the section header, not here)
     var components = [
       {label:'Production',  val: r.production_score,              color:'#10b981'},
       {label:'Efficiency',  val: r.efficiency_score,              color:'#3b82f6'},
@@ -651,82 +771,88 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
       {label:'Athleticism', val: r.athleticism_score,             color:'#ef4444'},
       {label:'Competition', val: r.competition_score,             color:'#06b6d4'},
       {label:'Draft Cap.',  val: r.projected_draft_capital_score, color:'#f97316'},
-      {label:'Confidence',  val: r.confidence_score,              color:'#a3a3a3'},
     ];
 
     var compsHtml = components.map(function(c) {
       var v = parseFloat(c.val||0);
-      return '<div class="rk-score-card">' +
-        '<div class="rk-score-card-label">' + c.label + '</div>' +
-        '<div class="rk-score-card-val" style="color:' + c.color + '">' + v.toFixed(0) + '</div>' +
-        '</div>';
+      return '<div class="rk-comp-row">' +
+        '<div class="rk-comp-label">' + c.label + '</div>' +
+        '<div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:' + Math.round(v) + '%;background:' + c.color + ';"></div></div>' +
+        '<div class="rk-comp-val" style="color:' + c.color + ';">' + v.toFixed(0) + '</div>' +
+      '</div>';
     }).join('');
 
     var reasonsHtml = reasons.length > 0
-      ? '<div style="margin-top:16px;">' +
-          '<div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Scouting Notes</div>' +
-          '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;">' +
-            reasons.map(function(l){ return '<div style="padding:2px 0;">' + l + '</div>'; }).join('') +
-          '</div>' +
+      ? '<div class="rk-section-divider"></div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">Scouting Notes</div>' +
+        '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;">' +
+          reasons.map(function(l){ return '<div style="padding:2px 0;">' + l + '</div>'; }).join('') +
         '</div>'
       : '';
 
-    var ht = r.height_inches;
-    var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
-    var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '—';
-    var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '—';
-    var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '—';
-    var mocksStr  = r.projected_pick
-      ? '#' + r.projected_pick + ' (' + (r.num_mocks_used||'?') + ' mocks)'
-      : '—';
-    var draftCapLabel = r.draft_capital_label ||
-      (r.projected_pick ? '#' + r.projected_pick : '?');
-
     content.innerHTML =
+      // ── Header: name + tier badge + close ───────────────────────────────
       '<div class="rk-modal-header">' +
         '<div>' +
-          '<div style="font-size:22px;font-weight:700;color:var(--text);">' + (r.name||'') + '</div>' +
-          '<div style="font-size:13px;color:var(--text-muted);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">' +
-            '<span>' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
-            (r.school ? '<span>• ' + r.school + '</span>' : '') +
-            '<span>• Age ' + age + '</span>' +
-            (r.draft_class_year ? '<span>• ' + r.draft_class_year + ' Draft</span>' : '') +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<span style="font-size:22px;font-weight:700;color:var(--text);">' + (r.name||'') + '</span>' +
+            '<span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;' +
+                  'background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + '44;">' +
+              'Tier ' + tier +
+            '</span>' +
+          '</div>' +
+          '<div style="font-size:13px;color:var(--text-muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+            '<span style="font-weight:600;color:var(--text);">' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
+            (r.school ? '<span style="opacity:.4;">·</span><span>' + r.school + '</span>' : '') +
+            '<span style="opacity:.4;">·</span><span>Age ' + age + '</span>' +
+            (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
           '</div>' +
         '</div>' +
         '<button class="rk-modal-close" onclick="rkCloseModal()">✕</button>' +
       '</div>' +
+
       '<div class="rk-modal-body">' +
 
-        // Tier + value strip
-        '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">' +
-          '<div style="padding:8px 14px;border-radius:8px;background:' + tierColor + '22;' +
-               'border:1px solid ' + tierColor + '44;flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:' + tierColor + ';font-weight:700;text-transform:uppercase;">Tier ' + (r.tier||'?') + '</div>' +
-            '<div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px;">' + (r.tier_label||'') + '</div>' +
+        // ── Hero: Prospect Score + 1QB Value + SF Value ──────────────────
+        '<div class="rk-hero-row">' +
+          '<div class="rk-hero-stat rk-hero-primary">' +
+            '<div class="rk-hero-label">Prospect Score</div>' +
+            '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(1) + '</div>' +
+            '<div class="rk-hero-sub">' + (r.tier_label||'') + '</div>' +
           '</div>' +
-          '<div style="padding:8px 14px;border-radius:8px;background:var(--accent-soft);flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;">Prospect Score</div>' +
-            '<div style="font-size:18px;font-weight:700;color:var(--accent);margin-top:2px;">' + score.toFixed(1) + '</div>' +
+          '<div class="rk-hero-stat">' +
+            '<div class="rk-hero-label">1QB Value</div>' +
+            '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div>' +
+            '<div class="rk-hero-sub">10-team</div>' +
           '</div>' +
-          '<div style="padding:8px 14px;border-radius:8px;background:var(--card-bg);border:1px solid var(--border);flex:1;text-align:center;">' +
-            '<div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Draft Capital</div>' +
-            '<div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px;">' + draftCapLabel + '</div>' +
+          '<div class="rk-hero-stat">' +
+            '<div class="rk-hero-label">SF Value</div>' +
+            '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div>' +
+            '<div class="rk-hero-sub">10-team</div>' +
           '</div>' +
         '</div>' +
 
-        // Bio strip
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:16px;">' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">1QB Value</div><div class="rk-score-card-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">SF Value</div><div class="rk-score-card-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">Height/Wt</div><div class="rk-score-card-val" style="font-size:13px;">' + heightStr + ' / ' + weightStr + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">40 Dash</div><div class="rk-score-card-val">' + fortyStr + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">RAS</div><div class="rk-score-card-val">' + rasStr + '</div></div>' +
-          '<div class="rk-score-card"><div class="rk-score-card-label">Mock Proj.</div><div class="rk-score-card-val" style="font-size:12px;">' + mocksStr + '</div></div>' +
+        // ── Draft (consolidated) ─────────────────────────────────────────
+        '<div class="rk-info-row">' +
+          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;">Draft</span>' +
+          '<span style="font-size:13px;font-weight:600;color:var(--text);">' + draftStr + '</span>' +
         '</div>' +
 
-        // Component breakdown
-        '<div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Component Breakdown</div>' +
-        '<div class="rk-score-grid">' + compsHtml + '</div>' +
+        // ── Measurables ──────────────────────────────────────────────────
+        '<div class="rk-meas-grid">' +
+          '<div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">' + heightStr + '</div></div>' +
+          '<div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">' + weightStr + '</div></div>' +
+          '<div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">' + fortyStr + '</div></div>' +
+          '<div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">' + rasStr + '</div></div>' +
+        '</div>' +
+
+        // ── Component scores with bars ───────────────────────────────────
+        '<div class="rk-section-divider"></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Component Scores</span>' +
+          '<span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">' + conf.toFixed(0) + '</strong></span>' +
+        '</div>' +
+        '<div class="rk-comp-list">' + compsHtml + '</div>' +
 
         reasonsHtml +
       '</div>';
