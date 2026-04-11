@@ -3535,21 +3535,6 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
-      // ── Info row: Position · Team · Age ──────────────────────────────────
-      const infoItems = [];
-      if (pos) infoItems.push({ text: pos, bold: true });
-      if (data.team) infoItems.push({ text: data.team });
-      if (data.age) infoItems.push({ text: `Age ${data.age.toFixed(1)}` });
-      if (infoItems.length) {
-        bodyHTML += `<div class="pm-info-row">` +
-          infoItems.map((item, i) =>
-            (i > 0 ? '<span style="opacity:.35;">·</span>' : '') +
-            (item.bold
-              ? `<span style="font-weight:700;color:var(--text);">${item.text}</span>`
-              : `<span style="color:var(--text-muted);">${item.text}</span>`)
-          ).join('') + `</div>`;
-      }
-
       // ── Advanced Metrics + Value History (side by side) ───────────────────
       const hasMetrics = pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
