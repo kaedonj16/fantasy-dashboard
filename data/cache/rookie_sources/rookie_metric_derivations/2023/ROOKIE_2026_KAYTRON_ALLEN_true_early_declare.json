@@ -1,5 +1,5 @@
 {
-  "cached_at": "2026-04-11T04:29:09Z",
+  "cached_at": "2026-04-11T16:03:17Z",
   "metric": "true_early_declare",
   "metric_payload": {
     "confidence": 0.8,
@@ -7,7 +7,7 @@
     "source_name": "rookie_metric_derivations",
     "source_type": "derived",
     "source_url": null,
-    "updated_at": "2026-04-11T04:29:09Z",
+    "updated_at": "2026-04-11T16:03:17Z",
     "value": false
   },
   "player_id": "ROOKIE_2026_KAYTRON_ALLEN",
