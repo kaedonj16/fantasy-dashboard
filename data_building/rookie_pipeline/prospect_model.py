@@ -937,12 +937,13 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Position-specific weights for more realistic evaluation
 POSITION_WEIGHTS = {
     "QB": {
-        # Efficiency (YPA, comp%, TD:INT) is the strongest QB-specific translator (r≈0.68).
-        # Experience (games started) guards against early-declare misses like Trey Lance.
-        # Volume/scheme metrics (utilization, environment) are weak predictors for QBs.
-        "draft_capital": 0.26,
+        # Draft capital (r=0.663) is the strongest QB predictor — weighted highest.
+        # Efficiency (YPA, comp%, TD:INT) is second-strongest QB-specific translator.
+        # Experience (games started/played) guards against early-declare misses like Trey Lance.
+        # Utilization is near-meaningless for QBs (they touch the ball every play).
+        "draft_capital": 0.30,
         "production": 0.13,
-        "utilization": 0.05,
+        "utilization": 0.01,
         "efficiency": 0.18,
         "age": 0.08,
         "breakout": 0.04,
@@ -1180,9 +1181,13 @@ def calc_experience_score(seasons: List[Dict], position: str) -> float:
     if position != "QB":
         return 0.0
     
-    # Calculate total games started across all seasons
+    # Calculate total games started across all seasons.
+    # Fall back to games_played when games_started is unavailable (common for
+    # pre-draft profiles that only have box-score game counts, not start data).
     games_started = sum(_safe(s.get("games_started", 0)) for s in seasons)
-    
+    if games_started == 0:
+        games_started = sum(_safe(s.get("games_played", 0)) for s in seasons)
+
     # Normalize to 0-100 scale (40 games = full experience)
     experience_ratio = min(games_started / 40.0, 1.0)
     return experience_ratio * 100.0
@@ -1356,10 +1361,11 @@ def score_prospect(
     # TE gets an additional 0.82x discount: TE draft capital is less predictive
     # than RB/WR because the college-to-NFL translation is harder at the position
     # (contested catches → YAC role, blocking duties, late development curves).
-    # QB: 0.72x — top picks are expected every year, less predictive in dynasty
-    # than equivalent non-QB capital.  The flat position curve already discounts
-    # mid-round QB picks; the multiplier adds a modest additional adjustment.
-    dc_multiplier = {"QB": 0.72, "TE": 0.85}.get(pos, 1.00)
+    # QB: 0.80x — QBs are picked in R1 every year so raw capital is slightly
+    # less scarce than equivalent WR/RB capital, but a #1 overall QB is still
+    # the strongest dynasty signal available.  Reduced from 0.72 to better
+    # preserve the value of top-3 QB picks relative to non-QB peers.
+    dc_multiplier = {"QB": 0.80, "TE": 0.85}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # A pick-200 prospect should never outscore a pick-8 prospect even with
