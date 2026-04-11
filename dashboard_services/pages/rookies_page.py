@@ -15,7 +15,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 id="rookiesTitle">Rookie Rankings</h2>
-        <div id="rookiesSubtitle" style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Dynasty prospect rankings — production, athleticism, and draft capital combined
         </div>
       </div>
@@ -50,7 +50,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
         </div>
         <div class="rk-settings-wrapper">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
-            ⚙️ Settings
+            League️ Settings
           </button>
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
@@ -77,6 +77,10 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
       <!-- Row 3: Sort + Active settings -->
       <div class="filter-row filter-row-secondary">
+        <div id="rkActiveSettings" class="active-settings-indicator">
+          <span class="active-setting-tag">10-Team</span>
+          <span class="active-setting-tag">1QB</span>
+        </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkRender()"
@@ -86,13 +90,9 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
             <option value="rank">Overall Rank</option>
             <option value="value">Value</option>
             <option value="score">Prospect Score</option>
-            <option value="age">Age (youngest)</option>
+            <option value="age">Age</option>
             <option value="pick">Draft Pick</option>
           </select>
-        </div>
-        <div id="rkActiveSettings" class="active-settings-indicator">
-          <span class="active-setting-tag">10-Team</span>
-          <span class="active-setting-tag">1QB</span>
         </div>
       </div>
     </div>
@@ -156,6 +156,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    justify-content: space-between;
   }
   .filter-search {
     position: relative;

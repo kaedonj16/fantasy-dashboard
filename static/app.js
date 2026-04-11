@@ -3511,12 +3511,10 @@ function openPlayerModal(playerId, playerName) {
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Pos Rank</div>
             <div class="pm-hero-val">${posRankLabel || data.stats.pos_rank}</div>
-            <div class="pm-hero-sub">${expLabel}</div>
           </div>`
         : `<div class="pm-hero-stat">
             <div class="pm-hero-label">Experience</div>
             <div class="pm-hero-val">${expLabel}</div>
-            <div class="pm-hero-sub">${pos || ''}</div>
           </div>`;
 
       bodyHTML += `
@@ -3529,7 +3527,6 @@ function openPlayerModal(playerId, playerName) {
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
             <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-            <div class="pm-hero-sub">Superflex</div>
           </div>
           ${thirdValueCard}
         </div>
@@ -3778,9 +3775,13 @@ function openPlayerModal(playerId, playerName) {
           const mutedColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--text-muted').trim() || '#6b7280';
 
+          // Add empty space after the data to center the last point
+          const extendedX = [...xData, '', '', '', '']; // Add more empty categories
+          const extendedY = [...yValues, null, null, null, null]; // Add more null values
+          
           const trace = {
-            x: xData,
-            y: yValues,
+            x: extendedX,
+            y: extendedY,
             type: 'scatter',
             mode: 'lines',
             name: 'Value',
@@ -3795,7 +3796,7 @@ function openPlayerModal(playerId, playerName) {
           const chartHeight = isMobile ? 200 : 250;
 
           const layout = {
-            margin: { l: 40, r: 20, t: 10, b: 36 },
+            margin: { l: 30, r: 20, t: 10, b: 36 },
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
@@ -3803,17 +3804,19 @@ function openPlayerModal(playerId, playerName) {
               showgrid: false,
               type: 'category',
               tickmode: 'array',
-              tickvals: tickvals,
-              ticktext: ticktext,
+              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3], // Include 4 empty positions
+              ticktext: [...ticktext, '', '', '', ''], // Empty labels for added space
               tickangle: 0,
               tickfont: { size: 11, color: mutedColor },
+              fixedrange: true,
             },
             yaxis: {
               showgrid: true,
-              showticklabels: false,
+              showticklabels: true,
               range: [yMin - yPad, yMax + yPad],
+              tickfont: { size: 11, color: mutedColor },
             },
-            hovermode: 'x unified',
+            hovermode: 'closest',
           };
 
           Plotly.newPlot('playerValueChart', [trace], layout, {
@@ -3937,7 +3940,11 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.opportunity_share != null) {
-      defs.push({ label: 'Opp Share', fill: Math.min(metrics.opportunity_share, 100), display: metrics.opportunity_share.toFixed(1) + '%' });
+      const oppShare = metrics.opportunity_share;
+      // Scale opportunity share differently: 25%+ is excellent (green), 15%+ is good (blue), 10%+ is average (yellow)
+      const fillPercent = Math.min(oppShare * 4, 100); // Scale up by 4x so 25% = 100%
+      const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
+      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.target_share != null) {

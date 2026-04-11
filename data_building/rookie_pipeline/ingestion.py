@@ -48,6 +48,7 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 import requests
+from utils.utils import normalize_name
 
 # Suppress urllib3 SSL warning for LibreSSL compatibility
 warnings.filterwarnings('ignore', message='.*urllib3 v2 only supports OpenSSL.*')
@@ -495,6 +496,14 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     return result
 
 
+# Name mapping: {cfbd_name: desired_display_name}
+CFBD_NAME_MAPPINGS = {
+    "kevin concepcion": "K.C. Concepcion",
+    # Add more mappings as needed
+    # "cfbd_name": "Display Name"
+}
+
+
 def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
@@ -614,7 +623,16 @@ def fetch_cfbd_college_stats(
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
                 if seasons:
                     seasons.sort(key=lambda s: s["season"])
-                    result[name] = seasons
+                    
+                    # Apply name mapping - use mapped name as key if available
+                    final_name = name
+                    for cfbd_name, display_name in CFBD_NAME_MAPPINGS.items():
+                        if name == cfbd_name:
+                            final_name = normalize_name(display_name)
+                            print(f"[cfbd] Remapped '{name}' to '{final_name}' for database storage")
+                            break
+                    
+                    result[final_name] = seasons
             except Exception as exc:
                 print(f"[cfbd] ERROR processing player '{name}' — {type(exc).__name__}: {exc}")
 
