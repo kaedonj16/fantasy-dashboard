@@ -937,14 +937,9 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Position-specific weights for more realistic evaluation
 POSITION_WEIGHTS = {
     "QB": {
-        # Draft capital (r=0.663) is predictive but QBs go R1 every year — less scarce
-        # than equivalent WR/RB capital.  Weight of 0.22 (vs WR 0.29) captures this:
-        # pick #1 QB scores 100 dc but contributes 22 pts vs 29 pts for a #1 WR.
-        # Efficiency (YPA, comp%, TD:INT) is second-strongest QB-specific translator.
-        # Experience (games started/played) guards against early-declare misses like Trey Lance.
-        "draft_capital": 0.22,
-        "production": 0.17,
-        "utilization": 0.05,
+        "draft_capital": 0.26,
+        "production": 0.15,
+        "utilization": 0.03,
         "efficiency": 0.18,
         "age": 0.08,
         "breakout": 0.04,
@@ -959,11 +954,11 @@ POSITION_WEIGHTS = {
         # Age is especially predictive for RBs who peak young and decline quickly.
         # Environment and competition are weak predictors for RBs.
         "draft_capital": 0.24,
-        "production": 0.22,
-        "utilization": 0.09,
-        "efficiency": 0.07,
+        "production": 0.23,
+        "utilization": 0.08,
+        "efficiency": 0.05,
         "age": 0.09,
-        "breakout": 0.12,
+        "breakout": 0.14,
         "athleticism": 0.10,
         "competition": 0.05,
         "environment": 0.01,
@@ -1590,7 +1585,7 @@ def _build_reasons(
 
     # ── Efficiency ────────────────────────────────────────────────────────────
     if eff >= 75:
-        bullets.append("High efficiency metrics (yards per touch, market share) stand out")
+        bullets.append("High efficiency metrics stand out")
     elif eff <= 35:
         bullets.append("Below-average efficiency — volume stats may overstate true impact")
 
@@ -1649,7 +1644,7 @@ def _build_reasons(
     # ── Competition ───────────────────────────────────────────────────────────
     conf = ls.get("conference", "")
     if comp_sc >= 70:
-        bullets.append(f"Production came against quality competition ({conf})")
+        bullets.append(f"Production came against quality competition")
     elif comp_sc <= 40:
         bullets.append(f"Played at lower competition level ({conf}) — discount applied")
 
@@ -1671,7 +1666,7 @@ def _build_reasons(
             conf_str = f", {conf_pct:.0f}% consensus" if n_mocks >= 3 else ""
             bullets.append(
                 f"Projected pick #{pick} (Round {rnd}) across {n_mocks} mock drafts"
-                f"{conf_str} — draft capital score {dc_sc:.0f}/100"
+                f"{conf_str}"
             )
 
     # ── Durability ────────────────────────────────────────────────────────────
