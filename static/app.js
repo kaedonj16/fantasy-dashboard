@@ -3762,11 +3762,19 @@ function openPlayerModal(playerId, playerName) {
           const yRange = yMax - yMin;
           const yPad = Math.max(yRange * 0.15, 30);
 
-          // Show ticks at first, middle, and last points (month-only labels)
+          // Latest date centered on x-axis; also show first date on left edge
           const midIdx = Math.floor((n - 1) / 2);
-          const tickIdxs = n <= 1 ? [0] : n <= 2 ? [0, n - 1] : [0, midIdx, n - 1];
-          const tickvals = tickIdxs.map(i => xData[i]);
-          const ticktext = tickIdxs.map(i => formatMonthOnly(data.value_history[i].as_of_date));
+          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
+          const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
+          // Put the latest-date label at the mid x-position so it sits centered
+          const tickvals = n <= 1 ? [xData[0]] : [xData[0], xData[midIdx], xData[n - 1]];
+          const ticktext  = n <= 1 ? [latestDateStr]
+                          : n <= 2 ? [firstDateStr, latestDateStr]
+                          : [firstDateStr, latestDateStr, ''];   // '' hides the last tick
+
+          // Read theme text color so ticks are visible in both light and dark mode
+          const mutedColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--text-muted').trim() || '#6b7280';
 
           const trace = {
             x: xData,
@@ -3784,9 +3792,8 @@ function openPlayerModal(playerId, playerName) {
           const isMobile = window.innerWidth <= 768;
           const chartHeight = isMobile ? 200 : 250;
 
-          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
           const layout = {
-            margin: { l: 40, r: 20, t: 30, b: 36 },
+            margin: { l: 40, r: 20, t: 10, b: 36 },
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
@@ -3797,6 +3804,7 @@ function openPlayerModal(playerId, playerName) {
               tickvals: tickvals,
               ticktext: ticktext,
               tickangle: 0,
+              tickfont: { size: 11, color: mutedColor },
             },
             yaxis: {
               showgrid: true,
@@ -3804,17 +3812,6 @@ function openPlayerModal(playerId, playerName) {
               range: [yMin - yPad, yMax + yPad],
             },
             hovermode: 'x unified',
-            annotations: [{
-              text: latestDateStr,
-              x: 0.5,
-              xref: 'paper',
-              y: 1,
-              yref: 'paper',
-              showarrow: false,
-              font: { size: 11 },
-              xanchor: 'center',
-              yanchor: 'bottom',
-            }],
           };
 
           Plotly.newPlot('playerValueChart', [trace], layout, {
