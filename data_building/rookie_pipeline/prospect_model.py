@@ -937,17 +937,19 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Position-specific weights for more realistic evaluation
 POSITION_WEIGHTS = {
     "QB": {
-        # Draft capital (r=0.663) is predictive but QBs go R1 every year — less scarce
-        # than equivalent WR/RB capital.  Weight of 0.22 (vs WR 0.29) captures this:
-        # pick #1 QB scores 100 dc but contributes 22 pts vs 29 pts for a #1 WR.
+        # Draft capital (r=0.663) leads — pick #1 QB scores 100 dc, contributes 28 pts
+        # vs 29 pts for a #1 WR (slightly less, reflecting QBs drafted R1 every year).
         # Efficiency (YPA, comp%, TD:INT) is second-strongest QB-specific translator.
         # Experience (games started/played) guards against early-declare misses like Trey Lance.
-        "draft_capital": 0.22,
+        # Breakout removed: QB dominator proxy (pass% of team yards) is unreliable —
+        # spread QBs from non-blue-blood programs are systematically underrated by this metric.
+        # Utilization near-zero: QBs touch the ball every play; scheme-dependent, not predictive.
+        "draft_capital": 0.28,
         "production": 0.17,
-        "utilization": 0.05,
+        "utilization": 0.03,
         "efficiency": 0.18,
         "age": 0.08,
-        "breakout": 0.04,
+        "breakout": 0.00,
         "athleticism": 0.10,
         "competition": 0.07,
         "environment": 0.02,
