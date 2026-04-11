@@ -366,11 +366,11 @@ def calc_benchmark_boost(
     # Cap total boost to prevent over-inflation
     total_boost = max(total_boost, -0.05)  # Max -5% penalty (reduced from -8%)
     
-    # Position-specific boost caps
-    if pos == "TE":
-        total_boost = min(total_boost, 0.07)   # Max +7% boost for TEs
-    else:
-        total_boost = min(total_boost, 0.08)   # Max +8% boost for other positions
+    # Uniform 3% cap across all positions.
+    # The benchmark boost is a small absolute-scale nudge for prospects who clear
+    # multiple elite criteria — it is not meant to inflate scores class-relatively.
+    # Keeping the cap tight ensures the weighted component sum drives the grade.
+    total_boost = min(total_boost, 0.03)   # Max +3% boost, all positions
     
     boosts["total_boost"] = total_boost
     
