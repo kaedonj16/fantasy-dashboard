@@ -937,13 +937,14 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Position-specific weights for more realistic evaluation
 POSITION_WEIGHTS = {
     "QB": {
-        # Draft capital (r=0.663) is the strongest QB predictor — weighted highest.
+        # Draft capital (r=0.663) is predictive but QBs go R1 every year — less scarce
+        # than equivalent WR/RB capital.  Weight of 0.22 (vs WR 0.29) captures this:
+        # pick #1 QB scores 100 dc but contributes 22 pts vs 29 pts for a #1 WR.
         # Efficiency (YPA, comp%, TD:INT) is second-strongest QB-specific translator.
         # Experience (games started/played) guards against early-declare misses like Trey Lance.
-        # Utilization is near-meaningless for QBs (they touch the ball every play).
-        "draft_capital": 0.30,
-        "production": 0.13,
-        "utilization": 0.01,
+        "draft_capital": 0.22,
+        "production": 0.17,
+        "utilization": 0.05,
         "efficiency": 0.18,
         "age": 0.08,
         "breakout": 0.04,
@@ -1354,18 +1355,13 @@ def score_prospect(
         round_multiplier = draft_capital_multiplier(projected_round)
         dc_score = _clip(dc_score * round_multiplier)
 
-    # ── QB dynasty discount ─────────────────────────────────────────────────
-    # QB top picks are expected every year and less predictive for dynasty value
-    # than equivalent non-QB picks.  WR/RB/TE rarity premiums are already baked
-    # into the position-specific curves in pick_to_draft_capital_score().
-    # TE gets an additional 0.82x discount: TE draft capital is less predictive
-    # than RB/WR because the college-to-NFL translation is harder at the position
-    # (contested catches → YAC role, blocking duties, late development curves).
-    # QB: 0.80x — QBs are picked in R1 every year so raw capital is slightly
-    # less scarce than equivalent WR/RB capital, but a #1 overall QB is still
-    # the strongest dynasty signal available.  Reduced from 0.72 to better
-    # preserve the value of top-3 QB picks relative to non-QB peers.
-    dc_multiplier = {"QB": 0.80, "TE": 0.85}.get(pos, 1.00)
+    # ── Position dc multiplier ──────────────────────────────────────────────
+    # TE draft capital is less predictive than RB/WR (harder college-to-NFL
+    # translation: contested catches, blocking duties, late development curves).
+    # QBs are NOT discounted here — pick #1 QB correctly scores 100/100.
+    # The lower dynasty value of QB capital vs WR/RB capital is captured
+    # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
+    dc_multiplier = {"TE": 0.85}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # A pick-200 prospect should never outscore a pick-8 prospect even with
