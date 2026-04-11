@@ -3762,15 +3762,17 @@ function openPlayerModal(playerId, playerName) {
           const yRange = yMax - yMin;
           const yPad = Math.max(yRange * 0.15, 30);
 
-          // Latest date centered on x-axis; also show first date on left edge
+          // Ticks at their actual positions (first / middle / last)
           const midIdx = Math.floor((n - 1) / 2);
-          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
           const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
-          // Put the latest-date label at the mid x-position so it sits centered
-          const tickvals = n <= 1 ? [xData[0]] : [xData[0], xData[midIdx], xData[n - 1]];
+          const midDateStr    = formatDateLabel(data.value_history[midIdx].as_of_date);
+          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
+          const tickvals = n <= 1 ? [xData[0]]
+                         : n <= 2 ? [xData[0], xData[n - 1]]
+                         : [xData[0], xData[midIdx], xData[n - 1]];
           const ticktext  = n <= 1 ? [latestDateStr]
                           : n <= 2 ? [firstDateStr, latestDateStr]
-                          : [firstDateStr, latestDateStr, ''];   // '' hides the last tick
+                          : [firstDateStr, midDateStr, latestDateStr];
 
           // Read theme text color so ticks are visible in both light and dark mode
           const mutedColor = getComputedStyle(document.documentElement)
@@ -3785,7 +3787,7 @@ function openPlayerModal(playerId, playerName) {
             line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
             fill: 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
-            hovertemplate: '%{y}<br>%{x}<extra></extra>'
+            hovertemplate: '%{y:.1f}<extra></extra>'
           };
 
           // Adjust chart height based on screen size
