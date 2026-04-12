@@ -28,7 +28,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 107.0,
       "target_share": 0.3741258741258741
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430878.png"
   },
   "8151": {
     "name": "Kenneth Walker III",
@@ -59,7 +60,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567048.png"
   },
   "7591": {
     "name": "Justin Fields",
@@ -90,7 +92,8 @@
       "avg_pass_int": 0.1111111111111111,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362887.png"
   },
   "7602": {
     "name": "Kylen Granson",
@@ -121,7 +124,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.013605442176870748
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4039160.png"
   },
   "11584": {
     "name": "Bucky Irving",
@@ -152,7 +156,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.05234159779614325
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4596448.png"
   },
   "12496": {
     "name": "Tai Felton",
@@ -183,7 +188,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003076923076923077
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4565185.png"
   },
   "9497": {
     "name": "Jalin Hyatt",
@@ -214,7 +220,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.03773584905660377
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4692590.png"
   },
   "5374": {
     "name": "Justin Watson",
@@ -245,7 +252,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010526315789473684
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3118892.png"
   },
   "7537": {
     "name": "Jaret Patterson",
@@ -276,7 +284,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362452.png"
   },
   "11655": {
     "name": "Tyrone Tracy Jr.",
@@ -307,7 +316,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
       "target_share": 0.08086253369272237
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360516.png"
   },
   "9226": {
     "name": "De'Von Achane",
@@ -338,7 +348,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 71.0,
       "target_share": 0.22118380062305296
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429160.png"
   },
   "12732": {
     "name": "Dominic Lovett",
@@ -369,7 +380,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4596439.png"
   },
   "8146": {
     "name": "Garrett Wilson",
@@ -400,7 +412,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 59.0,
       "target_share": 0.2048611111111111
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569618.png"
   },
   "4177": {
     "name": "Mack Hollins",
@@ -431,7 +444,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 44.0,
       "target_share": 0.1286549707602339
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2991662.png"
   },
   "5859": {
     "name": "A.J. Brown",
@@ -462,7 +476,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 75.0,
       "target_share": 0.25510204081632654
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4047646.png"
   },
   "9757": {
     "name": "Kendre Miller",
@@ -493,7 +508,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
       "target_share": 0.013513513513513514
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4599739.png"
   },
   "9224": {
     "name": "Chase Brown",
@@ -524,7 +540,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 57.0,
       "target_share": 0.14615384615384616
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362238.png"
   },
   "10229": {
     "name": "Rashee Rice",
@@ -555,7 +572,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 47.0,
       "target_share": 0.12176165803108809
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428331.png"
   },
   "11624": {
     "name": "Xavier Worthy",
@@ -586,7 +604,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 53.0,
       "target_share": 0.13730569948186527
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4683062.png"
   },
   "12658": {
     "name": "Jackson Hawes",
@@ -617,7 +636,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
       "target_share": 0.040123456790123455
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4573699.png"
   },
   "6797": {
     "name": "Justin Herbert",
@@ -648,7 +668,8 @@
       "avg_pass_int": 0.8181818181818182,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4038941.png"
   },
   "11635": {
     "name": "Ladd McConkey",
@@ -679,7 +700,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 85.0,
       "target_share": 0.22606382978723405
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4612826.png"
   },
   "11994": {
     "name": "Kameron Johnson",
@@ -710,7 +732,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.01652892561983471
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5097554.png"
   },
   "11633": {
     "name": "Jamari Thrash",
@@ -741,7 +764,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.04189944134078212
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428678.png"
   },
   "12486": {
     "name": "Dillon Gabriel",
@@ -772,7 +796,8 @@
       "avg_pass_int": 0.25,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427238.png"
   },
   "3163": {
     "name": "Jared Goff",
@@ -803,7 +828,8 @@
       "avg_pass_int": 0.45454545454545453,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3046779.png"
   },
   "6806": {
     "name": "J.K. Dobbins",
@@ -834,7 +860,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.038356164383561646
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241985.png"
   },
   "11650": {
     "name": "Luke McCaffrey",
@@ -865,7 +892,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.05154639175257732
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426948.png"
   },
   "4217": {
     "name": "George Kittle",
@@ -896,7 +924,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
       "target_share": 0.08021390374331551
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3040151.png"
   },
   "11600": {
     "name": "Ja'Tavion Sanders",
@@ -927,7 +956,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
       "target_share": 0.08761329305135952
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431588.png"
   },
   "3200": {
     "name": "Sterling Shepard",
@@ -958,7 +988,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 50.0,
       "target_share": 0.13774104683195593
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2976592.png"
   },
   "10210": {
     "name": "Cameron Latu",
@@ -989,7 +1020,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372026.png"
   },
   "7571": {
     "name": "Rashod Bateman",
@@ -1020,7 +1052,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.11594202898550725
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360939.png"
   },
   "8148": {
     "name": "Jameson Williams",
@@ -1051,7 +1084,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 53.0,
       "target_share": 0.1572700296735905
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426388.png"
   },
   "12527": {
     "name": "Ashton Jeanty",
@@ -1082,7 +1116,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 46.0,
       "target_share": 0.13411078717201166
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4890973.png"
   },
   "5850": {
     "name": "Josh Jacobs",
@@ -1113,7 +1148,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 35.0,
       "target_share": 0.11182108626198083
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4047365.png"
   },
   "2359": {
     "name": "Ameer Abdullah",
@@ -1144,7 +1180,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.01744186046511628
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2576336.png"
   },
   "4066": {
     "name": "Evan Engram",
@@ -1175,7 +1212,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 50.0,
       "target_share": 0.136986301369863
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3051876.png"
   },
   "10236": {
     "name": "Dalton Kincaid",
@@ -1206,7 +1244,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
       "target_share": 0.1111111111111111
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4385690.png"
   },
   "7553": {
     "name": "Kyle Pitts Sr.",
@@ -1237,7 +1276,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 67.0,
       "target_share": 0.19940476190476192
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360248.png"
   },
   "8698": {
     "name": "Jake Tonges",
@@ -1268,7 +1308,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 35.0,
       "target_share": 0.09358288770053476
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4259147.png"
   },
   "7594": {
     "name": "Chuba Hubbard",
@@ -1299,7 +1340,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.07854984894259819
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241416.png"
   },
   "3214": {
     "name": "Hunter Henry",
@@ -1330,7 +1372,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 63.0,
       "target_share": 0.18421052631578946
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3046439.png"
   },
   "8250": {
     "name": "Tay Martin",
@@ -1361,7 +1404,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006872852233676976
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4245144.png"
   },
   "10213": {
     "name": "Tre Tucker",
@@ -1392,7 +1436,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 64.0,
       "target_share": 0.18658892128279883
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428718.png"
   },
   "11564": {
     "name": "Drake Maye",
@@ -1423,7 +1468,8 @@
       "avg_pass_int": 0.5,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431452.png"
   },
   "5127": {
     "name": "Kyle Allen",
@@ -1454,7 +1500,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3115293.png"
   },
   "7842": {
     "name": "Luke Farrell",
@@ -1485,7 +1532,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03208556149732621
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4040612.png"
   },
   "8135": {
     "name": "Treylon Burks",
@@ -1516,7 +1564,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.013745704467353952
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567156.png"
   },
   "12490": {
     "name": "Bhayshul Tuten",
@@ -1547,7 +1596,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.0332409972299169
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4882093.png"
   },
   "8207": {
     "name": "Tyler Goodson",
@@ -1578,7 +1628,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.00872093023255814
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429676.png"
   },
   "6770": {
     "name": "Joe Burrow",
@@ -1609,7 +1660,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3915511.png"
   },
   "11643": {
     "name": "Jaylen Wright",
@@ -1640,7 +1692,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003115264797507788
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4682745.png"
   },
   "7757": {
     "name": "Ben Skowronek",
@@ -1671,7 +1724,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.012539184952978056
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035656.png"
   },
   "12524": {
     "name": "Shedeur Sanders",
@@ -1702,7 +1756,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432762.png"
   },
   "11570": {
     "name": "Rasheen Ali",
@@ -1733,7 +1788,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0036231884057971015
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4690013.png"
   },
   "6783": {
     "name": "Jerry Jeudy",
@@ -1764,7 +1820,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 76.0,
       "target_share": 0.2122905027932961
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241463.png"
   },
   "8167": {
     "name": "Christian Watson",
@@ -1795,7 +1852,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 24.0,
       "target_share": 0.07667731629392971
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4248528.png"
   },
   "6130": {
     "name": "Devin Singletary",
@@ -1826,7 +1884,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.026954177897574125
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4040761.png"
   },
   "11510": {
     "name": "Hunter Luepke",
@@ -1857,7 +1916,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.022670025188916875
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4383396.png"
   },
   "7547": {
     "name": "Amon-Ra St. Brown",
@@ -1888,7 +1948,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 107.0,
       "target_share": 0.31750741839762614
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4374302.png"
   },
   "11377": {
     "name": "Tyrell Shavers",
@@ -1919,7 +1980,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.05246913580246913
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241476.png"
   },
   "3269": {
     "name": "Chris Moore",
@@ -1950,7 +2012,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.07560137457044673
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2576581.png"
   },
   "11306": {
     "name": "Xavier Gipson",
@@ -1981,7 +2044,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006802721088435374
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427278.png"
   },
   "10871": {
     "name": "Luke Schoonmaker",
@@ -2012,7 +2076,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.04030226700251889
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372096.png"
   },
   "12541": {
     "name": "Dont'e Thornton Jr.",
@@ -2043,7 +2108,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 23.0,
       "target_share": 0.06705539358600583
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432775.png"
   },
   "4054": {
     "name": "Mo Alie-Cox",
@@ -2074,7 +2140,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.02616279069767442
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2998565.png"
   },
   "11895": {
     "name": "Mason Tipton",
@@ -2105,7 +2172,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.016216216216216217
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4573697.png"
   },
   "10859": {
     "name": "Sam LaPorta",
@@ -2136,7 +2204,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 49.0,
       "target_share": 0.14540059347181009
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430027.png"
   },
   "3161": {
     "name": "Carson Wentz",
@@ -2167,7 +2236,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2573079.png"
   },
   "8123": {
     "name": "Hassan Haskins",
@@ -2198,7 +2268,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010638297872340425
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372071.png"
   },
   "11627": {
     "name": "Troy Franklin",
@@ -2229,7 +2300,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 81.0,
       "target_share": 0.2219178082191781
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431280.png"
   },
   "10234": {
     "name": "Derius Davis",
@@ -2260,7 +2332,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005319148936170213
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362477.png"
   },
   "4035": {
     "name": "Alvin Kamara",
@@ -2291,7 +2364,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 39.0,
       "target_share": 0.10540540540540541
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3054850.png"
   },
   "12510": {
     "name": "Jalen Milroe",
@@ -2322,7 +2396,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432734.png"
   },
   "7525": {
     "name": "DeVonta Smith",
@@ -2353,7 +2428,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 78.0,
       "target_share": 0.2653061224489796
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241478.png"
   },
   "7090": {
     "name": "Darnell Mooney",
@@ -2384,7 +2460,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 45.0,
       "target_share": 0.13392857142857142
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4040655.png"
   },
   "11563": {
     "name": "Bo Nix",
@@ -2415,7 +2492,8 @@
       "avg_pass_int": 0.7272727272727273,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426338.png"
   },
   "9479": {
     "name": "Darnell Washington",
@@ -2446,7 +2524,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 28.0,
       "target_share": 0.0877742946708464
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430802.png"
   },
   "4718": {
     "name": "Dare Ogunbowale",
@@ -2477,7 +2556,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.015789473684210527
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2983509.png"
   },
   "6960": {
     "name": "Tyler Johnson",
@@ -2508,7 +2588,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.05555555555555555
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2310331.png"
   },
   "7436": {
     "name": "Mason Kinsey",
@@ -2539,7 +2620,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008620689655172414
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4057082.png"
   },
   "10218": {
     "name": "Xavier Hutchinson",
@@ -2570,7 +2652,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
       "target_share": 0.08947368421052632
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686422.png"
   },
   "4892": {
     "name": "Baker Mayfield",
@@ -2601,7 +2684,8 @@
       "avg_pass_int": 0.45454545454545453,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3052587.png"
   },
   "12699": {
     "name": "LaJohntay Wester",
@@ -2632,7 +2716,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4690143.png"
   },
   "5113": {
     "name": "Cedrick Wilson Jr.",
@@ -2663,7 +2748,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006230529595015576
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4036335.png"
   },
   "9501": {
     "name": "DeMario Douglas",
@@ -2694,7 +2780,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
       "target_share": 0.10526315789473684
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427095.png"
   },
   "11623": {
     "name": "Jordan Whittington",
@@ -2725,7 +2812,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.057692307692307696
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569382.png"
   },
   "7002": {
     "name": "Juwan Johnson",
@@ -2756,7 +2844,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 67.0,
       "target_share": 0.1810810810810811
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3929645.png"
   },
   "5008": {
     "name": "Durham Smythe",
@@ -2787,7 +2876,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.011560693641618497
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3052897.png"
   },
   "7587": {
     "name": "Dyami Brown",
@@ -2818,7 +2908,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
       "target_share": 0.0997229916897507
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361577.png"
   },
   "10219": {
     "name": "Chris Rodriguez Jr.",
@@ -2849,7 +2940,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003436426116838488
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362619.png"
   },
   "8127": {
     "name": "Charlie Kolar",
@@ -2880,7 +2972,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 11.0,
       "target_share": 0.03985507246376811
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241263.png"
   },
   "1373": {
     "name": "Geno Smith",
@@ -2911,7 +3004,8 @@
       "avg_pass_int": 1.1818181818181819,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/15864.png"
   },
   "6865": {
     "name": "Colby Parkinson",
@@ -2942,7 +3036,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.057692307692307696
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242557.png"
   },
   "8484": {
     "name": "Ko Kieft",
@@ -2973,7 +3068,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4034779.png"
   },
   "11210": {
     "name": "Malik Heath",
@@ -3004,7 +3100,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.019169329073482427
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4689334.png"
   },
   "12357": {
     "name": "David Martin-Robinson",
@@ -3035,7 +3132,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0028735632183908046
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360978.png"
   },
   "12520": {
     "name": "Xavier Restrepo",
@@ -3066,7 +3164,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.017241379310344827
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431353.png"
   },
   "8917": {
     "name": "KaVontae Turpin",
@@ -3097,7 +3196,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.0654911838790932
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3676833.png"
   },
   "6869": {
     "name": "Adam Trautman",
@@ -3128,7 +3228,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03287671232876712
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3911853.png"
   },
   "11589": {
     "name": "Trey Benson",
@@ -3159,7 +3260,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.03940886699507389
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429275.png"
   },
   "5973": {
     "name": "Josh Oliver",
@@ -3190,7 +3292,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.027692307692307693
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3921690.png"
   },
   "11201": {
     "name": "Blake Whiteheart",
@@ -3221,7 +3324,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008379888268156424
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362018.png"
   },
   "12670": {
     "name": "KeAndre Lambert-Smith",
@@ -3252,7 +3356,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430870.png"
   },
   "10224": {
     "name": "Brayden Willis",
@@ -3283,7 +3388,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.00267379679144385
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360290.png"
   },
   "7543": {
     "name": "Travis Etienne Jr.",
@@ -3314,7 +3420,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 37.0,
       "target_share": 0.10249307479224377
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4239996.png"
   },
   "11435": {
     "name": "Emanuel Wilson",
@@ -3345,7 +3452,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.04792332268370607
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4887558.png"
   },
   "5185": {
     "name": "Allen Lazard",
@@ -3376,7 +3484,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.04861111111111111
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3128390.png"
   },
   "11638": {
     "name": "Ricky Pearsall",
@@ -3407,7 +3516,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.0855614973262032
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428209.png"
   },
   "1426": {
     "name": "DeAndre Hopkins",
@@ -3438,7 +3548,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.09057971014492754
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/15795.png"
   },
   "8168": {
     "name": "Skyy Moore",
@@ -3469,7 +3580,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.016042780748663103
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430191.png"
   },
   "6271": {
     "name": "Olamide Zaccheaus",
@@ -3500,7 +3612,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 51.0,
       "target_share": 0.14739884393063585
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3917914.png"
   },
   "6694": {
     "name": "D'Ernest Johnson",
@@ -3531,7 +3644,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3139602.png"
   },
   "8254": {
     "name": "Julius Chestnut",
@@ -3562,7 +3676,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005747126436781609
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4367567.png"
   },
   "8155": {
     "name": "Breece Hall",
@@ -3593,7 +3708,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 37.0,
       "target_share": 0.1284722222222222
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427366.png"
   },
   "12062": {
     "name": "Cam Grandy",
@@ -3624,7 +3740,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002564102564102564
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4700712.png"
   },
   "5872": {
     "name": "Deebo Samuel",
@@ -3655,7 +3772,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3126486.png"
   },
   "6813": {
     "name": "Jonathan Taylor",
@@ -3686,7 +3804,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 35.0,
       "target_share": 0.10174418604651163
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242335.png"
   },
   "5844": {
     "name": "T.J. Hockenson",
@@ -3717,7 +3836,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 51.0,
       "target_share": 0.15692307692307692
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4036133.png"
   },
   "11311": {
     "name": "Jason Brownlee",
@@ -3748,7 +3868,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0025906735751295338
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4689988.png"
   },
   "7535": {
     "name": "Hunter Long",
@@ -3779,7 +3900,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.04709141274238227
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4239944.png"
   },
   "8137": {
     "name": "George Pickens",
@@ -3810,7 +3932,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 92.0,
       "target_share": 0.23173803526448364
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426354.png"
   },
   "8154": {
     "name": "Brian Robinson Jr.",
@@ -3841,7 +3964,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241474.png"
   },
   "12544": {
     "name": "LeQuint Allen Jr.",
@@ -3872,7 +3996,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.0221606648199446
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4911851.png"
   },
   "12517": {
     "name": "Colston Loveland",
@@ -3903,7 +4028,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 38.0,
       "target_share": 0.10982658959537572
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4723086.png"
   },
   "12718": {
     "name": "Konata Mumpfield",
@@ -3934,7 +4060,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.019230769230769232
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4710855.png"
   },
   "12634": {
     "name": "Jordan Watkins",
@@ -3965,7 +4092,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008021390374331552
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431466.png"
   },
   "11806": {
     "name": "Casey Washington",
@@ -3996,7 +4124,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.041666666666666664
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428796.png"
   },
   "6144": {
     "name": "Trayveon Williams",
@@ -4027,7 +4156,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0026595744680851063
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035222.png"
   },
   "12514": {
     "name": "Emeka Egbuka",
@@ -4058,7 +4188,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 93.0,
       "target_share": 0.256198347107438
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567750.png"
   },
   "12505": {
     "name": "Jalen Royals",
@@ -4089,7 +4220,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5082630.png"
   },
   "8131": {
     "name": "Isaiah Likely",
@@ -4120,7 +4252,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.07246376811594203
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361050.png"
   },
   "6149": {
     "name": "Darius Slayton",
@@ -4151,7 +4284,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
       "target_share": 0.09703504043126684
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916945.png"
   },
   "9493": {
     "name": "Puka Nacua",
@@ -4182,7 +4316,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 98.0,
       "target_share": 0.2692307692307692
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426515.png"
   },
   "5010": {
     "name": "Will Dissly",
@@ -4213,7 +4348,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
       "target_share": 0.013297872340425532
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3127292.png"
   },
   "12512": {
     "name": "Quinshon Judkins",
@@ -4244,7 +4380,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.055865921787709494
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685702.png"
   },
   "9506": {
     "name": "Sean Tucker",
@@ -4275,7 +4412,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.027548209366391185
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430871.png"
   },
   "3286": {
     "name": "Demarcus Robinson",
@@ -4306,7 +4444,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 23.0,
       "target_share": 0.06149732620320856
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3043116.png"
   },
   "4881": {
     "name": "Lamar Jackson",
@@ -4337,7 +4476,8 @@
       "avg_pass_int": 0.375,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916387.png"
   },
   "8885": {
     "name": "Tucker Fisk",
@@ -4368,7 +4508,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010638297872340425
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242558.png"
   },
   "4189": {
     "name": "Eric Saubert",
@@ -4399,7 +4540,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0034965034965034965
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2975863.png"
   },
   "1689": {
     "name": "Adam Thielen",
@@ -4430,7 +4572,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 18.0,
       "target_share": 0.055384615384615386
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16460.png"
   },
   "10228": {
     "name": "Charlie Jones",
@@ -4461,7 +4604,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002564102564102564
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4257188.png"
   },
   "12526": {
     "name": "Tetairoa McMillan",
@@ -4492,7 +4636,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 89.0,
       "target_share": 0.2688821752265861
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685472.png"
   },
   "12492": {
     "name": "Pat Bryant",
@@ -4523,7 +4668,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.0684931506849315
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4600981.png"
   },
   "11082": {
     "name": "Ben Sims",
@@ -4554,7 +4700,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4373030.png"
   },
   "9230": {
     "name": "Tanner McKee",
@@ -4585,7 +4732,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685201.png"
   },
   "3423": {
     "name": "Robbie Chosen",
@@ -4616,7 +4764,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.030927835051546393
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2574808.png"
   },
   "3257": {
     "name": "Jacoby Brissett",
@@ -4647,7 +4796,8 @@
       "avg_pass_int": 0.375,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2578570.png"
   },
   "5947": {
     "name": "Jakobi Meyers",
@@ -4678,7 +4828,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.04155124653739612
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916433.png"
   },
   "10867": {
     "name": "Jake Bobo",
@@ -4709,7 +4860,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006993006993006993
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360405.png"
   },
   "6427": {
     "name": "Ashton Dulin",
@@ -4740,7 +4892,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.023255813953488372
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4061956.png"
   },
   "12476": {
     "name": "Devin Neal",
@@ -4771,7 +4924,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.03783783783783784
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4682652.png"
   },
   "12481": {
     "name": "Cam Skattebo",
@@ -4802,7 +4956,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.0862533692722372
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4696981.png"
   },
   "2152": {
     "name": "Teddy Bridgewater",
@@ -4833,7 +4988,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16728.png"
   },
   "8249": {
     "name": "Lucas Krull",
@@ -4864,7 +5020,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010958904109589041
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360231.png"
   },
   "12489": {
     "name": "RJ Harvey",
@@ -4895,7 +5052,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.08767123287671233
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4568490.png"
   },
   "11599": {
     "name": "Cade Stover",
@@ -4926,7 +5084,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.015789473684210527
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426496.png"
   },
   "12533": {
     "name": "Jacory Croskey-Merritt",
@@ -4957,7 +5116,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
       "target_share": 0.044673539518900345
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4575131.png"
   },
   "9756": {
     "name": "Jordan Addison",
@@ -4988,7 +5148,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 53.0,
       "target_share": 0.16307692307692306
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429205.png"
   },
   "11560": {
     "name": "Caleb Williams",
@@ -5019,7 +5180,8 @@
       "avg_pass_int": 0.36363636363636365,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431611.png"
   },
   "5927": {
     "name": "Terry McLaurin",
@@ -5050,7 +5212,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.07216494845360824
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3121422.png"
   },
   "4274": {
     "name": "David Moore",
@@ -5081,7 +5244,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0030211480362537764
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4212909.png"
   },
   "6111": {
     "name": "Jake Browning",
@@ -5112,7 +5276,8 @@
       "avg_pass_int": 1.6,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3886812.png"
   },
   "6828": {
     "name": "AJ Dillon",
@@ -5143,7 +5308,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4239934.png"
   },
   "11629": {
     "name": "Devontez Walker",
@@ -5174,7 +5340,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.014492753623188406
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4696882.png"
   },
   "8144": {
     "name": "Chris Olave",
@@ -5205,7 +5372,8 @@
       "avg_pass_int": 0.09090909090909091,
       "total_targets": 108.0,
       "target_share": 0.2918918918918919
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361370.png"
   },
   "1837": {
     "name": "Jimmy Garoppolo",
@@ -5236,7 +5404,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16760.png"
   },
   "6804": {
     "name": "Jordan Love",
@@ -5267,7 +5436,8 @@
       "avg_pass_int": 0.2727272727272727,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4036378.png"
   },
   "2216": {
     "name": "Mike Evans",
@@ -5298,7 +5468,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
       "target_share": 0.08539944903581267
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16737.png"
   },
   "6943": {
     "name": "Gabe Davis",
@@ -5329,7 +5500,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.018518518518518517
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4243537.png"
   },
   "6790": {
     "name": "D'Andre Swift",
@@ -5360,7 +5532,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
       "target_share": 0.09826589595375723
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4259545.png"
   },
   "2306": {
     "name": "Jameis Winston",
@@ -5391,7 +5564,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2969939.png"
   },
   "11593": {
     "name": "Brevyn Spann-Ford",
@@ -5422,7 +5596,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.015113350125944584
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360967.png"
   },
   "12641": {
     "name": "Jaylin Lane",
@@ -5453,7 +5628,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
       "target_share": 0.10309278350515463
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4602667.png"
   },
   "1479": {
     "name": "Keenan Allen",
@@ -5484,7 +5660,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 86.0,
       "target_share": 0.22872340425531915
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/15818.png"
   },
   "7746": {
     "name": "Austin Trammell",
@@ -5515,7 +5692,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.01662049861495845
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4244856.png"
   },
   "2307": {
     "name": "Marcus Mariota",
@@ -5546,7 +5724,8 @@
       "avg_pass_int": 0.7142857142857143,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2576980.png"
   },
   "3198": {
     "name": "Derrick Henry",
@@ -5577,7 +5756,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.06159420289855073
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3043078.png"
   },
   "12501": {
     "name": "Matthew Golden",
@@ -5608,7 +5788,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.10223642172523961
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4701936.png"
   },
   "11610": {
     "name": "Malik Washington",
@@ -5639,7 +5820,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 47.0,
       "target_share": 0.14641744548286603
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569603.png"
   },
   "2449": {
     "name": "Stefon Diggs",
@@ -5670,7 +5852,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 75.0,
       "target_share": 0.21929824561403508
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2976212.png"
   },
   "12534": {
     "name": "Kyle Monangai",
@@ -5701,7 +5884,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.046242774566473986
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4608686.png"
   },
   "8527": {
     "name": "Dareke Young",
@@ -5732,7 +5916,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006993006993006993
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4401805.png"
   },
   "11574": {
     "name": "Dylan Laube",
@@ -5763,7 +5948,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.011661807580174927
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4366963.png"
   },
   "7564": {
     "name": "Ja'Marr Chase",
@@ -5794,7 +5980,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 117.0,
       "target_share": 0.3
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362628.png"
   },
   "8172": {
     "name": "Greg Dulcich",
@@ -5825,7 +6012,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
       "target_share": 0.040498442367601244
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4367209.png"
   },
   "12469": {
     "name": "Dylan Sampson",
@@ -5856,7 +6044,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 28.0,
       "target_share": 0.0782122905027933
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5081397.png"
   },
   "8188": {
     "name": "Tyquan Thornton",
@@ -5887,7 +6076,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
       "target_share": 0.08031088082901554
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362921.png"
   },
   "7670": {
     "name": "Joshua Palmer",
@@ -5918,7 +6108,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
       "target_share": 0.08950617283950617
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242433.png"
   },
   "11474": {
     "name": "Dylan Drummond",
@@ -5949,7 +6140,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008928571428571428
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4363551.png"
   },
   "8181": {
     "name": "Connor Heyward",
@@ -5980,7 +6172,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.009404388714733543
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241961.png"
   },
   "11237": {
     "name": "Jacob Saylors",
@@ -6011,7 +6204,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4383429.png"
   },
   "1339": {
     "name": "Zach Ertz",
@@ -6042,7 +6236,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 57.0,
       "target_share": 0.1958762886597938
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/15835.png"
   },
   "6154": {
     "name": "David Sills V",
@@ -6073,7 +6268,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03571428571428571
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3871102.png"
   },
   "12374": {
     "name": "Brenden Bates",
@@ -6104,7 +6300,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362603.png"
   },
   "12455": {
     "name": "Brashard Smith",
@@ -6135,7 +6332,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.06735751295336788
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4596602.png"
   },
   "12535": {
     "name": "Isaac TeSlaa",
@@ -6166,7 +6364,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.026706231454005934
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5123663.png"
   },
   "11371": {
     "name": "Julian Hill",
@@ -6197,7 +6396,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.04361370716510903
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4365395.png"
   },
   "4144": {
     "name": "Jonnu Smith",
@@ -6228,7 +6428,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 41.0,
       "target_share": 0.12852664576802508
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3054212.png"
   },
   "11586": {
     "name": "Blake Corum",
@@ -6259,7 +6460,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.027472527472527472
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429096.png"
   },
   "7607": {
     "name": "Michael Carter",
@@ -6290,7 +6492,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.054187192118226604
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4240657.png"
   },
   "12521": {
     "name": "Elijah Arroyo",
@@ -6321,7 +6524,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 23.0,
       "target_share": 0.08041958041958042
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4678006.png"
   },
   "12542": {
     "name": "Efton Chism III",
@@ -6352,7 +6556,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4695193.png"
   },
   "7595": {
     "name": "Tylan Wallace",
@@ -6383,7 +6588,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.028985507246376812
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241424.png"
   },
   "7596": {
     "name": "Elijah Moore",
@@ -6414,7 +6620,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.05246913580246913
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372414.png"
   },
   "8130": {
     "name": "Trey McBride",
@@ -6445,7 +6652,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 109.0,
       "target_share": 0.2684729064039409
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361307.png"
   },
   "8147": {
     "name": "John Metchie III",
@@ -6476,7 +6684,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 11.0,
       "target_share": 0.03819444444444445
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567096.png"
   },
   "11821": {
     "name": "Tahj Washington",
@@ -6507,7 +6716,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006230529595015576
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567506.png"
   },
   "12547": {
     "name": "Kyle Williams",
@@ -6538,7 +6748,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03508771929824561
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4613202.png"
   },
   "4351": {
     "name": "Tim Patrick",
@@ -6569,7 +6780,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.04155124653739612
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3134353.png"
   },
   "5045": {
     "name": "Courtland Sutton",
@@ -6600,7 +6812,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 74.0,
       "target_share": 0.20273972602739726
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3128429.png"
   },
   "12497": {
     "name": "Tory Horton",
@@ -6631,7 +6844,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.07692307692307693
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4597703.png"
   },
   "8150": {
     "name": "Kyren Williams",
@@ -6662,7 +6876,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.08791208791208792
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430737.png"
   },
   "7828": {
     "name": "Noah Gray",
@@ -6693,7 +6908,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 28.0,
       "target_share": 0.07253886010362694
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4240472.png"
   },
   "7531": {
     "name": "Feleipe Franks",
@@ -6724,7 +6940,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4034948.png"
   },
   "11559": {
     "name": "Michael Penix Jr.",
@@ -6755,7 +6972,8 @@
       "avg_pass_int": 0.3333333333333333,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360423.png"
   },
   "8136": {
     "name": "Rachaad White",
@@ -6786,7 +7004,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 33.0,
       "target_share": 0.09090909090909091
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4697815.png"
   },
   "8125": {
     "name": "Calvin Austin III",
@@ -6817,7 +7036,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 42.0,
       "target_share": 0.13166144200626959
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4243389.png"
   },
   "7600": {
     "name": "Pat Freiermuth",
@@ -6848,7 +7068,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.10031347962382445
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361411.png"
   },
   "4037": {
     "name": "Chris Godwin Jr.",
@@ -6879,7 +7100,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116165.png"
   },
   "9487": {
     "name": "Parker Washington",
@@ -6910,7 +7132,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 60.0,
       "target_share": 0.16620498614958448
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432620.png"
   },
   "5938": {
     "name": "Lil'Jordan Humphrey",
@@ -6941,7 +7164,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.026954177897574125
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4039057.png"
   },
   "12928": {
     "name": "Amar Johnson",
@@ -6972,7 +7196,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0026595744680851063
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4878878.png"
   },
   "6904": {
     "name": "Jalen Hurts",
@@ -7003,7 +7228,8 @@
       "avg_pass_int": 0.09090909090909091,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4040715.png"
   },
   "11299": {
     "name": "Zavier Scott",
@@ -7034,7 +7260,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.036923076923076927
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4257364.png"
   },
   "11620": {
     "name": "Rome Odunze",
@@ -7065,7 +7292,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 84.0,
       "target_share": 0.24277456647398843
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431299.png"
   },
   "1166": {
     "name": "Kirk Cousins",
@@ -7096,7 +7324,8 @@
       "avg_pass_int": 0.25,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/14880.png"
   },
   "11381": {
     "name": "Travis Vokolek",
@@ -7127,7 +7356,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4259324.png"
   },
   "4033": {
     "name": "David Njoku",
@@ -7158,7 +7388,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 45.0,
       "target_share": 0.12569832402234637
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3123076.png"
   },
   "7083": {
     "name": "Tyler Huntley",
@@ -7189,7 +7420,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035671.png"
   },
   "7528": {
     "name": "Najee Harris",
@@ -7220,7 +7452,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.007978723404255319
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241457.png"
   },
   "4381": {
     "name": "Taysom Hill",
@@ -7251,7 +7484,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010810810810810811
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2468609.png"
   },
   "5409": {
     "name": "Tanner Hudson",
@@ -7282,7 +7516,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
       "target_share": 0.03333333333333333
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3050481.png"
   },
   "2197": {
     "name": "Brandin Cooks",
@@ -7313,7 +7548,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.06756756756756757
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16731.png"
   },
   "6843": {
     "name": "Albert Okwuegbunam Jr.",
@@ -7344,7 +7580,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035115.png"
   },
   "9225": {
     "name": "Tank Bigsby",
@@ -7375,7 +7612,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003401360544217687
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429013.png"
   },
   "13122": {
     "name": "Carter Runyon",
@@ -7406,7 +7644,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0029154518950437317
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5155825.png"
   },
   "8177": {
     "name": "Grant Calcaterra",
@@ -7437,7 +7676,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.030612244897959183
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241374.png"
   },
   "12529": {
     "name": "TreVeyon Henderson",
@@ -7468,7 +7708,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
       "target_share": 0.09941520467836257
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432710.png"
   },
   "12487": {
     "name": "Terrance Ferguson",
@@ -7499,7 +7740,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03296703296703297
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4570037.png"
   },
   "10212": {
     "name": "Josh Whyle",
@@ -7530,7 +7772,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006389776357827476
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360086.png"
   },
   "3271": {
     "name": "Tyler Higbee",
@@ -7561,7 +7804,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
       "target_share": 0.08241758241758242
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2573401.png"
   },
   "8225": {
     "name": "Daniel Bellinger",
@@ -7592,7 +7836,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.04582210242587601
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361516.png"
   },
   "12506": {
     "name": "Harold Fannin Jr.",
@@ -7623,7 +7868,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 69.0,
       "target_share": 0.19273743016759776
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5083076.png"
   },
   "8423": {
     "name": "Brittain Brown",
@@ -7654,7 +7900,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002890173410404624
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4036032.png"
   },
   "8139": {
     "name": "Zamir White",
@@ -7685,7 +7932,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
       "target_share": 0.014577259475218658
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361777.png"
   },
   "4034": {
     "name": "Christian McCaffrey",
@@ -7716,7 +7964,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 96.0,
       "target_share": 0.25668449197860965
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3117251.png"
   },
   "4018": {
     "name": "Joe Mixon",
@@ -7747,7 +7996,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116385.png"
   },
   "12389": {
     "name": "Hayden Rucci",
@@ -7778,7 +8028,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428396.png"
   },
   "7496": {
     "name": "Nick Westbrook-Ikhine",
@@ -7809,7 +8060,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.059190031152647975
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3929785.png"
   },
   "12507": {
     "name": "Omarion Hampton",
@@ -7840,7 +8092,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.05851063829787234
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685382.png"
   },
   "11646": {
     "name": "Jalen Coker",
@@ -7871,7 +8124,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.045317220543806644
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4695883.png"
   },
   "11439": {
     "name": "Jaleel McLaughlin",
@@ -7902,7 +8156,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005479452054794521
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4722893.png"
   },
   "12493": {
     "name": "Oronde Gadsden II",
@@ -7933,7 +8188,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4595342.png"
   },
   "8228": {
     "name": "Jaylen Warren",
@@ -7964,7 +8220,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 28.0,
       "target_share": 0.0877742946708464
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569987.png"
   },
   "6786": {
     "name": "CeeDee Lamb",
@@ -7995,7 +8252,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 72.0,
       "target_share": 0.181360201511335
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241389.png"
   },
   "9481": {
     "name": "Luke Musgrave",
@@ -8026,7 +8284,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.054313099041533544
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428085.png"
   },
   "6768": {
     "name": "Tua Tagovailoa",
@@ -8057,7 +8316,8 @@
       "avg_pass_int": 1.1818181818181819,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241479.png"
   },
   "5347": {
     "name": "Nyheim Hines",
@@ -8088,7 +8348,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916430.png"
   },
   "8205": {
     "name": "Isiah Pacheco",
@@ -8119,7 +8380,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.04404145077720207
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361529.png"
   },
   "8111": {
     "name": "Cade Otton",
@@ -8150,7 +8412,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 60.0,
       "target_share": 0.1652892561983471
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4243331.png"
   },
   "4950": {
     "name": "Christian Kirk",
@@ -8181,7 +8444,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 37.0,
       "target_share": 0.09736842105263158
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3895856.png"
   },
   "12519": {
     "name": "Luther Burden III",
@@ -8212,7 +8476,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 28.0,
       "target_share": 0.08092485549132948
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685278.png"
   },
   "11596": {
     "name": "Ben Sinnott",
@@ -8243,7 +8508,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.010309278350515464
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4690923.png"
   },
   "13101": {
     "name": "Gage Larvadain",
@@ -8274,7 +8540,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.01675977653631285
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4877203.png"
   },
   "6699": {
     "name": "Gunner Olszewski",
@@ -8305,7 +8572,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008086253369272238
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4424106.png"
   },
   "2374": {
     "name": "Tyler Lockett",
@@ -8336,7 +8604,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.043731778425655975
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2577327.png"
   },
   "4866": {
     "name": "Saquon Barkley",
@@ -8367,7 +8636,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 41.0,
       "target_share": 0.13945578231292516
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3929630.png"
   },
   "12518": {
     "name": "Tyler Warren",
@@ -8398,7 +8668,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 74.0,
       "target_share": 0.21511627906976744
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431459.png"
   },
   "6794": {
     "name": "Justin Jefferson",
@@ -8429,7 +8700,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 99.0,
       "target_share": 0.3046153846153846
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4262921.png"
   },
   "11575": {
     "name": "Ray Davis",
@@ -8460,7 +8732,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.021604938271604937
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429501.png"
   },
   "8110": {
     "name": "Jake Ferguson",
@@ -8491,7 +8764,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 77.0,
       "target_share": 0.19395465994962216
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242355.png"
   },
   "12472": {
     "name": "Raheim Sanders",
@@ -8522,7 +8796,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4601080.png"
   },
   "8143": {
     "name": "Jerome Ford",
@@ -8553,7 +8828,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.07262569832402235
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372019.png"
   },
   "5285": {
     "name": "Ross Dwelley",
@@ -8584,7 +8860,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002967359050445104
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3120303.png"
   },
   "7039": {
     "name": "Cody White",
@@ -8615,7 +8892,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006993006993006993
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241983.png"
   },
   "11630": {
     "name": "Roman Wilson",
@@ -8646,7 +8924,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.05956112852664577
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431492.png"
   },
   "11577": {
     "name": "Will Shipley",
@@ -8677,7 +8956,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.02040816326530612
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431545.png"
   },
   "10227": {
     "name": "Payne Durham",
@@ -8708,7 +8988,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005509641873278237
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372505.png"
   },
   "7523": {
     "name": "Trevor Lawrence",
@@ -8739,7 +9020,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360310.png"
   },
   "829": {
     "name": "Andy Dalton",
@@ -8770,7 +9052,8 @@
       "avg_pass_int": 0.25,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/14012.png"
   },
   "5001": {
     "name": "Dalton Schultz",
@@ -8801,7 +9084,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 72.0,
       "target_share": 0.18947368421052632
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3117256.png"
   },
   "9500": {
     "name": "Josh Downs",
@@ -8832,7 +9116,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 54.0,
       "target_share": 0.1569767441860465
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4688813.png"
   },
   "12531": {
     "name": "Trevor Etienne",
@@ -8863,7 +9148,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006042296072507553
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685350.png"
   },
   "8183": {
     "name": "Brock Purdy",
@@ -8894,7 +9180,8 @@
       "avg_pass_int": 1.3333333333333333,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361741.png"
   },
   "6803": {
     "name": "Brandon Aiyuk",
@@ -8925,7 +9212,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360438.png"
   },
   "8112": {
     "name": "Drake London",
@@ -8956,7 +9244,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 94.0,
       "target_share": 0.27976190476190477
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426502.png"
   },
   "12485": {
     "name": "Tez Johnson",
@@ -8987,7 +9276,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 37.0,
       "target_share": 0.10192837465564739
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4608810.png"
   },
   "6826": {
     "name": "Cole Kmet",
@@ -9018,7 +9308,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
       "target_share": 0.0838150289017341
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4258595.png"
   },
   "11618": {
     "name": "Jalen McMillan",
@@ -9049,7 +9340,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430834.png"
   },
   "11384": {
     "name": "Owen Wright",
@@ -9080,7 +9372,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4249616.png"
   },
   "111": {
     "name": "Marcedes Lewis",
@@ -9111,7 +9404,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/9614.png"
   },
   "5096": {
     "name": "Ray-Ray McCloud III",
@@ -9142,7 +9436,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005390835579514825
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3728262.png"
   },
   "8117": {
     "name": "Jalen Tolbert",
@@ -9173,7 +9468,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.06297229219143577
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4249417.png"
   },
   "4454": {
     "name": "Kendrick Bourne",
@@ -9204,7 +9500,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 42.0,
       "target_share": 0.11229946524064172
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3045523.png"
   },
   "6819": {
     "name": "Michael Pittman Jr.",
@@ -9235,7 +9532,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035687.png"
   },
   "12457": {
     "name": "Jaydon Blue",
@@ -9266,7 +9564,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0025188916876574307
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685279.png"
   },
   "11566": {
     "name": "Jayden Daniels",
@@ -9297,7 +9596,8 @@
       "avg_pass_int": 0.3333333333333333,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426348.png"
   },
   "8122": {
     "name": "Bam Knight",
@@ -9328,7 +9628,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.054187192118226604
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427728.png"
   },
   "8013": {
     "name": "Tim Jones",
@@ -9359,7 +9660,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002770083102493075
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4245131.png"
   },
   "8170": {
     "name": "James Mitchell",
@@ -9390,7 +9692,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.00906344410876133
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361988.png"
   },
   "13047": {
     "name": "Jacardia Wright",
@@ -9421,7 +9724,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428943.png"
   },
   "7536": {
     "name": "Quintin Morris",
@@ -9452,7 +9756,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008310249307479225
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4244049.png"
   },
   "12508": {
     "name": "Jaxson Dart",
@@ -9483,7 +9788,8 @@
       "avg_pass_int": 0.3333333333333333,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4689114.png"
   },
   "4995": {
     "name": "Ian Thomas",
@@ -9514,7 +9820,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.029154518950437316
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4045305.png"
   },
   "9511": {
     "name": "Keaton Mitchell",
@@ -9545,7 +9852,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.021739130434782608
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4596334.png"
   },
   "11647": {
     "name": "Kimani Vidal",
@@ -9576,7 +9884,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.0425531914893617
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430968.png"
   },
   "9754": {
     "name": "Quentin Johnston",
@@ -9607,7 +9916,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 65.0,
       "target_share": 0.17287234042553193
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429025.png"
   },
   "8849": {
     "name": "Tanner Conner",
@@ -9638,7 +9948,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.04672897196261682
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4047422.png"
   },
   "4574": {
     "name": "Cooper Rush",
@@ -9669,7 +9980,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2972515.png"
   },
   "9486": {
     "name": "Dontayvion Wicks",
@@ -9700,7 +10012,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
       "target_share": 0.10862619808306709
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428850.png"
   },
   "7946": {
     "name": "Jack Stoll",
@@ -9731,7 +10044,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.01891891891891892
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4034862.png"
   },
   "11604": {
     "name": "Brock Bowers",
@@ -9762,7 +10076,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 64.0,
       "target_share": 0.18658892128279883
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432665.png"
   },
   "12484": {
     "name": "Jayden Higgins",
@@ -9793,7 +10108,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 45.0,
       "target_share": 0.11842105263157894
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4877706.png"
   },
   "9482": {
     "name": "Michael Mayer",
@@ -9824,7 +10140,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.09329446064139942
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429086.png"
   },
   "9997": {
     "name": "Zay Flowers",
@@ -9855,7 +10172,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 77.0,
       "target_share": 0.27898550724637683
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429615.png"
   },
   "10231": {
     "name": "Elijah Higgins",
@@ -9886,7 +10204,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.04926108374384237
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426844.png"
   },
   "9508": {
     "name": "Tyjae Spears",
@@ -9917,7 +10236,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 24.0,
       "target_share": 0.06896551724137931
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428557.png"
   },
   "7562": {
     "name": "Tutu Atwell",
@@ -9948,7 +10268,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.024725274725274724
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360797.png"
   },
   "3634": {
     "name": "Kalif Raymond",
@@ -9979,7 +10300,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.05637982195845697
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2973405.png"
   },
   "5022": {
     "name": "Dallas Goedert",
@@ -10010,7 +10332,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 52.0,
       "target_share": 0.17687074829931973
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3121023.png"
   },
   "5773": {
     "name": "KhaDarel Hodge",
@@ -10041,7 +10364,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.02976190476190476
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3047876.png"
   },
   "10444": {
     "name": "Cedric Tillman",
@@ -10072,7 +10396,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
       "target_share": 0.08659217877094973
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4369863.png"
   },
   "5967": {
     "name": "Tony Pollard",
@@ -10103,7 +10428,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.09195402298850575
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916148.png"
   },
   "13151": {
     "name": "Nick Kallerup",
@@ -10134,7 +10460,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0034965034965034965
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569547.png"
   },
   "5854": {
     "name": "Drew Lock",
@@ -10165,7 +10492,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3924327.png"
   },
   "12499": {
     "name": "Elic Ayomanor",
@@ -10196,7 +10524,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 59.0,
       "target_share": 0.16954022988505746
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4883647.png"
   },
   "7588": {
     "name": "Javonte Williams",
@@ -10227,7 +10556,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 39.0,
       "target_share": 0.0982367758186398
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361579.png"
   },
   "12971": {
     "name": "Ke'Shawn Williams",
@@ -10258,7 +10588,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4570738.png"
   },
   "11320": {
     "name": "Nikko Remigio",
@@ -10289,7 +10620,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0025906735751295338
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372716.png"
   },
   "7021": {
     "name": "Rico Dowdle",
@@ -10320,7 +10652,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 30.0,
       "target_share": 0.09063444108761329
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4038815.png"
   },
   "5970": {
     "name": "Greg Dortch",
@@ -10351,7 +10684,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 31.0,
       "target_share": 0.07635467980295567
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4037235.png"
   },
   "12539": {
     "name": "Arian Smith",
@@ -10382,7 +10716,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.034722222222222224
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429105.png"
   },
   "4039": {
     "name": "Cooper Kupp",
@@ -10413,7 +10748,8 @@
       "avg_pass_int": 0.1,
       "total_targets": 46.0,
       "target_share": 0.16083916083916083
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2977187.png"
   },
   "6850": {
     "name": "Harrison Bryant",
@@ -10444,7 +10780,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.015789473684210527
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4040774.png"
   },
   "5012": {
     "name": "Mark Andrews",
@@ -10475,7 +10812,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 46.0,
       "target_share": 0.16666666666666666
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116365.png"
   },
   "4098": {
     "name": "Kareem Hunt",
@@ -10506,7 +10844,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.04145077720207254
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3059915.png"
   },
   "13150": {
     "name": "Darius Cooper",
@@ -10537,7 +10876,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006802721088435374
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4715355.png"
   },
   "421": {
     "name": "Matthew Stafford",
@@ -10568,7 +10908,8 @@
       "avg_pass_int": 0.18181818181818182,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/12483.png"
   },
   "7891": {
     "name": "Brock Wright",
@@ -10599,7 +10940,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.06528189910979229
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242392.png"
   },
   "4663": {
     "name": "Austin Ekeler",
@@ -10630,7 +10972,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.024054982817869417
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3068267.png"
   },
   "12897": {
     "name": "Nathan Carter",
@@ -10661,7 +11004,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4605841.png"
   },
   "4137": {
     "name": "James Conner",
@@ -10692,7 +11036,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.022167487684729065
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3045147.png"
   },
   "5985": {
     "name": "Foster Moreau",
@@ -10723,7 +11068,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.016216216216216217
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3843945.png"
   },
   "12480": {
     "name": "Moliki Matavao",
@@ -10754,7 +11100,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432731.png"
   },
   "3976": {
     "name": "Mitchell Trubisky",
@@ -10785,7 +11132,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3039707.png"
   },
   "4171": {
     "name": "Josh Reynolds",
@@ -10816,7 +11164,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.07291666666666667
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3115306.png"
   },
   "5848": {
     "name": "Hollywood Brown",
@@ -10847,7 +11196,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241372.png"
   },
   "8676": {
     "name": "Rashid Shaheed",
@@ -10878,7 +11228,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.027972027972027972
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4032473.png"
   },
   "8489": {
     "name": "Drew Ogletree",
@@ -10909,7 +11260,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.00872093023255814
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4722908.png"
   },
   "3321": {
     "name": "Tyreek Hill",
@@ -10940,7 +11292,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
       "target_share": 0.09034267912772585
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116406.png"
   },
   "1466": {
     "name": "Travis Kelce",
@@ -10971,7 +11324,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 72.0,
       "target_share": 0.18652849740932642
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/15847.png"
   },
   "8126": {
     "name": "Wan'Dale Robinson",
@@ -11002,7 +11356,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 102.0,
       "target_share": 0.2749326145552561
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569587.png"
   },
   "7527": {
     "name": "Mac Jones",
@@ -11033,7 +11388,8 @@
       "avg_pass_int": 0.6666666666666666,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4241464.png"
   },
   "11628": {
     "name": "Marvin Harrison Jr.",
@@ -11064,7 +11420,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 62.0,
       "target_share": 0.15270935960591134
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432708.png"
   },
   "12536": {
     "name": "Jaylin Noel",
@@ -11095,7 +11452,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 27.0,
       "target_share": 0.07105263157894737
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4586312.png"
   },
   "6290": {
     "name": "Scotty Miller",
@@ -11126,7 +11484,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006269592476489028
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3914397.png"
   },
   "12545": {
     "name": "Tyler Shough",
@@ -11157,7 +11516,8 @@
       "avg_pass_int": 0.6,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360689.png"
   },
   "11921": {
     "name": "Xavier Weaver",
@@ -11188,7 +11548,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.017241379310344827
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4428811.png"
   },
   "4983": {
     "name": "DJ Moore",
@@ -11219,7 +11580,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 58.0,
       "target_share": 0.1676300578034682
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3915416.png"
   },
   "11834": {
     "name": "Devaughn Vele",
@@ -11250,7 +11612,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.05405405405405406
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569559.png"
   },
   "7569": {
     "name": "Nico Collins",
@@ -11281,7 +11644,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 85.0,
       "target_share": 0.2236842105263158
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4258173.png"
   },
   "96": {
     "name": "Aaron Rodgers",
@@ -11312,7 +11676,8 @@
       "avg_pass_int": 0.7,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/8439.png"
   },
   "5154": {
     "name": "Trent Sherfield Sr.",
@@ -11343,7 +11708,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.010958904109589041
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3122168.png"
   },
   "5870": {
     "name": "Daniel Jones",
@@ -11374,7 +11740,8 @@
       "avg_pass_int": 0.6363636363636364,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3917792.png"
   },
   "6801": {
     "name": "Tee Higgins",
@@ -11405,7 +11772,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 70.0,
       "target_share": 0.1794871794871795
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4239993.png"
   },
   "3294": {
     "name": "Dak Prescott",
@@ -11436,7 +11804,8 @@
       "avg_pass_int": 0.6363636363636364,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2577417.png"
   },
   "11370": {
     "name": "Chris Brooks",
@@ -11467,7 +11836,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.03194888178913738
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3149687.png"
   },
   "4984": {
     "name": "Josh Allen",
@@ -11498,7 +11868,8 @@
       "avg_pass_int": 0.8181818181818182,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3918298.png"
   },
   "7567": {
     "name": "Kenneth Gainwell",
@@ -11529,7 +11900,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 48.0,
       "target_share": 0.15047021943573669
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4371733.png"
   },
   "8138": {
     "name": "James Cook III",
@@ -11560,7 +11932,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4379399.png"
   },
   "12509": {
     "name": "Tre' Harris",
@@ -11591,7 +11964,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.05319148936170213
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686612.png"
   },
   "7612": {
     "name": "Dee Eskridge",
@@ -11622,7 +11996,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.021806853582554516
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4043016.png"
   },
   "12171": {
     "name": "British Brooks",
@@ -11653,7 +12028,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4373273.png"
   },
   "8799": {
     "name": "Zaire Mitchell-Paden",
@@ -11684,7 +12060,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002702702702702703
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4876006.png"
   },
   "4988": {
     "name": "Nick Chubb",
@@ -11715,7 +12092,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.05
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3128720.png"
   },
   "4040": {
     "name": "JuJu Smith-Schuster",
@@ -11746,7 +12124,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.08290155440414508
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3120348.png"
   },
   "12498": {
     "name": "Mason Taylor",
@@ -11777,7 +12156,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 53.0,
       "target_share": 0.1840277777777778
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4808766.png"
   },
   "11562": {
     "name": "Spencer Rattler",
@@ -11808,7 +12188,8 @@
       "avg_pass_int": 0.625,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426339.png"
   },
   "5121": {
     "name": "Braxton Berrios",
@@ -11839,7 +12220,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.021052631578947368
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3123075.png"
   },
   "4314": {
     "name": "Johnny Mundt",
@@ -11870,7 +12252,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 17.0,
       "target_share": 0.04709141274238227
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3052096.png"
   },
   "8208": {
     "name": "Tyler Badie",
@@ -11901,7 +12284,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.052054794520547946
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362748.png"
   },
   "11168": {
     "name": "Xavier Smith",
@@ -11932,7 +12316,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.027472527472527472
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4386544.png"
   },
   "12412": {
     "name": "Terrell Jennings",
@@ -11963,7 +12348,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0029239766081871343
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4427600.png"
   },
   "13079": {
     "name": "Jahdae Walker",
@@ -11994,7 +12380,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5160110.png"
   },
   "12775": {
     "name": "Max Brosmer",
@@ -12025,7 +12412,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4573398.png"
   },
   "2133": {
     "name": "Davante Adams",
@@ -12056,7 +12444,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 94.0,
       "target_share": 0.25824175824175827
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/16800.png"
   },
   "12523": {
     "name": "Jimmy Horn Jr.",
@@ -12087,7 +12476,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.030211480362537766
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4708486.png"
   },
   "11256": {
     "name": "Tyson Bagent",
@@ -12118,7 +12508,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4434153.png"
   },
   "7050": {
     "name": "Josiah Deguara",
@@ -12149,7 +12540,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0024630541871921183
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3914151.png"
   },
   "4602": {
     "name": "Robert Tonyan",
@@ -12180,7 +12572,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2975674.png"
   },
   "9753": {
     "name": "Zach Charbonnet",
@@ -12211,7 +12604,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.03496503496503497
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426385.png"
   },
   "9502": {
     "name": "Tank Dell",
@@ -12242,7 +12636,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4366031.png"
   },
   "7694": {
     "name": "Tommy Tremble",
@@ -12273,7 +12668,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.0755287009063444
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372780.png"
   },
   "11597": {
     "name": "Theo Johnson",
@@ -12304,7 +12700,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 60.0,
       "target_share": 0.16172506738544473
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429148.png"
   },
   "11068": {
     "name": "Mitchell Tinsley",
@@ -12335,7 +12732,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03076923076923077
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4690070.png"
   },
   "9228": {
     "name": "Bryce Young",
@@ -12366,7 +12764,8 @@
       "avg_pass_int": 0.7,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685720.png"
   },
   "827": {
     "name": "Tyrod Taylor",
@@ -12397,7 +12796,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/14163.png"
   },
   "8180": {
     "name": "Jalen Nailor",
@@ -12428,7 +12828,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 38.0,
       "target_share": 0.11692307692307692
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4382466.png"
   },
   "7611": {
     "name": "Rhamondre Stevenson",
@@ -12459,7 +12860,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.06140350877192982
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569173.png"
   },
   "12473": {
     "name": "Mitchell Evans",
@@ -12490,7 +12892,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.04229607250755287
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4683243.png"
   },
   "10222": {
     "name": "Jayden Reed",
@@ -12521,7 +12924,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 5.0,
       "target_share": 0.01597444089456869
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362249.png"
   },
   "6938": {
     "name": "Cam Akers",
@@ -12552,7 +12956,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003076923076923077
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4240021.png"
   },
   "4234": {
     "name": "Noah Brown",
@@ -12583,7 +12988,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.024054982817869417
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3121409.png"
   },
   "8129": {
     "name": "Dameon Pierce",
@@ -12614,7 +13020,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002631578947368421
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360238.png"
   },
   "11565": {
     "name": "J.J. McCarthy",
@@ -12645,7 +13052,8 @@
       "avg_pass_int": 1.6666666666666667,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4433970.png"
   },
   "12482": {
     "name": "Savion Williams",
@@ -12676,7 +13084,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.03194888178913738
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431487.png"
   },
   "11157": {
     "name": "Brycen Tremayne",
@@ -12707,7 +13116,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 15.0,
       "target_share": 0.045317220543806644
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360763.png"
   },
   "8145": {
     "name": "Jeremy Ruckert",
@@ -12738,7 +13148,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.05555555555555555
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361372.png"
   },
   "9480": {
     "name": "Brenton Strange",
@@ -12769,7 +13180,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 29.0,
       "target_share": 0.08033240997229917
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430539.png"
   },
   "8210": {
     "name": "Chig Okonkwo",
@@ -12800,7 +13212,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 46.0,
       "target_share": 0.13218390804597702
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360635.png"
   },
   "12495": {
     "name": "Ollie Gordon II",
@@ -12831,7 +13244,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.024922118380062305
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4711533.png"
   },
   "8227": {
     "name": "Teagan Quitoriano",
@@ -12862,7 +13276,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4374045.png"
   },
   "5849": {
     "name": "Kyler Murray",
@@ -12893,7 +13308,8 @@
       "avg_pass_int": 0.6,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3917315.png"
   },
   "11626": {
     "name": "Xavier Legette",
@@ -12924,7 +13340,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 46.0,
       "target_share": 0.13897280966767372
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430034.png"
   },
   "12889": {
     "name": "Beaux Collins",
@@ -12955,7 +13372,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.016172506738544475
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431210.png"
   },
   "4080": {
     "name": "Zay Jones",
@@ -12986,7 +13404,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 18.0,
       "target_share": 0.04433497536945813
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3059722.png"
   },
   "5086": {
     "name": "Marquez Valdes-Scantling",
@@ -13017,7 +13436,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3051738.png"
   },
   "3048": {
     "name": "Chris Manhertz",
@@ -13048,7 +13468,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005390835579514825
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2531358.png"
   },
   "10232": {
     "name": "Michael Wilson",
@@ -13079,7 +13500,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 71.0,
       "target_share": 0.1748768472906404
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360761.png"
   },
   "11762": {
     "name": "Anthony Gould",
@@ -13110,7 +13532,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.0029069767441860465
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429684.png"
   },
   "10214": {
     "name": "Davis Allen",
@@ -13141,7 +13564,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.054945054945054944
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426553.png"
   },
   "4147": {
     "name": "Samaje Perine",
@@ -13172,7 +13596,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.023076923076923078
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116389.png"
   },
   "4981": {
     "name": "Calvin Ridley",
@@ -13203,7 +13628,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 36.0,
       "target_share": 0.10344827586206896
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3925357.png"
   },
   "6001": {
     "name": "Drew Sample",
@@ -13234,7 +13660,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.02564102564102564
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3127310.png"
   },
   "2505": {
     "name": "Darren Waller",
@@ -13265,7 +13692,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.037383177570093455
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2576925.png"
   },
   "11608": {
     "name": "Isaiah Williams",
@@ -13296,7 +13724,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.03125
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4569371.png"
   },
   "12543": {
     "name": "Tahj Brooks",
@@ -13327,7 +13756,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.002564102564102564
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429299.png"
   },
   "6820": {
     "name": "Clyde Edwards-Helaire",
@@ -13358,7 +13788,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.0051813471502590676
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242214.png"
   },
   "9484": {
     "name": "Tucker Kraft",
@@ -13389,7 +13820,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 44.0,
       "target_share": 0.14057507987220447
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4572680.png"
   },
   "19": {
     "name": "Joe Flacco",
@@ -13420,7 +13852,8 @@
       "avg_pass_int": 1.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/11252.png"
   },
   "5110": {
     "name": "Russell Gage Jr.",
@@ -13451,7 +13884,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3115378.png"
   },
   "11571": {
     "name": "Isaiah Davis",
@@ -13482,7 +13916,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 21.0,
       "target_share": 0.07291666666666667
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4695404.png"
   },
   "11625": {
     "name": "Adonai Mitchell",
@@ -13513,7 +13948,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 13.0,
       "target_share": 0.04513888888888889
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4597500.png"
   },
   "11617": {
     "name": "Malachi Corley",
@@ -13544,7 +13980,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 6.0,
       "target_share": 0.01675977653631285
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4613104.png"
   },
   "12483": {
     "name": "Jack Bech",
@@ -13575,7 +14012,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.03498542274052478
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4603186.png"
   },
   "5846": {
     "name": "DK Metcalf",
@@ -13606,7 +14044,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 70.0,
       "target_share": 0.219435736677116
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4047650.png"
   },
   "5906": {
     "name": "Dawson Knox",
@@ -13637,7 +14076,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 25.0,
       "target_share": 0.07716049382716049
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3930086.png"
   },
   "8119": {
     "name": "Jahan Dotson",
@@ -13668,7 +14108,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 18.0,
       "target_share": 0.061224489795918366
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361409.png"
   },
   "8121": {
     "name": "Romeo Doubs",
@@ -13699,7 +14140,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 67.0,
       "target_share": 0.21405750798722045
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361432.png"
   },
   "12530": {
     "name": "Travis Hunter",
@@ -13730,7 +14172,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 45.0,
       "target_share": 0.12465373961218837
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685415.png"
   },
   "6853": {
     "name": "Van Jefferson",
@@ -13761,7 +14204,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 34.0,
       "target_share": 0.09770114942528736
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3930066.png"
   },
   "6945": {
     "name": "Antonio Gibson",
@@ -13792,7 +14236,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008771929824561403
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360294.png"
   },
   "4993": {
     "name": "Mike Gesicki",
@@ -13823,7 +14268,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.05641025641025641
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116164.png"
   },
   "8408": {
     "name": "Jordan Mason",
@@ -13854,7 +14300,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 14.0,
       "target_share": 0.043076923076923075
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360569.png"
   },
   "12540": {
     "name": "Chimere Dike",
@@ -13885,7 +14332,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 43.0,
       "target_share": 0.1235632183908046
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431268.png"
   },
   "9758": {
     "name": "C.J. Stroud",
@@ -13916,7 +14364,8 @@
       "avg_pass_int": 0.625,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432577.png"
   },
   "2749": {
     "name": "Raheem Mostert",
@@ -13947,7 +14396,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.026239067055393587
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/2576414.png"
   },
   "8132": {
     "name": "Tyler Allgeier",
@@ -13978,7 +14428,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.026785714285714284
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4373626.png"
   },
   "5892": {
     "name": "David Montgomery",
@@ -14009,7 +14460,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 22.0,
       "target_share": 0.06528189910979229
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035538.png"
   },
   "7526": {
     "name": "Jaylen Waddle",
@@ -14040,7 +14492,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 73.0,
       "target_share": 0.22741433021806853
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4372016.png"
   },
   "11421": {
     "name": "Ryan Miller",
@@ -14071,7 +14524,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 4.0,
       "target_share": 0.011019283746556474
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4369466.png"
   },
   "11637": {
     "name": "Keon Coleman",
@@ -14102,7 +14556,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 49.0,
       "target_share": 0.15123456790123457
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4635008.png"
   },
   "8500": {
     "name": "John FitzPatrick",
@@ -14133,7 +14588,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.022364217252396165
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4379401.png"
   },
   "7049": {
     "name": "Jauan Jennings",
@@ -14164,7 +14620,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 56.0,
       "target_share": 0.1497326203208556
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3886598.png"
   },
   "4082": {
     "name": "Curtis Samuel",
@@ -14195,7 +14652,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 9.0,
       "target_share": 0.027777777777777776
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3121427.png"
   },
   "9509": {
     "name": "Bijan Robinson",
@@ -14226,7 +14684,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 61.0,
       "target_share": 0.18154761904761904
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430807.png"
   },
   "12504": {
     "name": "Kaleb Johnson",
@@ -14257,7 +14716,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006269592476489028
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4819231.png"
   },
   "8800": {
     "name": "Malik Davis",
@@ -14288,7 +14748,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4240603.png"
   },
   "11603": {
     "name": "AJ Barner",
@@ -14319,7 +14780,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 41.0,
       "target_share": 0.14335664335664336
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4576297.png"
   },
   "5781": {
     "name": "Malik Turner",
@@ -14350,7 +14812,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.00267379679144385
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3115928.png"
   },
   "5857": {
     "name": "Noah Fant",
@@ -14381,7 +14844,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 35.0,
       "target_share": 0.08974358974358974
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4036131.png"
   },
   "1234": {
     "name": "Russell Wilson",
@@ -14412,7 +14876,8 @@
       "avg_pass_int": 0.5,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/14881.png"
   },
   "6957": {
     "name": "James Proche II",
@@ -14443,7 +14908,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008620689655172414
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3916204.png"
   },
   "9494": {
     "name": "Marvin Mims Jr.",
@@ -14474,7 +14940,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 32.0,
       "target_share": 0.08767123287671233
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686472.png"
   },
   "4943": {
     "name": "Sam Darnold",
@@ -14505,7 +14972,8 @@
       "avg_pass_int": 0.9090909090909091,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3912547.png"
   },
   "6151": {
     "name": "Miles Sanders",
@@ -14536,7 +15004,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 8.0,
       "target_share": 0.020151133501259445
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4045163.png"
   },
   "12474": {
     "name": "Woody Marks",
@@ -14567,7 +15036,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.06842105263157895
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429059.png"
   },
   "13121": {
     "name": "Ben Yurosek",
@@ -14598,7 +15068,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.006153846153846154
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4433959.png"
   },
   "11942": {
     "name": "Colson Yankoff",
@@ -14629,7 +15100,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 1.0,
       "target_share": 0.003436426116838488
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361088.png"
   },
   "6920": {
     "name": "Isaiah Hodgins",
@@ -14660,7 +15132,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242540.png"
   },
   "11632": {
     "name": "Malik Nabers",
@@ -14691,7 +15164,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 35.0,
       "target_share": 0.09433962264150944
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4595348.png"
   },
   "4199": {
     "name": "Aaron Jones Sr.",
@@ -14722,7 +15196,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.08
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3042519.png"
   },
   "11820": {
     "name": "Devin Culp",
@@ -14753,7 +15228,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361112.png"
   },
   "7585": {
     "name": "Davis Mills",
@@ -14784,7 +15260,8 @@
       "avg_pass_int": 0.2,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4242546.png"
   },
   "11631": {
     "name": "Brian Thomas Jr.",
@@ -14815,7 +15292,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 60.0,
       "target_share": 0.16620498614958448
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432773.png"
   },
   "3202": {
     "name": "Austin Hooper",
@@ -14846,7 +15324,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 19.0,
       "target_share": 0.05555555555555555
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3043275.png"
   },
   "8142": {
     "name": "Alec Pierce",
@@ -14877,7 +15356,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 54.0,
       "target_share": 0.1569767441860465
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360078.png"
   },
   "7075": {
     "name": "Charlie Woerner",
@@ -14908,7 +15388,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 7.0,
       "target_share": 0.020833333333333332
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4035020.png"
   },
   "4972": {
     "name": "Mason Rudolph",
@@ -14939,7 +15420,8 @@
       "avg_pass_int": 0.25,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3116407.png"
   },
   "5955": {
     "name": "Hunter Renfrow",
@@ -14970,7 +15452,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.07854984894259819
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3135321.png"
   },
   "12503": {
     "name": "Isaiah Bond",
@@ -15001,7 +15484,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 33.0,
       "target_share": 0.09217877094972067
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/college-football/players/full/4808839.png"
   },
   "11199": {
     "name": "Emari Demercado",
@@ -15032,7 +15516,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 12.0,
       "target_share": 0.029556650246305417
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4362478.png"
   },
   "7812": {
     "name": "Simi Fehoko",
@@ -15063,7 +15548,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4360739.png"
   },
   "11433": {
     "name": "Nate Adkins",
@@ -15094,7 +15580,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.0273972602739726
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4383440.png"
   },
   "9221": {
     "name": "Jahmyr Gibbs",
@@ -15125,7 +15612,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 55.0,
       "target_share": 0.1632047477744807
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429795.png"
   },
   "12471": {
     "name": "DJ Giddens",
@@ -15156,7 +15644,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 2.0,
       "target_share": 0.005813953488372093
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4874509.png"
   },
   "9504": {
     "name": "Kayshon Boutte",
@@ -15187,7 +15676,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 33.0,
       "target_share": 0.09649122807017543
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4429022.png"
   },
   "11576": {
     "name": "Braelon Allen",
@@ -15218,7 +15708,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.010416666666666666
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685247.png"
   },
   "4046": {
     "name": "Patrick Mahomes",
@@ -15249,7 +15740,8 @@
       "avg_pass_int": 0.6363636363636364,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3139477.png"
   },
   "6039": {
     "name": "Ty Johnson",
@@ -15280,7 +15772,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 16.0,
       "target_share": 0.04938271604938271
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3915411.png"
   },
   "4219": {
     "name": "Jeremy McNichols",
@@ -15311,7 +15804,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 20.0,
       "target_share": 0.06872852233676977
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3127586.png"
   },
   "10226": {
     "name": "Andrei Iosivas",
@@ -15342,7 +15836,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 42.0,
       "target_share": 0.1076923076923077
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4368003.png"
   },
   "6386": {
     "name": "Alex Bachman",
@@ -15373,7 +15868,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 3.0,
       "target_share": 0.008746355685131196
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3919510.png"
   },
   "7716": {
     "name": "John Bates",
@@ -15404,7 +15900,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 10.0,
       "target_share": 0.03436426116838488
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4048228.png"
   },
   "12522": {
     "name": "Cam Ward",
@@ -15435,7 +15932,8 @@
       "avg_pass_int": 0.5454545454545454,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4688380.png"
   },
   "11783": {
     "name": "Ryan Flournoy",
@@ -15466,7 +15964,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 26.0,
       "target_share": 0.0654911838790932
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5083754.png"
   },
   "12502": {
     "name": "Gunnar Helm",
@@ -15497,7 +15996,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 37.0,
       "target_share": 0.10632183908045977
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686728.png"
   },
   "5995": {
     "name": "Justice Hill",
@@ -15528,7 +16028,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 27.0,
       "target_share": 0.09782608695652174
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4038441.png"
   },
   "8134": {
     "name": "Khalil Shakir",
@@ -15559,7 +16060,8 @@
       "avg_pass_int": 0.0,
       "total_targets": 71.0,
       "target_share": 0.2191358024691358
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4373678.png"
   },
   "9489": {
     "name": "Justin Shorter",
@@ -15590,6 +16092,7 @@
       "avg_pass_int": 0.0,
       "total_targets": 0.0,
       "target_share": 0.0
-    }
+    },
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4361426.png"
   }
 }

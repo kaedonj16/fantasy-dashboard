@@ -7785,7 +7785,7 @@ def api_player_indicators():
             try:
                 from data_building.offseason_opportunity import get_offseason_breakout_candidates
 
-                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=30)
+                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=25)
                 breakouts = [str(c["player_id"]) for c in offseason_candidates]
                 print(f"[player-indicators] Offseason: Found {len(breakouts)} breakout candidates from roster changes")
 
@@ -8512,7 +8512,6 @@ def api_player_details(player_id: str):
                     break
 
             if not player_has_stats_this_season:
-                print(f"[api_player_details] Player {player_id} has no stats in {season_year}, skipping season")
                 continue
 
             # Now iterate through schedule and create game logs for ALL games
@@ -8657,6 +8656,7 @@ def api_player_details(player_id: str):
             "age": player_value.get("age"),
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
+            "espnHeadshot": player_meta.get("espnHeadshot"),
             "stats": {
                 "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
@@ -8915,9 +8915,6 @@ def api_team_details(roster_id: str):
             current_nfl_season = int(nfl_state.get("season", current_season))
             season_type = str(nfl_state.get("season_type", "")).lower().strip()
 
-            print(
-                f"[api_team_details] Graph logic - current_season: {current_season}, current_nfl_season: {current_nfl_season}, season_type: '{season_type}'")
-
             # Determine which season to use for graphs
             graph_season = current_season
             if current_nfl_season > int(season) and season_type in {"offseason", "pre"}:
@@ -8930,15 +8927,12 @@ def api_team_details(roster_id: str):
                 # We're in some form of offseason, try previous season
                 graph_season = int(season) - 1
 
-            print(f"[api_team_details] Using graph_season: {graph_season}")
 
             # Get league context for graphs
             ctx = get_league_ctx_from_cache(platform, league_id, graph_season)
             team_stats = ctx.get("team_stats")
             df_weekly = ctx.get("df_weekly")
 
-            print(
-                f"[api_team_details] Graph context - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
             if df_weekly is not None and not df_weekly.empty:
                 print(f"[api_team_details] df_weekly shape: {df_weekly.shape}")
 
@@ -8955,15 +8949,11 @@ def api_team_details(roster_id: str):
                     current_season=current_season,
                     target_season=fallback_season
                 )
-                print(
-                    f"[api_team_details] Using fallback league_id: {fallback_league_id} for season: {fallback_season}")
 
                 ctx = get_league_ctx_from_cache(platform, fallback_league_id, fallback_season)
                 team_stats = ctx.get("team_stats")
                 df_weekly = ctx.get("df_weekly")
                 graph_season = fallback_season
-                print(
-                    f"[api_team_details] Fallback context - team_stats exists: {team_stats is not None}, df_weekly exists: {df_weekly is not None and not df_weekly.empty}")
                 if df_weekly is not None and not df_weekly.empty:
                     print(f"[api_team_details] Fallback df_weekly shape: {df_weekly.shape}")
 
@@ -8975,7 +8965,6 @@ def api_team_details(roster_id: str):
 
                 # Only build graphs if we have data after filtering
                 if not df_weekly.empty:
-                    print(f"[api_team_details] Building graphs with df_weekly shape: {df_weekly.shape}")
                     # Get weekly scores for this team
                     team_weekly = df_weekly[df_weekly["owner"] == team_name]
                     weekly_scores = []
@@ -9002,8 +8991,6 @@ def api_team_details(roster_id: str):
                     # Find this team's row in team_stats
                     if team_stats is not None:
                         available_teams = team_stats["owner"].tolist() if "owner" in team_stats.columns else []
-                        print(f"[api_team_details] Available team names in stats: {available_teams}")
-                        print(f"[api_team_details] Looking for team_name: '{team_name}'")
 
                     # Try exact match first
                     team_row = team_stats[team_stats["owner"] == team_name]

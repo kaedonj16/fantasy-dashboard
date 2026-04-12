@@ -101,6 +101,56 @@ function bindOnce(el, key, type, handler, options) {
 
     // Update toggle button icons
     updateThemeIcons();
+    
+    // Update existing Plotly charts to match new theme
+    updatePlotlyChartsTheme();
+  }
+
+  function updatePlotlyChartsTheme() {
+    if (typeof Plotly === 'undefined') return;
+    
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'plotly_dark' : 'plotly_white';
+    
+    // Update team modal charts if they exist
+    const weeklyChart = document.getElementById('teamWeeklyChart');
+    const radarChart = document.getElementById('teamRadarChart');
+    
+    if (weeklyChart) {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#ffffff' : '#000000';
+      const bgColor = isDark ? '#1f2937' : '#ffffff';
+      const borderColor = isDark ? '#374151' : '#e5e7eb';
+      
+      Plotly.relayout(weeklyChart, {
+        template: theme,
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)',
+        'hoverlabel.bgcolor': bgColor,
+        'hoverlabel.bordercolor': borderColor,
+        'hoverlabel.font.color': textColor
+      });
+    }
+    
+    if (radarChart) {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#ffffff' : '#000000';
+      const gridColor = isDark ? '#374151' : '#e5e7eb';
+      const lineColor = isDark ? '#9ca3af' : '#6b7280';
+      
+      Plotly.relayout(radarChart, {
+        template: theme,
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)',
+        'polar.radialaxis.tickcolor': textColor,
+        'polar.radialaxis.gridcolor': gridColor,
+        'polar.radialaxis.linecolor': lineColor,
+        'polar.angularaxis.tickcolor': textColor,
+        'polar.angularaxis.gridcolor': gridColor,
+        'polar.angularaxis.linecolor': lineColor,
+        'polar.bgcolor': 'rgba(0,0,0,0)',
+        'font.color': textColor
+      });
+    }
   }
 
   function updateThemeIcons() {
@@ -1545,7 +1595,6 @@ window.initTradePage = function initTradePage(root = document) {
     // Don't run analysis in guest mode
     const isGuest = root.querySelector("#isGuestMode")?.value === "true";
     if (isGuest) {
-      console.log("[trade] Skipping analyzeTrade in guest mode");
       return;
     }
 
@@ -3351,8 +3400,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // Player Modal
 function openPlayerModal(playerId, playerName) {
-  console.log('Opening player modal for ID:', playerId, 'Name:', playerName); // Debug: Log player info
-  
+
   // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
   const pathParts = window.location.pathname.split('/').filter(p => p);
   const platform = pathParts[0] || 'sleeper';
@@ -3380,10 +3428,15 @@ function openPlayerModal(playerId, playerName) {
 
   modal.innerHTML = `
     <div class="player-modal-header">
+        <div class="player-modal-headshot-container">
+          <img class="player-modal-headshot" id="playerModalHeadshot" src="" alt="${playerName || 'Player'}" />
+        </div>
       <div class="player-modal-title-section">
-        <h2 class="player-modal-name">${playerName || 'Loading...'}</h2>
-        <div class="player-modal-meta" id="playerModalMeta">
-          <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+        <div class="player-modal-title-text">
+          <h2 class="player-modal-name">${playerName || 'Loading...'}</h2>
+          <div class="player-modal-meta" id="playerModalMeta">
+            <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+          </div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -3407,8 +3460,7 @@ function openPlayerModal(playerId, playerName) {
   fetch(apiUrl)
     .then(res => res.json())
     .then(data => {
-      console.log('Player modal data received:', data); // Debug: Log received data
-      
+
       if (data.error) {
         document.getElementById('playerModalBody').innerHTML = `
           <div class="player-modal-loading">
@@ -3474,6 +3526,12 @@ function openPlayerModal(playerId, playerName) {
       if (data.age) metaParts.push(`<span>${data.age.toFixed(1)} yrs</span>`);
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
+      // Update headshot
+      const headshotEl = document.getElementById('playerModalHeadshot');
+      if (headshotEl && data.espnHeadshot) {
+        headshotEl.src = data.espnHeadshot;
+      }
+
       // Build modal body
       let bodyHTML = '';
 
@@ -3483,7 +3541,7 @@ function openPlayerModal(playerId, playerName) {
         if (slot) {
           const bkHeaderBtn = document.createElement('button');
           bkHeaderBtn.id = 'playerModalBreakoutBtn';
-          bkHeaderBtn.textContent = '🔥 Breakout Analysis';
+          bkHeaderBtn.textContent = 'View Breakout Analysis';
           bkHeaderBtn.style.cssText = `
             background: rgba(16,185,129,0.1);
             border: 1px solid rgba(16,185,129,0.3);
@@ -3925,7 +3983,7 @@ function buildAdvancedMetricsHTML(metricsData) {
     defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
   // Snap Share (0–1 → %)
-  if (metrics.snap_share != null) {
+  if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
     defs.push({ label: 'Snap Share', fill: pct, display: pct.toFixed(1) + '%' });
   }
@@ -3935,9 +3993,17 @@ function buildAdvancedMetricsHTML(metricsData) {
       const v = metrics.yards_per_attempt;
       defs.push({ label: 'Yds/Attempt', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
     }
-    if (metrics.completion_rate != null) {
-      const pct = metrics.completion_rate * 100;
+    if (metrics.completion_pct != null) {
+      const pct = metrics.completion_pct;
       defs.push({ label: 'Completion %', fill: pct, display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
+      const ratio = metrics.td_rate / metrics.int_rate;
+      defs.push({ label: 'TD/INT Ratio', fill: Math.min(ratio * 20, 100), display: ratio.toFixed(2) });
+    }
+    if (metrics.yards_per_carry != null) {
+      const v = metrics.yards_per_carry;
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
   } else if (position === 'RB') {
     if (metrics.yards_per_carry != null) {
@@ -4249,9 +4315,14 @@ function openBreakoutModal(playerId, playerName) {
   modal.innerHTML = `
     <div class="player-modal-header">
       <div class="player-modal-title-section">
-        <h2 class="player-modal-name" id="bkModalName">${displayName}</h2>
-        <div class="player-modal-meta" id="bkModalMeta">
-          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+        <div class="player-modal-headshot-container">
+          <img class="player-modal-headshot" id="bkModalHeadshot" src="" alt="${displayName}" />
+        </div>
+        <div class="player-modal-title-text">
+          <h2 class="player-modal-name" id="bkModalName">${displayName}</h2>
+          <div class="player-modal-meta" id="bkModalMeta">
+            <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          </div>
         </div>
       </div>
       <button class="player-modal-close" onclick="closeBkModal()">×</button>
@@ -4273,13 +4344,27 @@ function openBreakoutModal(playerId, playerName) {
   const season = pathParts[1] || new Date().getFullYear();
 
   fetch(`/api/breakout/player/${playerId}?season=${season}`)
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        console.error('Breakout API request failed:', res.status, res.statusText);
+        document.getElementById('bkModalBody').innerHTML = `
+          <div class="player-modal-loading">
+            <div style="color:#ef4444;">Failed to load breakout data (${res.status})</div>
+            <div style="font-size:13px;color:var(--text-muted);">Please try again later.</div>
+          </div>
+        `;
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
+      console.log('Breakout API response for player', playerId, ':', data);
+      console.log('Data keys before error check:', Object.keys(data));
       if (data.error) {
         document.getElementById('bkModalBody').innerHTML = `
           <div class="player-modal-loading">
-            <div style="color:#ef4444;font-weight:500;">No breakout data found</div>
-            <div style="font-size:13px;color:var(--text-muted);">This player has no breakout score for the current season.</div>
+            <div style="color:#ef4444;font-weight:500;">No breakout data available</div>
+            <div style="font-size:13px;color:var(--text-muted);">This player doesn't have a breakout analysis for the current season.</div>
           </div>
         `;
         return;
@@ -4325,7 +4410,11 @@ function _renderBkModalContent(data, playerId) {
   if (formattedPhase !== '—') metaParts.push(`<span>${formattedPhase}</span>`);
   document.getElementById('bkModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 4px;">·</span>');
 
-  // Score color
+  // Update headshot
+  const headshotEl = document.getElementById("bkModalHeadshot");
+  if (headshotEl && data.espnHeadshot) {
+    headshotEl.src = data.espnHeadshot;
+  }
   let scoreColor = '#10b981';
   if (score < 50) scoreColor = '#3b82f6';
   if (score < 40) scoreColor = '#f59e0b';
@@ -4346,19 +4435,20 @@ function _renderBkModalContent(data, playerId) {
         <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
         <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
       </div>
-      <div class="pm-hero-stat" style="text-align:left;padding-left:16px;">
+      <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
         <div class="pm-hero-label">Profile</div>
-        <div style="font-size:22px;line-height:1;margin:4px 0;">${emoji}</div>
+        <div style="font-size:13px;font-weight:700;line-height:1,3;color:var(--text);margin:4px 0;">${breakoutType.profile_label}</div>
       </div>
       <div class="pm-hero-stat">
         <div class="pm-hero-label">Phase</div>
         <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
-        <div class="pm-hero-sub">${pos}${pos && team ? ' · ' : ''}${team}</div>
       </div>
     </div>
   `;
 
   // ── Component breakdown with bars ─────────────────────────────────────────
+  html += `<div class='pm-two-column'>`;
+  html += `<div class='pm-left-column'>`;
   html += `<hr class="pm-section-divider">`;
   html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
 
@@ -4371,7 +4461,7 @@ function _renderBkModalContent(data, playerId) {
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280', suffix: '%' },
   ];
 
-  html += '<div class="pm-comp-list">';
+  html += '<div class="pm-comp-list-bo">';
   components.forEach(c => {
     const v    = parseFloat(c.val || 0);
     const fill = Math.min(100, Math.max(0, v));
@@ -4385,42 +4475,46 @@ function _renderBkModalContent(data, playerId) {
       </div>`;
   });
   html += '</div>';
+  html += '</div>';
+
+
+  // ── Key factors ───────────────────────────────────────────────────────────
+  if (reasons.length) {
+    html += `
+      <div class='pm-right-column'>
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+    `;
+    reasons.forEach(r => {
+      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
+        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
+      </div>`;
+    });
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+  }
 
   // ── Context boxes ─────────────────────────────────────────────────────────
-  if (txnSummary) {
+  if (txnSummary && txnSummary !== "No departures") {
     html += `
       <hr class="pm-section-divider">
       <div class="pm-section-header"><span class="pm-section-label">Vacated Opportunity</span></div>
       <div class="pm-context-box">${txnSummary}</div>
     `;
   }
-  if (addedCompSumm) {
+  if (addedCompSumm && addedCompSumm !== "No new competition added") {
     html += `
       <hr class="pm-section-divider">
       <div class="pm-section-header"><span class="pm-section-label">Added Competition</span></div>
       <div class="pm-context-box competition">${addedCompSumm}</div>
     `;
   }
-
-  // ── Key factors ───────────────────────────────────────────────────────────
-  if (reasons.length) {
-    html += `
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>
-      <div style="display:flex;flex-direction:column;gap:6px;">
-    `;
-    reasons.forEach(r => {
-      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:8px;align-items:flex-start;">
-        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
-      </div>`;
-    });
-    html += '</div>';
-  }
-
   // ── Footer CTA ────────────────────────────────────────────────────────────
   html += `
     <div class="pm-footer">
-      <button id="bkViewProfileBtn" class="pm-profile-btn">View Full Player Profile →</button>
+      <button id="bkViewProfileBtn" class="pm-profile-btn">View Full Player Profile</button>
     </div>
   `;
 
@@ -4548,7 +4642,6 @@ function renderTeamDetails(data) {
 
   // Build graphs section
   let graphsHTML = '';
-  console.log('[team-modal] Graphs data:', data.graphs);
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
     graphsHTML += '<div class="team-modal-section"><h3>Performance Charts</h3>';
@@ -4571,6 +4664,17 @@ function renderTeamDetails(data) {
   const rightColumn = `<div class="team-modal-body-right">${graphsHTML}${picksHTML}</div>`;
   document.getElementById('teamModalBody').innerHTML = leftColumn + rightColumn;
 
+  // Helper function to get theme-appropriate Plotly styling
+  function getPlotlyTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return {
+      template: isDark ? 'plotly_dark' : 'plotly_white',
+      textColor: isDark ? '#ffffff' : '#000000',
+      gridColor: isDark ? '#374151' : '#e5e7eb',
+      lineColor: isDark ? '#9ca3af' : '#6b7280'
+    };
+  }
+
   // Render charts using Plotly (if data exists)
   if (data.graphs && typeof Plotly !== 'undefined') {
     // Render weekly scores chart
@@ -4578,6 +4682,7 @@ function renderTeamDetails(data) {
       const weeks = data.graphs.weekly_scores.map(d => d.week);
       const points = data.graphs.weekly_scores.map(d => d.points);
 
+      const theme = getPlotlyTheme();
       const traces = [{
         x: weeks,
         y: points,
@@ -4585,7 +4690,8 @@ function renderTeamDetails(data) {
         mode: 'lines+markers',
         name: data.team_name,
         line: { color: '#667eea', width: 3 },
-        marker: { size: 8 }
+        marker: { size: 8 },
+        hovertemplate: `<b>${data.team_name}</b><br>Week: %{x}<br>Points: %{y:.1f}<extra></extra>`
       }];
 
       // Add league average if available
@@ -4599,17 +4705,40 @@ function renderTeamDetails(data) {
           mode: 'lines',
           name: 'League Avg',
           line: { dash: 'dash', color: '#9ca3af', width: 2 },
-          opacity: 0.7
+          opacity: 0.7,
+          hovertemplate: `<b>League Average</b><br>Week: %{x}<br>Points: %{y:.1f}<extra></extra>`
         });
       }
 
       const weeklyLayout = {
-        xaxis: { title: 'Week', standoff: 12 },
-        yaxis: { title: 'Points' },
+        template: theme.template,
+        xaxis: { 
+          title: 'Week', 
+          standoff: 12,
+          color: theme.textColor,
+          gridcolor: theme.gridColor
+        },
+        yaxis: { 
+          title: 'Points',
+          color: theme.textColor,
+          gridcolor: theme.gridColor
+        },
         hovermode: 'x unified',
+        hoverlabel: {
+          bgcolor: theme.template === 'plotly_dark' ? '#1f2937' : '#ffffff',
+          bordercolor: theme.template === 'plotly_dark' ? '#374151' : '#e5e7eb',
+          font: { color: theme.textColor }
+        },
         margin: { l: 50, r: 20, t: 20, b: 50 },
         showlegend: true,
-        legend: { x: 0, y: 1.1, orientation: 'h' }
+        legend: { 
+          x: 0, 
+          y: 1.1, 
+          orientation: 'h',
+          font: { color: theme.textColor }
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)'
       };
 
       Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true });
@@ -4644,16 +4773,32 @@ function renderTeamDetails(data) {
         hoverinfo: 'text'
       };
 
+      const theme = getPlotlyTheme();
       const radarLayout = {
+        template: theme.template,
         polar: {
           radialaxis: {
             visible: true,
             range: [-3, 3],
-            tickvals: [-3, -2, -1, 0, 1, 2, 3]
-          }
+            tickvals: [-3, -2, -1, 0, 1, 2, 3],
+            tickcolor: theme.textColor,
+            gridcolor: theme.gridColor,
+            linecolor: theme.lineColor
+          },
+          angularaxis: {
+            tickcolor: theme.textColor,
+            gridcolor: theme.gridColor,
+            linecolor: theme.lineColor
+          },
+          bgcolor: 'rgba(0,0,0,0)'
         },
         margin: { l: 60, r: 60, t: 40, b: 40 },
-        showlegend: false
+        showlegend: false,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: {
+          color: theme.textColor
+        }
       };
 
       Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, { responsive: true });

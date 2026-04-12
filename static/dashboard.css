@@ -9530,16 +9530,72 @@ img, svg, canvas {
 }
 
 .player-modal-header {
-  padding: 24px 28px;
+  padding-left: 28px;
+  padding-top: 5px;
+  padding-right: 28px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   flex-shrink: 0;
 }
 
 .player-modal-title-section {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.player-modal-headshot-container {
+  flex-shrink: 0;
+}
+
+.player-modal-headshot {
+  width: 160px;
+  height: 135px;
+  object-fit: cover;
+  background: var(--surface);
+  display: none;
+}
+
+.player-modal-headshot[src]:not([src=""]) {
+  display: block;
+}
+
+/* Two-column layout for breakout modal analysis */
+.pm-two-column {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.pm-left-column,
+.pm-right-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.pm-subsection-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 768px) {
+  .pm-two-column {
+    flex-direction: column;
+    gap: 20px;
+  }
+}
+
+.player-modal-title-text {
+  padding-left: 5px;
+  flex: 1;
+  min-width: 0;
 }
 
 .player-modal-name {
@@ -10000,6 +10056,11 @@ img, svg, canvas {
   display: flex;
   flex-direction: column;
   gap: 35px;
+}
+.pm-comp-list-bo {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
 }
 .pm-comp-row {
   display: grid;

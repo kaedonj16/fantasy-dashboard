@@ -230,13 +230,20 @@ def main():
 
         from data_building.save_player_values import save_daily_values_to_db
         from utils.utils import load_model_value_table
+        from utils.email_notifications import send_cron_failure_notification, send_database_save_notification
 
         value_table = load_model_value_table()
         if not value_table:
             raise RuntimeError("No value table available after build_daily_model_values")
 
+        # Expected count based on typical roster size
+        expected_count = len(value_table)
         value_count = save_daily_values_to_db(value_table)
         print(f"[cron] Saved {value_count} player values")
+
+        # Check if save count is unexpectedly low
+        if value_count < expected_count * 0.8:  # Less than 80% of expected
+            send_database_save_notification(value_count, expected_count)
 
         # build_daily_market_pulse()
         build_daily_breakout_candidates(season, week, state)
@@ -248,6 +255,19 @@ def main():
         print(f"[cron] Daily run failed: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Send email notification
+        try:
+            from utils.email_notifications import send_cron_failure_notification
+            send_cron_failure_notification(e, {
+                'season': season,
+                'week': week,
+                'timestamp': datetime.now().isoformat()
+            })
+        except ImportError:
+            print("[cron] Email notifications not available")
+        except Exception as email_error:
+            print(f"[cron] Failed to send email notification: {email_error}")
 
 
 if __name__ == "__main__":

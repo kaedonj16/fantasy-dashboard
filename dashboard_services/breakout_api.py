@@ -268,6 +268,12 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
 
     candidate = enrich_candidate_with_type(dict(row))
 
+    # Add headshot from players index
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    player_meta = players_index.get(player_id, {})
+    candidate['espnHeadshot'] = player_meta.get('espnHeadshot')
+
     return candidate
 
 
