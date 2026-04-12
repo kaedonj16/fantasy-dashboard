@@ -283,10 +283,24 @@ def get_drafts(league_id: str) -> List[dict]:
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
     url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}
-    resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    return data.get("body") or data
+    try:
+        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("body") or data
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            print(f"[Tank01 API] Rate limited for games week {week} season {season}, returning empty list")
+            return []
+        else:
+            print(f"[Tank01 API] HTTP error {e.response.status_code} for games week {week} season {season}")
+            raise
+    except requests.exceptions.RequestException as e:
+        print(f"[Tank01 API] Request error for games week {week} season {season}: {e}")
+        return []
+    except Exception as e:
+        print(f"[Tank01 API] Unexpected error for games week {week} season {season}: {e}")
+        return []
 
 
 def _avatar_url(avatar_id: str) -> Union[str, None]:
@@ -384,10 +398,24 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     url = f"{BASE}/getNFLScoresOnly"
     params = {"gameDate": game_date, "topPerformers": "true"}
 
-    resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
-    resp.raise_for_status()
-    data = resp.json() or {}
-    return data.get("body") or {}
+    try:
+        resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
+        resp.raise_for_status()
+        data = resp.json() or {}
+        return data.get("body") or {}
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            print(f"[Tank01 API] Rate limited for scores on {game_date}, returning empty data")
+            return {}
+        else:
+            print(f"[Tank01 API] HTTP error {e.response.status_code} for scores on {game_date}")
+            raise
+    except requests.exceptions.RequestException as e:
+        print(f"[Tank01 API] Request error for scores on {game_date}: {e}")
+        return {}
+    except Exception as e:
+        print(f"[Tank01 API] Unexpected error for scores on {game_date}: {e}")
+        return {}
 
 
 @ttl_cache(ttl=300)
@@ -400,15 +428,29 @@ def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None
 
     params = {"gameID": game_id}
 
-    url = f"{BASE}/getNFLBoxScore"
-    resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=5)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        url = f"{BASE}/getNFLBoxScore"
+        resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
 
-    # Tank01 usually wraps payload in 'body'
-    if isinstance(data, dict) and "body" in data:
-        return data["body"]
-    return data
+        # Tank01 usually wraps payload in 'body'
+        if isinstance(data, dict) and "body" in data:
+            return data["body"]
+        return data
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            print(f"[Tank01 API] Rate limited for boxscore {game_id}, returning empty data")
+            return {}
+        else:
+            print(f"[Tank01 API] HTTP error {e.response.status_code} for boxscore {game_id}")
+            raise
+    except requests.exceptions.RequestException as e:
+        print(f"[Tank01 API] Request error for boxscore {game_id}: {e}")
+        return {}
+    except Exception as e:
+        print(f"[Tank01 API] Unexpected error for boxscore {game_id}: {e}")
+        return {}
 
 
 def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:

@@ -136,8 +136,7 @@ class ProspectSeasonStatsSource(RookieSource):
                         confidence=confidence,
                     )
                 else:
-                    print(f"[direct_miss] player={player_key} season={season} metric={metric.name} field={field} → None in season_record")
-                continue
+                    continue
 
             # --- inline computation map ---
             if metric.name in self._INLINE:
@@ -391,8 +390,6 @@ class SportradarNCAAFBSource(RookieSource):
 
             if metric.name == "routes_run":
                 if routes_estimated is not None:
-                    print(f"[sr_ncaa_src] ok player={player_key} season={season} metric=routes_run "
-                          f"targets={targets} via_receptions={_via_receptions} value={routes_estimated}")
                     payload = base_metric_payload(
                         value=routes_estimated,
                         season=season,
@@ -405,8 +402,6 @@ class SportradarNCAAFBSource(RookieSource):
             elif metric.name == "yprr":
                 if routes_estimated and routes_estimated > 0:
                     yprr = round(rec_yards / routes_estimated, 3)
-                    print(f"[sr_ncaa_src] ok player={player_key} season={season} metric=yprr "
-                          f"rec_yards={rec_yards} routes={routes_estimated} via_receptions={_via_receptions} value={yprr}")
                     payload = base_metric_payload(
                         value=yprr,
                         season=season,

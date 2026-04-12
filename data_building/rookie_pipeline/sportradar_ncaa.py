@@ -439,7 +439,6 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
     for name in names:
         player_id = lookup_player_id(name, roster_index)
         if not player_id:
-            print(f"[sr_ncaa] not_found name={name!r}")
             not_found += 1
             continue
 

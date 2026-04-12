@@ -1201,10 +1201,6 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
 
     resolved_league_id = league_id
-    print(
-        f"[build_league_context] requested_league_id={league_id} "
-        f"resolved_league_id={resolved_league_id} platform={platform} season={season}"
-    )
 
     # Core league data
     league = get_league(platform, resolved_league_id, season)
@@ -8677,6 +8673,19 @@ def api_player_details(player_id: str):
         return jsonify({"error": str(e)}), 500
 
 
+def clean_nan_for_json(obj):
+    """Recursively replace NaN values with None for JSON compatibility."""
+    import math
+    if isinstance(obj, dict):
+        return {k: clean_nan_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_for_json(item) for item in obj]
+    elif isinstance(obj, float) and math.isnan(obj):
+        return None
+    else:
+        return obj
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -8791,8 +8800,6 @@ def api_team_details(roster_id: str):
                 "is_starter": pid_str in starters
             })
 
-        print(
-            f"[api_team_details] Ages: {ages_found} found, {ages_missing} missing out of {len(roster_players)} total players")
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
@@ -8939,7 +8946,6 @@ def api_team_details(roster_id: str):
             # If we don't have weekly data for the chosen season, try previous season
             if (df_weekly is None or df_weekly.empty) and graph_season > 2025:
                 fallback_season = graph_season - 1
-                print(f"[api_team_details] No data for {graph_season}, trying fallback season: {fallback_season}")
 
                 # Resolve correct league_id for fallback season
                 from dashboard_services.api import resolve_league_id_for_season
@@ -8966,7 +8972,7 @@ def api_team_details(roster_id: str):
                 # Only build graphs if we have data after filtering
                 if not df_weekly.empty:
                     # Get weekly scores for this team
-                    team_weekly = df_weekly[df_weekly["owner"] == team_name]
+                    team_weekly = df_weekly[df_weekly["owner"] == team_name] if team_name is not None else pd.DataFrame()
                     weekly_scores = []
                     if not team_weekly.empty:
                         for _, row in team_weekly.sort_values("week").iterrows():
@@ -8993,10 +8999,10 @@ def api_team_details(roster_id: str):
                         available_teams = team_stats["owner"].tolist() if "owner" in team_stats.columns else []
 
                     # Try exact match first
-                    team_row = team_stats[team_stats["owner"] == team_name]
+                    team_row = team_stats[team_stats["owner"] == team_name] if team_name is not None else pd.DataFrame()
 
                     # If no exact match, try fuzzy matching for team name variations
-                    if team_row.empty and available_teams:
+                    if team_row.empty and available_teams and team_name is not None:
                         # Try case-insensitive match
                         team_row = team_stats[team_stats["owner"].str.lower() == team_name.lower()]
 
@@ -9009,7 +9015,6 @@ def api_team_details(roster_id: str):
 
                                 if clean_available in clean_target or clean_target in clean_available:
                                     team_row = team_stats[team_stats["owner"] == available_team]
-                                    print(f"[api_team_details] Fuzzy matched '{team_name}' to '{available_team}'")
                                     break
 
                     if not team_row.empty:
@@ -9031,9 +9036,8 @@ def api_team_details(roster_id: str):
                             },
                             "season_used": graph_season  # Add info about which season data was used
                         }
-                        print(f"[api_team_details] Successfully generated graphs_data with {len(weekly_scores)} weeks")
                     else:
-                        print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'")
+                        print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'") if team_name is not None else print("[api_team_details] No graphs generated - team_row is empty for team_name='None'")
                 else:
                     print(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
             else:
@@ -9060,7 +9064,9 @@ def api_team_details(roster_id: str):
             "graphs": graphs_data
         }
 
-        return jsonify(response)
+        # Clean NaN values before JSON serialization
+        cleaned_response = clean_nan_for_json(response)
+        return jsonify(cleaned_response)
 
     except Exception as e:
         print(f"[api_team_details] Error: {e}")

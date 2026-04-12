@@ -357,8 +357,13 @@ def build_trade_calculator_body(
 
           <div class="otc-side-panel">
             <div class="otc-side-head">
-              <h2 class="otc-side-title">Player Values</h2>
-              <div class="otc-side-sub">Filter by position</div>
+              <div class="otc-side-title-row">
+                <div>
+                  <h2 class="otc-side-title">Player Values</h2>
+                  <div class="otc-side-sub">Filter by position</div>
+                </div>
+                <a href="/players" class="otc-view-all-link">View All Players →</a>
+              </div>
             </div>
 
             <div class="otc-filter-row" id="posFilterRow">

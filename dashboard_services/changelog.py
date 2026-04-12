@@ -7,13 +7,13 @@ CHANGELOG = [
     {
         "date": "2026-04-09",
         "tag": "new",
-        "text": "Rookie Rankings: Full prospect evaluation system — production, athleticism, draft capital, and dynasty value for the active draft class",
+        "text": "Rookie Rankings: Full prospect evaluation system: production, athleticism, draft capital, and dynasty value for the active draft class",
         "link": "/rookies"
     },
     {
         "date": "2026-04-09",
         "tag": "new",
-        "text": "Player Rankings: New dedicated page with searchable, filterable player rankings — filter by position (multi-select), league format, team count, and sort by rank, value, age, or positional rank",
+        "text": "Player Rankings: New dedicated page with searchable, filterable player rankings: filter by position (multi-select), league format, team count, and sort by rank, value, age, or positional rank",
         "link": "/players"
     },
     {

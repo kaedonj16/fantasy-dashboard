@@ -3380,7 +3380,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 height: 430,
                 margin: { l: 40, r: 20, t: 20, b: 40 },
                 legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0 },
-                xaxis: { title: 'Week', dtick: 1 },
+                xaxis: { 
+                  title: 'Week',
+                  tickmode: 'auto',
+                  nticks: Math.min(10, Math.max(...data.data.flatMap(team => team.x)) || 18)
+                },
                 yaxis: { title: 'Points' }
               };
 
@@ -4207,6 +4211,9 @@ function openTeamModal(rosterId, teamName) {
 
   modal.innerHTML = `
     <div class="team-modal-header">
+      <div class="team-modal-avatar" id="teamModalAvatar">
+        <div class="loading-spinner" style="width: 32px; height: 32px;"></div>
+      </div>
       <div class="team-modal-title-section">
         <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
         <div class="team-modal-meta" id="teamModalMeta">
@@ -4530,6 +4537,17 @@ function _renderBkModalContent(data, playerId) {
 }
 
 function renderTeamDetails(data) {
+  // Update avatar
+  const avatarHTML = data.avatar 
+    ? `<img src="${data.avatar}" alt="${data.team_name || data.username}" class="team-modal-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+       <div class="team-modal-avatar-placeholder" style="display: none;">
+         <span>${(data.team_name || data.username || 'Team').charAt(0).toUpperCase()}</span>
+       </div>`
+    : `<div class="team-modal-avatar-placeholder">
+         <span>${(data.team_name || data.username || 'Team').charAt(0).toUpperCase()}</span>
+       </div>`;
+  document.getElementById('teamModalAvatar').innerHTML = avatarHTML;
+
   // Update header
   const metaHTML = `
     <div class="team-modal-stat-row">
@@ -4604,8 +4622,8 @@ function renderTeamDetails(data) {
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
           <td>${player.team || '—'}</td>
-          <td>${player.age != null ? player.age.toFixed(1) : '—'}</td>
-          <td>${player.value != null ? player.value.toFixed(1) : '—'}</td>
+          <td>${player.age != null && !isNaN(player.age) ? player.age.toFixed(1) : '—'}</td>
+          <td>${player.value != null && !isNaN(player.value) ? player.value.toFixed(1) : '—'}</td>
         </tr>
       `;
     });
@@ -4756,7 +4774,7 @@ function renderTeamDetails(data) {
 
       // Create hover text with raw stats
       const hoverText = metrics.map((metric, i) =>
-        `${metric}: ${rawStats[metric]} (z: ${zScores[i].toFixed(2)})`
+        `${metric}: ${rawStats[metric]} (z: ${zScores[i] != null && !isNaN(zScores[i]) ? zScores[i].toFixed(2) : 'N/A'})`
       );
       hoverText.push(hoverText[0]); // Close the ring for hover text too
 
