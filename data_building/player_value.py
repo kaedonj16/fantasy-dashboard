@@ -1217,9 +1217,9 @@ def build_value_table_for_usage(
     gmin = min(vals) if vals else 0.0
     gmax = max(vals) if vals else 1.0
 
-    GAMMA = 0.72
+    GAMMA = 0.80
     FLOOR = 0.03
-    ELITE_BOOST_SCALE = 0.035
+    ELITE_BOOST_SCALE = 0.020
 
     value_table: Dict[str, float] = {}
 
