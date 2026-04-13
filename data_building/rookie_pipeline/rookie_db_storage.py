@@ -166,10 +166,17 @@ def save_rookie_evaluation_to_db(
         }
 
         with conn.cursor() as cur:
-            for player_id, seasons in by_player_metrics.items():
-                for season, metrics in (seasons or {}).items():
+            # Union all player IDs so Sportradar-injected seasons with no resolved
+            # eval metrics (empty metrics_by_season entry) still get DB rows.
+            all_player_ids = set(by_player_metrics.keys()) | set((raw_seasons_by_player or {}).keys())
+            for player_id in all_player_ids:
+                metrics_by_season = by_player_metrics.get(player_id) or {}
+                raw_by_season = (raw_seasons_by_player or {}).get(player_id) or {}
+                all_seasons = set(metrics_by_season.keys()) | set(raw_by_season.keys())
+                for season in all_seasons:
+                    metrics = metrics_by_season.get(season) or {}
                     missing_metrics = missing_by_player.get(player_id) or {}
-                    raw = (raw_seasons_by_player or {}).get(player_id, {}).get(season, {})
+                    raw = raw_by_season.get(season) or {}
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data
@@ -184,11 +191,21 @@ def save_rookie_evaluation_to_db(
                              rush_attempts, rush_yards, rush_tds,
                              pass_attempts, pass_yards, pass_tds, completions, interceptions,
                              yds_per_carry, yds_per_reception, yds_per_attempt,
-                             completion_pct, td_int_ratio)
+                             completion_pct, td_int_ratio,
+                             yards_after_catch, yards_after_catch_per_reception,
+                             avg_depth_of_target, contested_catch_rate, avoided_tackles,
+                             drop_rate, slot_rate, wide_rate, inline_rate, pass_block_rate,
+                             grades_offense, grades_pass_block,
+                             explosive_runs_10_plus, breakaway_percentage, elusive_rating,
+                             pff_rushing_grade, pff_passing_grade,
+                             big_time_throw_rate, adjusted_completion_rate,
+                             pressure_to_sack_rate, nfl_passer_rating)
                         VALUES
                             (%s, %s, %s, %s, %s, NOW(),
                              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                             %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
                             rookie_eval_metrics     = EXCLUDED.rookie_eval_metrics,
@@ -207,22 +224,43 @@ def save_rookie_evaluation_to_db(
                             eval_true_early_declare = EXCLUDED.eval_true_early_declare,
                             games_played            = EXCLUDED.games_played,
                             targets                 = EXCLUDED.targets,
-                            receptions      = COALESCE(rookie_prospect_source_data.receptions,      EXCLUDED.receptions),
-                            receiving_yards = COALESCE(rookie_prospect_source_data.receiving_yards, EXCLUDED.receiving_yards),
-                            receiving_tds   = COALESCE(rookie_prospect_source_data.receiving_tds,   EXCLUDED.receiving_tds),
-                            rush_attempts   = COALESCE(rookie_prospect_source_data.rush_attempts,   EXCLUDED.rush_attempts),
-                            rush_yards      = COALESCE(rookie_prospect_source_data.rush_yards,      EXCLUDED.rush_yards),
-                            rush_tds        = COALESCE(rookie_prospect_source_data.rush_tds,        EXCLUDED.rush_tds),
-                            pass_attempts   = COALESCE(rookie_prospect_source_data.pass_attempts,   EXCLUDED.pass_attempts),
-                            pass_yards      = COALESCE(rookie_prospect_source_data.pass_yards,      EXCLUDED.pass_yards),
-                            pass_tds        = COALESCE(rookie_prospect_source_data.pass_tds,        EXCLUDED.pass_tds),
-                            completions     = COALESCE(rookie_prospect_source_data.completions,     EXCLUDED.completions),
-                            interceptions   = COALESCE(rookie_prospect_source_data.interceptions,   EXCLUDED.interceptions),
-                            yds_per_carry   = COALESCE(rookie_prospect_source_data.yds_per_carry,   EXCLUDED.yds_per_carry),
+                            receptions        = COALESCE(rookie_prospect_source_data.receptions,        EXCLUDED.receptions),
+                            receiving_yards   = COALESCE(rookie_prospect_source_data.receiving_yards,   EXCLUDED.receiving_yards),
+                            receiving_tds     = COALESCE(rookie_prospect_source_data.receiving_tds,     EXCLUDED.receiving_tds),
+                            rush_attempts     = COALESCE(rookie_prospect_source_data.rush_attempts,     EXCLUDED.rush_attempts),
+                            rush_yards        = COALESCE(rookie_prospect_source_data.rush_yards,        EXCLUDED.rush_yards),
+                            rush_tds          = COALESCE(rookie_prospect_source_data.rush_tds,          EXCLUDED.rush_tds),
+                            pass_attempts     = COALESCE(rookie_prospect_source_data.pass_attempts,     EXCLUDED.pass_attempts),
+                            pass_yards        = COALESCE(rookie_prospect_source_data.pass_yards,        EXCLUDED.pass_yards),
+                            pass_tds          = COALESCE(rookie_prospect_source_data.pass_tds,          EXCLUDED.pass_tds),
+                            completions       = COALESCE(rookie_prospect_source_data.completions,       EXCLUDED.completions),
+                            interceptions     = COALESCE(rookie_prospect_source_data.interceptions,     EXCLUDED.interceptions),
+                            yds_per_carry     = COALESCE(rookie_prospect_source_data.yds_per_carry,     EXCLUDED.yds_per_carry),
                             yds_per_reception = COALESCE(rookie_prospect_source_data.yds_per_reception, EXCLUDED.yds_per_reception),
-                            yds_per_attempt = COALESCE(rookie_prospect_source_data.yds_per_attempt, EXCLUDED.yds_per_attempt),
-                            completion_pct  = COALESCE(rookie_prospect_source_data.completion_pct,  EXCLUDED.completion_pct),
-                            td_int_ratio    = COALESCE(rookie_prospect_source_data.td_int_ratio,    EXCLUDED.td_int_ratio)
+                            yds_per_attempt   = COALESCE(rookie_prospect_source_data.yds_per_attempt,   EXCLUDED.yds_per_attempt),
+                            completion_pct    = COALESCE(rookie_prospect_source_data.completion_pct,    EXCLUDED.completion_pct),
+                            td_int_ratio      = COALESCE(rookie_prospect_source_data.td_int_ratio,      EXCLUDED.td_int_ratio),
+                            yards_after_catch = COALESCE(rookie_prospect_source_data.yards_after_catch, EXCLUDED.yards_after_catch),
+                            yards_after_catch_per_reception = COALESCE(rookie_prospect_source_data.yards_after_catch_per_reception, EXCLUDED.yards_after_catch_per_reception),
+                            avg_depth_of_target    = COALESCE(rookie_prospect_source_data.avg_depth_of_target,    EXCLUDED.avg_depth_of_target),
+                            contested_catch_rate   = COALESCE(rookie_prospect_source_data.contested_catch_rate,   EXCLUDED.contested_catch_rate),
+                            avoided_tackles        = COALESCE(rookie_prospect_source_data.avoided_tackles,        EXCLUDED.avoided_tackles),
+                            drop_rate              = COALESCE(rookie_prospect_source_data.drop_rate,              EXCLUDED.drop_rate),
+                            slot_rate              = COALESCE(rookie_prospect_source_data.slot_rate,              EXCLUDED.slot_rate),
+                            wide_rate              = COALESCE(rookie_prospect_source_data.wide_rate,              EXCLUDED.wide_rate),
+                            inline_rate            = COALESCE(rookie_prospect_source_data.inline_rate,            EXCLUDED.inline_rate),
+                            pass_block_rate        = COALESCE(rookie_prospect_source_data.pass_block_rate,        EXCLUDED.pass_block_rate),
+                            grades_offense         = COALESCE(rookie_prospect_source_data.grades_offense,         EXCLUDED.grades_offense),
+                            grades_pass_block      = COALESCE(rookie_prospect_source_data.grades_pass_block,      EXCLUDED.grades_pass_block),
+                            explosive_runs_10_plus = COALESCE(rookie_prospect_source_data.explosive_runs_10_plus, EXCLUDED.explosive_runs_10_plus),
+                            breakaway_percentage   = COALESCE(rookie_prospect_source_data.breakaway_percentage,   EXCLUDED.breakaway_percentage),
+                            elusive_rating         = COALESCE(rookie_prospect_source_data.elusive_rating,         EXCLUDED.elusive_rating),
+                            pff_rushing_grade      = COALESCE(rookie_prospect_source_data.pff_rushing_grade,      EXCLUDED.pff_rushing_grade),
+                            pff_passing_grade      = COALESCE(rookie_prospect_source_data.pff_passing_grade,      EXCLUDED.pff_passing_grade),
+                            big_time_throw_rate    = COALESCE(rookie_prospect_source_data.big_time_throw_rate,    EXCLUDED.big_time_throw_rate),
+                            adjusted_completion_rate = COALESCE(rookie_prospect_source_data.adjusted_completion_rate, EXCLUDED.adjusted_completion_rate),
+                            pressure_to_sack_rate  = COALESCE(rookie_prospect_source_data.pressure_to_sack_rate,  EXCLUDED.pressure_to_sack_rate),
+                            nfl_passer_rating      = COALESCE(rookie_prospect_source_data.nfl_passer_rating,      EXCLUDED.nfl_passer_rating)
                         """,
                         (
                             player_id,
@@ -260,6 +298,31 @@ def save_rookie_evaluation_to_db(
                             _raw_float(raw, "yds_per_attempt"),
                             _raw_float(raw, "completion_pct"),
                             _raw_float(raw, "td_int_ratio"),
+                            # Advanced metrics (migration 011)
+                            # yards_after_catch comes from Sportradar for all seasons;
+                            # the remaining 19 fields come from the CSV import (2025 only)
+                            # and are preserved via COALESCE on conflict.
+                            _raw_float(raw, "yards_after_catch"),
+                            _raw_float(raw, "yards_after_catch_per_reception"),
+                            _raw_float(raw, "avg_depth_of_target"),
+                            _raw_float(raw, "contested_catch_rate"),
+                            _raw_int(raw,   "avoided_tackles"),
+                            _raw_float(raw, "drop_rate"),
+                            _raw_float(raw, "slot_rate"),
+                            _raw_float(raw, "wide_rate"),
+                            _raw_float(raw, "inline_rate"),
+                            _raw_float(raw, "pass_block_rate"),
+                            _raw_float(raw, "grades_offense"),
+                            _raw_float(raw, "grades_pass_block"),
+                            _raw_int(raw,   "explosive_runs_10_plus"),
+                            _raw_float(raw, "breakaway_percentage"),
+                            _raw_float(raw, "elusive_rating"),
+                            _raw_float(raw, "pff_rushing_grade"),
+                            _raw_float(raw, "pff_passing_grade"),
+                            _raw_float(raw, "big_time_throw_rate"),
+                            _raw_float(raw, "adjusted_completion_rate"),
+                            _raw_float(raw, "pressure_to_sack_rate"),
+                            _raw_float(raw, "nfl_passer_rating"),
                         ),
                     )
                     metrics_rows += 1

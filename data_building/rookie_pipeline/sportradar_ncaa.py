@@ -359,7 +359,7 @@ def normalize_profile(raw: Dict) -> Dict[int, Dict[str, Any]]:
             "targets":         rec_tgt_total if has_tgt else None,
             "receiving_yards": rec_yds,
             "receiving_tds":   rec_tds,
-            "receiving_yac":   rec_yac_total if has_yac else None,
+            "yards_after_catch": rec_yac_total if has_yac else None,
             "yds_per_reception": round(rec_yds / rec_rec, 3) if rec_rec > 0 else None,
             # Passing
             "pass_attempts":   pass_att,
@@ -533,7 +533,7 @@ def _normalize_profile_inline(raw: Dict) -> Dict[int, Dict[str, Any]]:
             "targets":         rec_tgt_total if has_tgt else None,
             "receiving_yards": rec_yds,
             "receiving_tds":   rec_tds,
-            "receiving_yac":   rec_yac_total if has_yac else None,
+            "yards_after_catch": rec_yac_total if has_yac else None,
             "yds_per_reception": round(rec_yds / rec_rec, 3) if rec_rec > 0 else None,
             # Passing
             "pass_attempts":   pass_att,
