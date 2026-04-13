@@ -150,10 +150,31 @@ class ProspectSeasonStatsSource(RookieSource):
         "twp_rate": 0.55,
     }
 
-    # Persist all available per-season data whenever present in source rows.
-    # Leaving this empty disables "latest-season-only" suppression so older
-    # seasons (e.g. 2022/2023/2024) can still capture vendor metrics if loaded.
-    _LATEST_SEASON_ONLY_METRICS = frozenset()
+    # These new vendor metrics are currently populated for the latest season only
+    # (2025 in the current dataset). Restricting to the player's latest season
+    # avoids polluting older-season metric timelines with guaranteed NULL lookups.
+    _LATEST_SEASON_ONLY_METRICS = frozenset({
+        "alignment_slot_pct",
+        "alignment_wide_pct",
+        "alignment_inline_pct",
+        "contested_catch_rate",
+        "avg_depth_of_target",
+        "drop_rate",
+        "yac_per_att",
+        "mtf_per_att",
+        "explosive_run_rate",
+        "pass_block_snaps",
+        "pressure_to_sack_rate",
+        "adjusted_comp_pct",
+        "btt_rate",
+        "big_time_throw_rate",
+        "grades_offense",
+        "grades_pass_block",
+        "elusive_rating",
+        "pff_rushing_grade",
+        "pff_passing_grade",
+        "nfl_passer_rating",
+    })
 
     def fetch_player_season_metrics(
         self,
