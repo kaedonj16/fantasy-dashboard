@@ -63,6 +63,7 @@ def _missing_payload(metric: RookieMetricSpec, reason: str) -> Dict[str, Any]:
 # Proxy metrics where a value of exactly 0 is meaningless (no data, not truly zero).
 # The derivation functions now return None for these; cached 0s are stale artifacts.
 _REJECT_ZERO_METRICS = frozenset({"routes_run", "yprr", "tprr"})
+_NO_CACHE_SOURCE_NAMES = frozenset({"rookie_prospect_source_data"})
 
 
 def _cache_value_valid(metric_name: str, value) -> bool:
@@ -83,9 +84,14 @@ def _source_for_metric(
     source,
 ) -> Tuple[Optional[Dict[str, Any]], str]:
     player_key = player.get("player_id") or player.get("name") or "unknown"
-    cache_hit = cache.read(source.source_name, season, f"{player_key}_{metric.name}", source.source_type)
+    use_cache = source.source_name not in _NO_CACHE_SOURCE_NAMES
+    cache_hit = (
+        cache.read(source.source_name, season, f"{player_key}_{metric.name}", source.source_type)
+        if use_cache
+        else None
+    )
 
-    if cache_hit.payload and not cache_hit.is_stale and metric.name != "true_early_declare":
+    if use_cache and cache_hit and cache_hit.payload and not cache_hit.is_stale and metric.name != "true_early_declare":
         payload = cache_hit.payload.get("metric_payload")
         if payload and _cache_value_valid(metric.name, payload.get("value")):
             return payload, "cache_fresh"
@@ -94,22 +100,23 @@ def _source_for_metric(
         fetched = source.fetch_player_season_metrics(player, season_record, [metric])
         payload = fetched.get(metric.name)
         if payload and _cache_value_valid(metric.name, payload.get("value")):
-            cache.write(
-                source.source_name,
-                season,
-                f"{player_key}_{metric.name}",
-                {
-                    "metric": metric.name,
-                    "metric_payload": payload,
-                    "player_id": player.get("player_id"),
-                    "season": season,
-                },
-            )
+            if use_cache:
+                cache.write(
+                    source.source_name,
+                    season,
+                    f"{player_key}_{metric.name}",
+                    {
+                        "metric": metric.name,
+                        "metric_payload": payload,
+                        "player_id": player.get("player_id"),
+                        "season": season,
+                    },
+                )
             return payload, "fetched_live"
     except Exception as exc:
         print(f"[rookie_eval] source_error  player={player_key} season={season} metric={metric.name} source={source.source_name}: {type(exc).__name__}: {exc}")
 
-    if cache_hit.payload:
+    if use_cache and cache_hit and cache_hit.payload:
         payload = cache_hit.payload.get("metric_payload")
         if payload and _cache_value_valid(metric.name, payload.get("value")):
             return payload, "cache_stale_fallback"

@@ -1255,7 +1255,15 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
                    receptions, targets, receiving_yards, receiving_tds,
                    dominator_rating, market_share_yards, market_share_tds,
                    yds_per_carry, yds_per_reception, yds_per_attempt,
-                   completion_pct, td_int_ratio, team, conference, team_pass_rate
+                   completion_pct, td_int_ratio, team, conference, team_pass_rate,
+                   eval_snap_counts,
+                   yards_after_catch, yards_after_catch_per_reception,
+                   avg_depth_of_target, contested_catch_rate, avoided_tackles,
+                   drop_rate, slot_rate, wide_rate, inline_rate,
+                   pass_block_rate, grades_offense, grades_pass_block,
+                   explosive_runs_10_plus, breakaway_percentage, elusive_rating,
+                   pff_rushing_grade, pff_passing_grade, big_time_throw_rate,
+                   adjusted_completion_rate, pressure_to_sack_rate, nfl_passer_rating
             FROM rookie_prospect_source_data
             WHERE player_id IN (
                 SELECT player_id FROM rookie_prospects WHERE draft_class_year = %s
