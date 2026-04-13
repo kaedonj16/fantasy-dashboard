@@ -539,9 +539,9 @@ def _is_relevant(pid: str, meta: dict, usage: dict, history_by_pid: Dict[str, di
 
 def _proven_elite_bonus(pos: str, career_best_ppg: float, weighted_ppg_3yr: float, seasons_played: float) -> float:
     if pos == "WR":
-        if career_best_ppg >= 17.5 and weighted_ppg_3yr >= 15.0 and seasons_played >= 2:
+        if career_best_ppg >= 17.5 and weighted_ppg_3yr >= 13.0 and seasons_played >= 2:
             return 1.0
-        if career_best_ppg >= 15.5 and weighted_ppg_3yr >= 13.5 and seasons_played >= 2:
+        if career_best_ppg >= 15.5 and weighted_ppg_3yr >= 11.5 and seasons_played >= 2:
             return 0.7
         return 0.0
 
@@ -1012,18 +1012,18 @@ def build_value_table_for_usage(
             "upside": 0.06,
         },
         "WR": {
-            "blended_prod": 0.21,
+            "blended_prod": 0.20,
             "current_prod": 0.07,
-            "ceiling": 0.12,
+            "ceiling": 0.09,
             "floor": 0.11,
             "age": 0.09,
             "role": 0.12,
             "trend": 0.03,
-            "invest": 0.06,
+            "invest": 0.09,
             "rz": 0.04,
             "share": 0.06,
             "snap": 0.03,
-            "upside": 0.06,
+            "upside": 0.07,
         },
         "TE": {
             "blended_prod": 0.18,
