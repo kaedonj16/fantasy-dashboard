@@ -1520,10 +1520,20 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     import os
     _has_sr_key = bool(os.getenv("SPORTRADAR_API_KEY"))
     if not _has_sr_key:
-        print("[pipeline] SPORTRADAR_API_KEY not set - skipping ingestion, attempting DB-only scoring")
+        print("[pipeline] SPORTRADAR_API_KEY not set - attempting to use cached data")
 
-    # Fetch prospects from Sportradar (skip if no key)
-    sr_prospects = fetch_sportradar_prospects(draft_year) if _has_sr_key else []
+    # Fetch prospects from Sportradar (use cache if no key)
+    if _has_sr_key:
+        sr_prospects = fetch_sportradar_prospects(draft_year)
+    else:
+        # Try to load from cache when API key is not available
+        try:
+            from .ingestion import get_seed_prospects
+            sr_prospects = get_seed_prospects(draft_year)
+            print(f"[pipeline] Loaded {len(sr_prospects)} prospects from cached seed data")
+        except Exception as exc:
+            print(f"[pipeline] Failed to load cached prospects: {exc}")
+            sr_prospects = []
     if not sr_prospects:
         print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
         try:

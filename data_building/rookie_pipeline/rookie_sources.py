@@ -205,7 +205,6 @@ class ProspectSeasonStatsSource(RookieSource):
                 field, confidence = entry if isinstance(entry, tuple) else (entry, 0.70)
                 raw_value = field(season_record) if callable(field) else season_record.get(field)
                 if raw_value is not None:
-                    print(f"[direct_hit]  player={player_key} season={season} metric={metric.name} field={field} value={raw_value!r}")
                     out[metric.name] = base_metric_payload(
                         value=raw_value,
                         season=season,
