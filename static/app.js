@@ -3983,6 +3983,9 @@ function buildAdvancedMetricsHTML(metricsData) {
   const defs = [];
 
   // Role Score (0–100)
+  if (metrics.player_evaluation_score != null) {
+    defs.push({ label: 'Player Eval', fill: metrics.player_evaluation_score, display: metrics.player_evaluation_score.toFixed(1) });
+  }
   if (metrics.role_score != null) {
     defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
@@ -3993,6 +3996,22 @@ function buildAdvancedMetricsHTML(metricsData) {
   }
 
   if (position === 'QB') {
+    if (metrics.pff_passing_grade != null) {
+      const v = metrics.pff_passing_grade;
+      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.big_time_throw_rate != null) {
+      const v = metrics.big_time_throw_rate;
+      defs.push({ label: 'BTT Rate', fill: Math.min(v * 5, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.adjusted_completion_rate != null) {
+      const v = metrics.adjusted_completion_rate;
+      defs.push({ label: 'Adj Comp %', fill: v, display: v.toFixed(1) + '%' });
+    }
+    if (metrics.nfl_passer_rating != null) {
+      const v = metrics.nfl_passer_rating;
+      defs.push({ label: 'Passer Rating', fill: Math.min(v / 130 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
       defs.push({ label: 'Yds/Attempt', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
@@ -4010,6 +4029,18 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
   } else if (position === 'RB') {
+    if (metrics.pff_rushing_grade != null) {
+      const v = metrics.pff_rushing_grade;
+      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.breakaway_percentage != null) {
+      const v = metrics.breakaway_percentage;
+      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.elusive_rating != null) {
+      const v = metrics.elusive_rating;
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
@@ -4022,6 +4053,22 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
     }
   } else if (position === 'WR' || position === 'TE') {
+    if (metrics.grades_offense != null) {
+      const v = metrics.grades_offense;
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.yards_after_catch_per_reception != null) {
+      const v = metrics.yards_after_catch_per_reception;
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.avg_depth_of_target != null) {
+      const v = metrics.avg_depth_of_target;
+      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.contested_catch_rate != null) {
+      const v = metrics.contested_catch_rate;
+      defs.push({ label: 'Contested Catch %', fill: v, display: v.toFixed(1) + '%' });
+    }
     if (metrics.target_share != null) {
       const pct = metrics.target_share * 100;
       defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
