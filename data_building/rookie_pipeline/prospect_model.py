@@ -279,6 +279,22 @@ def _eval_metric_value(eval_metrics: Optional[Dict], name: str, min_confidence: 
     return entry.get("value")
 
 
+def _eval_metric_percent(
+    eval_metrics: Optional[Dict],
+    name: str,
+    min_confidence: float = 0.0,
+) -> Optional[float]:
+    """
+    Read an eval metric and normalize to 0-100 percent scale.
+    Accepts either [0,1] rates or already-scaled percentages.
+    """
+    val = _eval_metric_value(eval_metrics, name, min_confidence=min_confidence)
+    if val is None:
+        return None
+    f = _safe(val, default=0.0)
+    return f * 100.0 if 0.0 <= f <= 1.0 else f
+
+
 def calc_production_score(
     seasons: List[Dict],
     position: str,
@@ -383,6 +399,36 @@ def calc_production_score(
             blend = 0.85 + 0.15 * confidence
             prod = _clip(prod * (blend + (1.0 - blend) * yac_adj))
 
+    # Position-specific advanced metric bonuses from rookie source data.
+    if eval_metrics and pos in ("WR", "TE"):
+        ccr = _eval_metric_percent(eval_metrics, "contested_catch_rate", min_confidence=0.45)
+        if ccr is not None:
+            prod = _clip(prod + _clip((ccr - 45.0) * 0.10, -4.0, 4.0))
+
+        adot = _eval_metric_value(eval_metrics, "avg_depth_of_target", min_confidence=0.45)
+        if adot is not None:
+            prod = _clip(prod + _clip((float(adot) - 8.0) * 0.6, -3.0, 4.0))
+
+    elif eval_metrics and pos == "RB":
+        elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
+        if elusive is not None:
+            prod = _clip(prod + _clip((float(elusive) - 70.0) * 0.06, -4.0, 6.0))
+
+        breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
+        if breakaway is not None:
+            prod = _clip(prod + _clip((breakaway - 30.0) * 0.15, -3.0, 6.0))
+
+    elif eval_metrics and pos == "QB":
+        pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
+        if pff_pass is not None:
+            prod = _clip(prod + _clip((float(pff_pass) - 70.0) * 0.20, -4.0, 7.0))
+
+        btt = _eval_metric_percent(eval_metrics, "big_time_throw_rate", min_confidence=0.45)
+        if btt is None:
+            btt = _eval_metric_percent(eval_metrics, "btt_rate", min_confidence=0.45)
+        if btt is not None:
+            prod = _clip(prod + _clip((btt - 4.0) * 0.9, -3.0, 5.0))
+
     return prod
 
 
@@ -435,7 +481,7 @@ def calc_efficiency_score(
 
         # Use adjusted_comp_pct from eval pipeline when available and confident;
         # otherwise fall back to raw completion_pct from college stats.
-        adj_cpct = _eval_metric_value(eval_metrics, "adjusted_comp_pct", min_confidence=0.55)
+        adj_cpct = _eval_metric_percent(eval_metrics, "adjusted_comp_pct", min_confidence=0.55)
         if adj_cpct is not None:
             cpct = _safe(adj_cpct, 62.0)
         else:
@@ -497,6 +543,36 @@ def calc_efficiency_score(
                 # Bonus if latest ≈ or exceeds multi-year average; penalty if big drop
                 consistency = (latest_val - avg_val) / max(avg_val, 0.1)
                 eff = _clip(eff + _clip(consistency * 10, -5.0, 5.0))
+
+    # Advanced efficiency adjustments from evaluation metrics.
+    if eval_metrics and pos in ("WR", "TE"):
+        drop_rate = _eval_metric_percent(eval_metrics, "drop_rate", min_confidence=0.45)
+        if drop_rate is not None:
+            # Lower drop rate is better.
+            eff = _clip(eff + _clip((7.0 - drop_rate) * 1.1, -6.0, 6.0))
+
+        yac_rec = _eval_metric_value(eval_metrics, "yac_per_att", min_confidence=0.45)
+        if yac_rec is not None:
+            eff = _clip(eff + _clip((float(yac_rec) - 5.0) * 1.6, -4.0, 6.0))
+
+    elif eval_metrics and pos == "RB":
+        pff_rush = _eval_metric_value(eval_metrics, "pff_rushing_grade", min_confidence=0.45)
+        if pff_rush is not None:
+            eff = _clip(eff + _clip((float(pff_rush) - 68.0) * 0.22, -5.0, 7.0))
+
+    elif eval_metrics and pos == "QB":
+        adj_cpct = _eval_metric_percent(eval_metrics, "adjusted_comp_pct", min_confidence=0.45)
+        if adj_cpct is not None:
+            eff = _clip(eff + _clip((adj_cpct - 65.0) * 0.35, -5.0, 7.0))
+
+        psr = _eval_metric_value(eval_metrics, "nfl_passer_rating", min_confidence=0.45)
+        if psr is not None:
+            eff = _clip(eff + _clip((float(psr) - 85.0) * 0.18, -4.0, 6.0))
+
+        p2s = _eval_metric_percent(eval_metrics, "pressure_to_sack_rate", min_confidence=0.45)
+        if p2s is not None:
+            # Lower pressure-to-sack conversion is better QB pocket behavior.
+            eff = _clip(eff + _clip((20.0 - p2s) * 0.35, -5.0, 5.0))
 
     return _clip(eff)
 
