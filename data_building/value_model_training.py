@@ -1325,7 +1325,7 @@ def rewrite_value_table_with_model() -> Path:
                     
                     # If any source is >25% from mean, use consensus of ALL sources
                     # This gives proper weight to outliers while still providing consensus
-                    if max_deviation > 0.25:
+                    if max_deviation > 0.15:
                         consensus_val = np.mean(available_sources)  # Use all sources, not just non-outliers
                         final_value = consensus_val / 1000 * 999.9  # Scale back to 999.9 range
                         

@@ -225,8 +225,8 @@ def main():
         build_daily_data(season, week)
         build_daily_advanced_metrics()
 
-        from data_building.build_daily_value_table import build_daily_model_values
-        build_daily_model_values()
+        from data_building.player_value import build_value_table_for_usage
+        build_value_table_for_usage(league_type='1QB', include_confidence=False)
 
         from data_building.save_player_values import save_daily_values_to_db
         from data_building.update_player_values_with_rankings import update_player_values_with_rankings
@@ -235,7 +235,7 @@ def main():
 
         value_table = load_model_value_table()
         if not value_table:
-            raise RuntimeError("No value table available after build_daily_model_values")
+            raise RuntimeError("No value table available after build_value_table_for_usage")
 
         # Expected count based on typical roster size
         expected_count = len(value_table)

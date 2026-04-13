@@ -259,7 +259,7 @@ def _history_confidence(hist: dict) -> float:
     games_last_3yr = _safe_float(hist.get("games_last_3yr"), 0.0)
     c1 = _smoothstep01(seasons_played / 3.0)
     c2 = _smoothstep01(games_last_3yr / 34.0)
-    return _clip(0.55 * c1 + 0.45 * c2)
+    return _clip(0.55 * c1 + 0.55 * c2)
 
 
 def _usage_role_security(u: dict, hist: dict, pos: str) -> float:
@@ -533,6 +533,14 @@ def _is_relevant(pid: str, meta: dict, usage: dict, history_by_pid: Dict[str, di
         return True
     if opps >= 2:
         return True
+    
+    # Offseason fallback: allow more players through historical data
+    if hist_weighted_ppg >= 4:
+        return True
+    if hist_career_best >= 8:
+        return True
+    if hist_seasons >= 1:
+        return True
 
     return False
 
@@ -601,30 +609,15 @@ def _apply_qb_market_compression(
 
         youth_upside = (per_pid.get(pid, {}) or {}).get("youth_upside", 0.0)
 
-        # Adjust compression based on league type.
-        # Rushing is a meaningful signal in all formats — mobile QBs get explicit
-        # credit because rushing production and rushing floor are dynasty differentiators.
         if league_type == "1QB":
             # Heavy compression; rushing opens the cap for mobile QBs
-            base = 0.36
+            base = 0.35
             elite_boost = 0.22 * elite_soft
             ceiling_boost = 0.05 * ceiling_soft
             rushing_boost = 0.14 * rush_norm
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.68)
+            qb_keep = min(qb_keep, 0.80)
         elif league_type == "Superflex":
-            # QBs are boosted relative to 1QB, but the multipliers are calibrated
-            # so that only the very best QBs (Allen) clearly outrank elite WRs/RBs.
-            # base = 0.90 ensures all QBs get at least a 0.9x pass-through.
-            # elite_boost concentrates premium on the top 1-2 QBs (Allen/Hurts tier).
-            # youth_boost rewards young QBs (Maye/Daniels) with proven upside.
-            # rushing_boost rewards mobile QBs (Lamar/Allen) with dynasty floor value.
-            # Calibrated so Allen (~elite=1.0, rush=0.67) hits the cap and
-            # lands just above the top WR/RB pre-compression scores.
-            # The ^2.0 exponent concentrates the elite_boost on Allen vs Hurts.
-            # youth_boost (0.80) rewards clearly promising young QBs (Maye/Daniels)
-            # without over-boosting veterans with aging draft capital.
-            # proven_bonus rewards historically elite QBs (career_best>=23 tier).
             proven_elite_val = (per_pid.get(pid, {}) or {}).get("proven_elite", 0.0)
             base = 1.00
             elite_boost = 0.70 * (elite ** 2.0)  # ^2 concentrates on Allen tier
@@ -668,7 +661,7 @@ def _apply_te_market_compression(
         ceiling = ceiling_norm.get(pid, 0.0)
 
         keep = (
-                0.60
+                0.55
                 + 0.06 * (elite ** 0.90)
                 + 0.02 * (ceiling ** 0.95)
         )
@@ -683,11 +676,11 @@ def _apply_te_market_compression(
             if age is not None and age < 26.0:
                 age_proximity = _clip((26.0 - age) / 6.0)
                 youth_relief = 0.18 * age_proximity + 0.14 * youth_upside
-                keep = min(keep + youth_relief, 0.84)
+                keep = min(keep + youth_relief, 0.85)
             else:
-                keep = min(keep, 0.70)
+                keep = min(keep, 0.80)
         else:
-            keep = min(keep, 0.70)
+            keep = min(keep, 0.80)
 
         final_scores[pid] = _clip(score * keep)
 
@@ -1236,10 +1229,56 @@ def build_value_table_for_usage(
 
     if not include_confidence:
         return value_table
-
+    
     confidence_table: Dict[str, float] = {}
+    for pid, p in per_pid.items():
+        games = _safe_float(usage_table.get(pid, {}).get("games"))
+        confidence_table[pid] = round(_value_confidence(p, games), 3)
+    
+    # Save to model path for update_player_values_with_rankings to use
+    save_value_table_to_model_path(value_table, confidence_table)
+    
+    return value_table, confidence_table
     for pid, p in per_pid.items():
         games = _safe_float(usage_table.get(pid, {}).get("games"))
         confidence_table[pid] = round(_value_confidence(p, games), 3)
 
     return value_table, confidence_table
+
+
+def save_value_table_to_model_path(value_table: Dict[str, float], confidence_table: Dict[str, float]) -> None:
+    """
+    Save value table to model path for update_player_values_with_rankings to use.
+    """
+    from utils.utils import path_model_value_table, load_usage_table, load_players_index
+    import json
+    
+    try:
+        model_path = path_model_value_table()
+        
+        # Load player data to create full player objects
+        usage_table = load_usage_table()
+        players_index = load_players_index() or {}
+        
+        # Create full player objects with all required fields
+        full_player_data = []
+        for obj in usage_table:
+            pid = str(obj.get('id'))
+            if pid in value_table:
+                meta = players_index.get(pid, {})
+                full_player_data.append({
+                    'id': pid,
+                    'name': meta.get('name', ''),
+                    'position': meta.get('pos', ''),
+                    'team': meta.get('team', ''),
+                    'age': meta.get('age', 0),
+                    'value': round(value_table[pid], 2),
+                    'sf_value': round(value_table[pid], 2),  # Same for now
+                    'search_name': meta.get('search_name', ''),
+                })
+        
+        with open(model_path, 'w', encoding='utf-8') as f:
+            json.dump(full_player_data, f, indent=2)
+        print(f"[player_value] Saved {len(full_player_data)} players to {model_path}")
+    except Exception as e:
+        print(f"[player_value] Error saving to model path: {e}")

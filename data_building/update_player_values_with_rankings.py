@@ -58,6 +58,17 @@ def update_player_values_with_rankings() -> int:
     # Save to player_value_history table
     history_count = save_to_player_value_history(updated_players)
     
+    # Save ranked players back to model value table for frontend
+    from utils.utils import path_model_value_table
+    import json
+    try:
+        model_path = path_model_value_table()
+        with open(model_path, 'w', encoding='utf-8') as f:
+            json.dump(updated_players, f, indent=2)
+        print(f"[update_player_values] Saved {len(updated_players)} ranked players to model table")
+    except Exception as e:
+        print(f"[update_player_values] Error saving to model table: {e}")
+    
     print(f"[update_player_values] Updated {saved_count} players with rankings")
     print(f"[update_player_values] Saved {history_count} entries to player_value_history")
     
