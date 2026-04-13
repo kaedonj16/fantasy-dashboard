@@ -105,7 +105,7 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
     pos = (pos or "").upper()
 
     if pos == "RB":
-        return _peak_age_score(age, peak=23.5, left_width=3.5, right_width=5.5)
+        return _peak_age_score(age, peak=23.5, left_width=3.5, right_width=5.0)
     if pos == "WR":
         # WR prime extends later than historical models assumed; recent data shows peak ~26-27
         return _peak_age_score(age, peak=26.0, left_width=4.5, right_width=7.5)
@@ -606,12 +606,12 @@ def _apply_qb_market_compression(
         # credit because rushing production and rushing floor are dynasty differentiators.
         if league_type == "1QB":
             # Heavy compression; rushing opens the cap for mobile QBs
-            base = 0.42
+            base = 0.36
             elite_boost = 0.22 * elite_soft
             ceiling_boost = 0.05 * ceiling_soft
-            rushing_boost = 0.20 * rush_norm  # raised: rushing matters more
+            rushing_boost = 0.14 * rush_norm
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.82)  # raised cap to reward top mobile QBs
+            qb_keep = min(qb_keep, 0.68)
         elif league_type == "Superflex":
             # QBs are boosted relative to 1QB, but the multipliers are calibrated
             # so that only the very best QBs (Allen) clearly outrank elite WRs/RBs.
