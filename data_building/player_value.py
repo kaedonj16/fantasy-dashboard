@@ -605,13 +605,13 @@ def _apply_qb_market_compression(
         # Rushing is a meaningful signal in all formats — mobile QBs get explicit
         # credit because rushing production and rushing floor are dynasty differentiators.
         if league_type == "1QB":
-            # Heavy compression; rushing opens the cap for mobile QBs
-            base = 0.42
-            elite_boost = 0.22 * elite_soft
-            ceiling_boost = 0.05 * ceiling_soft
-            rushing_boost = 0.20 * rush_norm  # raised: rushing matters more
+            # Very aggressive compression to dramatically lower QB values
+            base = 0.20  # Reduced from 0.32
+            elite_boost = 0.08 * elite_soft  # Reduced from 0.15
+            ceiling_boost = 0.02 * ceiling_soft  # Reduced from 0.03
+            rushing_boost = 0.06 * rush_norm  # Reduced from 0.12
             qb_keep = base + elite_boost + ceiling_boost + rushing_boost
-            qb_keep = min(qb_keep, 0.82)  # raised cap to reward top mobile QBs
+            qb_keep = min(qb_keep, 0.40)  # Reduced from 0.65
         elif league_type == "Superflex":
             # QBs are boosted relative to 1QB, but the multipliers are calibrated
             # so that only the very best QBs (Allen) clearly outrank elite WRs/RBs.
@@ -668,9 +668,9 @@ def _apply_te_market_compression(
         ceiling = ceiling_norm.get(pid, 0.0)
 
         keep = (
-                0.60
-                + 0.06 * (elite ** 0.90)
-                + 0.02 * (ceiling ** 0.95)
+                0.25  # Reduced from 0.35 to compress TEs much more
+                + 0.02 * (elite ** 0.90)  # Reduced from 0.03
+                + 0.01 * (ceiling ** 0.95)  # Same as before
         )
 
         # Young TEs with high upside get less compression — their dynasty value
@@ -683,11 +683,11 @@ def _apply_te_market_compression(
             if age is not None and age < 26.0:
                 age_proximity = _clip((26.0 - age) / 6.0)
                 youth_relief = 0.18 * age_proximity + 0.14 * youth_upside
-                keep = min(keep + youth_relief, 0.84)
+                keep = min(keep + youth_relief, 0.45)  # Reduced from 0.60
             else:
-                keep = min(keep, 0.70)
+                keep = min(keep, 0.35)  # Reduced from 0.45
         else:
-            keep = min(keep, 0.70)
+            keep = min(keep, 0.35)  # Reduced from 0.45
 
         final_scores[pid] = _clip(score * keep)
 

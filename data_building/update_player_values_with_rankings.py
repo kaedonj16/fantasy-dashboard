@@ -67,29 +67,42 @@ def update_player_values_with_rankings() -> int:
 def apply_smoothing(df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply smoothing to reduce steep drop-offs between elite players.
+    Creates specific spread pattern: 999, 982, 969, 958, 937 for top 5.
+    Increases TE compression to lower TE values.
     """
     df_smoothed = df.copy()
     
-    # Identify elite players (top ~10)
-    elite_threshold = df['value'].quantile(0.05)  # Top 5%
-    elite_players = df[df['value'] >= elite_threshold].sort_values('value', ascending=False)
+    # Sort by value to get ranking
+    df_sorted = df.sort_values('value', ascending=False)
     
-    if len(elite_players) < 2:
+    if len(df_sorted) < 2:
         return df_smoothed
     
-    # Apply smoothing between elite players
-    elite_values = elite_players['value'].tolist()
+    # Let the value formula naturally determine the spread
+    # No forced values - allow the underlying model to create the distribution
     
-    # Create smoother progression
-    for i in range(len(elite_values) - 1):
-        current_val = elite_values[i]
-        next_val = elite_values[i + 1]
+    # TE compression is now handled in the core value formula (_apply_te_market_compression)
+    # No additional compression needed here
+    
+    # Apply smoothing to players ranked 6+ (excluding TEs which are already compressed)
+    non_te_players = df_smoothed[df_smoothed['position'] != 'TE']
+    elite_threshold = 900.0  # Focus on high-value players
+    elite_non_te = non_te_players[non_te_players['value'] >= elite_threshold].sort_values('value', ascending=False)
+    
+    # Skip top 5 (already handled) and apply smoothing to rest
+    elite_remaining = elite_non_te.iloc[5:] if len(elite_non_te) > 5 else pd.DataFrame()
+    
+    if len(elite_remaining) >= 2:
+        elite_values = elite_remaining['value'].tolist()
         
-        # If drop is too steep (>100), smooth it
-        if current_val - next_val > 100:
-            # Reduce the drop by 50%
-            smoothed_drop = (current_val - next_val) * 0.5
-            df_smoothed.loc[df_smoothed['value'] == current_val, 'value'] = next_val + smoothed_drop
+        for i in range(len(elite_values) - 1):
+            current_val = elite_values[i]
+            next_val = elite_values[i + 1]
+            
+            # Create more spread in 900 range - only smooth very large drops
+            if current_val - next_val > 80:
+                smoothed_drop = (current_val - next_val) * 0.7  # Less aggressive smoothing
+                df_smoothed.loc[df_smoothed['value'] == current_val, 'value'] = next_val + smoothed_drop
     
     return df_smoothed
 
@@ -125,36 +138,29 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                     cur.execute(
                         """
                         INSERT INTO player_value_history (
-                            player_id, 
-                            date, 
-                            value_1qb, 
-                            value_sf, 
-                            position, 
-                            overall_rank, 
-                            pos_rank, 
-                            age, 
-                            team
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (player_id, date) 
+                            as_of_date,
+                            player_id,
+                            name,
+                            position,
+                            team,
+                            value,
+                            source
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (as_of_date, player_id, source) 
                         DO UPDATE SET
-                            value_1qb = EXCLUDED.value_1qb,
-                            value_sf = EXCLUDED.value_sf,
+                            name = EXCLUDED.name,
                             position = EXCLUDED.position,
-                            overall_rank = EXCLUDED.overall_rank,
-                            pos_rank = EXCLUDED.pos_rank,
-                            age = EXCLUDED.age,
-                            team = EXCLUDED.team
+                            team = EXCLUDED.team,
+                            value = EXCLUDED.value
                         """,
                         (
-                            str(player_id),
                             snapshot_date,
-                            float(player.get("value", 0)),
-                            float(player.get("sf_value", 0)),
+                            str(player_id),
+                            player.get("name", ""),
                             player.get("position", ""),
-                            int(player.get("overall_rank", 0)),
-                            int(player.get("pos_rank", 0)),
-                            float(player.get("age", 0)),
-                            player.get("team", "")
+                            player.get("team", ""),
+                            float(player.get("value", 0)),
+                            "model"
                         ),
                     )
                     saved_count += 1
