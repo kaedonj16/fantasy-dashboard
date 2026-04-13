@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 from datetime import date
 from typing import Dict, Iterable, Optional, List
 
@@ -31,6 +32,7 @@ from data_building.advanced_metrics import init_advanced_metrics_db
 from utils.utils import load_players_index, normalize_name
 
 OUTPUT_DIR = "data"
+PFF_BASE = "https://premium.pff.com"
 
 RECEIVING_COLS = {
     "yards_after_catch": "yards_after_catch",
@@ -92,6 +94,30 @@ def download_csv(url: str, out_path: str) -> str:
         f.write(resp.text)
 
     return out_path
+
+
+def _default_page_url(kind: str, season: int) -> str:
+    if kind == "receiving":
+        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/receiving?position=WR,TE,RB&minimum=20p"
+    if kind == "rushing":
+        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/rushing?position=RB&minimum=20p"
+    if kind == "passing":
+        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/passing?position=QB&minimum=20p"
+    raise ValueError(f"Unknown PFF kind: {kind}")
+
+
+def _seasonize_page_url(url: str, season: int) -> str:
+    if "{season}" in url:
+        return url.format(season=season)
+    # Handle links like /positions/2016/REGPO/...
+    return re.sub(r"/positions/\d{4}/", f"/positions/{season}/", url)
+
+
+def _ensure_csv_export(url: str) -> str:
+    if "export=csv" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}export=csv"
 
 
 def resolve_seasons(explicit_seasons: Optional[str], last_n: int) -> List[int]:
@@ -221,15 +247,13 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     total_r = total_w = total_p = 0
     for season in seasons:
-        rushing_url = os.getenv("PFF_RUSHING_CSV_URL", "")
-        receiving_url = os.getenv("PFF_RECEIVING_CSV_URL", "")
-        passing_url = os.getenv("PFF_PASSING_CSV_URL", "")
-        if "{season}" in rushing_url:
-            rushing_url = rushing_url.format(season=season)
-        if "{season}" in receiving_url:
-            receiving_url = receiving_url.format(season=season)
-        if "{season}" in passing_url:
-            passing_url = passing_url.format(season=season)
+        rushing_page_url = os.getenv("PFF_RUSHING_CSV_URL", "") or _default_page_url("rushing", season)
+        receiving_page_url = os.getenv("PFF_RECEIVING_CSV_URL", "") or _default_page_url("receiving", season)
+        passing_page_url = os.getenv("PFF_PASSING_CSV_URL", "") or _default_page_url("passing", season)
+
+        rushing_url = _ensure_csv_export(_seasonize_page_url(rushing_page_url, season))
+        receiving_url = _ensure_csv_export(_seasonize_page_url(receiving_page_url, season))
+        passing_url = _ensure_csv_export(_seasonize_page_url(passing_page_url, season))
 
         rushing_csv = download_csv(rushing_url, os.path.join(OUTPUT_DIR, f"pff_nfl_rushing_{season}.csv"))
         receiving_csv = download_csv(receiving_url, os.path.join(OUTPUT_DIR, f"pff_nfl_receiving_{season}.csv"))
