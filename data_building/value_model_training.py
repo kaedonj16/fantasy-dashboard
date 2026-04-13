@@ -1262,87 +1262,57 @@ def rewrite_value_table_with_model() -> Path:
             'position': player.get('position', '')
         })
         
-        # Use engine values with multi-source outlier detection
-        if pid in engine_1qb_map:
-            engine_val = engine_1qb_map[pid]
-            
-            # Debug: Check if this is Bucky Irving
-            player_name = str(player.get('name', '')).strip()
-            if 'Bucky' in player_name:
-                print(f"[DEBUG] Bucky Irving - engine path reached")
-                print(f"[DEBUG] PID {pid} in engine_1qb_map: True")
-                print(f"[DEBUG] PID {pid} in vendor_values: {pid in vendor_values}")
-            
-            # Check if this player has vendor values for outlier detection
-            if pid in vendor_values:
-                fc_val = vendor_values[pid]
-                
-                # Multi-source outlier detection: need consensus from multiple sources
-                fc_norm = fc_val  # vendor_values already normalized to 0-1000 scale
-                engine_norm = engine_val / 999.9 * 1000   # Max engine value
-                
-                # Debug: Check FC normalization for Bucky
-                if 'Bucky' in player_name:
-                    print(f"[DEBUG] Bucky FC value (already normalized): {fc_norm:.2f}")
-                    print(f"[DEBUG] Expected FC normalization: 352.68")
-                
-                # Get DynastyProcess value if available
-                dp_val = 0.0
-                player_row = df_by_id.get(pid)
-                if player_row is not None:
-                    name = str(player_row.get('name', '')).strip()
-                    team = str(player_row.get('team', '')).strip()
-                    if not dp_df.empty:
-                        dp_match = dp_df_full[(dp_df_full['player'].str.lower() == name.lower()) & 
-                                                (dp_df_full['team'].str.lower() == team.lower())]
-                        if not dp_match.empty:
-                            dp_val = dp_match.iloc[0]['value_1qb']
-                
-                dp_norm = dp_val / 10256.0 * 1000  # Max DP value
-                
-                # Count available sources
-                available_sources = []
-                if fc_norm > 0:
-                    available_sources.append(fc_norm)
-                if dp_norm > 0:
-                    available_sources.append(dp_norm)
-                if engine_norm > 0:
-                    available_sources.append(engine_norm)
-                
-                # Only detect outlier if we have 2+ sources and one deviates significantly
-                if len(available_sources) >= 2:
-                    mean_val = np.mean(available_sources)
-                    max_deviation = max(abs(val - mean_val) / mean_val for val in available_sources)
-                    
-                    # Debug: Check if this is Bucky Irving
-                    player_name = str(player.get('name', '')).strip()
-                    if 'Bucky' in player_name:
-                        print(f"[DEBUG] Bucky Irving outlier detection:")
-                        print(f"[DEBUG] Available sources: {available_sources}")
-                        print(f"[DEBUG] Mean: {mean_val:.1f}")
-                        print(f"[DEBUG] Max deviation: {max_deviation:.2f}")
-                        print(f"[DEBUG] Outlier threshold: 0.35")
-                    
-                    # If any source is >25% from mean, use consensus of ALL sources
-                    # This gives proper weight to outliers while still providing consensus
-                    if max_deviation > 0.25:
-                        consensus_val = np.mean(available_sources)  # Use all sources, not just non-outliers
-                        final_value = consensus_val / 1000 * 999.9  # Scale back to 999.9 range
-                        
-                        if 'Bucky' in player_name:
-                            print(f"[DEBUG] Bucky outlier detected - using consensus: {consensus_val:.1f}")
-                            print(f"[DEBUG] Final value: {final_value:.2f}")
-                    else:
-                        final_value = engine_val
-                        if 'Bucky' in player_name:
-                            print(f"[DEBUG] Bucky no outlier - using engine: {final_value:.2f}")
+        # Build vendor consensus (FC + DP) as the primary value source.
+        # The engine is used only when no vendor data is available, or to nudge
+        # the consensus when it is close (within 12%) — preventing stale engine
+        # values from overriding market consensus.
+
+        # Gather DP value (matched by name + team since DP has no sleeper_id)
+        dp_val_raw = 0.0
+        player_row = df_by_id.get(pid)
+        if player_row is not None:
+            p_name = str(player_row.get('name', '')).strip()
+            p_team = str(player_row.get('team', '')).strip()
+            if not dp_df.empty:
+                dp_match = dp_df_full[
+                    (dp_df_full['player'].str.lower() == p_name.lower()) &
+                    (dp_df_full['team'].str.lower() == p_team.lower())
+                ]
+                if not dp_match.empty:
+                    dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
+
+        # Normalise DP to 0-999.9 (DP max ≈ 10 256)
+        DP_MAX = 10256.0
+        dp_norm = (dp_val_raw / DP_MAX * 999.9) if dp_val_raw > 0 else 0.0
+
+        # Collect vendor sources (already on 0-999.9 scale)
+        vendor_sources: list[float] = []
+        if pid in vendor_values and vendor_values[pid] > 0:
+            vendor_sources.append(vendor_values[pid])   # FC normalised
+        if dp_norm > 0:
+            vendor_sources.append(dp_norm)
+
+        if vendor_sources:
+            vendor_consensus = float(np.mean(vendor_sources))
+
+            # Optionally blend in the engine when it is close to vendor consensus
+            if pid in engine_1qb_map:
+                engine_val = float(engine_1qb_map[pid])
+                deviation = abs(engine_val - vendor_consensus) / max(vendor_consensus, 1.0)
+                if deviation <= 0.12:
+                    # Engine agrees — weight it alongside vendors (lower weight)
+                    final_value = (vendor_consensus * 0.7 + engine_val * 0.3)
                 else:
-                    final_value = engine_val
+                    # Engine is a significant outlier — trust vendor consensus
+                    final_value = vendor_consensus
             else:
-                final_value = engine_val
-        elif pid in vendor_values:
-            final_value = vendor_values[pid]
+                final_value = vendor_consensus
+
+        elif pid in engine_1qb_map:
+            # No vendor data — fall back to engine
+            final_value = float(engine_1qb_map[pid])
         else:
+            # Last resort: ML model prediction
             final_value = ml_prediction
 
         # Calculate Superflex value - use engine values as primary source
@@ -1481,66 +1451,6 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
 
-    # Apply elite player selection: limit max 2 players per position
-    if hasattr(rewrite_value_table_with_model, '_ml_predictions'):
-        ml_preds = rewrite_value_table_with_model._ml_predictions
-        if ml_preds:
-            pred_df = pd.DataFrame(ml_preds)
-            
-            # Sort by ML prediction descending
-            pred_df_sorted = pred_df.sort_values('ml_prediction', ascending=False)
-            
-            # Select top 2 players per position
-            top_elite_pids = set()
-            position_counts = {}
-            
-            print("[DEBUG] Elite selection by position:")
-            for _, row in pred_df_sorted.iterrows():
-                position = str(row.get('position', '')).upper()
-                pid = str(row.get('pid'))
-                name = str(row.get('name', ''))
-                
-                # Count players per position
-                if position not in position_counts:
-                    position_counts[position] = 0
-                
-                # Add player if under limit for this position
-                if position_counts[position] < 2:
-                    top_elite_pids.add(pid)
-                    position_counts[position] += 1
-                    print(f"[DEBUG] Added elite: {name} ({position}) - count: {position_counts[position]}")
-                else:
-                    print(f"[DEBUG] Skipped: {name} ({position}) - count already {position_counts[position]}")
-                
-                # Stop if we have enough players (optional safety check)
-                if len(top_elite_pids) >= 10:  # Reasonable upper limit
-                    break
-            
-            print(f"[DEBUG] Final elite selection: {len(top_elite_pids)} players")
-            print(f"[DEBUG] Position counts: {position_counts}")
-            
-            # Update values for elite players to use ML predictions
-            for asset in cleaned_assets:
-                pid = str(asset.get('id'))
-                if pid in top_elite_pids:
-                    # Find the ML prediction for this player
-                    ml_row = pred_df[pred_df['pid'] == pid]
-                    if not ml_row.empty:
-                        ml_value = ml_row.iloc[0]['ml_prediction']
-                        
-                        # Add variation: top players shouldn't all be exactly 999.9
-                        elite_rank = list(top_elite_pids).index(pid) + 1
-                        variation_factor = 1.0 - (elite_rank - 1) * 0.001  # 0.1% decrease per rank
-                        
-                        varied_value = ml_value * variation_factor
-                        asset['value'] = varied_value
-                        asset['sf_value'] = varied_value  # Same for SF
-                        
-                        # Update all league size variants too
-                        for n in LEAGUE_SIZES:
-                            if n != 10:
-                                asset[f'value_{n}'] = ml_value
-                                asset[f'sf_value_{n}'] = ml_value
 
     pos_to_indices: dict[str, list[int]] = {}
 
