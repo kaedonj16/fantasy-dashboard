@@ -46,31 +46,24 @@ RECEIVING_COLS = {
     "inline_rate": "inline_rate",
     "pass_block_rate": "pass_block_rate",
     "grades_offense": "grades_offense",
-    "grades_pass_block": "grades_pass_block",
 }
 
 RUSHING_COLS = {
     "explosive": "explosive_runs_10_plus",
-    "explosive_runs_10_plus": "explosive_runs_10_plus",
     "breakaway_percent": "breakaway_percentage",
-    "breakaway_percentage": "breakaway_percentage",
     "elusive_rating": "elusive_rating",
     "grades_run": "pff_rushing_grade",
-    "pff_rushing_grade": "pff_rushing_grade",
     "grades_offense": "grades_offense",
+    "avoided_tackles": "avoided_tackles",
 }
 
 PASSING_COLS = {
     "grades_pass": "pff_passing_grade",
-    "pff_passing_grade": "pff_passing_grade",
     "grades_offense": "grades_offense",
-    "big_time_throws": "big_time_throw_rate",
-    "big_time_throw_rate": "big_time_throw_rate",
+    "btt_rate": "big_time_throw_rate",
     "completion_percent": "adjusted_completion_rate",
-    "adjusted_completion_rate": "adjusted_completion_rate",
     "pressure_to_sack_rate": "pressure_to_sack_rate",
     "qb_rating": "nfl_passer_rating",
-    "nfl_passer_rating": "nfl_passer_rating",
 }
 
 
@@ -185,21 +178,18 @@ def upsert_csv(
     with open(csv_path, "r", encoding="utf-8") as f, get_conn() as conn:
         reader = csv.DictReader(f)
         for row in reader:
-            row_season_raw = row.get("season") or row.get("Season") or row.get("year") or row.get("Year")
-            if row_season_raw:
-                try:
-                    if int(float(str(row_season_raw).strip())) != season:
-                        continue
-                except ValueError:
-                    pass
+            # Use player_id directly from the local summary files
+            player_id = row.get("player_id")
+            if not player_id:
+                continue
 
-            name, pos, team = _player_key(row)
+            name = normalize_name(row.get("player") or "")
+            pos = (row.get("position") or "").upper()
+            team = (row.get("team_name") or "").upper()
+            
             if not name:
                 continue
             pos = pos or position_hint
-            player_id = lookup.get(f"{name}|{pos}|{team}") or lookup.get(f"{name}|{pos}|") or lookup.get(f"{name}||{team}") or lookup.get(f"{name}||")
-            if not player_id:
-                continue
 
             update_data = {}
             for source_col, target_col in mapping.items():
@@ -247,21 +237,18 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     total_r = total_w = total_p = 0
     for season in seasons:
-        rushing_page_url = os.getenv("PFF_RUSHING_CSV_URL", "") or _default_page_url("rushing", season)
-        receiving_page_url = os.getenv("PFF_RECEIVING_CSV_URL", "") or _default_page_url("receiving", season)
-        passing_page_url = os.getenv("PFF_PASSING_CSV_URL", "") or _default_page_url("passing", season)
+        # Use local summary files instead of downloading from PFF
+        rushing_csv = os.path.join(OUTPUT_DIR, f"rushing_summary_{season}.csv")
+        receiving_csv = os.path.join(OUTPUT_DIR, f"receiving_summary_{season}.csv")
+        passing_csv = os.path.join(OUTPUT_DIR, f"passing_summary_{season}.csv")
 
-        rushing_url = _ensure_csv_export(_seasonize_page_url(rushing_page_url, season))
-        receiving_url = _ensure_csv_export(_seasonize_page_url(receiving_page_url, season))
-        passing_url = _ensure_csv_export(_seasonize_page_url(passing_page_url, season))
-
-        rushing_csv = download_csv(rushing_url, os.path.join(OUTPUT_DIR, f"pff_nfl_rushing_{season}.csv"))
-        receiving_csv = download_csv(receiving_url, os.path.join(OUTPUT_DIR, f"pff_nfl_receiving_{season}.csv"))
-        passing_csv = download_csv(passing_url, os.path.join(OUTPUT_DIR, f"pff_nfl_passing_{season}.csv"))
-
-        total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", lookup)
-        total_w += upsert_csv(receiving_csv, season, RECEIVING_COLS, "WR", lookup)
-        total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", lookup)
+        # Check if files exist before processing
+        if os.path.exists(rushing_csv):
+            total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", lookup)
+        if os.path.exists(receiving_csv):
+            total_w += upsert_csv(receiving_csv, season, RECEIVING_COLS, "WR", lookup)
+        if os.path.exists(passing_csv):
+            total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", lookup)
 
     print(f"Synced PFF metrics rows: rushing={total_r}, receiving={total_w}, passing={total_p}")
     return 0

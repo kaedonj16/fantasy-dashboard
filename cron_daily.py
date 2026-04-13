@@ -229,6 +229,7 @@ def main():
         build_daily_model_values()
 
         from data_building.save_player_values import save_daily_values_to_db
+        from data_building.update_player_values_with_rankings import update_player_values_with_rankings
         from utils.utils import load_model_value_table
         from utils.email_notifications import send_cron_failure_notification, send_database_save_notification
 
@@ -238,7 +239,7 @@ def main():
 
         # Expected count based on typical roster size
         expected_count = len(value_table)
-        value_count = save_daily_values_to_db(value_table)
+        value_count = update_player_values_with_rankings()
         print(f"[cron] Saved {value_count} player values")
 
         # Check if save count is unexpectedly low

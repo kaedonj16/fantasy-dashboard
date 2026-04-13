@@ -658,23 +658,23 @@ def train_trade_value_model(
 
     # NOTE: Vendor values used for TARGET only, not as features
     # (They're not available during inference from usage_table.json)
-
-    weights = np.vstack([
-        np.where(~np.isnan(fc_norm.values), 0.35, 0.0),
-        np.where(~np.isnan(dp_norm.values), 0.25, 0.0),
-        np.where(~np.isnan(engine_norm.values), 0.40, 0.0),
-    ])
-
+    
+    # Use max-based approach instead of weighted averaging to allow higher elite values
+    # This preserves the ability for top players to reach closer to theoretical max
+    
     vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
-    numerator = np.nansum(vals * weights, axis=0)
-    denominator = np.nansum(weights, axis=0)
-
-    y_norm = np.divide(
-        numerator,
-        denominator,
-        out=np.full_like(numerator, np.nan, dtype=float),
-        where=denominator != 0,
-    )
+    
+    # For each player, take the maximum normalized value across available sources
+    # This allows elite players to maintain higher target values
+    y_norm = np.nanmax(vals, axis=0)
+    
+    # Apply a slight boost for players with multiple high-value sources (consensus elites)
+    consensus_boost = np.sum(~np.isnan(vals), axis=0)  # Count of available sources
+    consensus_boost = np.where(consensus_boost >= 2, 1.05, 1.0)  # 5% boost for consensus
+    y_norm = y_norm * consensus_boost
+    
+    # Cap at 1.0 to maintain normalization
+    y_norm = np.minimum(y_norm, 1.0)
 
     df["target_vendor_norm"] = y_norm
     df["target_value"] = df["target_vendor_norm"] * 1000.0
@@ -903,12 +903,12 @@ def train_trade_value_model(
     # Model
     # -----------------------------
     gbr = GradientBoostingRegressor(
-        n_estimators=250,
-        learning_rate=0.03,
-        max_depth=3,
+        n_estimators=400,
+        learning_rate=0.08,
+        max_depth=5,
         random_state=random_state,
-        subsample=0.85,
-        min_samples_leaf=6,
+        subsample=0.95,
+        min_samples_leaf=2,
     )
 
     model = Pipeline(
@@ -1017,6 +1017,13 @@ def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) ->
 
     s01 = (raw_pred - scale_min) / (scale_max - scale_min)
     s01 = max(0.0, min(1.0, s01))
+    
+    # Apply power boost for elite players (top 10% of predictions)
+    # This allows elite players to reach closer to theoretical max
+    if s01 > 0.85:
+        boost_factor = 1.0 + (s01 - 0.85) * 0.3  # Up to 4.5% boost for top values
+        s01 = min(1.0, s01 * boost_factor)
+    
     return round(s01 * 999.9, 1)
 
 
@@ -1104,13 +1111,29 @@ def rewrite_value_table_with_model() -> Path:
     vendor_values: dict[str, float] = {}
 
     # Get FC values normalized to 999.9 scale
+    print(f"[DEBUG] fc_df.empty: {fc_df.empty}")
+    print(f"[DEBUG] 'fc_value' in fc_df.columns: {'fc_value' in fc_df.columns}")
+    print(f"[DEBUG] 'sleeper_id' in fc_df.columns: {'sleeper_id' in fc_df.columns}")
+    print(f"[DEBUG] fc_df shape: {fc_df.shape}")
+    
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
         fc_max = fc_df["fc_value"].max()
+        print(f"[DEBUG] fc_max: {fc_max}")
+        
         for _, row in fc_df.iterrows():
             pid = str(row.get("sleeper_id"))
             fc_val = row.get("fc_value")
             if pid and pd.notna(fc_val):
                 vendor_values[pid] = float(fc_val) / fc_max * 999.9
+                if 'Bucky' in str(row.get('name', '')):
+                    print(f"[DEBUG] Bucky added to vendor_values: PID {pid} -> {vendor_values[pid]:.2f}")
+        
+        print(f"[DEBUG] Total vendor_values populated: {len(vendor_values)}")
+        print(f"[DEBUG] Bucky (11584) in vendor_values: {'11584' in vendor_values}")
+        if '11584' in vendor_values:
+            print(f"[DEBUG] Bucky vendor value: {vendor_values['11584']:.2f}")
+    else:
+        print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
@@ -1160,7 +1183,15 @@ def rewrite_value_table_with_model() -> Path:
 
     # Load value_2qb from dynastyprocess (need to match by name+team)
     dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
-    if not dp_df.empty:
+    dp_df_full = pd.DataFrame()  # Full DP dataframe for outlier detection
+    # Always try to load DP dataframe for outlier detection
+    try:
+        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        if "player" in dp_raw.columns and "value_1qb" in dp_raw.columns:
+            dp_df_full = dp_raw
+    except Exception as e:
+        print(f"[ERROR] Failed to load dp_df_full: {e}")
+        dp_df_full = pd.DataFrame()
         try:
             dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
             if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
@@ -1218,19 +1249,106 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        # Blend FC vendor value (60%) + engine value (40%) when both available.
-        # Falls back to FC-only or engine-only when one source is missing.
-        if pid in vendor_values and pid in engine_1qb_map:
-            final_value = 0.6 * vendor_values[pid] + 0.4 * engine_1qb_map[pid]
+        # Get ML model prediction first
+        ml_prediction = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+        
+        # Store ML predictions for later ranking
+        if not hasattr(rewrite_value_table_with_model, '_ml_predictions'):
+            rewrite_value_table_with_model._ml_predictions = []
+        rewrite_value_table_with_model._ml_predictions.append({
+            'pid': pid,
+            'ml_prediction': ml_prediction,
+            'name': player.get('name', ''),
+            'position': player.get('position', '')
+        })
+        
+        # Use engine values with multi-source outlier detection
+        if pid in engine_1qb_map:
+            engine_val = engine_1qb_map[pid]
+            
+            # Debug: Check if this is Bucky Irving
+            player_name = str(player.get('name', '')).strip()
+            if 'Bucky' in player_name:
+                print(f"[DEBUG] Bucky Irving - engine path reached")
+                print(f"[DEBUG] PID {pid} in engine_1qb_map: True")
+                print(f"[DEBUG] PID {pid} in vendor_values: {pid in vendor_values}")
+            
+            # Check if this player has vendor values for outlier detection
+            if pid in vendor_values:
+                fc_val = vendor_values[pid]
+                
+                # Multi-source outlier detection: need consensus from multiple sources
+                fc_norm = fc_val  # vendor_values already normalized to 0-1000 scale
+                engine_norm = engine_val / 999.9 * 1000   # Max engine value
+                
+                # Debug: Check FC normalization for Bucky
+                if 'Bucky' in player_name:
+                    print(f"[DEBUG] Bucky FC value (already normalized): {fc_norm:.2f}")
+                    print(f"[DEBUG] Expected FC normalization: 352.68")
+                
+                # Get DynastyProcess value if available
+                dp_val = 0.0
+                player_row = df_by_id.get(pid)
+                if player_row is not None:
+                    name = str(player_row.get('name', '')).strip()
+                    team = str(player_row.get('team', '')).strip()
+                    if not dp_df.empty:
+                        dp_match = dp_df_full[(dp_df_full['player'].str.lower() == name.lower()) & 
+                                                (dp_df_full['team'].str.lower() == team.lower())]
+                        if not dp_match.empty:
+                            dp_val = dp_match.iloc[0]['value_1qb']
+                
+                dp_norm = dp_val / 10256.0 * 1000  # Max DP value
+                
+                # Count available sources
+                available_sources = []
+                if fc_norm > 0:
+                    available_sources.append(fc_norm)
+                if dp_norm > 0:
+                    available_sources.append(dp_norm)
+                if engine_norm > 0:
+                    available_sources.append(engine_norm)
+                
+                # Only detect outlier if we have 2+ sources and one deviates significantly
+                if len(available_sources) >= 2:
+                    mean_val = np.mean(available_sources)
+                    max_deviation = max(abs(val - mean_val) / mean_val for val in available_sources)
+                    
+                    # Debug: Check if this is Bucky Irving
+                    player_name = str(player.get('name', '')).strip()
+                    if 'Bucky' in player_name:
+                        print(f"[DEBUG] Bucky Irving outlier detection:")
+                        print(f"[DEBUG] Available sources: {available_sources}")
+                        print(f"[DEBUG] Mean: {mean_val:.1f}")
+                        print(f"[DEBUG] Max deviation: {max_deviation:.2f}")
+                        print(f"[DEBUG] Outlier threshold: 0.35")
+                    
+                    # If any source is >25% from mean, use consensus of ALL sources
+                    # This gives proper weight to outliers while still providing consensus
+                    if max_deviation > 0.25:
+                        consensus_val = np.mean(available_sources)  # Use all sources, not just non-outliers
+                        final_value = consensus_val / 1000 * 999.9  # Scale back to 999.9 range
+                        
+                        if 'Bucky' in player_name:
+                            print(f"[DEBUG] Bucky outlier detected - using consensus: {consensus_val:.1f}")
+                            print(f"[DEBUG] Final value: {final_value:.2f}")
+                    else:
+                        final_value = engine_val
+                        if 'Bucky' in player_name:
+                            print(f"[DEBUG] Bucky no outlier - using engine: {final_value:.2f}")
+                else:
+                    final_value = engine_val
+            else:
+                final_value = engine_val
         elif pid in vendor_values:
             final_value = vendor_values[pid]
-        elif pid in engine_1qb_map:
-            final_value = 0.0  # FC absence = no dynasty consensus; engine alone is insufficient
         else:
-            final_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+            final_value = ml_prediction
 
-        # Calculate Superflex value
-        if pid in sf_vendor_values:
+        # Calculate Superflex value - use engine values as primary source
+        if pid in sf_engine_map:
+            sf_value = sf_engine_map[pid]
+        elif pid in sf_vendor_values:
             sf_value = sf_vendor_values[pid]
         else:
             # Fallback to ML model for SF (same as 1QB for now)
@@ -1362,6 +1480,67 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"value_{n}"] = float(val)
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
+
+    # Apply elite player selection: limit max 2 players per position
+    if hasattr(rewrite_value_table_with_model, '_ml_predictions'):
+        ml_preds = rewrite_value_table_with_model._ml_predictions
+        if ml_preds:
+            pred_df = pd.DataFrame(ml_preds)
+            
+            # Sort by ML prediction descending
+            pred_df_sorted = pred_df.sort_values('ml_prediction', ascending=False)
+            
+            # Select top 2 players per position
+            top_elite_pids = set()
+            position_counts = {}
+            
+            print("[DEBUG] Elite selection by position:")
+            for _, row in pred_df_sorted.iterrows():
+                position = str(row.get('position', '')).upper()
+                pid = str(row.get('pid'))
+                name = str(row.get('name', ''))
+                
+                # Count players per position
+                if position not in position_counts:
+                    position_counts[position] = 0
+                
+                # Add player if under limit for this position
+                if position_counts[position] < 2:
+                    top_elite_pids.add(pid)
+                    position_counts[position] += 1
+                    print(f"[DEBUG] Added elite: {name} ({position}) - count: {position_counts[position]}")
+                else:
+                    print(f"[DEBUG] Skipped: {name} ({position}) - count already {position_counts[position]}")
+                
+                # Stop if we have enough players (optional safety check)
+                if len(top_elite_pids) >= 10:  # Reasonable upper limit
+                    break
+            
+            print(f"[DEBUG] Final elite selection: {len(top_elite_pids)} players")
+            print(f"[DEBUG] Position counts: {position_counts}")
+            
+            # Update values for elite players to use ML predictions
+            for asset in cleaned_assets:
+                pid = str(asset.get('id'))
+                if pid in top_elite_pids:
+                    # Find the ML prediction for this player
+                    ml_row = pred_df[pred_df['pid'] == pid]
+                    if not ml_row.empty:
+                        ml_value = ml_row.iloc[0]['ml_prediction']
+                        
+                        # Add variation: top players shouldn't all be exactly 999.9
+                        elite_rank = list(top_elite_pids).index(pid) + 1
+                        variation_factor = 1.0 - (elite_rank - 1) * 0.001  # 0.1% decrease per rank
+                        
+                        varied_value = ml_value * variation_factor
+                        asset['value'] = varied_value
+                        asset['sf_value'] = varied_value  # Same for SF
+                        
+                        # Update all league size variants too
+                        for n in LEAGUE_SIZES:
+                            if n != 10:
+                                asset[f'value_{n}'] = ml_value
+                                asset[f'sf_value_{n}'] = ml_value
 
     pos_to_indices: dict[str, list[int]] = {}
 

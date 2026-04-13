@@ -3495,10 +3495,10 @@ function openPlayerModal(playerId, playerName) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
+        'RB': 600,   // Elite young backs
+        'WR': 700,   // Elite WRs
         'TE': 550,   // Premium TE scarcity
-        'QB': 400,   // Solid QB1s
+        'QB': 450,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };
@@ -3983,9 +3983,6 @@ function buildAdvancedMetricsHTML(metricsData) {
   const defs = [];
 
   // Role Score (0–100)
-  if (metrics.player_evaluation_score != null) {
-    defs.push({ label: 'Player Eval', fill: metrics.player_evaluation_score, display: metrics.player_evaluation_score.toFixed(1) });
-  }
   if (metrics.role_score != null) {
     defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
@@ -4173,7 +4170,7 @@ function addBreakoutBadgesToTeamsPage() {
       
       // Position-specific elite thresholds
       const eliteThresholds = {
-        'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
+        'RB': 900, 'WR': 900, 'TE': 900, 'QB': 900, 'K': 9999, 'DEF': 9999
       };
       const threshold = eliteThresholds[position] || 750;
       const isElite = value >= threshold;
@@ -4638,10 +4635,10 @@ function renderTeamDetails(data) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
-        'TE': 550,   // Premium TE scarcity
-        'QB': 400,   // Solid QB1s
+        'RB': 900,   // Elite young backs
+        'WR': 900,   // Elite WRs
+        'TE': 900,   // Premium TE scarcity
+        'QB': 900,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };

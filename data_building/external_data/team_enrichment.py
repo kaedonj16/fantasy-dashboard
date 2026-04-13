@@ -200,7 +200,17 @@ def fetch_team_offense_per_game(
 
 def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
     teams_index = load_teams_index() or {}
-    per_game = fetch_team_offense_per_game(season, session=HTTP_SESSION)
+    try:
+        per_game = fetch_team_offense_per_game(season, session=HTTP_SESSION)
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            return
+        else:
+            print(f"Skipping tank01 API call due to HTTP error: {e}")
+            return
+    except Exception as e:
+        print(f"Skipping tank01 API call due to unexpected error: {e}")
+        return
 
     for team_abv, stats in per_game.items():
         meta = teams_index.setdefault(team_abv, {})
