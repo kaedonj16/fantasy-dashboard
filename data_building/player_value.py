@@ -105,7 +105,7 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
     pos = (pos or "").upper()
 
     if pos == "RB":
-        return _peak_age_score(age, peak=23.5, left_width=3.5, right_width=4.5)
+        return _peak_age_score(age, peak=23.5, left_width=3.5, right_width=5.5)
     if pos == "WR":
         # WR prime extends later than historical models assumed; recent data shows peak ~26-27
         return _peak_age_score(age, peak=26.0, left_width=4.5, right_width=7.5)
@@ -124,7 +124,7 @@ def horizon_age_factor(pos: str, age: Optional[float]) -> float:
     if age is None:
         age = 26.0
 
-    weights = [0.20, 0.35, 0.45]
+    weights = [0.40, 0.35, 0.25]
     vals = [_age_factor(pos, float(age) + i) for i in range(len(weights))]
     base = sum(w * v for w, v in zip(weights, vals)) / sum(weights)
     return base ** 1.10
@@ -998,14 +998,14 @@ def build_value_table_for_usage(
             "upside": 0.06,
         },
         "RB": {
-            "blended_prod": 0.16,
+            "blended_prod": 0.14,
             "current_prod": 0.10,
-            "ceiling": 0.08,
-            "floor": 0.06,
+            "ceiling": 0.06,
+            "floor": 0.09,
             "age": 0.13,
-            "role": 0.12,
+            "role": 0.10,
             "trend": 0.05,
-            "invest": 0.10,
+            "invest": 0.13,
             "rz": 0.08,
             "share": 0.00,
             "snap": 0.06,
@@ -1068,7 +1068,7 @@ def build_value_table_for_usage(
                 w["rz"] * rz_norm.get(pid, 0.0) +
                 w["share"] * target_share_norm.get(pid, 0.0) +
                 w["snap"] * snap_norm.get(pid, 0.0) +
-                w["upside"] * max(p["youth_upside"], 0.55 * p["proven_elite"])
+                w["upside"] * max(p["youth_upside"], 0.70 * p["proven_elite"])
         )
 
         if pos == "QB":
