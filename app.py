@@ -6506,7 +6506,7 @@ def page_players(platform: str, season: int, league_id: str):
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
-          const age = p.age != null ? Number(p.age).toFixed(1) : '—';
+          const age = (p.age != null && Number(p.age) > 0) ? Number(p.age).toFixed(1) : '—';
           const val = prGetValue(p);
 
           let badges = '';

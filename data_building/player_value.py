@@ -886,7 +886,7 @@ def build_value_table_for_usage(
 
         blended_prod = blended_prod_raw * defense_factor
 
-        ceiling_proxy = 0.65 * career_best_ppg + 0.35 * max(current_ppg, last_year_ppg)
+        ceiling_proxy = 0.50 * career_best_ppg + 0.30 * max(current_ppg, last_year_ppg) + 0.20 * career_avg_ppg
         floor_proxy = 0.70 * career_avg_ppg + 0.30 * last_year_ppg
 
         # Red zone metric: prefer current-season data, fall back to 3-year weighted historical average
@@ -991,7 +991,7 @@ def build_value_table_for_usage(
             "upside": 0.06,
         },
         "RB": {
-            "blended_prod": 0.14,
+            "blended_prod": 0.16,   # was 0.14 — reward confirmed production over speculation
             "current_prod": 0.10,
             "ceiling": 0.06,
             "floor": 0.09,
@@ -1002,7 +1002,7 @@ def build_value_table_for_usage(
             "rz": 0.08,
             "share": 0.00,
             "snap": 0.06,
-            "upside": 0.06,
+            "upside": 0.04,         # was 0.06 — less raw upside speculation
         },
         "WR": {
             "blended_prod": 0.20,
