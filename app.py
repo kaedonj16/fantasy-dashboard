@@ -8006,16 +8006,33 @@ def api_player_advanced_metrics(player_id: str):
         season_val = metrics.pop("season", target_season)
         metrics.pop("id", None)
 
+        metrics_payload = {
+            k: (float(v) if v is not None and not isinstance(v, (datetime, date)) else (str(v) if isinstance(v, (datetime, date)) else None))
+            for k, v in metrics.items()
+            if k not in ("player_id", "position")
+        }
+
+        # Blend usage-based role score with PFF quality grades for a single
+        # evaluation signal used by the modal.
+        role = metrics_payload.get("role_score")
+        off = metrics_payload.get("grades_offense")
+        rush = metrics_payload.get("pff_rushing_grade")
+        ppass = metrics_payload.get("pff_passing_grade")
+
+        quality = ppass if metrics.get("position") == "QB" else (rush or off)
+        if role is not None and quality is not None:
+            metrics_payload["player_evaluation_score"] = round((float(role) * 0.65) + (float(quality) * 0.35), 1)
+        elif role is not None:
+            metrics_payload["player_evaluation_score"] = round(float(role), 1)
+        elif quality is not None:
+            metrics_payload["player_evaluation_score"] = round(float(quality), 1)
+
         return jsonify({
             "player_id": str(player_id),
             "position": metrics.get("position"),
             "season": season_val,
             "available_seasons": available_seasons,
-            "metrics": {
-                k: (float(v) if v is not None and not isinstance(v, (datetime, date)) else (str(v) if isinstance(v, (datetime, date)) else None))
-                for k, v in metrics.items()
-                if k not in ("player_id", "position")
-            },
+            "metrics": metrics_payload,
             "as_of_date": as_of_date,
         })
 
