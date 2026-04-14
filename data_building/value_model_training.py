@@ -1286,13 +1286,13 @@ def rewrite_value_table_with_model() -> Path:
         dp_norm = (dp_val_raw / DP_MAX * 999.9) if dp_val_raw > 0 else 0.0
 
         # Collect vendor sources (already on 0-999.9 scale).
-        # For QBs in 1QB leagues, DP inflates their value relative to market
-        # consensus — use FC only so that elite TEs rank above QB1 as expected.
+        # DP undervalues TEs relative to market consensus (KTC/FC), so for TEs
+        # use FC only. All other positions use FC + DP average.
         player_position = str(player.get("position") or "").upper()
         vendor_sources: list[float] = []
         if pid in vendor_values and vendor_values[pid] > 0:
             vendor_sources.append(vendor_values[pid])   # FC normalised
-        if dp_norm > 0 and player_position != "QB":
+        if dp_norm > 0 and player_position != "TE":
             vendor_sources.append(dp_norm)
 
         if vendor_sources:
