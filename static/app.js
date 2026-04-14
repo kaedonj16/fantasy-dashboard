@@ -5011,11 +5011,13 @@ document.addEventListener('click', (e) => {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
       body: 'Click any player to see their dynasty value, trend, and breakout score.',
+      action: 'openPlayerModal',
     },
     {
       page: 'dashboard', selector: '.team-clickable, .team-row',
       title: 'Team Cards',
       body: 'Click any team to see their full roster and asset values.',
+      action: 'openTeamModal',
     },
     {
       page: 'dashboard', selector: 'a[href*="/weekly"]',
@@ -5036,10 +5038,18 @@ document.addEventListener('click', (e) => {
       navigate: 'graphs',
     },
     {
-      page: 'dashboard', selector: '#changelogBell',
+      page: 'dashboard', selector: '#settingsChangelogBtn',
       title: "What's New",
       body: 'The bell shows new features and updates. A red dot means something new dropped.',
       navigate: 'dashboard',
+      beforeShow: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = 'block';
+      },
+      afterLeave: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = '';
+      },
     },
     {
       page: 'dashboard', selector: null,
@@ -5115,9 +5125,33 @@ document.addEventListener('click', (e) => {
       if (!el) { advanceTour(); return; }
     }
 
+    // Run beforeShow hook (e.g. open settings dropdown)
+    if (typeof step.beforeShow === 'function') step.beforeShow();
+
     const target = step.selector ? document.querySelector(step.selector) : null;
     positionOverlays(target);
     renderTooltip(step, idx, target);
+
+    // Auto-open modals as a demo
+    if (step.action === 'openPlayerModal') {
+      const playerEl = document.querySelector('[data-player-id]');
+      if (playerEl) {
+        setTimeout(function () {
+          const pid  = playerEl.dataset.playerId;
+          const pname = playerEl.dataset.playerName || playerEl.textContent.trim();
+          if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
+        }, 400);
+      }
+    } else if (step.action === 'openTeamModal') {
+      const teamEl = document.querySelector('.team-clickable[data-roster-id]');
+      if (teamEl) {
+        setTimeout(function () {
+          const rid   = teamEl.dataset.rosterId;
+          const tname = teamEl.dataset.teamName || '';
+          if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
+        }, 400);
+      }
+    }
   }
 
   function positionOverlays(target) {
@@ -5207,7 +5241,22 @@ document.addEventListener('click', (e) => {
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
+  function leaveCurrentStep() {
+    // Call afterLeave hook (e.g. close settings dropdown)
+    const step = TOUR_STEPS[currentStep];
+    if (step && typeof step.afterLeave === 'function') step.afterLeave();
+
+    // Close any open player/team modals
+    if (typeof closePlayerModal === 'function' && document.getElementById('playerModal')) {
+      closePlayerModal();
+    }
+    if (typeof closeTeamModal === 'function' && document.getElementById('teamModal')) {
+      closeTeamModal();
+    }
+  }
+
   function advanceTour() {
+    leaveCurrentStep();
     const nextIdx  = currentStep + 1;
     if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
     const nextStep = TOUR_STEPS[nextIdx];
@@ -5221,6 +5270,7 @@ document.addEventListener('click', (e) => {
   }
 
   function endTour() {
+    leaveCurrentStep();
     localStorage.setItem(tourKey, '1');
     removeTourDOM();
     tourActive = false;
