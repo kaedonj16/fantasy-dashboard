@@ -1194,18 +1194,19 @@ def rewrite_value_table_with_model() -> Path:
     DP_1QB_MIN: float = float(_dp_1qb_vals.min()) if len(_dp_1qb_vals) else 1.0
     DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
     DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
-        dp_df_full = pd.DataFrame()
-        try:
-            dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
-            if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
-                for _, row in dp_raw.iterrows():
-                    name = str(row.get("player", "")).strip()
-                    team = str(row.get("team", "")).strip()
-                    val_2qb = row.get("value_2qb")
-                    if name and pd.notna(val_2qb):
-                        dp_2qb_map[(name, team)] = float(val_2qb)
-        except Exception as e:
-            print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
+    
+    dp_df_full = pd.DataFrame()
+    try:
+        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
+            for _, row in dp_raw.iterrows():
+                name = str(row.get("player", "")).strip()
+                team = str(row.get("team", "")).strip()
+                val_2qb = row.get("value_2qb")
+                if name and pd.notna(val_2qb):
+                    dp_2qb_map[(name, team)] = float(val_2qb)
+    except Exception as e:
+        print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
 
     # Calculate Superflex vendor values: blend FC (50%), DP 2QB (35%), SF Engine (15%)
     # First, normalize DP 2QB values to 999.9 scale
