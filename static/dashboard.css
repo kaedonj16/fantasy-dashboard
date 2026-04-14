@@ -3957,6 +3957,12 @@ thead th {
   line-height: 1.2;
 }
 
+.history-cards-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: grid;
+  gap: 5px;
+}
+
 .history-card .history-card-label {
   font-size: 10px;
   letter-spacing: 0.08em;

@@ -1198,6 +1198,7 @@ def rewrite_value_table_with_model() -> Path:
     dp_df_full = pd.DataFrame()
     try:
         dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
         if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
             for _, row in dp_raw.iterrows():
                 name = str(row.get("player", "")).strip()
