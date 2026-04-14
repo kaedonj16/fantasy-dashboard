@@ -44,7 +44,7 @@
     "name": "Jaden Shirden",
     "team": "CAR",
     "position": "RB",
-    "age": 23.9,
+    "age": 24.0,
     "usage": {}
   },
   {
@@ -68,7 +68,7 @@
     "name": "Kyric McGowan",
     "team": "MIA",
     "position": "WR",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -148,7 +148,7 @@
     "name": "Bucky Irving",
     "team": "TB",
     "position": "RB",
-    "age": 23.6,
+    "age": 23.7,
     "usage": {}
   },
   {
@@ -164,7 +164,7 @@
     "name": "Jalin Hyatt",
     "team": "NYG",
     "position": "WR",
-    "age": 24.5,
+    "age": 24.6,
     "usage": {}
   },
   {
@@ -340,7 +340,7 @@
     "name": "Lincoln Sefcik",
     "team": "NYJ",
     "position": "TE",
-    "age": 26.7,
+    "age": 26.8,
     "usage": {}
   },
   {
@@ -388,7 +388,7 @@
     "name": "Jody Fortson",
     "team": "KC",
     "position": "TE",
-    "age": 30.3,
+    "age": 30.4,
     "usage": {}
   },
   {
@@ -788,7 +788,7 @@
     "name": "Jackson Hawes",
     "team": "BUF",
     "position": "TE",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -980,7 +980,7 @@
     "name": "Darrius Shepherd",
     "team": "LAC",
     "position": "WR",
-    "age": 30.4,
+    "age": 30.5,
     "usage": {}
   },
   {
@@ -1052,7 +1052,7 @@
     "name": "Jameson Williams",
     "team": "DET",
     "position": "WR",
-    "age": 25.0,
+    "age": 25.1,
     "usage": {}
   },
   {
@@ -1212,7 +1212,7 @@
     "name": "Hunter Henry",
     "team": "NE",
     "position": "TE",
-    "age": 31.3,
+    "age": 31.4,
     "usage": {}
   },
   {
@@ -1308,7 +1308,7 @@
     "name": "Jalen Guyton",
     "team": "LV",
     "position": "WR",
-    "age": 28.8,
+    "age": 28.9,
     "usage": {}
   },
   {
@@ -1764,7 +1764,7 @@
     "name": "Quali Conley",
     "team": "CIN",
     "position": "RB",
-    "age": 23.5,
+    "age": 23.6,
     "usage": {}
   },
   {
@@ -2020,7 +2020,7 @@
     "name": "Sam LaPorta",
     "team": "DET",
     "position": "TE",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {}
   },
   {
@@ -2084,7 +2084,7 @@
     "name": "Isaiah Bowser",
     "team": "BUF",
     "position": "RB",
-    "age": 26.7,
+    "age": 26.8,
     "usage": {}
   },
   {
@@ -2252,7 +2252,7 @@
     "name": "Rashod Owens",
     "team": "CIN",
     "position": "WR",
-    "age": 24.3,
+    "age": 24.4,
     "usage": {}
   },
   {
@@ -2556,7 +2556,7 @@
     "name": "Dyami Brown",
     "team": "WAS",
     "position": "WR",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -3380,7 +3380,7 @@
     "name": "Hunter Long",
     "team": "JAX",
     "position": "TE",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {
@@ -3612,7 +3612,7 @@
     "name": "Jalen Royals",
     "team": "KC",
     "position": "WR",
-    "age": 23.1,
+    "age": 23.2,
     "usage": {}
   },
   {
@@ -3644,7 +3644,7 @@
     "name": "Darius Slayton",
     "team": "NYG",
     "position": "WR",
-    "age": 29.2,
+    "age": 29.3,
     "usage": {}
   },
   {
@@ -3772,7 +3772,7 @@
     "name": "Tre Mosley",
     "team": "CIN",
     "position": "WR",
-    "age": 24.5,
+    "age": 24.6,
     "usage": {}
   },
   {
@@ -3868,7 +3868,7 @@
     "name": "Graham Mertz",
     "team": "HOU",
     "position": "QB",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -3892,7 +3892,7 @@
     "name": "Bryson Nesbit",
     "team": "MIN",
     "position": "TE",
-    "age": 23.5,
+    "age": 23.6,
     "usage": {}
   },
   {
@@ -4364,7 +4364,7 @@
     "name": "Kyle Sheets",
     "team": "KC",
     "position": "WR",
-    "age": 25.5,
+    "age": 25.6,
     "usage": {}
   },
   {
@@ -4404,7 +4404,7 @@
     "name": "Chester Rogers",
     "team": "CLE",
     "position": "WR",
-    "age": 32.2,
+    "age": 32.3,
     "usage": {}
   },
   {
@@ -4572,7 +4572,7 @@
     "name": "AJ Dillon",
     "team": "CAR",
     "position": "RB",
-    "age": 27.9,
+    "age": 28.0,
     "usage": {}
   },
   {
@@ -5124,7 +5124,7 @@
     "name": "Greg Dulcich",
     "team": "MIA",
     "position": "TE",
-    "age": 26.0,
+    "age": 26.1,
     "usage": {}
   },
   {
@@ -5372,7 +5372,7 @@
     "name": "Ja'Corey Brooks",
     "team": "WAS",
     "position": "WR",
-    "age": 24.4,
+    "age": 24.5,
     "usage": {}
   },
   {
@@ -5452,7 +5452,7 @@
     "name": "Taylor Grimes",
     "team": "DEN",
     "position": "WR",
-    "age": 26.0,
+    "age": 26.1,
     "usage": {}
   },
   {
@@ -6060,7 +6060,7 @@
     "name": "Rachaad White",
     "team": "WAS",
     "position": "RB",
-    "age": 27.2,
+    "age": 27.3,
     "usage": {}
   },
   {
@@ -6356,7 +6356,7 @@
     "name": "Kaden Davis",
     "team": "CLE",
     "position": "WR",
-    "age": 27.5,
+    "age": 27.6,
     "usage": {}
   },
   {
@@ -6380,7 +6380,7 @@
     "name": "Kirk Cousins",
     "team": "ATL",
     "position": "QB",
-    "age": 37.6,
+    "age": 37.7,
     "usage": {}
   },
   {
@@ -6492,7 +6492,7 @@
     "name": "Brandin Cooks",
     "team": "NO",
     "position": "WR",
-    "age": 32.5,
+    "age": 32.6,
     "usage": {}
   },
   {
@@ -6524,7 +6524,7 @@
     "name": "Robert Burns",
     "team": "CHI",
     "position": "RB",
-    "age": 27.5,
+    "age": 27.6,
     "usage": {}
   },
   {
@@ -6572,7 +6572,7 @@
     "name": "David Wells",
     "team": "TB",
     "position": "TE",
-    "age": 30.9,
+    "age": 31.0,
     "usage": {}
   },
   {
@@ -6852,7 +6852,7 @@
     "name": "Blake Proehl",
     "team": "MIN",
     "position": "WR",
-    "age": 27.2,
+    "age": 27.3,
     "usage": {}
   },
   {
@@ -6884,7 +6884,7 @@
     "name": "Christian McCaffrey",
     "team": "SF",
     "position": "RB",
-    "age": 29.8,
+    "age": 29.9,
     "usage": {}
   },
   {
@@ -7596,7 +7596,7 @@
     "name": "Andrew Armstrong",
     "team": "KC",
     "position": "WR",
-    "age": 25.4,
+    "age": 25.5,
     "usage": {}
   },
   {
@@ -7892,7 +7892,7 @@
     "name": "Jalen McMillan",
     "team": "TB",
     "position": "WR",
-    "age": 24.3,
+    "age": 24.4,
     "usage": {}
   },
   {
@@ -8500,7 +8500,7 @@
     "name": "Sean Clifford",
     "team": "CIN",
     "position": "QB",
-    "age": 27.7,
+    "age": 27.8,
     "usage": {}
   },
   {
@@ -8924,7 +8924,7 @@
     "name": "Jerrion Ealy",
     "team": "KC",
     "position": "WR",
-    "age": 25.6,
+    "age": 25.7,
     "usage": {}
   },
   {
@@ -9020,7 +9020,7 @@
     "name": "Deon Jackson",
     "team": "DET",
     "position": "RB",
-    "age": 27.1,
+    "age": 27.2,
     "usage": {}
   },
   {
@@ -9444,7 +9444,7 @@
     "name": "Marquez Stevenson",
     "team": "CAR",
     "position": "WR",
-    "age": 28.0,
+    "age": 28.1,
     "usage": {}
   },
   {
@@ -10180,7 +10180,7 @@
     "name": "James Cook III",
     "team": "BUF",
     "position": "RB",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {}
   },
   {
@@ -10268,7 +10268,7 @@
     "name": "Zaire Mitchell-Paden",
     "team": "NO",
     "position": "TE",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {}
   },
   {
@@ -10692,7 +10692,7 @@
     "name": "Elijah Mitchell",
     "team": "NE",
     "position": "RB",
-    "age": 27.9,
+    "age": 28.0,
     "usage": {}
   },
   {
@@ -10780,7 +10780,7 @@
     "name": "Ryan Jones",
     "team": "NYG",
     "position": "TE",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {}
   },
   {
@@ -11260,7 +11260,7 @@
     "name": "Tre' McKitty",
     "team": "HOU",
     "position": "TE",
-    "age": 27.2,
+    "age": 27.3,
     "usage": {}
   },
   {
@@ -11676,7 +11676,7 @@
     "name": "Darrell Henderson Jr.",
     "team": "LAR",
     "position": "RB",
-    "age": 28.6,
+    "age": 28.7,
     "usage": {}
   },
   {
@@ -12020,7 +12020,7 @@
     "name": "Nick Boyle",
     "team": "BAL",
     "position": "TE",
-    "age": 33.1,
+    "age": 33.2,
     "usage": {}
   },
   {
@@ -12028,7 +12028,7 @@
     "name": "Trey Quinn",
     "team": "DET",
     "position": "WR",
-    "age": 30.3,
+    "age": 30.4,
     "usage": {}
   },
   {
@@ -12236,7 +12236,7 @@
     "name": "David Montgomery",
     "team": "HOU",
     "position": "RB",
-    "age": 28.8,
+    "age": 28.9,
     "usage": {}
   },
   {
@@ -12332,7 +12332,7 @@
     "name": "Isaiah Neyor",
     "team": "GB",
     "position": "WR",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {}
   },
   {
@@ -12604,7 +12604,7 @@
     "name": "John Hall",
     "team": "SEA",
     "position": "WR",
-    "age": 28.3,
+    "age": 28.4,
     "usage": {}
   },
   {
@@ -12780,7 +12780,7 @@
     "name": "Javon Baker",
     "team": "PHI",
     "position": "WR",
-    "age": 24.1,
+    "age": 24.2,
     "usage": {}
   },
   {
@@ -13004,7 +13004,7 @@
     "name": "Terique Owens",
     "team": "SF",
     "position": "WR",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {}
   },
   {
@@ -13428,7 +13428,7 @@
     "name": "Derrick Deese Jr.",
     "team": "DET",
     "position": "TE",
-    "age": 27.6,
+    "age": 27.7,
     "usage": {}
   },
   {

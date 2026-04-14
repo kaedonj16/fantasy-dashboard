@@ -381,3 +381,173 @@ def build_graphs_body(ctx: dict) -> str:
     """
 
     return main_html
+
+
+def build_career_graphs_body(career_ctx: dict) -> str:
+    """
+    Build Plotly graphs for the career (all-seasons aggregate) view.
+    career_ctx keys: team_stats, df_weekly (combined with 'season' col), season_pf_df, is_career
+    """
+    import pandas as pd  # local import fine since module already imports it at top
+    team_stats = career_ctx.get("team_stats", pd.DataFrame())
+    df_all = career_ctx.get("df_weekly", pd.DataFrame())
+    season_pf_df = career_ctx.get("season_pf_df", pd.DataFrame())
+
+    if team_stats.empty:
+        return "<div class='card central'><div class='card-body'><p>No career data available.</p></div></div>"
+
+    owners = team_stats["owner"].tolist()
+    owner_colors: dict = {}
+    for idx, o in enumerate(owners):
+        owner_colors[o] = COLOR_CYCLE[idx % len(COLOR_CYCLE)]
+
+    figs: dict = {}
+
+    # ── 1. Career PF vs PA scatter ─────────────────────────────────────────
+    scatter_traces = []
+    for _, r in team_stats.iterrows():
+        owner = r["owner"]
+        scatter_traces.append(
+            go.Scatter(
+                x=[r["PA"]],
+                y=[r["PF"]],
+                mode="markers+text",
+                text=[owner],
+                textposition="top center",
+                marker=dict(size=12, color=owner_colors.get(owner), line=dict(color="black", width=1)),
+                name=owner,
+                showlegend=False,
+            )
+        )
+    figs["pf_pa"] = go.Figure(scatter_traces)
+    figs["pf_pa"].update_layout(
+        xaxis_title=dict(text="Career Points Against", standoff=12),
+        yaxis_title=dict(text="Career Points For"),
+        hovermode="closest",
+        margin=dict(l=40, r=20, t=10, b=45),
+        showlegend=False,
+    )
+
+    # ── 2. Season-by-season points per team (line chart) ──────────────────
+    season_fig_traces = []
+    if not season_pf_df.empty and {"season", "owner", "pf"}.issubset(season_pf_df.columns):
+        for owner, grp in season_pf_df.groupby("owner"):
+            grp = grp.sort_values("season")
+            season_fig_traces.append(
+                go.Scatter(
+                    x=grp["season"],
+                    y=grp["pf"],
+                    mode="lines+markers",
+                    name=str(owner),
+                    line=dict(color=owner_colors.get(str(owner))),
+                    marker=dict(size=7),
+                    showlegend=False,
+                    hovertemplate="%{fullData.name}<br>%{x}: %{y:.1f} PF<extra></extra>",
+                )
+            )
+    figs["season_pf"] = go.Figure(season_fig_traces)
+    figs["season_pf"].update_layout(
+        xaxis_title=dict(text="Season", standoff=12),
+        yaxis_title=dict(text="Total Points (regular season)"),
+        xaxis=dict(dtick=1),
+        hovermode="x unified",
+        margin=dict(l=40, r=20, t=10, b=60),
+        showlegend=False,
+    )
+
+    # ── 3. Career score distribution (all weekly scores, box plot) ─────────
+    finalized_df = df_all[df_all["finalized"] == True].copy() if "finalized" in df_all.columns else df_all.copy()
+    box_order = (
+        finalized_df.groupby("owner")["points"].median()
+        .sort_values(ascending=False).index.tolist()
+    ) if not finalized_df.empty and "points" in finalized_df.columns else owners
+
+    box_traces = []
+    for o in box_order:
+        pts = finalized_df.loc[finalized_df["owner"] == o, "points"] if not finalized_df.empty else pd.Series()
+        box_traces.append(
+            go.Box(
+                y=pts,
+                name=o,
+                boxmean=True,
+                boxpoints=False,
+                marker=dict(color=owner_colors.get(o)),
+                showlegend=False,
+            )
+        )
+    figs["box"] = go.Figure(box_traces)
+    figs["box"].update_layout(
+        xaxis_title=dict(text="Team", standoff=12),
+        yaxis_title=dict(text="Weekly Points"),
+        hovermode="closest",
+        margin=dict(l=40, r=20, t=10, b=120),
+        showlegend=False,
+    )
+
+    div_scatter  = plotly_plot(figs["pf_pa"],     include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
+    div_season   = plotly_plot(figs["season_pf"], include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
+    div_box      = plotly_plot(figs["box"],        include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
+
+    # ── Sidebar: career standings table ───────────────────────────────────
+    ts_sorted = team_stats.sort_values("PF", ascending=False).reset_index(drop=True)
+    sidebar_rows = ""
+    for _, r in ts_sorted.iterrows():
+        owner = r["owner"]
+        color = owner_colors.get(owner, "#9ca3af")
+        games = int(r.get("Wins", 0)) + int(r.get("Losses", 0)) + int(r.get("Ties", 0))
+        sidebar_rows += (
+            f"<div class='mini-row'>"
+            f"  <div class='mini-label' style='display:flex;align-items:center;gap:6px;'>"
+            f"    <span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:{color};'></span>"
+            f"    {owner}"
+            f"  </div>"
+            f"  <div class='mini-value'>"
+            f"    <span class='mini-stat'>{int(r.get('Wins',0))}-{int(r.get('Losses',0))}</span>"
+            f"    <span class='mini-stat'>{r['PF']:.0f} PF</span>"
+            f"  </div>"
+            f"</div>"
+        )
+
+    sidebar_html = f"""
+        <div class="card small">
+          <div class="card-header"><h3>Career Standings</h3></div>
+          <div class="card-body mini-body">{sidebar_rows}</div>
+        </div>
+        <div class="card small">
+          <div class="card-header"><h3>Metrics Key</h3></div>
+          <div class="card-body">
+            <ul class="ticker-list">
+              <li><span class="mini-label">PF</span> — Career points for</li>
+              <li><span class="mini-label">PA</span> — Career points against</li>
+              <li><span class="mini-label">W-L</span> — Career record</li>
+            </ul>
+          </div>
+        </div>"""
+
+    return f"""
+      <div class="page-layout" data-page="graphs">
+        <main class="page-main">
+          <div class="graphs-page">
+            <div class="card">
+              <div class="card-header-row"><h2>Career PF vs PA</h2></div>
+              <div class="card-body graph-body">{div_scatter}</div>
+            </div>
+            <div class="card">
+              <div class="card-header-row"><h2>Points Per Season by Team</h2></div>
+              <div class="card-body graph-body">{div_season}</div>
+            </div>
+            <div class="card">
+              <div class="card-header-row"><h2>Career Score Distribution</h2></div>
+              <div class="card-body graph-body">{div_box}</div>
+            </div>
+          </div>
+        </main>
+        <aside class="page-sidebar">{sidebar_html}</aside>
+      </div>"""
+
+
+COLOR_CYCLE = [
+    "#636EFA", "#EF553B", "#00CC96", "#AB63FA",
+    "#FFA15A", "#19D3F3", "#FF6692",
+    "#B6E880", "#FF97FF", "#FECB52",
+]

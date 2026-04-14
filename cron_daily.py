@@ -1,4 +1,9 @@
 from datetime import date, datetime
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from dashboard_services.api import get_nfl_state
 from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse

@@ -279,6 +279,74 @@ def load_latest_value_snapshot(source: str = "model") -> list[dict]:
     return players
 
 
+def load_current_values_from_db() -> list[dict]:
+    """
+    Load current player values from the player_values table (one row per player,
+    updated daily by cron_daily).  Falls back gracefully if the table doesn't
+    exist yet or the DB is unavailable.
+    """
+    from utils.utils import normalize_name
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        player_id  AS id,
+                        value_1qb  AS value,
+                        value_sf   AS sf_value,
+                        position,
+                        pos_rank,
+                        pos_rank_label,
+                        age,
+                        team,
+                        years_exp,
+                        last_updated
+                    FROM player_values
+                    ORDER BY value_1qb DESC NULLS LAST
+                    LIMIT 800
+                    """
+                )
+                rows = cur.fetchall()
+    except Exception as e:
+        print(f"[load_current_values_from_db] Query failed: {e}")
+        return []
+
+    if not rows:
+        return []
+
+    players = []
+    for row in rows:
+        player = dict(row)
+        # Normalise field names expected by the rest of the app
+        player.setdefault("sf_value", player.get("value") or 0.0)
+        player["search_name"] = normalize_name(str(player.get("id") or ""))
+        # Add league-size variants as the current value (no per-size data in player_values)
+        val    = float(player.get("value")    or 0.0)
+        sf_val = float(player.get("sf_value") or 0.0)
+        for sz in (8, 12, 14):
+            player.setdefault(f"value_{sz}",    val)
+            player.setdefault(f"sf_value_{sz}", sf_val)
+        players.append(player)
+
+    # Compute pos_rank if not already stored
+    if players and players[0].get("pos_rank") is None:
+        from collections import defaultdict
+        pos_groups: dict[str, list[int]] = defaultdict(list)
+        for i, p in enumerate(players):
+            pos = str(p.get("position") or "").upper()
+            if pos and pos != "PICK":
+                pos_groups[pos].append(i)
+        for pos, idxs in pos_groups.items():
+            idxs.sort(key=lambda i: float(players[i].get("value") or 0.0), reverse=True)
+            for rank, i in enumerate(idxs, 1):
+                players[i]["pos_rank"] = rank
+                players[i]["pos_rank_label"] = f"{pos}{rank}"
+
+    return players
+
+
 def get_top_movers(
         *,
         days: int = 7,

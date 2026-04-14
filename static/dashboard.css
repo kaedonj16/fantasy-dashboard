@@ -655,6 +655,32 @@ ul {
   pointer-events: none;
 }
 
+/* Notification dot for gear button (mirrors changelog-dot style) */
+.nav-notif-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #E24B4A;
+  border: 1.5px solid var(--card);
+  pointer-events: none;
+}
+
+/* Notification dot for settings menu items */
+.settings-notif-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #E24B4A;
+  border: 1px solid var(--card-bg);
+  pointer-events: none;
+}
+
 /* Dark mode toggle */
 #darkModeToggle {
   display: inline-flex !important;
@@ -767,8 +793,9 @@ ul {
   z-index: 1000;
 }
 
-/* But make the dropdown visible when shown */
-.changelog-bell-wrapper .changelog-dropdown {
+/* But make the dropdown and notification dot visible when shown */
+.changelog-bell-wrapper .changelog-dropdown,
+.changelog-bell-wrapper .changelog-dot {
   visibility: visible;
   pointer-events: all;
 }
@@ -791,6 +818,7 @@ ul {
   width: 100%;
   display: flex;
   align-items: center;
+  position: relative;
   gap: 12px;
   padding: 12px 16px;
   background: none;
@@ -3944,6 +3972,12 @@ thead th {
   line-height: 1.2;
 }
 
+.history-cards-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: grid;
+  gap: 5px;
+}
+
 .history-card .history-card-label {
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -5282,6 +5316,70 @@ thead th {
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.6);
   min-width: 320px;
   max-width: 380px;
+  color: #e5e7eb;
+}
+
+/* "Continue as X" returning-user CTA banner */
+.saved-viewer-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.saved-viewer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.saved-viewer-label {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.saved-viewer-btn {
+  display: inline-block;
+  background: #38bdf8;
+  color: #0f172a !important;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none !important;
+  border-radius: 6px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 230px;
+}
+
+.saved-viewer-btn:hover {
+  background: #7dd3fc;
+}
+
+/* dismiss button — must override .home-card button { width: 100% } */
+.saved-viewer-cta .saved-viewer-dismiss {
+  width: auto !important;
+  padding: 0 4px !important;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #9ca3af;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.saved-viewer-cta .saved-viewer-dismiss:hover {
   color: #e5e7eb;
 }
 
@@ -10853,4 +10951,135 @@ img, svg, canvas {
   .bk-components-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ============================================
+   GRAPHS SEASON SELECTOR
+   ============================================ */
+
+.graphs-season-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin-bottom: 4px;
+}
+
+.graphs-season-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.graphs-season-select {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 180px;
+}
+
+/* ============================================
+   NEW USER TOUR
+   ============================================ */
+
+.tour-overlay-piece {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 99990;
+  pointer-events: none;
+}
+
+.tour-tooltip {
+  position: fixed;
+  z-index: 99991;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 14px;
+  padding: 16px 18px 14px;
+  width: 300px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+
+.tour-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tour-step-count {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.tour-skip-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.tour-skip-btn:hover {
+  color: var(--text, #e2e8f0);
+}
+
+.tour-tooltip-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text, #e2e8f0);
+  margin-bottom: 6px;
+}
+
+.tour-tooltip-body {
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.tour-tooltip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tour-btn {
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.tour-btn-primary {
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+.tour-btn-primary:hover {
+  background: #7dd3fc;
+}
+
+.tour-btn-secondary {
+  background: var(--card-bg, #0f172a);
+  color: var(--text-muted, #94a3b8);
+  border: 1px solid var(--border, #334155);
+}
+
+.tour-btn-secondary:hover {
+  color: var(--text, #e2e8f0);
 }
