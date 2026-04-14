@@ -34,6 +34,7 @@ sys.path.insert(0, str(project_root))
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +167,13 @@ ROOKIE_TABLE_NAMES = {
 }
 
 
+def _adapt(v: Any) -> Any:
+    """Wrap dict/list values as Jsonb so psycopg3 can serialise them for JSONB columns."""
+    if isinstance(v, (dict, list)):
+        return Jsonb(v)
+    return v
+
+
 def _get_url(env_var: str) -> str:
     url = os.getenv(env_var, "").strip()
     if not url:
@@ -238,7 +246,7 @@ def _migrate_table(
     upserted = 0
     with prod_conn.cursor() as cur:
         for row in rows:
-            values = [row[c] for c in insert_cols]
+            values = [_adapt(row[c]) for c in insert_cols]
             cur.execute(upsert_sql, values)
             upserted += cur.rowcount
 
