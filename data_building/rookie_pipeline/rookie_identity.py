@@ -15,8 +15,13 @@ class IdentityMatch:
 
 
 def _norm_name(value: str) -> str:
-    base = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
-    return " ".join(base.split())
+    # Strip periods before main regex so "K.C." and "KC" both normalize to "kc"
+    s = (value or "").lower().replace(".", "")
+    base = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    normalized = " ".join(base.split())
+    # Collapse spaced single-letter initials: "k c concepcion" -> "kc concepcion"
+    normalized = re.sub(r"\b([a-z])\s([a-z])\b", r"\1\2", normalized)
+    return normalized
 
 
 def _norm_school(value: str) -> str:
