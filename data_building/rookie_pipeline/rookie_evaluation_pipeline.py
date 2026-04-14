@@ -37,16 +37,26 @@ def _load_eval_prospects(draft_year: int) -> List[Dict[str, Any]]:
       - `load_prospects_for_year` depends on external APIs/seed files.
       - evaluation should still produce values when the prospects are already
         populated in Postgres via `scripts.populate_rookie_data` / pipeline jobs.
-    """
-    try:
-        from dashboard_services.db import get_conn
 
-        with get_conn() as conn:
-            db_prospects = load_prospects_from_db(draft_year, conn)
-            if db_prospects:
-                return db_prospects
-    except Exception as exc:
-        print(f"[rookie_eval] db_prospect_load_failed class={draft_year}: {exc}")
+    When SPORTRADAR_API_KEY is set, always fetch fresh data from the API so
+    that running against a prod DB (which has existing rows) doesn't silently
+    re-use stale prospects instead of pulling the latest from Sportradar.
+    The DB fallback is only used when no API key is available.
+    """
+    import os
+    has_api_key = bool(os.getenv("SPORTRADAR_API_KEY"))
+
+    if not has_api_key:
+        # No API key — use DB data if available, then fall back to seed/API
+        try:
+            from dashboard_services.db import get_conn
+
+            with get_conn() as conn:
+                db_prospects = load_prospects_from_db(draft_year, conn)
+                if db_prospects:
+                    return db_prospects
+        except Exception as exc:
+            print(f"[rookie_eval] db_prospect_load_failed class={draft_year}: {exc}")
 
     return load_prospects_for_year(draft_year) or []
 
