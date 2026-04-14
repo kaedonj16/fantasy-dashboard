@@ -49,11 +49,13 @@ from dashboard_services.matchups import (
     render_matchup_carousel_weeks,
     render_matchup_slide,
 )
-from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.graphs_page import build_graphs_body, build_career_graphs_body
 from dashboard_services.pages.history_page import (
     build_history_body,
     build_regular_season_team_stats,
+    get_champion_and_runner_up,
     sort_team_stats,
+    _build_summary as _build_history_summary,
 )
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
@@ -916,7 +918,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
-    def nav_pill_dropdown(label: str, items: list, active_keys: list) -> str:
+    def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
@@ -932,12 +934,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+        btn_id  = dropdown_id.replace("Dropdown", "Btn")
+        menu_id = dropdown_id.replace("Dropdown", "Menu")
         return (
-            f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
-            f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+            f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
+            f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
             f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
             f"  </button>"
-            f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+            f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
             f"    {item_html}"
             f"  </div>"
             f"</div>"
@@ -960,13 +964,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Player Rankings", "page_players",  "players",  False),
         ("Rookie Rankings", "page_rookies",  "rookies",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "breakouts", "rookies"]))
-    nav_pills.append(nav_pill("History", "page_history", "history"))
-
-    # Standings and Graphs remain in-season only
+    ], ["players", "breakouts", "rookies"], "playersNavDropdown"))
+    nav_pills.append(nav_pill_dropdown("Stats", [
+        ("Awards",  "page_awards",  "awards",  False),
+        ("Graphs",  "page_graphs",  "graphs",  False),
+        ("History", "page_history", "history", False),
+    ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if not offseason_mode:
         nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
-        nav_pills.append(nav_pill("Graphs", "page_graphs", "graphs"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -5982,30 +5987,189 @@ def page_graphs(platform: str, season: int, league_id: str):
             mock_ctx = _build_tour_mock_graphs_ctx()
             body_html = build_graphs_body(mock_ctx)
         except Exception as exc:
-            body_html = f"<div class='card central'><div class='card-body'><p>Graphs preview unavailable: {exc}</p></div></div>"
+            body_html = (
+                f"<div class='card central'><div class='card-body'>"
+                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
+            )
         return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
-    cached = get_page_html_from_cache(platform, season, league_id, "graphs")
-    if cached:
-        return render_page("BR Fantasy Graphs", league_id, "graphs", cached, platform, season)
-
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+    offseason = bool(ctx.get("offseason_mode"))
+    available_seasons = get_available_history_seasons(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
-        body_html = """
-        <div class="card central">
-          <div class="card-header"><h2>Graphs Unavailable</h2></div>
-          <div class="card-body">
-            <p>Weekly scoring graphs will appear once the season begins.</p>
-            <p>During the offseason, use Dashboard, Teams, Activity, and Trade Calc for roster planning.</p>
-          </div>
-        </div>
-        """
+    # Default view: career during offseason, current season in-season
+    default_view = "career" if offseason else str(season)
+    view = request.args.get("view", default_view)
+
+    # Build the season-selector dropdown (navigate via URL query param)
+    graphs_base_url = url_for("page_graphs", platform=platform, season=season, league_id=league_id)
+    selector_opts = []
+    selector_opts.append(
+        f"<option value='{graphs_base_url}?view=career' "
+        f"{'selected' if view == 'career' else ''}>Career (all seasons)</option>"
+    )
+    if not offseason:
+        selector_opts.append(
+            f"<option value='{graphs_base_url}?view={season}' "
+            f"{'selected' if view == str(season) else ''}>{season} (current)</option>"
+        )
+    for s in available_seasons:
+        selector_opts.append(
+            f"<option value='{graphs_base_url}?view={s}' "
+            f"{'selected' if view == str(s) else ''}>{s}</option>"
+        )
+
+    season_selector_html = f"""
+    <div class="graphs-season-selector">
+      <label class="graphs-season-label">View:</label>
+      <select class="graphs-season-select" onchange="window.location.href=this.value">
+        {"".join(selector_opts)}
+      </select>
+    </div>"""
+
+    # ── Render the appropriate graphs ──────────────────────────────────────
+    if view == "career":
+        if not available_seasons:
+            charts_html = """
+            <div class="card central">
+              <div class="card-body">
+                <p style="color:var(--text-muted);">
+                  Career graphs appear after your first completed season.
+                </p>
+              </div>
+            </div>"""
+        else:
+            try:
+                # Build career ctx from all available seasons
+                career_ctx = _build_career_graphs_ctx_live(platform, league_id, season, available_seasons)
+                charts_html = build_career_graphs_body(career_ctx)
+            except Exception as exc:
+                import traceback; traceback.print_exc()
+                charts_html = (
+                    f"<div class='card central'><div class='card-body'>"
+                    f"<p>Career graphs unavailable: {exc}</p></div></div>"
+                )
     else:
-        body_html = build_graphs_body(ctx)
+        target_season = int(view) if view.isdigit() else season
+        if target_season == season and not offseason:
+            season_ctx = ctx
+        else:
+            rid = resolve_league_id_for_season(platform, league_id, season, target_season)
+            season_ctx = get_league_ctx_from_cache(platform, rid, target_season)
 
-    store_page_html(platform, season, league_id, "graphs", body_html)
+        if season_ctx.get("offseason_mode") or season_ctx.get("df_weekly", pd.DataFrame()).empty:
+            charts_html = f"""
+            <div class="card central">
+              <div class="card-body">
+                <p style="color:var(--text-muted);">
+                  No weekly data available for {target_season}.
+                  Select another season or choose Career view.
+                </p>
+              </div>
+            </div>"""
+        else:
+            charts_html = build_graphs_body(season_ctx)
+
+    body_html = season_selector_html + charts_html
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
+
+def _build_career_graphs_ctx_live(
+    platform: str, league_id: str, season: int, available_seasons: list
+) -> dict:
+    """Aggregate team_stats and df_weekly across all completed seasons for career graphs."""
+    career: dict = {}  # owner -> {Wins, Losses, Ties, PF, PA, weekly_pts, season_pf}
+    season_pf_rows: list = []  # rows for per-season bar chart: {season, owner, pf}
+
+    for hist_s in available_seasons:
+        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+        try:
+            hctx = get_league_ctx_from_cache(platform, rid, hist_s)
+        except Exception:
+            continue
+
+        df = hctx.get("df_weekly", pd.DataFrame())
+        if df.empty or "owner" not in df.columns:
+            continue
+
+        mock_lg = hctx.get("league") or {}
+        ts = build_regular_season_team_stats(df, mock_lg)
+
+        for _, row in ts.iterrows():
+            owner = str(row.get("owner", "?"))
+            if owner not in career:
+                career[owner] = {
+                    "Wins": 0, "Losses": 0, "Ties": 0,
+                    "PF": 0.0, "PA": 0.0, "weekly_pts": [],
+                }
+            career[owner]["Wins"]   += int(row.get("Wins", 0))
+            career[owner]["Losses"] += int(row.get("Losses", 0))
+            career[owner]["Ties"]   += int(row.get("Ties", 0))
+            career[owner]["PF"]     += float(row.get("PF", 0))
+            career[owner]["PA"]     += float(row.get("PA", 0))
+            season_pf_rows.append({"season": hist_s, "owner": owner, "pf": float(row.get("PF", 0))})
+
+        sub = df[df["finalized"] == True] if "finalized" in df.columns else df
+        for owner, grp in sub.groupby("owner"):
+            career.setdefault(str(owner), {
+                "Wins": 0, "Losses": 0, "Ties": 0, "PF": 0.0, "PA": 0.0, "weekly_pts": [],
+            })["weekly_pts"].extend(grp["points"].tolist() if "points" in grp else [])
+
+    # Build career team_stats DataFrame
+    stat_rows = []
+    for owner, d in career.items():
+        pts = d["weekly_pts"]
+        games = d["Wins"] + d["Losses"] + d["Ties"]
+        stat_rows.append({
+            "owner": owner,
+            "Wins": d["Wins"],
+            "Losses": d["Losses"],
+            "Ties": d["Ties"],
+            "PF": d["PF"],
+            "PA": d["PA"],
+            "AVG": d["PF"] / games if games > 0 else 0.0,
+            "Win%": d["Wins"] / games if games > 0 else 0.0,
+            "MAX": max(pts) if pts else 0.0,
+            "MIN": min(pts) if pts else 0.0,
+            "STD": float(pd.Series(pts).std()) if len(pts) > 1 else 0.0,
+        })
+
+    team_stats = pd.DataFrame(stat_rows) if stat_rows else pd.DataFrame()
+
+    if not team_stats.empty and "PF" in team_stats.columns:
+        # Approximate PowerScore for career (win% + avg PF rank)
+        pf_z  = (team_stats["PF"]  - team_stats["PF"].mean())  / max(float(team_stats["PF"].std()),  1.0)
+        win_z = (team_stats["Win%"]- team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
+        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean())  / max(float(team_stats["AVG"].std()),  1.0)
+        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
+        for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
+            if col in team_stats.columns:
+                cv = team_stats[col]
+                sd = max(float(cv.std()), 1.0)
+                team_stats[f"Z_{col}"] = (cv - cv.mean()) / sd
+
+    # Combined df_weekly (with season column) for box/line charts
+    combined_dfs = []
+    for hist_s in available_seasons:
+        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+        try:
+            hctx = get_league_ctx_from_cache(platform, rid, hist_s)
+            df = hctx.get("df_weekly", pd.DataFrame()).copy()
+            if not df.empty and "owner" in df.columns:
+                df["season"] = hist_s
+                combined_dfs.append(df)
+        except Exception:
+            continue
+
+    df_combined = pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
+    season_pf_df = pd.DataFrame(season_pf_rows) if season_pf_rows else pd.DataFrame()
+
+    return {
+        "team_stats": team_stats,
+        "df_weekly": df_combined,
+        "season_pf_df": season_pf_df,
+        "is_career": True,
+    }
 
 
 @app.route("/<platform>/<int:season>/<league_id>/players")
@@ -6908,6 +7072,248 @@ def page_teams(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
 
 
+def _collect_all_season_data(platform: str, league_id: str, season: int):
+    """
+    Load ctx for every available historical season and return aggregated data:
+      career_owners  – dict  owner -> {Wins, Losses, Ties, PF, PA, seasons, weekly_pts}
+      championships  – dict  owner -> [season, ...]
+      season_records – list  of per-season summary dicts
+    """
+    available = get_available_history_seasons(platform, league_id, season)
+    career_owners: dict = {}
+    championships: dict = {}
+    season_records: list = []
+
+    for hist_s in available:
+        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+        try:
+            ctx = get_league_ctx_from_cache(platform, rid, hist_s)
+        except Exception:
+            continue
+
+        df = ctx.get("df_weekly", pd.DataFrame())
+        if df.empty or "owner" not in df.columns:
+            continue
+
+        mock_league = ctx.get("league") or {}
+        ts = build_regular_season_team_stats(df, mock_league)
+
+        for _, row in ts.iterrows():
+            owner = str(row.get("owner", "Unknown"))
+            if owner not in career_owners:
+                career_owners[owner] = {
+                    "Wins": 0, "Losses": 0, "Ties": 0,
+                    "PF": 0.0, "PA": 0.0, "seasons": 0,
+                    "weekly_pts": [],
+                }
+            career_owners[owner]["Wins"]   += int(row.get("Wins", 0))
+            career_owners[owner]["Losses"] += int(row.get("Losses", 0))
+            career_owners[owner]["Ties"]   += int(row.get("Ties", 0))
+            career_owners[owner]["PF"]     += float(row.get("PF", 0))
+            career_owners[owner]["PA"]     += float(row.get("PA", 0))
+            career_owners[owner]["seasons"] += 1
+
+        # collect weekly scores per owner for box/radar
+        if {"owner", "points", "finalized"}.issubset(df.columns):
+            sub = df[df["finalized"] == True][["owner", "points"]].copy()
+        elif {"owner", "points"}.issubset(df.columns):
+            sub = df[["owner", "points"]].copy()
+        else:
+            sub = pd.DataFrame()
+        for owner, grp in sub.groupby("owner"):
+            career_owners.setdefault(str(owner), {
+                "Wins": 0, "Losses": 0, "Ties": 0,
+                "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
+            })["weekly_pts"].extend(grp["points"].tolist())
+
+        champ, runner_up = get_champion_and_runner_up(ctx)
+        if champ != "—":
+            championships.setdefault(champ, []).append(hist_s)
+
+        summary = _build_history_summary(ctx)
+        season_records.append({
+            "season": hist_s,
+            "champion": champ,
+            "runner_up": runner_up,
+            "champion_record": summary.get("champion_record", "—"),
+            "top_pf_team": summary.get("top_scorer_team", "—"),
+            "top_pf": float(summary.get("top_scorer_value") or 0),
+            "highest_week_team": summary.get("highest_week_team", "—"),
+            "highest_week_value": float(summary.get("highest_week_value") or 0),
+            "closest_matchup": summary.get("closest_matchup", "—"),
+            "closest_margin": float(summary.get("closest_margin") or 0),
+        })
+
+    return available, career_owners, championships, season_records
+
+
+def _build_awards_html(career_owners: dict, championships: dict, season_records: list) -> str:
+    """Render the All-Time Awards page body HTML."""
+    # Build career standings DataFrame
+    rows = []
+    for owner, d in career_owners.items():
+        games = d["Wins"] + d["Losses"] + d["Ties"]
+        pts = d["weekly_pts"]
+        rows.append({
+            "owner": owner,
+            "Championships": len(championships.get(owner, [])),
+            "Wins": d["Wins"],
+            "Losses": d["Losses"],
+            "PF": d["PF"],
+            "PA": d["PA"],
+            "Win%": d["Wins"] / games if games > 0 else 0.0,
+            "AVG": d["PF"] / games if games > 0 else 0.0,
+            "MAX": max(pts) if pts else 0.0,
+            "Seasons": d["seasons"],
+        })
+
+    career_df = pd.DataFrame(rows).sort_values(
+        ["Championships", "Wins", "Win%", "PF"],
+        ascending=[False, False, False, False],
+    ).reset_index(drop=True)
+
+    # ── Career standings table ──────────────────────────────────────────────
+    table_rows_html = ""
+    for i, (_, row) in enumerate(career_df.iterrows()):
+        rings = "🏆 " * int(row["Championships"]) if row["Championships"] > 0 else ""
+        table_rows_html += f"""
+        <tr>
+          <td>{i + 1}</td>
+          <td>{html.escape(str(row['owner']))} {rings}</td>
+          <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
+          <td>{int(row['Wins'])}-{int(row['Losses'])}</td>
+          <td>{row['Win%']:.1%}</td>
+          <td>{row['PF']:,.1f}</td>
+          <td>{row['PA']:,.1f}</td>
+          <td>{row['AVG']:.1f}</td>
+          <td>{row['MAX']:.1f}</td>
+          <td>{int(row['Seasons'])}</td>
+        </tr>"""
+
+    standings_table = f"""
+    <div class="card">
+      <div class="card-header"><h2>All-Time Standings</h2></div>
+      <div class="card-body" style="padding-top:0;">
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <thead><tr>
+              <th>#</th><th>Team</th><th>Titles</th><th>Record</th>
+              <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
+            </tr></thead>
+            <tbody>{table_rows_html}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>"""
+
+    # ── Championship timeline ───────────────────────────────────────────────
+    champ_rows_html = ""
+    for rec in sorted(season_records, key=lambda x: x["season"], reverse=True):
+        def _cell(v: str) -> str:
+            return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
+        champ_rows_html += f"""
+        <tr>
+          <td>{rec['season']}</td>
+          <td style="font-weight:600;">{_cell(rec['champion'])}</td>
+          <td>{html.escape(rec['champion_record'])}</td>
+          <td>{_cell(rec['runner_up'])}</td>
+        </tr>"""
+
+    champ_table = f"""
+    <div class="card">
+      <div class="card-header"><h2>Championship History</h2></div>
+      <div class="card-body" style="padding-top:0;">
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <thead><tr><th>Season</th><th>Champion</th><th>Record</th><th>Runner-Up</th></tr></thead>
+            <tbody>{champ_rows_html}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>"""
+
+    # ── Season highlights (best PF, best week across all seasons) ──────────
+    if season_records:
+        best_pf_rec = max(season_records, key=lambda x: x["top_pf"])
+        best_wk_rec = max(season_records, key=lambda x: x["highest_week_value"])
+    else:
+        best_pf_rec = best_wk_rec = None
+
+    def _hist_card(label: str, value: str, sub: str = "") -> str:
+        return f"""
+        <div class="history-card">
+          <div class="history-card-label">{label}</div>
+          <div class="history-card-value">{value}</div>
+          {"<div class='history-card-sub'>" + sub + "</div>" if sub else ""}
+        </div>"""
+
+    highlights_html = ""
+    if best_pf_rec:
+        highlights_html += _hist_card(
+            "Highest Season PF",
+            html.escape(best_pf_rec["top_pf_team"]),
+            f"{best_pf_rec['top_pf']:.1f} pts in {best_pf_rec['season']}",
+        )
+    if best_wk_rec:
+        highlights_html += _hist_card(
+            "Highest Single Week",
+            html.escape(best_wk_rec["highest_week_team"]),
+            f"{best_wk_rec['highest_week_value']:.1f} pts in {best_wk_rec['season']}",
+        )
+
+    # Most championships summary card
+    if career_df.empty is False and int(career_df.iloc[0]["Championships"]) > 0:
+        most_champ_owner = str(career_df.iloc[0]["owner"])
+        most_champ_n = int(career_df.iloc[0]["Championships"])
+        highlights_html += _hist_card(
+            "Most Championships",
+            html.escape(most_champ_owner),
+            f"{most_champ_n} title{'s' if most_champ_n > 1 else ''}",
+        )
+
+    highlights_section = ""
+    if highlights_html:
+        highlights_section = f"""
+    <div class="card">
+      <div class="card-header"><h2>League Records</h2></div>
+      <div class="card-body">
+        <div class="history-cards-grid">{highlights_html}</div>
+      </div>
+    </div>"""
+
+    return f"""
+    <div class="overview-layout">
+      <div class="overview-main">
+        {highlights_section}
+        {standings_table}
+        {champ_table}
+      </div>
+    </div>"""
+
+
+@app.route("/<platform>/<int:season>/<league_id>/awards")
+def page_awards(platform: str, season: int, league_id: str):
+    available, career_owners, championships, season_records = \
+        _collect_all_season_data(platform, league_id, season)
+
+    if not available or not career_owners:
+        body_html = """
+        <div class="card central">
+          <div class="card-body">
+            <div class="bract-empty-state">
+              <div class="bract-empty-title">No History Yet</div>
+              <div class="bract-empty-copy">
+                All-time awards will appear after your first completed season.
+              </div>
+            </div>
+          </div>
+        </div>"""
+        return render_page("League Awards", league_id, "awards", body_html, platform, season)
+
+    body_html = _build_awards_html(career_owners, championships, season_records)
+    return render_page("League Awards", league_id, "awards", body_html, platform, season)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/history")
 def page_history(platform: str, season: int, league_id: str):
     # Tour preview: render with mock data, bypass real league fetch
@@ -7104,6 +7510,21 @@ def index():
             season=season,
         )
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
+
+        # Preload historical season contexts in the background so History/Awards/Graphs
+        # pages are fast on first click.
+        def _preload_history(p: str, lid: str, s: int) -> None:
+            try:
+                hist_seasons = get_available_history_seasons(p, lid, s)
+                for hist_s in hist_seasons:
+                    rid = resolve_league_id_for_season(p, lid, s, hist_s)
+                    get_league_ctx_from_cache(p, rid, hist_s)
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=_preload_history, args=(platform, league_id, season), daemon=True
+        ).start()
 
         return redirect(url_for(
             "page_dashboard",

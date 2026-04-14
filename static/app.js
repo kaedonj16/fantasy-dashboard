@@ -3263,22 +3263,43 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Players nav dropdown toggle
-function togglePlayersNav(e) {
+// Generic nav dropdown toggle (works for Players, Stats, or any future dropdown)
+function toggleNavDropdown(e, wrapperId) {
   e.stopPropagation();
-  const wrapper = document.getElementById('playersNavDropdown');
+  const wrapper = document.getElementById(wrapperId);
   if (!wrapper) return;
+  // Close all other open dropdowns first
+  document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+    if (el.id !== wrapperId) el.classList.remove('open');
+  });
   wrapper.classList.toggle('open');
 }
 
+// Legacy alias kept in case any rendered HTML still calls it
+function togglePlayersNav(e) { toggleNavDropdown(e, 'playersNavDropdown'); }
+
 document.addEventListener('DOMContentLoaded', function() {
-  // Close players nav dropdown when clicking outside
+  // Close all nav dropdowns when clicking outside
   document.addEventListener('click', function(e) {
-    const wrapper = document.getElementById('playersNavDropdown');
-    if (wrapper && !wrapper.contains(e.target)) {
-      wrapper.classList.remove('open');
+    if (!e.target.closest('.nav-pill-dropdown-wrapper')) {
+      document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+        el.classList.remove('open');
+      });
     }
   });
+
+  // Close dropdowns when a sub-menu item is clicked (mobile nav)
+  const navPillsContainer = document.getElementById('navPillsContainer') ||
+                            document.querySelector('.nav-pills-container');
+  if (navPillsContainer) {
+    navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+          el.classList.remove('open');
+        });
+      });
+    });
+  }
 });
 
 // Card collapse toggle functionality

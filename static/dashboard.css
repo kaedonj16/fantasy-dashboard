@@ -5303,18 +5303,18 @@ thead th {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  gap: 12px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.45);
   border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
 }
 
 .saved-viewer-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -5322,36 +5322,43 @@ thead th {
   font-size: 11px;
   color: #9ca3af;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .saved-viewer-btn {
   display: inline-block;
+  background: #38bdf8;
+  color: #0f172a !important;
   font-size: 13px;
-  font-weight: 600;
-  color: #38bdf8;
-  text-decoration: none;
+  font-weight: 700;
+  text-decoration: none !important;
+  border-radius: 6px;
+  padding: 6px 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 230px;
 }
 
 .saved-viewer-btn:hover {
-  text-decoration: underline;
+  background: #7dd3fc;
 }
 
-.saved-viewer-dismiss {
-  flex-shrink: 0;
-  background: none;
-  border: none;
+/* dismiss button — must override .home-card button { width: 100% } */
+.saved-viewer-cta .saved-viewer-dismiss {
+  width: auto !important;
+  padding: 0 4px !important;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
   color: #9ca3af;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 2px;
+  flex-shrink: 0;
 }
 
-.saved-viewer-dismiss:hover {
+.saved-viewer-cta .saved-viewer-dismiss:hover {
   color: #e5e7eb;
 }
 
@@ -10923,6 +10930,36 @@ img, svg, canvas {
   .bk-components-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ============================================
+   GRAPHS SEASON SELECTOR
+   ============================================ */
+
+.graphs-season-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin-bottom: 4px;
+}
+
+.graphs-season-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.graphs-season-select {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 180px;
 }
 
 /* ============================================
