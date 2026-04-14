@@ -5251,28 +5251,38 @@ document.addEventListener('click', (e) => {
           var pid   = playerEl.dataset.playerId;
           var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
-          // Wait for modal to render, then move the spotlight onto it
-          // Use a longer delay and check multiple times to ensure content is fully loaded
+          
+          // Start checking immediately and frequently
           var attempts = 0;
-          var maxAttempts = 5;
+          var maxAttempts = 30; // More attempts
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('playerModal');
             if (modal) {
-              // Check if modal has content beyond the loading state
               var body = document.getElementById('playerModalBody');
-              var hasContent = body && !body.querySelector('.player-modal-loading');
+              // Check for modal being visible and having advanced metrics section
+              var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
+              var hasAdvancedMetrics = body && body.querySelector('#advancedMetricsSection');
               
-              if (hasContent || attempts >= maxAttempts) {
+              // Position spotlight when advanced metrics section is loaded
+              if (isVisible && hasAdvancedMetrics) {
                 positionOverlays(modal); 
                 placeTooltip(modal);
+                return; // Stop checking once positioned
+              }
+              
+              // If modal exists but advanced metrics not loaded yet, keep checking frequently
+              if (attempts < maxAttempts) {
+                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
               } else {
-                setTimeout(checkAndPosition, 300);
+                // Fallback: position on modal even if advanced metrics didn't load
+                positionOverlays(modal); 
+                placeTooltip(modal);
               }
             }
           }
-          setTimeout(checkAndPosition, 800);
-        }, 400);
+          setTimeout(checkAndPosition, 100); // Start checking after 100ms
+        }, 100); // Minimal delay before opening modal
       }
     } else if (step.action === 'openTeamModal') {
       var teamEl = document.querySelector('.team-clickable[data-roster-id]');
@@ -5281,12 +5291,38 @@ document.addEventListener('click', (e) => {
           var rid   = teamEl.dataset.rosterId;
           var tname = teamEl.dataset.teamName || '';
           if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
-          // Wait for modal to render, then move the spotlight onto it
-          setTimeout(function () {
+          
+          // Start checking immediately and frequently for team weekly chart
+          var attempts = 0;
+          var maxAttempts = 30;
+          function checkAndPosition() {
+            attempts++;
             var modal = document.getElementById('teamModal');
-            if (modal) { positionOverlays(modal); placeTooltip(modal); }
-          }, 800);
-        }, 400);
+            if (modal) {
+              var body = document.getElementById('teamModalBody');
+              // Check for modal being visible and having team weekly chart
+              var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
+              var hasWeeklyChart = body && body.querySelector('#teamWeeklyChart');
+              
+              // Position spotlight when team weekly chart is loaded
+              if (isVisible && hasWeeklyChart) {
+                positionOverlays(modal); 
+                placeTooltip(modal);
+                return; // Stop checking once positioned
+              }
+              
+              // If modal exists but weekly chart not loaded yet, keep checking frequently
+              if (attempts < maxAttempts) {
+                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
+              } else {
+                // Fallback: position on modal even if weekly chart didn't load
+                positionOverlays(modal); 
+                placeTooltip(modal);
+              }
+            }
+          }
+          setTimeout(checkAndPosition, 100); // Start checking after 100ms
+        }, 100); // Minimal delay before opening modal
       }
     }
   }
