@@ -63,12 +63,13 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     team = row.get("team")
                     years_exp = row.get("years_exp")
 
-                    # Update existing row or insert new one based on player_id only
+                    # Insert or update — one row per player, keyed by player_id only.
+                    # last_updated tracks when the value was last refreshed.
                     cur.execute(
                         """
                         INSERT INTO player_values (
                             player_id,
-                            date,
+                            last_updated,
                             value_1qb,
                             value_sf,
                             position,
@@ -80,7 +81,7 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
-                            date = EXCLUDED.date,
+                            last_updated = EXCLUDED.last_updated,
                             value_1qb = EXCLUDED.value_1qb,
                             value_sf = EXCLUDED.value_sf,
                             position = EXCLUDED.position,

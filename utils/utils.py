@@ -248,15 +248,25 @@ def load_model_value_table():
     # Return ONLY the parsed JSON data, not the path object
     result = read_json(path_model_value_table())
 
-    # Fallback to database if JSON file doesn't exist
+    # Fallback to database if JSON file doesn't exist.
+    # Prefer player_values (current, one-row-per-player) over player_value_history.
+    if result is None:
+        try:
+            from dashboard_services.player_value_history import load_current_values_from_db
+            result = load_current_values_from_db()
+            if result:
+                print(f"[load_model_value_table] Loaded {len(result)} players from player_values table")
+        except Exception as e:
+            print(f"[load_model_value_table] Failed to load from player_values: {e}")
+
     if result is None:
         try:
             from dashboard_services.player_value_history import load_latest_value_snapshot
             result = load_latest_value_snapshot()
             if result:
-                print(f"[load_model_value_table] Loaded {len(result)} players from database (JSON file not found)")
+                print(f"[load_model_value_table] Loaded {len(result)} players from player_value_history (fallback)")
         except Exception as e:
-            print(f"[load_model_value_table] Failed to load from database: {e}")
+            print(f"[load_model_value_table] Failed to load from player_value_history: {e}")
 
     # Zero out players absent from FantasyCalc — FC omission signals no dynasty value.
     # (Handles pre-built JSON that pre-dates the training-script fix.)

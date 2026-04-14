@@ -1194,8 +1194,9 @@ def rewrite_value_table_with_model() -> Path:
     DP_1QB_MIN: float = float(_dp_1qb_vals.min()) if len(_dp_1qb_vals) else 1.0
     DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
     DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
-    
-    dp_df_full = pd.DataFrame()
+
+    # NOTE: dp_df_full intentionally kept from the load above — it is used below
+    # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
     try:
         dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
         dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
@@ -1319,8 +1320,19 @@ def rewrite_value_table_with_model() -> Path:
                         # likely knows this player better; use engine as the floor
                         final_value = engine_val
                 else:
-                    # Vendor consensus is higher than engine — trust vendors
-                    final_value = vendor_consensus
+                    # Vendor consensus is higher than engine.
+                    # For skill positions (RB/WR/TE), if the engine is more than
+                    # 30% below vendor consensus the player may be a current-season
+                    # breakout whose long-term dynasty value is overstated by market
+                    # sentiment — blend toward the engine to cap the overvaluation.
+                    if player_position in ("RB", "WR", "TE"):
+                        deviation_down = (vendor_consensus - engine_val) / max(vendor_consensus, 1.0)
+                        if deviation_down > 0.30:
+                            final_value = vendor_consensus * 0.60 + engine_val * 0.40
+                        else:
+                            final_value = vendor_consensus
+                    else:
+                        final_value = vendor_consensus
             else:
                 final_value = vendor_consensus
 
