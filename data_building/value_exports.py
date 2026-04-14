@@ -119,7 +119,6 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
         yesterday_file = None
 
     if yesterday_file and yesterday_file.exists():
-        print(f"[engine_values] Removing yesterday's value file: {yesterday_file.name}")
         try:
             yesterday_file.unlink()
         except Exception as e:
@@ -136,9 +135,6 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-
-    print(f"[engine_values] Wrote {len(rows)} players to {out_csv.name} "
-          f"(league sizes: {LEAGUE_SIZES})")
 
 
 if __name__ == "__main__":

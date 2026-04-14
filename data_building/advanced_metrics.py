@@ -128,6 +128,32 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS rookie_eval_is_rookie          BOOLEAN;
     """)
 
+    # PFF feed columns (NFL) for player evaluation and modal display
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS yards_after_catch NUMERIC,
+            ADD COLUMN IF NOT EXISTS yards_after_catch_per_reception NUMERIC,
+            ADD COLUMN IF NOT EXISTS avg_depth_of_target NUMERIC,
+            ADD COLUMN IF NOT EXISTS contested_catch_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS avoided_tackles NUMERIC,
+            ADD COLUMN IF NOT EXISTS drop_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS slot_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS wide_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS inline_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS pass_block_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS grades_offense NUMERIC,
+            ADD COLUMN IF NOT EXISTS grades_pass_block NUMERIC,
+            ADD COLUMN IF NOT EXISTS explosive_runs_10_plus NUMERIC,
+            ADD COLUMN IF NOT EXISTS breakaway_percentage NUMERIC,
+            ADD COLUMN IF NOT EXISTS elusive_rating NUMERIC,
+            ADD COLUMN IF NOT EXISTS pff_rushing_grade NUMERIC,
+            ADD COLUMN IF NOT EXISTS pff_passing_grade NUMERIC,
+            ADD COLUMN IF NOT EXISTS big_time_throw_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS adjusted_completion_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS pressure_to_sack_rate NUMERIC,
+            ADD COLUMN IF NOT EXISTS nfl_passer_rating NUMERIC;
+    """)
+
 
 def _extract_metric_value(metrics: Dict, metric_name: str):
     """Safely pull the scalar value from a metric payload dict."""

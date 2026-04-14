@@ -2652,6 +2652,52 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Save viewer to localStorage on form submit so returning users can skip re-entry
+  const leagueSelectFormEl = document.getElementById("leagueSelectForm");
+  if (leagueSelectFormEl) {
+    leagueSelectFormEl.addEventListener("submit", () => {
+      const lId = leagueSelect?.value;
+      const uname = usernameInput?.value.trim();
+      const platform = formPlatform?.value || "sleeper";
+      const seasonVal = leagueSelectFormEl.querySelector('input[name="season"]')?.value;
+      if (lId && uname) {
+        localStorage.setItem("saved_viewer", JSON.stringify({
+          username: uname,
+          league_id: lId,
+          platform: platform,
+          season: seasonVal || new Date().getFullYear(),
+          ts: Date.now()
+        }));
+      }
+    });
+  }
+
+  // Show "Continue as X" CTA for returning users
+  const saved = JSON.parse(localStorage.getItem("saved_viewer") || "null");
+  if (saved?.league_id && saved?.username) {
+    const platform = saved.platform || "sleeper";
+    const season = saved.season || new Date().getFullYear();
+    const dashboardUrl = `/${platform}/${season}/${saved.league_id}/dashboard`;
+
+    const cta = document.createElement("div");
+    cta.className = "saved-viewer-cta";
+    cta.innerHTML = `
+      <div class="saved-viewer-info">
+        <span class="saved-viewer-label">Welcome back!</span>
+        <a href="${dashboardUrl}" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></a>
+      </div>
+      <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
+    `;
+
+    const homeCard = document.querySelector(".home-card");
+    if (homeCard) homeCard.insertAdjacentElement("afterbegin", cta);
+
+    cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => {
+      localStorage.removeItem("saved_viewer");
+      cta.remove();
+    });
+  }
+
   // Sleeper lookup
   if (lookupBtn) {
     lookupBtn.addEventListener("click", async () => {
@@ -2868,6 +2914,23 @@ document.addEventListener("DOMContentLoaded", () => {
 // Changelog Bell
 // ------------------------------------------------------------
 
+// Global function for notification dots (accessible from settings dropdown)
+function setChangelogDot(hasNew, showSettingsDot = false) {
+
+  // Always update gear dot
+  const gearDot = document.getElementById("gearDot");
+  if (gearDot) {
+    gearDot.style.display = hasNew ? "block" : "none";
+  }
+  
+  // Only show settings notification dot when explicitly requested (when settings is opened)
+  const settingsDot = document.getElementById("settingsNotifDot");
+  if (settingsDot) {
+    settingsDot.style.display = (hasNew && showSettingsDot) ? "block" : "none";
+  } else {
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const bellWrapper = document.querySelector(".changelog-bell-wrapper");
   const bellBtn = document.getElementById("changelogBell");
@@ -2904,8 +2967,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const latestDate = changelogData[0].date;
       const lastSeen = localStorage.getItem("changelog_last_seen");
 
+
       if (!lastSeen || latestDate > lastSeen) {
-        dot.classList.remove("changelog-dot-hidden");
+        setChangelogDot(true);
       }
 
       // Build dropdown HTML
@@ -2963,11 +3027,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isDropdownOpen) {
       dropdown.style.display = "block";
 
-      // Mark as seen
+      // Mark as seen — hide dots on both bell and gear
       if (changelogData && changelogData.length > 0) {
         const latestDate = changelogData[0].date;
         localStorage.setItem("changelog_last_seen", latestDate);
-        dot.classList.add("changelog-dot-hidden");
+setChangelogDot(false);
       }
     } else {
       dropdown.style.display = "none";
@@ -3012,12 +3076,21 @@ document.addEventListener("DOMContentLoaded", () => {
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
     dropdown.style.display = isDropdownOpen ? "block" : "none";
+    
+
+    // When opening settings, show bell dot if there are new notifications
+    if (isDropdownOpen) {
+      // Check if there are new notifications by checking if gear dot is visible
+      const gearDot = document.getElementById("gearDot");
+    }
   }
 
   function closeDropdown() {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
+      // Hide settings notification dot when dropdown closes
+      setChangelogDot(true, false);
     }
   }
 
@@ -3069,6 +3142,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.target.tagName !== 'A' && !e.target.closest('a')) {
         e.stopPropagation();
       }
+    });
+  }
+
+  // Clear saved viewer on logout so the "Continue as X" CTA doesn't reappear
+  const logoutLink = dropdown?.querySelector('a[href="/logout"]');
+  if (logoutLink) {
+    logoutLink.addEventListener("click", () => {
+      localStorage.removeItem("saved_viewer");
     });
   }
 });
@@ -3196,22 +3277,43 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Players nav dropdown toggle
-function togglePlayersNav(e) {
+// Generic nav dropdown toggle (works for Players, Stats, or any future dropdown)
+function toggleNavDropdown(e, wrapperId) {
   e.stopPropagation();
-  const wrapper = document.getElementById('playersNavDropdown');
+  const wrapper = document.getElementById(wrapperId);
   if (!wrapper) return;
+  // Close all other open dropdowns first
+  document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+    if (el.id !== wrapperId) el.classList.remove('open');
+  });
   wrapper.classList.toggle('open');
 }
 
+// Legacy alias kept in case any rendered HTML still calls it
+function togglePlayersNav(e) { toggleNavDropdown(e, 'playersNavDropdown'); }
+
 document.addEventListener('DOMContentLoaded', function() {
-  // Close players nav dropdown when clicking outside
+  // Close all nav dropdowns when clicking outside
   document.addEventListener('click', function(e) {
-    const wrapper = document.getElementById('playersNavDropdown');
-    if (wrapper && !wrapper.contains(e.target)) {
-      wrapper.classList.remove('open');
+    if (!e.target.closest('.nav-pill-dropdown-wrapper')) {
+      document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+        el.classList.remove('open');
+      });
     }
   });
+
+  // Close dropdowns when a sub-menu item is clicked (mobile nav)
+  const navPillsContainer = document.getElementById('navPillsContainer') ||
+                            document.querySelector('.nav-pills-container');
+  if (navPillsContainer) {
+    navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
+          el.classList.remove('open');
+        });
+      });
+    });
+  }
 });
 
 // Card collapse toggle functionality
@@ -3495,10 +3597,10 @@ function openPlayerModal(playerId, playerName) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
+        'RB': 600,   // Elite young backs
+        'WR': 700,   // Elite WRs
         'TE': 550,   // Premium TE scarcity
-        'QB': 400,   // Solid QB1s
+        'QB': 450,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };
@@ -3993,6 +4095,22 @@ function buildAdvancedMetricsHTML(metricsData) {
   }
 
   if (position === 'QB') {
+    if (metrics.pff_passing_grade != null) {
+      const v = metrics.pff_passing_grade;
+      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.big_time_throw_rate != null) {
+      const v = metrics.big_time_throw_rate;
+      defs.push({ label: 'BTT Rate', fill: Math.min(v * 5, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.adjusted_completion_rate != null) {
+      const v = metrics.adjusted_completion_rate;
+      defs.push({ label: 'Adj Comp %', fill: v, display: v.toFixed(1) + '%' });
+    }
+    if (metrics.nfl_passer_rating != null) {
+      const v = metrics.nfl_passer_rating;
+      defs.push({ label: 'Passer Rating', fill: Math.min(v / 130 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
       defs.push({ label: 'Yds/Attempt', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
@@ -4010,6 +4128,18 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
   } else if (position === 'RB') {
+    if (metrics.pff_rushing_grade != null) {
+      const v = metrics.pff_rushing_grade;
+      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.breakaway_percentage != null) {
+      const v = metrics.breakaway_percentage;
+      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.elusive_rating != null) {
+      const v = metrics.elusive_rating;
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
@@ -4022,6 +4152,22 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
     }
   } else if (position === 'WR' || position === 'TE') {
+    if (metrics.grades_offense != null) {
+      const v = metrics.grades_offense;
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
+    }
+    if (metrics.yards_after_catch_per_reception != null) {
+      const v = metrics.yards_after_catch_per_reception;
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.avg_depth_of_target != null) {
+      const v = metrics.avg_depth_of_target;
+      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.contested_catch_rate != null) {
+      const v = metrics.contested_catch_rate;
+      defs.push({ label: 'Contested Catch %', fill: v, display: v.toFixed(1) + '%' });
+    }
     if (metrics.target_share != null) {
       const pct = metrics.target_share * 100;
       defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
@@ -4126,7 +4272,7 @@ function addBreakoutBadgesToTeamsPage() {
       
       // Position-specific elite thresholds
       const eliteThresholds = {
-        'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
+        'RB': 900, 'WR': 900, 'TE': 900, 'QB': 900, 'K': 9999, 'DEF': 9999
       };
       const threshold = eliteThresholds[position] || 750;
       const isElite = value >= threshold;
@@ -4365,8 +4511,6 @@ function openBreakoutModal(playerId, playerName) {
       return res.json();
     })
     .then(data => {
-      console.log('Breakout API response for player', playerId, ':', data);
-      console.log('Data keys before error check:', Object.keys(data));
       if (data.error) {
         document.getElementById('bkModalBody').innerHTML = `
           <div class="player-modal-loading">
@@ -4591,10 +4735,10 @@ function renderTeamDetails(data) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
-        'TE': 550,   // Premium TE scarcity
-        'QB': 400,   // Solid QB1s
+        'RB': 900,   // Elite young backs
+        'WR': 900,   // Elite WRs
+        'TE': 900,   // Premium TE scarcity
+        'QB': 900,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };
@@ -4835,3 +4979,454 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+
+// ── New User Tour ──────────────────────────────────────────────────────────
+(function () {
+  'use strict';
+
+  // Determine league context from URL
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
+  if (!hasLeague) return;
+
+  const platform  = pathParts[0];
+  const season    = pathParts[1];
+  const leagueId  = pathParts[2];
+  const tourKey   = 'tour_done_' + leagueId;
+
+  // Current page from the page-shell data attribute
+  const pageShell = document.querySelector('.page-shell');
+  const currentPage = pageShell ? (pageShell.dataset.page || '') : '';
+
+  function buildLeagueUrl(page) {
+    // Extract league context from current URL
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+
+    if (pathParts.length >= 3 && !isNaN(pathParts[1])) {
+      const platform = pathParts[0];
+      const season = pathParts[1];
+      const leagueId = pathParts[2];
+      const url = '/' + platform + '/' + season + '/' + leagueId + '/' + page;
+      return url;
+    }
+    // Fallback to just page name if no league context
+    const fallbackUrl = '/' + page;
+    return fallbackUrl;
+  }
+
+  // ── Tour steps ──────────────────────────────────────────────────────────
+  const TOUR_STEPS = [
+    {
+      page: 'dashboard', selector: null,
+      title: 'Welcome!',
+      body: "Let's take a 30-second tour of your dynasty dashboard.",
+    },
+    {
+      page: 'dashboard', selector: '#settingsGearBtn',
+      title: 'Settings & Leagues',
+      body: 'Switch leagues, toggle dark mode, or view the changelog here.',
+    },
+    {
+      page: 'dashboard', selector: '#settingsDropdown',
+      title: 'Settings Menu',
+      body: 'Here you can refresh data, view notifications, switch leagues, and toggle dark mode.',
+      beforeShow: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = 'block';
+      },
+      afterLeave: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = '';
+      },
+    },
+    {
+      page: 'dashboard', selector: '#settingsChangelogBtn',
+      title: "What's New",
+      body: 'The bell shows new features and updates. A red dot means something new dropped.',
+      beforeShow: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = 'block';
+      },
+      afterLeave: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = '';
+      },
+    },
+    {
+      page: 'dashboard', selector: '.nav-pills-container',
+      title: 'Navigation',
+      body: 'Jump between Dashboard, Trade Calc, Teams, Activity, Players, and more.',
+    },
+    {
+      page: 'dashboard', selector: '.player-row, .otc-player-row',
+      title: 'Player Cards',
+      body: 'Click any player to see their dynasty value, trend, and breakout score.',
+      action: 'openPlayerModal',
+    },
+    {
+      page: 'dashboard', selector: '.team-clickable, .team-row',
+      title: 'Team Cards',
+      body: 'Click any team to see their full roster and asset values.',
+      action: 'openTeamModal',
+    },
+    {
+      page: 'dashboard', selector: 'a[href*="/weekly"]',
+      title: 'Weekly Hub',
+      body: 'During the season, see live scores, matchup previews, and weekly recaps here.',
+      onlyIfPresent: false,
+    },
+    {
+      page: 'history', selector: '.card',
+      title: 'Season History',
+      body: 'Review past season awards, standings, and scoring trends for every year.',
+      navigate: 'history',
+      beforeShow: function () {
+        // Create mock data for history page during tour
+        setTimeout(() => {
+          // Mock season awards
+          const awardsContainer = document.querySelector('.awards-container');
+          if (awardsContainer && !awardsContainer.querySelector('.tour-mock-data')) {
+            awardsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>2024 Season Awards</h4>
+                <div class="award-item">
+                  <span class="award-winner">🏆 Team Alpha</span>
+                  <span class="award-desc">League Champion</span>
+                </div>
+                <div class="award-item">
+                  <span class="award-winner">⭐ Player One</span>
+                  <span class="award-desc">MVP</span>
+                </div>
+                <div class="award-item">
+                  <span class="award-winner">🚀 Player Two</span>
+                  <span class="award-desc">Breakout Player</span>
+                </div>
+              </div>
+            `;
+          }
+
+          // Mock regular season standings
+          const standingsContainer = document.querySelector('.standings-container');
+          if (standingsContainer && !standingsContainer.querySelector('.tour-mock-data')) {
+            standingsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>2024 Regular Season Standings</h4>
+                <table class="standings-table">
+                  <thead>
+                    <tr><th>Team</th><th>W-L</th><th>PF</th><th>PA</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Team Alpha</td><td>12-1</td><td>2,450</td><td>1,890</td></tr>
+                    <tr><td>Team Beta</td><td>10-3</td><td>2,320</td><td>1,950</td></tr>
+                    <tr><td>Team Gamma</td><td>8-5</td><td>2,180</td><td>2,010</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            `;
+          }
+
+          // Mock season trends
+          const trendsContainer = document.querySelector('.trends-container');
+          if (trendsContainer && !trendsContainer.querySelector('.tour-mock-data')) {
+            trendsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>Season Scoring Trends</h4>
+                <div class="trend-chart">
+                  <div class="trend-item">
+                    <span class="trend-label">Avg Score:</span>
+                    <span class="trend-value">142.5 pts</span>
+                  </div>
+                  <div class="trend-item">
+                    <span class="trend-label">High Score:</span>
+                    <span class="trend-value">198.2 pts</span>
+                  </div>
+                  <div class="trend-item">
+                    <span class="trend-label">Low Score:</span>
+                    <span class="trend-value">89.7 pts</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        }, 1000); // Wait for page to load
+      },
+    },
+    {
+      page: 'graphs', selector: '.card',
+      title: 'League Analytics',
+      body: 'Explore PF vs PA scatter plots, weekly score lines, and a head-to-head radar chart.',
+      navigate: 'graphs',
+    },
+    {
+      page: 'dashboard', selector: null,
+      title: "You're all set!",
+      body: 'Explore your dynasty empire. Good luck this season!',
+    },
+  ];
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let currentStep  = 0;
+  let tourActive   = false;
+  const overlays   = [];
+  let tooltipEl    = null;
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  function initTour() {
+    const params     = new URLSearchParams(window.location.search);
+    const resumeAt   = params.get('tour');
+
+    if (resumeAt !== null) {
+      // Came here via a tour navigation — clean the URL then resume
+      history.replaceState(null, '', window.location.pathname);
+      const idx = parseInt(resumeAt, 10);
+      if (!isNaN(idx)) {
+        startTour(idx);
+        return;
+      }
+    }
+
+    // Only auto-start on the dashboard for new users with league context
+    if (currentPage !== 'dashboard') return;
+    if (localStorage.getItem(tourKey)) return;
+    
+    // Check if we have league context (not on demo/home page)
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
+    if (!hasLeague) return;
+
+    setTimeout(function () { startTour(0); }, 800);
+  }
+
+  // ── DOM creation ─────────────────────────────────────────────────────────
+  function startTour(fromStep) {
+    tourActive   = true;
+    currentStep  = fromStep;
+    createOverlayDOM();
+    showStep(currentStep);
+  }
+
+  function createOverlayDOM() {
+    ['top', 'bottom', 'left', 'right'].forEach(function (side) {
+      const el = document.createElement('div');
+      el.className = 'tour-overlay-piece';
+      el.dataset.side = side;
+      document.body.appendChild(el);
+      overlays.push(el);
+    });
+
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'tour-tooltip';
+    document.body.appendChild(tooltipEl);
+  }
+
+  // ── Step rendering ───────────────────────────────────────────────────────
+  function showStep(idx) {
+    if (idx < 0 || idx >= TOUR_STEPS.length) { endTour(); return; }
+    const step = TOUR_STEPS[idx];
+
+    // Wrong page? Navigate there
+    if (step.page && step.page !== currentPage) {
+      window.location.href = buildLeagueUrl(step.page) + '?tour=' + idx;
+      return;
+    }
+
+    // Skip if element required but missing
+    if (step.onlyIfPresent) {
+      const el = step.selector ? document.querySelector(step.selector) : null;
+      if (!el) { advanceTour(); return; }
+    }
+
+    // Run beforeShow hook (e.g. open settings dropdown)
+    if (typeof step.beforeShow === 'function') step.beforeShow();
+
+    const target = step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target);
+    renderTooltip(step, idx, target);
+
+    // Auto-open modals as a demo, then reposition the spotlight onto the modal
+    if (step.action === 'openPlayerModal') {
+      var playerEl = document.querySelector('[data-player-id]');
+      if (playerEl) {
+        setTimeout(function () {
+          var pid   = playerEl.dataset.playerId;
+          var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
+          if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
+          // Wait for modal to render, then move the spotlight onto it
+          // Use a longer delay and check multiple times to ensure content is fully loaded
+          var attempts = 0;
+          var maxAttempts = 5;
+          function checkAndPosition() {
+            attempts++;
+            var modal = document.getElementById('playerModal');
+            if (modal) {
+              // Check if modal has content beyond the loading state
+              var body = document.getElementById('playerModalBody');
+              var hasContent = body && !body.querySelector('.player-modal-loading');
+              
+              if (hasContent || attempts >= maxAttempts) {
+                positionOverlays(modal); 
+                placeTooltip(modal);
+              } else {
+                setTimeout(checkAndPosition, 300);
+              }
+            }
+          }
+          setTimeout(checkAndPosition, 800);
+        }, 400);
+      }
+    } else if (step.action === 'openTeamModal') {
+      var teamEl = document.querySelector('.team-clickable[data-roster-id]');
+      if (teamEl) {
+        setTimeout(function () {
+          var rid   = teamEl.dataset.rosterId;
+          var tname = teamEl.dataset.teamName || '';
+          if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
+          // Wait for modal to render, then move the spotlight onto it
+          setTimeout(function () {
+            var modal = document.getElementById('teamModal');
+            if (modal) { positionOverlays(modal); placeTooltip(modal); }
+          }, 800);
+        }, 400);
+      }
+    }
+  }
+
+  function positionOverlays(target) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const PAD = 8;
+
+    if (!target) {
+      // Full-screen dim — all coverage via top piece, rest zeroed
+      overlays.forEach(function (p) {
+        if (p.dataset.side === 'top') {
+          Object.assign(p.style, { top: '0', left: '0', width: vw + 'px', height: vh + 'px' });
+        } else {
+          Object.assign(p.style, { top: '0', left: '0', width: '0', height: '0' });
+        }
+      });
+      return;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const r  = target.getBoundingClientRect();
+    const x1 = Math.max(0, r.left   - PAD);
+    const y1 = Math.max(0, r.top    - PAD);
+    const x2 = Math.min(vw, r.right  + PAD);
+    const y2 = Math.min(vh, r.bottom + PAD);
+
+    overlays.forEach(function (p) {
+      switch (p.dataset.side) {
+        case 'top':    Object.assign(p.style, { top: '0',        left: '0',       width: vw + 'px',       height: y1 + 'px'       }); break;
+        case 'bottom': Object.assign(p.style, { top: y2 + 'px',  left: '0',       width: vw + 'px',       height: (vh - y2) + 'px' }); break;
+        case 'left':   Object.assign(p.style, { top: y1 + 'px',  left: '0',       width: x1 + 'px',       height: (y2 - y1) + 'px' }); break;
+        case 'right':  Object.assign(p.style, { top: y1 + 'px',  left: x2 + 'px', width: (vw - x2) + 'px', height: (y2 - y1) + 'px' }); break;
+      }
+    });
+  }
+
+  function renderTooltip(step, idx, target) {
+    const isLast  = idx === TOUR_STEPS.length - 1;
+    const isFirst = idx === 0;
+    const count   = (idx + 1) + ' / ' + TOUR_STEPS.length;
+
+    tooltipEl.innerHTML =
+      '<div class="tour-tooltip-header">' +
+        '<span class="tour-step-count">' + count + '</span>' +
+        '<button class="tour-skip-btn" type="button">Skip tour</button>' +
+      '</div>' +
+      '<div class="tour-tooltip-title">' + step.title + '</div>' +
+      '<div class="tour-tooltip-body">'  + step.body  + '</div>' +
+      '<div class="tour-tooltip-footer">' +
+        (isFirst ? '<span></span>' : '<button class="tour-btn tour-btn-secondary" data-action="prev">Back</button>') +
+        '<button class="tour-btn tour-btn-primary" data-action="next">' + (isLast ? 'Finish' : 'Next →') + '</button>' +
+      '</div>';
+
+    // Position
+    if (!target) {
+      Object.assign(tooltipEl.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)', display: 'block' });
+    } else {
+      placeTooltip(target);
+      tooltipEl.style.display = 'block';
+    }
+
+    tooltipEl.querySelector('[data-action="next"]').addEventListener('click', advanceTour);
+    const prevBtn = tooltipEl.querySelector('[data-action="prev"]');
+    if (prevBtn) prevBtn.addEventListener('click', function () { currentStep--; showStep(currentStep); });
+    tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', endTour);
+  }
+
+  function placeTooltip(target) {
+    const TW   = 300;
+    const TH   = 180; // estimate
+    const PAD  = 12;
+    const vw   = window.innerWidth;
+    const vh   = window.innerHeight;
+    const r    = target.getBoundingClientRect();
+
+    let top  = r.bottom + PAD;
+    if (top + TH > vh) top = Math.max(PAD, r.top - PAD - TH);
+
+    let left = r.left + r.width / 2 - TW / 2;
+    left = Math.max(PAD, Math.min(left, vw - TW - PAD));
+
+    Object.assign(tooltipEl.style, {
+      top: top + 'px',
+      left: left + 'px',
+      transform: '',
+    });
+  }
+
+  // ── Navigation ───────────────────────────────────────────────────────────
+  function leaveCurrentStep() {
+    // Call afterLeave hook (e.g. close settings dropdown)
+    const step = TOUR_STEPS[currentStep];
+    if (step && typeof step.afterLeave === 'function') step.afterLeave();
+
+    // Close any open player/team modals
+    if (typeof closePlayerModal === 'function' && document.getElementById('playerModal')) {
+      closePlayerModal();
+    }
+    if (typeof closeTeamModal === 'function' && document.getElementById('teamModal')) {
+      closeTeamModal();
+    }
+  }
+
+  function advanceTour() {
+    leaveCurrentStep();
+    const nextIdx  = currentStep + 1;
+    if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
+    const nextStep = TOUR_STEPS[nextIdx];
+
+    if (nextStep.navigate && nextStep.page !== currentPage) {
+      window.location.href = buildLeagueUrl(nextStep.page) + '?tour=' + nextIdx;
+      return;
+    }
+    currentStep = nextIdx;
+    showStep(currentStep);
+  }
+
+  function endTour() {
+    leaveCurrentStep();
+    localStorage.setItem(tourKey, '1');
+    removeTourDOM();
+    tourActive = false;
+  }
+
+  function removeTourDOM() {
+    overlays.forEach(function (p) { p.remove(); });
+    overlays.length = 0;
+    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+  }
+
+  // Reposition on resize
+  window.addEventListener('resize', function () {
+    if (!tourActive) return;
+    const step   = TOUR_STEPS[currentStep];
+    const target = step && step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target);
+    if (tooltipEl && target) placeTooltip(target);
+  });
+
+  document.addEventListener('DOMContentLoaded', initTour);
+}());

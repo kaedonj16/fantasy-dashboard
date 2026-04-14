@@ -40,6 +40,7 @@ Normalization contract — every player dict returned by this module has:
 from __future__ import annotations
 
 import csv
+import datetime
 import io
 import os
 import re
@@ -1073,6 +1074,48 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 
 def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
     """Return the curated seed dataset for a given draft year."""
+    import json
+    from pathlib import Path
+    
+    # Try to load from the most recent JSON file that has data
+    project_root = Path(__file__).parent.parent.parent
+    data_dir = project_root / "data"
+    
+    # Check for available rookie profile files, preferring latest but falling back to earlier ones
+    profile_files = [
+        data_dir / "rookie_profiles_latest.json",
+        data_dir / f"rookie_profiles_{datetime.date.today().isoformat()}.json",
+        data_dir / "rookie_profiles_2026-04-11.json",
+        data_dir / "rookie_profiles_2026-04-10.json",
+    ]
+    
+    for file_path in profile_files:
+        if file_path.exists():
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Check if this file has actual data (not empty)
+                if data.get("count", 0) > 0 and data.get("profiles"):
+                    # Filter by draft class year if specified
+                    profiles = data["profiles"]
+                    if draft_year and data.get("draft_class_year"):
+                        if data["draft_class_year"] != draft_year:
+                            continue
+                    
+                    # Add draft_class_year to each prospect record
+                    file_draft_year = data.get("draft_class_year", draft_year)
+                    for profile in profiles:
+                        profile["draft_class_year"] = file_draft_year
+                    
+                    print(f"[ingestion] Loaded {len(profiles)} seed prospects from {file_path.name}")
+                    return profiles
+                    
+            except Exception as exc:
+                print(f"[ingestion] ERROR loading seed data from {file_path.name} - {type(exc).__name__}: {exc}")
+                continue
+    
+    print(f"[ingestion] No seed data found for draft year {draft_year}")
     return []
 
 

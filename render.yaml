@@ -13,6 +13,20 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
+      - key: EMAIL_USER
+        value: kjenkins3232@gmail.com
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: RECIPIENT_EMAIL
+        value: kjenkins3232@gmail.com
+        sync: false
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: PYTHON_ENV
+        value: production
     autoDeploy: true
   - type: cron
     name: daily-job
@@ -28,6 +42,20 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
+      - key: EMAIL_USER
+        value: kjenkins3232@gmail.com
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: RECIPIENT_EMAIL
+        value: kjenkins3232@gmail.com
+        sync: false
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: PYTHON_ENV
+        value: production
 
 databases:
   - name: brfantasy-db

@@ -879,7 +879,7 @@ def train_trade_value_model(
     if numeric_cols:
         numeric_transformer = Pipeline(
             steps=[
-                ("imputer", SimpleImputer(strategy="median", fill_value=0)),
+                ("imputer", SimpleImputer(strategy="median")),
                 ("scaler", StandardScaler()),
             ]
         )
@@ -1300,19 +1300,15 @@ def rewrite_value_table_with_model() -> Path:
         active_sources = [v for v in (fc_val, dp_val, eng_val) if v > 0]
 
         if len(active_sources) == 3:
-            fc_val, dp_val, eng_val = active_sources
-            
-            # Check if engine value is 15% above or below either vendor source
-            fc_vs_eng = abs(eng_val - fc_val) / max(fc_val, 1.0) if fc_val > 0 else 0
-            dp_vs_eng = abs(eng_val - dp_val) / max(dp_val, 1.0) if dp_val > 0 else 0
-            
-            if fc_vs_eng > 0.15 or dp_vs_eng > 0.15:
-                # Engine is outlier - use average of the two vendor sources
-                vendor_sources = [v for v in (fc_val, dp_val) if v > 0]
-                final_value = float(np.mean(vendor_sources))
-            else:
-                # No outlier - use average of all three sources
-                final_value = float(np.mean(active_sources))
+            v1, v2, v3 = active_sources
+            for val, others in [(v1, [v2, v3]), (v2, [v1, v3]), (v3, [v1, v2])]:
+                avg_others = (others[0] + others[1]) / 2.0
+                if avg_others > 0 and abs(val - avg_others) / avg_others > 0.15:
+                    # Outlier found — mean of all three moderates the deviant value
+                    break
+            # Mean of all three is the final value regardless; the averaging
+            # naturally dampens any outlier without discarding it.
+            final_value = float(np.mean(active_sources))
 
         elif len(active_sources) == 2:
             final_value = float(np.mean(active_sources))

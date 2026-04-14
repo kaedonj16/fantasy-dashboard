@@ -73,7 +73,53 @@ class ProspectSeasonStatsSource(RookieSource):
     # metric_name → source field name (or callable for inline computation)
     # Each entry is (field_or_callable, confidence)
     DIRECT_MAP: Dict[str, Any] = {
-        "snap_counts": ("games_played", 0.70),
+        # Use explicit eval snap counts when available; fall back to games_played.
+        "snap_counts": (lambda sr: sr.get("eval_snap_counts", sr.get("games_played")), 0.78),
+        "alignment_slot_pct": ("slot_rate", 0.88),
+        "alignment_wide_pct": ("wide_rate", 0.88),
+        "alignment_inline_pct": ("inline_rate", 0.88),
+        "contested_catch_rate": ("contested_catch_rate", 0.86),
+        "yac_per_att": ("yards_after_catch_per_reception", 0.80),
+        "mtf_per_att": (
+            lambda sr: (
+                round(float(sr.get("avoided_tackles")) / float((sr.get("rush_attempts") or 0) + (sr.get("receptions") or 0)), 3)
+                if sr.get("avoided_tackles") is not None and ((sr.get("rush_attempts") or 0) + (sr.get("receptions") or 0)) > 0
+                else None
+            ),
+            0.72,
+        ),
+        "explosive_run_rate": (
+            lambda sr: (
+                sr.get("breakaway_percentage")
+                if sr.get("breakaway_percentage") is not None
+                else (
+                    round(float(sr.get("explosive_runs_10_plus")) / float(sr.get("rush_attempts")), 3)
+                    if sr.get("explosive_runs_10_plus") is not None and sr.get("rush_attempts") not in (None, 0)
+                    else None
+                )
+            ),
+            0.78,
+        ),
+        "pass_block_snaps": (
+            lambda sr: (
+                round(float(sr.get("pass_block_rate")) * float(sr.get("eval_snap_counts") or sr.get("games_played") or 0), 1)
+                if sr.get("pass_block_rate") is not None and (sr.get("eval_snap_counts") is not None or sr.get("games_played") is not None)
+                else None
+            ),
+            0.65,
+        ),
+        "pressure_to_sack_rate": ("pressure_to_sack_rate", 0.82),
+        "adjusted_comp_pct": ("adjusted_completion_rate", 0.86),
+        "btt_rate": ("big_time_throw_rate", 0.86),
+        "big_time_throw_rate": ("big_time_throw_rate", 0.86),
+        "avg_depth_of_target": ("avg_depth_of_target", 0.84),
+        "drop_rate": ("drop_rate", 0.84),
+        "grades_offense": ("grades_offense", 0.90),
+        "grades_pass_block": ("grades_pass_block", 0.90),
+        "elusive_rating": ("elusive_rating", 0.90),
+        "pff_rushing_grade": ("pff_rushing_grade", 0.90),
+        "pff_passing_grade": ("pff_passing_grade", 0.90),
+        "nfl_passer_rating": ("nfl_passer_rating", 0.88),
     }
 
     # QB-only metrics — skipped automatically for non-QB positions in fetch_player_season_metrics
@@ -104,6 +150,32 @@ class ProspectSeasonStatsSource(RookieSource):
         "twp_rate": 0.55,
     }
 
+    # These new vendor metrics are currently populated for the latest season only
+    # (2025 in the current dataset). Restricting to the player's latest season
+    # avoids polluting older-season metric timelines with guaranteed NULL lookups.
+    _LATEST_SEASON_ONLY_METRICS = frozenset({
+        "alignment_slot_pct",
+        "alignment_wide_pct",
+        "alignment_inline_pct",
+        "contested_catch_rate",
+        "avg_depth_of_target",
+        "drop_rate",
+        "yac_per_att",
+        "mtf_per_att",
+        "explosive_run_rate",
+        "pass_block_snaps",
+        "pressure_to_sack_rate",
+        "adjusted_comp_pct",
+        "btt_rate",
+        "big_time_throw_rate",
+        "grades_offense",
+        "grades_pass_block",
+        "elusive_rating",
+        "pff_rushing_grade",
+        "pff_passing_grade",
+        "nfl_passer_rating",
+    })
+
     def fetch_player_season_metrics(
         self,
         player: Dict[str, Any],
@@ -114,8 +186,15 @@ class ProspectSeasonStatsSource(RookieSource):
         season = int(season_record.get("season") or player.get("draft_class_year") or 0)
         player_key = player.get("player_id") or player.get("name") or "unknown"
         position = (player.get("position") or "").upper()
+        latest_season = max(
+            (int(s.get("season") or 0) for s in (player.get("seasons") or []) if s.get("season") is not None),
+            default=season,
+        )
 
         for metric in requested_metrics:
+            if metric.name in self._LATEST_SEASON_ONLY_METRICS and season != latest_season:
+                continue
+
             # QB-only metrics must not be populated for other positions
             if metric.name in self._QB_ONLY_METRICS and position != "QB":
                 continue
@@ -124,9 +203,8 @@ class ProspectSeasonStatsSource(RookieSource):
             if metric.name in self.DIRECT_MAP:
                 entry = self.DIRECT_MAP[metric.name]
                 field, confidence = entry if isinstance(entry, tuple) else (entry, 0.70)
-                raw_value = season_record.get(field)
+                raw_value = field(season_record) if callable(field) else season_record.get(field)
                 if raw_value is not None:
-                    print(f"[direct_hit]  player={player_key} season={season} metric={metric.name} field={field} value={raw_value!r}")
                     out[metric.name] = base_metric_payload(
                         value=raw_value,
                         season=season,
@@ -139,7 +217,7 @@ class ProspectSeasonStatsSource(RookieSource):
                     continue
 
             # --- inline computation map ---
-            if metric.name in self._INLINE:
+            if metric.name in self._INLINE and metric.name not in out:
                 try:
                     computed = self._INLINE[metric.name](season_record)
                 except Exception:
@@ -475,14 +553,23 @@ def rookie_metric_specs() -> List[RookieMetricSpec]:
         RookieMetricSpec("alignment_wide_pct", "Sports Info Solutions"),
         RookieMetricSpec("alignment_inline_pct", "Sports Info Solutions"),
         RookieMetricSpec("contested_catch_rate", "PFF College"),
+        RookieMetricSpec("avg_depth_of_target", "PFF College"),
+        RookieMetricSpec("drop_rate", "PFF College"),
         RookieMetricSpec("yac_per_att", "PFF College"),
         RookieMetricSpec("mtf_per_att", "PFF College"),
         RookieMetricSpec("explosive_run_rate", "TruMedia"),
+        RookieMetricSpec("big_time_throw_rate", "PFF College"),
         RookieMetricSpec("pass_block_snaps", "PFF College"),
         RookieMetricSpec("pressures_allowed", "PFF College"),
         RookieMetricSpec("pressure_to_sack_rate", "PFF College"),
         RookieMetricSpec("adjusted_comp_pct", "PFF College"),
         RookieMetricSpec("btt_rate", "PFF College"),
+        RookieMetricSpec("grades_offense", "PFF College"),
+        RookieMetricSpec("grades_pass_block", "PFF College"),
+        RookieMetricSpec("elusive_rating", "PFF College"),
+        RookieMetricSpec("pff_rushing_grade", "PFF College"),
+        RookieMetricSpec("pff_passing_grade", "PFF College"),
+        RookieMetricSpec("nfl_passer_rating", "PFF College"),
         RookieMetricSpec("twp_rate", "PFF College"),
         RookieMetricSpec("epa_clean", "CFBData play-by-play"),
         RookieMetricSpec("epa_pressured", "CFBData play-by-play"),
