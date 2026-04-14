@@ -1117,21 +1117,17 @@ def rewrite_value_table_with_model() -> Path:
     print(f"[DEBUG] fc_df shape: {fc_df.shape}")
     
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
-        fc_max = fc_df["fc_value"].max()
-        print(f"[DEBUG] fc_max: {fc_max}")
-        
+        fc_values_nonzero = fc_df["fc_value"][fc_df["fc_value"] > 0]
+        fc_max = fc_values_nonzero.max()
+        fc_min = fc_values_nonzero.min()
+        fc_range = max(fc_max - fc_min, 1.0)
+
         for _, row in fc_df.iterrows():
             pid = str(row.get("sleeper_id"))
             fc_val = row.get("fc_value")
-            if pid and pd.notna(fc_val):
-                vendor_values[pid] = float(fc_val) / fc_max * 999.9
-                if 'Bucky' in str(row.get('name', '')):
-                    print(f"[DEBUG] Bucky added to vendor_values: PID {pid} -> {vendor_values[pid]:.2f}")
-        
-        print(f"[DEBUG] Total vendor_values populated: {len(vendor_values)}")
-        print(f"[DEBUG] Bucky (11584) in vendor_values: {'11584' in vendor_values}")
-        if '11584' in vendor_values:
-            print(f"[DEBUG] Bucky vendor value: {vendor_values['11584']:.2f}")
+            if pid and pd.notna(fc_val) and float(fc_val) > 0:
+                # Floor-at-100 normalization: lowest FC player → 100, highest → 999.9
+                vendor_values[pid] = (float(fc_val) - fc_min) / fc_range * 899.9 + 100.0
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
@@ -1191,6 +1187,13 @@ def rewrite_value_table_with_model() -> Path:
             dp_df_full = dp_raw
     except Exception as e:
         print(f"[ERROR] Failed to load dp_df_full: {e}")
+
+    # Pre-compute DP normalisation bounds (floor-at-100: min→100, max→999.9)
+    _dp_1qb_vals = dp_df_full["value_1qb"].dropna() if not dp_df_full.empty and "value_1qb" in dp_df_full.columns else pd.Series(dtype=float)
+    _dp_1qb_vals = _dp_1qb_vals[_dp_1qb_vals > 0]
+    DP_1QB_MIN: float = float(_dp_1qb_vals.min()) if len(_dp_1qb_vals) else 1.0
+    DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
+    DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
         dp_df_full = pd.DataFrame()
         try:
             dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
@@ -1281,9 +1284,8 @@ def rewrite_value_table_with_model() -> Path:
                 if not dp_match.empty:
                     dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
 
-        # Normalise DP to 0-999.9 (DP max ≈ 10 256)
-        DP_MAX = 10256.0
-        dp_norm = (dp_val_raw / DP_MAX * 999.9) if dp_val_raw > 0 else 0.0
+        # Normalise DP with floor-at-100 (min → 100, max → 999.9)
+        dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 899.9 + 100.0) if dp_val_raw > 0 else 0.0
 
         # Collect vendor sources (already on 0-999.9 scale).
         # DP undervalues TEs relative to market consensus (KTC/FC), so for TEs
@@ -1298,15 +1300,24 @@ def rewrite_value_table_with_model() -> Path:
         if vendor_sources:
             vendor_consensus = float(np.mean(vendor_sources))
 
-            # Optionally blend in the engine when it is close to vendor consensus
             if pid in engine_1qb_map:
                 engine_val = float(engine_1qb_map[pid])
-                deviation = abs(engine_val - vendor_consensus) / max(vendor_consensus, 1.0)
-                if deviation <= 0.12:
-                    # Engine agrees — weight it alongside vendors (lower weight)
-                    final_value = (vendor_consensus * 0.7 + engine_val * 0.3)
+
+                if engine_val > vendor_consensus:
+                    deviation = (engine_val - vendor_consensus) / max(vendor_consensus, 1.0)
+                    if deviation <= 0.12:
+                        # Engine slightly above vendors — standard vendor-weighted blend
+                        final_value = vendor_consensus * 0.7 + engine_val * 0.3
+                    elif vendor_consensus >= 600:
+                        # Engine much higher but vendors are substantial (top-tier players)
+                        # — vendor consensus wins; engine value is stale/inflated
+                        final_value = vendor_consensus
+                    else:
+                        # Engine much higher and vendors have a low value — engine
+                        # likely knows this player better; use engine as the floor
+                        final_value = engine_val
                 else:
-                    # Engine is a significant outlier — trust vendor consensus
+                    # Vendor consensus is higher than engine — trust vendors
                     final_value = vendor_consensus
             else:
                 final_value = vendor_consensus
