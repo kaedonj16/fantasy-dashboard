@@ -1268,79 +1268,55 @@ def rewrite_value_table_with_model() -> Path:
             'position': player.get('position', '')
         })
         
-        # Build vendor consensus (FC + DP) as the primary value source.
-        # The engine is used only when no vendor data is available, or to nudge
-        # the consensus when it is close (within 12%) — preventing stale engine
-        # values from overriding market consensus.
+        # Gather all three value sources on the same 0-999.9 scale:
+        #   FC (vendor), DP (vendor, non-TEs only), internal engine.
+        # Outlier rule: if any source deviates >15% from the avg of the other two,
+        # use the mean of all three — which pulls the outlier toward the centre and
+        # prevents any single inflated/stale value from dominating.
+        # When all three agree (no outlier) the mean is the final value too.
+        player_position = str(player.get("position") or "").upper()
 
-        # Gather DP value (matched by name + team since DP has no sleeper_id)
+        # Resolve DP value for this player (matched by name + team, no sleeper_id in DP)
         dp_val_raw = 0.0
         player_row = df_by_id.get(pid)
         if player_row is not None:
             p_name = str(player_row.get('name', '')).strip()
             p_team = str(player_row.get('team', '')).strip()
-            if not dp_df.empty:
+            if not dp_df_full.empty:
                 dp_match = dp_df_full[
                     (dp_df_full['player'].str.lower() == p_name.lower()) &
                     (dp_df_full['team'].str.lower() == p_team.lower())
                 ]
                 if not dp_match.empty:
                     dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
-
-        # Normalise DP with floor-at-100 (min → 100, max → 999.9)
+        # Normalise DP: floor-at-100 (min → 100, max → 999.9)
         dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 899.9 + 100.0) if dp_val_raw > 0 else 0.0
 
-        # Collect vendor sources (already on 0-999.9 scale).
-        # DP undervalues TEs relative to market consensus (KTC/FC), so for TEs
-        # use FC only. All other positions use FC + DP average.
-        player_position = str(player.get("position") or "").upper()
-        vendor_sources: list[float] = []
-        if pid in vendor_values and vendor_values[pid] > 0:
-            vendor_sources.append(vendor_values[pid])   # FC normalised
-        if dp_norm > 0 and player_position != "TE":
-            vendor_sources.append(dp_norm)
+        fc_val  = vendor_values.get(pid, 0.0)
+        # DP undervalues TEs vs market consensus; exclude for that position.
+        dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
+        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else 0.0
 
-        if vendor_sources:
-            vendor_consensus = float(np.mean(vendor_sources))
+        active_sources = [v for v in (fc_val, dp_val, eng_val) if v > 0]
 
-            if pid in engine_1qb_map:
-                engine_val = float(engine_1qb_map[pid])
+        if len(active_sources) == 3:
+            v1, v2, v3 = active_sources
+            for val, others in [(v1, [v2, v3]), (v2, [v1, v3]), (v3, [v1, v2])]:
+                avg_others = (others[0] + others[1]) / 2.0
+                if avg_others > 0 and abs(val - avg_others) / avg_others > 0.15:
+                    # Outlier found — mean of all three moderates the deviant value
+                    break
+            # Mean of all three is the final value regardless; the averaging
+            # naturally dampens any outlier without discarding it.
+            final_value = float(np.mean(active_sources))
 
-                if engine_val > vendor_consensus:
-                    deviation = (engine_val - vendor_consensus) / max(vendor_consensus, 1.0)
-                    if deviation <= 0.12:
-                        # Engine slightly above vendors — standard vendor-weighted blend
-                        final_value = vendor_consensus * 0.7 + engine_val * 0.3
-                    elif vendor_consensus >= 600:
-                        # Engine much higher but vendors are substantial (top-tier players)
-                        # — vendor consensus wins; engine value is stale/inflated
-                        final_value = vendor_consensus
-                    else:
-                        # Engine much higher and vendors have a low value — engine
-                        # likely knows this player better; use engine as the floor
-                        final_value = engine_val
-                else:
-                    # Vendor consensus is higher than engine.
-                    # For skill positions (RB/WR/TE), if the engine is more than
-                    # 30% below vendor consensus the player may be a current-season
-                    # breakout whose long-term dynasty value is overstated by market
-                    # sentiment — blend toward the engine to cap the overvaluation.
-                    if player_position in ("RB", "WR", "TE"):
-                        deviation_down = (vendor_consensus - engine_val) / max(vendor_consensus, 1.0)
-                        if deviation_down > 0.30:
-                            final_value = vendor_consensus * 0.60 + engine_val * 0.40
-                        else:
-                            final_value = vendor_consensus
-                    else:
-                        final_value = vendor_consensus
-            else:
-                final_value = vendor_consensus
+        elif len(active_sources) == 2:
+            final_value = float(np.mean(active_sources))
 
-        elif pid in engine_1qb_map:
-            # No vendor data — fall back to engine
-            final_value = float(engine_1qb_map[pid])
+        elif len(active_sources) == 1:
+            final_value = active_sources[0]
+
         else:
-            # Last resort: ML model prediction
             final_value = ml_prediction
 
         # Calculate Superflex value - use engine values as primary source
