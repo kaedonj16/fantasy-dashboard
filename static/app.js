@@ -2914,6 +2914,23 @@ document.addEventListener("DOMContentLoaded", () => {
 // Changelog Bell
 // ------------------------------------------------------------
 
+// Global function for notification dots (accessible from settings dropdown)
+function setChangelogDot(hasNew, showSettingsDot = false) {
+
+  // Always update gear dot
+  const gearDot = document.getElementById("gearDot");
+  if (gearDot) {
+    gearDot.style.display = hasNew ? "block" : "none";
+  }
+  
+  // Only show settings notification dot when explicitly requested (when settings is opened)
+  const settingsDot = document.getElementById("settingsNotifDot");
+  if (settingsDot) {
+    settingsDot.style.display = (hasNew && showSettingsDot) ? "block" : "none";
+  } else {
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const bellWrapper = document.querySelector(".changelog-bell-wrapper");
   const bellBtn = document.getElementById("changelogBell");
@@ -2924,19 +2941,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let changelogData = [];
   let isDropdownOpen = false;
-
-  // Update both bell dot and gear dot together
-  function setChangelogDot(hasNew) {
-    if (dot) {
-      if (hasNew) {
-        dot.classList.remove("changelog-dot-hidden");
-      } else {
-        dot.classList.add("changelog-dot-hidden");
-      }
-    }
-    const gearDot = document.getElementById("gearDot");
-    if (gearDot) gearDot.style.display = hasNew ? "block" : "none";
-  }
 
   // Fetch changelog and initialize
   async function initChangelog() {
@@ -2962,6 +2966,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Check if we should show the red dot
       const latestDate = changelogData[0].date;
       const lastSeen = localStorage.getItem("changelog_last_seen");
+
 
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
@@ -3026,7 +3031,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (changelogData && changelogData.length > 0) {
         const latestDate = changelogData[0].date;
         localStorage.setItem("changelog_last_seen", latestDate);
-        setChangelogDot(false);
+setChangelogDot(false);
       }
     } else {
       dropdown.style.display = "none";
@@ -3071,12 +3076,31 @@ document.addEventListener("DOMContentLoaded", () => {
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
     dropdown.style.display = isDropdownOpen ? "block" : "none";
+    
+    console.log('[settings] Dropdown toggled:', { isDropdownOpen });
+    
+    // When opening settings, show bell dot if there are new notifications
+    if (isDropdownOpen) {
+      // Check if there are new notifications by checking if gear dot is visible
+      const gearDot = document.getElementById("gearDot");
+      console.log('[settings] Gear dot element:', gearDot, 'display:', gearDot?.style.display);
+      
+      if (gearDot && gearDot.style.display !== "none") {
+        // Show bell dot in settings dropdown
+        console.log('[settings] Showing bell dot in settings');
+        setChangelogDot(true, true);
+      } else {
+        console.log('[settings] No new notifications to show in settings');
+      }
+    }
   }
 
   function closeDropdown() {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
+      // Hide settings notification dot when dropdown closes
+      setChangelogDot(true, false);
     }
   }
 
@@ -4987,7 +5011,22 @@ document.addEventListener('click', (e) => {
   const currentPage = pageShell ? (pageShell.dataset.page || '') : '';
 
   function buildLeagueUrl(page) {
-    return '/' + platform + '/' + season + '/' + leagueId + '/' + page;
+    // Extract league context from current URL
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    console.log('[tour] buildLeagueUrl called with page:', page, 'current pathname:', window.location.pathname, 'pathParts:', pathParts);
+    
+    if (pathParts.length >= 3 && !isNaN(pathParts[1])) {
+      const platform = pathParts[0];
+      const season = pathParts[1];
+      const leagueId = pathParts[2];
+      const url = '/' + platform + '/' + season + '/' + leagueId + '/' + page;
+      console.log('[tour] Generated league URL:', url);
+      return url;
+    }
+    // Fallback to just page name if no league context
+    const fallbackUrl = '/' + page;
+    console.log('[tour] Using fallback URL:', fallbackUrl, '(no league context found)');
+    return fallbackUrl;
   }
 
   // ── Tour steps ──────────────────────────────────────────────────────────
@@ -5001,6 +5040,32 @@ document.addEventListener('click', (e) => {
       page: 'dashboard', selector: '#settingsGearBtn',
       title: 'Settings & Leagues',
       body: 'Switch leagues, toggle dark mode, or view the changelog here.',
+    },
+    {
+      page: 'dashboard', selector: '#settingsDropdown',
+      title: 'Settings Menu',
+      body: 'Here you can refresh data, view notifications, switch leagues, and toggle dark mode.',
+      beforeShow: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = 'block';
+      },
+      afterLeave: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = '';
+      },
+    },
+    {
+      page: 'dashboard', selector: '#settingsChangelogBtn',
+      title: "What's New",
+      body: 'The bell shows new features and updates. A red dot means something new dropped.',
+      beforeShow: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = 'block';
+      },
+      afterLeave: function () {
+        var dd = document.getElementById('settingsDropdown');
+        if (dd) dd.style.display = '';
+      },
     },
     {
       page: 'dashboard', selector: '.nav-pills-container',
@@ -5023,33 +5088,89 @@ document.addEventListener('click', (e) => {
       page: 'dashboard', selector: 'a[href*="/weekly"]',
       title: 'Weekly Hub',
       body: 'During the season, see live scores, matchup previews, and weekly recaps here.',
-      onlyIfPresent: true,
+      onlyIfPresent: false,
     },
     {
       page: 'history', selector: '.card',
       title: 'Season History',
       body: 'Review past season awards, standings, and scoring trends for every year.',
       navigate: 'history',
+      beforeShow: function () {
+        // Create mock data for history page during tour
+        setTimeout(() => {
+          // Mock season awards
+          const awardsContainer = document.querySelector('.awards-container');
+          if (awardsContainer && !awardsContainer.querySelector('.tour-mock-data')) {
+            awardsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>2024 Season Awards</h4>
+                <div class="award-item">
+                  <span class="award-winner">🏆 Team Alpha</span>
+                  <span class="award-desc">League Champion</span>
+                </div>
+                <div class="award-item">
+                  <span class="award-winner">⭐ Player One</span>
+                  <span class="award-desc">MVP</span>
+                </div>
+                <div class="award-item">
+                  <span class="award-winner">🚀 Player Two</span>
+                  <span class="award-desc">Breakout Player</span>
+                </div>
+              </div>
+            `;
+          }
+
+          // Mock regular season standings
+          const standingsContainer = document.querySelector('.standings-container');
+          if (standingsContainer && !standingsContainer.querySelector('.tour-mock-data')) {
+            standingsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>2024 Regular Season Standings</h4>
+                <table class="standings-table">
+                  <thead>
+                    <tr><th>Team</th><th>W-L</th><th>PF</th><th>PA</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Team Alpha</td><td>12-1</td><td>2,450</td><td>1,890</td></tr>
+                    <tr><td>Team Beta</td><td>10-3</td><td>2,320</td><td>1,950</td></tr>
+                    <tr><td>Team Gamma</td><td>8-5</td><td>2,180</td><td>2,010</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            `;
+          }
+
+          // Mock season trends
+          const trendsContainer = document.querySelector('.trends-container');
+          if (trendsContainer && !trendsContainer.querySelector('.tour-mock-data')) {
+            trendsContainer.innerHTML = `
+              <div class="tour-mock-data">
+                <h4>Season Scoring Trends</h4>
+                <div class="trend-chart">
+                  <div class="trend-item">
+                    <span class="trend-label">Avg Score:</span>
+                    <span class="trend-value">142.5 pts</span>
+                  </div>
+                  <div class="trend-item">
+                    <span class="trend-label">High Score:</span>
+                    <span class="trend-value">198.2 pts</span>
+                  </div>
+                  <div class="trend-item">
+                    <span class="trend-label">Low Score:</span>
+                    <span class="trend-value">89.7 pts</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        }, 1000); // Wait for page to load
+      },
     },
     {
       page: 'graphs', selector: '.card',
       title: 'League Analytics',
       body: 'Explore PF vs PA scatter plots, weekly score lines, and a head-to-head radar chart.',
       navigate: 'graphs',
-    },
-    {
-      page: 'dashboard', selector: '#settingsChangelogBtn',
-      title: "What's New",
-      body: 'The bell shows new features and updates. A red dot means something new dropped.',
-      navigate: 'dashboard',
-      beforeShow: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = 'block';
-      },
-      afterLeave: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = '';
-      },
     },
     {
       page: 'dashboard', selector: null,
@@ -5079,9 +5200,14 @@ document.addEventListener('click', (e) => {
       }
     }
 
-    // Only auto-start on the dashboard for new users
+    // Only auto-start on the dashboard for new users with league context
     if (currentPage !== 'dashboard') return;
     if (localStorage.getItem(tourKey)) return;
+    
+    // Check if we have league context (not on demo/home page)
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
+    if (!hasLeague) return;
 
     setTimeout(function () { startTour(0); }, 800);
   }
@@ -5141,10 +5267,26 @@ document.addEventListener('click', (e) => {
           var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
           // Wait for modal to render, then move the spotlight onto it
-          setTimeout(function () {
+          // Use a longer delay and check multiple times to ensure content is fully loaded
+          var attempts = 0;
+          var maxAttempts = 5;
+          function checkAndPosition() {
+            attempts++;
             var modal = document.getElementById('playerModal');
-            if (modal) { positionOverlays(modal); placeTooltip(modal); }
-          }, 350);
+            if (modal) {
+              // Check if modal has content beyond the loading state
+              var body = document.getElementById('playerModalBody');
+              var hasContent = body && !body.querySelector('.player-modal-loading');
+              
+              if (hasContent || attempts >= maxAttempts) {
+                positionOverlays(modal); 
+                placeTooltip(modal);
+              } else {
+                setTimeout(checkAndPosition, 300);
+              }
+            }
+          }
+          setTimeout(checkAndPosition, 800);
         }, 400);
       }
     } else if (step.action === 'openTeamModal') {
@@ -5158,7 +5300,7 @@ document.addEventListener('click', (e) => {
           setTimeout(function () {
             var modal = document.getElementById('teamModal');
             if (modal) { positionOverlays(modal); placeTooltip(modal); }
-          }, 350);
+          }, 800);
         }, 400);
       }
     }
