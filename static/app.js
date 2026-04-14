@@ -5132,23 +5132,33 @@ document.addEventListener('click', (e) => {
     positionOverlays(target);
     renderTooltip(step, idx, target);
 
-    // Auto-open modals as a demo
+    // Auto-open modals as a demo, then reposition the spotlight onto the modal
     if (step.action === 'openPlayerModal') {
-      const playerEl = document.querySelector('[data-player-id]');
+      var playerEl = document.querySelector('[data-player-id]');
       if (playerEl) {
         setTimeout(function () {
-          const pid  = playerEl.dataset.playerId;
-          const pname = playerEl.dataset.playerName || playerEl.textContent.trim();
+          var pid   = playerEl.dataset.playerId;
+          var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
+          // Wait for modal to render, then move the spotlight onto it
+          setTimeout(function () {
+            var modal = document.getElementById('playerModal');
+            if (modal) { positionOverlays(modal); placeTooltip(modal); }
+          }, 350);
         }, 400);
       }
     } else if (step.action === 'openTeamModal') {
-      const teamEl = document.querySelector('.team-clickable[data-roster-id]');
+      var teamEl = document.querySelector('.team-clickable[data-roster-id]');
       if (teamEl) {
         setTimeout(function () {
-          const rid   = teamEl.dataset.rosterId;
-          const tname = teamEl.dataset.teamName || '';
+          var rid   = teamEl.dataset.rosterId;
+          var tname = teamEl.dataset.teamName || '';
           if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
+          // Wait for modal to render, then move the spotlight onto it
+          setTimeout(function () {
+            var modal = document.getElementById('teamModal');
+            if (modal) { positionOverlays(modal); placeTooltip(modal); }
+          }, 350);
         }, 400);
       }
     }

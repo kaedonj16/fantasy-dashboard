@@ -780,8 +780,9 @@ ul {
   z-index: 1000;
 }
 
-/* But make the dropdown visible when shown */
-.changelog-bell-wrapper .changelog-dropdown {
+/* But make the dropdown and notification dot visible when shown */
+.changelog-bell-wrapper .changelog-dropdown,
+.changelog-bell-wrapper .changelog-dot {
   visibility: visible;
   pointer-events: all;
 }
