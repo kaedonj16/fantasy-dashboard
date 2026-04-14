@@ -32,9 +32,28 @@ from typing import Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+import datetime
+import decimal
+import json
+
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb
+from psycopg.types.json import Jsonb, set_json_dumps
+
+
+def _json_default(obj):
+    """Handle types that stdlib json.dumps can't serialise (mirrors db.py)."""
+    if isinstance(obj, decimal.Decimal):
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, set):
+        return sorted(obj)  # sort for determinism
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serialisable")
+
+
+# Register globally so every Jsonb() call in this script uses the same encoder.
+set_json_dumps(lambda v: json.dumps(v, default=_json_default))
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +187,8 @@ ROOKIE_TABLE_NAMES = {
 
 
 def _adapt(v: Any) -> Any:
-    """Wrap dict/list values as Jsonb so psycopg3 can serialise them for JSONB columns."""
-    if isinstance(v, (dict, list)):
+    """Wrap dict/list/set values as Jsonb so psycopg3 can serialise them for JSONB columns."""
+    if isinstance(v, (dict, list, set)):
         return Jsonb(v)
     return v
 
@@ -330,6 +349,10 @@ def main() -> int:
             except Exception as exc:
                 print(f"  {table:<42} ERROR: {exc}")
                 errors.append((table, exc))
+                try:
+                    prod_conn.rollback()
+                except Exception:
+                    pass
 
     print()
     print("=" * 60)
