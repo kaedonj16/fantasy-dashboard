@@ -5819,7 +5819,6 @@ def api_refresh_league():
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
 def page_dashboard(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    print("[page_dashboard] offseason_mode=", ctx.get("offseason_mode"), "season_type=", ctx.get("season_type"))
 
     if ctx.get("offseason_mode"):
         body = build_offseason_dashboard_body(ctx)
@@ -8309,7 +8308,6 @@ def api_player_indicators():
 
                 offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=25)
                 breakouts = [str(c["player_id"]) for c in offseason_candidates]
-                print(f"[player-indicators] Offseason: Found {len(breakouts)} breakout candidates from roster changes")
 
             except Exception as e:
                 print(f"[player-indicators] Offseason breakout detection failed: {e}")
@@ -8321,7 +8319,6 @@ def api_player_indicators():
 
                 breakout_candidates = detect_breakout_candidates(lookback_days=14)
                 breakouts = [str(b["player_id"]) for b in breakout_candidates]
-                print(f"[player-indicators] Found {len(breakouts)} breakout candidates using advanced metrics")
 
             except Exception as e:
                 # Fallback to simple value-based detection (more restrictive threshold)

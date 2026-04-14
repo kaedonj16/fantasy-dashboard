@@ -3077,21 +3077,11 @@ document.addEventListener("DOMContentLoaded", () => {
     isDropdownOpen = !isDropdownOpen;
     dropdown.style.display = isDropdownOpen ? "block" : "none";
     
-    console.log('[settings] Dropdown toggled:', { isDropdownOpen });
-    
+
     // When opening settings, show bell dot if there are new notifications
     if (isDropdownOpen) {
       // Check if there are new notifications by checking if gear dot is visible
       const gearDot = document.getElementById("gearDot");
-      console.log('[settings] Gear dot element:', gearDot, 'display:', gearDot?.style.display);
-      
-      if (gearDot && gearDot.style.display !== "none") {
-        // Show bell dot in settings dropdown
-        console.log('[settings] Showing bell dot in settings');
-        setChangelogDot(true, true);
-      } else {
-        console.log('[settings] No new notifications to show in settings');
-      }
     }
   }
 
@@ -4521,8 +4511,6 @@ function openBreakoutModal(playerId, playerName) {
       return res.json();
     })
     .then(data => {
-      console.log('Breakout API response for player', playerId, ':', data);
-      console.log('Data keys before error check:', Object.keys(data));
       if (data.error) {
         document.getElementById('bkModalBody').innerHTML = `
           <div class="player-modal-loading">
@@ -5013,19 +5001,16 @@ document.addEventListener('click', (e) => {
   function buildLeagueUrl(page) {
     // Extract league context from current URL
     const pathParts = window.location.pathname.split('/').filter(Boolean);
-    console.log('[tour] buildLeagueUrl called with page:', page, 'current pathname:', window.location.pathname, 'pathParts:', pathParts);
-    
+
     if (pathParts.length >= 3 && !isNaN(pathParts[1])) {
       const platform = pathParts[0];
       const season = pathParts[1];
       const leagueId = pathParts[2];
       const url = '/' + platform + '/' + season + '/' + leagueId + '/' + page;
-      console.log('[tour] Generated league URL:', url);
       return url;
     }
     // Fallback to just page name if no league context
     const fallbackUrl = '/' + page;
-    console.log('[tour] Using fallback URL:', fallbackUrl, '(no league context found)');
     return fallbackUrl;
   }
 
