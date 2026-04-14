@@ -879,7 +879,7 @@ def train_trade_value_model(
     if numeric_cols:
         numeric_transformer = Pipeline(
             steps=[
-                ("imputer", SimpleImputer(strategy="median")),
+                ("imputer", SimpleImputer(strategy="median", fill_value=0)),
                 ("scaler", StandardScaler()),
             ]
         )

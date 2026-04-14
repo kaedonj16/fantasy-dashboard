@@ -15,8 +15,16 @@ WHERE pv1.player_id = latest.player_id
 -- Step 2: Drop the old compound primary key
 ALTER TABLE player_values DROP CONSTRAINT player_values_pkey;
 
--- Step 3: Rename date → last_updated to reflect the new semantics
-ALTER TABLE player_values RENAME COLUMN date TO last_updated;
+-- Step 3: Rename date → last_updated to reflect the new semantics (if it doesn't exist)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'player_values' AND column_name = 'last_updated'
+    ) THEN
+        ALTER TABLE player_values RENAME COLUMN date TO last_updated;
+    END IF;
+END $$;
 
 -- Step 4: New primary key on player_id only
 ALTER TABLE player_values ADD PRIMARY KEY (player_id);
