@@ -380,12 +380,17 @@ def _youth_opportunity_boost(pos: str, age: Optional[float], hist: dict, usage: 
 
     youth_factor = _clip(1.0 - (seasons / 4.0))
 
-    trend_tgt = _safe_float(hist.get("target_share_trend_1yr"), 0.0)
-    trend_ppg = _safe_float(hist.get("ppg_trend_1yr"), 0.0)
-    trend_factor = _clip(
-        0.5 * _clip((trend_tgt / 0.08 + 1.0) / 2.0) +
-        0.5 * _clip((trend_ppg / 4.0 + 1.0) / 2.0)
-    )
+    # Only compute a trend when there is a prior-year baseline to compare against.
+    # For a rookie, ppg_trend_1yr = PPG - 0 which inflates the trend_factor.
+    if seasons < 2:
+        trend_factor = 0.5  # neutral — no meaningful year-over-year comparison yet
+    else:
+        trend_tgt = _safe_float(hist.get("target_share_trend_1yr"), 0.0)
+        trend_ppg = _safe_float(hist.get("ppg_trend_1yr"), 0.0)
+        trend_factor = _clip(
+            0.5 * _clip((trend_tgt / 0.08 + 1.0) / 2.0) +
+            0.5 * _clip((trend_ppg / 4.0 + 1.0) / 2.0)
+        )
 
     draft_cap_pct = _safe_float(invest.get("draft_capital_pos_pct"), 0.0)
     if draft_cap_pct > 1.5:
@@ -396,6 +401,13 @@ def _youth_opportunity_boost(pos: str, age: Optional[float], hist: dict, usage: 
 
 
 def _trend_score(hist: dict, pos: str) -> float:
+    # A trend requires at least two seasons of data.  For rookies/first-year players
+    # ppg_trend_1yr = PPG − 0, which creates a spuriously large positive "growth"
+    # signal.  Return neutral (0.5) when no prior-year baseline exists.
+    seasons_played = _safe_float(hist.get("seasons_played"), 1.0)
+    if seasons_played < 2:
+        return 0.5
+
     ppg_trend_1yr = _safe_float(hist.get("ppg_trend_1yr"))
     ppg_trend_2yr = _safe_float(hist.get("ppg_trend_2yr"))
     target_share_trend_1yr = _safe_float(hist.get("target_share_trend_1yr"))
@@ -447,8 +459,8 @@ def _risk_penalty(
         if chronic_rate < 0.70:
             # Pattern of missing games across seasons — treat as chronic
             injury_risk = max(base_injury_risk, 0.35)
-        elif chronic_rate > 0.88 and base_injury_risk > 0.20:
-            # Good multi-year history but hurt this season — likely one-time event
+        elif chronic_rate > 0.88 and base_injury_risk < 0.20:
+            # Good multi-year history and only a minor current injury — likely one-time
             injury_risk = base_injury_risk * 0.65
         else:
             injury_risk = base_injury_risk
@@ -1090,7 +1102,10 @@ def build_value_table_for_usage(
             elif rush_yds_pg < 18:
                 base *= 0.92
 
-        confidence_multiplier = 0.82 + 0.10 * p["current_conf"] + 0.08 * p["hist_conf"]
+        # Scale base confidence by seasons of evidence: rookies start at 0.72,
+        # recovering to a full 1.0 ceiling only after 3+ seasons.
+        seasons_factor = _clip(_safe_float(p.get("seasons_played"), 1.0) / 3.0)
+        confidence_multiplier = 0.72 + 0.10 * p["current_conf"] + 0.08 * p["hist_conf"] + 0.10 * seasons_factor
         availability_multiplier = 0.84 + 0.16 * p["avail"]
 
         adjusted = base * confidence_multiplier * availability_multiplier
