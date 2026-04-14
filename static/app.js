@@ -2652,6 +2652,52 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Save viewer to localStorage on form submit so returning users can skip re-entry
+  const leagueSelectFormEl = document.getElementById("leagueSelectForm");
+  if (leagueSelectFormEl) {
+    leagueSelectFormEl.addEventListener("submit", () => {
+      const lId = leagueSelect?.value;
+      const uname = usernameInput?.value.trim();
+      const platform = formPlatform?.value || "sleeper";
+      const seasonVal = leagueSelectFormEl.querySelector('input[name="season"]')?.value;
+      if (lId && uname) {
+        localStorage.setItem("saved_viewer", JSON.stringify({
+          username: uname,
+          league_id: lId,
+          platform: platform,
+          season: seasonVal || new Date().getFullYear(),
+          ts: Date.now()
+        }));
+      }
+    });
+  }
+
+  // Show "Continue as X" CTA for returning users
+  const saved = JSON.parse(localStorage.getItem("saved_viewer") || "null");
+  if (saved?.league_id && saved?.username) {
+    const platform = saved.platform || "sleeper";
+    const season = saved.season || new Date().getFullYear();
+    const dashboardUrl = `/${platform}/${season}/${saved.league_id}/dashboard`;
+
+    const cta = document.createElement("div");
+    cta.className = "saved-viewer-cta";
+    cta.innerHTML = `
+      <div class="saved-viewer-info">
+        <span class="saved-viewer-label">Welcome back!</span>
+        <a href="${dashboardUrl}" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></a>
+      </div>
+      <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
+    `;
+
+    const homeCard = document.querySelector(".home-card");
+    if (homeCard) homeCard.insertAdjacentElement("afterbegin", cta);
+
+    cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => {
+      localStorage.removeItem("saved_viewer");
+      cta.remove();
+    });
+  }
+
   // Sleeper lookup
   if (lookupBtn) {
     lookupBtn.addEventListener("click", async () => {
@@ -2879,6 +2925,19 @@ document.addEventListener("DOMContentLoaded", () => {
   let changelogData = [];
   let isDropdownOpen = false;
 
+  // Update both bell dot and gear dot together
+  function setChangelogDot(hasNew) {
+    if (dot) {
+      if (hasNew) {
+        dot.classList.remove("changelog-dot-hidden");
+      } else {
+        dot.classList.add("changelog-dot-hidden");
+      }
+    }
+    const gearDot = document.getElementById("gearDot");
+    if (gearDot) gearDot.style.display = hasNew ? "block" : "none";
+  }
+
   // Fetch changelog and initialize
   async function initChangelog() {
     try {
@@ -2905,7 +2964,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const lastSeen = localStorage.getItem("changelog_last_seen");
 
       if (!lastSeen || latestDate > lastSeen) {
-        dot.classList.remove("changelog-dot-hidden");
+        setChangelogDot(true);
       }
 
       // Build dropdown HTML
@@ -2963,11 +3022,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isDropdownOpen) {
       dropdown.style.display = "block";
 
-      // Mark as seen
+      // Mark as seen — hide dots on both bell and gear
       if (changelogData && changelogData.length > 0) {
         const latestDate = changelogData[0].date;
         localStorage.setItem("changelog_last_seen", latestDate);
-        dot.classList.add("changelog-dot-hidden");
+        setChangelogDot(false);
       }
     } else {
       dropdown.style.display = "none";
@@ -3069,6 +3128,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.target.tagName !== 'A' && !e.target.closest('a')) {
         e.stopPropagation();
       }
+    });
+  }
+
+  // Clear saved viewer on logout so the "Continue as X" CTA doesn't reappear
+  const logoutLink = dropdown?.querySelector('a[href="/logout"]');
+  if (logoutLink) {
+    logoutLink.addEventListener("click", () => {
+      localStorage.removeItem("saved_viewer");
     });
   }
 });
@@ -4879,3 +4946,279 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+
+// ── New User Tour ──────────────────────────────────────────────────────────
+(function () {
+  'use strict';
+
+  // Determine league context from URL
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
+  if (!hasLeague) return;
+
+  const platform  = pathParts[0];
+  const season    = pathParts[1];
+  const leagueId  = pathParts[2];
+  const tourKey   = 'tour_done_' + leagueId;
+
+  // Current page from the page-shell data attribute
+  const pageShell = document.querySelector('.page-shell');
+  const currentPage = pageShell ? (pageShell.dataset.page || '') : '';
+
+  function buildLeagueUrl(page) {
+    return '/' + platform + '/' + season + '/' + leagueId + '/' + page;
+  }
+
+  // ── Tour steps ──────────────────────────────────────────────────────────
+  const TOUR_STEPS = [
+    {
+      page: 'dashboard', selector: null,
+      title: 'Welcome!',
+      body: "Let's take a 30-second tour of your dynasty dashboard.",
+    },
+    {
+      page: 'dashboard', selector: '#settingsGearBtn',
+      title: 'Settings & Leagues',
+      body: 'Switch leagues, toggle dark mode, or view the changelog here.',
+    },
+    {
+      page: 'dashboard', selector: '.nav-pills-container',
+      title: 'Navigation',
+      body: 'Jump between Dashboard, Trade Calc, Teams, Activity, Players, and more.',
+    },
+    {
+      page: 'dashboard', selector: '.player-row, .otc-player-row',
+      title: 'Player Cards',
+      body: 'Click any player to see their dynasty value, trend, and breakout score.',
+    },
+    {
+      page: 'dashboard', selector: '.team-clickable, .team-row',
+      title: 'Team Cards',
+      body: 'Click any team to see their full roster and asset values.',
+    },
+    {
+      page: 'dashboard', selector: 'a[href*="/weekly"]',
+      title: 'Weekly Hub',
+      body: 'During the season, see live scores, matchup previews, and weekly recaps here.',
+      onlyIfPresent: true,
+    },
+    {
+      page: 'history', selector: '.card',
+      title: 'Season History',
+      body: 'Review past season awards, standings, and scoring trends for every year.',
+      navigate: 'history',
+    },
+    {
+      page: 'graphs', selector: '.card',
+      title: 'League Analytics',
+      body: 'Explore PF vs PA scatter plots, weekly score lines, and a head-to-head radar chart.',
+      navigate: 'graphs',
+    },
+    {
+      page: 'dashboard', selector: '#changelogBell',
+      title: "What's New",
+      body: 'The bell shows new features and updates. A red dot means something new dropped.',
+      navigate: 'dashboard',
+    },
+    {
+      page: 'dashboard', selector: null,
+      title: "You're all set!",
+      body: 'Explore your dynasty empire. Good luck this season!',
+    },
+  ];
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let currentStep  = 0;
+  let tourActive   = false;
+  const overlays   = [];
+  let tooltipEl    = null;
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  function initTour() {
+    const params     = new URLSearchParams(window.location.search);
+    const resumeAt   = params.get('tour');
+
+    if (resumeAt !== null) {
+      // Came here via a tour navigation — clean the URL then resume
+      history.replaceState(null, '', window.location.pathname);
+      const idx = parseInt(resumeAt, 10);
+      if (!isNaN(idx)) {
+        startTour(idx);
+        return;
+      }
+    }
+
+    // Only auto-start on the dashboard for new users
+    if (currentPage !== 'dashboard') return;
+    if (localStorage.getItem(tourKey)) return;
+
+    setTimeout(function () { startTour(0); }, 800);
+  }
+
+  // ── DOM creation ─────────────────────────────────────────────────────────
+  function startTour(fromStep) {
+    tourActive   = true;
+    currentStep  = fromStep;
+    createOverlayDOM();
+    showStep(currentStep);
+  }
+
+  function createOverlayDOM() {
+    ['top', 'bottom', 'left', 'right'].forEach(function (side) {
+      const el = document.createElement('div');
+      el.className = 'tour-overlay-piece';
+      el.dataset.side = side;
+      document.body.appendChild(el);
+      overlays.push(el);
+    });
+
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'tour-tooltip';
+    document.body.appendChild(tooltipEl);
+  }
+
+  // ── Step rendering ───────────────────────────────────────────────────────
+  function showStep(idx) {
+    if (idx < 0 || idx >= TOUR_STEPS.length) { endTour(); return; }
+    const step = TOUR_STEPS[idx];
+
+    // Wrong page? Navigate there
+    if (step.page && step.page !== currentPage) {
+      window.location.href = buildLeagueUrl(step.page) + '?tour=' + idx;
+      return;
+    }
+
+    // Skip if element required but missing
+    if (step.onlyIfPresent) {
+      const el = step.selector ? document.querySelector(step.selector) : null;
+      if (!el) { advanceTour(); return; }
+    }
+
+    const target = step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target);
+    renderTooltip(step, idx, target);
+  }
+
+  function positionOverlays(target) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const PAD = 8;
+
+    if (!target) {
+      // Full-screen dim — all coverage via top piece, rest zeroed
+      overlays.forEach(function (p) {
+        if (p.dataset.side === 'top') {
+          Object.assign(p.style, { top: '0', left: '0', width: vw + 'px', height: vh + 'px' });
+        } else {
+          Object.assign(p.style, { top: '0', left: '0', width: '0', height: '0' });
+        }
+      });
+      return;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const r  = target.getBoundingClientRect();
+    const x1 = Math.max(0, r.left   - PAD);
+    const y1 = Math.max(0, r.top    - PAD);
+    const x2 = Math.min(vw, r.right  + PAD);
+    const y2 = Math.min(vh, r.bottom + PAD);
+
+    overlays.forEach(function (p) {
+      switch (p.dataset.side) {
+        case 'top':    Object.assign(p.style, { top: '0',        left: '0',       width: vw + 'px',       height: y1 + 'px'       }); break;
+        case 'bottom': Object.assign(p.style, { top: y2 + 'px',  left: '0',       width: vw + 'px',       height: (vh - y2) + 'px' }); break;
+        case 'left':   Object.assign(p.style, { top: y1 + 'px',  left: '0',       width: x1 + 'px',       height: (y2 - y1) + 'px' }); break;
+        case 'right':  Object.assign(p.style, { top: y1 + 'px',  left: x2 + 'px', width: (vw - x2) + 'px', height: (y2 - y1) + 'px' }); break;
+      }
+    });
+  }
+
+  function renderTooltip(step, idx, target) {
+    const isLast  = idx === TOUR_STEPS.length - 1;
+    const isFirst = idx === 0;
+    const count   = (idx + 1) + ' / ' + TOUR_STEPS.length;
+
+    tooltipEl.innerHTML =
+      '<div class="tour-tooltip-header">' +
+        '<span class="tour-step-count">' + count + '</span>' +
+        '<button class="tour-skip-btn" type="button">Skip tour</button>' +
+      '</div>' +
+      '<div class="tour-tooltip-title">' + step.title + '</div>' +
+      '<div class="tour-tooltip-body">'  + step.body  + '</div>' +
+      '<div class="tour-tooltip-footer">' +
+        (isFirst ? '<span></span>' : '<button class="tour-btn tour-btn-secondary" data-action="prev">Back</button>') +
+        '<button class="tour-btn tour-btn-primary" data-action="next">' + (isLast ? 'Finish' : 'Next →') + '</button>' +
+      '</div>';
+
+    // Position
+    if (!target) {
+      Object.assign(tooltipEl.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)', display: 'block' });
+    } else {
+      placeTooltip(target);
+      tooltipEl.style.display = 'block';
+    }
+
+    tooltipEl.querySelector('[data-action="next"]').addEventListener('click', advanceTour);
+    const prevBtn = tooltipEl.querySelector('[data-action="prev"]');
+    if (prevBtn) prevBtn.addEventListener('click', function () { currentStep--; showStep(currentStep); });
+    tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', endTour);
+  }
+
+  function placeTooltip(target) {
+    const TW   = 300;
+    const TH   = 180; // estimate
+    const PAD  = 12;
+    const vw   = window.innerWidth;
+    const vh   = window.innerHeight;
+    const r    = target.getBoundingClientRect();
+
+    let top  = r.bottom + PAD;
+    if (top + TH > vh) top = Math.max(PAD, r.top - PAD - TH);
+
+    let left = r.left + r.width / 2 - TW / 2;
+    left = Math.max(PAD, Math.min(left, vw - TW - PAD));
+
+    Object.assign(tooltipEl.style, {
+      top: top + 'px',
+      left: left + 'px',
+      transform: '',
+    });
+  }
+
+  // ── Navigation ───────────────────────────────────────────────────────────
+  function advanceTour() {
+    const nextIdx  = currentStep + 1;
+    if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
+    const nextStep = TOUR_STEPS[nextIdx];
+
+    if (nextStep.navigate && nextStep.page !== currentPage) {
+      window.location.href = buildLeagueUrl(nextStep.page) + '?tour=' + nextIdx;
+      return;
+    }
+    currentStep = nextIdx;
+    showStep(currentStep);
+  }
+
+  function endTour() {
+    localStorage.setItem(tourKey, '1');
+    removeTourDOM();
+    tourActive = false;
+  }
+
+  function removeTourDOM() {
+    overlays.forEach(function (p) { p.remove(); });
+    overlays.length = 0;
+    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+  }
+
+  // Reposition on resize
+  window.addEventListener('resize', function () {
+    if (!tourActive) return;
+    const step   = TOUR_STEPS[currentStep];
+    const target = step && step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target);
+    if (tooltipEl && target) placeTooltip(target);
+  });
+
+  document.addEventListener('DOMContentLoaded', initTour);
+}());

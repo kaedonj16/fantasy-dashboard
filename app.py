@@ -832,6 +832,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "          aria-label='Settings' title='Settings'>"
         "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
         "  </button>"
+        "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
         f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
         f"    {settings_content}"
         "  </div>"
@@ -1012,6 +1013,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "          aria-label='Settings' title='Settings'>"
             "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
             "  </button>"
+            "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
             f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
             f"    {settings_content}"
             "  </div>"
@@ -5896,8 +5898,93 @@ def page_activity(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Activity", league_id, "activity", body, platform, season)
 
 
+# ── Tour mock data helpers ─────────────────────────────────────────────────
+
+_TOUR_MOCK_TEAMS = [
+    "Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
+    "Redzone Rebels", "Endzone Elite", "Pocket Protectors",
+]
+
+def _build_tour_mock_df_weekly() -> pd.DataFrame:
+    """Seeded, deterministic weekly scores for 6 mock teams over 13 weeks."""
+    import random as _rand
+    rng = _rand.Random(42)
+    rows = []
+    for week in range(1, 14):
+        pairs = [(0, 1), (2, 3), (4, 5)] if week % 2 == 0 else [(0, 2), (1, 4), (3, 5)]
+        for mid, (a, b) in enumerate(pairs, start=week * 10):
+            rows += [
+                {
+                    "week": week, "matchup_id": mid,
+                    "owner": _TOUR_MOCK_TEAMS[a],
+                    "points": round(rng.gauss(98, 12), 2),
+                    "finalized": True,
+                },
+                {
+                    "week": week, "matchup_id": mid,
+                    "owner": _TOUR_MOCK_TEAMS[b],
+                    "points": round(rng.gauss(95, 11), 2),
+                    "finalized": True,
+                },
+            ]
+    return pd.DataFrame(rows)
+
+
+def _build_tour_mock_graphs_ctx() -> dict:
+    """Minimal ctx for build_graphs_body with pre-computed team_stats."""
+    df = _build_tour_mock_df_weekly()
+    mock_league: dict = {"settings": {"playoff_week_start": 14}}
+    team_stats = build_regular_season_team_stats(df, mock_league)
+    team_stats = sort_team_stats(team_stats)
+
+    if not team_stats.empty and "PF" in team_stats.columns:
+        pf_z = (team_stats["PF"] - team_stats["PF"].mean()) / max(float(team_stats["PF"].std()), 1.0)
+        win_z = (team_stats["Win%"] - team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
+        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean()) / max(float(team_stats["AVG"].std()), 1.0)
+        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
+        # Z-score columns required by z_better_outward
+        for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
+            zc = f"Z_{col}"
+            if col in team_stats.columns:
+                col_vals = team_stats[col]
+                std_val = float(col_vals.std())
+                team_stats[zc] = (col_vals - col_vals.mean()) / max(std_val, 1.0)
+
+    return {"team_stats": team_stats, "df_weekly": df}
+
+
+def _build_tour_mock_history_ctx() -> dict:
+    """Minimal history context for build_history_body."""
+    df = _build_tour_mock_df_weekly()
+    return {
+        "platform": "sleeper",
+        "season": 2024,
+        "league_id": "tour_mock",
+        "resolved_league_id": "tour_mock",
+        "league": {
+            "name": "Demo League",
+            "league_id": "tour_mock",
+            "settings": {"playoff_week_start": 14},
+        },
+        "df_weekly": df,
+        "roster_map": {},
+        "users": {},
+        "rosters": [],
+        "offseason_mode": False,
+    }
+
+
 @app.route("/<platform>/<int:season>/<league_id>/graphs")
 def page_graphs(platform: str, season: int, league_id: str):
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = _build_tour_mock_graphs_ctx()
+            body_html = build_graphs_body(mock_ctx)
+        except Exception as exc:
+            body_html = f"<div class='card central'><div class='card-body'><p>Graphs preview unavailable: {exc}</p></div></div>"
+        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
     cached = get_page_html_from_cache(platform, season, league_id, "graphs")
     if cached:
         return render_page("BR Fantasy Graphs", league_id, "graphs", cached, platform, season)
@@ -6823,6 +6910,23 @@ def page_teams(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/history")
 def page_history(platform: str, season: int, league_id: str):
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = _build_tour_mock_history_ctx()
+            body_html = build_history_body(
+                history_ctx=mock_ctx,
+                available_seasons=[2024],
+                base_platform=platform,
+                base_season=season,
+                base_league_id=league_id,
+                selected_history_season=2024,
+                resolved_history_league_id="tour_mock",
+            )
+        except Exception as exc:
+            body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
+        return render_page("League History", league_id, "history", body_html, platform, season)
+
     available_seasons = get_available_history_seasons(platform, league_id, season)
 
     # Handle first-year league case
