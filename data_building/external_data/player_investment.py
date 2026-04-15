@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from cache.paths import PLAYER_INVESTMENT_DIR
+from utils.paths import PLAYER_INVESTMENT_DIR
 from utils.utils import normalize_name, load_players_index
 
 REQUEST_HEADERS = {
