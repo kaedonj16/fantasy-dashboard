@@ -242,7 +242,7 @@ def _load_cfbd_college_stats(
     Gracefully returns {} if CFBD_API_KEY is not set or the API is unreachable.
     """
     print(f"[backtest]   Fetching CFBD college stats for {draft_year} class…")
-    cfbd_raw = fetch_cfbd_college_stats(draft_year)
+    cfbd_raw = fetch_cfbd_college_stats(draft_year, skip_sagarin=True)
     if not cfbd_raw:
         print("[backtest]   CFBD returned no data (key missing or API unreachable)")
         return {}
@@ -399,7 +399,7 @@ def _run_draft_class_backtest(
           f"({'full model' if n_with_stats > 0 else 'draft capital + athleticism only'})")
 
     print(f"[backtest]   Scoring {len(prospects)} prospects…")
-    scores = score_all_prospects(prospects, consensus_map)
+    scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
 
     # Build lookup maps
     p_by_id  = {p["player_id"]: p for p in prospects}

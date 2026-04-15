@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from data_building.paths import DATA_DIR
+from utils.paths import DATA_DIR
 
 
 def _json_default(obj):

@@ -3201,7 +3201,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
 
         top_waiver_assets.append({
-            "name": row.get("name", "Unknown"),
+            "name": row.get("name") or players_index.get(pid, {}).get("name", "Unknown"),
             "position": pos,
             "team": row.get("team") or "",
             "value": val,
@@ -7430,7 +7430,14 @@ def maybe_run_daily():
                 season = int(state.get("season") or datetime.now().year)
                 week = int(state.get("week") or 0)
 
-                run_daily_data_async(season, week)
+                # Run in background thread
+                daily_thread = threading.Thread(
+                    target=run_daily_data_async,
+                    args=(season, week),
+                    daemon=True
+                )
+                daily_thread.start()
+                
                 daily_completed = today_et
         finally:
             daily_lock.release()
@@ -8087,6 +8094,39 @@ def _sanitize_for_json(obj):
     return obj
 
 
+@app.route("/api/players")
+def api_players():
+    """Compact player list for comparison search. No league context required."""
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        players_index = load_players_index() or {}
+        value_table = load_model_value_table() or []
+        value_map = {str(p.get("id")): p for p in value_table}
+
+        results = []
+        for pid, meta in players_index.items():
+            pos = meta.get("pos", "")
+            if pos in ("K", "DEF"):
+                continue
+            v = value_map.get(str(pid), {})
+            results.append({
+                "player_id": pid,
+                "name": meta.get("name", ""),
+                "position": pos,
+                "team": meta.get("team", ""),
+                "value": v.get("value", 0),
+                "sf_value": v.get("sf_value", 0),
+                "pos_rank_label": v.get("pos_rank_label", ""),
+                "espnHeadshot": meta.get("espnHeadshot", ""),
+            })
+
+        # Sort by value descending so most relevant players appear first
+        results.sort(key=lambda x: x["value"] or 0, reverse=True)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/league-players")
 def api_league_players():
     model_value_table = list(load_model_value_table() or [])
@@ -8455,6 +8495,18 @@ def api_breakout_candidates():
         return jsonify([])
 
 
+@app.route("/api/nfl-state")
+def api_nfl_state():
+    """Get current NFL state from Sleeper API."""
+    try:
+        from dashboard_services.api import get_nfl_state
+        state = get_nfl_state()
+        return jsonify(state or {})
+    except Exception as e:
+        print(f"[nfl-state] Error: {e}")
+        return jsonify({}), 500
+
+
 @app.route("/api/player-advanced-metrics/<player_id>")
 def api_player_advanced_metrics(player_id: str):
     """
@@ -8483,6 +8535,7 @@ def api_player_advanced_metrics(player_id: str):
         from data_building.advanced_metrics import (
             get_player_metrics,
             get_player_metrics_by_season,
+            get_player_career_metrics,
             get_available_seasons_for_player,
         )
 
@@ -8493,7 +8546,9 @@ def api_player_advanced_metrics(player_id: str):
 
         # Parse requested season from query param
         requested_season = request.args.get("season")
-        if requested_season:
+        is_career_request = requested_season == "career" or requested_season is None
+        
+        if requested_season and requested_season != "career":
             try:
                 requested_season = int(requested_season)
             except (ValueError, TypeError):
@@ -8512,11 +8567,27 @@ def api_player_advanced_metrics(player_id: str):
         else:
             target_season = nfl_season
 
-        # Fetch metrics for the target season (or fall back to latest row)
-        if available_seasons:
+        # Fetch metrics
+        if is_career_request:
+            # Career mode - aggregate across all seasons
+            metrics = get_player_career_metrics(str(player_id))
+            target_season = None
+        elif requested_season:
+            # Specific season requested
+            metrics = get_player_metrics_by_season(str(player_id), requested_season)
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            # Current season (in-season)
+            metrics = get_player_metrics_by_season(str(player_id), nfl_season)
+            target_season = nfl_season
+        elif available_seasons:
+            # Most recent season with data
+            target_season = available_seasons[0]
             metrics = get_player_metrics_by_season(str(player_id), target_season)
         else:
+            # Fallback to latest
             metrics = get_player_metrics(str(player_id))
+            target_season = None
 
         if not metrics:
             return jsonify({

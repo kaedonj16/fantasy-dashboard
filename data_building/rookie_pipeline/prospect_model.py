@@ -135,6 +135,16 @@ CONF_QUALITY: Dict[str, float] = {
 DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Sagarin team-caliber dominator adjustment
+# Applied multiplicatively to the WR/TE pass-share metric.
+# Alabama 2020 (predictor ~99) → +6.47% cap.
+# Non-D1 / unrated           → -9.3% floor.
+# ─────────────────────────────────────────────────────────────────────────────
+_SAGARIN_FBS_AVG = 75.0           # approximate mean Sagarin predictor for FBS teams
+_SAGARIN_SCALE   = 0.0647 / 24.0  # ≈ 0.00270 per rating point above avg
+                                   # (99 − 75) × 0.00270 = 0.0648 → capped at +6.47%
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Scheme-inflation penalties
 # High-volume / spread systems where college WR stats are poor NFL predictors.
 # Applied as a multiplier to production AND efficiency scores for WRs only.
@@ -163,11 +173,35 @@ def _conf_quality(conference: Optional[str]) -> float:
     return DEFAULT_CONF_QUALITY
 
 
+def _sagarin_dom_adj(rating: Optional[float], conference: Optional[str] = None) -> float:
+    """
+    Convert a Sagarin CFB predictor rating into a multiplicative dominator
+    adjustment for WR/TE pass-share scoring.
+
+    Bounds (user-calibrated):
+        None + FCS/non-D1 conference → -9.3%  floor
+        None + FBS conference        →  0.0%  neutral (Sagarin fetch failed)
+        FBS average (~75)            →  0.0%
+        Alabama 2020 (~99)           → +6.47% cap
+
+    The conference-aware fallback prevents historical backtest years from
+    incorrectly penalising every FBS player when the Sagarin page for that
+    season year is unavailable.  _conf_quality() returns 0.48 for FCS and
+    higher for all FBS conferences, so 0.50 is a clean dividing line.
+    """
+    if rating is None:
+        if _conf_quality(conference) >= 0.50:
+            return 0.0    # FBS team — Sagarin unavailable, apply no adjustment
+        return -0.093     # Confirmed FCS / non-D1
+    raw = (rating - _SAGARIN_FBS_AVG) * _SAGARIN_SCALE
+    return max(-0.093, min(0.0647, raw))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_production_season(season: Dict, pos: str) -> float:
+def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False) -> float:
     """
     Compute the raw production score (pre-transfer-penalty) for a single season.
     Returns the weighted component score (0-100).
@@ -175,15 +209,28 @@ def _score_production_season(season: Dict, pos: str) -> float:
     gp = max(_safe(season.get("games_played"), 12), 1)
 
     if pos == "WR":
-        rec_yds_pg = _safe(season.get("receiving_yards")) / gp
-        rec_tds_pg = _safe(season.get("receiving_tds"))   / gp
-        dom        = _safe(season.get("dominator_rating"))
+        rec_yds_pg    = _safe(season.get("receiving_yards")) / gp
+        rec_tds_pg    = _safe(season.get("receiving_tds"))   / gp
+        dom           = _safe(season.get("dominator_rating"))
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
+        team_pass_yds = _safe(season.get("team_pass_yards"))
+        sag_adj       = 0.0 if skip_sagarin else _sagarin_dom_adj(
+                            season.get("sagarin_team_rating"), season.get("conference"))
+
+        # Pass-share dominator: rec yards as % of team passing yards, adjusted
+        # for team caliber via Sagarin predictor rating.
+        # Falls back to legacy total-offense dominator if team_pass_yards absent.
+        if team_pass_yds > 0:
+            pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
+            dom_score  = _scale(pass_share, 0.08, 0.35)
+        else:
+            dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
+
         prod = (
             _scale(rec_yds_pg, 35,  110) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
-            _scale(dom,        0.08, 0.40) * 0.30
+            dom_score                      * 0.30
         )
         # Red zone proxy: TDs per 100 receiving yards — rewards goal-line separators
         if total_rec_yds >= 200:
@@ -269,19 +316,31 @@ def _score_production_season(season: Dict, pos: str) -> float:
         rec_pg        = _safe(season.get("receptions"))       / gp
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
+        team_pass_yds = _safe(season.get("team_pass_yards"))
+        sag_adj       = 0.0 if skip_sagarin else _sagarin_dom_adj(
+                            season.get("sagarin_team_rating"), season.get("conference"))
+
+        # Pass-share dominator for TEs — same logic as WR, narrower scale
+        # (TEs command a smaller share of passing yards than WRs).
+        if team_pass_yds > 0:
+            pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
+            dom_score  = _scale(pass_share, 0.04, 0.22)
+        else:
+            dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.20)
+
         prod = (
-            _scale(rec_yds_pg, 20,  75)  * 0.35 +  # Lowered thresholds for higher scores
-            _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +  # Lowered thresholds for higher scores
-            _scale(dom,        0.05, 0.20) * 0.20 +  # Lowered thresholds for higher scores
-            _scale(rec_pg,     1.0,  5.0) * 0.15   # Lowered reception thresholds
+            _scale(rec_yds_pg, 20,  75)  * 0.35 +
+            _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +
+            dom_score                      * 0.20 +
+            _scale(rec_pg,     1.0,  5.0) * 0.15
         )
         # Red zone proxy: TE goal-line usage is extremely valuable in NFL
-        if total_rec_yds >= 200:  # Increased requirement from 150 to 200 yards
+        if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100
-            if rz_rate >= 10.0:  # Increased TD rate requirement from 9.0 to 10.0
-                prod = _clip(prod * 1.05)  # Reduced bonus from 7% to 5%
-            elif rz_rate >= 7.0:  # Increased from 6.0 to 7.0
-                prod = _clip(prod * 1.02)  # Reduced bonus from 4% to 2%
+            if rz_rate >= 10.0:
+                prod = _clip(prod * 1.05)
+            elif rz_rate >= 7.0:
+                prod = _clip(prod * 1.02)
         return prod
 
     return 52.0
@@ -325,6 +384,7 @@ def calc_production_score(
     seasons: List[Dict],
     position: str,
     eval_metrics: Optional[Dict] = None,
+    skip_sagarin: bool = False,
 ) -> float:
     """
     Per-game production vs position-specific elite thresholds.
@@ -384,17 +444,17 @@ def calc_production_score(
 
     # With only one season there is nothing to blend — just score it directly.
     if len(seasons) == 1:
-        return _clip(_score_production_season(ls, pos) * transfer_penalty)
+        return _clip(_score_production_season(ls, pos, skip_sagarin) * transfer_penalty)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
-    latest_score = _score_production_season(ls, pos)
+    latest_score = _score_production_season(ls, pos, skip_sagarin)
 
     # Find best season by primary volume metric per position
     _PEAK_KEY = {"WR": "receiving_yards", "RB": "rush_yards", "QB": "pass_yards", "TE": "receiving_yards"}
     peak_key = _PEAK_KEY[pos]
     peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
-    best_score = _score_production_season(peak_season, pos)
+    best_score = _score_production_season(peak_season, pos, skip_sagarin)
 
     # 85% weight on whichever is higher (recent or peak), 15% on the other
     prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
@@ -951,31 +1011,38 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
     """
     Adjusts for team usage patterns.
 
-    - High pass rate for skill players (WR/TE) is better context (more targets)
-    - For RBs, high rush rate inflates volume — slight discount applied
-    - Uses a recency-weighted average of team pass rate across all seasons
-      (same decay as competition score) so transferred players aren't locked
-      to their latest team's scheme.
+    - WR/TE: yards-based pass share (team_pass_yards / team_total_yards).
+      Captures how much of the offense's actual production came through the air,
+      not just how often they called pass plays. Falls back to attempt-based
+      team_pass_rate when yard totals are unavailable.
+    - For RBs, high rush rate inflates volume — slight discount applied.
+    - Uses a recency-weighted average across all seasons so transferred players
+      aren't locked to their latest team's scheme.
     """
     if not seasons:
         return 50.0
 
     pos = position.upper()
 
-    # Recency-weighted pass rate: most recent season weight 1.0, decaying by 0.2
+    # Recency-weighted pass share: most recent season weight 1.0, decaying by 0.2
     sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0), reverse=True)
     weighted_sum = 0.0
     total_weight = 0.0
     for i, s in enumerate(sorted_seasons):
-        pr = _safe(s.get("team_pass_rate"), 0.52)
+        team_pass_yds  = _safe(s.get("team_pass_yards"))
+        team_total_yds = _safe(s.get("team_total_yards"))
+        if team_pass_yds > 0 and team_total_yds > 0:
+            pr = team_pass_yds / team_total_yds   # yards-based pass share
+        else:
+            pr = _safe(s.get("team_pass_rate"), 0.55)  # fallback: attempt-based rate
         w  = max(0.2, 1.0 - i * 0.2)
         weighted_sum += pr * w
         total_weight += w
-    pass_rate = weighted_sum / total_weight if total_weight > 0 else 0.52
+    pass_rate = weighted_sum / total_weight if total_weight > 0 else 0.55
 
     if pos in ("WR", "TE"):
-        # More passing = more opportunities; 55-65% pass rate is ideal
-        base = _scale(pass_rate, 0.42, 0.68)
+        # Yards-based pass share: 40% = run-heavy floor, 72% = Air Raid ceiling
+        base = _scale(pass_rate, 0.40, 0.72)
     elif pos == "RB":
         # RBs benefit from balanced / run-heavy but it's easier to produce in bad offences
         # Slight penalty for very pass-heavy (≥65%) teams since it reduces rush attempts
@@ -1431,6 +1498,7 @@ def calc_interaction_features(production_score: float, efficiency_score: float,
 def score_prospect(
     prospect: Dict[str, Any],
     draft_capital: Optional[Dict[str, Any]] = None,
+    skip_sagarin: bool = False,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -1453,7 +1521,8 @@ def score_prospect(
     # the evaluation pipeline has run first.  Shape: {metric_name: metric_payload}.
     eval_metrics: Optional[Dict] = prospect.get("_eval_metrics") or None
 
-    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics)
+    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics,
+                                                skip_sagarin=skip_sagarin)
     
     # Apply loaded roster adjustment for players on talent-rich teams
     ls = _latest_season(seasons) or {}
@@ -1736,6 +1805,136 @@ def _build_reasons(
     elif eff <= 35:
         bullets.append("Below-average efficiency — volume stats may overstate true impact")
 
+    # ── Advanced metrics ──────────────────────────────────────────────────────
+    if pos in ("WR", "TE"):
+        adv: List[str] = []
+
+        ccr = ls.get("contested_catch_rate")
+        if ccr is not None:
+            pct = float(ccr)
+            if pct >= 80:
+                adv.append(f"{pct:.0f}% contested catch rate — elite ball-winner in traffic")
+            elif pct >= 65:
+                adv.append(f"{pct:.0f}% contested catch rate — reliable in contested situations")
+            elif pct < 40:
+                adv.append(f"{pct:.0f}% contested catch rate — struggles in jump-ball situations")
+
+        dr = ls.get("drop_rate")
+        if dr is not None:
+            dpct = float(dr)
+            if dpct <= 3.0:
+                adv.append(f"{dpct:.1f}% drop rate — elite ball security")
+            elif dpct >= 10.0:
+                adv.append(f"{dpct:.0f}% drop rate — ball security concern")
+
+        yac = ls.get("yards_after_catch_per_reception")
+        if yac is not None:
+            yac = float(yac)
+            thresh     = 5.5 if pos == "WR" else 4.0
+            low_thresh = 2.5 if pos == "WR" else 1.8
+            if yac >= thresh:
+                adv.append(f"{yac:.1f} YAC/reception — dynamic after the catch")
+            elif yac <= low_thresh:
+                adv.append(f"{yac:.1f} YAC/reception — limited after-catch production")
+
+        adot = ls.get("avg_depth_of_target")
+        if adot is not None and pos == "WR":
+            adot = float(adot)
+            if adot >= 14.0:
+                adv.append(f"{adot:.1f}-yd avg depth of target — true deep threat")
+            elif adot <= 6.0:
+                adv.append(f"{adot:.1f}-yd aDOT — short-area route specialist")
+
+        pff_off = ls.get("grades_offense")
+        if pff_off is not None:
+            pff_off = float(pff_off)
+            if pff_off >= 85.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — elite overall grade")
+            elif pff_off >= 75.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — above-average")
+
+        if pos == "WR":
+            sr = ls.get("slot_rate")
+            if sr is not None and float(sr) >= 0.65:
+                adv.append(f"{float(sr)*100:.0f}% slot rate — primary slot receiver")
+
+        if pos == "TE":
+            ir = ls.get("inline_rate")
+            if ir is not None:
+                ir = float(ir)
+                if ir >= 0.60:
+                    adv.append(f"{ir*100:.0f}% inline rate — traditional in-line TE")
+                elif ir <= 0.20:
+                    adv.append(f"{ir*100:.0f}% inline rate — move TE / receives in space")
+
+        bullets.extend(adv[:3])
+
+    elif pos == "RB":
+        adv = []
+
+        pff_off = ls.get("grades_offense")
+        if pff_off is not None:
+            pff_off = float(pff_off)
+            if pff_off >= 80.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — elite overall grade")
+            elif pff_off >= 70.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — above-average")
+
+        elusive = ls.get("elusive_rating")
+        if elusive is not None:
+            elusive = float(elusive)
+            if elusive >= 90.0:
+                adv.append(f"Elusive rating {elusive:.1f} — exceptional open-field threat")
+            elif elusive >= 70.0:
+                adv.append(f"Elusive rating {elusive:.1f} — above-average evasion ability")
+
+        bp = ls.get("breakaway_percentage")
+        if bp is not None:
+            bpct = float(bp) * 100
+            if bpct >= 18.0:
+                adv.append(f"{bpct:.0f}% breakaway run rate — consistent big-play threat")
+            elif bpct >= 12.0:
+                adv.append(f"{bpct:.0f}% breakaway run rate — shows explosive burst")
+
+        bullets.extend(adv[:3])
+
+    elif pos == "QB":
+        adv = []
+
+        pff_pass = ls.get("pff_passing_grade")
+        if pff_pass is not None:
+            pff_pass = float(pff_pass)
+            if pff_pass >= 85.0:
+                adv.append(f"PFF passing grade {pff_pass:.1f} — elite passer grade")
+            elif pff_pass >= 75.0:
+                adv.append(f"PFF passing grade {pff_pass:.1f} — above-average")
+
+        acr = ls.get("adjusted_completion_rate")
+        if acr is not None:
+            apct = float(acr) * 100
+            if apct >= 75.0:
+                adv.append(f"{apct:.0f}% adjusted completion rate — highly accurate")
+            elif apct <= 58.0:
+                adv.append(f"{apct:.0f}% adjusted completion rate — accuracy concern")
+
+        btt = ls.get("big_time_throw_rate")
+        if btt is not None:
+            bpct = float(btt) * 100
+            if bpct >= 8.0:
+                adv.append(f"{bpct:.1f}% big-time throw rate — attacks deep coverage effectively")
+            elif bpct >= 5.0:
+                adv.append(f"{bpct:.1f}% big-time throw rate — willing to push ball downfield")
+
+        adot = ls.get("avg_depth_of_target")
+        if adot is not None:
+            adot = float(adot)
+            if adot >= 10.0:
+                adv.append(f"{adot:.1f}-yd avg depth of target — attacks full field vertically")
+            elif adot <= 6.0:
+                adv.append(f"{adot:.1f}-yd aDOT — relies heavily on short/underneath game")
+
+        bullets.extend(adv[:3])
+
     # ── Dominator rating ──────────────────────────────────────────────────────
     dom = _safe(ls.get("dominator_rating"))
     if dom >= 0.35 and pos in ("WR", "RB"):
@@ -1838,6 +2037,7 @@ def _build_reasons(
 def score_all_prospects(
     prospects: List[Dict[str, Any]],
     consensus_map: Optional[Dict[str, Dict]] = None,
+    skip_sagarin: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
@@ -1855,7 +2055,7 @@ def score_all_prospects(
     scores = []
     for p in prospects:
         dc = consensus_map.get(p["player_id"])
-        scores.append(score_prospect(p, dc))
+        scores.append(score_prospect(p, dc, skip_sagarin=skip_sagarin))
 
     # Sort overall
     scores.sort(key=lambda x: x["prospect_score"], reverse=True)

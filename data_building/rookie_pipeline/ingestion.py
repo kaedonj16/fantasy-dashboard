@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from utils.utils import normalize_name
+from .sagarin import get_team_rating as _sagarin_get_team_rating
 
 # Suppress urllib3 SSL warning for LibreSSL compatibility
 warnings.filterwarnings('ignore', message='.*urllib3 v2 only supports OpenSSL.*')
@@ -486,7 +487,7 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
 
 
 def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
-                       games: Optional[int]) -> Dict:
+                       games: Optional[int], skip_sagarin: bool = False) -> Dict:
     """Fold CFBD stat rows for one player-season into a single normalized dict."""
     row: Dict[str, Any] = {
         "season": season, "games_played": games,
@@ -568,6 +569,9 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     row["team_total_yards"]   = _safe_int(t_yds)
     row["team_total_tds"]     = _safe_int(t_tds)
     row["team_pass_rate"]     = ts.get("pass_rate")
+    row["team_pass_yards"]    = int(ts.get("netPassingYards") or 0)
+    row["sagarin_team_rating"] = (None if skip_sagarin
+                                  else _sagarin_get_team_rating(team_name, season))
 
     dom = 0.0
     if t_yds > 0: dom += (p_yds / t_yds) * 0.65
@@ -666,6 +670,7 @@ CFBD_NAME_MAPPINGS = {
 def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
+    skip_sagarin: bool = False,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -775,9 +780,8 @@ def fetch_cfbd_college_stats(
                         continue
                     try:
                         gp = (games_played_map.get(name) or {}).get(yr)
-                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp))
-                        # print(name)
-                        # print(seasons)
+                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp,
+                                                          skip_sagarin=skip_sagarin))
                     except Exception as exc:
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
                 if seasons:
@@ -1180,7 +1184,8 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
                     "dominator_rating", "market_share_yards", "market_share_tds",
                     "yds_per_carry", "yds_per_reception", "yds_per_attempt",
                     "completion_pct", "td_int_ratio", "team_pass_rate",
-                    "team_total_yards", "team_total_tds", "team", "conference"):
+                    "team_total_yards", "team_total_tds", "team", "conference",
+                    "team_pass_yards", "sagarin_team_rating"):
             s.setdefault(fld, None)
 
     return p

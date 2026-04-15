@@ -804,6 +804,82 @@ def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[s
         return dict(row) if row else None
 
 
+def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve career-advanced metrics aggregated across all seasons for a player.
+    
+    Args:
+        player_id: Sleeper player ID
+        
+    Returns:
+        Dict with aggregated career metrics or None if not found
+    """
+    with get_conn() as conn:
+        # Get all metrics for this player across all seasons
+        rows = conn.execute("""
+            SELECT * FROM player_advanced_metrics
+            WHERE player_id = %s
+            ORDER BY as_of_date DESC
+        """, (player_id,)).fetchall()
+        
+        if not rows:
+            return None
+            
+        # Convert to list of dicts
+        metrics_list = [dict(row) for row in rows]
+        
+        # Get the most recent position and season info
+        latest = metrics_list[0]
+        position = latest.get('position')
+        
+        # Initialize aggregated metrics
+        aggregated = {
+            'player_id': player_id,
+            'position': position,
+            'season': None,  # Career mode
+            'as_of_date': latest.get('as_of_date'),  # Use latest date
+        }
+        
+        # Define numeric metrics to aggregate
+        numeric_metrics = [
+            'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+            'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
+            'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
+            'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+            'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
+            'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
+            'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
+            'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
+            'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
+            'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
+            'nfl_passer_rating'
+        ]
+        
+        # Aggregate metrics using weighted average (more recent seasons weighted more)
+        total_weight = 0
+        for i, metrics in enumerate(metrics_list):
+            # Weight decreases with age (recent seasons get higher weight)
+            weight = 1.0 / (i + 1)
+            total_weight += weight
+            
+            for metric in numeric_metrics:
+                value = metrics.get(metric)
+                if value is not None:
+                    if metric not in aggregated:
+                        aggregated[metric] = 0
+                    # Convert Decimal to float for multiplication
+                    float_value = float(value)
+                    aggregated[metric] += float_value * weight
+        
+        # Normalize by total weight
+        if total_weight > 0:
+            for metric in numeric_metrics:
+                if metric in aggregated:
+                    aggregated[metric] = aggregated[metric] / total_weight
+        
+        return aggregated
+
+
 def get_available_seasons_for_player(player_id: str) -> List[int]:
     """
     Return a list of seasons (descending) for which metrics exist for this player.

@@ -1075,7 +1075,8 @@ window.initTradePage = function initTradePage(root = document) {
           metaParts.push(c.position);
         }
         if (c.team) metaParts.push(c.team);
-        if (c.age != null) metaParts.push(`${c.age.toFixed(1)} yrs`);
+        const cAgeNum = parseFloat(c.age);
+        if (!isNaN(cAgeNum)) metaParts.push(`${cAgeNum.toFixed(1)} yrs`);
         meta.textContent = metaParts.join(" · ");
 
         // Add opportunity badge
@@ -3547,6 +3548,7 @@ function openPlayerModal(playerId, playerName) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="playerModalBreakoutSlot"></span>
+        <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
     </div>
@@ -3629,7 +3631,8 @@ function openPlayerModal(playerId, playerName) {
       const metaParts = [];
       if (data.position && data.pos_rank) metaParts.push(`<span style="font-weight:600;color:var(--text);">${data.position}${data.pos_rank}</span>`);
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
-      if (data.age) metaParts.push(`<span>${data.age.toFixed(1)} yrs</span>`);
+      const ageNum = parseFloat(data.age);
+      if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
       // Update headshot
@@ -3891,6 +3894,12 @@ function openPlayerModal(playerId, playerName) {
           closePlayerModal();
           openBreakoutModal(playerId, playerName);
         });
+      }
+
+      // Wire up compare button
+      const cmpBtn = document.getElementById('playerModalCompareBtn');
+      if (cmpBtn) {
+        cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
       // Render value history chart if data exists
@@ -4240,6 +4249,593 @@ function closePlayerModal() {
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 200);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Player Comparison
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _playerListCache = null;
+
+function _cmpFuzzyScore(name, query) {
+  if (!name || !query) return 0;
+  const n = name.toLowerCase();
+  const q = query.toLowerCase();
+  if (n.includes(q)) return 100 + (100 - n.indexOf(q));
+  const nWords = n.split(/[\s\-]+/);
+  if (nWords.some(w => w.startsWith(q))) return 60;
+  if (q.length >= 4) {
+    for (let i = 0; i < q.length; i++) {
+      const del = q.slice(0, i) + q.slice(i + 1);
+      if (n.includes(del)) return 40;
+    }
+  }
+  return 0;
+}
+
+function openCompareSearch(player1Data) {
+  const modal = document.getElementById('playerModal');
+  const body = document.getElementById('playerModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.add('compare-mode');
+
+  body.innerHTML = `
+    <div class="compare-search-panel">
+      <div class="compare-search-header">
+        <div class="compare-search-p1">
+          <img src="${player1Data.espnHeadshot || ''}" class="compare-search-headshot" alt="${player1Data.name}" />
+          <div>
+            <div class="compare-search-p1-name">${player1Data.name}</div>
+            <div class="compare-search-p1-meta">${player1Data.position || ''} · ${player1Data.team || ''}</div>
+          </div>
+        </div>
+        <div class="compare-vs-badge">VS</div>
+        <div class="compare-search-picker">
+          <input
+            type="text"
+            id="comparePlayerInput"
+            class="compare-search-input"
+            placeholder="Search for a player to compare..."
+            autocomplete="off"
+          />
+          <div id="compareSearchResults" class="compare-search-results"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById('comparePlayerInput');
+  const resultsBox = document.getElementById('compareSearchResults');
+  input.focus();
+
+  function renderResults(players) {
+    if (!players.length) {
+      resultsBox.innerHTML = '<div class="compare-search-empty">No players found</div>';
+      return;
+    }
+    resultsBox.innerHTML = players.slice(0, 10).map(p => `
+      <div class="compare-search-result-item" data-pid="${p.player_id}" data-pname="${p.name}">
+        <img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${p.name}" />
+        <div class="compare-result-info">
+          <div class="compare-result-name">${p.name}</div>
+          <div class="compare-result-meta">${p.position || ''} · ${p.team || ''}</div>
+        </div>
+        <div class="compare-result-value">${p.value || '—'}</div>
+      </div>
+    `).join('');
+
+    resultsBox.querySelectorAll('.compare-search-result-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const pid = item.dataset.pid;
+        const pname = item.dataset.pname;
+        // Show loading state
+        body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
+        // Fetch second player details
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        const platform = pathParts[0] || 'sleeper';
+        const season = pathParts[1] || new Date().getFullYear();
+        const leagueId = pathParts[2] || null;
+        const apiUrl = leagueId
+          ? `/api/player-details/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
+          : `/api/player-details/${pid}`;
+        fetch(apiUrl)
+          .then(r => r.json())
+          .then(p2Data => openComparisonView(player1Data, p2Data))
+          .catch(() => {
+            body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Failed to load player data</div></div>';
+          });
+      });
+    });
+  }
+
+  function doSearch(q) {
+    if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
+    const scored = _playerListCache
+      .filter(p => p.player_id !== player1Data.player_id)
+      .map(p => ({ p, score: _cmpFuzzyScore(p.name, q) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || (b.p.value || 0) - (a.p.value || 0));
+    renderResults(scored.map(x => x.p));
+  }
+
+  let _debounce;
+  input.addEventListener('input', () => {
+    clearTimeout(_debounce);
+    _debounce = setTimeout(() => doSearch(input.value.trim()), 150);
+  });
+
+  // Load player list (cached after first load)
+  if (_playerListCache) {
+    // Already loaded — nothing more to do; search fires on input
+  } else {
+    resultsBox.innerHTML = '<div class="compare-search-empty" style="opacity:.5;">Loading players...</div>';
+    fetch('/api/players')
+      .then(r => r.json())
+      .then(list => {
+        _playerListCache = list;
+        resultsBox.innerHTML = '';
+        if (input.value.trim().length >= 2) doSearch(input.value.trim());
+      })
+      .catch(() => {
+        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Failed to load players</div>';
+      });
+  }
+}
+
+function _buildCompareHeroHTML(p) {
+  const val1qb = p.stats?.value || 0;
+  const valsf  = p.stats?.sf_value || 0;
+  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '—');
+  return `
+    <div class="compare-hero-row">
+      <div class="pm-hero-stat pm-hero-primary">
+        <div class="pm-hero-label">1QB Value</div>
+        <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">SF Value</div>
+        <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">Pos Rank</div>
+        <div class="pm-hero-val">${posRankLabel}</div>
+      </div>
+    </div>
+  `;
+}
+
+function _buildComparePlayerHeader(p) {
+  const metaParts = [];
+  if (p.position) metaParts.push(`<span style="font-weight:600;">${p.position}</span>`);
+  if (p.team) metaParts.push(`<span>${p.team}</span>`);
+  const _pAge = parseFloat(p.age);
+  if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
+  return `
+    <div class="compare-player-header">
+      <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
+      <div class="compare-player-header-info">
+        <div class="compare-player-name">${p.name}</div>
+        <div class="compare-player-meta">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCompareMetricRows(m1, m2, p1, p2) {
+  // Build a map of metrics present in both players
+  const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
+  
+  // Position-aware metric groups
+  const qbMetrics = [
+    'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
+    'pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 
+    'pressure_to_sack_rate', 'snap_share', 'role_score'
+  ];
+  
+  const rbMetrics = [
+    'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share', 
+    'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
+    'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense'
+  ];
+  
+  const wrTeMetrics = [
+    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+    'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+    'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
+    'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
+    'wide_rate', 'inline_rate', 'grades_offense'
+  ];
+  
+  const olMetrics = [
+    'snap_share', 'pass_block_rate', 'grades_offense', 'grades_pass_block'
+  ];
+  
+  const allLabelMap = {
+    // Receiving metrics
+    yards_per_target: 'Yards/Target',
+    catch_rate: 'Catch Rate',
+    yards_per_reception: 'Yards/Rec',
+    target_quality_score: 'Target Quality',
+    yards_after_catch: 'YAC',
+    yards_after_catch_per_reception: 'YAC/Rec',
+    avg_depth_of_target: 'aDOT',
+    contested_catch_rate: 'Contested Catch %',
+    avoided_tackles: 'Avoided Tackles',
+    drop_rate: 'Drop Rate',
+    slot_rate: 'Slot Rate',
+    wide_rate: 'Wide Rate',
+    inline_rate: 'Inline Rate',
+    
+    // Rushing metrics
+    yards_per_carry: 'Yards/Carry',
+    yards_per_touch: 'Yards/Touch',
+    rush_td_rate: 'Rush TD Rate',
+    explosive_runs_10_plus: '10+ Yd Runs',
+    breakaway_percentage: 'Breakaway %',
+    elusive_rating: 'Elusive Rating',
+    pff_rushing_grade: 'PFF Rush Grade',
+    
+    // Passing metrics
+    completion_pct: 'Completion %',
+    yards_per_attempt: 'Yards/Attempt',
+    td_rate: 'TD Rate',
+    int_rate: 'INT Rate',
+    nfl_passer_rating: 'Passer Rating',
+    pff_passing_grade: 'PFF Pass Grade',
+    big_time_throw_rate: 'BTT Rate',
+    adjusted_completion_rate: 'Adj Comp %',
+    pressure_to_sack_rate: 'P2S Rate',
+    
+    // Usage/Role metrics
+    snap_share: 'Snap Share',
+    opportunity_share: 'Opportunity Share',
+    red_zone_usage: 'Red Zone Usage',
+    role_score: 'Role Score',
+    
+    // Blocking metrics
+    pass_block_rate: 'Pass Block Rate',
+    grades_pass_block: 'PFF Pass Block',
+    grades_offense: 'PFF Off Grade',
+  };
+  
+  // Determine relevant metrics based on positions
+  let relevantMetrics = [];
+  const pos1 = (p1?.position || '').toUpperCase();
+  const pos2 = (p2?.position || '').toUpperCase();
+  
+  if (pos1 === 'QB' || pos2 === 'QB') {
+    relevantMetrics.push(...qbMetrics);
+  }
+  if (pos1 === 'RB' || pos2 === 'RB') {
+    relevantMetrics.push(...rbMetrics);
+  }
+  if ((pos1 === 'WR' || pos1 === 'TE') || (pos2 === 'WR' || pos2 === 'TE')) {
+    relevantMetrics.push(...wrTeMetrics);
+  }
+  if ((pos1 === 'OT' || pos1 === 'OG' || pos1 === 'C') || (pos2 === 'OT' || pos2 === 'OG' || pos2 === 'C')) {
+    relevantMetrics.push(...olMetrics);
+  }
+  
+  // Add universal metrics if no position-specific ones found
+  if (relevantMetrics.length === 0) {
+    relevantMetrics = ['snap_share', 'role_score', 'grades_offense'];
+  }
+  
+  // Filter to only include relevant metrics that exist in the data
+  const displayKeys = relevantMetrics.filter(k => 
+    allLabelMap[k] && allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null)
+  );
+  if (!displayKeys.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
+
+  // Determine max per metric for bar scaling using metric-specific ranges
+  return displayKeys.map(key => {
+    const v1 = m1?.[key] ?? null;
+    const v2 = m2?.[key] ?? null;
+    
+    // Metric-specific scaling ranges for meaningful comparison
+    const metricRanges = {
+      // Percentage metrics (0-100)
+      'catch_rate': 1, 'completion_pct': 100, 'contested_catch_rate': 100,
+      'drop_rate': 100, 'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
+      'pass_block_rate': 100, 'snap_share': 1, 'opportunity_share': 25,
+      'red_zone_usage': 4,
+      
+      // Rate metrics (0-10 or 0-20)
+      'rush_td_rate': .05, 'td_rate': 8, 'int_rate': 3, 'avoided_tackles': 1,
+      'explosive_runs_10_plus': 20,
+      
+      // Yards per attempt metrics (0-20)
+      'yards_per_target': 20, 'yards_per_reception': 20, 'yards_per_carry': 10,
+      'yards_per_touch': 15, 'yards_per_attempt': 15, 'avg_depth_of_target': 20,
+      'yards_after_catch': 20, 'yards_after_catch_per_reception': 20,
+      
+      // PFF grades (0-100)
+      'pff_passing_grade': 100, 'pff_rushing_grade': 100, 'grades_offense': 100,
+      'grades_pass_block': 100,
+      
+      // Role score (0-100)
+      'role_score': 100,
+      
+      'big_time_throw_rate': 1, 'adjusted_completion_rate': 1,
+      
+      // Rating metrics (0-160)
+      'nfl_passer_rating': 160,
+      
+      // Other metrics
+      'target_quality_score': 50, 'elusive_rating': 100,
+    };
+    
+    const range = metricRanges[key] || 100; // Default to 100 if not specified
+    const pct1 = v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0;
+    const pct2 = v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0;
+
+    function barColor(pct, raw) {
+      if (raw == null) return '#374151';
+      
+      // Inverse metrics where lower is better (INT rate, drop rate)
+      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate'];
+      const isInverse = inverseMetrics.includes(key);
+      
+      if (isInverse) {
+        // For inverse metrics: lower values are better (green), higher are worse (red)
+        if (pct <= 20) return '#10b981';  // Excellent
+        if (pct <= 40) return '#3b82f6';  // Good
+        return '#f59e0b';  // Poor
+      } else {
+        // For normal metrics: higher values are better
+        if (pct >= 60) return '#10b981';
+        if (pct >= 35) return '#3b82f6';
+        return '#f59e0b';
+      }
+    }
+
+    const fmt = v => {
+      if (v == null) return 'â';
+      
+      // Metrics that should be displayed as percentages
+      const percentageMetrics = [
+        'catch_rate', 'snap_share', 'rush_td_rate',
+        'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
+        'breakaway_percentage'
+      ];
+      
+      // Check if current metric is a percentage metric
+      const isPercentageMetric = percentageMetrics.includes(key);
+      
+      if (isPercentageMetric) {
+        // Display as percentage (e.g., .6 becomes 60.0%)
+        if (v < 0.1 && v > 0) return (v * 100).toFixed(1) + '%';
+        return (v * 100).toFixed(0) + '%';
+      } else {
+        // Regular formatting for other metrics
+        if (v < 0.1 && v > 0) return v.toFixed(3);
+        return Number.isInteger(v) ? v : v.toFixed(1);
+      }
+    };
+
+    return `
+      <div class="compare-metric-row">
+        <div class="compare-metric-p1-val">${fmt(v1)}</div>
+        <div class="compare-bar-left">
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
+        </div>
+        <div class="compare-metric-label">${allLabelMap[key]}</div>
+        <div class="compare-bar-right">
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
+        </div>
+        <div class="compare-metric-p2-val">${fmt(v2)}</div>
+      </div>
+    `;
+  }).join("");
+}function loadCompareMetrics(playerId1, playerId2, season) {
+  const metricsUrl = (pid, season) => {
+    if (season === null) {
+      return `/api/player-advanced-metrics/${pid}?season=career`;
+    }
+    return `/api/player-advanced-metrics/${pid}?season=${season}`;
+  };
+
+  Promise.all([
+    fetch(metricsUrl(playerId1, season)).then(r => r.json()).catch(() => ({})),
+    fetch(metricsUrl(playerId2, season)).then(r => r.json()).catch(() => ({})),
+  ]).then(([data1, data2]) => {
+    const metricsDiv = document.getElementById('compareMetricsContent');
+    if (metricsDiv) {
+      // Extract metrics from the nested structure returned by API
+      const m1 = data1.metrics || {};
+      const m2 = data2.metrics || {};
+      
+      // Get available seasons from both players
+      const seasons1 = data1.available_seasons || [];
+      const seasons2 = data2.available_seasons || [];
+      const allSeasons = [...new Set([...seasons1, ...seasons2])].sort((a, b) => b - a);
+      
+      // Rebuild season selector with updated active state
+      let seasonSelectorHTML = '';
+      if (allSeasons.length > 1) {
+        seasonSelectorHTML = `
+          <div class="compare-season-selector">
+            <div class="compare-season-label">Season:</div>
+            <div class="compare-season-pills">
+              <button class="adv-season-pill ${season === null ? 'active' : ''}" 
+                      onclick="loadCompareMetrics('${playerId1}', '${playerId2}', null)">
+                Career
+              </button>
+              ${allSeasons.map(s => `
+                <button class="adv-season-pill ${season === s ? 'active' : ''}" 
+                        onclick="loadCompareMetrics('${playerId1}', '${playerId2}', ${s})">
+                  ${s}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      const rows = renderCompareMetricRows(m1, m2, data1, data2);
+      metricsDiv.innerHTML = `
+        ${seasonSelectorHTML}
+        ${rows}
+      `;
+    }
+  });
+}
+
+function openComparisonView(p1, p2) {
+  const modal = document.getElementById('playerModal');
+  const body = document.getElementById('playerModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.add('compare-mode');
+
+  // Update the header to show both players instead of single player
+  const headerTitleSection = modal.querySelector('.player-modal-title-section');
+  const headshotContainer = modal.querySelector('.player-modal-headshot-container');
+  if (headshotContainer) headshotContainer.style.display = 'none';
+  if (headerTitleSection) {
+    headerTitleSection.innerHTML = `
+      <div class="compare-dual-header">
+        ${_buildComparePlayerHeader(p1)}
+        <div class="compare-vs-badge">VS</div>
+        ${_buildComparePlayerHeader(p2)}
+      </div>
+    `;
+  }
+
+  // Build the comparison body
+  body.innerHTML = `
+    <div class="compare-body">
+      <div class="compare-hero-section">
+        <div class="compare-hero-player" id="compareHero1">${_buildCompareHeroHTML(p1)}</div>
+        <div class="compare-hero-player" id="compareHero2">${_buildCompareHeroHTML(p2)}</div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics Comparison</span></div>
+      <div id="compareMetricsContent" class="compare-metrics-section">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+        </div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
+      <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
+
+      <div style="margin-top:16px;">
+        <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
+      </div>
+    </div>
+  `;
+
+  // Back button
+  document.getElementById('compareBackBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    openPlayerModal(p1.player_id, p1.name);
+  });
+
+  // Fetch NFL state to determine if it's offseason
+  fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
+    .then(nflState => {
+      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
+      const currentSeason = nflState.season || new Date().getFullYear();
+      
+      // During offseason, default to career metrics (no season parameter)
+      const defaultSeason = isOffseason ? null : currentSeason;
+      
+      // Fetch advanced metrics for both players in parallel
+      const metricsUrl = (pid, season) => {
+        if (season === null) {
+          return `/api/player-advanced-metrics/${pid}?season=career`;
+        }
+        return `/api/player-advanced-metrics/${pid}?season=${season}`;
+      };
+
+      Promise.all([
+        fetch(metricsUrl(p1.player_id, defaultSeason)).then(r => r.json()).catch(() => ({})),
+        fetch(metricsUrl(p2.player_id, defaultSeason)).then(r => r.json()).catch(() => ({})),
+      ]).then(([data1, data2]) => {
+        const metricsDiv = document.getElementById('compareMetricsContent');
+        if (metricsDiv) {
+          // Extract metrics from the nested structure returned by API
+          const m1 = data1.metrics || {};
+          const m2 = data2.metrics || {};
+          
+          // Get available seasons from both players
+          const seasons1 = data1.available_seasons || [];
+          const seasons2 = data2.available_seasons || [];
+          const allSeasons = [...new Set([...seasons1, ...seasons2])].sort((a, b) => b - a);
+          
+          // Build season selector if multiple seasons available
+          let seasonSelectorHTML = '';
+          if (allSeasons.length > 1) {
+            const activeSeason = defaultSeason || allSeasons[0];
+            seasonSelectorHTML = `
+              <div class="compare-season-selector">
+                <div class="compare-season-label">Season:</div>
+                <div class="compare-season-pills">
+                  <button class="adv-season-pill ${activeSeason === null ? 'active' : ''}" 
+                          onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', null)">
+                    Career
+                  </button>
+                  ${allSeasons.map(season => `
+                    <button class="adv-season-pill ${activeSeason === season ? 'active' : ''}" 
+                            onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', ${season})">
+                      ${season}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }
+          
+          const rows = renderCompareMetricRows(m1, m2, p1, p2);
+          metricsDiv.innerHTML = `
+            ${seasonSelectorHTML}
+            ${rows}
+          `;
+        }
+      });
+    });
+
+  // Render value history chart with two lines
+  if (typeof Plotly !== 'undefined') {
+    const chartDiv = document.getElementById('compareValueChart');
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#9ca3af' : '#6b7280';
+    const bgColor = isDark ? '#1e293b' : '#f8fafc';
+
+    const makeTrace = (history, name, color) => {
+      const dates = (history || []).map(h => h.as_of_date || h.date);
+      const vals  = (history || []).map(h => h.value);
+      return {
+        x: dates, y: vals, mode: 'lines', name,
+        line: { color, width: 2.5 },
+        hovertemplate: `<b>${name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
+      };
+    };
+
+    const traces = [
+      makeTrace(p1.value_history, p1.name, '#3b82f6'),
+      makeTrace(p2.value_history, p2.name, '#f59e0b'),
+    ];
+
+    Plotly.newPlot(chartDiv, traces, {
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: bgColor,
+      margin: { t: 10, r: 16, b: 40, l: 46 },
+      xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
+      yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
+      legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
+      hovermode: 'x unified',
+      showlegend: true,
+    }, { responsive: true, displayModeBar: false });
   }
 }
 
@@ -4766,8 +5362,8 @@ function renderTeamDetails(data) {
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
           <td>${player.team || '—'}</td>
-          <td>${player.age != null && !isNaN(player.age) ? player.age.toFixed(1) : '—'}</td>
-          <td>${player.value != null && !isNaN(player.value) ? player.value.toFixed(1) : '—'}</td>
+          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—'}</td>
+          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—'}</td>
         </tr>
       `;
     });

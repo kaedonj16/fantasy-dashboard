@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from data_building.paths import DATA_DIR
+from utils.paths import DATA_DIR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
