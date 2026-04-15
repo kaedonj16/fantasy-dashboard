@@ -173,18 +173,26 @@ def _conf_quality(conference: Optional[str]) -> float:
     return DEFAULT_CONF_QUALITY
 
 
-def _sagarin_dom_adj(rating: Optional[float]) -> float:
+def _sagarin_dom_adj(rating: Optional[float], conference: Optional[str] = None) -> float:
     """
     Convert a Sagarin CFB predictor rating into a multiplicative dominator
     adjustment for WR/TE pass-share scoring.
 
     Bounds (user-calibrated):
-        None (non-D1 / unrated) → -9.3%  floor
-        FBS average (~75)       →  0.0%
-        Alabama 2020 (~99)      → +6.47% cap
+        None + FCS/non-D1 conference → -9.3%  floor
+        None + FBS conference        →  0.0%  neutral (Sagarin fetch failed)
+        FBS average (~75)            →  0.0%
+        Alabama 2020 (~99)           → +6.47% cap
+
+    The conference-aware fallback prevents historical backtest years from
+    incorrectly penalising every FBS player when the Sagarin page for that
+    season year is unavailable.  _conf_quality() returns 0.48 for FCS and
+    higher for all FBS conferences, so 0.50 is a clean dividing line.
     """
     if rating is None:
-        return -0.093
+        if _conf_quality(conference) >= 0.50:
+            return 0.0    # FBS team — Sagarin unavailable, apply no adjustment
+        return -0.093     # Confirmed FCS / non-D1
     raw = (rating - _SAGARIN_FBS_AVG) * _SAGARIN_SCALE
     return max(-0.093, min(0.0647, raw))
 
@@ -207,7 +215,8 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         team_pass_yds = _safe(season.get("team_pass_yards"))
-        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"))
+        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"),
+                                         season.get("conference"))
 
         # Pass-share dominator: rec yards as % of team passing yards, adjusted
         # for team caliber via Sagarin predictor rating.
@@ -308,7 +317,8 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         team_pass_yds = _safe(season.get("team_pass_yards"))
-        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"))
+        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"),
+                                         season.get("conference"))
 
         # Pass-share dominator for TEs — same logic as WR, narrower scale
         # (TEs command a smaller share of passing yards than WRs).
