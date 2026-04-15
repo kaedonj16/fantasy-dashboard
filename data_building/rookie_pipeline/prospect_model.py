@@ -135,6 +135,16 @@ CONF_QUALITY: Dict[str, float] = {
 DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Sagarin team-caliber dominator adjustment
+# Applied multiplicatively to the WR/TE pass-share metric.
+# Alabama 2020 (predictor ~99) → +6.47% cap.
+# Non-D1 / unrated           → -9.3% floor.
+# ─────────────────────────────────────────────────────────────────────────────
+_SAGARIN_FBS_AVG = 75.0           # approximate mean Sagarin predictor for FBS teams
+_SAGARIN_SCALE   = 0.0647 / 24.0  # ≈ 0.00270 per rating point above avg
+                                   # (99 − 75) × 0.00270 = 0.0648 → capped at +6.47%
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Scheme-inflation penalties
 # High-volume / spread systems where college WR stats are poor NFL predictors.
 # Applied as a multiplier to production AND efficiency scores for WRs only.
@@ -163,6 +173,22 @@ def _conf_quality(conference: Optional[str]) -> float:
     return DEFAULT_CONF_QUALITY
 
 
+def _sagarin_dom_adj(rating: Optional[float]) -> float:
+    """
+    Convert a Sagarin CFB predictor rating into a multiplicative dominator
+    adjustment for WR/TE pass-share scoring.
+
+    Bounds (user-calibrated):
+        None (non-D1 / unrated) → -9.3%  floor
+        FBS average (~75)       →  0.0%
+        Alabama 2020 (~99)      → +6.47% cap
+    """
+    if rating is None:
+        return -0.093
+    raw = (rating - _SAGARIN_FBS_AVG) * _SAGARIN_SCALE
+    return max(-0.093, min(0.0647, raw))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,15 +201,27 @@ def _score_production_season(season: Dict, pos: str) -> float:
     gp = max(_safe(season.get("games_played"), 12), 1)
 
     if pos == "WR":
-        rec_yds_pg = _safe(season.get("receiving_yards")) / gp
-        rec_tds_pg = _safe(season.get("receiving_tds"))   / gp
-        dom        = _safe(season.get("dominator_rating"))
+        rec_yds_pg    = _safe(season.get("receiving_yards")) / gp
+        rec_tds_pg    = _safe(season.get("receiving_tds"))   / gp
+        dom           = _safe(season.get("dominator_rating"))
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
+        team_pass_yds = _safe(season.get("team_pass_yards"))
+        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"))
+
+        # Pass-share dominator: rec yards as % of team passing yards, adjusted
+        # for team caliber via Sagarin predictor rating.
+        # Falls back to legacy total-offense dominator if team_pass_yards absent.
+        if team_pass_yds > 0:
+            pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
+            dom_score  = _scale(pass_share, 0.08, 0.35)
+        else:
+            dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
+
         prod = (
             _scale(rec_yds_pg, 35,  110) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
-            _scale(dom,        0.08, 0.40) * 0.30
+            dom_score                      * 0.30
         )
         # Red zone proxy: TDs per 100 receiving yards — rewards goal-line separators
         if total_rec_yds >= 200:
@@ -269,19 +307,30 @@ def _score_production_season(season: Dict, pos: str) -> float:
         rec_pg        = _safe(season.get("receptions"))       / gp
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
+        team_pass_yds = _safe(season.get("team_pass_yards"))
+        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"))
+
+        # Pass-share dominator for TEs — same logic as WR, narrower scale
+        # (TEs command a smaller share of passing yards than WRs).
+        if team_pass_yds > 0:
+            pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
+            dom_score  = _scale(pass_share, 0.04, 0.22)
+        else:
+            dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.20)
+
         prod = (
-            _scale(rec_yds_pg, 20,  75)  * 0.35 +  # Lowered thresholds for higher scores
-            _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +  # Lowered thresholds for higher scores
-            _scale(dom,        0.05, 0.20) * 0.20 +  # Lowered thresholds for higher scores
-            _scale(rec_pg,     1.0,  5.0) * 0.15   # Lowered reception thresholds
+            _scale(rec_yds_pg, 20,  75)  * 0.35 +
+            _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +
+            dom_score                      * 0.20 +
+            _scale(rec_pg,     1.0,  5.0) * 0.15
         )
         # Red zone proxy: TE goal-line usage is extremely valuable in NFL
-        if total_rec_yds >= 200:  # Increased requirement from 150 to 200 yards
+        if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100
-            if rz_rate >= 10.0:  # Increased TD rate requirement from 9.0 to 10.0
-                prod = _clip(prod * 1.05)  # Reduced bonus from 7% to 5%
-            elif rz_rate >= 7.0:  # Increased from 6.0 to 7.0
-                prod = _clip(prod * 1.02)  # Reduced bonus from 4% to 2%
+            if rz_rate >= 10.0:
+                prod = _clip(prod * 1.05)
+            elif rz_rate >= 7.0:
+                prod = _clip(prod * 1.02)
         return prod
 
     return 52.0

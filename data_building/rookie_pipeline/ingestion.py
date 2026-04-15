@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from utils.utils import normalize_name
+from .sagarin import get_team_rating as _sagarin_get_team_rating
 
 # Suppress urllib3 SSL warning for LibreSSL compatibility
 warnings.filterwarnings('ignore', message='.*urllib3 v2 only supports OpenSSL.*')
@@ -568,6 +569,8 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     row["team_total_yards"]   = _safe_int(t_yds)
     row["team_total_tds"]     = _safe_int(t_tds)
     row["team_pass_rate"]     = ts.get("pass_rate")
+    row["team_pass_yards"]    = int(ts.get("netPassingYards") or 0)
+    row["sagarin_team_rating"] = _sagarin_get_team_rating(team_name, season)
 
     dom = 0.0
     if t_yds > 0: dom += (p_yds / t_yds) * 0.65
