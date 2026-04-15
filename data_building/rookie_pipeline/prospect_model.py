@@ -1011,31 +1011,38 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
     """
     Adjusts for team usage patterns.
 
-    - High pass rate for skill players (WR/TE) is better context (more targets)
-    - For RBs, high rush rate inflates volume — slight discount applied
-    - Uses a recency-weighted average of team pass rate across all seasons
-      (same decay as competition score) so transferred players aren't locked
-      to their latest team's scheme.
+    - WR/TE: yards-based pass share (team_pass_yards / team_total_yards).
+      Captures how much of the offense's actual production came through the air,
+      not just how often they called pass plays. Falls back to attempt-based
+      team_pass_rate when yard totals are unavailable.
+    - For RBs, high rush rate inflates volume — slight discount applied.
+    - Uses a recency-weighted average across all seasons so transferred players
+      aren't locked to their latest team's scheme.
     """
     if not seasons:
         return 50.0
 
     pos = position.upper()
 
-    # Recency-weighted pass rate: most recent season weight 1.0, decaying by 0.2
+    # Recency-weighted pass share: most recent season weight 1.0, decaying by 0.2
     sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0), reverse=True)
     weighted_sum = 0.0
     total_weight = 0.0
     for i, s in enumerate(sorted_seasons):
-        pr = _safe(s.get("team_pass_rate"), 0.52)
+        team_pass_yds  = _safe(s.get("team_pass_yards"))
+        team_total_yds = _safe(s.get("team_total_yards"))
+        if team_pass_yds > 0 and team_total_yds > 0:
+            pr = team_pass_yds / team_total_yds   # yards-based pass share
+        else:
+            pr = _safe(s.get("team_pass_rate"), 0.55)  # fallback: attempt-based rate
         w  = max(0.2, 1.0 - i * 0.2)
         weighted_sum += pr * w
         total_weight += w
-    pass_rate = weighted_sum / total_weight if total_weight > 0 else 0.52
+    pass_rate = weighted_sum / total_weight if total_weight > 0 else 0.55
 
     if pos in ("WR", "TE"):
-        # More passing = more opportunities; 55-65% pass rate is ideal
-        base = _scale(pass_rate, 0.42, 0.68)
+        # Yards-based pass share: 40% = run-heavy floor, 72% = Air Raid ceiling
+        base = _scale(pass_rate, 0.40, 0.72)
     elif pos == "RB":
         # RBs benefit from balanced / run-heavy but it's easier to produce in bad offences
         # Slight penalty for very pass-heavy (≥65%) teams since it reduces rush attempts
