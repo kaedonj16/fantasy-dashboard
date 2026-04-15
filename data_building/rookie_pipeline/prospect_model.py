@@ -134,6 +134,24 @@ CONF_QUALITY: Dict[str, float] = {
 
 DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheme-inflation penalties
+# High-volume / spread systems where college WR stats are poor NFL predictors.
+# Applied as a multiplier to production AND efficiency scores for WRs only.
+# Tennessee (Heupel air-raid): very high ADOT, schemed targets, historically
+#   weak NFL translation for receivers outside the #1 option.
+# Ole Miss (Kiffin spread): similar volume inflation at lower severity.
+# ─────────────────────────────────────────────────────────────────────────────
+SCHEME_INFLATION_SYSTEMS: Dict[str, float] = {
+    "tennessee": 0.60,
+    "ole miss":  0.80,
+}
+
+
+def _scheme_inflation_discount(team: Optional[str]) -> float:
+    """Return the production/efficiency discount multiplier for known stat-inflating WR systems."""
+    return SCHEME_INFLATION_SYSTEMS.get((team or "").strip().lower(), 1.0)
+
 
 def _conf_quality(conference: Optional[str]) -> float:
     if not conference:
@@ -407,7 +425,12 @@ def calc_production_score(
 
         adot = _eval_metric_value(eval_metrics, "avg_depth_of_target", min_confidence=0.45)
         if adot is not None:
-            prod = _clip(prod + _clip((float(adot) - 8.0) * 0.6, -3.0, 4.0))
+            adot_bonus = _clip((float(adot) - 8.0) * 0.6, -3.0, 4.0)
+            # High ADOT in an air-raid system with poor contested-catch ability is
+            # scheme-generated volume, not a separation skill signal.
+            if float(adot) > 14.0 and ccr is not None and ccr < 50.0:
+                adot_bonus = min(adot_bonus, 0.0)
+            prod = _clip(prod + adot_bonus)
 
     elif eval_metrics and pos == "RB":
         elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
@@ -428,6 +451,13 @@ def calc_production_score(
             btt = _eval_metric_percent(eval_metrics, "btt_rate", min_confidence=0.45)
         if btt is not None:
             prod = _clip(prod + _clip((btt - 4.0) * 0.9, -3.0, 5.0))
+
+    # Scheme-inflation discount: WR stats from high-volume spread systems translate
+    # poorly to the NFL.  Apply a multiplier before returning.
+    if pos == "WR":
+        scheme_discount = _scheme_inflation_discount(ls.get("team"))
+        if scheme_discount < 1.0:
+            prod = _clip(prod * scheme_discount)
 
     return prod
 
@@ -574,6 +604,13 @@ def calc_efficiency_score(
             # Lower pressure-to-sack conversion is better QB pocket behavior.
             eff = _clip(eff + _clip((20.0 - p2s) * 0.35, -5.0, 5.0))
 
+    # Scheme-inflation discount: WR efficiency metrics in high-volume spread
+    # systems are scheme-inflated (e.g. yds/rec boosted by deep ADOT).
+    if pos == "WR":
+        scheme_discount = _scheme_inflation_discount(ls.get("team"))
+        if scheme_discount < 1.0:
+            eff = _clip(eff * scheme_discount)
+
     return _clip(eff)
 
 
@@ -716,7 +753,7 @@ _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Maximum athleticism score when metric coverage is sparse.
 # Prevents a single elite metric (e.g. one 4.28 40-time) from yielding a top score
 # when we have no idea about the rest of the athletic profile.
-_ATH_DATA_CAPS = {1: 72, 2: 84, 3: 93}   # n_metrics_present → cap
+_ATH_DATA_CAPS = {1: 65, 2: 82, 3: 92}   # n_metrics_present → cap
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -1042,17 +1079,19 @@ POSITION_WEIGHTS = {
     },
     "WR": {
         # Draft capital (r=0.72) is the strongest WR predictor — weighted highest.
-        # Breakout (r=0.65) reduced to avoid penalizing loaded-team WRs (e.g. Ohio State).
+        # Breakout reduced: volume-based metric is inflated by spread/air-raid systems.
         # Utilization (r=0.45) reduced — target volume is scheme-dependent.
+        # Environment raised: scheme translatability is more predictive for WRs than
+        #   previously weighted, particularly for prospects from air-raid offenses.
         "draft_capital": 0.29,
-        "production": 0.22,
+        "production": 0.20,
         "utilization": 0.04,
         "efficiency": 0.10,
         "age": 0.08,
-        "breakout": 0.12,
+        "breakout": 0.09,
         "athleticism": 0.07,
         "competition": 0.07,
-        "environment": 0.01,
+        "environment": 0.06,
         "durability": 0.00,
     },
     "TE": {
