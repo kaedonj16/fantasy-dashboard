@@ -201,7 +201,7 @@ def _sagarin_dom_adj(rating: Optional[float], conference: Optional[str] = None) 
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_production_season(season: Dict, pos: str) -> float:
+def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False) -> float:
     """
     Compute the raw production score (pre-transfer-penalty) for a single season.
     Returns the weighted component score (0-100).
@@ -215,8 +215,8 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         team_pass_yds = _safe(season.get("team_pass_yards"))
-        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"),
-                                         season.get("conference"))
+        sag_adj       = 0.0 if skip_sagarin else _sagarin_dom_adj(
+                            season.get("sagarin_team_rating"), season.get("conference"))
 
         # Pass-share dominator: rec yards as % of team passing yards, adjusted
         # for team caliber via Sagarin predictor rating.
@@ -317,8 +317,8 @@ def _score_production_season(season: Dict, pos: str) -> float:
         total_rec_yds = _safe(season.get("receiving_yards"))
         total_rec_tds = _safe(season.get("receiving_tds"))
         team_pass_yds = _safe(season.get("team_pass_yards"))
-        sag_adj       = _sagarin_dom_adj(season.get("sagarin_team_rating"),
-                                         season.get("conference"))
+        sag_adj       = 0.0 if skip_sagarin else _sagarin_dom_adj(
+                            season.get("sagarin_team_rating"), season.get("conference"))
 
         # Pass-share dominator for TEs — same logic as WR, narrower scale
         # (TEs command a smaller share of passing yards than WRs).
@@ -384,6 +384,7 @@ def calc_production_score(
     seasons: List[Dict],
     position: str,
     eval_metrics: Optional[Dict] = None,
+    skip_sagarin: bool = False,
 ) -> float:
     """
     Per-game production vs position-specific elite thresholds.
@@ -443,17 +444,17 @@ def calc_production_score(
 
     # With only one season there is nothing to blend — just score it directly.
     if len(seasons) == 1:
-        return _clip(_score_production_season(ls, pos) * transfer_penalty)
+        return _clip(_score_production_season(ls, pos, skip_sagarin) * transfer_penalty)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
-    latest_score = _score_production_season(ls, pos)
+    latest_score = _score_production_season(ls, pos, skip_sagarin)
 
     # Find best season by primary volume metric per position
     _PEAK_KEY = {"WR": "receiving_yards", "RB": "rush_yards", "QB": "pass_yards", "TE": "receiving_yards"}
     peak_key = _PEAK_KEY[pos]
     peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
-    best_score = _score_production_season(peak_season, pos)
+    best_score = _score_production_season(peak_season, pos, skip_sagarin)
 
     # 85% weight on whichever is higher (recent or peak), 15% on the other
     prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
@@ -1490,6 +1491,7 @@ def calc_interaction_features(production_score: float, efficiency_score: float,
 def score_prospect(
     prospect: Dict[str, Any],
     draft_capital: Optional[Dict[str, Any]] = None,
+    skip_sagarin: bool = False,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -1512,7 +1514,8 @@ def score_prospect(
     # the evaluation pipeline has run first.  Shape: {metric_name: metric_payload}.
     eval_metrics: Optional[Dict] = prospect.get("_eval_metrics") or None
 
-    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics)
+    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics,
+                                                skip_sagarin=skip_sagarin)
     
     # Apply loaded roster adjustment for players on talent-rich teams
     ls = _latest_season(seasons) or {}
@@ -1897,6 +1900,7 @@ def _build_reasons(
 def score_all_prospects(
     prospects: List[Dict[str, Any]],
     consensus_map: Optional[Dict[str, Dict]] = None,
+    skip_sagarin: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
@@ -1914,7 +1918,7 @@ def score_all_prospects(
     scores = []
     for p in prospects:
         dc = consensus_map.get(p["player_id"])
-        scores.append(score_prospect(p, dc))
+        scores.append(score_prospect(p, dc, skip_sagarin=skip_sagarin))
 
     # Sort overall
     scores.sort(key=lambda x: x["prospect_score"], reverse=True)

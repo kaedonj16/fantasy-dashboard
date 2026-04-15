@@ -399,7 +399,7 @@ def _run_draft_class_backtest(
           f"({'full model' if n_with_stats > 0 else 'draft capital + athleticism only'})")
 
     print(f"[backtest]   Scoring {len(prospects)} prospects…")
-    scores = score_all_prospects(prospects, consensus_map)
+    scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
 
     # Build lookup maps
     p_by_id  = {p["player_id"]: p for p in prospects}
