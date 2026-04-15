@@ -3547,6 +3547,7 @@ function openPlayerModal(playerId, playerName) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="playerModalBreakoutSlot"></span>
+        <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">⚖ Compare</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
     </div>
@@ -3891,6 +3892,12 @@ function openPlayerModal(playerId, playerName) {
           closePlayerModal();
           openBreakoutModal(playerId, playerName);
         });
+      }
+
+      // Wire up compare button
+      const cmpBtn = document.getElementById('playerModalCompareBtn');
+      if (cmpBtn) {
+        cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
       // Render value history chart if data exists
@@ -4240,6 +4247,349 @@ function closePlayerModal() {
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 200);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Player Comparison
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _playerListCache = null;
+
+function _cmpFuzzyScore(name, query) {
+  if (!name || !query) return 0;
+  const n = name.toLowerCase();
+  const q = query.toLowerCase();
+  if (n.includes(q)) return 100 + (100 - n.indexOf(q));
+  const nWords = n.split(/[\s\-]+/);
+  if (nWords.some(w => w.startsWith(q))) return 60;
+  if (q.length >= 4) {
+    for (let i = 0; i < q.length; i++) {
+      const del = q.slice(0, i) + q.slice(i + 1);
+      if (n.includes(del)) return 40;
+    }
+  }
+  return 0;
+}
+
+function openCompareSearch(player1Data) {
+  const modal = document.getElementById('playerModal');
+  const body = document.getElementById('playerModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.add('compare-mode');
+
+  body.innerHTML = `
+    <div class="compare-search-panel">
+      <div class="compare-search-header">
+        <div class="compare-search-p1">
+          <img src="${player1Data.espnHeadshot || ''}" class="compare-search-headshot" alt="${player1Data.name}" />
+          <div>
+            <div class="compare-search-p1-name">${player1Data.name}</div>
+            <div class="compare-search-p1-meta">${player1Data.position || ''} · ${player1Data.team || ''}</div>
+          </div>
+        </div>
+        <div class="compare-vs-badge">VS</div>
+        <div class="compare-search-picker">
+          <input
+            type="text"
+            id="comparePlayerInput"
+            class="compare-search-input"
+            placeholder="Search for a player to compare..."
+            autocomplete="off"
+          />
+          <div id="compareSearchResults" class="compare-search-results"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById('comparePlayerInput');
+  const resultsBox = document.getElementById('compareSearchResults');
+  input.focus();
+
+  function renderResults(players) {
+    if (!players.length) {
+      resultsBox.innerHTML = '<div class="compare-search-empty">No players found</div>';
+      return;
+    }
+    resultsBox.innerHTML = players.slice(0, 10).map(p => `
+      <div class="compare-search-result-item" data-pid="${p.player_id}" data-pname="${p.name}">
+        <img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${p.name}" />
+        <div class="compare-result-info">
+          <div class="compare-result-name">${p.name}</div>
+          <div class="compare-result-meta">${p.position || ''} · ${p.team || ''}</div>
+        </div>
+        <div class="compare-result-value">${p.value || '—'}</div>
+      </div>
+    `).join('');
+
+    resultsBox.querySelectorAll('.compare-search-result-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const pid = item.dataset.pid;
+        const pname = item.dataset.pname;
+        // Show loading state
+        body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
+        // Fetch second player details
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        const platform = pathParts[0] || 'sleeper';
+        const season = pathParts[1] || new Date().getFullYear();
+        const leagueId = pathParts[2] || null;
+        const apiUrl = leagueId
+          ? `/api/player-details/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
+          : `/api/player-details/${pid}`;
+        fetch(apiUrl)
+          .then(r => r.json())
+          .then(p2Data => openComparisonView(player1Data, p2Data))
+          .catch(() => {
+            body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Failed to load player data</div></div>';
+          });
+      });
+    });
+  }
+
+  function doSearch(q) {
+    if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
+    const scored = _playerListCache
+      .filter(p => p.player_id !== player1Data.player_id)
+      .map(p => ({ p, score: _cmpFuzzyScore(p.name, q) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || (b.p.value || 0) - (a.p.value || 0));
+    renderResults(scored.map(x => x.p));
+  }
+
+  let _debounce;
+  input.addEventListener('input', () => {
+    clearTimeout(_debounce);
+    _debounce = setTimeout(() => doSearch(input.value.trim()), 150);
+  });
+
+  // Load player list (cached after first load)
+  if (_playerListCache) {
+    // Already loaded — nothing more to do; search fires on input
+  } else {
+    resultsBox.innerHTML = '<div class="compare-search-empty" style="opacity:.5;">Loading players...</div>';
+    fetch('/api/players')
+      .then(r => r.json())
+      .then(list => {
+        _playerListCache = list;
+        resultsBox.innerHTML = '';
+        if (input.value.trim().length >= 2) doSearch(input.value.trim());
+      })
+      .catch(() => {
+        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Failed to load players</div>';
+      });
+  }
+}
+
+function _buildCompareHeroHTML(p) {
+  const val1qb = p.stats?.value || 0;
+  const valsf  = p.stats?.sf_value || 0;
+  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '—');
+  return `
+    <div class="compare-hero-row">
+      <div class="pm-hero-stat pm-hero-primary">
+        <div class="pm-hero-label">1QB Value</div>
+        <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">SF Value</div>
+        <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">Pos Rank</div>
+        <div class="pm-hero-val">${posRankLabel}</div>
+      </div>
+    </div>
+  `;
+}
+
+function _buildComparePlayerHeader(p) {
+  const metaParts = [];
+  if (p.position) metaParts.push(`<span style="font-weight:600;">${p.position}</span>`);
+  if (p.team) metaParts.push(`<span>${p.team}</span>`);
+  if (p.age) metaParts.push(`<span>${p.age.toFixed ? p.age.toFixed(1) : p.age} yrs</span>`);
+  return `
+    <div class="compare-player-header">
+      <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
+      <div class="compare-player-header-info">
+        <div class="compare-player-name">${p.name}</div>
+        <div class="compare-player-meta">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCompareMetricRows(m1, m2) {
+  // Build a map of metrics present in both players
+  const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
+  const labelMap = {
+    pff_passing_grade: 'PFF Pass Grade',
+    big_time_throw_rate: 'BTT Rate',
+    adjusted_completion_rate: 'Adj Comp %',
+    nfl_passer_rating: 'Passer Rating',
+    pff_rushing_grade: 'PFF Rush Grade',
+    breakaway_percentage: 'Breakaway %',
+    elusive_rating: 'Elusive Rating',
+    grades_offense: 'PFF Off Grade',
+    yards_after_catch_per_reception: 'YAC/Rec',
+    avg_depth_of_target: 'aDOT',
+    contested_catch_rate: 'Contested Catch %',
+    drop_rate: 'Drop Rate',
+    pressure_to_sack_rate: 'P2S Rate',
+  };
+  const displayKeys = Object.keys(labelMap).filter(k => allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null));
+  if (!displayKeys.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
+
+  // Determine max per metric for bar scaling
+  return displayKeys.map(key => {
+    const v1 = m1?.[key] ?? null;
+    const v2 = m2?.[key] ?? null;
+    const maxVal = Math.max(v1 ?? 0, v2 ?? 0, 1);
+    const pct1 = v1 != null ? Math.min(100, Math.round((v1 / maxVal) * 100)) : 0;
+    const pct2 = v2 != null ? Math.min(100, Math.round((v2 / maxVal) * 100)) : 0;
+
+    function barColor(pct, raw) {
+      if (raw == null) return '#374151';
+      if (pct >= 60) return '#10b981';
+      if (pct >= 35) return '#3b82f6';
+      return '#f59e0b';
+    }
+
+    const fmt = v => v != null ? (Number.isInteger(v) ? v : v.toFixed(1)) : '—';
+
+    return `
+      <div class="compare-metric-row">
+        <div class="compare-metric-p1-val">${fmt(v1)}</div>
+        <div class="compare-bar-left">
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
+        </div>
+        <div class="compare-metric-label">${labelMap[key]}</div>
+        <div class="compare-bar-right">
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
+        </div>
+        <div class="compare-metric-p2-val">${fmt(v2)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openComparisonView(p1, p2) {
+  const modal = document.getElementById('playerModal');
+  const body = document.getElementById('playerModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.add('compare-mode');
+
+  // Update the header to show both players instead of single player
+  const headerTitleSection = modal.querySelector('.player-modal-title-section');
+  const headshotContainer = modal.querySelector('.player-modal-headshot-container');
+  if (headshotContainer) headshotContainer.style.display = 'none';
+  if (headerTitleSection) {
+    headerTitleSection.innerHTML = `
+      <div class="compare-dual-header">
+        ${_buildComparePlayerHeader(p1)}
+        <div class="compare-vs-badge">VS</div>
+        ${_buildComparePlayerHeader(p2)}
+      </div>
+    `;
+  }
+
+  // Build the comparison body
+  body.innerHTML = `
+    <div class="compare-body">
+      <div class="compare-hero-section">
+        <div class="compare-hero-player" id="compareHero1">${_buildCompareHeroHTML(p1)}</div>
+        <div class="compare-hero-player" id="compareHero2">${_buildCompareHeroHTML(p2)}</div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics Comparison</span></div>
+      <div id="compareMetricsContent" class="compare-metrics-section">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+        </div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
+      <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
+
+      <div style="margin-top:16px;">
+        <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
+      </div>
+    </div>
+  `;
+
+  // Back button
+  document.getElementById('compareBackBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    openPlayerModal(p1.player_id, p1.name);
+  });
+
+  // Fetch advanced metrics for both players in parallel
+  const pathParts = window.location.pathname.split('/').filter(x => x);
+  const platform = pathParts[0] || 'sleeper';
+  const season = pathParts[1] || new Date().getFullYear();
+  const leagueId = pathParts[2] || null;
+
+  const metricsUrl = (pid) => leagueId
+    ? `/api/player-advanced-metrics/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
+    : `/api/player-advanced-metrics/${pid}`;
+
+  Promise.all([
+    fetch(metricsUrl(p1.player_id)).then(r => r.json()).catch(() => ({})),
+    fetch(metricsUrl(p2.player_id)).then(r => r.json()).catch(() => ({})),
+  ]).then(([m1, m2]) => {
+    const metricsDiv = document.getElementById('compareMetricsContent');
+    if (metricsDiv) {
+      const rows = renderCompareMetricRows(m1, m2);
+      metricsDiv.innerHTML = `
+        <div class="compare-metrics-legend">
+          <span class="compare-legend-dot" style="background:#3b82f6;"></span><span>${p1.name}</span>
+          <span class="compare-legend-dot" style="background:#f59e0b;margin-left:16px;"></span><span>${p2.name}</span>
+        </div>
+        ${rows}
+      `;
+    }
+  });
+
+  // Render value history chart with two lines
+  if (typeof Plotly !== 'undefined') {
+    const chartDiv = document.getElementById('compareValueChart');
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#9ca3af' : '#6b7280';
+    const bgColor = isDark ? '#1e293b' : '#f8fafc';
+
+    const makeTrace = (history, name, color) => {
+      const dates = (history || []).map(h => h.as_of_date || h.date);
+      const vals  = (history || []).map(h => h.value);
+      return {
+        x: dates, y: vals, mode: 'lines', name,
+        line: { color, width: 2.5 },
+        hovertemplate: `<b>${name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
+      };
+    };
+
+    const traces = [
+      makeTrace(p1.value_history, p1.name, '#3b82f6'),
+      makeTrace(p2.value_history, p2.name, '#f59e0b'),
+    ];
+
+    Plotly.newPlot(chartDiv, traces, {
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: bgColor,
+      margin: { t: 10, r: 16, b: 40, l: 46 },
+      xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
+      yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
+      legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
+      hovermode: 'x unified',
+      showlegend: true,
+    }, { responsive: true, displayModeBar: false });
   }
 }
 

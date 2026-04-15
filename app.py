@@ -8087,6 +8087,39 @@ def _sanitize_for_json(obj):
     return obj
 
 
+@app.route("/api/players")
+def api_players():
+    """Compact player list for comparison search. No league context required."""
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        players_index = load_players_index() or {}
+        value_table = load_model_value_table() or []
+        value_map = {str(p.get("id")): p for p in value_table}
+
+        results = []
+        for pid, meta in players_index.items():
+            pos = meta.get("pos", "")
+            if pos in ("K", "DEF"):
+                continue
+            v = value_map.get(str(pid), {})
+            results.append({
+                "player_id": pid,
+                "name": meta.get("name", ""),
+                "position": pos,
+                "team": meta.get("team", ""),
+                "value": v.get("value", 0),
+                "sf_value": v.get("sf_value", 0),
+                "pos_rank_label": v.get("pos_rank_label", ""),
+                "espnHeadshot": meta.get("espnHeadshot", ""),
+            })
+
+        # Sort by value descending so most relevant players appear first
+        results.sort(key=lambda x: x["value"] or 0, reverse=True)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/league-players")
 def api_league_players():
     model_value_table = list(load_model_value_table() or [])
