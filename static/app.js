@@ -1075,7 +1075,8 @@ window.initTradePage = function initTradePage(root = document) {
           metaParts.push(c.position);
         }
         if (c.team) metaParts.push(c.team);
-        if (c.age != null) metaParts.push(`${c.age.toFixed(1)} yrs`);
+        const cAgeNum = parseFloat(c.age);
+        if (!isNaN(cAgeNum)) metaParts.push(`${cAgeNum.toFixed(1)} yrs`);
         meta.textContent = metaParts.join(" · ");
 
         // Add opportunity badge
@@ -3630,7 +3631,8 @@ function openPlayerModal(playerId, playerName) {
       const metaParts = [];
       if (data.position && data.pos_rank) metaParts.push(`<span style="font-weight:600;color:var(--text);">${data.position}${data.pos_rank}</span>`);
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
-      if (data.age) metaParts.push(`<span>${data.age.toFixed(1)} yrs</span>`);
+      const ageNum = parseFloat(data.age);
+      if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
       // Update headshot
@@ -4408,7 +4410,8 @@ function _buildComparePlayerHeader(p) {
   const metaParts = [];
   if (p.position) metaParts.push(`<span style="font-weight:600;">${p.position}</span>`);
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
-  if (p.age) metaParts.push(`<span>${p.age.toFixed ? p.age.toFixed(1) : p.age} yrs</span>`);
+  const _pAge = parseFloat(p.age);
+  if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
   return `
     <div class="compare-player-header">
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
@@ -5116,8 +5119,8 @@ function renderTeamDetails(data) {
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
           <td>${player.team || '—'}</td>
-          <td>${player.age != null && !isNaN(player.age) ? player.age.toFixed(1) : '—'}</td>
-          <td>${player.value != null && !isNaN(player.value) ? player.value.toFixed(1) : '—'}</td>
+          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—'}</td>
+          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—'}</td>
         </tr>
       `;
     });

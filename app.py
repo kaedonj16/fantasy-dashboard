@@ -3201,7 +3201,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
 
         top_waiver_assets.append({
-            "name": row.get("name", "Unknown"),
+            "name": row.get("name") or players_index.get(pid, {}).get("name", "Unknown"),
             "position": pos,
             "team": row.get("team") or "",
             "value": val,
