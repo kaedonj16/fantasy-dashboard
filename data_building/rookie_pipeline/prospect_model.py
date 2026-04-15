@@ -445,12 +445,14 @@ def calc_production_score(
         if elusive is not None:
             # Scale-based: 0 at elusive=50 (replacement level), max +8 at 130 (elite).
             # No penalty for below-average elusive — avoids punishing Singleton-type backs.
-            prod = _clip(prod + _scale(float(elusive), 50.0, 130.0) * 8.0)
+            # _scale returns 0-100, so multiply by 0.08 to get 0-8 bonus range.
+            prod = _clip(prod + _scale(float(elusive), 50.0, 130.0) * 0.08)
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
             # Scale-based: 0 at 20% (average), max +8 at 50% (elite). No penalty.
-            prod = _clip(prod + _scale(breakaway, 20.0, 50.0) * 8.0)
+            # _scale returns 0-100, so multiply by 0.08 to get 0-8 bonus range.
+            prod = _clip(prod + _scale(breakaway, 20.0, 50.0) * 0.08)
 
     elif eval_metrics and pos == "QB":
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
