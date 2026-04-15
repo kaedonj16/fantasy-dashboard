@@ -569,7 +569,7 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     row["team_total_yards"]   = _safe_int(t_yds)
     row["team_total_tds"]     = _safe_int(t_tds)
     row["team_pass_rate"]     = ts.get("pass_rate")
-    row["team_pass_yards"]    = int(ts.get("netPassingYards") or 0)
+    row["team_pass_yards"]    = int(ts.get("team_pass_yards") or 0)
     row["sagarin_team_rating"] = _sagarin_get_team_rating(team_name, season)
 
     dom = 0.0
@@ -779,8 +779,6 @@ def fetch_cfbd_college_stats(
                     try:
                         gp = (games_played_map.get(name) or {}).get(yr)
                         seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp))
-                        # print(name)
-                        # print(seasons)
                     except Exception as exc:
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
                 if seasons:

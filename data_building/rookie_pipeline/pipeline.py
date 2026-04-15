@@ -1502,8 +1502,8 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         fetch_cfbd_college_stats,
         fetch_local_combine_csv,
     )
+    from .sagarin import get_team_rating as _sagarin_get_team_rating
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
-    from .mock_draft_consensus import build_mock_draft_consensus_from_scraped
     from .prospect_model import score_all_prospects
     from .value_translation import translate_all
 
