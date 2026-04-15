@@ -11427,14 +11427,37 @@ img, svg, canvas {
   flex-shrink: 0;
 }
 
-/* Responsive */
+/* ── Mobile: tablet and below ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* Full-width modal */
   .player-modal.compare-mode {
     max-width: 100%;
   }
+
+  /* Dual header: keep side-by-side but tighten */
   .compare-dual-header {
-    flex-wrap: wrap;
+    gap: 6px;
   }
+  .compare-player-header {
+    gap: 6px;
+    min-width: 0;
+  }
+  .compare-player-headshot {
+    width: 38px;
+    height: 32px;
+  }
+  .compare-player-name {
+    font-size: 13px;
+  }
+  .compare-player-meta {
+    font-size: 11px;
+  }
+  .compare-vs-badge {
+    font-size: 11px;
+    padding: 0 4px;
+  }
+
+  /* Hero stats: stack vertically */
   .compare-hero-section {
     flex-direction: column;
   }
@@ -11442,20 +11465,106 @@ img, svg, canvas {
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding-right: 0;
-    padding-bottom: 16px;
+    padding-bottom: 14px;
+    margin-bottom: 2px;
   }
   .compare-hero-player:last-child {
     padding-left: 0;
-    padding-top: 16px;
+    padding-top: 14px;
   }
+
+  /* Season selector: allow pills to scroll horizontally */
+  .compare-season-selector {
+    gap: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  .compare-season-label {
+    flex-shrink: 0;
+  }
+  .compare-season-pills {
+    flex-wrap: nowrap;
+  }
+
+  /* Metric rows: shrink label, keep mirrored bars readable */
+  .compare-metric-label {
+    width: 88px;
+    font-size: 10px;
+  }
+  .compare-metric-p1-val,
+  .compare-metric-p2-val {
+    width: 34px;
+    font-size: 11px;
+  }
+
+  /* Search: stack player + picker vertically */
   .compare-search-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 12px;
+  }
+  .compare-search-p1 {
+    width: 100%;
   }
   .compare-search-picker {
     width: 100%;
   }
+}
+
+/* ── Mobile: small phones ─────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Metric rows: move label above bars so bars get full width */
+  .compare-metric-row {
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
   .compare-metric-label {
-    width: 100px;
+    width: 100%;
+    order: -1;
+    text-align: center;
+    margin-bottom: 1px;
+    font-size: 10px;
+  }
+  .compare-metric-p1-val {
+    order: 1;
+    width: 30px;
+    text-align: right;
+  }
+  .compare-bar-left {
+    order: 2;
+  }
+  .compare-bar-right {
+    order: 3;
+  }
+  .compare-metric-p2-val {
+    order: 4;
+    width: 30px;
+    text-align: left;
+  }
+
+  /* Tighter dual header on small phones */
+  .compare-player-headshot {
+    width: 32px;
+    height: 28px;
+  }
+  .compare-player-name {
+    font-size: 12px;
+  }
+  .compare-player-meta {
+    font-size: 10px;
+  }
+
+  /* Metrics legend: wrap naturally */
+  .compare-metrics-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Season pills: smaller touch targets */
+  .compare-season-pill {
+    padding: 3px 9px;
+    font-size: 11px;
   }
 }
