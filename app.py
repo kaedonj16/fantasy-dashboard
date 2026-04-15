@@ -7430,7 +7430,14 @@ def maybe_run_daily():
                 season = int(state.get("season") or datetime.now().year)
                 week = int(state.get("week") or 0)
 
-                run_daily_data_async(season, week)
+                # Run in background thread
+                daily_thread = threading.Thread(
+                    target=run_daily_data_async,
+                    args=(season, week),
+                    daemon=True
+                )
+                daily_thread.start()
+                
                 daily_completed = today_et
         finally:
             daily_lock.release()
