@@ -1811,7 +1811,7 @@ def _build_reasons(
 
         ccr = ls.get("contested_catch_rate")
         if ccr is not None:
-            pct = float(ccr) * 100
+            pct = float(ccr)
             if pct >= 80:
                 adv.append(f"{pct:.0f}% contested catch rate — elite ball-winner in traffic")
             elif pct >= 65:
@@ -1821,7 +1821,7 @@ def _build_reasons(
 
         dr = ls.get("drop_rate")
         if dr is not None:
-            dpct = float(dr) * 100
+            dpct = float(dr)
             if dpct <= 3.0:
                 adv.append(f"{dpct:.1f}% drop rate — elite ball security")
             elif dpct >= 10.0:
