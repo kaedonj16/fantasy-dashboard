@@ -8495,6 +8495,18 @@ def api_breakout_candidates():
         return jsonify([])
 
 
+@app.route("/api/nfl-state")
+def api_nfl_state():
+    """Get current NFL state from Sleeper API."""
+    try:
+        from dashboard_services.api import get_nfl_state
+        state = get_nfl_state()
+        return jsonify(state or {})
+    except Exception as e:
+        print(f"[nfl-state] Error: {e}")
+        return jsonify({}), 500
+
+
 @app.route("/api/player-advanced-metrics/<player_id>")
 def api_player_advanced_metrics(player_id: str):
     """
@@ -8523,6 +8535,7 @@ def api_player_advanced_metrics(player_id: str):
         from data_building.advanced_metrics import (
             get_player_metrics,
             get_player_metrics_by_season,
+            get_player_career_metrics,
             get_available_seasons_for_player,
         )
 
@@ -8533,7 +8546,9 @@ def api_player_advanced_metrics(player_id: str):
 
         # Parse requested season from query param
         requested_season = request.args.get("season")
-        if requested_season:
+        is_career_request = requested_season == "career" or requested_season is None
+        
+        if requested_season and requested_season != "career":
             try:
                 requested_season = int(requested_season)
             except (ValueError, TypeError):
@@ -8552,11 +8567,27 @@ def api_player_advanced_metrics(player_id: str):
         else:
             target_season = nfl_season
 
-        # Fetch metrics for the target season (or fall back to latest row)
-        if available_seasons:
+        # Fetch metrics
+        if is_career_request:
+            # Career mode - aggregate across all seasons
+            metrics = get_player_career_metrics(str(player_id))
+            target_season = None
+        elif requested_season:
+            # Specific season requested
+            metrics = get_player_metrics_by_season(str(player_id), requested_season)
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            # Current season (in-season)
+            metrics = get_player_metrics_by_season(str(player_id), nfl_season)
+            target_season = nfl_season
+        elif available_seasons:
+            # Most recent season with data
+            target_season = available_seasons[0]
             metrics = get_player_metrics_by_season(str(player_id), target_season)
         else:
+            # Fallback to latest
             metrics = get_player_metrics(str(player_id))
+            target_season = None
 
         if not metrics:
             return jsonify({

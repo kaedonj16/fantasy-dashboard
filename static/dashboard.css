@@ -11160,6 +11160,56 @@ img, svg, canvas {
   flex-shrink: 0;
 }
 
+/* Season selector for comparison */
+.compare-season-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #334155);
+}
+.compare-season-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.compare-season-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.compare-season-pill {
+  background: var(--surface, #1e293b);
+  border: 1px solid var(--border, #334155);
+  color: var(--text-muted);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.compare-season-pill:hover {
+  background: var(--surface-hover, #334155);
+  color: var(--text);
+  border-color: var(--border-hover, #475569);
+}
+.compare-season-pill.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+  font-weight: 600;
+}
+
+.compare-hero-row {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 5px;
+}
+
 /* Hero stats two-column */
 .compare-hero-section {
   display: flex;
