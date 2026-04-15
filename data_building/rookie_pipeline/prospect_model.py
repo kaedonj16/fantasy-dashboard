@@ -205,14 +205,22 @@ def _score_production_season(season: Dict, pos: str) -> float:
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 35,  140) * 0.30 +
-            _scale(all_yds_pg, 45,  160) * 0.25 +
-            _scale(tds_pg,      0.4,  1.8) * 0.25 +
-            _scale(dom,         0.12, 0.60) * 0.20
+            _scale(rush_yds_pg, 20,  120) * 0.18 +
+            _scale(all_yds_pg,  30,  150) * 0.17 +
+            _scale(tds_pg,       0.4,  1.8) * 0.25 +
+            _scale(dom,          0.12, 0.60) * 0.15 +
+            _scale(ypc,          3.5,  7.5) * 0.25
         )
-        if rec_yds_pg >= 20:
-            prod = _clip(prod * 1.10)
-        if ypc >= 6.5:
+        # Receiving tiers: require meaningful rec share so dedicated pass-catchers
+        # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
+        rec_share = rec_yds_pg / max(all_yds_pg, 1.0)
+        if rec_yds_pg >= 20 and rec_share >= 0.28:
+            prod = _clip(prod * 1.20)   # dedicated pass-catcher
+        elif rec_yds_pg >= 20 and rec_share >= 0.22:
+            prod = _clip(prod * 1.15)   # strong receiving back
+        elif rec_yds_pg >= 15:
+            prod = _clip(prod * 1.08)   # incidental receiver
+        if ypc >= 6.0:
             prod = _clip(prod * 1.08)
         if dom >= 0.30:
             prod = _clip(prod * 1.12)
@@ -435,11 +443,14 @@ def calc_production_score(
     elif eval_metrics and pos == "RB":
         elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
         if elusive is not None:
-            prod = _clip(prod + _clip((float(elusive) - 70.0) * 0.06, -4.0, 6.0))
+            # Scale-based: 0 at elusive=50 (replacement level), max +8 at 130 (elite).
+            # No penalty for below-average elusive — avoids punishing Singleton-type backs.
+            prod = _clip(prod + _scale(float(elusive), 50.0, 130.0) * 8.0)
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
-            prod = _clip(prod + _clip((breakaway - 30.0) * 0.15, -3.0, 6.0))
+            # Scale-based: 0 at 20% (average), max +8 at 50% (elite). No penalty.
+            prod = _clip(prod + _scale(breakaway, 20.0, 50.0) * 8.0)
 
     elif eval_metrics and pos == "QB":
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
@@ -500,8 +511,8 @@ def calc_efficiency_score(
         ms    = _safe(ls.get("market_share_yards"))
         ypr   = _safe(ls.get("yds_per_reception"), 7.0)
         eff   = (
-            _scale(ypc,  3.5,  7.0)  * 0.55 +
-            _scale(ms,   0.10, 0.45) * 0.25 +
+            _scale(ypc,  3.5,  7.0)  * 0.65 +   # increased: per-carry quality is the key RB efficiency signal
+            _scale(ms,   0.10, 0.45) * 0.15 +   # reduced: market share penalises committee backs unfairly
             _scale(ypr,  5.0, 12.0)  * 0.20
         )
 
@@ -1065,11 +1076,12 @@ POSITION_WEIGHTS = {
     "RB": {
         # Draft capital (r=0.72) and breakout age (r=0.65) are the clearest RB predictors.
         # Age is especially predictive for RBs who peak young and decline quickly.
-        # Environment and competition are weak predictors for RBs.
+        # Efficiency raised: YPC-based efficiency is more predictive than raw volume for RBs.
+        # Production reduced: volume-centric formula over-rewards featured backs vs. committee RBs.
         "draft_capital": 0.24,
-        "production": 0.23,
+        "production": 0.18,
         "utilization": 0.08,
-        "efficiency": 0.05,
+        "efficiency": 0.10,
         "age": 0.09,
         "breakout": 0.14,
         "athleticism": 0.10,
@@ -1127,6 +1139,7 @@ def calc_loaded_roster_adjustment(
     season: int,
     production_score: float,
     market_share: float,
+    ypc: float = 0.0,
 ) -> float:
     loaded_rosters: Dict[str, Dict[str, Dict[int, int]]] = {
         "Ohio State": {
@@ -1191,6 +1204,12 @@ def calc_loaded_roster_adjustment(
                 2025: 2,
             },
         },
+        "Notre Dame": {
+            "RB": {
+                2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
+                2025: 2,
+            },
+        },
     }
 
     team = (team or "").strip()
@@ -1225,6 +1244,8 @@ def calc_loaded_roster_adjustment(
         base_bonus = 0.12
     elif room_size == 3:
         base_bonus = 0.10
+    elif position == "RB":
+        base_bonus = 0.10   # committee RBs are more opportunity-limited than shared WR rooms
     else:
         base_bonus = 0.06
 
@@ -1247,6 +1268,10 @@ def calc_loaded_roster_adjustment(
         prod_factor = 0.55
     elif production_score >= 50:
         prod_factor = 0.30
+    elif position == "RB" and ypc >= 5.5:
+        # Committee RB with elite YPC: volume suppressed by opportunity, not talent.
+        # Per-carry efficiency is the quality signal — use it instead of production_score.
+        prod_factor = 0.65
     else:
         prod_factor = 0.10
 
@@ -1437,7 +1462,8 @@ def score_prospect(
     market_share = _safe(ls.get("market_share_yards"), 0.15)
     
     loaded_roster_adjustment = calc_loaded_roster_adjustment(
-        team, pos, season, production_score, market_share
+        team, pos, season, production_score, market_share,
+        ypc=_safe(ls.get("yds_per_carry")),
     )
     production_score = _clip(production_score * loaded_roster_adjustment)
     
@@ -1586,7 +1612,13 @@ def score_prospect(
     # util=43.6) → gate≈0.64 → ~8% penalty, dropping him ~5-6 points.
     _PROD_GATE = 65.0
     _UTIL_GATE = 55.0
-    if production_score < _PROD_GATE and utilization_score < _UTIL_GATE:
+    # RB bypass: a back with elite per-carry efficiency (YPC ≥ 5.5) is
+    # opportunity-constrained, not talent-constrained (e.g. blocked by a generational
+    # back). The gate was designed for genuinely sparse evidence, not committee backs
+    # who produce efficiently in limited carries.
+    _rb_ypc = _safe((_latest_season(seasons) or {}).get("yds_per_carry")) if pos == "RB" else 0.0
+    _rb_efficiency_bypass = (pos == "RB" and _rb_ypc >= 5.5)
+    if production_score < _PROD_GATE and utilization_score < _UTIL_GATE and not _rb_efficiency_bypass:
         gate = (production_score / _PROD_GATE) * (utilization_score / _UTIL_GATE)
         prospect_score *= 1.0 - (1.0 - gate) * 0.22
 
