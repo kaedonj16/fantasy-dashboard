@@ -1181,7 +1181,8 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
                     "dominator_rating", "market_share_yards", "market_share_tds",
                     "yds_per_carry", "yds_per_reception", "yds_per_attempt",
                     "completion_pct", "td_int_ratio", "team_pass_rate",
-                    "team_total_yards", "team_total_tds", "team", "conference"):
+                    "team_total_yards", "team_total_tds", "team", "conference",
+                    "team_pass_yards", "sagarin_team_rating"):
             s.setdefault(fld, None)
 
     return p
