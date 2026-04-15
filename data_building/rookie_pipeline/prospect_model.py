@@ -1805,6 +1805,136 @@ def _build_reasons(
     elif eff <= 35:
         bullets.append("Below-average efficiency — volume stats may overstate true impact")
 
+    # ── Advanced metrics ──────────────────────────────────────────────────────
+    if pos in ("WR", "TE"):
+        adv: List[str] = []
+
+        ccr = ls.get("contested_catch_rate")
+        if ccr is not None:
+            pct = float(ccr) * 100
+            if pct >= 80:
+                adv.append(f"{pct:.0f}% contested catch rate — elite ball-winner in traffic")
+            elif pct >= 65:
+                adv.append(f"{pct:.0f}% contested catch rate — reliable in contested situations")
+            elif pct < 40:
+                adv.append(f"{pct:.0f}% contested catch rate — struggles in jump-ball situations")
+
+        dr = ls.get("drop_rate")
+        if dr is not None:
+            dpct = float(dr) * 100
+            if dpct <= 3.0:
+                adv.append(f"{dpct:.1f}% drop rate — elite ball security")
+            elif dpct >= 10.0:
+                adv.append(f"{dpct:.0f}% drop rate — ball security concern")
+
+        yac = ls.get("yards_after_catch_per_reception")
+        if yac is not None:
+            yac = float(yac)
+            thresh     = 5.5 if pos == "WR" else 4.0
+            low_thresh = 2.5 if pos == "WR" else 1.8
+            if yac >= thresh:
+                adv.append(f"{yac:.1f} YAC/reception — dynamic after the catch")
+            elif yac <= low_thresh:
+                adv.append(f"{yac:.1f} YAC/reception — limited after-catch production")
+
+        adot = ls.get("avg_depth_of_target")
+        if adot is not None and pos == "WR":
+            adot = float(adot)
+            if adot >= 14.0:
+                adv.append(f"{adot:.1f}-yd avg depth of target — true deep threat")
+            elif adot <= 6.0:
+                adv.append(f"{adot:.1f}-yd aDOT — short-area route specialist")
+
+        pff_off = ls.get("grades_offense")
+        if pff_off is not None:
+            pff_off = float(pff_off)
+            if pff_off >= 85.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — elite overall grade")
+            elif pff_off >= 75.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — above-average")
+
+        if pos == "WR":
+            sr = ls.get("slot_rate")
+            if sr is not None and float(sr) >= 0.65:
+                adv.append(f"{float(sr)*100:.0f}% slot rate — primary slot receiver")
+
+        if pos == "TE":
+            ir = ls.get("inline_rate")
+            if ir is not None:
+                ir = float(ir)
+                if ir >= 0.60:
+                    adv.append(f"{ir*100:.0f}% inline rate — traditional in-line TE")
+                elif ir <= 0.20:
+                    adv.append(f"{ir*100:.0f}% inline rate — move TE / receives in space")
+
+        bullets.extend(adv[:3])
+
+    elif pos == "RB":
+        adv = []
+
+        pff_off = ls.get("grades_offense")
+        if pff_off is not None:
+            pff_off = float(pff_off)
+            if pff_off >= 80.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — elite overall grade")
+            elif pff_off >= 70.0:
+                adv.append(f"PFF offensive grade {pff_off:.1f} — above-average")
+
+        elusive = ls.get("elusive_rating")
+        if elusive is not None:
+            elusive = float(elusive)
+            if elusive >= 90.0:
+                adv.append(f"Elusive rating {elusive:.1f} — exceptional open-field threat")
+            elif elusive >= 70.0:
+                adv.append(f"Elusive rating {elusive:.1f} — above-average evasion ability")
+
+        bp = ls.get("breakaway_percentage")
+        if bp is not None:
+            bpct = float(bp) * 100
+            if bpct >= 18.0:
+                adv.append(f"{bpct:.0f}% breakaway run rate — consistent big-play threat")
+            elif bpct >= 12.0:
+                adv.append(f"{bpct:.0f}% breakaway run rate — shows explosive burst")
+
+        bullets.extend(adv[:3])
+
+    elif pos == "QB":
+        adv = []
+
+        pff_pass = ls.get("pff_passing_grade")
+        if pff_pass is not None:
+            pff_pass = float(pff_pass)
+            if pff_pass >= 85.0:
+                adv.append(f"PFF passing grade {pff_pass:.1f} — elite passer grade")
+            elif pff_pass >= 75.0:
+                adv.append(f"PFF passing grade {pff_pass:.1f} — above-average")
+
+        acr = ls.get("adjusted_completion_rate")
+        if acr is not None:
+            apct = float(acr) * 100
+            if apct >= 75.0:
+                adv.append(f"{apct:.0f}% adjusted completion rate — highly accurate")
+            elif apct <= 58.0:
+                adv.append(f"{apct:.0f}% adjusted completion rate — accuracy concern")
+
+        btt = ls.get("big_time_throw_rate")
+        if btt is not None:
+            bpct = float(btt) * 100
+            if bpct >= 8.0:
+                adv.append(f"{bpct:.1f}% big-time throw rate — attacks deep coverage effectively")
+            elif bpct >= 5.0:
+                adv.append(f"{bpct:.1f}% big-time throw rate — willing to push ball downfield")
+
+        adot = ls.get("avg_depth_of_target")
+        if adot is not None:
+            adot = float(adot)
+            if adot >= 10.0:
+                adv.append(f"{adot:.1f}-yd avg depth of target — attacks full field vertically")
+            elif adot <= 6.0:
+                adv.append(f"{adot:.1f}-yd aDOT — relies heavily on short/underneath game")
+
+        bullets.extend(adv[:3])
+
     # ── Dominator rating ──────────────────────────────────────────────────────
     dom = _safe(ls.get("dominator_rating"))
     if dom >= 0.35 and pos in ("WR", "RB"):
