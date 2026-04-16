@@ -6,7 +6,7 @@ import json
 import pickle
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1495,19 +1495,18 @@ def rewrite_value_table_with_model() -> Path:
             cleaned_assets[i]["sf_pos_rank_label"] = f"{pos}{rank}"
             rank += 1
 
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    yesterday_file = DATA_DIR / f"model_values_{yesterday.isoformat()}.json"
-
-    if yesterday_file.exists():
-        print(f"[model_values] Removing yesterday's value file: {yesterday_file.name}")
-        try:
-            yesterday_file.unlink()
-        except Exception as e:
-            print(f"[model_values] Failed to remove yesterday's file: {e}")
-
     out_path = DATA_DIR / f"model_values_{date_str}.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
+
+    # Remove all previous model_values files now that today's has been written
+    today_name = out_path.name
+    for old_file in DATA_DIR.glob("model_values_*.json"):
+        if old_file.name != today_name:
+            try:
+                old_file.unlink()
+                print(f"[model_values] Removed old value file: {old_file.name}")
+            except Exception as e:
+                print(f"[model_values] Failed to remove {old_file.name}: {e}")
 
     return out_path
