@@ -5560,10 +5560,184 @@ def build_teams_body(ctx: dict) -> str:
     all_cards_html = "".join(
         cards_html) or "<div class='card'><div class='card-body'><p>No teams found.</p></div></div>"
 
+    # ---------- League analytics section (lazy-loaded) ----------
+    platform_js = platform
+    season_js = current_season
+
+    # Detect league type (sf vs 1qb) from roster positions
+    _rp = get_roster_positions()
+    _rp_list = list(_rp) if _rp else []
+    _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+    _league_type_js = "sf" if _is_sf else "1qb"
+    _league_size_js = int(len(rosters)) if rosters else 10
+
+    analytics_html = f"""
+    <div class="card teams-analytics-card" id="teamsAnalyticsCard">
+      <div class="card-header" style="padding-bottom:0;">
+        <div class="tab-strip" id="teamsAnalyticsTabs" style="border-bottom:none;">
+          <button class="tab-btn active" data-tab="btm">Beat the Market</button>
+          <button class="tab-btn" data-tab="sos">Schedule Strength</button>
+          <button class="tab-btn" data-tab="draft">Draft Grades</button>
+          <div class="tab-panels">
+            <div class="tab-panel active" data-tab="btm" id="btmPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="sos" id="sosPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="draft" id="draftPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function() {{
+      var _platform   = {repr(platform_js)};
+      var _leagueId   = {repr(league_id)};
+      var _season     = {season_js};
+      var _leagueType = {repr(_league_type_js)};
+      var _leagueSize = {_league_size_js};
+      var _loaded     = {{}};
+
+
+      function loadBtm() {{
+        if (_loaded.btm) return;
+        _loaded.btm = true;
+        var panel = document.getElementById('btmPanel');
+        if (!panel) return;
+        fetch('/api/beat-the-market?platform=' + _platform +
+              '&league_id=' + _leagueId + '&season=' + _season +
+              '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=30')
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+            var rows = data.rosters || [];
+            var maxAbs = Math.max(...rows.map(r => Math.abs(r.vs_avg)), 1);
+            var html = '<div class="analytics-btm-header"><span class="analytics-date-label">30-day window: ' +
+              data.baseline_date + ' → ' + data.latest_date + '</span>' +
+              '<span class="analytics-avg-label">League avg delta: ' +
+              (data.league_avg_delta >= 0 ? '+' : '') + data.league_avg_delta + '</span></div>';
+            html += '<div class="analytics-bar-list">';
+            rows.forEach(function(r) {{
+              var sign = r.vs_avg >= 0 ? '+' : '';
+              var cls  = r.vs_avg >= 0 ? 'analytics-bar-pos' : 'analytics-bar-neg';
+              var pct  = Math.min(100, Math.round(Math.abs(r.vs_avg) / maxAbs * 100));
+              html += '<div class="analytics-bar-row">' +
+                '<span class="analytics-bar-name">' + r.team_name + '</span>' +
+                '<div class="analytics-bar-track">' +
+                  '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
+                '</div>' +
+                '<span class="analytics-bar-val ' + cls + '">' + sign + r.vs_avg + '</span>' +
+              '</div>';
+            }});
+            html += '</div>';
+            panel.innerHTML = html;
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
+      function loadSos() {{
+        if (_loaded.sos) return;
+        _loaded.sos = true;
+        var panel = document.getElementById('sosPanel');
+        if (!panel) return;
+        fetch('/api/schedule-strength?platform=' + _platform +
+              '&league_id=' + _leagueId + '&season=' + _season)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+            var teams = data.teams || [];
+            if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No schedule data available.</p>'; return; }}
+            var maxOpp = Math.max(...teams.map(t => t.avg_opp_points), 1);
+            var wr = data.weeks_remaining || 0;
+            var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
+              '</span><span class="analytics-avg-label">Sorted by avg opponent score (hardest first)</span></div>';
+            html += '<div class="analytics-bar-list">';
+            teams.forEach(function(t) {{
+              var pct = Math.min(100, Math.round(t.avg_opp_points / maxOpp * 100));
+              var cls = t.avg_opp_points >= maxOpp * 0.75 ? 'analytics-bar-neg' :
+                        t.avg_opp_points <= maxOpp * 0.5  ? 'analytics-bar-pos' : 'analytics-bar-mid';
+              html += '<div class="analytics-bar-row">' +
+                '<span class="analytics-bar-name">' + t.team_name + '</span>' +
+                '<div class="analytics-bar-track">' +
+                  '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
+                '</div>' +
+                '<span class="analytics-bar-val">' + t.avg_opp_points.toFixed(1) + '</span>' +
+              '</div>';
+            }});
+            html += '</div>';
+            panel.innerHTML = html;
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
+      function loadDraft() {{
+        if (_loaded.draft) return;
+        _loaded.draft = true;
+        var panel = document.getElementById('draftPanel');
+        if (!panel) return;
+        fetch('/api/draft-grades?platform=' + _platform +
+              '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+            var teams = data.teams || [];
+            if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
+            var html = '<div class="analytics-draft-grid">';
+            teams.forEach(function(t) {{
+              var gcls = 'dg-' + t.grade.replace('+', 'plus');
+              var sign = t.total_value_diff >= 0 ? '+' : '';
+              html += '<div class="analytics-draft-team">' +
+                '<div class="analytics-draft-header">' +
+                  '<span class="analytics-draft-name">' + t.team_name + '</span>' +
+                  '<span class="analytics-draft-grade ' + gcls + '">' + t.grade + '</span>' +
+                '</div>' +
+                '<div class="analytics-draft-meta">' + sign + t.total_value_diff + ' total value</div>' +
+                '<div class="analytics-draft-picks">';
+              t.picks.forEach(function(p) {{
+                var pgcls = 'dg-' + p.grade.replace('+', 'plus');
+                var psign = p.value_diff >= 0 ? '+' : '';
+                html += '<div class="analytics-pick-row">' +
+                  '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
+                  '<span class="analytics-pick-name">' + p.name + '</span>' +
+                  '<span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
+                  '<span class="analytics-pick-val ' + (p.value_diff >= 0 ? 'analytics-bar-pos' : 'analytics-bar-neg') + '">' +
+                    psign + p.value_diff + '</span>' +
+                '</div>';
+              }});
+              html += '</div></div>';
+            }});
+            html += '</div>';
+            panel.innerHTML = html;
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
+      // Load active tab on page load
+      document.addEventListener('DOMContentLoaded', function() {{
+        var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
+        tabs.forEach(function(btn) {{
+          btn.addEventListener('click', function() {{
+            var tab = btn.dataset.tab;
+            if (tab === 'btm')   loadBtm();
+            if (tab === 'sos')   loadSos();
+            if (tab === 'draft') loadDraft();
+          }});
+        }});
+        // Load the first tab immediately
+        loadBtm();
+      }});
+    }})();
+    </script>
+    """
+
     # ---------- Page shell ----------
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
+        {analytics_html}
         <div class="teams-grid">
           {all_cards_html}
         </div>
@@ -9952,6 +10126,439 @@ def api_espn_validate_league():
         if "Missing required env var" in msg:
             return jsonify({"ok": False, "error": "Server not configured for ESPN (missing ESPN_S2/ESPN_SWID)."}), 503
         return jsonify({"ok": False, "error": f"Could not load ESPN league: {msg}"}), 500
+
+
+@app.route("/api/beat-the-market")
+def api_beat_the_market():
+    """
+    For each roster in a league, compute the sum of 30-day player value deltas
+    and compare it to the league-average delta over the same window.
+
+    A positive 'vs_avg' means the roster gained more value than a typical roster.
+
+    Query params: platform, league_id, season, days (default 30), league_type, league_size
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    nfl_state = get_nfl_state() or {}
+    try:
+        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+
+    try:
+        days = max(1, int(request.args.get("days", 30)))
+    except (TypeError, ValueError):
+        days = 30
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in [8, 10, 12, 14]:
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    try:
+        # Determine the right value field
+        if league_type == "sf" and league_size != 10:
+            value_expr = f"COALESCE(sf_value_{league_size}, sf_value, value)"
+        elif league_type == "sf":
+            value_expr = "COALESCE(sf_value, value)"
+        elif league_size != 10:
+            value_expr = f"COALESCE(value_{league_size}, value)"
+        else:
+            value_expr = "value"
+
+        from data_building.player_value_history import init_value_history_db, get_latest_snapshot_date
+        from dashboard_services.db import get_conn
+        from datetime import timedelta as _td
+
+        init_value_history_db()
+        latest_date = get_latest_snapshot_date(source="model")
+        if not latest_date:
+            return jsonify({"error": "No value history available"}), 404
+
+        from datetime import date as _date
+        if isinstance(latest_date, _date):
+            latest_date_obj = latest_date
+        else:
+            latest_date_obj = _date.fromisoformat(str(latest_date))
+
+        # Find the closest baseline date within the requested window
+        from dashboard_services.db import get_conn
+        baseline_date = None
+        with get_conn() as conn:
+            for candidate_days in range(days, 0, -1):
+                target = latest_date_obj - _td(days=candidate_days)
+                row = conn.execute(
+                    "SELECT MAX(as_of_date) AS d FROM player_value_history "
+                    "WHERE source = 'model' AND as_of_date <= %s",
+                    (target,)
+                ).fetchone()
+                if row and row["d"] and row["d"] < latest_date_obj:
+                    baseline_date = row["d"]
+                    break
+
+        if not baseline_date:
+            return jsonify({"error": "Insufficient history for requested window"}), 404
+
+        # Fetch deltas for all players in one query
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"""
+                WITH latest AS (
+                    SELECT DISTINCT ON (player_id) player_id,
+                           {value_expr} AS val
+                    FROM player_value_history
+                    WHERE source = 'model' AND as_of_date = %s
+                    ORDER BY player_id, as_of_date DESC
+                ),
+                baseline AS (
+                    SELECT DISTINCT ON (player_id) player_id,
+                           {value_expr} AS val
+                    FROM player_value_history
+                    WHERE source = 'model' AND as_of_date = %s
+                    ORDER BY player_id, as_of_date DESC
+                )
+                SELECT l.player_id,
+                       ROUND((l.val - b.val)::numeric, 1) AS delta
+                FROM latest l
+                JOIN baseline b ON b.player_id = l.player_id
+                """,
+                (latest_date_obj, baseline_date)
+            ).fetchall()
+
+        delta_by_pid = {str(r["player_id"]): float(r["delta"]) for r in rows}
+
+        # Fetch rosters
+        rosters = get_rosters(platform, league_id, season) or []
+        roster_map = _build_roster_map(
+            get_users(platform, league_id, season) or [],
+            rosters
+        )
+
+        # Aggregate per roster (only QB/RB/WR/TE players, ignore picks/K/DEF)
+        CORE_POS = {"QB", "RB", "WR", "TE"}
+        players_index = load_players_index() or {}
+
+        roster_totals: dict = {}
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            players_on_roster = r.get("players") or []
+            total_delta = 0.0
+            player_deltas = []
+            for pid in players_on_roster:
+                meta = players_index.get(str(pid), {})
+                pos = str(meta.get("pos", "")).upper()
+                if pos not in CORE_POS:
+                    continue
+                d = delta_by_pid.get(str(pid), 0.0)
+                total_delta += d
+                if abs(d) >= 5:
+                    player_deltas.append({
+                        "player_id": str(pid),
+                        "name": meta.get("name", str(pid)),
+                        "position": pos,
+                        "delta": d,
+                    })
+            player_deltas.sort(key=lambda x: abs(x["delta"]), reverse=True)
+            roster_totals[rid] = {
+                "roster_id": rid,
+                "team_name": roster_map.get(rid, f"Roster {rid}"),
+                "total_delta": round(total_delta, 1),
+                "top_movers": player_deltas[:5],
+            }
+
+        # Compute league average delta
+        all_deltas = [v["total_delta"] for v in roster_totals.values()]
+        avg_delta = round(sum(all_deltas) / len(all_deltas), 1) if all_deltas else 0.0
+
+        # Add vs_avg
+        results = []
+        for rid, entry in roster_totals.items():
+            results.append({
+                **entry,
+                "vs_avg": round(entry["total_delta"] - avg_delta, 1),
+            })
+
+        results.sort(key=lambda x: x["vs_avg"], reverse=True)
+
+        return jsonify({
+            "latest_date": str(latest_date_obj),
+            "baseline_date": str(baseline_date),
+            "league_avg_delta": avg_delta,
+            "rosters": results,
+        })
+
+    except Exception:
+        logger.exception("[beat-the-market] Unexpected error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/schedule-strength")
+def api_schedule_strength():
+    """
+    Compute schedule strength remaining for each team in a league.
+
+    For each team's future matchups (weeks > current_week), look up their
+    opponent's average points scored this season. The team with the hardest
+    remaining schedule faces the highest-scoring opponents on average.
+
+    Query params: platform, league_id, season
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    nfl_state = get_nfl_state() or {}
+    try:
+        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+
+    current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    season_type = str(nfl_state.get("season_type") or "").lower()
+    FULL_SEASON_WEEKS = 14  # typical fantasy regular season
+
+    try:
+        from dashboard_services.platform_api import get_matchups as pf_get_matchups
+
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+        roster_map = _build_roster_map(users, rosters)
+
+        # Build per-roster average points from completed weeks
+        avg_pts_by_rid: dict[str, float] = {}
+        weekly_pts: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
+
+        for w in range(1, current_week + 1):
+            try:
+                week_data = pf_get_matchups(platform, league_id, w, season) or []
+            except Exception:
+                continue
+            for m in week_data:
+                rid = str(m.get("roster_id", ""))
+                pts = float(m.get("points") or 0.0)
+                if rid in weekly_pts:
+                    weekly_pts[rid].append(pts)
+
+        for rid, pts_list in weekly_pts.items():
+            avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
+
+        # Build future matchups map: rid -> list of opponent roster_ids
+        future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
+
+        for w in range(current_week + 1, FULL_SEASON_WEEKS + 1):
+            try:
+                week_data = pf_get_matchups(platform, league_id, w, season) or []
+            except Exception:
+                continue
+            if not week_data:
+                break
+            # Group by matchup_id
+            by_mid: dict = {}
+            for m in week_data:
+                mid = m.get("matchup_id")
+                if mid is None:
+                    continue
+                by_mid.setdefault(mid, []).append(str(m.get("roster_id", "")))
+            for mid, rids in by_mid.items():
+                if len(rids) == 2:
+                    future_opponents[rids[0]].append(rids[1])
+                    future_opponents[rids[1]].append(rids[0])
+
+        results = []
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            opp_rids = future_opponents.get(rid, [])
+            opp_avgs = [avg_pts_by_rid.get(o, 0.0) for o in opp_rids]
+            avg_opp = round(sum(opp_avgs) / len(opp_avgs), 2) if opp_avgs else 0.0
+            results.append({
+                "roster_id": rid,
+                "team_name": roster_map.get(rid, f"Roster {rid}"),
+                "games_remaining": len(opp_rids),
+                "avg_opp_points": avg_opp,
+                "my_avg_points": avg_pts_by_rid.get(rid, 0.0),
+            })
+
+        results.sort(key=lambda x: x["avg_opp_points"], reverse=True)
+
+        return jsonify({
+            "current_week": current_week,
+            "weeks_remaining": max(0, FULL_SEASON_WEEKS - current_week),
+            "teams": results,
+        })
+
+    except Exception:
+        logger.exception("[schedule-strength] Unexpected error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/draft-grades")
+def api_draft_grades():
+    """
+    Grade each team's most recent draft class by comparing each pick's
+    current model value to an ADP-based expected value.
+
+    ADP expected value curve: picks 1-3 = 95th percentile, 4-6 = 85th,
+    7-12 = 75th, 13-24 = 60th, 25+ = 40th of the current value table.
+
+    Grade scale: A+ ≥+15%, A ≥+8%, B ≥0%, C ≥-10%, D ≥-20%, F <-20%.
+
+    Query params: platform, league_id, season
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    nfl_state = get_nfl_state() or {}
+    try:
+        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+
+    try:
+        # Fetch the draft picks
+        drafts = get_drafts(platform, league_id, season) or []
+        latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
+        if not latest_draft:
+            return jsonify({"error": "No completed draft found for this season"}), 404
+
+        draft_id = latest_draft.get("draft_id") or latest_draft.get("id")
+        if not draft_id:
+            return jsonify({"error": "Draft has no ID"}), 404
+
+        # Fetch draft picks from Sleeper (platform-agnostic via fetch_json)
+        from dashboard_services.api import fetch_json
+        picks_raw = fetch_json(f"/draft/{draft_id}/picks") or []
+        if not isinstance(picks_raw, list):
+            return jsonify({"error": "Could not load draft picks"}), 404
+
+        if not picks_raw:
+            return jsonify({"error": "Draft has no picks yet"}), 404
+
+        # Load current model value table
+        value_table = load_model_value_table() or []
+        val_field = "sf_value" if league_type == "sf" else "value"
+        value_by_id: dict = {str(p.get("id")): float(p.get(val_field) or p.get("value") or 0) for p in value_table}
+        players_index = load_players_index() or {}
+
+        # Build ADP expected value: sort all non-K/DEF players by current value
+        CORE_POS = {"QB", "RB", "WR", "TE"}
+        ranked_values = sorted(
+            [v for pid, v in value_by_id.items()
+             if str((players_index.get(pid) or {}).get("pos", "")).upper() in CORE_POS
+             and v > 0],
+            reverse=True
+        )
+
+        def adp_expected_value(pick_no: int) -> float:
+            """Map pick number to expected value from sorted values list."""
+            n = len(ranked_values)
+            if n == 0:
+                return 0.0
+            # Percentile bands by pick number
+            if pick_no <= 3:
+                pct = 0.95
+            elif pick_no <= 6:
+                pct = 0.85
+            elif pick_no <= 12:
+                pct = 0.75
+            elif pick_no <= 24:
+                pct = 0.60
+            elif pick_no <= 36:
+                pct = 0.45
+            else:
+                pct = 0.30
+            idx = min(int((1 - pct) * n), n - 1)
+            return ranked_values[idx]
+
+        def pick_grade(pct_diff: float) -> str:
+            if pct_diff >= 0.15:   return "A+"
+            if pct_diff >= 0.08:   return "A"
+            if pct_diff >= 0.00:   return "B"
+            if pct_diff >= -0.10:  return "C"
+            if pct_diff >= -0.20:  return "D"
+            return "F"
+
+        def team_letter_grade(avg_pct: float) -> str:
+            if avg_pct >= 0.12:    return "A+"
+            if avg_pct >= 0.06:    return "A"
+            if avg_pct >= -0.01:   return "B"
+            if avg_pct >= -0.08:   return "C"
+            if avg_pct >= -0.15:   return "D"
+            return "F"
+
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+        roster_map = _build_roster_map(users, rosters)
+
+        # Group picks by roster_id
+        from collections import defaultdict as _defaultdict
+        picks_by_roster: dict = _defaultdict(list)
+        for p in picks_raw:
+            if not isinstance(p, dict):
+                continue
+            rid = str(p.get("roster_id") or p.get("picked_by") or "")
+            if not rid:
+                continue
+            player_id = str(p.get("player_id") or "")
+            pick_no = int(p.get("pick_no") or p.get("draft_slot") or 0)
+            player_meta = players_index.get(player_id, {})
+            current_val = value_by_id.get(player_id, 0.0)
+            expected_val = adp_expected_value(pick_no)
+            pct_diff = ((current_val - expected_val) / expected_val) if expected_val > 0 else 0.0
+            picks_by_roster[rid].append({
+                "pick_no": pick_no,
+                "player_id": player_id,
+                "name": player_meta.get("name", f"Pick #{pick_no}"),
+                "position": str(player_meta.get("pos", "")).upper(),
+                "team": player_meta.get("team", ""),
+                "current_value": round(current_val, 1),
+                "expected_value": round(expected_val, 1),
+                "value_diff": round(current_val - expected_val, 1),
+                "pct_diff": round(pct_diff, 3),
+                "grade": pick_grade(pct_diff),
+            })
+
+        results = []
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            team_picks = sorted(picks_by_roster.get(rid, []), key=lambda x: x["pick_no"])
+            if not team_picks:
+                continue
+            pct_diffs = [p["pct_diff"] for p in team_picks]
+            avg_pct = sum(pct_diffs) / len(pct_diffs)
+            total_diff = sum(p["value_diff"] for p in team_picks)
+            results.append({
+                "roster_id": rid,
+                "team_name": roster_map.get(rid, f"Roster {rid}"),
+                "grade": team_letter_grade(avg_pct),
+                "avg_pct_diff": round(avg_pct, 3),
+                "total_value_diff": round(total_diff, 1),
+                "picks": team_picks,
+            })
+
+        results.sort(key=lambda x: x["avg_pct_diff"], reverse=True)
+
+        return jsonify({
+            "draft_id": str(draft_id),
+            "season": season,
+            "league_type": league_type,
+            "teams": results,
+        })
+
+    except Exception:
+        logger.exception("[draft-grades] Unexpected error")
+        return jsonify({"error": "Internal error"}), 500
 
 
 if __name__ == "__main__":
