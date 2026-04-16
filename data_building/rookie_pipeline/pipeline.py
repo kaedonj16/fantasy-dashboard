@@ -1376,7 +1376,10 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
         return prospects
 
 
-def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, Any]:
+def run_rookie_pipeline_inmemory(
+    draft_year: Optional[int] = None,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+) -> Dict[str, Any]:
     """
     Run the full pipeline without writing to the database.
     Returns a dict with prospects, scores, consensus, values — ready for the
@@ -1405,7 +1408,11 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
         mock_picks = scrape_consensus_mock_draft(draft_year)
         prospects = prospects_from_mock_draft(mock_picks, draft_year)
 
-    scores       = score_all_prospects(prospects, consensus)
+    scores       = score_all_prospects(
+        prospects,
+        consensus,
+        position_weights_override=position_weights_override,
+    )
     values       = translate_all(scores, prospects, consensus)
 
     return {
@@ -1421,7 +1428,11 @@ def run_rookie_pipeline_inmemory(draft_year: Optional[int] = None) -> Dict[str, 
 # DB-only scoring path (used when ingestion APIs are unavailable)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
+def _score_from_db(
+    draft_year: int,
+    get_conn_fn,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+) -> Dict[str, Any]:
     """
     Score prospects using data already persisted in the DB.
 
@@ -1473,7 +1484,11 @@ def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
 
     # Stage 6: score + translate + save rankings
     print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
-    scores = score_all_prospects(existing_prospects, consensus_map)
+    scores = score_all_prospects(
+        existing_prospects,
+        consensus_map,
+        position_weights_override=position_weights_override,
+    )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
     values = translate_all(scores, existing_prospects, consensus_map)
@@ -1498,7 +1513,10 @@ def _score_from_db(draft_year: int, get_conn_fn) -> Dict[str, Any]:
 # Public API — full DB path
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, Any]:
+def run_rookie_pipeline_staged(
+    draft_year: Optional[int] = None,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+) -> Dict[str, Any]:
     """
     Staged pipeline with DB saves after each step:
     1. Fetch prospects + bio data → save to rookie_prospects
@@ -1565,7 +1583,11 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
         # Fall back: score from whatever is already in the DB
-        return _score_from_db(draft_year, get_conn)
+        return _score_from_db(
+            draft_year,
+            get_conn,
+            position_weights_override=position_weights_override,
+        )
 
     print(f"[pipeline] Loaded {len(sr_prospects)} prospects")
 
@@ -1783,7 +1805,11 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
         print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
 
     # Score prospects
-    scores = score_all_prospects(complete_prospects, consensus_map)
+    scores = score_all_prospects(
+        complete_prospects,
+        consensus_map,
+        position_weights_override=position_weights_override,
+    )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
     # Translate to values
@@ -1809,13 +1835,19 @@ def run_rookie_pipeline_staged(draft_year: Optional[int] = None) -> Dict[str, An
     }
 
 
-def run_rookie_pipeline(draft_year: Optional[int] = None) -> Dict[str, Any]:
+def run_rookie_pipeline(
+    draft_year: Optional[int] = None,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+) -> Dict[str, Any]:
     """
     Full pipeline: ingest → score → translate → persist to DB.
 
     Uses the new staged approach with DB saves after each step.
     """
-    return run_rookie_pipeline_staged(draft_year)
+    return run_rookie_pipeline_staged(
+        draft_year,
+        position_weights_override=position_weights_override,
+    )
 
 
 def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:

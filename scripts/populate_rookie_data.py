@@ -36,6 +36,11 @@ def main():
         action="store_true",
         help="Populate all available years (2025, 2026)"
     )
+    parser.add_argument(
+        "--calibrated-weights",
+        action="store_true",
+        help="Use historical calibration to derive position weights before scoring",
+    )
     args = parser.parse_args()
 
     print("🏈 Rookie Data Population Script")
@@ -68,11 +73,25 @@ def main():
         print(f"{'='*60}\n")
 
         try:
+            position_weights_override = None
+            if args.calibrated_weights:
+                print("  [weights] Running historical calibration for dynamic position weights...")
+                from data_building.rookie_pipeline.historical_calibration import get_calibrated_weights
+                calibration_years = list(range(2016, year))
+                position_weights_override = get_calibrated_weights(draft_years=calibration_years)
+                print(
+                    "  [weights] Using calibrated weights: "
+                    f"{', '.join(sorted(position_weights_override.keys()))}"
+                )
+
             print(f"  Step 1/2: Running evaluation pipeline (computes + saves eval metrics)...")
             eval_result = run_rookie_evaluation_pipeline(year)
 
             print(f"  Step 2/2: Running main pipeline (reads eval metrics from DB for scoring)...")
-            result = run_rookie_pipeline(year)
+            result = run_rookie_pipeline(
+                year,
+                position_weights_override=position_weights_override,
+            )
 
             print(f"✅ Success! {year} draft class populated:")
             print(
