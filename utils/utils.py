@@ -168,7 +168,15 @@ def path_engine_table() -> str:
 
 
 def path_model_value_table() -> str:
-    return os.path.join(DATA_DIR, f"model_values_{date.today().isoformat()}.json")
+    """Return the path to today's model value file, or the most recent available."""
+    today_path = DATA_DIR / f"model_values_{date.today().isoformat()}.json"
+    if today_path.exists():
+        return str(today_path)
+    # Fall back to most recent existing file
+    candidates = sorted(DATA_DIR.glob("model_values_*.json"), reverse=True)
+    if candidates:
+        return str(candidates[0])
+    return str(today_path)  # Return today's path even if it doesn't exist (will be None on read)
 
 
 def path_teams_index() -> str:

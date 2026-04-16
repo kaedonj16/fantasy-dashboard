@@ -5573,8 +5573,8 @@ def build_teams_body(ctx: dict) -> str:
 
     analytics_html = f"""
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
-      <div class="card-header" style="padding-bottom:0;">
-        <div class="tab-strip" id="teamsAnalyticsTabs" style="border-bottom:none;">
+      <div class="card-tabs">
+        <div class="tab-strip" id="teamsAnalyticsTabs">
           <button class="tab-btn active" data-tab="btm">Beat the Market</button>
           <button class="tab-btn" data-tab="sos">Schedule Strength</button>
           <button class="tab-btn" data-tab="draft">Draft Grades</button>
@@ -5715,8 +5715,8 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
 
-      // Load active tab on page load
-      document.addEventListener('DOMContentLoaded', function() {{
+      // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
+      function wireAnalyticsTabs() {{
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {{
           btn.addEventListener('click', function() {{
@@ -5726,9 +5726,14 @@ def build_teams_body(ctx: dict) -> str:
             if (tab === 'draft') loadDraft();
           }});
         }});
-        // Load the first tab immediately
-        loadBtm();
-      }});
+        loadBtm();  // load first tab immediately
+      }}
+
+      if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', wireAnalyticsTabs);
+      }} else {{
+        wireAnalyticsTabs();
+      }}
     }})();
     </script>
     """

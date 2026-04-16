@@ -228,10 +228,16 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
 
         prod = (
-            _scale(rec_yds_pg, 35,  110) * 0.40 +
+            _scale(rec_yds_pg, 32,  110) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
             dom_score                      * 0.30
         )
+        # YAC bonus: dynamic after-catch ability is a strong NFL translation signal
+        yac = _safe(season.get("yards_after_catch_per_reception"))
+        if yac >= 7.0:
+            prod = _clip(prod * 1.10)
+        elif yac >= 5.5:
+            prod = _clip(prod * 1.05)
         # Red zone proxy: TDs per 100 receiving yards — rewards goal-line separators
         if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100
@@ -256,7 +262,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             _scale(all_yds_pg,  30,  150) * 0.17 +
             _scale(tds_pg,       0.4,  1.8) * 0.25 +
             _scale(dom,          0.12, 0.60) * 0.15 +
-            _scale(ypc,          3.5,  7.5) * 0.25
+            _scale(ypc,          3.5,  8.0) * 0.25
         )
         # Receiving tiers: require meaningful rec share so dedicated pass-catchers
         # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
@@ -294,7 +300,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         prod = (
             _scale(pass_yds_pg, 150, 330) * 0.20 +
             _scale(tds_pg,        1.5,  3.5) * 0.20 +
-            _scale(comp_pct,     60.0, 76.0) * 0.25 +
+            _scale(comp_pct,     58.0, 76.0) * 0.25 +
             _scale(ypa,           6.5,  10.5) * 0.25 +
             _scale(td_int,        1.5,   6.0) * 0.10
         )
@@ -334,6 +340,12 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score                      * 0.20 +
             _scale(rec_pg,     1.0,  5.0) * 0.15
         )
+        # YAC bonus: move TEs who create after the catch are more NFL-translatable
+        te_yac = _safe(season.get("yards_after_catch_per_reception"))
+        if te_yac >= 5.0:
+            prod = _clip(prod * 1.08)
+        elif te_yac >= 3.5:
+            prod = _clip(prod * 1.04)
         # Red zone proxy: TE goal-line usage is extremely valuable in NFL
         if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100

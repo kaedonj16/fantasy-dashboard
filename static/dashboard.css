@@ -1417,6 +1417,8 @@ html[data-theme="dark"] img[src*="logout.png"] {
 
 .card .tab-panels {
   margin-top: 4px;
+  flex-basis: 100%;
+  width: 100%;
 }
 
 .card .tab-strip {
@@ -11625,9 +11627,7 @@ img, svg, canvas {
 }
 
 /* ─── Teams Analytics Card ───────────────────────────────────────────────── */
-.teams-analytics-card {
-  margin-bottom: 16px;
-}
+.teams-analytics-card {}
 
 .analytics-loading {
   padding: 24px;

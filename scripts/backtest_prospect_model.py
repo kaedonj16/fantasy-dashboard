@@ -24,8 +24,6 @@ import sys
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from pandas import read_csv
-
 from utils.utils import read_json
 
 # Ensure the project root is on the path
@@ -166,10 +164,7 @@ def _build_nfl_ppr_per_player(
 
     for offset in range(nfl_data_years):
         nfl_yr = draft_year + offset
-        if nfl_yr == 2025:
-            read_csv("cache/stats_player_reg_2025.csv")
-        else:
-            stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
+        stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
 
         # Accumulate PPR per gsis_id for this season (stats are weekly)
         yr_pts: Dict[str, float] = {}
@@ -537,6 +532,129 @@ def _print_class_table(
         print(f"\n  (No NFL data available yet for {draft_year} class)")
 
 
+def _print_positional_rankings(rows: List[Dict], draft_year: int) -> None:
+    """
+    For a single draft class, show within-position model rank vs actual PPR rank.
+    Displays QB1/QB2, WR1/WR2/WR3/WR4, RB1/RB2/RB3, TE1/TE2 labels.
+    """
+    pos_order = ["WR", "RB", "QB", "TE"]
+    pos_top_n = {"WR": 8, "RB": 6, "QB": 4, "TE": 4}
+
+    print(f"\n  ── {draft_year} Positional Rankings (Model vs Actual) ──")
+    header = f"  {'Pos-Rank':<8}  {'Player':<25} {'Pick':>4}  {'Score':>5}  {'PPR-Y1':>6}  {'PPR-Y2':>6}  {'PPR-Cum':>7}  {'Actual':<8}"
+    print(header)
+    print(f"  {'-'*90}")
+
+    for pos in pos_order:
+        pos_rows = [r for r in rows if r["position"] == pos]
+        if not pos_rows:
+            continue
+
+        # Sort by model score (descending) for model rank within position
+        pos_by_model  = sorted(pos_rows, key=lambda x: x["model_score"], reverse=True)
+        # Sort by cum PPR for actual rank within position
+        has_ppr = [r for r in pos_rows if r["ppr_cum"] > 0]
+        pos_by_actual = sorted(has_ppr, key=lambda x: x["ppr_cum"], reverse=True)
+        actual_rank   = {r["name"]: i + 1 for i, r in enumerate(pos_by_actual)}
+
+        top_n = pos_top_n.get(pos, 5)
+        for model_pos_rank, r in enumerate(pos_by_model[:top_n], 1):
+            ar   = actual_rank.get(r["name"])
+            label = f"{pos}{model_pos_rank}"   # e.g. WR1, WR2
+
+            if ar is not None:
+                actual_label = f"{pos}{ar}"
+                delta = model_pos_rank - ar
+                # Arrow: ↑ = did better than model expected, ↓ = did worse
+                arrow = "↑" if delta > 1 else ("↓" if delta < -1 else "≈")
+                rank_str = f"{actual_label} ({arrow}{abs(delta):d})" if delta != 0 else f"{actual_label} (=)"
+            else:
+                rank_str = "no NFL data"
+
+            ppr_y3_str = f"{r['ppr_y3']:>6.0f}" if r.get("ppr_y3", 0) > 0 else "     -"
+            print(
+                f"  {label:<8}  {r['name']:<25} #{r['draft_pick']:>3}  "
+                f"{r['model_score']:>5.1f}  "
+                f"{r['ppr_y1']:>6.0f}  {r['ppr_y2']:>6.0f}  "
+                f"{r['ppr_cum']:>7.0f}  {rank_str}"
+            )
+        print()
+
+
+def _print_positional_summary(all_rows: List[Dict]) -> None:
+    """
+    Cross-year positional analysis: how well does the model predict each position's
+    within-position rank?  Shows Spearman-ρ per position per year.
+    """
+    pos_order = ["WR", "RB", "QB", "TE"]
+    by_year: Dict[int, List[Dict]] = {}
+    for r in all_rows:
+        by_year.setdefault(r["draft_year"], []).append(r)
+
+    print(f"\n{'=' * 90}")
+    print("  POSITIONAL RANK ACCURACY  (model pos-rank vs actual PPR pos-rank, per year)")
+    print(f"{'=' * 90}")
+
+    years = sorted(by_year.keys())
+    # Header
+    year_cols = "  ".join(f"{y}" for y in years)
+    print(f"  {'Pos':<5}  {year_cols}   Overall")
+    print(f"  {'-'*80}")
+
+    for pos in pos_order:
+        year_rs = []
+        for yr in years:
+            yr_rows = [r for r in by_year[yr] if r["position"] == pos]
+            has_ppr = [r for r in yr_rows if r["ppr_cum"] > 0]
+            if len(has_ppr) < 3:
+                year_rs.append("n/a")
+                continue
+            # Within-position model rank
+            by_model  = sorted(yr_rows, key=lambda x: x["model_score"], reverse=True)
+            model_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_model)}
+            # Within-position actual rank
+            by_actual = sorted(has_ppr, key=lambda x: x["ppr_cum"], reverse=True)
+            actual_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_actual)}
+
+            paired = [(model_pos_rank[r["name"]], actual_pos_rank[r["name"]])
+                      for r in has_ppr if r["name"] in model_pos_rank]
+            if len(paired) < 3:
+                year_rs.append("n/a")
+                continue
+            mr_list  = [x for x, _ in paired]
+            ar_list  = [y for _, y in paired]
+            rho = _pearson_r(mr_list, ar_list)
+            year_rs.append(f"{rho:+.2f}" if not math.isnan(rho) else " n/a")
+
+        # Overall across all years for this position
+        all_pos = [r for r in all_rows if r["position"] == pos and r["ppr_cum"] > 0]
+        if len(all_pos) >= 5:
+            # Need to build cross-year within-position ranks per class
+            by_yr_pos: Dict[int, List] = {}
+            for r in all_pos:
+                by_yr_pos.setdefault(r["draft_year"], []).append(r)
+            mr_all: List[float] = []
+            ar_all: List[float] = []
+            for yr, yr_pos_rows in by_yr_pos.items():
+                by_model  = sorted(yr_pos_rows, key=lambda x: x["model_score"], reverse=True)
+                model_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_model)}
+                by_actual = sorted(yr_pos_rows, key=lambda x: x["ppr_cum"], reverse=True)
+                actual_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_actual)}
+                for r in yr_pos_rows:
+                    if r["name"] in model_pos_rank and r["name"] in actual_pos_rank:
+                        mr_all.append(model_pos_rank[r["name"]])
+                        ar_all.append(actual_pos_rank[r["name"]])
+            overall_r = _pearson_r(mr_all, ar_all) if len(mr_all) >= 5 else float("nan")
+            overall_str = f"{overall_r:+.2f}" if not math.isnan(overall_r) else " n/a"
+        else:
+            overall_str = " n/a"
+
+        year_col_str = "  ".join(f"{r:>5}" for r in year_rs)
+        print(f"  {pos:<5}  {year_col_str}   {overall_str}")
+
+    print()
+
+
 def _print_summary(all_rows: List[Dict]) -> None:
     print(f"\n{'=' * 110}")
     print("  OVERALL BACKTEST SUMMARY  (2021–2025 draft classes)")
@@ -731,8 +849,10 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
         if rows:
             all_rows.extend(rows)
             _print_class_table(rows, dy, seasons_note)
+            _print_positional_rankings(rows, dy)
 
     if all_rows:
+        _print_positional_summary(all_rows)
         _print_summary(all_rows)
 
     return all_rows
