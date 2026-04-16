@@ -1175,20 +1175,19 @@ POSITION_WEIGHTS = {
         "durability": 0.01,
     },
     "WR": {
-        # Draft capital (r=0.72) is the strongest WR predictor — weighted highest.
-        # Breakout reduced: volume-based metric is inflated by spread/air-raid systems.
-        # Utilization (r=0.45) reduced — target volume is scheme-dependent.
-        # Environment raised: scheme translatability is more predictive for WRs than
-        #   previously weighted, particularly for prospects from air-raid offenses.
-        "draft_capital": 0.29,
-        "production": 0.20,
-        "utilization": 0.04,
-        "efficiency": 0.10,
-        "age": 0.08,
-        "breakout": 0.09,
-        "athleticism": 0.07,
-        "competition": 0.07,
-        "environment": 0.06,
+        # WR calibration update from recent backtests:
+        # - Emphasize draft capital + age + raw production signals
+        # - De-emphasize breakout/dominator-heavy proxies that have become noisier
+        #   in recent classes and can overrate certain archetypes.
+        "draft_capital": 0.31,
+        "production": 0.23,
+        "utilization": 0.03,
+        "efficiency": 0.11,
+        "age": 0.10,
+        "breakout": 0.04,
+        "athleticism": 0.05,
+        "competition": 0.04,
+        "environment": 0.09,
         "durability": 0.00,
     },
     "TE": {
