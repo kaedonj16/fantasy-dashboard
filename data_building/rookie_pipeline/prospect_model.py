@@ -1529,6 +1529,9 @@ def calc_translation_adjustment(
         yac = _safe(latest.get("yards_after_catch_per_reception"), 0.0)
         yprr = _safe(latest.get("yards_per_route_run"), 0.0)
         market_share = _safe(latest.get("market_share_yards"), 0.0)
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
+        rec_tds_pg = _safe(latest.get("rec_tds_pg"), _safe(latest.get("receiving_tds"), 0.0) / gp)
 
         # Penalize classic WR false-positive profiles (high volume, poor translation traits)
         if drop_rate >= 10.0:
@@ -1541,6 +1544,8 @@ def calc_translation_adjustment(
         # near elite tier solely via draft capital.
         if projected_pick <= 64 and production_score < 62 and efficiency_score < 58:
             adj -= 3.0
+        if projected_pick <= 50 and rec_yds_pg > 0 and rec_yds_pg < 55 and rec_tds_pg < 0.50:
+            adj -= 1.5
 
         # Boost strong skill indicators for non-elite draft capital WRs (Kupp/Puka archetype)
         if projected_pick > 40 and (yprr >= 2.6 or market_share >= 0.30):
@@ -1549,9 +1554,12 @@ def calc_translation_adjustment(
             adj += 1.5
         if projected_pick > 90 and yprr >= 2.8 and market_share >= 0.28 and age_score >= 60:
             adj += 2.0
+        if projected_pick > 80 and (rec_yds_pg >= 80 or rec_tds_pg >= 0.90):
+            adj += 1.5
 
     elif position == "RB":
-        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
         dominator = _safe(latest.get("dominator_rating"), 0.0)
         ypc = _safe(latest.get("yds_per_carry"), 0.0)
 
