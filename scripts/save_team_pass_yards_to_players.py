@@ -413,8 +413,7 @@ def save_team_pass_yards_to_players():
                         teams[team_name]["netPassingYards"] = stat_value
                 
                 team_stats_by_season[season] = teams
-                print(f"[migration] Loaded team stats for {season}: {len(teams)} teams")
-            
+
             # Update player records with team passing yards
             updated_count = 0
             for player in players:

@@ -98,14 +98,11 @@ def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
     url = f"{_SR_BASE}/{SPORTRADAR_ACCESS}/v1/en/{path}"
     headers = {"x-api-key": SPORTRADAR_KEY, "Accept": "application/json"}
     params  = {"api_key": SPORTRADAR_KEY}
-    
-    print(f"[sportradar] Request: GET {url} (access={SPORTRADAR_ACCESS}, key={SPORTRADAR_KEY[:8] if SPORTRADAR_KEY else 'NONE'}...)")
-    
+
     last_error = None
     for attempt in range(retries):
         try:
             resp = requests.get(url, headers=headers, params=params, timeout=20)
-            print(f"[sportradar] Response: HTTP {resp.status_code} for {path}")
             resp.raise_for_status()
             return resp.json()
         except requests.Timeout as exc:
@@ -426,7 +423,6 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
     url = f"{CFBD_BASE}{path}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
 
-    print(f"[cfbd] Request: GET {url} (params={params}, key={CFBD_KEY[:8] if CFBD_KEY else 'NONE'}...)")
 
     time.sleep(_CFBD_THROTTLE_S)  # global throttle before every call
 
@@ -434,13 +430,11 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
     for attempt in range(retries):
         try:
             resp = requests.get(url, headers=headers, params=params or {}, timeout=15)
-            print(f"[cfbd] Response: HTTP {resp.status_code} for {path}")
             resp.raise_for_status()
             return resp.json()
         except requests.Timeout:
             last_error = "Timeout after 15s"
             wait = 2 ** attempt
-            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: TIMEOUT — retrying in {wait}s")
             time.sleep(wait)
         except requests.HTTPError as exc:
             last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
@@ -577,7 +571,6 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     if t_yds > 0: dom += (p_yds / t_yds) * 0.65
     if t_tds > 0: dom += (p_tds / t_tds) * 0.35
     row["dominator_rating"] = round(dom, 4) if (t_yds or t_tds) else None
-    # print(row)
     return row
 
 
@@ -603,7 +596,6 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
 
     for yr in years:
-        print(f"[cfbd_gp] Fetching /games/players week-by-week for {yr}")
         player_games: Dict[str, set] = {}   # name_lower → set of game_ids
         empty_streak = 0
 
@@ -653,9 +645,6 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
             result.setdefault(player_name, {})[yr] = len(game_ids)
             count += 1
 
-        print(f"[cfbd_gp] {yr}: resolved games-played for {count} players")
-
-    print(f"[cfbd_gp] COMPLETE: {len(result)} players across {len(years)} seasons")
     return result
 
 
@@ -683,21 +672,17 @@ def fetch_cfbd_college_stats(
             Default False to conserve rate-limit budget; per-game rates fall
             back to assuming 12 games when disabled.
     """
-    print(f"[cfbd] Starting college stats fetch for draft year {draft_year}")
-    
+
     if not CFBD_KEY:
         print("[cfbd] No CFBD_API_KEY set — skipping college stats")
         return {}
 
     years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
-    print(f"[cfbd] Fetching college stats for years: {years}")
 
     try:
         # Team season totals for market share / dominator calculation
-        print("[cfbd] Fetching team season totals for market share calculation")
         team_stats: Dict[int, Dict] = {}
         for yr in years:
-            print(f"[cfbd] Fetching team stats for {yr}")
             data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
             if not data:
                 print(f"[cfbd] No team stats data for {yr}")
@@ -714,7 +699,6 @@ def fetch_cfbd_college_stats(
                     total = pa + ra
                     s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
                 team_stats[yr] = teams
-                print(f"[cfbd] Loaded team stats for {yr}: {len(teams)} teams")
             except Exception as exc:
                 print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}

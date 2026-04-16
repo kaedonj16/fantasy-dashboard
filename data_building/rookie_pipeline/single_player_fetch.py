@@ -56,14 +56,11 @@ def fetch_cfbd_stats_for_player(
     years = [draft_year - 1, draft_year - 2, draft_year - 3]
     # Get all possible CFBD names to search for
     search_names = get_cfbd_search_names(player_name)
-    print(f"[cfbd] Fetching college stats for '{player_name}' (searching CFBD as: {search_names}) for years: {years}")
 
     try:
         # Team season totals for market share / dominator calculation
-        print("[cfbd] Fetching team season totals for market share calculation")
         team_stats: Dict[int, Dict] = {}
         for yr in years:
-            print(f"[cfbd] Fetching team stats for {yr}")
             data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
             if not data:
                 print(f"[cfbd] No team stats data for {yr}")
@@ -80,7 +77,6 @@ def fetch_cfbd_stats_for_player(
                     total = pa + ra
                     s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
                 team_stats[yr] = teams
-                print(f"[cfbd] Loaded team stats for {yr}: {len(teams)} teams")
             except Exception as exc:
                 print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}
@@ -88,14 +84,12 @@ def fetch_cfbd_stats_for_player(
         # Games-played lookup for this specific player
         games_played_map: Dict[str, Dict[int, int]] = {}
         if fetch_games_played:
-            print("[cfbd] Fetching games played for specific player")
             try:
                 # Fetch games played for just this player
                 games_played_map = fetch_cfbd_games_played(draft_year)
-                if name_lower in games_played_map:
+                if player_name.lower() in games_played_map:
                     print(f"[cfbd] Games played resolved for '{player_name}'")
                 else:
-                    print(f"[cfbd] No games played data found for '{player_name}'")
                     games_played_map = {}
             except Exception as exc:
                 print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")
@@ -104,12 +98,10 @@ def fetch_cfbd_stats_for_player(
             print("[cfbd] Skipping games-played lookup")
 
         # Player season stats for this specific player
-        print(f"[cfbd] Fetching player season stats for '{player_name}'")
         result: Dict[str, List[Dict]] = {}
         seasons = []
         
         for yr in years:
-            print(f"[cfbd] Fetching player stats for {yr}")
             try:
                 # Try different conferences to find the player
                 conferences = ["sec", "acc", "big-ten", "big-12", "pac-12", "sun-belt", "cusa", "mac", "indep"]
@@ -125,7 +117,6 @@ def fetch_cfbd_stats_for_player(
                                 n = (row.get("player") or "").lower()
                                 if n == search_name.lower():
                                     data = test_data
-                                    print(f"[cfbd] Found {search_name} in {conference} conference for {yr}")
                                     break
                             if data:
                                 break
@@ -135,8 +126,7 @@ def fetch_cfbd_stats_for_player(
                 if not data:
                     # Fallback to no conference filter
                     data = _cfbd_get("/stats/player/season", {"year": yr, "seasonType": "regular"}) or []
-                    print(f"[cfbd] No conference filter worked, using all players for {yr}")
-                
+
                 # Find rows matching our player (try all search names)
                 player_rows = []
                 matched_name = None
@@ -151,16 +141,13 @@ def fetch_cfbd_stats_for_player(
                 
                 if player_rows:
                     gp = (games_played_map.get(search_names[0].lower()) or {}).get(yr)
-                    print(f"[cfbd] DEBUG: Raw player_rows for {yr}: {len(player_rows)} rows")
                     for i, row in enumerate(player_rows[:2]):  # Show first 2 rows
                         print(f"[cfbd] DEBUG:   Row {i+1}: {dict(list(row.items())[:5])}")  # Show first 5 fields
                     
                     season = _build_cfbd_season(player_rows, team_stats.get(yr, {}), yr, gp)
-                    print(f"[cfbd] DEBUG: Processed season for {yr}: {dict(list(season.items())[:8])}")  # Show first 8 fields
-                    
+
                     if season:
                         seasons.append(season)
-                        print(f"[cfbd] Found stats for '{player_name}' as '{matched_name}' in {yr}")
                 else:
                     print(f"[cfbd] No stats found for '{player_name}' in {yr}")
                     
@@ -170,7 +157,6 @@ def fetch_cfbd_stats_for_player(
         if seasons:
             seasons.sort(key=lambda s: s["season"])
             result[search_names[0].lower()] = seasons
-            print(f"[cfbd] COMPLETE: Loaded {len(seasons)} seasons for '{player_name}'")
         else:
             print(f"[cfbd] COMPLETE: No stats found for '{player_name}'")
 

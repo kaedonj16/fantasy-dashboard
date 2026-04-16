@@ -485,10 +485,10 @@ def _run_draft_class_backtest(
 
 # PPR-peak threshold that approximates a "hit" season per position
 _HIT_PPR_THRESHOLD: Dict[str, float] = {
-    "QB": 325.0,   # ≈ top-6 QB season
-    "WR": 175.0,   # ≈ top-12 WR season
-    "RB": 175.0,   # ≈ top-12 RB season
-    "TE": 110.0,   # ≈ top-6 TE season
+    "QB": 310.0,   # ≈ top-6 QB season
+    "WR": 220.0,   # ≈ top-12 WR season
+    "RB": 240.0,   # ≈ top-12 RB season
+    "TE": 175.0,   # ≈ top-6 TE season
 }
 
 # (display_label, row_key, operator, threshold)
