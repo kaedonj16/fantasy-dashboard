@@ -11457,6 +11457,9 @@ img, svg, canvas {
   /* Full-width modal */
   .player-modal.compare-mode {
     max-width: 100%;
+    margin-top: 0;        /* override bottom-sheet margin — center vertically instead */
+    border-radius: 16px;  /* restore all-corner rounding when centered */
+    max-height: 92vh;
   }
 
   /* Give dual header more breathing room by reducing overall header padding */
