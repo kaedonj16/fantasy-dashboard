@@ -5588,9 +5588,9 @@ def build_teams_body(ctx: dict) -> str:
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">Beat the Market</button>
-          <button class="tab-btn" data-tab="sos">Schedule Strength</button>
-          <button class="tab-btn" data-tab="draft">Draft Grades</button>
+          <button class="tab-btn active" data-tab="btm">BTM</button>
+          <button class="tab-btn" data-tab="sos">Schedule</button>
+          <button class="tab-btn" data-tab="draft">Draft</button>
           <div class="tab-panels">
             <div class="tab-panel active" data-tab="btm" id="btmPanel">
               <div class="analytics-loading">Loading…</div>
@@ -5620,6 +5620,8 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.btm = true;
         var panel = document.getElementById('btmPanel');
         if (!panel) return;
+        // Detect narrow sidebar context — skip bar + movers columns to fit 320px
+        var slim = !!panel.closest('.teams-sidebar');
         fetch('/api/beat-the-market?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season +
               '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=30')
@@ -5635,17 +5637,17 @@ def build_teams_body(ctx: dict) -> str:
 
             var html = '<div class="btm-meta">' +
               '<span class="btm-window">📅 ' + data.baseline_date + ' → ' + data.latest_date + '</span>' +
-              '<span class="btm-avg-pill">League avg: ' + avgFmt + ' pts</span>' +
-              '<span class="btm-legend"><span class="btm-dot btm-dot-pos"></span>Beat avg&nbsp;&nbsp;<span class="btm-dot btm-dot-neg"></span>Below avg</span>' +
+              '<span class="btm-avg-pill">Avg: ' + avgFmt + '</span>' +
+              (slim ? '' : '<span class="btm-legend"><span class="btm-dot btm-dot-pos"></span>Beat avg&nbsp;&nbsp;<span class="btm-dot btm-dot-neg"></span>Below avg</span>') +
             '</div>';
 
-            html += '<div class="btm-col-header">' +
+            html += '<div class="btm-col-header' + (slim ? ' btm-slim' : '') + '">' +
               '<span class="btm-ch-rank">#</span>' +
               '<span class="btm-ch-team">Team</span>' +
-              '<span class="btm-ch-delta">Portfolio Δ</span>' +
-              '<span class="btm-ch-vsavg">vs League Avg</span>' +
-              '<span class="btm-ch-bar"></span>' +
-              '<span class="btm-ch-movers">Key Movers</span>' +
+              '<span class="btm-ch-delta">' + (slim ? 'Δ Val' : 'Portfolio Δ') + '</span>' +
+              '<span class="btm-ch-vsavg">vs Avg</span>' +
+              (slim ? '' : '<span class="btm-ch-bar"></span>') +
+              (slim ? '' : '<span class="btm-ch-movers">Key Movers</span>') +
             '</div>';
 
             html += '<div class="btm-rows">';
@@ -5656,29 +5658,32 @@ def build_teams_body(ctx: dict) -> str:
               var pdSign = r.total_delta >= 0 ? '+' : '';
               var pct  = Math.min(100, Math.round(Math.abs(r.vs_avg) / maxVsAvg * 100));
 
-              // top 2 movers with position badge
               var moversHtml = '';
-              (r.top_movers || []).slice(0, 2).forEach(function(m) {{
-                var ms = m.delta >= 0 ? '+' : '';
-                var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
-                var shortName = m.name.split(' ').pop(); // last name only
-                moversHtml += '<span class="btm-mover ' + mc + '">' +
-                  '<span class="btm-mover-pos-badge">' + m.position + '</span>' +
-                  shortName + ' ' + ms + Math.round(m.delta) +
-                '</span>';
-              }});
+              if (!slim) {{
+                (r.top_movers || []).slice(0, 2).forEach(function(m) {{
+                  var ms = m.delta >= 0 ? '+' : '';
+                  var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
+                  var shortName = m.name.split(' ').pop();
+                  moversHtml += '<span class="btm-mover ' + mc + '">' +
+                    '<span class="btm-mover-pos-badge">' + m.position + '</span>' +
+                    shortName + ' ' + ms + Math.round(m.delta) +
+                  '</span>';
+                }});
+              }}
 
-              html += '<div class="btm-row ' + cls + '">' +
+              html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
                 '<span class="btm-rank">' + (idx + 1) + '</span>' +
                 '<span class="btm-team">' + r.team_name + '</span>' +
                 '<span class="btm-delta">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</span>' +
                 '<span class="btm-vsavg ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
-                '<span class="btm-bar-wrap">' +
-                  '<div class="btm-bar-track">' +
-                    '<div class="btm-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
-                  '</div>' +
-                '</span>' +
-                '<span class="btm-movers">' + (moversHtml || '<span class="btm-no-movers">—</span>') + '</span>' +
+                (slim ? '' :
+                  '<span class="btm-bar-wrap">' +
+                    '<div class="btm-bar-track">' +
+                      '<div class="btm-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
+                    '</div>' +
+                  '</span>' +
+                  '<span class="btm-movers">' + (moversHtml || '<span class="btm-no-movers">—</span>') + '</span>'
+                ) +
               '</div>';
             }});
             html += '</div>';

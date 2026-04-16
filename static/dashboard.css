@@ -11965,16 +11965,9 @@ img, svg, canvas {
   .btm-ch-movers, .btm-movers { display: none; }
 }
 
-/* BTM/analytics inside the 320px teams sidebar: drop bar + movers columns */
-.teams-sidebar .btm-col-header,
-.teams-sidebar .btm-row {
-  grid-template-columns: 22px 1fr 62px 70px;
-}
-.teams-sidebar .btm-ch-bar,
-.teams-sidebar .btm-bar-wrap,
-.teams-sidebar .btm-ch-movers,
-.teams-sidebar .btm-movers,
-.teams-sidebar .btm-no-movers { display: none; }
-.teams-sidebar .teams-analytics-card { margin: 0; }
+/* Slim (sidebar) BTM: 4-column grid — bar + movers are not rendered in DOM */
+.btm-col-header.btm-slim,
+.btm-row.btm-slim { grid-template-columns: 22px 1fr 64px 68px; }
 .teams-sidebar .btm-meta { flex-wrap: wrap; gap: 4px; }
 .teams-sidebar .btm-window { font-size: 11px; }
+.teams-sidebar .teams-analytics-card { margin: 0; }
