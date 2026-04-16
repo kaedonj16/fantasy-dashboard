@@ -5375,6 +5375,18 @@ def build_teams_body(ctx: dict) -> str:
 
         return "".join(rows_html)
 
+    # Pre-compute global chart Y-max so all team cards share the same Y-axis scale
+    _chart_all_pos_vals = []
+    for _rid in team_meta:
+        _chart_all_pos_vals.extend([
+            sum(team_pos_values[_rid].get("QB", [])),
+            sum(team_pos_values[_rid].get("RB", [])),
+            sum(team_pos_values[_rid].get("WR", [])),
+            sum(team_pos_values[_rid].get("TE", [])),
+            team_pick_value.get(_rid, 0.0),
+        ])
+    _chart_y_max = round(max(_chart_all_pos_vals) * 1.15, 1) if _chart_all_pos_vals else 100.0
+
     # ----------------- Build HTML cards -----------------
     cards_html = []
 
@@ -5508,6 +5520,7 @@ def build_teams_body(ctx: dict) -> str:
             "plot_bgcolor": "rgba(0,0,0,0)",
             "height":       200,
             "yaxis": {
+                "range":      [0, _chart_y_max],
                 "tickformat": ".2s",
                 "showgrid":   True,
                 "gridcolor":  "rgba(100,116,139,0.2)",
@@ -5778,31 +5791,13 @@ def build_teams_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        {analytics_html}
         <div class="teams-grid">
           {all_cards_html}
         </div>
       </main>
 
-      <aside class="page-sidebar">
-        <div class="card small">
-          <div class="card-header">
-            <h3>Legend</h3>
-          </div>
-          <div class="card-body">
-            <p class="mini-label">Positional Index</p>
-            <p style="font-size:13px;color:#64748b;">
-              Weighted average of each position's Z-score using lineup slot counts.
-              Positive = stronger than league at those positions; negative = weaker.
-            </p>
-            <ul class="ticker-list">
-              <li><span class="mini-label">Green row</span> – strongest position for that team.</li>
-              <li><span class="mini-label">Red row</span> – weakest position for that team.</li>
-              <li><span class="mini-label">Strength bar</span> – how this team ranks vs others at that position.</li>
-              <li>Click a position row to view all players for that position.</li>
-            </ul>
-          </div>
-        </div>
+      <aside class="page-sidebar teams-sidebar">
+        {analytics_html}
       </aside>
     </div>
 

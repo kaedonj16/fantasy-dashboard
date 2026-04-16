@@ -11964,3 +11964,17 @@ img, svg, canvas {
   .btm-row { grid-template-columns: 24px 1fr 60px 70px 80px; }
   .btm-ch-movers, .btm-movers { display: none; }
 }
+
+/* BTM/analytics inside the 320px teams sidebar: drop bar + movers columns */
+.teams-sidebar .btm-col-header,
+.teams-sidebar .btm-row {
+  grid-template-columns: 22px 1fr 62px 70px;
+}
+.teams-sidebar .btm-ch-bar,
+.teams-sidebar .btm-bar-wrap,
+.teams-sidebar .btm-ch-movers,
+.teams-sidebar .btm-movers,
+.teams-sidebar .btm-no-movers { display: none; }
+.teams-sidebar .teams-analytics-card { margin: 0; }
+.teams-sidebar .btm-meta { flex-wrap: wrap; gap: 4px; }
+.teams-sidebar .btm-window { font-size: 11px; }
