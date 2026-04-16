@@ -1440,17 +1440,6 @@ def calc_late_round_upside(draft_capital: Optional[Dict], seasons: List[Dict], p
     best_dominator = max([_safe(s.get("dominator_rating", 0)) for s in seasons])
     dominator_rating = best_dominator
     
-    # For WR/TE, check yards per route run if available
-    yprr = 0.0
-    if position in ("WR", "TE"):
-        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
-        yprr = best_yprr
-    if position in ("WR", "TE"):
-        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
-        yprr = best_yprr
-    
-    # For WR/TE, check yards per route run if available
-    # For WR/TE, check yards per route run if available
     yprr = 0.0
     if position in ("WR", "TE"):
         best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
@@ -1513,10 +1502,99 @@ def calc_interaction_features(production_score: float, efficiency_score: float,
     }
 
 
+def calc_translation_adjustment(
+    prospect: Dict[str, Any],
+    position: str,
+    draft_capital: Optional[Dict[str, Any]],
+    production_score: float,
+    efficiency_score: float,
+    age_score: float,
+) -> float:
+    """
+    Position-specific post-model adjustment (in points) to reduce common misses:
+      - WR false positives on low-translation profiles (hands/YAC + weak efficiency)
+      - Day-2/Day-3 WR/RB underrates with strong underlying profiles
+      - TE volatility when receiving-usage profile is weak
+    """
+    if not prospect.get("seasons"):
+        return 0.0
+
+    latest = _latest_season(prospect["seasons"]) or {}
+    adj = 0.0
+    projected_pick = _safe((draft_capital or {}).get("projected_pick"), 300.0)
+
+    if position == "WR":
+        drop_rate = _safe(latest.get("drop_rate"), 0.0)
+        contested = _safe(latest.get("contested_catch_rate"), 0.0)
+        yac = _safe(latest.get("yards_after_catch_per_reception"), 0.0)
+        yprr = _safe(latest.get("yards_per_route_run"), 0.0)
+        market_share = _safe(latest.get("market_share_yards"), 0.0)
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
+        rec_tds_pg = _safe(latest.get("rec_tds_pg"), _safe(latest.get("receiving_tds"), 0.0) / gp)
+
+        # Penalize classic WR false-positive profiles (high volume, poor translation traits)
+        if drop_rate >= 10.0:
+            adj -= 2.0
+        if contested > 0 and contested < 45.0:
+            adj -= 1.5
+        if yac > 0 and yac < 2.8:
+            adj -= 1.0
+        # Early-pick WR guardrail: weak production+efficiency profile should not sit
+        # near elite tier solely via draft capital.
+        if projected_pick <= 64 and production_score < 62 and efficiency_score < 58:
+            adj -= 3.0
+        if projected_pick <= 50 and rec_yds_pg > 0 and rec_yds_pg < 55 and rec_tds_pg < 0.50:
+            adj -= 1.5
+
+        # Boost strong skill indicators for non-elite draft capital WRs (Kupp/Puka archetype)
+        if projected_pick > 40 and (yprr >= 2.6 or market_share >= 0.30):
+            adj += 2.5
+        if projected_pick > 75 and production_score >= 72 and efficiency_score >= 68:
+            adj += 1.5
+        if projected_pick > 90 and yprr >= 2.8 and market_share >= 0.28 and age_score >= 60:
+            adj += 2.0
+        if projected_pick > 80 and (rec_yds_pg >= 80 or rec_tds_pg >= 0.90):
+            adj += 1.5
+
+    elif position == "RB":
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
+        dominator = _safe(latest.get("dominator_rating"), 0.0)
+        ypc = _safe(latest.get("yds_per_carry"), 0.0)
+
+        # Raise dual-threat and high-dominator RBs drafted outside top tiers
+        if projected_pick > 50 and rec_yds_pg >= 20:
+            adj += 2.0
+        if projected_pick > 75 and dominator >= 0.30 and ypc >= 5.2:
+            adj += 2.0
+        if projected_pick > 100 and rec_yds_pg >= 25 and dominator >= 0.28:
+            adj += 1.5
+
+    elif position == "TE":
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
+        target_share = _safe(latest.get("target_share"), 0.0)
+        draft_age = _safe(prospect.get("age"), 0.0)
+
+        # TE shrinkage: de-emphasize risky profiles with weak receiving usage
+        if rec_yds_pg > 0 and rec_yds_pg < 35:
+            adj -= 1.5
+        if target_share > 0 and target_share < 0.14:
+            adj -= 1.0
+        if draft_age and draft_age > 23.0 and age_score < 50:
+            adj -= 0.5
+        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42:
+            adj -= 1.0
+
+    # Keep the adjustment bounded; this is a corrective signal, not the main model.
+    return max(-10.0, min(6.0, adj))
+
+
 def score_prospect(
     prospect: Dict[str, Any],
     draft_capital: Optional[Dict[str, Any]] = None,
     skip_sagarin: bool = False,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -1619,8 +1697,9 @@ def score_prospect(
         production_score, efficiency_score, athleticism_score, dc_score_adjusted
     )
 
-    # Get position-specific weights
-    pos_weights = POSITION_WEIGHTS.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
+    # Get position-specific weights (optionally overridden by calibrated weights)
+    weights_source = position_weights_override or POSITION_WEIGHTS
+    pos_weights = weights_source.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
     
     # Base prospect score with position-specific weights
     prospect_score = (
@@ -1688,6 +1767,18 @@ def score_prospect(
     #   75 raw → 81.2  (solid starter)
     #   65 raw → 69.6  (developmental)
     prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+
+    # Position-specific translation adjustment from historical miss archetypes.
+    # Applied late (after global scaling) so the correction magnitude is preserved.
+    translation_adjustment = calc_translation_adjustment(
+        prospect=prospect,
+        position=pos,
+        draft_capital=draft_capital,
+        production_score=production_score,
+        efficiency_score=efficiency_score,
+        age_score=age_score,
+    )
+    prospect_score += translation_adjustment
 
     # Thin-sample volume gate: when both production AND utilization fall below
     # position-typical thresholds, efficiency/athleticism/breakout signals are
@@ -1770,6 +1861,7 @@ def score_prospect(
         "key_reasons":                  reasons,
         "experience_score":             round(experience_score, 2),
         "late_round_upside":             round(late_round_upside, 2),
+        "translation_adjustment":        round(translation_adjustment, 2),
         "loaded_roster_adjustment":      round(loaded_roster_adjustment, 3),
         "production_efficiency_interaction": round(interaction_features["production_efficiency_interaction"], 2),
         "athleticism_draft_capital_interaction": round(interaction_features["athleticism_draft_capital_interaction"], 2),
@@ -2056,6 +2148,7 @@ def score_all_prospects(
     prospects: List[Dict[str, Any]],
     consensus_map: Optional[Dict[str, Dict]] = None,
     skip_sagarin: bool = False,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
@@ -2073,7 +2166,14 @@ def score_all_prospects(
     scores = []
     for p in prospects:
         dc = consensus_map.get(p["player_id"])
-        scores.append(score_prospect(p, dc, skip_sagarin=skip_sagarin))
+        scores.append(
+            score_prospect(
+                p,
+                dc,
+                skip_sagarin=skip_sagarin,
+                position_weights_override=position_weights_override,
+            )
+        )
 
     # Sort overall
     scores.sort(key=lambda x: x["prospect_score"], reverse=True)

@@ -17,12 +17,14 @@ Usage:
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import json
 import logging
 import math
 import statistics
 import urllib.request
+from urllib.error import HTTPError
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
@@ -61,14 +63,23 @@ except ImportError:
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fetch_csv(url: str) -> List[Dict[str, str]]:
-    """Download a CSV URL and return list of row dicts."""
+def _fetch_csv(url: str, *, quiet_404: bool = False) -> List[Dict[str, str]]:
+    """Download a CSV URL and return list of row dicts.
+
+    Args:
+        url: CSV URL to fetch.
+        quiet_404: If True, suppress warning logs for HTTP 404 responses.
+    """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "fantasy-dashboard/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read().decode("utf-8", errors="replace")
         reader = csv.DictReader(io.StringIO(content))
         return list(reader)
+    except HTTPError as exc:
+        if not (quiet_404 and exc.code == 404):
+            log.warning("[calibration] Failed to fetch %s: %s", url, exc)
+        return []
     except Exception as exc:
         log.warning("[calibration] Failed to fetch %s: %s", url, exc)
         return []
@@ -121,6 +132,7 @@ def _build_nfl_outcomes(
     }}
     """
     outcomes: Dict[str, Dict[str, Any]] = {}
+    latest_completed_regular_season = dt.datetime.utcnow().year - 1
 
     for draft_year in draft_years:
         log.info("[calibration] Loading draft class %d roster", draft_year)
@@ -149,8 +161,25 @@ def _build_nfl_outcomes(
         season_stats: Dict[str, List[float]] = {p: [] for p in draft_class}
         season_games: Dict[str, List[int]]   = {p: [] for p in draft_class}
 
-        for nfl_yr in range(draft_year, draft_year + nfl_data_years):
-            stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
+        last_eval_year = min(draft_year + nfl_data_years - 1, latest_completed_regular_season)
+        for nfl_yr in range(draft_year, last_eval_year + 1):
+            stat_rows = _fetch_csv(
+                _NFLVERSE_BASE.format(year=nfl_yr),
+                quiet_404=(nfl_yr >= latest_completed_regular_season),
+            )
+
+            if not stat_rows:
+                # If a recent season file is unavailable yet (or temporarily missing),
+                # stop extending the label window for this class to avoid noisy 404s.
+                if nfl_yr >= latest_completed_regular_season:
+                    log.info(
+                        "[calibration] No NFL player_stats for season %d yet; "
+                        "using seasons through %d for draft class %d",
+                        nfl_yr,
+                        nfl_yr - 1,
+                        draft_year,
+                    )
+                    break
             gid_to_pts:   Dict[str, float] = {}
             gid_to_games: Dict[str, int]   = {}
             for sr in stat_rows:
