@@ -1880,6 +1880,11 @@ button:hover {
   padding-bottom: 0;
 }
 
+.team-value-chart {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .pos-strength-table {
   width: 100%;
   border-collapse: collapse;
@@ -11107,6 +11112,26 @@ img, svg, canvas {
 /* ============================================
    PLAYER COMPARISON
    ============================================ */
+
+/* Watchlist star button */
+.player-modal-watchlist-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.player-modal-watchlist-btn:hover {
+  color: #f59e0b;
+  transform: scale(1.15);
+}
+.player-modal-watchlist-btn--active {
+  color: #f59e0b;
+}
 
 /* Compare button in modal header */
 .player-modal-compare-btn {

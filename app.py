@@ -118,6 +118,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── Sentry error tracking ─────────────────────────────────────────────────────
+_sentry_dsn = os.environ.get("SENTRY_DSN", "")
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.05,   # 5% of requests sampled for performance
+            send_default_pii=False,
+        )
+        logger.info("[sentry] Error tracking enabled")
+    except ImportError:
+        logger.warning("[sentry] sentry-sdk not installed — error tracking disabled")
+else:
+    logger.info("[sentry] SENTRY_DSN not set — error tracking disabled")
+
 DASHBOARD_CACHE = {}
 
 # How long a league context is considered fresh
@@ -156,19 +174,21 @@ del _secret_key
 plotly_js = get_plotlyjs()
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
+_redis_url = os.environ.get("REDIS_URL", "")
+_limiter_storage = f"redis://{_redis_url.split('://')[-1]}" if _redis_url else "memory://"
 try:
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
     limiter = Limiter(
         get_remote_address,
         app=app,
-        default_limits=[],          # no default limit — opt-in per route
-        storage_uri="memory://",    # in-process store; swap for Redis in production
+        default_limits=[],
+        storage_uri=_limiter_storage,
     )
-    logger.info("[limiter] Flask-Limiter enabled (memory backend)")
+    backend = "redis" if _redis_url else "memory (set REDIS_URL for multi-worker)"
+    logger.info("[limiter] Flask-Limiter enabled (%s backend)", backend)
 except ImportError:
     logger.warning("[limiter] Flask-Limiter not installed — rate limiting disabled")
-    # Provide a no-op decorator so route definitions don't fail
     class _NoopLimiter:
         def limit(self, *a, **kw):
             def decorator(f): return f
@@ -435,10 +455,20 @@ BASE_HTML = """
             crossorigin="anonymous"></script>
     
     <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#38bdf8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
     <script>
       {plotly_js}
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {{
+        navigator.serviceWorker.register('/sw.js').catch(() => {{}});
+      }}
     </script>
   </head>
   <body>
@@ -5454,6 +5484,48 @@ def build_teams_body(ctx: dict) -> str:
             "</tr>"
         )
 
+        # ── Position value bar chart ──────────────────────────────────────────
+        _chart_labels  = ["QB", "RB", "WR", "TE", "Picks"]
+        _chart_colors  = ["#3b82f6", "#86efac", "#4ade80", "#fb923c", "#a78bfa"]
+        _chart_values  = [
+            round(sum(team_pos_values[rid].get("QB", [])), 1),
+            round(sum(team_pos_values[rid].get("RB", [])), 1),
+            round(sum(team_pos_values[rid].get("WR", [])), 1),
+            round(sum(team_pos_values[rid].get("TE", [])), 1),
+            round(team_pick_value.get(rid, 0.0), 1),
+        ]
+        _chart_div_id  = f"teamValueChart_{rid}"
+        _chart_data    = json.dumps([{
+            "type":          "bar",
+            "x":             _chart_labels,
+            "y":             _chart_values,
+            "marker":        {"color": _chart_colors},
+            "hovertemplate": "%{x}: %{y:,.0f}<extra></extra>",
+        }])
+        _chart_layout  = json.dumps({
+            "margin":       {"t": 8, "b": 28, "l": 44, "r": 8},
+            "paper_bgcolor":"rgba(0,0,0,0)",
+            "plot_bgcolor": "rgba(0,0,0,0)",
+            "height":       200,
+            "yaxis": {
+                "tickformat": ".2s",
+                "showgrid":   True,
+                "gridcolor":  "rgba(100,116,139,0.2)",
+                "zeroline":   False,
+                "tickfont":   {"size": 11},
+            },
+            "xaxis": {"showgrid": False, "tickfont": {"size": 12}},
+            "showlegend":   False,
+            "bargap":       0.3,
+        })
+        _chart_html = (
+            f"<div id='{_chart_div_id}' class='team-value-chart'></div>"
+            f"<script>(function(){{"
+            f"  var d={_chart_data},l={_chart_layout};"
+            f"  if(typeof Plotly!=='undefined')Plotly.newPlot('{_chart_div_id}',d,l,{{responsive:true,displayModeBar:false}});"
+            f"}})();</script>"
+        )
+
         card_html = (
             "<div class='card team-strength-card'>"
             "  <div class='card-header-row'>"
@@ -5462,7 +5534,7 @@ def build_teams_body(ctx: dict) -> str:
             f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
             "  </div>"
             "  <div class='card-body'>"
-            "    <table class='pos-strength-table'>"
+            f"    {_chart_html}"
             "    <table class='pos-strength-table'>"
             "      <thead>"
             "        <tr>"
@@ -5540,6 +5612,12 @@ def build_teams_body(ctx: dict) -> str:
     }})();
     </script>
     """
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Serve service worker from root scope so it can control all pages."""
+    return send_file("static/sw.js", mimetype="application/javascript")
 
 
 @app.route("/privacy")

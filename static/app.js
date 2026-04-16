@@ -3548,6 +3548,7 @@ function openPlayerModal(playerId, playerName) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="playerModalBreakoutSlot"></span>
+        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist">☆</button>
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
@@ -3902,6 +3903,18 @@ function openPlayerModal(playerId, playerName) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
+      // Wire up watchlist button
+      const wlBtn = document.getElementById('playerModalWatchlistBtn');
+      if (wlBtn) {
+        _updateWatchlistBtn(wlBtn, playerId);
+        wlBtn.addEventListener('click', () => {
+          _toggleWatchlist({ player_id: playerId, name: playerName,
+            position: data.position, team: data.nfl_team,
+            value: data.stats?.value, espnHeadshot: data.espnHeadshot });
+          _updateWatchlistBtn(wlBtn, playerId);
+        });
+      }
+
       // Render value history chart if data exists
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
@@ -4243,6 +4256,38 @@ function toggleGameLogYear(year) {
   }
 }
 
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+const _WL_KEY = 'brfantasy_watchlist';
+
+function _getWatchlist() {
+  try { return JSON.parse(localStorage.getItem(_WL_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function _saveWatchlist(list) {
+  localStorage.setItem(_WL_KEY, JSON.stringify(list));
+  window.dispatchEvent(new Event('watchlist-updated'));
+}
+
+function _isWatched(player_id) {
+  return _getWatchlist().some(p => p.player_id === player_id);
+}
+
+function _toggleWatchlist(player) {
+  const list = _getWatchlist();
+  const idx = list.findIndex(p => p.player_id === player.player_id);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.unshift(player);
+  _saveWatchlist(list);
+}
+
+function _updateWatchlistBtn(btn, player_id) {
+  const watched = _isWatched(player_id);
+  btn.textContent = watched ? '★' : '☆';
+  btn.title = watched ? 'Remove from watchlist' : 'Add to watchlist';
+  btn.classList.toggle('player-modal-watchlist-btn--active', watched);
+}
+
 function closePlayerModal() {
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
@@ -4350,38 +4395,32 @@ function openCompareSearch(player1Data) {
     });
   }
 
+  let _debounce;
+  let _currentQuery = '';
+
   function doSearch(q) {
     if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
-    const scored = _playerListCache
-      .filter(p => p.player_id !== player1Data.player_id)
-      .map(p => ({ p, score: _cmpFuzzyScore(p.name, q) }))
-      .filter(x => x.score > 0)
-      .sort((a, b) => b.score - a.score || (b.p.value || 0) - (a.p.value || 0));
-    renderResults(scored.map(x => x.p));
-  }
-
-  let _debounce;
-  input.addEventListener('input', () => {
-    clearTimeout(_debounce);
-    _debounce = setTimeout(() => doSearch(input.value.trim()), 150);
-  });
-
-  // Load player list (cached after first load)
-  if (_playerListCache) {
-    // Already loaded — nothing more to do; search fires on input
-  } else {
-    resultsBox.innerHTML = '<div class="compare-search-empty" style="opacity:.5;">Loading players...</div>';
-    fetch('/api/players')
+    _currentQuery = q;
+    resultsBox.innerHTML = '<div class="compare-search-empty" style="opacity:.5;">Searching...</div>';
+    fetch(`/api/players?q=${encodeURIComponent(q)}&limit=20`)
       .then(r => r.json())
       .then(list => {
-        _playerListCache = list;
-        resultsBox.innerHTML = '';
-        if (input.value.trim().length >= 2) doSearch(input.value.trim());
+        if (_currentQuery !== q) return; // stale response
+        // Support both paginated {players:[...]} and flat [...] responses
+        const players = Array.isArray(list) ? list : (list.players || []);
+        renderResults(players.filter(p => p.player_id !== player1Data.player_id));
       })
       .catch(() => {
-        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Failed to load players</div>';
+        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Search failed</div>';
       });
   }
+
+  input.addEventListener('input', () => {
+    clearTimeout(_debounce);
+    const q = input.value.trim();
+    if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
+    _debounce = setTimeout(() => doSearch(q), 250);
+  });
 }
 
 function _buildCompareHeroHTML(p) {

@@ -16,6 +16,8 @@ fake-useragent==2.2.0
 fastparquet==2024.11.0
 Flask==3.1.2
 Flask-Limiter==3.9.4
+redis==5.2.1
+sentry-sdk[flask]==2.29.1
 fonttools==4.60.1
 fsspec==2025.10.0
 greenlet==3.2.4
