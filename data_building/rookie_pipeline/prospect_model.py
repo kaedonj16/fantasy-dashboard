@@ -1868,16 +1868,16 @@ def _build_reasons(
         if pos == "WR":
             sr = ls.get("slot_rate")
             if sr is not None and float(sr) >= 0.65:
-                adv.append(f"{float(sr)*100:.0f}% slot rate — primary slot receiver")
+                adv.append(f"{float(sr):.0f}% slot rate — primary slot receiver")
 
         if pos == "TE":
             ir = ls.get("inline_rate")
             if ir is not None:
                 ir = float(ir)
                 if ir >= 0.60:
-                    adv.append(f"{ir*100:.0f}% inline rate — traditional in-line TE")
+                    adv.append(f"{ir:.0f}% inline rate — traditional in-line TE")
                 elif ir <= 0.20:
-                    adv.append(f"{ir*100:.0f}% inline rate — move TE / receives in space")
+                    adv.append(f"{ir:.0f}% inline rate — move TE / receives in space")
 
         bullets.extend(adv[:3])
 
@@ -1902,7 +1902,7 @@ def _build_reasons(
 
         bp = ls.get("breakaway_percentage")
         if bp is not None:
-            bpct = float(bp) * 100
+            bpct = float(bp)
             if bpct >= 18.0:
                 adv.append(f"{bpct:.0f}% breakaway run rate — consistent big-play threat")
             elif bpct >= 12.0:
@@ -1923,7 +1923,7 @@ def _build_reasons(
 
         acr = ls.get("adjusted_completion_rate")
         if acr is not None:
-            apct = float(acr) * 100
+            apct = float(acr)
             if apct >= 75.0:
                 adv.append(f"{apct:.0f}% adjusted completion rate — highly accurate")
             elif apct <= 58.0:
@@ -1931,7 +1931,7 @@ def _build_reasons(
 
         btt = ls.get("big_time_throw_rate")
         if btt is not None:
-            bpct = float(btt) * 100
+            bpct = float(btt)
             if bpct >= 8.0:
                 adv.append(f"{bpct:.1f}% big-time throw rate — attacks deep coverage effectively")
             elif bpct >= 5.0:
