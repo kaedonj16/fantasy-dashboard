@@ -1716,6 +1716,17 @@ def score_prospect(
         upside_bonus = late_round_upside * 0.05  # 5% of upside score as bonus
         prospect_score += upside_bonus
 
+    # Position-specific translation adjustment from historical miss archetypes
+    translation_adjustment = calc_translation_adjustment(
+        prospect=prospect,
+        position=pos,
+        draft_capital=draft_capital,
+        production_score=production_score,
+        efficiency_score=efficiency_score,
+        age_score=age_score,
+    )
+    prospect_score += translation_adjustment
+
     # Apply benchmark boost system for NFL success predictors
     from benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost
     
