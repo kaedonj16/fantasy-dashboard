@@ -9743,6 +9743,12 @@ img, svg, canvas {
   flex-wrap: wrap;
 }
 
+@media (max-width: 768px) {
+  .player-modal-meta {
+    gap: 0px;
+  }
+}
+
 .player-modal-meta-item {
   display: flex;
   align-items: center;
