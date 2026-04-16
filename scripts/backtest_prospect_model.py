@@ -413,29 +413,68 @@ def _run_draft_class_backtest(
         gid  = dc.get("gsis_id", "")
         ppr  = nfl_ppr.get(gid, {})
 
-        rows.append({
-            "draft_year":       draft_year,
-            "model_rank":       sc["overall_rank"],
-            "pos_rank":         sc["position_rank"],
-            "name":             p.get("name", pid),
-            "position":         p.get("position", ""),
-            "college":          p.get("school", ""),
-            "draft_pick":       dc.get("draft_pick", 0),
-            "model_score":      sc["prospect_score"],
-            "dc_score":         sc["projected_draft_capital_score"],
-            "ath_score":        sc["athleticism_score"],
-            "prod_score":       sc["production_score"],
-            "age_score":        sc["age_score"],
-            "ppr_y1":           ppr.get("ppr_y1", 0.0),
-            "ppr_y2":           ppr.get("ppr_y2", 0.0),
-            "ppr_y3":           ppr.get("ppr_y3", 0.0),
-            "ppr_y4":           ppr.get("ppr_y4", 0.0),
-            "ppr_peak":         ppr.get("ppr_peak", 0.0),
-            "ppr_cum":          ppr.get("ppr_cum", 0.0),
-            "seasons_avail":    ppr.get("seasons_available", 0),
-            "has_cfbd":         bool(p_by_id.get(pid, {}).get("seasons")),
-            "breakout_score":   sc["breakout_profile_score"],
-        })
+        # Extract college benchmark features from the latest available season
+        latest_s: Dict[str, Any] = {}
+        if p.get("seasons"):
+            latest_s = max(p["seasons"], key=lambda s: s.get("season", 0))
+
+        def _sf(k: str) -> Optional[float]:
+            v = latest_s.get(k)
+            try:
+                f = float(v) if v not in (None, "", "NA") else None
+                return f if f else None
+            except (TypeError, ValueError):
+                return None
+
+        gp           = max(float(latest_s.get("games_played") or 12), 1.0)
+        rec_yds      = float(latest_s.get("receiving_yards") or 0)
+        rec_tds      = float(latest_s.get("receiving_tds")   or 0)
+        rush_yds     = float(latest_s.get("rush_yards")      or 0)
+        rush_tds     = float(latest_s.get("rush_tds")        or 0)
+        pass_yds     = float(latest_s.get("pass_yards")      or 0)
+        team_pass_yds = float(latest_s.get("team_pass_yards") or 0)
+
+        col_pass_share = (rec_yds / team_pass_yds) if team_pass_yds > 0 else None
+
+        row = {
+            "draft_year":         draft_year,
+            "model_rank":         sc["overall_rank"],
+            "pos_rank":           sc["position_rank"],
+            "name":               p.get("name", pid),
+            "position":           p.get("position", ""),
+            "college":            p.get("school", ""),
+            "draft_pick":         dc.get("draft_pick", 0),
+            "model_score":        sc["prospect_score"],
+            "dc_score":           sc["projected_draft_capital_score"],
+            "ath_score":          sc["athleticism_score"],
+            "prod_score":         sc["production_score"],
+            "age_score":          sc["age_score"],
+            "ppr_y1":             ppr.get("ppr_y1", 0.0),
+            "ppr_y2":             ppr.get("ppr_y2", 0.0),
+            "ppr_y3":             ppr.get("ppr_y3", 0.0),
+            "ppr_y4":             ppr.get("ppr_y4", 0.0),
+            "ppr_peak":           ppr.get("ppr_peak", 0.0),
+            "ppr_cum":            ppr.get("ppr_cum", 0.0),
+            "seasons_avail":      ppr.get("seasons_available", 0),
+            "has_cfbd":           bool(p.get("seasons")),
+            "breakout_score":     sc["breakout_profile_score"],
+            # College benchmark features (None = data unavailable)
+            "col_rec_yds_pg":     rec_yds / gp if latest_s else None,
+            "col_rec_yds_season": rec_yds      if latest_s else None,
+            "col_rec_tds_pg":     rec_tds / gp if latest_s else None,
+            "col_rush_yds_pg":    rush_yds / gp if latest_s else None,
+            "col_pass_yds_pg":    pass_yds / gp if latest_s else None,
+            "col_tds_pg":         (rec_tds + rush_tds) / gp if latest_s else None,
+            "col_dominator":      _sf("dominator_rating"),
+            "col_pass_share":     col_pass_share,
+            "col_yac_per_rec":    _sf("yards_after_catch_per_reception"),
+            "col_ypc":            _sf("yds_per_carry"),
+            "col_completion_pct": _sf("completion_pct"),
+            "col_ypa":            _sf("yds_per_attempt"),
+            "col_td_int":         _sf("td_int_ratio"),
+            "col_age_at_draft":   p.get("age"),
+        }
+        rows.append(row)
 
     return rows
 
@@ -443,6 +482,66 @@ def _run_draft_class_backtest(
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6 – Summary stats
 # ─────────────────────────────────────────────────────────────────────────────
+
+# PPR-peak threshold that approximates a "hit" season per position
+_HIT_PPR_THRESHOLD: Dict[str, float] = {
+    "QB": 325.0,   # ≈ top-6 QB season
+    "WR": 175.0,   # ≈ top-12 WR season
+    "RB": 175.0,   # ≈ top-12 RB season
+    "TE": 110.0,   # ≈ top-6 TE season
+}
+
+# (display_label, row_key, operator, threshold)
+_POS_BENCHMARKS: Dict[str, List[Tuple[str, str, str, float]]] = {
+    "WR": [
+        ("Rec yds/game ≥80",      "col_rec_yds_pg",     ">=", 80.0),
+        ("Rec yds/game ≥65",      "col_rec_yds_pg",     ">=", 65.0),
+        ("Season rec yds ≥1000",  "col_rec_yds_season", ">=", 1000.0),
+        ("Season rec yds ≥800",   "col_rec_yds_season", ">=", 800.0),
+        ("Dominator rating ≥30%", "col_dominator",      ">=", 0.30),
+        ("Dominator rating ≥25%", "col_dominator",      ">=", 0.25),
+        ("Pass share ≥24%",       "col_pass_share",     ">=", 0.24),
+        ("YAC/rec ≥5.5",          "col_yac_per_rec",    ">=", 5.5),
+        ("Draft age ≤21.5",       "col_age_at_draft",   "<=", 21.5),
+        ("TDs/game ≥0.7",         "col_rec_tds_pg",     ">=", 0.7),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+        ("2nd-round or earlier",  "draft_pick",         "<=", 64),
+    ],
+    "RB": [
+        ("Rush yds/game ≥100",    "col_rush_yds_pg",    ">=", 100.0),
+        ("Rush yds/game ≥80",     "col_rush_yds_pg",    ">=", 80.0),
+        ("Dominator rating ≥30%", "col_dominator",      ">=", 0.30),
+        ("Dominator rating ≥20%", "col_dominator",      ">=", 0.20),
+        ("YPC ≥5.5",              "col_ypc",            ">=", 5.5),
+        ("Rec yds/game ≥20",      "col_rec_yds_pg",     ">=", 20.0),
+        ("Draft age ≤21.5",       "col_age_at_draft",   "<=", 21.5),
+        ("TDs/game ≥1.0",         "col_tds_pg",         ">=", 1.0),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+    "QB": [
+        ("Completion% ≥70%",      "col_completion_pct", ">=", 70.0),
+        ("Completion% ≥65%",      "col_completion_pct", ">=", 65.0),
+        ("YPA ≥8.0",              "col_ypa",            ">=", 8.0),
+        ("YPA ≥7.5",              "col_ypa",            ">=", 7.5),
+        ("TD:INT ratio ≥3.0",     "col_td_int",         ">=", 3.0),
+        ("Pass yds/game ≥280",    "col_pass_yds_pg",    ">=", 280.0),
+        ("Rush yds/game ≥40",     "col_rush_yds_pg",    ">=", 40.0),
+        ("Top-10 pick",           "draft_pick",         "<=", 10),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+    "TE": [
+        ("Rec yds/game ≥55",      "col_rec_yds_pg",     ">=", 55.0),
+        ("Rec yds/game ≥40",      "col_rec_yds_pg",     ">=", 40.0),
+        ("Season rec yds ≥800",   "col_rec_yds_season", ">=", 800.0),
+        ("Dominator rating ≥20%", "col_dominator",      ">=", 0.20),
+        ("Dominator rating ≥15%", "col_dominator",      ">=", 0.15),
+        ("Pass share ≥15%",       "col_pass_share",     ">=", 0.15),
+        ("YAC/rec ≥4.0",          "col_yac_per_rec",    ">=", 4.0),
+        ("TDs/game ≥0.4",         "col_rec_tds_pg",     ">=", 0.4),
+        ("Draft age ≤22",         "col_age_at_draft",   "<=", 22.0),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+}
 
 def _pearson_r(xs: List[float], ys: List[float]) -> float:
     n = len(xs)
@@ -655,6 +754,82 @@ def _print_positional_summary(all_rows: List[Dict]) -> None:
     print()
 
 
+def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
+    """
+    For each position, compute the hit rate (% who reached top-6/12 PPR-peak)
+    for every defined college benchmark threshold.
+    Only players who have at least one season of NFL data (ppr_peak > 0) are counted.
+    """
+    print(f"\n{'=' * 105}")
+    print("  BENCHMARK HIT RATES  —  college threshold  →  top-6 (QB/TE) or top-12 (WR/RB) fantasy season")
+    print("  Approximate PPR-peak thresholds: QB ≥325 pts  |  WR ≥175 pts  |  RB ≥175 pts  |  TE ≥110 pts")
+    print("  'N meet' = players with that stat + NFL data  |  'Hit%' = % who peaked above threshold")
+    print("  'vs base' = hit-rate delta vs. all players at that position  |  col_ features require CFBD data")
+    print(f"{'=' * 105}")
+
+    for pos in ("WR", "RB", "QB", "TE"):
+        benchmarks = _POS_BENCHMARKS.get(pos, [])
+        hit_thresh = _HIT_PPR_THRESHOLD[pos]
+        tier_label = "TOP-6" if pos in ("QB", "TE") else "TOP-12"
+
+        # Only players with real NFL data
+        with_data = [r for r in all_rows if r["position"] == pos and r.get("ppr_peak", 0) > 0]
+        if not with_data:
+            continue
+
+        base_hits = sum(1 for r in with_data if r["ppr_peak"] >= hit_thresh)
+        base_rate = base_hits / len(with_data) * 100
+
+        print(f"\n  ── {pos}  ({tier_label}: PPR-peak ≥ {hit_thresh:.0f} pts)  "
+              f"[{len(with_data)} draftees with NFL data, baseline {base_rate:.0f}% hit rate] ──")
+        print(f"  {'Benchmark':<26}  {'N meet':>6}  {'N hit':>5}  {'Hit%':>5}  {'vs base':>8}  Bar (5% per block)")
+        print(f"  {'-'*26}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*8}  {'-'*25}")
+
+        results = []
+        for lbl, key, op, thresh in benchmarks:
+            eligible = []
+            for r in with_data:
+                val = r.get(key)
+                if val is None:
+                    continue
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                if   op == ">=" and val >= thresh:
+                    eligible.append(r)
+                elif op == "<=" and val <= thresh and val > 0:
+                    eligible.append(r)
+                elif op == ">"  and val >  thresh:
+                    eligible.append(r)
+
+            if len(eligible) < 3:
+                results.append((lbl, None, None, None, None))
+                continue
+
+            hits = sum(1 for r in eligible if r["ppr_peak"] >= hit_thresh)
+            rate = hits / len(eligible) * 100
+            delta = rate - base_rate
+            results.append((lbl, len(eligible), hits, rate, delta))
+
+        # Sort by hit rate descending, n/a at bottom
+        results.sort(key=lambda x: (x[3] is None, -(x[3] or 0)))
+
+        for lbl, n_meet, n_hit, rate, delta in results:
+            if rate is None:
+                print(f"  {lbl:<26}  {'<3':>6}  {'—':>5}  {'—':>5}  {'—':>8}")
+                continue
+            delta_str = f"{delta:+.1f}%"
+            bar_filled = min(int(rate / 5), 20)
+            bar = "█" * bar_filled + "░" * (20 - bar_filled)
+            marker = " ◄" if abs(delta) >= 15 else ""
+            print(f"  {lbl:<26}  {n_meet:>6}  {n_hit:>5}  {rate:>4.0f}%  {delta_str:>8}  {bar}{marker}")
+
+        # Print baseline row at the bottom
+        base_bar = "█" * min(int(base_rate / 5), 20) + "░" * (20 - min(int(base_rate / 5), 20))
+        print(f"  {'(All — baseline)':<26}  {len(with_data):>6}  {base_hits:>5}  {base_rate:>4.0f}%  {'baseline':>8}  {base_bar}")
+
+
 def _print_summary(all_rows: List[Dict]) -> None:
     print(f"\n{'=' * 110}")
     print("  OVERALL BACKTEST SUMMARY  (2021–2025 draft classes)")
@@ -853,6 +1028,7 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
 
     if all_rows:
         _print_positional_summary(all_rows)
+        _print_benchmark_hit_rates(all_rows)
         _print_summary(all_rows)
 
     return all_rows
