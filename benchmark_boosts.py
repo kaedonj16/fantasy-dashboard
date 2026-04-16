@@ -62,7 +62,8 @@ def calc_benchmark_boost(
         "competition_boost": 0.0,
         "athleticism_boost": 0.0,
         "elite_profile_boost": 0.0,
-        "bust_risk_penalty": 0.0
+        "bust_risk_penalty": 0.0,
+        "empirical_benchmark_boost": 0.0,
     }
     
     pos = position.upper()
@@ -124,8 +125,43 @@ def calc_benchmark_boost(
     else:
         boosts["draft_capital_boost"] = -0.02  # Penalty for undrafted
     
-    # 2. DOMINATOR RATING BOOST (r = 0.68) - VERY STRONG PREDICTOR
+    # Season-level helpers used by multiple benchmark rules
     latest_season = seasons[-1] if seasons else {}
+
+    def _num(v: Any, default: float = 0.0) -> float:
+        try:
+            return float(v) if v not in (None, "", "NA", "NULL") else default
+        except (TypeError, ValueError):
+            return default
+
+    gp = max(_num(latest_season.get("games_played"), 12.0), 1.0)
+    rec_yds_pg = (
+        _num(latest_season.get("rec_yds_pg"), 0.0)
+        or _num(latest_season.get("receiving_yards"), 0.0) / gp
+    )
+    rec_tds_pg = (
+        _num(latest_season.get("rec_tds_pg"), 0.0)
+        or _num(latest_season.get("receiving_tds"), 0.0) / gp
+    )
+    rush_yds_pg = (
+        _num(latest_season.get("rush_yds_pg"), 0.0)
+        or _num(latest_season.get("rush_yards"), 0.0) / gp
+    )
+    pass_yds_pg = (
+        _num(latest_season.get("pass_yds_pg"), 0.0)
+        or _num(latest_season.get("passing_yards"), 0.0) / gp
+    )
+    pass_share = _num(latest_season.get("target_share") or latest_season.get("market_share_yards"), 0.0)
+    completion_pct = _num(latest_season.get("completion_pct") or latest_season.get("completion_percentage"), 0.0)
+    rush_att = _num(latest_season.get("rush_attempts"), 0.0)
+    rush_yds = _num(latest_season.get("rush_yards"), 0.0)
+    rush_yds_att = (rush_yds / rush_att) if rush_att > 0 else 0.0
+    rush_yds_qb_pg = (
+        _num(latest_season.get("rush_yds_pg"), 0.0)
+        or (rush_yds / gp if gp > 0 else 0.0)
+    )
+
+    # 2. DOMINATOR RATING BOOST (r = 0.68) - VERY STRONG PREDICTOR
     dominator_rating = latest_season.get("dominator_rating", 0.0)
     
     # Handle None values by treating as 0.0
@@ -136,14 +172,15 @@ def calc_benchmark_boost(
     # Thresholds are calibrated to ~15th percentile (elite), ~35th percentile (strong),
     # and ~60th percentile (average) of historical college dominator rating distributions.
     if pos == "WR":
-        # WRs: elite ≥0.40 (top 15%), strong ≥0.30 (top 35%), average ≥0.20 (top 60%)
-        # Prior 0.45 threshold was too strict — fewer than 5% of WRs achieved it.
+        # WR dominator has recently been less stable across classes than draft capital,
+        # age, and receiving yardage rates. Keep this signal modest to avoid overweighting
+        # scheme-inflated profiles.
         if dominator_rating >= 0.40:  # Elite WR dominator
-            boosts["dominator_boost"] = 0.06  # +6% bonus
-        elif dominator_rating >= 0.30:  # Strong WR dominator
-            boosts["dominator_boost"] = 0.04  # +4% bonus
-        elif dominator_rating >= 0.20:  # Average WR dominator
             boosts["dominator_boost"] = 0.02  # +2% bonus
+        elif dominator_rating >= 0.30:  # Strong WR dominator
+            boosts["dominator_boost"] = 0.01  # +1% bonus
+        elif dominator_rating >= 0.20:  # Average WR dominator
+            boosts["dominator_boost"] = 0.00  # neutral
         else:
             boosts["dominator_boost"] = -0.01  # Penalty for low dominator
     elif pos == "RB":
@@ -359,6 +396,54 @@ def calc_benchmark_boost(
         boosts["bust_risk_penalty"] = -0.05  # -5% penalty for high bust risk (reduced from -10%)
     elif risk_factors >= 2:
         boosts["bust_risk_penalty"] = -0.03  # -3% penalty for moderate bust risk (reduced from -5%)
+
+    # 11. EMPIRICAL BENCHMARK LIFT
+    # Directly encode historically high-lift hit-rate thresholds by position.
+    benchmark_hits = 0
+    benchmark_misses = 0
+    if pos == "WR":
+        checks = [
+            draft_pick is not None and draft_pick <= 64,
+            age <= 21.5,
+            rec_yds_pg >= 80,
+            rec_tds_pg >= 0.70,
+        ]
+        benchmark_hits = sum(1 for c in checks if c)
+        benchmark_misses = sum(1 for c in checks if not c)
+    elif pos == "RB":
+        checks = [
+            draft_pick is not None and draft_pick <= 32,
+            dominator_rating >= 0.30,
+            rec_yds_pg >= 20,
+            rush_yds_att >= 5.5,
+        ]
+        benchmark_hits = sum(1 for c in checks if c)
+        benchmark_misses = sum(1 for c in checks if not c)
+    elif pos == "QB":
+        checks = [
+            completion_pct >= 70.0,
+            draft_pick is not None and draft_pick <= 10,
+            rush_yds_qb_pg >= 40,
+            pass_yds_pg >= 280,
+        ]
+        benchmark_hits = sum(1 for c in checks if c)
+        benchmark_misses = sum(1 for c in checks if not c)
+    elif pos == "TE":
+        checks = [
+            draft_pick is not None and draft_pick <= 32,
+            rec_yds_pg >= 55,
+            age <= 22.0,
+            pass_share >= 0.15,
+        ]
+        benchmark_hits = sum(1 for c in checks if c)
+        benchmark_misses = sum(1 for c in checks if not c)
+
+    if benchmark_hits >= 3:
+        boosts["empirical_benchmark_boost"] = 0.03
+    elif benchmark_hits == 2:
+        boosts["empirical_benchmark_boost"] = 0.015
+    elif benchmark_hits == 0 and benchmark_misses >= 3:
+        boosts["empirical_benchmark_boost"] = -0.02
     
     # Calculate total boost
     total_boost = sum(boosts.values())
@@ -366,11 +451,11 @@ def calc_benchmark_boost(
     # Cap total boost to prevent over-inflation
     total_boost = max(total_boost, -0.05)  # Max -5% penalty (reduced from -8%)
     
-    # Uniform 3% cap across all positions.
+    # Uniform 5% cap across all positions.
     # The benchmark boost is a small absolute-scale nudge for prospects who clear
     # multiple elite criteria — it is not meant to inflate scores class-relatively.
     # Keeping the cap tight ensures the weighted component sum drives the grade.
-    total_boost = min(total_boost, 0.03)   # Max +3% boost, all positions
+    total_boost = min(total_boost, 0.05)   # Max +5% boost, all positions
     
     boosts["total_boost"] = total_boost
     
