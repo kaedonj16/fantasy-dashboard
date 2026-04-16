@@ -689,7 +689,7 @@ def fetch_cfbd_college_stats(
         print("[cfbd] No CFBD_API_KEY set — skipping college stats")
         return {}
 
-    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
     print(f"[cfbd] Fetching college stats for years: {years}")
 
     try:

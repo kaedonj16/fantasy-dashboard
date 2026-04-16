@@ -390,8 +390,8 @@ def _build_college_features(
     for draft_year in draft_years:
         log.info("[calibration] Fetching CFBD features for draft class %d", draft_year)
 
-        # Use the two seasons before draft (junior + senior year)
-        for yr in [draft_year - 1, draft_year - 2]:
+        # Use up to 4 seasons before draft (full college career)
+        for yr in [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]:
             try:
                 stat_rows = _cfbd_get("/stats/player/season", {"year": yr, "seasonType": "regular"})
             except Exception as exc:

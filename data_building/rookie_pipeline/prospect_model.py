@@ -260,7 +260,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         prod = (
             _scale(rush_yds_pg, 20,  120) * 0.18 +
             _scale(all_yds_pg,  30,  150) * 0.17 +
-            _scale(tds_pg,       0.4,  1.8) * 0.25 +
+            _scale(tds_pg,       0.4,  1.5) * 0.25 +
             _scale(dom,          0.12, 0.60) * 0.15 +
             _scale(ypc,          3.5,  8.0) * 0.25
         )
@@ -287,32 +287,39 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         return prod
 
     elif pos == "QB":
-        pass_yds_pg = _safe(season.get("pass_yards")) / gp
-        tds_pg      = _safe(season.get("pass_tds"))   / gp
-        comp_pct    = _safe(season.get("completion_pct"), 60.0)
-        ypa         = _safe(season.get("yds_per_attempt"), 7.0)
-        td_int      = _safe(season.get("td_int_ratio"),    2.0)
-        # Efficiency-first QB scoring: YPA and completion% predict NFL translation
-        # better than raw college volume, which varies wildly by scheme.
-        # Air-Raid QBs inflate volume stats; pro-style systems suppress them.
-        # Volume scale lowered (150-330) so conservative offenses aren't penalised
-        # for running 20-play-action drives; efficiency (YPA, comp%) gets 50% weight.
-        prod = (
-            _scale(pass_yds_pg, 150, 330) * 0.20 +
-            _scale(tds_pg,        1.5,  3.5) * 0.20 +
-            _scale(comp_pct,     58.0, 76.0) * 0.25 +
-            _scale(ypa,           6.5,  10.5) * 0.25 +
-            _scale(td_int,        1.5,   6.0) * 0.10
-        )
-        # Mobile QB bonus: rushing production adds significant fantasy value
+        pass_yds_pg    = _safe(season.get("pass_yards")) / gp
+        tds_pg         = _safe(season.get("pass_tds"))   / gp
+        comp_pct       = _safe(season.get("completion_pct"), 60.0)
+        ypa            = _safe(season.get("yds_per_attempt"), 7.0)
+        td_int         = _safe(season.get("td_int_ratio"),    2.0)
         rush_yds_pg    = _safe(season.get("rush_yards")) / gp
         rush_tds_season = _safe(season.get("rush_tds"))
-        if rush_yds_pg >= 30:
-            prod = _clip(prod * 1.08)   # 8% for QB with meaningful rushing
-        if rush_yds_pg >= 50:
-            prod = _clip(prod * 1.05)   # additional 5% for elite rushing QB
-        if rush_tds_season >= 5:
-            prod = _clip(prod * 1.04)   # bonus for multi-TD rushing QBs
+
+        # Rushing QBs: elite college rushers (Lamar, Kyler, Jalen Hurts) are
+        # systematically penalised by pure passing metrics. Rushing is a direct
+        # fantasy component in the NFL, not just a tie-breaker.
+        # Architecture: 85% passing composite + 15% rushing component so that
+        # a pocket passer can still max out (rushing = 0 → no penalty) while
+        # a dual-threat who rushes 80+ yd/game adds a full 15 pts on top.
+        # Completion% weight reduced (0.25→0.18) because spread/RPO systems
+        # inflate college comp% (Mac Jones 77%) while dual-threat systems
+        # suppress it without signalling worse NFL potential.
+        pass_comp = (
+            _scale(pass_yds_pg, 150, 330) * 0.22 +
+            _scale(tds_pg,        1.5,  3.5) * 0.22 +
+            _scale(comp_pct,     58.0, 76.0) * 0.18 +
+            _scale(ypa,           6.5,  10.5) * 0.28 +
+            _scale(td_int,        1.5,   6.0) * 0.10
+        )
+        rush_comp = _scale(rush_yds_pg, 10.0, 85.0)  # 0–100; Lamar ~90+ yd/g → near 100
+
+        prod = _clip(pass_comp * 0.85 + rush_comp * 0.15)
+
+        # Extra multiplier for elite rushing + TDs (dual-threat upside)
+        if rush_yds_pg >= 70 and rush_tds_season >= 8:
+            prod = _clip(prod * 1.06)
+        elif rush_yds_pg >= 50 and rush_tds_season >= 5:
+            prod = _clip(prod * 1.03)
         return prod
 
     elif pos == "TE":
@@ -1153,19 +1160,18 @@ POSITION_WEIGHTS = {
         "experience": 0.07,
     },
     "RB": {
-        # Draft capital (r=0.72) and breakout age (r=0.65) are the clearest RB predictors.
-        # Age is especially predictive for RBs who peak young and decline quickly.
-        # Efficiency raised: YPC-based efficiency is more predictive than raw volume for RBs.
-        # Production reduced: volume-centric formula over-rewards featured backs vs. committee RBs.
-        "draft_capital": 0.24,
+        # Draft capital is the single strongest RB predictor (1st-round RBs hit at 83%,
+        # the highest hit rate of any position/tier — higher than 1st-round WRs at 64%).
+        # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
+        "draft_capital": 0.29,
         "production": 0.18,
         "utilization": 0.08,
         "efficiency": 0.10,
         "age": 0.09,
-        "breakout": 0.14,
+        "breakout": 0.11,
         "athleticism": 0.10,
-        "competition": 0.05,
-        "environment": 0.01,
+        "competition": 0.04,
+        "environment": 0.00,
         "durability": 0.01,
     },
     "WR": {

@@ -5614,22 +5614,58 @@ def build_teams_body(ctx: dict) -> str:
           .then(data => {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var rows = data.rosters || [];
-            var maxAbs = Math.max(...rows.map(r => Math.abs(r.vs_avg)), 1);
-            var html = '<div class="analytics-btm-header"><span class="analytics-date-label">30-day window: ' +
-              data.baseline_date + ' → ' + data.latest_date + '</span>' +
-              '<span class="analytics-avg-label">League avg delta: ' +
-              (data.league_avg_delta >= 0 ? '+' : '') + data.league_avg_delta + '</span></div>';
-            html += '<div class="analytics-bar-list">';
-            rows.forEach(function(r) {{
-              var sign = r.vs_avg >= 0 ? '+' : '';
-              var cls  = r.vs_avg >= 0 ? 'analytics-bar-pos' : 'analytics-bar-neg';
-              var pct  = Math.min(100, Math.round(Math.abs(r.vs_avg) / maxAbs * 100));
-              html += '<div class="analytics-bar-row">' +
-                '<span class="analytics-bar-name">' + r.team_name + '</span>' +
-                '<div class="analytics-bar-track">' +
-                  '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
-                '</div>' +
-                '<span class="analytics-bar-val ' + cls + '">' + sign + r.vs_avg + '</span>' +
+            var avgDelta = data.league_avg_delta || 0;
+            var sign = avgDelta >= 0 ? '+' : '';
+            var avgFmt = sign + Math.round(avgDelta).toLocaleString();
+
+            var maxVsAvg = Math.max(...rows.map(r => Math.abs(r.vs_avg)), 1);
+
+            var html = '<div class="btm-meta">' +
+              '<span class="btm-window">📅 ' + data.baseline_date + ' → ' + data.latest_date + '</span>' +
+              '<span class="btm-avg-pill">League avg: ' + avgFmt + ' pts</span>' +
+              '<span class="btm-legend"><span class="btm-dot btm-dot-pos"></span>Beat avg&nbsp;&nbsp;<span class="btm-dot btm-dot-neg"></span>Below avg</span>' +
+            '</div>';
+
+            html += '<div class="btm-col-header">' +
+              '<span class="btm-ch-rank">#</span>' +
+              '<span class="btm-ch-team">Team</span>' +
+              '<span class="btm-ch-delta">Portfolio Δ</span>' +
+              '<span class="btm-ch-vsavg">vs League Avg</span>' +
+              '<span class="btm-ch-bar"></span>' +
+              '<span class="btm-ch-movers">Key Movers</span>' +
+            '</div>';
+
+            html += '<div class="btm-rows">';
+            rows.forEach(function(r, idx) {{
+              var pos  = r.vs_avg >= 0;
+              var cls  = pos ? 'btm-pos' : 'btm-neg';
+              var vsSign = pos ? '+' : '';
+              var pdSign = r.total_delta >= 0 ? '+' : '';
+              var pct  = Math.min(100, Math.round(Math.abs(r.vs_avg) / maxVsAvg * 100));
+
+              // top 2 movers with position badge
+              var moversHtml = '';
+              (r.top_movers || []).slice(0, 2).forEach(function(m) {{
+                var ms = m.delta >= 0 ? '+' : '';
+                var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
+                var shortName = m.name.split(' ').pop(); // last name only
+                moversHtml += '<span class="btm-mover ' + mc + '">' +
+                  '<span class="btm-mover-pos-badge">' + m.position + '</span>' +
+                  shortName + ' ' + ms + Math.round(m.delta) +
+                '</span>';
+              }});
+
+              html += '<div class="btm-row ' + cls + '">' +
+                '<span class="btm-rank">' + (idx + 1) + '</span>' +
+                '<span class="btm-team">' + r.team_name + '</span>' +
+                '<span class="btm-delta">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</span>' +
+                '<span class="btm-vsavg ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
+                '<span class="btm-bar-wrap">' +
+                  '<div class="btm-bar-track">' +
+                    '<div class="btm-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
+                  '</div>' +
+                '</span>' +
+                '<span class="btm-movers">' + (moversHtml || '<span class="btm-no-movers">—</span>') + '</span>' +
               '</div>';
             }});
             html += '</div>';
