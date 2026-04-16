@@ -1512,9 +1512,9 @@ def calc_translation_adjustment(
 ) -> float:
     """
     Position-specific post-model adjustment (in points) to reduce common misses:
-      - WR false positives on low-translation profiles (hands/YAC concerns)
+      - WR false positives on low-translation profiles (hands/YAC + weak efficiency)
       - Day-2/Day-3 WR/RB underrates with strong underlying profiles
-      - TE volatility when profile quality is weak
+      - TE volatility when receiving-usage profile is weak
     """
     if not prospect.get("seasons"):
         return 0.0
@@ -1537,12 +1537,18 @@ def calc_translation_adjustment(
             adj -= 1.5
         if yac > 0 and yac < 2.8:
             adj -= 1.0
+        # Early-pick WR guardrail: weak production+efficiency profile should not sit
+        # near elite tier solely via draft capital.
+        if projected_pick <= 64 and production_score < 62 and efficiency_score < 58:
+            adj -= 3.0
 
         # Boost strong skill indicators for non-elite draft capital WRs (Kupp/Puka archetype)
         if projected_pick > 40 and (yprr >= 2.6 or market_share >= 0.30):
             adj += 2.5
         if projected_pick > 75 and production_score >= 72 and efficiency_score >= 68:
             adj += 1.5
+        if projected_pick > 90 and yprr >= 2.8 and market_share >= 0.28 and age_score >= 60:
+            adj += 2.0
 
     elif position == "RB":
         rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
@@ -1554,6 +1560,8 @@ def calc_translation_adjustment(
             adj += 2.0
         if projected_pick > 75 and dominator >= 0.30 and ypc >= 5.2:
             adj += 2.0
+        if projected_pick > 100 and rec_yds_pg >= 25 and dominator >= 0.28:
+            adj += 1.5
 
     elif position == "TE":
         rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
@@ -1567,8 +1575,11 @@ def calc_translation_adjustment(
             adj -= 1.0
         if draft_age and draft_age > 23.0 and age_score < 50:
             adj -= 0.5
+        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42:
+            adj -= 1.0
 
-    return _clip(adj, 0.0, 100.0) if adj > 0 else max(adj, -6.0)
+    # Keep the adjustment bounded; this is a corrective signal, not the main model.
+    return max(-10.0, min(6.0, adj))
 
 
 def score_prospect(
@@ -1759,6 +1770,18 @@ def score_prospect(
     #   75 raw → 81.2  (solid starter)
     #   65 raw → 69.6  (developmental)
     prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+
+    # Position-specific translation adjustment from historical miss archetypes.
+    # Applied late (after global scaling) so the correction magnitude is preserved.
+    translation_adjustment = calc_translation_adjustment(
+        prospect=prospect,
+        position=pos,
+        draft_capital=draft_capital,
+        production_score=production_score,
+        efficiency_score=efficiency_score,
+        age_score=age_score,
+    )
+    prospect_score += translation_adjustment
 
     # Thin-sample volume gate: when both production AND utilization fall below
     # position-typical thresholds, efficiency/athleticism/breakout signals are

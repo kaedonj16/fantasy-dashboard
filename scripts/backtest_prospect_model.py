@@ -932,11 +932,33 @@ def _print_summary(all_rows: List[Dict]) -> None:
             if r.get("has_cfbd"):
                 overall_valid_cfbd.append((r["model_score"], r["ppr_cum"]))
 
-    overall_with_data = [r for r in all_rows if r.get("ppr_cum", 0) > 0]
-    if overall_with_data:
-        overall_p10, overall_r10, _ = _precision_recall_at_k(overall_with_data, k=10)
-        overall_ndcg10 = _ndcg_at_k(overall_with_data, k=10, metric="ppr_cum")
-        overall_ndcg25 = _ndcg_at_k(overall_with_data, k=25, metric="ppr_cum")
+    # Pooled decision-quality metrics should be averaged across classes, not
+    # computed on one giant merged table (that collapses to just 10 positives).
+    pooled_p10: List[float] = []
+    pooled_r10: List[float] = []
+    pooled_nd10: List[float] = []
+    pooled_nd25: List[float] = []
+    for yr in sorted(by_year.keys()):
+        yr_rows = [r for r in by_year[yr] if r.get("ppr_cum", 0) > 0]
+        if len(yr_rows) < 10:
+            continue
+        p10, r10, _ = _precision_recall_at_k(yr_rows, k=10)
+        nd10 = _ndcg_at_k(yr_rows, k=10, metric="ppr_cum")
+        nd25 = _ndcg_at_k(yr_rows, k=25, metric="ppr_cum")
+        if not math.isnan(p10):
+            pooled_p10.append(p10)
+        if not math.isnan(r10):
+            pooled_r10.append(r10)
+        if not math.isnan(nd10):
+            pooled_nd10.append(nd10)
+        if not math.isnan(nd25):
+            pooled_nd25.append(nd25)
+
+    if pooled_p10:
+        overall_p10 = statistics.mean(pooled_p10)
+        overall_r10 = statistics.mean(pooled_r10) if pooled_r10 else float("nan")
+        overall_ndcg10 = statistics.mean(pooled_nd10) if pooled_nd10 else float("nan")
+        overall_ndcg25 = statistics.mean(pooled_nd25) if pooled_nd25 else float("nan")
         p10_str = f"{overall_p10:.2f}" if not math.isnan(overall_p10) else "n/a"
         r10_str = f"{overall_r10:.2f}" if not math.isnan(overall_r10) else "n/a"
         nd10_str = f"{overall_ndcg10:.3f}" if not math.isnan(overall_ndcg10) else "n/a"
