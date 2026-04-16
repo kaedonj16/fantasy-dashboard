@@ -569,6 +569,56 @@ def _rank_corr(rows: List[Dict], metric: str = "ppr_cum") -> float:
     return _pearson_r(model_ranks, actual_ranks)
 
 
+def _precision_recall_at_k(rows: List[Dict], k: int = 10) -> Tuple[float, float, int]:
+    """
+    Compute Precision@k and Recall@k using top-k cumulative PPR as positives.
+
+    Returns (precision, recall, n_actual_positives).
+    """
+    with_data = [r for r in rows if r.get("ppr_cum", 0) > 0]
+    if not with_data or k <= 0:
+        return float("nan"), float("nan"), 0
+
+    k_eff = min(k, len(with_data))
+    by_model = sorted(with_data, key=lambda x: x.get("model_score", 0.0), reverse=True)
+    by_actual = sorted(with_data, key=lambda x: x.get("ppr_cum", 0.0), reverse=True)
+    pred_topk = {r["name"] for r in by_model[:k_eff]}
+    actual_topk = {r["name"] for r in by_actual[:k_eff]}
+    hits = len(pred_topk & actual_topk)
+    precision = hits / k_eff
+    recall = hits / len(actual_topk) if actual_topk else float("nan")
+    return precision, recall, len(actual_topk)
+
+
+def _ndcg_at_k(rows: List[Dict], k: int = 10, metric: str = "ppr_cum") -> float:
+    """
+    Compute NDCG@k where relevance is normalized actual `metric` value.
+    """
+    with_data = [r for r in rows if r.get(metric, 0) > 0]
+    if len(with_data) < 2 or k <= 0:
+        return float("nan")
+
+    k_eff = min(k, len(with_data))
+    max_rel = max(r.get(metric, 0.0) for r in with_data)
+    if max_rel <= 0:
+        return float("nan")
+
+    rel = {r["name"]: (r.get(metric, 0.0) / max_rel) for r in with_data}
+    by_model = sorted(with_data, key=lambda x: x.get("model_score", 0.0), reverse=True)[:k_eff]
+    by_actual = sorted(with_data, key=lambda x: x.get(metric, 0.0), reverse=True)[:k_eff]
+
+    def _dcg(items: List[Dict]) -> float:
+        score = 0.0
+        for idx, row in enumerate(items, 1):
+            score += rel.get(row["name"], 0.0) / math.log2(idx + 1)
+        return score
+
+    ideal = _dcg(by_actual)
+    if ideal <= 0:
+        return float("nan")
+    return _dcg(by_model) / ideal
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Display helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -843,8 +893,11 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
     overall_valid: List[Tuple[float, float]] = []  # (model_score, ppr_cum)
     overall_valid_cfbd: List[Tuple[float, float]] = []  # only rows with CFBD data
-    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  {'Spearman-ρ':>10}  {'Top10 hit':>8}")
-    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}")
+    print(
+        f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  "
+        f"{'Spearman-ρ':>10}  {'Top10 hit':>8}  {'P@10':>6}  {'R@10':>6}  {'NDCG@10':>8}  {'NDCG@25':>8}"
+    )
+    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}  {'-'*6}  {'-'*6}  {'-'*8}  {'-'*8}")
 
     for yr in sorted(by_year.keys()):
         rows = by_year[yr]
@@ -860,13 +913,60 @@ def _print_summary(all_rows: List[Dict]) -> None:
         top10_actual = {r["name"] for r in sorted(with_data, key=lambda x: x["ppr_cum"], reverse=True)[:10]}
         hit_n = len(top10_model & top10_actual)
         hit_str = f"{hit_n}/10" if with_data else "n/a"
+        p10, r10, _ = _precision_recall_at_k(rows, k=10)
+        ndcg10 = _ndcg_at_k(rows, k=10, metric="ppr_cum")
+        ndcg25 = _ndcg_at_k(rows, k=25, metric="ppr_cum")
 
-        print(f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}")
+        p10_str = f"{p10:.2f}" if not math.isnan(p10) else " n/a"
+        r10_str = f"{r10:.2f}" if not math.isnan(r10) else " n/a"
+        ndcg10_str = f"{ndcg10:.3f}" if not math.isnan(ndcg10) else "   n/a"
+        ndcg25_str = f"{ndcg25:.3f}" if not math.isnan(ndcg25) else "   n/a"
+
+        print(
+            f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}  "
+            f"{p10_str:>6}  {r10_str:>6}  {ndcg10_str:>8}  {ndcg25_str:>8}"
+        )
 
         for r in with_data:
             overall_valid.append((r["model_score"], r["ppr_cum"]))
             if r.get("has_cfbd"):
                 overall_valid_cfbd.append((r["model_score"], r["ppr_cum"]))
+
+    # Pooled decision-quality metrics should be averaged across classes, not
+    # computed on one giant merged table (that collapses to just 10 positives).
+    pooled_p10: List[float] = []
+    pooled_r10: List[float] = []
+    pooled_nd10: List[float] = []
+    pooled_nd25: List[float] = []
+    for yr in sorted(by_year.keys()):
+        yr_rows = [r for r in by_year[yr] if r.get("ppr_cum", 0) > 0]
+        if len(yr_rows) < 10:
+            continue
+        p10, r10, _ = _precision_recall_at_k(yr_rows, k=10)
+        nd10 = _ndcg_at_k(yr_rows, k=10, metric="ppr_cum")
+        nd25 = _ndcg_at_k(yr_rows, k=25, metric="ppr_cum")
+        if not math.isnan(p10):
+            pooled_p10.append(p10)
+        if not math.isnan(r10):
+            pooled_r10.append(r10)
+        if not math.isnan(nd10):
+            pooled_nd10.append(nd10)
+        if not math.isnan(nd25):
+            pooled_nd25.append(nd25)
+
+    if pooled_p10:
+        overall_p10 = statistics.mean(pooled_p10)
+        overall_r10 = statistics.mean(pooled_r10) if pooled_r10 else float("nan")
+        overall_ndcg10 = statistics.mean(pooled_nd10) if pooled_nd10 else float("nan")
+        overall_ndcg25 = statistics.mean(pooled_nd25) if pooled_nd25 else float("nan")
+        p10_str = f"{overall_p10:.2f}" if not math.isnan(overall_p10) else "n/a"
+        r10_str = f"{overall_r10:.2f}" if not math.isnan(overall_r10) else "n/a"
+        nd10_str = f"{overall_ndcg10:.3f}" if not math.isnan(overall_ndcg10) else "n/a"
+        nd25_str = f"{overall_ndcg25:.3f}" if not math.isnan(overall_ndcg25) else "n/a"
+        print(
+            f"\n  Decision-quality ranking metrics (all classes pooled): "
+            f"P@10={p10_str}  R@10={r10_str}  NDCG@10={nd10_str}  NDCG@25={nd25_str}"
+        )
 
     # ── Pearson r by data-completeness tier ────────────────────────────────────
     # 2024 has only 1 NFL season; 2023 has 2.  Including them pools clean signal
