@@ -1,6 +1,7 @@
 import hashlib
 import html
 import json
+import logging
 import os
 import threading
 import time
@@ -109,6 +110,14 @@ daily_lock = threading.Lock()
 daily_completed = None
 EASTERN = ZoneInfo("America/New_York")
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 DASHBOARD_CACHE = {}
 
 # How long a league context is considered fresh
@@ -134,28 +143,58 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+_secret_key = os.environ.get('FLASK_SECRET_KEY', '')
+if not _secret_key:
+    logging.warning(
+        "FLASK_SECRET_KEY is not set — using insecure default. "
+        "Set this env var in production to protect session cookies."
+    )
+    _secret_key = 'dev-secret-key-change-in-production'
+app.secret_key = _secret_key
+del _secret_key
+
 plotly_js = get_plotlyjs()
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=[],          # no default limit — opt-in per route
+        storage_uri="memory://",    # in-process store; swap for Redis in production
+    )
+    logger.info("[limiter] Flask-Limiter enabled (memory backend)")
+except ImportError:
+    logger.warning("[limiter] Flask-Limiter not installed — rate limiting disabled")
+    # Provide a no-op decorator so route definitions don't fail
+    class _NoopLimiter:
+        def limit(self, *a, **kw):
+            def decorator(f): return f
+            return decorator
+    limiter = _NoopLimiter()
+
 try:
     init_value_history_db()
 except Exception as e:
-    print(f"[value-history] init skipped: {e}")
+    logger.warning("[value-history] init skipped: %s", e)
 
 # Register breakout detection API routes
 try:
     from dashboard_services.breakout_api import register_breakout_routes
     register_breakout_routes(app)
-    print("[breakout-api] Breakout API endpoints registered")
+    logger.info("[breakout-api] Breakout API endpoints registered")
 except Exception as e:
-    print(f"[breakout-api] Registration skipped: {e}")
+    logger.warning("[breakout-api] Registration skipped: %s", e)
 
 # Register rookie prospect API routes
 try:
     from dashboard_services.rookie_api import register_rookie_routes
     register_rookie_routes(app)
-    print("[rookie-api] Rookie API endpoints registered")
+    logger.info("[rookie-api] Rookie API endpoints registered")
 except Exception as e:
-    print(f"[rookie-api] Registration skipped: {e}")
+    logger.warning("[rookie-api] Registration skipped: %s", e)
 
 
 def generate_recent_updates_html(limit=5):
@@ -1735,7 +1774,27 @@ def get_trade_ai_analysis(
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
 
 
+@app.route("/health")
+def health():
+    """Uptime / readiness probe used by Render and load balancers."""
+    from dashboard_services.db import get_database_url
+    db_ok = False
+    try:
+        import psycopg
+        url = get_database_url()
+        with psycopg.connect(url, connect_timeout=3) as conn:
+            conn.execute("SELECT 1")
+        db_ok = True
+    except Exception as exc:
+        logger.warning("[health] DB check failed: %s", exc)
+
+    payload = {"status": "ok" if db_ok else "degraded", "db": db_ok}
+    status_code = 200 if db_ok else 503
+    return jsonify(payload), status_code
+
+
 @app.route("/api/history/ai-recap")
+@limiter.limit("10 per minute")
 def history_ai_recap():
     """Generate AI-powered season recap for a specific team."""
     league_id = request.args.get("league_id")
@@ -7834,6 +7893,7 @@ def get_model_value_table_cached():
 
 
 @app.route("/api/gm-memo", methods=["POST"])
+@limiter.limit("10 per minute")
 def api_gm_memo():
     payload = request.get_json(force=True)
 
@@ -7854,9 +7914,7 @@ def api_gm_memo():
             "gm_memo_html": gm_memo_html
         })
     except Exception as e:
-        print(f"[api-gm-memo] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("[api-gm-memo] Error: %s", e)
         return jsonify({
             "success": False,
             "error": str(e)
@@ -7864,6 +7922,7 @@ def api_gm_memo():
 
 
 @app.route("/api/trade-eval", methods=["POST"])
+@limiter.limit("10 per minute")
 def api_trade_eval():
     payload = request.get_json(force=True)
 
@@ -8096,7 +8155,13 @@ def _sanitize_for_json(obj):
 
 @app.route("/api/players")
 def api_players():
-    """Compact player list for comparison search. No league context required."""
+    """Compact player list for comparison search. No league context required.
+
+    Query params:
+        page  (int, default 1)   — 1-based page number
+        limit (int, default 0)   — results per page; 0 = return all (legacy)
+        q     (str, optional)    — prefix/substring filter applied before paging
+    """
     try:
         from utils.utils import load_players_index, load_model_value_table
         players_index = load_players_index() or {}
@@ -8122,8 +8187,33 @@ def api_players():
 
         # Sort by value descending so most relevant players appear first
         results.sort(key=lambda x: x["value"] or 0, reverse=True)
+
+        # Optional substring filter
+        q = request.args.get("q", "").strip().lower()
+        if q:
+            results = [r for r in results if q in r["name"].lower()]
+
+        # Pagination — limit=0 (default) returns the full list for backwards compat
+        total = len(results)
+        try:
+            limit = max(0, int(request.args.get("limit", 0)))
+            page  = max(1, int(request.args.get("page", 1)))
+        except (TypeError, ValueError):
+            limit, page = 0, 1
+
+        if limit > 0:
+            start   = (page - 1) * limit
+            results = results[start: start + limit]
+            return jsonify({
+                "players": results,
+                "total":   total,
+                "page":    page,
+                "pages":   math.ceil(total / limit),
+            })
+
         return jsonify(results)
     except Exception as e:
+        logger.exception("[api-players] Unexpected error")
         return jsonify({"error": str(e)}), 500
 
 

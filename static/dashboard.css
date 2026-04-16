@@ -11392,17 +11392,14 @@ img, svg, canvas {
   border-color: #3b82f6;
 }
 .compare-search-results {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  /* In-flow (not absolute) so it's never clipped by the modal's overflow:hidden */
+  margin-top: 4px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   max-height: 320px;
   overflow-y: auto;
-  z-index: 10001;
 }
 .compare-search-empty {
   padding: 16px;
