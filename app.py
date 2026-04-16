@@ -5486,7 +5486,7 @@ def build_teams_body(ctx: dict) -> str:
 
         # ── Position value bar chart ──────────────────────────────────────────
         _chart_labels  = ["QB", "RB", "WR", "TE", "Picks"]
-        _chart_colors  = ["#3b82f6", "#86efac", "#4ade80", "#fb923c", "#a78bfa"]
+        _chart_colors  = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#c92c68"]
         _chart_values  = [
             round(sum(team_pos_values[rid].get("QB", [])), 1),
             round(sum(team_pos_values[rid].get("RB", [])), 1),

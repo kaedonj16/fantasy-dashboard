@@ -48,12 +48,12 @@ from data_building.rookie_pipeline.ingestion import fetch_cfbd_college_stats
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
 
-DRAFT_YEARS  = [2021, 2022, 2023, 2024, 2025]
+DRAFT_YEARS  = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
 SKILL_POS    = {"QB", "RB", "WR", "TE"}
 NFL_LOOKBACK = 4   # seasons of NFL data to collect per player
 
 # How many top-N players per draft class to show in the table
-TOP_N_PER_CLASS = 15
+TOP_N_PER_CLASS = 10
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 – Load nflverse roster data to get draft picks
@@ -1036,7 +1036,7 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Backtest rookie prospect model (2021-2025)")
+    parser = argparse.ArgumentParser(description="Backtest rookie prospect model (2016-2025)")
     parser.add_argument(
         "--years", nargs="+", type=int,
         default=DRAFT_YEARS,
