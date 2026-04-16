@@ -19,6 +19,7 @@ Mid Tier Predictors (Correlation 0.4-0.6):
 
 from typing import Dict, List, Optional, Any
 import math
+import os
 
 
 def calc_benchmark_boost(
@@ -397,6 +398,8 @@ def calc_benchmark_boost(
     elif risk_factors >= 2:
         boosts["bust_risk_penalty"] = -0.03  # -3% penalty for moderate bust risk (reduced from -5%)
 
+    profile = (os.getenv("ROOKIE_BENCHMARK_PROFILE") or "conservative").strip().lower()
+
     # 11. EMPIRICAL BENCHMARK LIFT
     # Directly encode historically high-lift hit-rate thresholds by position.
     benchmark_hits = 0
@@ -438,12 +441,22 @@ def calc_benchmark_boost(
         benchmark_hits = sum(1 for c in checks if c)
         benchmark_misses = sum(1 for c in checks if not c)
 
-    if benchmark_hits >= 3:
-        boosts["empirical_benchmark_boost"] = 0.03
-    elif benchmark_hits == 2:
-        boosts["empirical_benchmark_boost"] = 0.015
-    elif benchmark_hits == 0 and benchmark_misses >= 3:
-        boosts["empirical_benchmark_boost"] = -0.02
+    if profile == "aggressive":
+        if benchmark_hits >= 3:
+            boosts["empirical_benchmark_boost"] = 0.03
+        elif benchmark_hits == 2:
+            boosts["empirical_benchmark_boost"] = 0.015
+        elif benchmark_hits == 0 and benchmark_misses >= 3:
+            boosts["empirical_benchmark_boost"] = -0.02
+    else:
+        # Conservative mode (default): keep empirical benchmark influence small so
+        # recent class-specific benchmark noise does not overpower core signals.
+        if benchmark_hits >= 3:
+            boosts["empirical_benchmark_boost"] = 0.01
+        elif benchmark_hits == 2:
+            boosts["empirical_benchmark_boost"] = 0.005
+        elif benchmark_hits == 0 and benchmark_misses >= 3:
+            boosts["empirical_benchmark_boost"] = -0.01
     
     # Calculate total boost
     total_boost = sum(boosts.values())
@@ -451,11 +464,11 @@ def calc_benchmark_boost(
     # Cap total boost to prevent over-inflation
     total_boost = max(total_boost, -0.05)  # Max -5% penalty (reduced from -8%)
     
-    # Uniform 5% cap across all positions.
+    # Position-agnostic cap by profile.
     # The benchmark boost is a small absolute-scale nudge for prospects who clear
     # multiple elite criteria — it is not meant to inflate scores class-relatively.
     # Keeping the cap tight ensures the weighted component sum drives the grade.
-    total_boost = min(total_boost, 0.05)   # Max +5% boost, all positions
+    total_boost = min(total_boost, 0.05 if profile == "aggressive" else 0.03)
     
     boosts["total_boost"] = total_boost
     

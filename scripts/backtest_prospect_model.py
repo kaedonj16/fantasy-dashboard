@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import math
+import os
 import statistics
 import sys
 import os
@@ -1146,6 +1147,13 @@ if __name__ == "__main__":
         "--top-n", type=int, default=TOP_N_PER_CLASS,
         help=f"Rows per draft class (default: {TOP_N_PER_CLASS})",
     )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=["conservative", "aggressive"],
+        default="conservative",
+        help="Benchmark boost profile to use during scoring (default: conservative)",
+    )
     args = parser.parse_args()
+    os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
     TOP_N_PER_CLASS = args.top_n
     run_backtest(args.years)

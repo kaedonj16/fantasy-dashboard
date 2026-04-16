@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -41,10 +42,18 @@ def main():
         action="store_true",
         help="Use historical calibration to derive position weights before scoring",
     )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=["conservative", "aggressive"],
+        default="conservative",
+        help="Benchmark boost profile for scoring (default: conservative)",
+    )
     args = parser.parse_args()
 
     print("🏈 Rookie Data Population Script")
     print("=" * 60)
+    os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
+    print(f"📐 Benchmark profile: {args.benchmark_profile}")
 
     from data_building.rookie_pipeline.pipeline import (
         run_rookie_pipeline,
