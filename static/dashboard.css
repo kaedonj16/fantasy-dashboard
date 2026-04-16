@@ -10669,11 +10669,25 @@ img, svg, canvas {
   }
 
   .player-modal-header {
-    padding: 16px;
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  /* Shrink headshot so buttons stay on screen */
+  .player-modal-headshot {
+    width: 80px;
+    height: 68px;
   }
 
   .player-modal-name {
-    font-size: 18px;
+    font-size: 17px;
+  }
+
+  /* Compact the compare button so the × is always visible */
+  .player-modal-compare-btn {
+    font-size: 11px;
+    padding: 4px 8px;
+    white-space: nowrap;
   }
 
   .player-modal-body {
@@ -11110,6 +11124,11 @@ img, svg, canvas {
   max-width: 1100px;
 }
 
+/* Hide the compare button once compare mode is active */
+.player-modal.compare-mode .player-modal-compare-btn {
+  display: none;
+}
+
 /* Dual-player header strip */
 .compare-dual-header {
   display: flex;
@@ -11432,6 +11451,11 @@ img, svg, canvas {
   /* Full-width modal */
   .player-modal.compare-mode {
     max-width: 100%;
+  }
+
+  /* Give dual header more breathing room by reducing overall header padding */
+  .player-modal.compare-mode .player-modal-header {
+    padding: 10px 12px;
   }
 
   /* Dual header: keep side-by-side but tighten */
