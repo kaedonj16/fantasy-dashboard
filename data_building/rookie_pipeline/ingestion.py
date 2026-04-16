@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import hashlib
 import io
 import os
 import re
@@ -65,6 +66,10 @@ CFBD_BASE = "https://api.collegefootballdata.com"
 _NFLVERSE_COMBINE_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/combine/combine.csv"
 )
+
+# CFBD API caching
+_CFBD_CACHE: Dict[str, Dict[str, Any]] = {}  # {cache_key: {"data": data, "timestamp": timestamp}}
+_CFBD_CACHE_TTL = 3600  # 1 hour cache TTL for CFBD data
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -419,10 +424,27 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
 
 _CFBD_THROTTLE_S = 4.0   # 600 req/hr = 1 per 6s; 4s sleep + ~0.5s latency ≈ 720/hr (safe)
 
+def _get_cache_key(path: str, params: Optional[Dict[str, Any]] = None) -> str:
+    """Generate a unique cache key for CFBD API requests."""
+    key_data = f"{path}:{str(params or {})}"
+    return hashlib.md5(key_data.encode()).hexdigest()
+
+
+def _is_cache_valid(timestamp: float) -> bool:
+    """Check if cached data is still valid based on TTL."""
+    return time.time() - timestamp < _CFBD_CACHE_TTL
+
 def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Optional[Any]:
+    # Check cache first
+    cache_key = _get_cache_key(path, params)
+    cached_entry = _CFBD_CACHE.get(cache_key)
+    
+    if cached_entry and _is_cache_valid(cached_entry["timestamp"]):
+        print(f"[cfbd] {path} CACHE HIT")
+        return cached_entry["data"]
+    
     url = f"{CFBD_BASE}{path}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
-
 
     time.sleep(_CFBD_THROTTLE_S)  # global throttle before every call
 
@@ -431,7 +453,15 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
         try:
             resp = requests.get(url, headers=headers, params=params or {}, timeout=15)
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            
+            # Cache the successful response
+            _CFBD_CACHE[cache_key] = {
+                "data": data,
+                "timestamp": time.time()
+            }
+            print(f"[cfbd] {path} CACHED (TTL: {_CFBD_CACHE_TTL}s)")
+            return data
         except requests.Timeout:
             last_error = "Timeout after 15s"
             wait = 2 ** attempt
@@ -439,16 +469,16 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
         except requests.HTTPError as exc:
             last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
             if exc.response.status_code == 401:
-                print(f"[cfbd] {path} FAILED: Authentication error (401) — check CFBD_API_KEY is valid")
+                print(f"[cfbd] {path} FAILED: Authentication error (401) - check CFBD_API_KEY is valid")
                 return None
             elif exc.response.status_code == 403:
-                print(f"[cfbd] {path} FAILED: Forbidden (403) — API key may not have required permissions")
+                print(f"[cfbd] {path} FAILED: Forbidden (403) - API key may not have required permissions")
                 return None
             elif exc.response.status_code == 404:
-                print(f"[cfbd] {path} FAILED: Not found (404) — invalid endpoint or parameters: {params}")
+                print(f"[cfbd] {path} FAILED: Not found (404) - invalid endpoint or parameters: {params}")
                 return None
             elif exc.response.status_code == 400:
-                print(f"[cfbd] {path} FAILED: Bad Request (400) — invalid parameters: {params}")
+                print(f"[cfbd] {path} FAILED: Bad Request (400) - invalid parameters: {params}")
                 return None
             elif exc.response.status_code == 429:
                 # Respect Retry-After header if present, else exponential back-off
@@ -460,25 +490,24 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
                         wait = 15 * (2 ** attempt)
                 else:
                     wait = 15 * (2 ** attempt)   # 15s, 30s, 60s, 120s, 240s
-                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — backing off {wait}s")
+                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) - backing off {wait}s")
                 time.sleep(wait)
             else:
                 wait = 2 ** attempt
-                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} — retrying in {wait}s")
+                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} - retrying in {wait}s")
                 time.sleep(wait)
         except requests.RequestException as exc:
             last_error = f"Request failed: {type(exc).__name__}"
             wait = 2 ** attempt
-            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} — retrying in {wait}s")
+            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} - retrying in {wait}s")
             time.sleep(wait)
         except Exception as exc:
             last_error = f"Unexpected error: {type(exc).__name__}: {exc}"
-            print(f"[cfbd] {path} FAILED: UNEXPECTED ERROR — {last_error}")
+            print(f"[cfbd] {path} FAILED: UNEXPECTED ERROR - {last_error}")
             return None
     
-    print(f"[cfbd] {path} FAILED after {retries} attempts — Last error: {last_error}")
+    print(f"[cfbd] {path} FAILED after {retries} attempts - Last error: {last_error}")
     return None
-
 
 def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
                        games: Optional[int], skip_sagarin: bool = False) -> Dict:
