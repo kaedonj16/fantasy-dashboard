@@ -2685,7 +2685,13 @@ document.addEventListener("DOMContentLoaded", () => {
     cta.innerHTML = `
       <div class="saved-viewer-info">
         <span class="saved-viewer-label">Welcome back!</span>
-        <a href="${dashboardUrl}" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></a>
+        <form method="POST" action="/set-viewer" style="display:inline">
+          <input type="hidden" name="league_id" value="${saved.league_id}">
+          <input type="hidden" name="username" value="${saved.username}">
+          <input type="hidden" name="platform" value="${platform}">
+          <input type="hidden" name="season" value="${season}">
+          <button type="submit" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></button>
+        </form>
       </div>
       <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
     `;

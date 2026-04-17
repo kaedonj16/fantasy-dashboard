@@ -8043,7 +8043,7 @@ def set_viewer():
         )
 
     save_viewer_session(viewer)
-    return redirect(url_for("page_dashboard", league_id=league_id))
+    return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
 @app.route("/api/refresh-page", methods=["POST"])
