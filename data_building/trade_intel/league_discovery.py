@@ -1,0 +1,203 @@
+"""
+League discovery for Trade Intelligence Engine.
+
+Strategy (no Sleeper search API exists):
+1. Seed from Sleeper trending players endpoint — each trending entry includes
+   league_ids that recently touched the player.
+2. From each discovered league, pull rosters -> owner user_ids -> fetch their
+   leagues -> expand the frontier.
+3. Filter to dynasty leagues only (league_type == 2).
+4. Persist discovered leagues to trade_intel_leagues for the crawler.
+"""
+from __future__ import annotations
+
+import logging
+import time
+from typing import Set
+
+import requests
+
+from dashboard_services.db import get_conn
+
+logger = logging.getLogger(__name__)
+
+SLEEPER_BASE = "https://api.sleeper.app/v1"
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
+
+_REQUEST_DELAY = 0.1   # seconds between Sleeper calls — stay well under rate limits
+_MAX_LEAGUES = 5_000   # target ceiling per crawl run
+
+
+def _get(path: str, params: dict | None = None) -> list | dict | None:
+    url = f"{SLEEPER_BASE}{path}"
+    try:
+        resp = SESSION.get(url, params=params, timeout=10)
+        if resp.status_code == 429:
+            logger.warning("[discovery] Rate limited — sleeping 60s")
+            time.sleep(60)
+            resp = SESSION.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        logger.debug("[discovery] %s failed: %s", path, exc)
+        return None
+
+
+def _current_season() -> int:
+    state = _get("/state/nfl")
+    if state and "season" in state:
+        return int(state["season"])
+    return 2024
+
+
+def _trending_league_ids(season: int) -> Set[str]:
+    """
+    Sleeper trending endpoint returns player objects with a `leagues` list
+    embedded in activity. We pull add/drop trending and extract any league IDs.
+    """
+    league_ids: Set[str] = set()
+    for trend_type in ("add", "drop"):
+        data = _get(f"/players/nfl/trending/{trend_type}", {"lookback_hours": 168, "limit": 200})
+        if not data:
+            continue
+        for entry in data:
+            for lid in entry.get("leagues", []):
+                league_ids.add(str(lid))
+    logger.info("[discovery] Trending seeds: %d leagues", len(league_ids))
+    return league_ids
+
+
+def _user_leagues(user_id: str, season: int) -> list[str]:
+    data = _get(f"/user/{user_id}/leagues/nfl/{season}")
+    if not data:
+        return []
+    return [str(lg["league_id"]) for lg in data if lg.get("league_id")]
+
+
+def _league_meta(league_id: str) -> dict | None:
+    return _get(f"/league/{league_id}")
+
+
+def _roster_owner_ids(league_id: str) -> list[str]:
+    rosters = _get(f"/league/{league_id}/rosters")
+    if not rosters:
+        return []
+    return [str(r["owner_id"]) for r in rosters if r.get("owner_id")]
+
+
+def _already_known(season: int) -> Set[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT league_id FROM trade_intel_leagues WHERE season = %s",
+            (season,)
+        ).fetchall()
+    return {r["league_id"] for r in rows}
+
+
+def _save_leagues(leagues: list[dict]) -> int:
+    if not leagues:
+        return 0
+    with get_conn() as conn:
+        inserted = 0
+        for lg in leagues:
+            conn.execute(
+                """
+                INSERT INTO trade_intel_leagues
+                    (league_id, season, num_teams, scoring_type, league_type)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (league_id) DO NOTHING
+                """,
+                (
+                    lg["league_id"],
+                    lg["season"],
+                    lg.get("num_teams"),
+                    lg.get("scoring_type"),
+                    lg.get("league_type"),
+                )
+            )
+            if conn.pgresult and conn.pgresult.command_tuples == 1:
+                inserted += 1
+    return inserted
+
+
+def _classify_scoring(settings: dict) -> str:
+    ppr = float((settings.get("scoring_settings") or {}).get("rec", 0))
+    if ppr >= 1.0:
+        return "ppr"
+    if ppr >= 0.5:
+        return "half"
+    return "std"
+
+
+def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
+    """
+    Discover up to `target` dynasty Sleeper leagues and store them.
+    Returns total count of newly inserted leagues.
+    """
+    if season is None:
+        season = _current_season()
+
+    known = _already_known(season)
+    frontier: Set[str] = _trending_league_ids(season) - known
+    visited_users: Set[str] = set()
+    to_save: list[dict] = []
+    total_new = 0
+
+    logger.info("[discovery] Starting. Known=%d, Frontier=%d", len(known), len(frontier))
+
+    while frontier and (len(known) + total_new) < target:
+        league_id = frontier.pop()
+        if league_id in known:
+            continue
+
+        time.sleep(_REQUEST_DELAY)
+        meta = _league_meta(league_id)
+        if not meta:
+            continue
+
+        # Only dynasty leagues
+        if meta.get("settings", {}).get("type") != 2:
+            known.add(league_id)  # mark so we don't revisit
+            continue
+
+        lg_season = int(meta.get("season") or season)
+        to_save.append({
+            "league_id": league_id,
+            "season": lg_season,
+            "num_teams": meta.get("total_rosters"),
+            "scoring_type": _classify_scoring(meta),
+            "league_type": 2,
+        })
+        known.add(league_id)
+
+        # Expand frontier via roster owners, but cap user fan-out
+        if len(frontier) < 500:
+            time.sleep(_REQUEST_DELAY)
+            for owner_id in _roster_owner_ids(league_id):
+                if owner_id in visited_users:
+                    continue
+                visited_users.add(owner_id)
+                time.sleep(_REQUEST_DELAY)
+                for new_lid in _user_leagues(owner_id, season):
+                    if new_lid not in known:
+                        frontier.add(new_lid)
+
+        # Flush every 100
+        if len(to_save) >= 100:
+            n = _save_leagues(to_save)
+            total_new += n
+            logger.info("[discovery] Saved batch. New total: %d", total_new)
+            to_save = []
+
+    if to_save:
+        total_new += _save_leagues(to_save)
+
+    logger.info("[discovery] Done. %d new leagues discovered this run.", total_new)
+    return total_new
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    count = run_discovery()
+    print(f"Discovered {count} new leagues.")

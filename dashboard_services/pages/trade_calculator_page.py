@@ -307,6 +307,18 @@ def build_trade_calculator_body(
 
       <aside class="otc-side">
         <div class="otc-side-stack">
+
+          <div class="otc-side-panel" id="tradeIntelPanel" style="display:none;">
+            <div class="otc-mini-head">
+              <div class="otc-mini-head-row">
+                <h3 class="otc-mini-title">Market Intel</h3>
+                <span class="otc-mini-badge">Real trades</span>
+              </div>
+              <div class="otc-mini-sub">How this trade compares across thousands of leagues</div>
+            </div>
+            <div id="tradeIntelBody" class="otc-mini-list" style="padding: 8px 12px; gap: 10px; display: flex; flex-direction: column;"></div>
+          </div>
+
           <div class="otc-side-panel otc-movers-panel">
             <div class="otc-mini-head">
               <div class="otc-mini-head-row">

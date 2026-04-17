@@ -10615,5 +10615,205 @@ def api_draft_grades():
         return jsonify({"error": "Internal error"}), 500
 
 
+# ---------------------------------------------------------------------------
+# Trade Intelligence Engine API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/trade-intel/trending")
+def api_trade_intel_trending():
+    """
+    Most traded players in the last 7 days across all crawled leagues.
+    Returns up to 25 players with trade counts and market vs model value delta.
+    """
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        limit = min(int(request.args.get("limit") or 25), 50)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        value_col = "market_value_sf" if league_type == "sf" else "market_value_1qb"
+        model_col = "value_sf" if league_type == "sf" else "value_1qb"
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    s.player_id,
+                    s.trade_count_7d,
+                    s.trade_count_30d,
+                    s.trade_count,
+                    s.{value_col}          AS market_value,
+                    s.buy_sell_ratio,
+                    pv.{model_col}         AS model_value,
+                    pv.position,
+                    pv.team
+                FROM trade_intel_player_stats s
+                LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                WHERE s.season = %s AND s.trade_count_7d > 0
+                ORDER BY s.trade_count_7d DESC
+                LIMIT %s
+                """,
+                (season, limit)
+            ).fetchall()
+
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+
+        result = []
+        for r in rows:
+            pid = r["player_id"]
+            info = players_map.get(pid, {})
+            model_val = float(r["model_value"] or 0)
+            market_val = float(r["market_value"] or 0)
+            delta = round(market_val - model_val, 1) if model_val and market_val else None
+            result.append({
+                "player_id": pid,
+                "name": info.get("name", pid),
+                "position": r["position"] or info.get("pos"),
+                "team": r["team"] or info.get("team"),
+                "trade_count_7d": r["trade_count_7d"],
+                "trade_count_30d": r["trade_count_30d"],
+                "trade_count_all": r["trade_count"],
+                "market_value": market_val or None,
+                "model_value": model_val or None,
+                "value_delta": delta,
+                "buy_sell_ratio": float(r["buy_sell_ratio"]) if r["buy_sell_ratio"] else None,
+            })
+
+        return jsonify({"season": season, "players": result})
+
+    except Exception:
+        logger.exception("[trade-intel/trending] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/player/<player_id>")
+def api_trade_intel_player(player_id: str):
+    """
+    Trade market data for a specific player:
+    - Real trade frequency
+    - Market value implied by actual trades
+    - Model value vs market delta
+    - Common trade companions
+    """
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        value_col = "market_value_sf" if league_type == "sf" else "market_value_1qb"
+        model_col = "value_sf" if league_type == "sf" else "value_1qb"
+
+        with get_conn() as conn:
+            stat_row = conn.execute(
+                f"""
+                SELECT
+                    s.*,
+                    s.{value_col}  AS market_value,
+                    pv.{model_col} AS model_value,
+                    pv.position, pv.team
+                FROM trade_intel_player_stats s
+                LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                WHERE s.player_id = %s AND s.season = %s
+                """,
+                (player_id, season)
+            ).fetchone()
+
+            package_rows = conn.execute(
+                """
+                SELECT package_key, occurrence_count
+                FROM trade_intel_packages
+                WHERE anchor_player_id = %s AND season = %s
+                ORDER BY occurrence_count DESC
+                LIMIT 10
+                """,
+                (player_id, season)
+            ).fetchall()
+
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+
+        def _resolve_package(pkg_key: str) -> list[dict]:
+            companions = []
+            for pid in pkg_key.split("|"):
+                if not pid:
+                    continue
+                info = players_map.get(pid, {})
+                companions.append({
+                    "player_id": pid,
+                    "name": info.get("name", pid),
+                    "position": info.get("pos"),
+                })
+            return companions
+
+        common_packages = [
+            {
+                "companions": _resolve_package(r["package_key"]),
+                "occurrence_count": r["occurrence_count"],
+            }
+            for r in package_rows
+            if r["package_key"]
+        ]
+
+        if not stat_row:
+            return jsonify({
+                "player_id": player_id,
+                "season": season,
+                "trade_count": 0,
+                "common_packages": common_packages,
+            })
+
+        model_val = float(stat_row["model_value"] or 0)
+        market_val = float(stat_row["market_value"] or 0)
+        delta = round(market_val - model_val, 1) if model_val and market_val else None
+
+        return jsonify({
+            "player_id": player_id,
+            "season": season,
+            "trade_count_7d": stat_row["trade_count_7d"],
+            "trade_count_30d": stat_row["trade_count_30d"],
+            "trade_count_all": stat_row["trade_count"],
+            "market_value": market_val or None,
+            "model_value": model_val or None,
+            "value_delta": delta,
+            "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
+            "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
+            "common_packages": common_packages,
+        })
+
+    except Exception:
+        logger.exception("[trade-intel/player] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/run-crawl", methods=["POST"])
+@limiter.limit("2 per hour")
+def api_trade_intel_run_crawl():
+    """
+    Trigger a crawl batch manually (admin use). Runs discovery + crawl in background.
+    In production this should be called by a cron job rather than the UI.
+    """
+    try:
+        import threading
+        from data_building.trade_intel.league_discovery import run_discovery
+        from data_building.trade_intel.trade_crawler import run_crawl
+        from data_building.trade_intel.analytics import run_analytics
+
+        def _job():
+            try:
+                discovered = run_discovery(target=500)
+                logger.info("[trade-intel] Discovered %d new leagues", discovered)
+                crawl_result = run_crawl(batch_size=100)
+                logger.info("[trade-intel] Crawl: %s", crawl_result)
+                analytics_result = run_analytics()
+                logger.info("[trade-intel] Analytics: %s", analytics_result)
+            except Exception:
+                logger.exception("[trade-intel] Background job failed")
+
+        t = threading.Thread(target=_job, daemon=True)
+        t.start()
+        return jsonify({"status": "started"})
+
+    except Exception:
+        logger.exception("[trade-intel/run-crawl] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)

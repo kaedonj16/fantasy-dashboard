@@ -1579,6 +1579,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
       }
+
+      fetchTradeIntel();
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -1586,6 +1588,81 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = err.message || "Failed to evaluate trade.";
       }
     }
+  }
+
+  // ------------------------------------------------------------
+  // fetchTradeIntel — loads real market data for players in the trade
+  // ------------------------------------------------------------
+  async function fetchTradeIntel() {
+    const intelPanel = root.querySelector("#tradeIntelPanel");
+    const intelBody = root.querySelector("#tradeIntelBody");
+    if (!intelPanel || !intelBody) return;
+
+    const allPlayers = [
+      ...state.sideAPlayers.map(p => ({ id: String(p.id), name: p.name || p.id, side: "a" })),
+      ...state.sideBPlayers.map(p => ({ id: String(p.id), name: p.name || p.id, side: "b" })),
+    ];
+
+    const playerIds = allPlayers.filter(p => !p.id.startsWith("pick_") && !p.id.startsWith("PICK"));
+    if (playerIds.length === 0) {
+      intelPanel.style.display = "none";
+      return;
+    }
+
+    const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+    const leagueType = getLeagueType();
+
+    intelBody.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:4px 0;">Loading market data...</div>';
+    intelPanel.style.display = "";
+
+    const results = await Promise.all(
+      playerIds.map(p =>
+        fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => d ? { ...d, name: p.name, side: p.side } : null)
+          .catch(() => null)
+      )
+    );
+
+    const valid = results.filter(r => r && r.trade_count_all > 0);
+    if (valid.length === 0) {
+      intelPanel.style.display = "none";
+      return;
+    }
+
+    intelBody.innerHTML = valid.map(r => {
+      const delta = r.value_delta;
+      const deltaStr = delta != null
+        ? `<span style="color:${delta >= 0 ? "#10b981" : "#ef4444"};font-weight:600;">${delta >= 0 ? "+" : ""}${delta}</span>`
+        : "";
+      const marketVal = r.market_value ? `<span style="color:#e2e8f0;">${Math.round(r.market_value)}</span>` : "—";
+      const modelVal = r.model_value ? `<span style="color:#94a3b8;">${Math.round(r.model_value)}</span>` : "—";
+
+      const bsr = r.buy_sell_ratio;
+      const bsrLabel = bsr != null
+        ? (bsr > 0.6 ? "🟢 Buy pressure" : bsr < 0.4 ? "🔴 Sell pressure" : "⚪ Neutral")
+        : "";
+
+      const packages = (r.common_packages || []).slice(0, 2).map(pkg => {
+        const names = (pkg.companions || []).map(c => c.name).join(" + ");
+        return `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">w/ ${names} (${pkg.occurrence_count}x)</div>`;
+      }).join("");
+
+      return `
+        <div style="border-bottom:1px solid #1e293b;padding-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-size:13px;font-weight:600;color:#f1f5f9;">${r.name}</span>
+            <span style="font-size:11px;color:#64748b;">${r.trade_count_7d}x this week · ${r.trade_count_30d}x/mo</span>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;font-size:12px;margin-bottom:4px;">
+            <span>Market ${marketVal}</span>
+            <span>Model ${modelVal}</span>
+            ${deltaStr ? `<span>${deltaStr} vs model</span>` : ""}
+          </div>
+          ${bsrLabel ? `<div style="font-size:11px;color:#94a3b8;">${bsrLabel}</div>` : ""}
+          ${packages}
+        </div>`;
+    }).join("");
   }
 
   // ------------------------------------------------------------
