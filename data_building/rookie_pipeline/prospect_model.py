@@ -206,7 +206,10 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
     Compute the raw production score (pre-transfer-penalty) for a single season.
     Returns the weighted component score (0-100).
     """
-    gp = max(_safe(season.get("games_played"), 12), 1)
+    # Guard against bad games-played values (0/1) that can explode per-game rates
+    # and incorrectly saturate production to 100.
+    gp_raw = _safe(season.get("games_played"), 12)
+    gp = gp_raw if gp_raw >= 4 else 12
 
     if pos == "WR":
         rec_yds_pg    = _safe(season.get("receiving_yards")) / gp
@@ -266,25 +269,32 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         )
         # Receiving tiers: require meaningful rec share so dedicated pass-catchers
         # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
+        # Use an additive multiplier budget (single final clip) to reduce 100-point
+        # ceiling effects from stacked multiplicative boosts.
+        mult = 1.0
         rec_share = rec_yds_pg / max(all_yds_pg, 1.0)
         if rec_yds_pg >= 20 and rec_share >= 0.28:
-            prod = _clip(prod * 1.10)   # dedicated pass-catcher (reduced from 1.20)
+            mult += 0.08   # dedicated pass-catcher
         elif rec_yds_pg >= 20 and rec_share >= 0.22:
-            prod = _clip(prod * 1.08)   # strong receiving back
+            mult += 0.06   # strong receiving back
         elif rec_yds_pg >= 15:
-            prod = _clip(prod * 1.05)   # incidental receiver (reduced from 1.08)
+            mult += 0.03   # incidental receiver
         if ypc >= 6.0:
-            prod = _clip(prod * 1.05)   # reduced from 1.08
+            mult += 0.03
         if dom >= 0.30:
-            prod = _clip(prod * 1.08)   # reduced from 1.12
+            mult += 0.05
         # Red zone proxy: TDs per 100 total yards
         total_yds = _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
         total_tds = _safe(season.get("rush_tds"))   + _safe(season.get("receiving_tds"))
         if total_yds >= 300:
             rz_rate = total_tds / total_yds * 100
-            if rz_rate >= 6.0:   prod = _clip(prod * 1.05)
-            elif rz_rate >= 4.0: prod = _clip(prod * 1.02)
-        return prod
+            if rz_rate >= 6.0:
+                mult += 0.03
+            elif rz_rate >= 4.0:
+                mult += 0.015
+
+        mult = min(mult, 1.16)  # hard cap so one-season RB production doesn't trivially max
+        return _clip(prod * mult)
 
     elif pos == "QB":
         pass_yds_pg    = _safe(season.get("pass_yards")) / gp
@@ -522,14 +532,16 @@ def calc_production_score(
     elif eval_metrics and pos == "RB":
         elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
         if elusive is not None:
-            # Scale-based: 0 at elusive=50 (replacement level), max +8 at 130 (elite).
-            # No penalty for below-average elusive — avoids punishing Singleton-type backs.
-            prod = _clip(prod + _scale(float(elusive), 50.0, 130.0) * 8.0)
+            # Scale-based and symmetric: 0 at elusive=90 (roughly average), up to
+            # +5 at 130 (elite), down to -4 at 55 (poor). Symmetry reduces ceiling lock.
+            elusive_delta = _clip((float(elusive) - 90.0) / 40.0, -0.8, 1.0)
+            prod = _clip(prod + (elusive_delta * 5.0))
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
-            # Scale-based: 0 at 20% (average), max +8 at 50% (elite). No penalty.
-            prod = _clip(prod + _scale(breakaway, 20.0, 50.0) * 8.0)
+            # Scale-based and symmetric: 0 at 20% (average), +4 at 40% elite, -3 at 8%.
+            breakaway_delta = _clip((breakaway - 20.0) / 20.0, -1.0, 1.0)
+            prod = _clip(prod + (breakaway_delta * 4.0))
 
     elif eval_metrics and pos == "QB":
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
