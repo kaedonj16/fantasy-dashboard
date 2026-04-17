@@ -425,4 +425,32 @@ def load_pick_value_table(
         key_str = _pick_key_to_output_string(key)
         final[key_str] = round(float(val), 1)
 
+    # In offseason/exact-slot mode the table only stores "2026_1_01", "2026_1_02", …
+    # but no bucket or generic keys. Add them now so pick_value() can match
+    # traded picks that have no resolved slot (e.g. "2026 1st" without a known pick order).
+    if not draft_done:
+        for rnd_num in range(1, 6):
+            prefix = f"{current_year}_{rnd_num}_"
+            slot_items = sorted(
+                [(int(k[len(prefix):]), v)
+                 for k, v in final.items()
+                 if k.startswith(prefix) and k[len(prefix):].isdigit()],
+            )
+            if not slot_items:
+                continue
+
+            early = [v for slot, v in slot_items if slot <= 3]
+            mid   = [v for slot, v in slot_items if 4 <= slot <= 7]
+            late  = [v for slot, v in slot_items if slot >= 8]
+            all_vals = [v for _, v in slot_items]
+
+            if early and f"{current_year}_{rnd_num}_early" not in final:
+                final[f"{current_year}_{rnd_num}_early"] = round(sum(early) / len(early), 1)
+            if mid and f"{current_year}_{rnd_num}_mid" not in final:
+                final[f"{current_year}_{rnd_num}_mid"] = round(sum(mid) / len(mid), 1)
+            if late and f"{current_year}_{rnd_num}_late" not in final:
+                final[f"{current_year}_{rnd_num}_late"] = round(sum(late) / len(late), 1)
+            if all_vals and f"{current_year}_{rnd_num}" not in final:
+                final[f"{current_year}_{rnd_num}"] = round(sum(all_vals) / len(all_vals), 1)
+
     return final
