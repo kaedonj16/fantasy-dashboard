@@ -59,7 +59,7 @@ kiwisolver==1.4.7
 
 lxml==6.0.2
 
-markdown-it==3.0.1
+markdown-it-py==3.0.0
 
 matplotlib==3.9.4
 
