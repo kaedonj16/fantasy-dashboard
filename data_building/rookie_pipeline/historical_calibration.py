@@ -17,12 +17,14 @@ Usage:
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import json
 import logging
 import math
 import statistics
 import urllib.request
+from urllib.error import HTTPError
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
@@ -61,14 +63,23 @@ except ImportError:
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fetch_csv(url: str) -> List[Dict[str, str]]:
-    """Download a CSV URL and return list of row dicts."""
+def _fetch_csv(url: str, *, quiet_404: bool = False) -> List[Dict[str, str]]:
+    """Download a CSV URL and return list of row dicts.
+
+    Args:
+        url: CSV URL to fetch.
+        quiet_404: If True, suppress warning logs for HTTP 404 responses.
+    """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "fantasy-dashboard/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read().decode("utf-8", errors="replace")
         reader = csv.DictReader(io.StringIO(content))
         return list(reader)
+    except HTTPError as exc:
+        if not (quiet_404 and exc.code == 404):
+            log.warning("[calibration] Failed to fetch %s: %s", url, exc)
+        return []
     except Exception as exc:
         log.warning("[calibration] Failed to fetch %s: %s", url, exc)
         return []
@@ -121,6 +132,7 @@ def _build_nfl_outcomes(
     }}
     """
     outcomes: Dict[str, Dict[str, Any]] = {}
+    latest_completed_regular_season = dt.datetime.utcnow().year - 1
 
     for draft_year in draft_years:
         log.info("[calibration] Loading draft class %d roster", draft_year)
@@ -149,8 +161,25 @@ def _build_nfl_outcomes(
         season_stats: Dict[str, List[float]] = {p: [] for p in draft_class}
         season_games: Dict[str, List[int]]   = {p: [] for p in draft_class}
 
-        for nfl_yr in range(draft_year, draft_year + nfl_data_years):
-            stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
+        last_eval_year = min(draft_year + nfl_data_years - 1, latest_completed_regular_season)
+        for nfl_yr in range(draft_year, last_eval_year + 1):
+            stat_rows = _fetch_csv(
+                _NFLVERSE_BASE.format(year=nfl_yr),
+                quiet_404=(nfl_yr >= latest_completed_regular_season),
+            )
+
+            if not stat_rows:
+                # If a recent season file is unavailable yet (or temporarily missing),
+                # stop extending the label window for this class to avoid noisy 404s.
+                if nfl_yr >= latest_completed_regular_season:
+                    log.info(
+                        "[calibration] No NFL player_stats for season %d yet; "
+                        "using seasons through %d for draft class %d",
+                        nfl_yr,
+                        nfl_yr - 1,
+                        draft_year,
+                    )
+                    break
             gid_to_pts:   Dict[str, float] = {}
             gid_to_games: Dict[str, int]   = {}
             for sr in stat_rows:
@@ -196,61 +225,313 @@ def _build_nfl_outcomes(
 # Step 2: Build college predictor features per player
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_features_from_db(
+    draft_years: List[int],
+) -> Dict[str, Dict[str, float]]:
+    """
+    Pull rich college features from rookie_prospect_source_data for any draft
+    classes that have data stored in the DB.  Returns a name-keyed dict in the
+    same format as _build_college_features().
+
+    The DB has advanced metrics (YAC, aDOT, contested_catch_rate, PFF grades,
+    elusive_rating, etc.) that CFBD's public API does not expose, making these
+    more informative than a pure CFBD fetch.
+    """
+    try:
+        from dashboard_services.db import get_conn
+    except ImportError:
+        return {}
+
+    features: Dict[str, Dict[str, float]] = {}
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        rp.name,
+                        rp.position,
+                        rp.draft_class_year,
+                        rp.age,
+                        sd.season,
+                        sd.games_played,
+                        -- Passing
+                        sd.pass_yards, sd.pass_tds, sd.pass_attempts, sd.completions,
+                        sd.interceptions,
+                        -- Rushing
+                        sd.rush_attempts, sd.rush_yards, sd.rush_tds,
+                        -- Receiving
+                        sd.receptions, sd.targets, sd.receiving_yards, sd.receiving_tds,
+                        -- Derived
+                        sd.dominator_rating, sd.market_share_yards,
+                        sd.yds_per_carry, sd.yds_per_reception, sd.yds_per_attempt,
+                        sd.completion_pct, sd.td_int_ratio,
+                        -- Team context
+                        sd.conference, sd.team_pass_rate,
+                        -- Advanced metrics (migration 014)
+                        sd.yards_after_catch_per_reception,
+                        sd.avg_depth_of_target,
+                        sd.contested_catch_rate,
+                        sd.drop_rate,
+                        sd.grades_offense,
+                        sd.breakaway_percentage,
+                        sd.elusive_rating,
+                        sd.pff_passing_grade,
+                        sd.big_time_throw_rate,
+                        sd.adjusted_completion_rate
+                    FROM rookie_prospects rp
+                    JOIN rookie_prospect_source_data sd ON sd.player_id = rp.player_id
+                    WHERE rp.draft_class_year = ANY(%s)
+                    ORDER BY rp.name, sd.season DESC
+                    """,
+                    (list(draft_years),)
+                )
+                rows = cur.fetchall()
+    except Exception as exc:
+        log.warning("[calibration] DB feature fetch failed: %s", exc)
+        return {}
+
+    if not rows:
+        return {}
+
+    # Group by player name — use the latest season's advanced metrics, accumulate totals
+    player_seasons: Dict[str, List[Any]] = {}
+    for row in rows:
+        name = str(row["name"] or "").strip().lower()
+        if name:
+            player_seasons.setdefault(name, []).append(dict(row))
+
+    try:
+        from .prospect_model import _conf_quality  # type: ignore
+    except ImportError:
+        _conf_quality = lambda conf, pos: 0.65  # type: ignore
+
+    for name, seasons in player_seasons.items():
+        # Use most recent season for advanced metrics / per-game features
+        latest = seasons[0]  # already sorted DESC by season
+
+        gp = max(_safe_float(latest.get("games_played")), 1.0)
+        rec_yds   = _safe_float(latest.get("receiving_yards"))
+        rec_tds   = _safe_float(latest.get("receiving_tds"))
+        rush_yds  = _safe_float(latest.get("rush_yards"))
+        rush_tds  = _safe_float(latest.get("rush_tds"))
+        pass_yds  = _safe_float(latest.get("pass_yards"))
+        pass_tds  = _safe_float(latest.get("pass_tds"))
+        rush_att  = _safe_float(latest.get("rush_attempts"))
+        pass_att  = _safe_float(latest.get("pass_attempts"))
+        recs      = _safe_float(latest.get("receptions"))
+
+        all_yds = rec_yds + rush_yds + pass_yds
+
+        feat: Dict[str, float] = {
+            "draft_year": float(latest.get("draft_class_year") or 0),
+            # Raw totals
+            "rec_yds":   rec_yds,
+            "rec_tds":   rec_tds,
+            "rush_yds":  rush_yds,
+            "pass_yds":  pass_yds,
+            # Per-game rates
+            "rec_yds_pg":       rec_yds / gp,
+            "rush_yds_pg":      rush_yds / gp,
+            "pass_yds_pg":      pass_yds / gp,
+            "rec_tds_pg":       rec_tds / gp,
+            "receptions_pg":    recs / gp,
+            "rush_attempts_pg": rush_att / gp,
+            "pass_attempts_pg": pass_att / gp,
+            "all_yds_pg":       all_yds / gp,
+            "games_played":     gp,
+        }
+
+        # Efficiency from stored derived fields
+        for k in ("dominator_rating", "market_share_yards", "yds_per_carry",
+                  "yds_per_reception", "yds_per_attempt", "completion_pct", "td_int_ratio"):
+            v = latest.get(k)
+            if v is not None:
+                feat[k] = _safe_float(v)
+
+        # Competition / environment
+        conf = latest.get("conference") or ""
+        pos  = str(latest.get("position") or "WR").upper()
+        feat["conf_quality"] = _conf_quality(conf, pos)
+        if latest.get("team_pass_rate") is not None:
+            feat["team_pass_rate"] = _safe_float(latest["team_pass_rate"])
+
+        # Advanced metrics (migration 014 — may be NULL for older classes)
+        for k, fk in [
+            ("yards_after_catch_per_reception", "yac_per_rec"),
+            ("avg_depth_of_target",             "avg_depth_of_target"),
+            ("contested_catch_rate",             "contested_catch_rate"),
+            ("drop_rate",                        "drop_rate"),
+            ("grades_offense",                   "pff_grade"),
+            ("breakaway_percentage",             "breakaway_pct"),
+            ("elusive_rating",                   "elusive_rating"),
+            ("pff_passing_grade",                "pff_passing_grade"),
+            ("big_time_throw_rate",              "big_time_throw_rate"),
+            ("adjusted_completion_rate",         "adjusted_completion_pct"),
+        ]:
+            v = latest.get(k)
+            if v is not None:
+                feat[fk] = _safe_float(v)
+
+        # Age at draft
+        if latest.get("age") is not None:
+            feat["age_at_draft"] = _safe_float(latest["age"])
+
+        features[name] = feat
+
+    log.info("[calibration] Built DB features for %d players", len(features))
+    return features
+
+
 def _build_college_features(
     draft_years: List[int],
 ) -> Dict[str, Dict[str, float]]:
     """
     Fetch CFBD stats for each draft class and compute predictor features.
+    First tries the DB (richer features), then falls back to CFBD API.
 
     Returns: {player_name_lower: {
-        "dominator_rating": float, "rec_yds_pg": float, "tds_pg": float,
-        "breakout_age": float, "team_pass_rate": float, "draft_capital": float,
-        "conf_quality": float, ...
+        "rec_yds_pg": float, "rec_tds_pg": float, "dominator_rating": float,
+        "yac_per_rec": float, "avg_depth_of_target": float,
+        "conf_quality": float, "team_pass_rate": float, ...
     }}
     """
+    # Start with any DB-stored features (richer; covers the active class)
+    db_features = _build_features_from_db(draft_years)
+
     if _cfbd_get is None:
         log.warning("[calibration] _cfbd_get unavailable — CFBD features will be empty")
-        return {}
+        return db_features
 
-    from .prospect_model import _conf_quality, pick_to_draft_capital_score  # type: ignore
-    from .mock_draft_consensus import pick_to_draft_capital_score  # noqa: F811
+    try:
+        from .prospect_model import _conf_quality  # type: ignore
+    except ImportError:
+        _conf_quality = lambda conf, pos: 0.65  # type: ignore
 
-    features: Dict[str, Dict[str, float]] = {}
+    # CFBD API fetch for historical classes not in DB
+    cfbd_features: Dict[str, Dict[str, float]] = {}
+
+    # Per-season accumulator: player → year → stat_type → value
+    _season_stats: Dict[str, Dict[int, Dict[str, float]]] = {}
+    _season_gp:    Dict[str, int] = {}  # player → games played (most recent)
 
     for draft_year in draft_years:
         log.info("[calibration] Fetching CFBD features for draft class %d", draft_year)
-        for yr in [draft_year - 1, draft_year - 2]:
+
+        # Use up to 4 seasons before draft (full college career)
+        for yr in [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]:
             try:
-                rows = _cfbd_get("/stats/player/season", {"year": yr, "seasonType": "regular"})
+                stat_rows = _cfbd_get("/stats/player/season", {"year": yr, "seasonType": "regular"})
             except Exception as exc:
                 log.warning("[calibration] CFBD /stats/player/season %d failed: %s", yr, exc)
                 continue
 
-            for row in (rows or []):
-                player = (row.get("player") or "").strip().lower()
+            for row in (stat_rows or []):
+                player    = (row.get("player") or "").strip().lower()
+                team      = (row.get("team")   or "").strip()
+                conf      = (row.get("conference") or "").strip()
+                stat_type = row.get("statType", "")
+                val       = _safe_float(row.get("stat"))
                 if not player:
                     continue
 
-                stat_type = row.get("statType", "")
-                val = _safe_float(row.get("stat"))
-                if player not in features:
-                    features[player] = {"draft_year": float(draft_year)}
+                if player not in _season_stats:
+                    _season_stats[player] = {}
+                if yr not in _season_stats[player]:
+                    _season_stats[player][yr] = {
+                        "_draft_year": float(draft_year),
+                        "_team": team,
+                        "_conf": conf,
+                    }
 
-                # Flatten key stats
+                s = _season_stats[player][yr]
                 if stat_type == "REC YDS":
-                    features[player]["rec_yds"] = features[player].get("rec_yds", 0) + val
+                    s["rec_yds"] = s.get("rec_yds", 0) + val
                 elif stat_type == "REC TD":
-                    features[player]["rec_tds"] = features[player].get("rec_tds", 0) + val
+                    s["rec_tds"] = s.get("rec_tds", 0) + val
                 elif stat_type == "RUSH YDS":
-                    features[player]["rush_yds"] = features[player].get("rush_yds", 0) + val
+                    s["rush_yds"] = s.get("rush_yds", 0) + val
                 elif stat_type == "RUSH TD":
-                    features[player]["rush_tds"] = features[player].get("rush_tds", 0) + val
+                    s["rush_tds"] = s.get("rush_tds", 0) + val
                 elif stat_type == "PASS YDS":
-                    features[player]["pass_yds"] = features[player].get("pass_yds", 0) + val
+                    s["pass_yds"] = s.get("pass_yds", 0) + val
                 elif stat_type == "PASS TD":
-                    features[player]["pass_tds"] = features[player].get("pass_tds", 0) + val
+                    s["pass_tds"] = s.get("pass_tds", 0) + val
+                elif stat_type == "REC":
+                    s["receptions"] = s.get("receptions", 0) + val
+                elif stat_type == "RUSH ATT":
+                    s["rush_attempts"] = s.get("rush_attempts", 0) + val
+                elif stat_type == "PASS ATT":
+                    s["pass_attempts"] = s.get("pass_attempts", 0) + val
+                elif stat_type == "PASS COMP":
+                    s["completions"] = s.get("completions", 0) + val
+                elif stat_type == "INT":
+                    s["interceptions"] = s.get("interceptions", 0) + val
+                elif stat_type == "GP":
+                    s["games_played"] = val
 
-    return features
+    # Collapse _season_stats into cfbd_features using the most recent season
+    for player, seasons in _season_stats.items():
+        latest_yr = max(seasons.keys())
+        s = seasons[latest_yr]
+        gp = max(_safe_float(s.get("games_played")), 1.0)
+
+        rec_yds  = _safe_float(s.get("rec_yds"))
+        rec_tds  = _safe_float(s.get("rec_tds"))
+        rush_yds = _safe_float(s.get("rush_yds"))
+        rush_tds = _safe_float(s.get("rush_tds"))
+        pass_yds = _safe_float(s.get("pass_yds"))
+        pass_tds = _safe_float(s.get("pass_tds"))
+        rush_att = _safe_float(s.get("rush_attempts"))
+        pass_att = _safe_float(s.get("pass_attempts"))
+        recs     = _safe_float(s.get("receptions"))
+        comps    = _safe_float(s.get("completions"))
+        ints     = _safe_float(s.get("interceptions"))
+        all_yds  = rec_yds + rush_yds + pass_yds
+
+        feat: Dict[str, float] = {
+            "draft_year":       s.get("_draft_year", 0.0),
+            # Totals
+            "rec_yds":          rec_yds,
+            "rec_tds":          rec_tds,
+            "rush_yds":         rush_yds,
+            "pass_yds":         pass_yds,
+            # Per-game
+            "rec_yds_pg":       rec_yds / gp,
+            "rush_yds_pg":      rush_yds / gp,
+            "pass_yds_pg":      pass_yds / gp,
+            "rec_tds_pg":       rec_tds / gp,
+            "receptions_pg":    recs / gp,
+            "rush_attempts_pg": rush_att / gp,
+            "pass_attempts_pg": pass_att / gp,
+            "all_yds_pg":       all_yds / gp,
+            "games_played":     gp,
+        }
+
+        # Efficiency
+        if recs > 0:
+            feat["yds_per_reception"] = rec_yds / recs
+        if rush_att > 0:
+            feat["yds_per_carry"] = rush_yds / rush_att
+        if pass_att > 0:
+            feat["yds_per_attempt"] = pass_yds / pass_att
+            feat["completion_pct"]  = comps / pass_att * 100
+        if ints > 0 and pass_tds > 0:
+            feat["td_int_ratio"] = pass_tds / ints
+
+        # Competition
+        conf = s.get("_conf", "")
+        pos  = "WR"  # default; CFBD stats don't reliably include position
+        feat["conf_quality"] = _conf_quality(conf, pos)
+
+        cfbd_features[player] = feat
+
+    # Merge: DB features win over CFBD (DB has richer metrics)
+    merged = {**cfbd_features, **db_features}
+    log.info("[calibration] Built college features: %d CFBD + %d DB = %d total",
+             len(cfbd_features), len(db_features), len(merged))
+    return merged
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -382,19 +663,57 @@ REFINED_POSITION_WEIGHTS = {
     },
 }
 
-# Feature → component mapping (CFBD features → prospect_model components)
+# Feature → component mapping (CFBD/DB features → prospect_model components)
 _FEATURE_TO_COMPONENT = {
-    "draft_capital_score":  "draft_capital",
-    "rec_yds":              "production",
-    "rush_yds":             "production",
-    "pass_yds":             "production",
-    "rec_tds":              "production",
-    "rush_tds":             "production",
-    "pass_tds":             "production",
-    "dominator_rating":     "production",
-    "breakout_age":         "breakout",
-    "conf_quality":         "competition",
-    "team_pass_rate":       "environment",
+    # Draft
+    "draft_capital_score":          "draft_capital",
+    # Production — volume
+    "rec_yds":                      "production",
+    "rec_yds_pg":                   "production",
+    "rush_yds":                     "production",
+    "rush_yds_pg":                  "production",
+    "pass_yds":                     "production",
+    "pass_yds_pg":                  "production",
+    "rec_tds":                      "production",
+    "rec_tds_pg":                   "production",
+    "rush_tds":                     "production",
+    "pass_tds":                     "production",
+    "all_yds_pg":                   "production",
+    # Production — share / dominator
+    "dominator_rating":             "production",
+    "market_share_yards":           "production",
+    "pass_share":                   "production",
+    # Efficiency
+    "yds_per_reception":            "efficiency",
+    "yds_per_carry":                "efficiency",
+    "yds_per_attempt":              "efficiency",
+    "completion_pct":               "efficiency",
+    "td_int_ratio":                 "efficiency",
+    "yac_per_rec":                  "efficiency",
+    "avg_depth_of_target":          "efficiency",
+    "contested_catch_rate":         "efficiency",
+    "drop_rate":                    "efficiency",
+    "pff_grade":                    "efficiency",
+    "adjusted_completion_pct":      "efficiency",
+    "big_time_throw_rate":          "efficiency",
+    # Utilization
+    "receptions_pg":                "utilization",
+    "targets_pg":                   "utilization",
+    "rush_attempts_pg":             "utilization",
+    "pass_attempts_pg":             "utilization",
+    # Breakout / age
+    "breakout_age":                 "breakout",
+    "age_at_draft":                 "age",
+    "games_played":                 "durability",
+    # Athleticism
+    "ras_score":                    "athleticism",
+    "forty_yard":                   "athleticism",
+    "breakaway_pct":                "athleticism",
+    "elusive_rating":               "athleticism",
+    # Competition / environment
+    "conf_quality":                 "competition",
+    "team_pass_rate":               "environment",
+    "sagarin_team_rating":          "environment",
 }
 
 
@@ -498,21 +817,22 @@ def run_calibration(
     # Step 4: Weight recommendations
     weight_recommendations = _recommend_weights(correlations)
 
-    # Build summary
+    # Build summary (fix: use per-position current weights, not undefined global)
     summary_lines = ["=== Historical Calibration Results ===", f"Target: {target}", ""]
     for pos in positions:
         corr = correlations.get(pos, {})
         if not corr:
             continue
+        curr_weights = REFINED_POSITION_WEIGHTS.get(pos, {})
         summary_lines.append(f"── {pos} ──")
-        top = sorted(corr.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+        top = sorted(corr.items(), key=lambda x: abs(x[1]), reverse=True)[:8]
         for feat, r in top:
-            summary_lines.append(f"  {feat:<30s} r={r:+.3f}")
+            summary_lines.append(f"  {feat:<35s} r={r:+.3f}")
         rec = weight_recommendations.get(pos, {}).get("blended_recommendation", {})
         if rec:
-            summary_lines.append(f"  Recommended weights:")
+            summary_lines.append(f"  Recommended component weights:")
             for comp, w in sorted(rec.items(), key=lambda x: -x[1]):
-                curr = _CURRENT_WEIGHTS.get(comp, 0)
+                curr = curr_weights.get(comp, 0)
                 delta = w - curr
                 arrow = "↑" if delta > 0.005 else ("↓" if delta < -0.005 else "=")
                 summary_lines.append(f"    {comp:<20s} {w:.3f}  ({arrow} {delta:+.3f} vs current)")

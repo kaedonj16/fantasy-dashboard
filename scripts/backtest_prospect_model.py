@@ -19,12 +19,11 @@ Usage:
 from __future__ import annotations
 
 import math
+import os
 import statistics
 import sys
 import os
 from typing import Any, Dict, List, Optional, Tuple
-
-from pandas import read_csv
 
 from utils.utils import read_json
 
@@ -50,12 +49,12 @@ from data_building.rookie_pipeline.ingestion import fetch_cfbd_college_stats
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
 
-DRAFT_YEARS  = [2021, 2022, 2023, 2024, 2025]
+DRAFT_YEARS  = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
 SKILL_POS    = {"QB", "RB", "WR", "TE"}
 NFL_LOOKBACK = 4   # seasons of NFL data to collect per player
 
 # How many top-N players per draft class to show in the table
-TOP_N_PER_CLASS = 15
+TOP_N_PER_CLASS = 10
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 – Load nflverse roster data to get draft picks
@@ -166,10 +165,7 @@ def _build_nfl_ppr_per_player(
 
     for offset in range(nfl_data_years):
         nfl_yr = draft_year + offset
-        if nfl_yr == 2025:
-            read_csv("cache/stats_player_reg_2025.csv")
-        else:
-            stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
+        stat_rows = _fetch_csv(_NFLVERSE_BASE.format(year=nfl_yr))
 
         # Accumulate PPR per gsis_id for this season (stats are weekly)
         yr_pts: Dict[str, float] = {}
@@ -418,29 +414,68 @@ def _run_draft_class_backtest(
         gid  = dc.get("gsis_id", "")
         ppr  = nfl_ppr.get(gid, {})
 
-        rows.append({
-            "draft_year":       draft_year,
-            "model_rank":       sc["overall_rank"],
-            "pos_rank":         sc["position_rank"],
-            "name":             p.get("name", pid),
-            "position":         p.get("position", ""),
-            "college":          p.get("school", ""),
-            "draft_pick":       dc.get("draft_pick", 0),
-            "model_score":      sc["prospect_score"],
-            "dc_score":         sc["projected_draft_capital_score"],
-            "ath_score":        sc["athleticism_score"],
-            "prod_score":       sc["production_score"],
-            "age_score":        sc["age_score"],
-            "ppr_y1":           ppr.get("ppr_y1", 0.0),
-            "ppr_y2":           ppr.get("ppr_y2", 0.0),
-            "ppr_y3":           ppr.get("ppr_y3", 0.0),
-            "ppr_y4":           ppr.get("ppr_y4", 0.0),
-            "ppr_peak":         ppr.get("ppr_peak", 0.0),
-            "ppr_cum":          ppr.get("ppr_cum", 0.0),
-            "seasons_avail":    ppr.get("seasons_available", 0),
-            "has_cfbd":         bool(p_by_id.get(pid, {}).get("seasons")),
-            "breakout_score":   sc["breakout_profile_score"],
-        })
+        # Extract college benchmark features from the latest available season
+        latest_s: Dict[str, Any] = {}
+        if p.get("seasons"):
+            latest_s = max(p["seasons"], key=lambda s: s.get("season", 0))
+
+        def _sf(k: str) -> Optional[float]:
+            v = latest_s.get(k)
+            try:
+                f = float(v) if v not in (None, "", "NA") else None
+                return f if f else None
+            except (TypeError, ValueError):
+                return None
+
+        gp           = max(float(latest_s.get("games_played") or 12), 1.0)
+        rec_yds      = float(latest_s.get("receiving_yards") or 0)
+        rec_tds      = float(latest_s.get("receiving_tds")   or 0)
+        rush_yds     = float(latest_s.get("rush_yards")      or 0)
+        rush_tds     = float(latest_s.get("rush_tds")        or 0)
+        pass_yds     = float(latest_s.get("pass_yards")      or 0)
+        team_pass_yds = float(latest_s.get("team_pass_yards") or 0)
+
+        col_pass_share = (rec_yds / team_pass_yds) if team_pass_yds > 0 else None
+
+        row = {
+            "draft_year":         draft_year,
+            "model_rank":         sc["overall_rank"],
+            "pos_rank":           sc["position_rank"],
+            "name":               p.get("name", pid),
+            "position":           p.get("position", ""),
+            "college":            p.get("school", ""),
+            "draft_pick":         dc.get("draft_pick", 0),
+            "model_score":        sc["prospect_score"],
+            "dc_score":           sc["projected_draft_capital_score"],
+            "ath_score":          sc["athleticism_score"],
+            "prod_score":         sc["production_score"],
+            "age_score":          sc["age_score"],
+            "ppr_y1":             ppr.get("ppr_y1", 0.0),
+            "ppr_y2":             ppr.get("ppr_y2", 0.0),
+            "ppr_y3":             ppr.get("ppr_y3", 0.0),
+            "ppr_y4":             ppr.get("ppr_y4", 0.0),
+            "ppr_peak":           ppr.get("ppr_peak", 0.0),
+            "ppr_cum":            ppr.get("ppr_cum", 0.0),
+            "seasons_avail":      ppr.get("seasons_available", 0),
+            "has_cfbd":           bool(p.get("seasons")),
+            "breakout_score":     sc["breakout_profile_score"],
+            # College benchmark features (None = data unavailable)
+            "col_rec_yds_pg":     rec_yds / gp if latest_s else None,
+            "col_rec_yds_season": rec_yds      if latest_s else None,
+            "col_rec_tds_pg":     rec_tds / gp if latest_s else None,
+            "col_rush_yds_pg":    rush_yds / gp if latest_s else None,
+            "col_pass_yds_pg":    pass_yds / gp if latest_s else None,
+            "col_tds_pg":         (rec_tds + rush_tds) / gp if latest_s else None,
+            "col_dominator":      _sf("dominator_rating"),
+            "col_pass_share":     col_pass_share,
+            "col_yac_per_rec":    _sf("yards_after_catch_per_reception"),
+            "col_ypc":            _sf("yds_per_carry"),
+            "col_completion_pct": _sf("completion_pct"),
+            "col_ypa":            _sf("yds_per_attempt"),
+            "col_td_int":         _sf("td_int_ratio"),
+            "col_age_at_draft":   p.get("age"),
+        }
+        rows.append(row)
 
     return rows
 
@@ -448,6 +483,66 @@ def _run_draft_class_backtest(
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6 – Summary stats
 # ─────────────────────────────────────────────────────────────────────────────
+
+# PPR-peak threshold that approximates a "hit" season per position
+_HIT_PPR_THRESHOLD: Dict[str, float] = {
+    "QB": 310.0,   # ≈ top-6 QB season
+    "WR": 220.0,   # ≈ top-12 WR season
+    "RB": 240.0,   # ≈ top-12 RB season
+    "TE": 175.0,   # ≈ top-6 TE season
+}
+
+# (display_label, row_key, operator, threshold)
+_POS_BENCHMARKS: Dict[str, List[Tuple[str, str, str, float]]] = {
+    "WR": [
+        ("Rec yds/game ≥80",      "col_rec_yds_pg",     ">=", 80.0),
+        ("Rec yds/game ≥65",      "col_rec_yds_pg",     ">=", 65.0),
+        ("Season rec yds ≥1000",  "col_rec_yds_season", ">=", 1000.0),
+        ("Season rec yds ≥800",   "col_rec_yds_season", ">=", 800.0),
+        ("Dominator rating ≥30%", "col_dominator",      ">=", 0.30),
+        ("Dominator rating ≥25%", "col_dominator",      ">=", 0.25),
+        ("Pass share ≥24%",       "col_pass_share",     ">=", 0.24),
+        ("YAC/rec ≥5.5",          "col_yac_per_rec",    ">=", 5.5),
+        ("Draft age ≤21.5",       "col_age_at_draft",   "<=", 21.5),
+        ("TDs/game ≥0.7",         "col_rec_tds_pg",     ">=", 0.7),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+        ("2nd-round or earlier",  "draft_pick",         "<=", 64),
+    ],
+    "RB": [
+        ("Rush yds/game ≥100",    "col_rush_yds_pg",    ">=", 100.0),
+        ("Rush yds/game ≥80",     "col_rush_yds_pg",    ">=", 80.0),
+        ("Dominator rating ≥30%", "col_dominator",      ">=", 0.30),
+        ("Dominator rating ≥20%", "col_dominator",      ">=", 0.20),
+        ("YPC ≥5.5",              "col_ypc",            ">=", 5.5),
+        ("Rec yds/game ≥20",      "col_rec_yds_pg",     ">=", 20.0),
+        ("Draft age ≤21.5",       "col_age_at_draft",   "<=", 21.5),
+        ("TDs/game ≥1.0",         "col_tds_pg",         ">=", 1.0),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+    "QB": [
+        ("Completion% ≥70%",      "col_completion_pct", ">=", 70.0),
+        ("Completion% ≥65%",      "col_completion_pct", ">=", 65.0),
+        ("YPA ≥8.0",              "col_ypa",            ">=", 8.0),
+        ("YPA ≥7.5",              "col_ypa",            ">=", 7.5),
+        ("TD:INT ratio ≥3.0",     "col_td_int",         ">=", 3.0),
+        ("Pass yds/game ≥280",    "col_pass_yds_pg",    ">=", 280.0),
+        ("Rush yds/game ≥40",     "col_rush_yds_pg",    ">=", 40.0),
+        ("Top-10 pick",           "draft_pick",         "<=", 10),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+    "TE": [
+        ("Rec yds/game ≥55",      "col_rec_yds_pg",     ">=", 55.0),
+        ("Rec yds/game ≥40",      "col_rec_yds_pg",     ">=", 40.0),
+        ("Season rec yds ≥800",   "col_rec_yds_season", ">=", 800.0),
+        ("Dominator rating ≥20%", "col_dominator",      ">=", 0.20),
+        ("Dominator rating ≥15%", "col_dominator",      ">=", 0.15),
+        ("Pass share ≥15%",       "col_pass_share",     ">=", 0.15),
+        ("YAC/rec ≥4.0",          "col_yac_per_rec",    ">=", 4.0),
+        ("TDs/game ≥0.4",         "col_rec_tds_pg",     ">=", 0.4),
+        ("Draft age ≤22",         "col_age_at_draft",   "<=", 22.0),
+        ("1st-round pick",        "draft_pick",         "<=", 32),
+    ],
+}
 
 def _pearson_r(xs: List[float], ys: List[float]) -> float:
     n = len(xs)
@@ -473,6 +568,56 @@ def _rank_corr(rows: List[Dict], metric: str = "ppr_cum") -> float:
     ppr_rank    = {r["name"]: i + 1 for i, r in enumerate(ppr_sorted)}
     actual_ranks = [ppr_rank[r["name"]] for r in valid]
     return _pearson_r(model_ranks, actual_ranks)
+
+
+def _precision_recall_at_k(rows: List[Dict], k: int = 10) -> Tuple[float, float, int]:
+    """
+    Compute Precision@k and Recall@k using top-k cumulative PPR as positives.
+
+    Returns (precision, recall, n_actual_positives).
+    """
+    with_data = [r for r in rows if r.get("ppr_cum", 0) > 0]
+    if not with_data or k <= 0:
+        return float("nan"), float("nan"), 0
+
+    k_eff = min(k, len(with_data))
+    by_model = sorted(with_data, key=lambda x: x.get("model_score", 0.0), reverse=True)
+    by_actual = sorted(with_data, key=lambda x: x.get("ppr_cum", 0.0), reverse=True)
+    pred_topk = {r["name"] for r in by_model[:k_eff]}
+    actual_topk = {r["name"] for r in by_actual[:k_eff]}
+    hits = len(pred_topk & actual_topk)
+    precision = hits / k_eff
+    recall = hits / len(actual_topk) if actual_topk else float("nan")
+    return precision, recall, len(actual_topk)
+
+
+def _ndcg_at_k(rows: List[Dict], k: int = 10, metric: str = "ppr_cum") -> float:
+    """
+    Compute NDCG@k where relevance is normalized actual `metric` value.
+    """
+    with_data = [r for r in rows if r.get(metric, 0) > 0]
+    if len(with_data) < 2 or k <= 0:
+        return float("nan")
+
+    k_eff = min(k, len(with_data))
+    max_rel = max(r.get(metric, 0.0) for r in with_data)
+    if max_rel <= 0:
+        return float("nan")
+
+    rel = {r["name"]: (r.get(metric, 0.0) / max_rel) for r in with_data}
+    by_model = sorted(with_data, key=lambda x: x.get("model_score", 0.0), reverse=True)[:k_eff]
+    by_actual = sorted(with_data, key=lambda x: x.get(metric, 0.0), reverse=True)[:k_eff]
+
+    def _dcg(items: List[Dict]) -> float:
+        score = 0.0
+        for idx, row in enumerate(items, 1):
+            score += rel.get(row["name"], 0.0) / math.log2(idx + 1)
+        return score
+
+    ideal = _dcg(by_actual)
+    if ideal <= 0:
+        return float("nan")
+    return _dcg(by_model) / ideal
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -537,6 +682,205 @@ def _print_class_table(
         print(f"\n  (No NFL data available yet for {draft_year} class)")
 
 
+def _print_positional_rankings(rows: List[Dict], draft_year: int) -> None:
+    """
+    For a single draft class, show within-position model rank vs actual PPR rank.
+    Displays QB1/QB2, WR1/WR2/WR3/WR4, RB1/RB2/RB3, TE1/TE2 labels.
+    """
+    pos_order = ["WR", "RB", "QB", "TE"]
+    pos_top_n = {"WR": 8, "RB": 6, "QB": 4, "TE": 4}
+
+    print(f"\n  ── {draft_year} Positional Rankings (Model vs Actual) ──")
+    header = f"  {'Pos-Rank':<8}  {'Player':<25} {'Pick':>4}  {'Score':>5}  {'PPR-Y1':>6}  {'PPR-Y2':>6}  {'PPR-Cum':>7}  {'Actual':<8}"
+    print(header)
+    print(f"  {'-'*90}")
+
+    for pos in pos_order:
+        pos_rows = [r for r in rows if r["position"] == pos]
+        if not pos_rows:
+            continue
+
+        # Sort by model score (descending) for model rank within position
+        pos_by_model  = sorted(pos_rows, key=lambda x: x["model_score"], reverse=True)
+        # Sort by cum PPR for actual rank within position
+        has_ppr = [r for r in pos_rows if r["ppr_cum"] > 0]
+        pos_by_actual = sorted(has_ppr, key=lambda x: x["ppr_cum"], reverse=True)
+        actual_rank   = {r["name"]: i + 1 for i, r in enumerate(pos_by_actual)}
+
+        top_n = pos_top_n.get(pos, 5)
+        for model_pos_rank, r in enumerate(pos_by_model[:top_n], 1):
+            ar   = actual_rank.get(r["name"])
+            label = f"{pos}{model_pos_rank}"   # e.g. WR1, WR2
+
+            if ar is not None:
+                actual_label = f"{pos}{ar}"
+                delta = model_pos_rank - ar
+                # Arrow: ↑ = did better than model expected, ↓ = did worse
+                arrow = "↑" if delta > 1 else ("↓" if delta < -1 else "≈")
+                rank_str = f"{actual_label} ({arrow}{abs(delta):d})" if delta != 0 else f"{actual_label} (=)"
+            else:
+                rank_str = "no NFL data"
+
+            ppr_y3_str = f"{r['ppr_y3']:>6.0f}" if r.get("ppr_y3", 0) > 0 else "     -"
+            print(
+                f"  {label:<8}  {r['name']:<25} #{r['draft_pick']:>3}  "
+                f"{r['model_score']:>5.1f}  "
+                f"{r['ppr_y1']:>6.0f}  {r['ppr_y2']:>6.0f}  "
+                f"{r['ppr_cum']:>7.0f}  {rank_str}"
+            )
+        print()
+
+
+def _print_positional_summary(all_rows: List[Dict]) -> None:
+    """
+    Cross-year positional analysis: how well does the model predict each position's
+    within-position rank?  Shows Spearman-ρ per position per year.
+    """
+    pos_order = ["WR", "RB", "QB", "TE"]
+    by_year: Dict[int, List[Dict]] = {}
+    for r in all_rows:
+        by_year.setdefault(r["draft_year"], []).append(r)
+
+    print(f"\n{'=' * 90}")
+    print("  POSITIONAL RANK ACCURACY  (model pos-rank vs actual PPR pos-rank, per year)")
+    print(f"{'=' * 90}")
+
+    years = sorted(by_year.keys())
+    # Header
+    year_cols = "  ".join(f"{y}" for y in years)
+    print(f"  {'Pos':<5}  {year_cols}   Overall")
+    print(f"  {'-'*80}")
+
+    for pos in pos_order:
+        year_rs = []
+        for yr in years:
+            yr_rows = [r for r in by_year[yr] if r["position"] == pos]
+            has_ppr = [r for r in yr_rows if r["ppr_cum"] > 0]
+            if len(has_ppr) < 3:
+                year_rs.append("n/a")
+                continue
+            # Within-position model rank
+            by_model  = sorted(yr_rows, key=lambda x: x["model_score"], reverse=True)
+            model_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_model)}
+            # Within-position actual rank
+            by_actual = sorted(has_ppr, key=lambda x: x["ppr_cum"], reverse=True)
+            actual_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_actual)}
+
+            paired = [(model_pos_rank[r["name"]], actual_pos_rank[r["name"]])
+                      for r in has_ppr if r["name"] in model_pos_rank]
+            if len(paired) < 3:
+                year_rs.append("n/a")
+                continue
+            mr_list  = [x for x, _ in paired]
+            ar_list  = [y for _, y in paired]
+            rho = _pearson_r(mr_list, ar_list)
+            year_rs.append(f"{rho:+.2f}" if not math.isnan(rho) else " n/a")
+
+        # Overall across all years for this position
+        all_pos = [r for r in all_rows if r["position"] == pos and r["ppr_cum"] > 0]
+        if len(all_pos) >= 5:
+            # Need to build cross-year within-position ranks per class
+            by_yr_pos: Dict[int, List] = {}
+            for r in all_pos:
+                by_yr_pos.setdefault(r["draft_year"], []).append(r)
+            mr_all: List[float] = []
+            ar_all: List[float] = []
+            for yr, yr_pos_rows in by_yr_pos.items():
+                by_model  = sorted(yr_pos_rows, key=lambda x: x["model_score"], reverse=True)
+                model_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_model)}
+                by_actual = sorted(yr_pos_rows, key=lambda x: x["ppr_cum"], reverse=True)
+                actual_pos_rank = {r["name"]: i + 1 for i, r in enumerate(by_actual)}
+                for r in yr_pos_rows:
+                    if r["name"] in model_pos_rank and r["name"] in actual_pos_rank:
+                        mr_all.append(model_pos_rank[r["name"]])
+                        ar_all.append(actual_pos_rank[r["name"]])
+            overall_r = _pearson_r(mr_all, ar_all) if len(mr_all) >= 5 else float("nan")
+            overall_str = f"{overall_r:+.2f}" if not math.isnan(overall_r) else " n/a"
+        else:
+            overall_str = " n/a"
+
+        year_col_str = "  ".join(f"{r:>5}" for r in year_rs)
+        print(f"  {pos:<5}  {year_col_str}   {overall_str}")
+
+    print()
+
+
+def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
+    """
+    For each position, compute the hit rate (% who reached top-6/12 PPR-peak)
+    for every defined college benchmark threshold.
+    Only players who have at least one season of NFL data (ppr_peak > 0) are counted.
+    """
+    print(f"\n{'=' * 105}")
+    print("  BENCHMARK HIT RATES  —  college threshold  →  top-6 (QB/TE) or top-12 (WR/RB) fantasy season")
+    print("  Approximate PPR-peak thresholds: QB ≥325 pts  |  WR ≥175 pts  |  RB ≥175 pts  |  TE ≥110 pts")
+    print("  'N meet' = players with that stat + NFL data  |  'Hit%' = % who peaked above threshold")
+    print("  'vs base' = hit-rate delta vs. all players at that position  |  col_ features require CFBD data")
+    print(f"{'=' * 105}")
+
+    for pos in ("WR", "RB", "QB", "TE"):
+        benchmarks = _POS_BENCHMARKS.get(pos, [])
+        hit_thresh = _HIT_PPR_THRESHOLD[pos]
+        tier_label = "TOP-6" if pos in ("QB", "TE") else "TOP-12"
+
+        # Only players with real NFL data
+        with_data = [r for r in all_rows if r["position"] == pos and r.get("ppr_peak", 0) > 0]
+        if not with_data:
+            continue
+
+        base_hits = sum(1 for r in with_data if r["ppr_peak"] >= hit_thresh)
+        base_rate = base_hits / len(with_data) * 100
+
+        print(f"\n  ── {pos}  ({tier_label}: PPR-peak ≥ {hit_thresh:.0f} pts)  "
+              f"[{len(with_data)} draftees with NFL data, baseline {base_rate:.0f}% hit rate] ──")
+        print(f"  {'Benchmark':<26}  {'N meet':>6}  {'N hit':>5}  {'Hit%':>5}  {'vs base':>8}  Bar (5% per block)")
+        print(f"  {'-'*26}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*8}  {'-'*25}")
+
+        results = []
+        for lbl, key, op, thresh in benchmarks:
+            eligible = []
+            for r in with_data:
+                val = r.get(key)
+                if val is None:
+                    continue
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                if   op == ">=" and val >= thresh:
+                    eligible.append(r)
+                elif op == "<=" and val <= thresh and val > 0:
+                    eligible.append(r)
+                elif op == ">"  and val >  thresh:
+                    eligible.append(r)
+
+            if len(eligible) < 3:
+                results.append((lbl, None, None, None, None))
+                continue
+
+            hits = sum(1 for r in eligible if r["ppr_peak"] >= hit_thresh)
+            rate = hits / len(eligible) * 100
+            delta = rate - base_rate
+            results.append((lbl, len(eligible), hits, rate, delta))
+
+        # Sort by hit rate descending, n/a at bottom
+        results.sort(key=lambda x: (x[3] is None, -(x[3] or 0)))
+
+        for lbl, n_meet, n_hit, rate, delta in results:
+            if rate is None:
+                print(f"  {lbl:<26}  {'<3':>6}  {'—':>5}  {'—':>5}  {'—':>8}")
+                continue
+            delta_str = f"{delta:+.1f}%"
+            bar_filled = min(int(rate / 5), 20)
+            bar = "█" * bar_filled + "░" * (20 - bar_filled)
+            marker = " ◄" if abs(delta) >= 15 else ""
+            print(f"  {lbl:<26}  {n_meet:>6}  {n_hit:>5}  {rate:>4.0f}%  {delta_str:>8}  {bar}{marker}")
+
+        # Print baseline row at the bottom
+        base_bar = "█" * min(int(base_rate / 5), 20) + "░" * (20 - min(int(base_rate / 5), 20))
+        print(f"  {'(All — baseline)':<26}  {len(with_data):>6}  {base_hits:>5}  {base_rate:>4.0f}%  {'baseline':>8}  {base_bar}")
+
+
 def _print_summary(all_rows: List[Dict]) -> None:
     print(f"\n{'=' * 110}")
     print("  OVERALL BACKTEST SUMMARY  (2021–2025 draft classes)")
@@ -550,8 +894,11 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
     overall_valid: List[Tuple[float, float]] = []  # (model_score, ppr_cum)
     overall_valid_cfbd: List[Tuple[float, float]] = []  # only rows with CFBD data
-    print(f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  {'Spearman-ρ':>10}  {'Top10 hit':>8}")
-    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}")
+    print(
+        f"\n  {'Year':>4}  {'Players':>7}  {'w/NFL data':>10}  {'CFBD hit%':>9}  "
+        f"{'Spearman-ρ':>10}  {'Top10 hit':>8}  {'P@10':>6}  {'R@10':>6}  {'NDCG@10':>8}  {'NDCG@25':>8}"
+    )
+    print(f"  {'-'*4}  {'-'*7}  {'-'*10}  {'-'*9}  {'-'*10}  {'-'*8}  {'-'*6}  {'-'*6}  {'-'*8}  {'-'*8}")
 
     for yr in sorted(by_year.keys()):
         rows = by_year[yr]
@@ -567,13 +914,60 @@ def _print_summary(all_rows: List[Dict]) -> None:
         top10_actual = {r["name"] for r in sorted(with_data, key=lambda x: x["ppr_cum"], reverse=True)[:10]}
         hit_n = len(top10_model & top10_actual)
         hit_str = f"{hit_n}/10" if with_data else "n/a"
+        p10, r10, _ = _precision_recall_at_k(rows, k=10)
+        ndcg10 = _ndcg_at_k(rows, k=10, metric="ppr_cum")
+        ndcg25 = _ndcg_at_k(rows, k=25, metric="ppr_cum")
 
-        print(f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}")
+        p10_str = f"{p10:.2f}" if not math.isnan(p10) else " n/a"
+        r10_str = f"{r10:.2f}" if not math.isnan(r10) else " n/a"
+        ndcg10_str = f"{ndcg10:.3f}" if not math.isnan(ndcg10) else "   n/a"
+        ndcg25_str = f"{ndcg25:.3f}" if not math.isnan(ndcg25) else "   n/a"
+
+        print(
+            f"  {yr:>4}  {len(rows):>7}  {len(with_data):>10}  {cfbd_pct:>9}  {rc_str:>10}  {hit_str:>8}  "
+            f"{p10_str:>6}  {r10_str:>6}  {ndcg10_str:>8}  {ndcg25_str:>8}"
+        )
 
         for r in with_data:
             overall_valid.append((r["model_score"], r["ppr_cum"]))
             if r.get("has_cfbd"):
                 overall_valid_cfbd.append((r["model_score"], r["ppr_cum"]))
+
+    # Pooled decision-quality metrics should be averaged across classes, not
+    # computed on one giant merged table (that collapses to just 10 positives).
+    pooled_p10: List[float] = []
+    pooled_r10: List[float] = []
+    pooled_nd10: List[float] = []
+    pooled_nd25: List[float] = []
+    for yr in sorted(by_year.keys()):
+        yr_rows = [r for r in by_year[yr] if r.get("ppr_cum", 0) > 0]
+        if len(yr_rows) < 10:
+            continue
+        p10, r10, _ = _precision_recall_at_k(yr_rows, k=10)
+        nd10 = _ndcg_at_k(yr_rows, k=10, metric="ppr_cum")
+        nd25 = _ndcg_at_k(yr_rows, k=25, metric="ppr_cum")
+        if not math.isnan(p10):
+            pooled_p10.append(p10)
+        if not math.isnan(r10):
+            pooled_r10.append(r10)
+        if not math.isnan(nd10):
+            pooled_nd10.append(nd10)
+        if not math.isnan(nd25):
+            pooled_nd25.append(nd25)
+
+    if pooled_p10:
+        overall_p10 = statistics.mean(pooled_p10)
+        overall_r10 = statistics.mean(pooled_r10) if pooled_r10 else float("nan")
+        overall_ndcg10 = statistics.mean(pooled_nd10) if pooled_nd10 else float("nan")
+        overall_ndcg25 = statistics.mean(pooled_nd25) if pooled_nd25 else float("nan")
+        p10_str = f"{overall_p10:.2f}" if not math.isnan(overall_p10) else "n/a"
+        r10_str = f"{overall_r10:.2f}" if not math.isnan(overall_r10) else "n/a"
+        nd10_str = f"{overall_ndcg10:.3f}" if not math.isnan(overall_ndcg10) else "n/a"
+        nd25_str = f"{overall_ndcg25:.3f}" if not math.isnan(overall_ndcg25) else "n/a"
+        print(
+            f"\n  Decision-quality ranking metrics (all classes pooled): "
+            f"P@10={p10_str}  R@10={r10_str}  NDCG@10={nd10_str}  NDCG@25={nd25_str}"
+        )
 
     # ── Pearson r by data-completeness tier ────────────────────────────────────
     # 2024 has only 1 NFL season; 2023 has 2.  Including them pools clean signal
@@ -731,8 +1125,11 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
         if rows:
             all_rows.extend(rows)
             _print_class_table(rows, dy, seasons_note)
+            _print_positional_rankings(rows, dy)
 
     if all_rows:
+        _print_positional_summary(all_rows)
+        _print_benchmark_hit_rates(all_rows)
         _print_summary(all_rows)
 
     return all_rows
@@ -740,7 +1137,7 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Backtest rookie prospect model (2021-2025)")
+    parser = argparse.ArgumentParser(description="Backtest rookie prospect model (2016-2025)")
     parser.add_argument(
         "--years", nargs="+", type=int,
         default=DRAFT_YEARS,
@@ -750,6 +1147,13 @@ if __name__ == "__main__":
         "--top-n", type=int, default=TOP_N_PER_CLASS,
         help=f"Rows per draft class (default: {TOP_N_PER_CLASS})",
     )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=["conservative", "aggressive"],
+        default="conservative",
+        help="Benchmark boost profile to use during scoring (default: conservative)",
+    )
     args = parser.parse_args()
+    os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
     TOP_N_PER_CLASS = args.top_n
     run_backtest(args.years)

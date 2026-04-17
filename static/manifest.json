@@ -1,0 +1,31 @@
+{
+  "name": "BR Fantasy Dashboard",
+  "short_name": "BR Fantasy",
+  "description": "Dynasty fantasy football analytics and trade tools",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#38bdf8",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/BR_Logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Trade Evaluator",
+      "url": "/trade",
+      "description": "Evaluate dynasty trades"
+    },
+    {
+      "name": "Player Rankings",
+      "url": "/players",
+      "description": "Dynasty player values"
+    }
+  ]
+}

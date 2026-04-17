@@ -50,10 +50,10 @@ _CURVE: List[Tuple[float, float]] = [
     (70,  280),
     (75,  340),
     (80,  410),
-    (85,  490),
-    (88,  540),
-    (92,  610),
-    (95,  665),
+    (85,  470),
+    (88,  530),
+    (92,  580),
+    (95,  630),
     (100, 700),
 ]
 
@@ -110,13 +110,13 @@ _POS_ADJ_1QB: Dict[str, float] = {
     "QB": -20,   # QBs have lower 1QB dynasty ceiling; -20 keeps QB3/QB4 viable
     "RB":  0,
     "WR": +10,
-    "TE": -15,
+    "TE": -25,
 }
 _POS_ADJ_SF: Dict[str, float] = {
     "QB": +90,   # SF QB premium is very real
     "RB": -10,
     "WR":  +5,
-    "TE": -15,
+    "TE": -25,
 }
 
 # Scale multipliers for calibrated league sizes (anchors)

@@ -206,7 +206,10 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
     Compute the raw production score (pre-transfer-penalty) for a single season.
     Returns the weighted component score (0-100).
     """
-    gp = max(_safe(season.get("games_played"), 12), 1)
+    # Guard against bad games-played values (0/1) that can explode per-game rates
+    # and incorrectly saturate production to 100.
+    gp_raw = _safe(season.get("games_played"), 12)
+    gp = gp_raw if gp_raw >= 4 else 12
 
     if pos == "WR":
         rec_yds_pg    = _safe(season.get("receiving_yards")) / gp
@@ -228,10 +231,16 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
 
         prod = (
-            _scale(rec_yds_pg, 35,  110) * 0.40 +
+            _scale(rec_yds_pg, 32,  120) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
             dom_score                      * 0.30
         )
+        # YAC bonus: dynamic after-catch ability is a strong NFL translation signal
+        yac = _safe(season.get("yards_after_catch_per_reception"))
+        if yac >= 7.0:
+            prod = _clip(prod * 1.10)
+        elif yac >= 5.5:
+            prod = _clip(prod * 1.05)
         # Red zone proxy: TDs per 100 receiving yards — rewards goal-line separators
         if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100
@@ -252,61 +261,75 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 20,  120) * 0.18 +
-            _scale(all_yds_pg,  30,  150) * 0.17 +
-            _scale(tds_pg,       0.4,  1.8) * 0.25 +
-            _scale(dom,          0.12, 0.60) * 0.15 +
-            _scale(ypc,          3.5,  7.5) * 0.25
+            _scale(rush_yds_pg, 20,  150) * 0.18 +
+            _scale(all_yds_pg,  30,  180) * 0.17 +
+            _scale(tds_pg,       0.4,  2.0) * 0.25 +
+            _scale(dom,          0.12, 0.75) * 0.15 +
+            _scale(ypc,          3.5,  9.0) * 0.25
         )
         # Receiving tiers: require meaningful rec share so dedicated pass-catchers
         # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
+        # Use an additive multiplier budget (single final clip) to reduce 100-point
+        # ceiling effects from stacked multiplicative boosts.
+        mult = 1.0
         rec_share = rec_yds_pg / max(all_yds_pg, 1.0)
         if rec_yds_pg >= 20 and rec_share >= 0.28:
-            prod = _clip(prod * 1.20)   # dedicated pass-catcher
+            mult += 0.08   # dedicated pass-catcher
         elif rec_yds_pg >= 20 and rec_share >= 0.22:
-            prod = _clip(prod * 1.15)   # strong receiving back
+            mult += 0.06   # strong receiving back
         elif rec_yds_pg >= 15:
-            prod = _clip(prod * 1.08)   # incidental receiver
+            mult += 0.03   # incidental receiver
         if ypc >= 6.0:
-            prod = _clip(prod * 1.08)
+            mult += 0.03
         if dom >= 0.30:
-            prod = _clip(prod * 1.12)
+            mult += 0.05
         # Red zone proxy: TDs per 100 total yards
         total_yds = _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
         total_tds = _safe(season.get("rush_tds"))   + _safe(season.get("receiving_tds"))
         if total_yds >= 300:
             rz_rate = total_tds / total_yds * 100
-            if rz_rate >= 6.0:   prod = _clip(prod * 1.05)
-            elif rz_rate >= 4.0: prod = _clip(prod * 1.02)
-        return prod
+            if rz_rate >= 6.0:
+                mult += 0.03
+            elif rz_rate >= 4.0:
+                mult += 0.015
+
+        mult = min(mult, 1.16)  # hard cap so one-season RB production doesn't trivially max
+        return _clip(prod * mult)
 
     elif pos == "QB":
-        pass_yds_pg = _safe(season.get("pass_yards")) / gp
-        tds_pg      = _safe(season.get("pass_tds"))   / gp
-        comp_pct    = _safe(season.get("completion_pct"), 60.0)
-        ypa         = _safe(season.get("yds_per_attempt"), 7.0)
-        td_int      = _safe(season.get("td_int_ratio"),    2.0)
-        # Efficiency-first QB scoring: YPA and completion% predict NFL translation
-        # better than raw college volume, which varies wildly by scheme.
-        # Air-Raid QBs inflate volume stats; pro-style systems suppress them.
-        # Volume scale lowered (150-330) so conservative offenses aren't penalised
-        # for running 20-play-action drives; efficiency (YPA, comp%) gets 50% weight.
-        prod = (
-            _scale(pass_yds_pg, 150, 330) * 0.20 +
-            _scale(tds_pg,        1.5,  3.5) * 0.20 +
-            _scale(comp_pct,     60.0, 76.0) * 0.25 +
-            _scale(ypa,           6.5,  10.5) * 0.25 +
-            _scale(td_int,        1.5,   6.0) * 0.10
-        )
-        # Mobile QB bonus: rushing production adds significant fantasy value
+        pass_yds_pg    = _safe(season.get("pass_yards")) / gp
+        tds_pg         = _safe(season.get("pass_tds"))   / gp
+        comp_pct       = _safe(season.get("completion_pct"), 60.0)
+        ypa            = _safe(season.get("yds_per_attempt"), 7.0)
+        td_int         = _safe(season.get("td_int_ratio"),    2.0)
         rush_yds_pg    = _safe(season.get("rush_yards")) / gp
         rush_tds_season = _safe(season.get("rush_tds"))
-        if rush_yds_pg >= 30:
-            prod = _clip(prod * 1.08)   # 8% for QB with meaningful rushing
-        if rush_yds_pg >= 50:
-            prod = _clip(prod * 1.05)   # additional 5% for elite rushing QB
-        if rush_tds_season >= 5:
-            prod = _clip(prod * 1.04)   # bonus for multi-TD rushing QBs
+
+        # Rushing QBs: elite college rushers (Lamar, Kyler, Jalen Hurts) are
+        # systematically penalised by pure passing metrics. Rushing is a direct
+        # fantasy component in the NFL, not just a tie-breaker.
+        # Architecture: 85% passing composite + 15% rushing component so that
+        # a pocket passer can still max out (rushing = 0 → no penalty) while
+        # a dual-threat who rushes 80+ yd/game adds a full 15 pts on top.
+        # Completion% weight reduced (0.25→0.18) because spread/RPO systems
+        # inflate college comp% (Mac Jones 77%) while dual-threat systems
+        # suppress it without signalling worse NFL potential.
+        pass_comp = (
+            _scale(pass_yds_pg, 150, 330) * 0.22 +
+            _scale(tds_pg,        1.5,  3.5) * 0.22 +
+            _scale(comp_pct,     58.0, 76.0) * 0.18 +
+            _scale(ypa,           6.5,  10.5) * 0.28 +
+            _scale(td_int,        1.5,   6.0) * 0.10
+        )
+        rush_comp = _scale(rush_yds_pg, 10.0, 85.0)  # 0–100; Lamar ~90+ yd/g → near 100
+
+        prod = _clip(pass_comp * 0.85 + rush_comp * 0.15)
+
+        # Extra multiplier for elite rushing + TDs (dual-threat upside)
+        if rush_yds_pg >= 70 and rush_tds_season >= 8:
+            prod = _clip(prod * 1.06)
+        elif rush_yds_pg >= 50 and rush_tds_season >= 5:
+            prod = _clip(prod * 1.03)
         return prod
 
     elif pos == "TE":
@@ -329,11 +352,17 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.20)
 
         prod = (
-            _scale(rec_yds_pg, 20,  75)  * 0.35 +
+            _scale(rec_yds_pg, 20,  85)  * 0.35 +
             _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +
             dom_score                      * 0.20 +
-            _scale(rec_pg,     1.0,  5.0) * 0.15
+            _scale(rec_pg,     1.0,  6.5) * 0.15
         )
+        # YAC bonus: move TEs who create after the catch are more NFL-translatable
+        te_yac = _safe(season.get("yards_after_catch_per_reception"))
+        if te_yac >= 5.0:
+            prod = _clip(prod * 1.08)
+        elif te_yac >= 3.5:
+            prod = _clip(prod * 1.04)
         # Red zone proxy: TE goal-line usage is extremely valuable in NFL
         if total_rec_yds >= 200:
             rz_rate = total_rec_tds / total_rec_yds * 100
@@ -503,14 +532,16 @@ def calc_production_score(
     elif eval_metrics and pos == "RB":
         elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
         if elusive is not None:
-            # Scale-based: 0 at elusive=50 (replacement level), max +8 at 130 (elite).
-            # No penalty for below-average elusive — avoids punishing Singleton-type backs.
-            prod = _clip(prod + _scale(float(elusive), 50.0, 130.0) * 8.0)
+            # Scale-based and symmetric: 0 at elusive=90 (roughly average), up to
+            # +5 at 130 (elite), down to -4 at 55 (poor). Symmetry reduces ceiling lock.
+            elusive_delta = _clip((float(elusive) - 90.0) / 40.0, -0.8, 1.0)
+            prod = _clip(prod + (elusive_delta * 5.0))
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
-            # Scale-based: 0 at 20% (average), max +8 at 50% (elite). No penalty.
-            prod = _clip(prod + _scale(breakaway, 20.0, 50.0) * 8.0)
+            # Scale-based and symmetric: 0 at 20% (average), +4 at 40% elite, -3 at 8%.
+            breakaway_delta = _clip((breakaway - 20.0) / 20.0, -1.0, 1.0)
+            prod = _clip(prod + (breakaway_delta * 4.0))
 
     elif eval_metrics and pos == "QB":
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
@@ -728,7 +759,7 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
 
     # Dominator breakout threshold by position.
     # QB dominator_rating is receiving-based and not meaningful for QBs — use neutral.
-    dom_thresh = {"WR": 0.20, "RB": 0.35, "TE": 0.12}
+    dom_thresh = {"WR": 0.25, "RB": 0.275, "TE": 0.12}
     dom = _safe(ls.get("dominator_rating"))
     thresh = dom_thresh.get(pos)
 
@@ -824,7 +855,7 @@ _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Maximum athleticism score when metric coverage is sparse.
 # Prevents a single elite metric (e.g. one 4.28 40-time) from yielding a top score
 # when we have no idea about the rest of the athletic profile.
-_ATH_DATA_CAPS = {1: 65, 2: 82, 3: 92}   # n_metrics_present → cap
+_ATH_DATA_CAPS = {1: 74, 2: 82, 3: 92}   # n_metrics_present → cap
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -1141,27 +1172,23 @@ POSITION_WEIGHTS = {
         "experience": 0.07,
     },
     "RB": {
-        # Draft capital (r=0.72) and breakout age (r=0.65) are the clearest RB predictors.
-        # Age is especially predictive for RBs who peak young and decline quickly.
-        # Efficiency raised: YPC-based efficiency is more predictive than raw volume for RBs.
-        # Production reduced: volume-centric formula over-rewards featured backs vs. committee RBs.
-        "draft_capital": 0.24,
+        # Draft capital is the single strongest RB predictor (1st-round RBs hit at 83%,
+        # the highest hit rate of any position/tier — higher than 1st-round WRs at 64%).
+        # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
+        "draft_capital": 0.29,
         "production": 0.18,
         "utilization": 0.08,
         "efficiency": 0.10,
         "age": 0.09,
-        "breakout": 0.14,
+        "breakout": 0.11,
         "athleticism": 0.10,
-        "competition": 0.05,
-        "environment": 0.01,
+        "competition": 0.04,
+        "environment": 0.00,
         "durability": 0.01,
     },
     "WR": {
-        # Draft capital (r=0.72) is the strongest WR predictor — weighted highest.
-        # Breakout reduced: volume-based metric is inflated by spread/air-raid systems.
-        # Utilization (r=0.45) reduced — target volume is scheme-dependent.
-        # Environment raised: scheme translatability is more predictive for WRs than
-        #   previously weighted, particularly for prospects from air-raid offenses.
+        # WR calibration - reduce overgrading by lowering weights on most influential components
+        # Keep draft capital emphasis but reduce production/age to prevent inflation
         "draft_capital": 0.29,
         "production": 0.20,
         "utilization": 0.04,
@@ -1178,13 +1205,13 @@ POSITION_WEIGHTS = {
         # Athleticism defines generational TEs; efficiency (YPR + catch rate) is predictive.
         # College TE production and utilization are less reliable signals due to blocking roles.
         "draft_capital": 0.26,
-        "production": 0.18,
-        "utilization": 0.05,
+        "production": 0.19,
+        "utilization": 0.07,
         "efficiency": 0.12,
-        "age": 0.13,
-        "breakout": 0.05,
-        "athleticism": 0.12,
-        "competition": 0.07,
+        "age": 0.10,
+        "breakout": 0.06,
+        "athleticism": 0.10,
+        "competition": 0.08,
         "environment": 0.01,
         "durability": 0.01,
     },
@@ -1422,17 +1449,6 @@ def calc_late_round_upside(draft_capital: Optional[Dict], seasons: List[Dict], p
     best_dominator = max([_safe(s.get("dominator_rating", 0)) for s in seasons])
     dominator_rating = best_dominator
     
-    # For WR/TE, check yards per route run if available
-    yprr = 0.0
-    if position in ("WR", "TE"):
-        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
-        yprr = best_yprr
-    if position in ("WR", "TE"):
-        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
-        yprr = best_yprr
-    
-    # For WR/TE, check yards per route run if available
-    # For WR/TE, check yards per route run if available
     yprr = 0.0
     if position in ("WR", "TE"):
         best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
@@ -1495,10 +1511,99 @@ def calc_interaction_features(production_score: float, efficiency_score: float,
     }
 
 
+def calc_translation_adjustment(
+    prospect: Dict[str, Any],
+    position: str,
+    draft_capital: Optional[Dict[str, Any]],
+    production_score: float,
+    efficiency_score: float,
+    age_score: float,
+) -> float:
+    """
+    Position-specific post-model adjustment (in points) to reduce common misses:
+      - WR false positives on low-translation profiles (hands/YAC + weak efficiency)
+      - Day-2/Day-3 WR/RB underrates with strong underlying profiles
+      - TE volatility when receiving-usage profile is weak
+    """
+    if not prospect.get("seasons"):
+        return 0.0
+
+    latest = _latest_season(prospect["seasons"]) or {}
+    adj = 0.0
+    projected_pick = _safe((draft_capital or {}).get("projected_pick"), 300.0)
+
+    if position == "WR":
+        drop_rate = _safe(latest.get("drop_rate"), 0.0)
+        contested = _safe(latest.get("contested_catch_rate"), 0.0)
+        yac = _safe(latest.get("yards_after_catch_per_reception"), 0.0)
+        yprr = _safe(latest.get("yards_per_route_run"), 0.0)
+        market_share = _safe(latest.get("market_share_yards"), 0.0)
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
+        rec_tds_pg = _safe(latest.get("rec_tds_pg"), _safe(latest.get("receiving_tds"), 0.0) / gp)
+
+        # Penalize classic WR false-positive profiles (high volume, poor translation traits)
+        if drop_rate >= 10.0:
+            adj -= 2.0
+        if contested > 0 and contested < 45.0:
+            adj -= 1.5
+        if yac > 0 and yac < 2.8:
+            adj -= 1.0
+        # Early-pick WR guardrail: weak production+efficiency profile should not sit
+        # near elite tier solely via draft capital.
+        if projected_pick <= 64 and production_score < 62 and efficiency_score < 58:
+            adj -= 3.0
+        if projected_pick <= 50 and rec_yds_pg > 0 and rec_yds_pg < 55 and rec_tds_pg < 0.50:
+            adj -= 1.5
+
+        # Boost strong skill indicators for non-elite draft capital WRs (Kupp/Puka archetype)
+        if projected_pick > 40 and (yprr >= 2.6 or market_share >= 0.30):
+            adj += 2.5
+        if projected_pick > 75 and production_score >= 72 and efficiency_score >= 68:
+            adj += 1.5
+        if projected_pick > 90 and yprr >= 2.8 and market_share >= 0.28 and age_score >= 60:
+            adj += 2.0
+        if projected_pick > 80 and (rec_yds_pg >= 80 or rec_tds_pg >= 0.90):
+            adj += 1.5
+
+    elif position == "RB":
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
+        dominator = _safe(latest.get("dominator_rating"), 0.0)
+        ypc = _safe(latest.get("yds_per_carry"), 0.0)
+
+        # Raise dual-threat and high-dominator RBs drafted outside top tiers
+        if projected_pick > 50 and rec_yds_pg >= 20:
+            adj += 2.0
+        if projected_pick > 75 and dominator >= 0.30 and ypc >= 5.2:
+            adj += 2.0
+        if projected_pick > 100 and rec_yds_pg >= 25 and dominator >= 0.28:
+            adj += 1.5
+
+    elif position == "TE":
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
+        target_share = _safe(latest.get("target_share"), 0.0)
+        draft_age = _safe(prospect.get("age"), 0.0)
+
+        # TE shrinkage: de-emphasize risky profiles with weak receiving usage
+        if rec_yds_pg > 0 and rec_yds_pg < 35:
+            adj -= 1.5
+        if target_share > 0 and target_share < 0.14:
+            adj -= 1.0
+        if draft_age and draft_age > 23.0 and age_score < 50:
+            adj -= 0.5
+        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42:
+            adj -= 1.0
+
+    # Keep the adjustment bounded; this is a corrective signal, not the main model.
+    return max(-10.0, min(6.0, adj))
+
+
 def score_prospect(
     prospect: Dict[str, Any],
     draft_capital: Optional[Dict[str, Any]] = None,
     skip_sagarin: bool = False,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -1601,8 +1706,9 @@ def score_prospect(
         production_score, efficiency_score, athleticism_score, dc_score_adjusted
     )
 
-    # Get position-specific weights
-    pos_weights = POSITION_WEIGHTS.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
+    # Get position-specific weights (optionally overridden by calibrated weights)
+    weights_source = position_weights_override or POSITION_WEIGHTS
+    pos_weights = weights_source.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
     
     # Base prospect score with position-specific weights
     prospect_score = (
@@ -1626,6 +1732,17 @@ def score_prospect(
     if late_round_upside > 0:
         upside_bonus = late_round_upside * 0.05  # 5% of upside score as bonus
         prospect_score += upside_bonus
+
+    # Position-specific translation adjustment from historical miss archetypes
+    translation_adjustment = calc_translation_adjustment(
+        prospect=prospect,
+        position=pos,
+        draft_capital=draft_capital,
+        production_score=production_score,
+        efficiency_score=efficiency_score,
+        age_score=age_score,
+    )
+    prospect_score += translation_adjustment
 
     # Apply benchmark boost system for NFL success predictors
     from benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost
@@ -1670,6 +1787,18 @@ def score_prospect(
     #   75 raw → 81.2  (solid starter)
     #   65 raw → 69.6  (developmental)
     prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+
+    # Position-specific translation adjustment from historical miss archetypes.
+    # Applied late (after global scaling) so the correction magnitude is preserved.
+    translation_adjustment = calc_translation_adjustment(
+        prospect=prospect,
+        position=pos,
+        draft_capital=draft_capital,
+        production_score=production_score,
+        efficiency_score=efficiency_score,
+        age_score=age_score,
+    )
+    prospect_score += translation_adjustment
 
     # Thin-sample volume gate: when both production AND utilization fall below
     # position-typical thresholds, efficiency/athleticism/breakout signals are
@@ -1752,6 +1881,7 @@ def score_prospect(
         "key_reasons":                  reasons,
         "experience_score":             round(experience_score, 2),
         "late_round_upside":             round(late_round_upside, 2),
+        "translation_adjustment":        round(translation_adjustment, 2),
         "loaded_roster_adjustment":      round(loaded_roster_adjustment, 3),
         "production_efficiency_interaction": round(interaction_features["production_efficiency_interaction"], 2),
         "athleticism_draft_capital_interaction": round(interaction_features["athleticism_draft_capital_interaction"], 2),
@@ -1856,16 +1986,16 @@ def _build_reasons(
         if pos == "WR":
             sr = ls.get("slot_rate")
             if sr is not None and float(sr) >= 0.65:
-                adv.append(f"{float(sr)*100:.0f}% slot rate — primary slot receiver")
+                adv.append(f"{float(sr):.0f}% slot rate — primary slot receiver")
 
         if pos == "TE":
             ir = ls.get("inline_rate")
             if ir is not None:
                 ir = float(ir)
                 if ir >= 0.60:
-                    adv.append(f"{ir*100:.0f}% inline rate — traditional in-line TE")
+                    adv.append(f"{ir:.0f}% inline rate — traditional in-line TE")
                 elif ir <= 0.20:
-                    adv.append(f"{ir*100:.0f}% inline rate — move TE / receives in space")
+                    adv.append(f"{ir:.0f}% inline rate — move TE / receives in space")
 
         bullets.extend(adv[:3])
 
@@ -1890,7 +2020,7 @@ def _build_reasons(
 
         bp = ls.get("breakaway_percentage")
         if bp is not None:
-            bpct = float(bp) * 100
+            bpct = float(bp)
             if bpct >= 18.0:
                 adv.append(f"{bpct:.0f}% breakaway run rate — consistent big-play threat")
             elif bpct >= 12.0:
@@ -1911,7 +2041,7 @@ def _build_reasons(
 
         acr = ls.get("adjusted_completion_rate")
         if acr is not None:
-            apct = float(acr) * 100
+            apct = float(acr)
             if apct >= 75.0:
                 adv.append(f"{apct:.0f}% adjusted completion rate — highly accurate")
             elif apct <= 58.0:
@@ -1919,7 +2049,7 @@ def _build_reasons(
 
         btt = ls.get("big_time_throw_rate")
         if btt is not None:
-            bpct = float(btt) * 100
+            bpct = float(btt)
             if bpct >= 8.0:
                 adv.append(f"{bpct:.1f}% big-time throw rate — attacks deep coverage effectively")
             elif bpct >= 5.0:
@@ -2038,6 +2168,7 @@ def score_all_prospects(
     prospects: List[Dict[str, Any]],
     consensus_map: Optional[Dict[str, Dict]] = None,
     skip_sagarin: bool = False,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
@@ -2055,7 +2186,14 @@ def score_all_prospects(
     scores = []
     for p in prospects:
         dc = consensus_map.get(p["player_id"])
-        scores.append(score_prospect(p, dc, skip_sagarin=skip_sagarin))
+        scores.append(
+            score_prospect(
+                p,
+                dc,
+                skip_sagarin=skip_sagarin,
+                position_weights_override=position_weights_override,
+            )
+        )
 
     # Sort overall
     scores.sort(key=lambda x: x["prospect_score"], reverse=True)

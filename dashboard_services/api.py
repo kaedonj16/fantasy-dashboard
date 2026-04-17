@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import functools
+import logging
 import os
 from typing import Any, List, Dict, Optional, Union
 
 import requests
+
+from dashboard_services.circuit_breaker import get_breaker
+
+logger = logging.getLogger(__name__)
+
+# Shared circuit breaker for all Tank01 calls
+_tank01_breaker = get_breaker("tank01", failure_threshold=5, reset_timeout=300)
 
 # ---- League context globals ----
 SCORING_SETTINGS: Dict[str, Any] = {}
@@ -281,25 +289,32 @@ def get_drafts(league_id: str) -> List[dict]:
 
 @ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
+    if _tank01_breaker.is_open():
+        logger.warning("[Tank01] Circuit OPEN — skipping getNFLGamesForWeek w%s s%s", week, season)
+        return []
     url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}
     try:
         resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
+        _tank01_breaker.record_success()
         return data.get("body") or data
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
-            print(f"[Tank01 API] Rate limited for games week {week} season {season}, returning empty list")
+            logger.warning("[Tank01] Rate limited — getNFLGamesForWeek w%s s%s", week, season)
+            _tank01_breaker.record_failure()
             return []
-        else:
-            print(f"[Tank01 API] HTTP error {e.response.status_code} for games week {week} season {season}")
-            raise
+        logger.error("[Tank01] HTTP %s — getNFLGamesForWeek w%s s%s", e.response.status_code, week, season)
+        _tank01_breaker.record_failure()
+        raise
     except requests.exceptions.RequestException as e:
-        print(f"[Tank01 API] Request error for games week {week} season {season}: {e}")
+        logger.error("[Tank01] Request error — getNFLGamesForWeek w%s s%s: %s", week, season, e)
+        _tank01_breaker.record_failure()
         return []
     except Exception as e:
-        print(f"[Tank01 API] Unexpected error for games week {week} season {season}: {e}")
+        logger.exception("[Tank01] Unexpected error — getNFLGamesForWeek w%s s%s", week, season)
+        _tank01_breaker.record_failure()
         return []
 
 
@@ -362,29 +377,38 @@ def get_tank01_player_gamelogs(
     if season is not None:
         querystring["season"] = str(season)
 
-    resp = SESSION.get(url, headers=TANK01_HEADERS, params=querystring, timeout=20)
-    if resp.status_code != 200:
-        raise Tank01Error(f"Tank01 API error {resp.status_code}: {resp.text[:200]}")
+    if _tank01_breaker.is_open():
+        raise Tank01Error("Tank01 circuit breaker OPEN — skipping request")
 
-    data = resp.json()
-    status_code = data.get("statusCode")
-    if status_code != 200:
-        raise Tank01Error(f"Tank01 returned statusCode={status_code}: {data}")
+    try:
+        resp = SESSION.get(url, headers=TANK01_HEADERS, params=querystring, timeout=20)
+        if resp.status_code != 200:
+            _tank01_breaker.record_failure()
+            raise Tank01Error(f"Tank01 API error {resp.status_code}: {resp.text[:200]}")
 
-    raw_body = data.get("body") or {}
+        data = resp.json()
+        status_code = data.get("statusCode")
+        if status_code != 200:
+            _tank01_breaker.record_failure()
+            raise Tank01Error(f"Tank01 returned statusCode={status_code}: {data}")
 
-    if isinstance(raw_body, list):
-        games: List[Dict[str, Any]] = [g for g in raw_body if isinstance(g, dict)]
-    elif isinstance(raw_body, dict):
-        games = [g for g in raw_body.values() if isinstance(g, dict)]
-    else:
-        print(
-            f"[Tank01] Unexpected body type for {tank_player_id}: "
-            f"{type(raw_body)} -> {raw_body}"
-        )
-        games = []
+        _tank01_breaker.record_success()
+        raw_body = data.get("body") or {}
 
-    return games
+        if isinstance(raw_body, list):
+            games: List[Dict[str, Any]] = [g for g in raw_body if isinstance(g, dict)]
+        elif isinstance(raw_body, dict):
+            games = [g for g in raw_body.values() if isinstance(g, dict)]
+        else:
+            logger.warning("[Tank01] Unexpected body type for %s: %s", tank_player_id, type(raw_body))
+            games = []
+
+        return games
+    except Tank01Error:
+        raise
+    except requests.exceptions.RequestException as e:
+        _tank01_breaker.record_failure()
+        raise Tank01Error(f"Tank01 request failed: {e}") from e
 
 
 @ttl_cache(ttl=300)
@@ -398,23 +422,29 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     url = f"{BASE}/getNFLScoresOnly"
     params = {"gameDate": game_date, "topPerformers": "true"}
 
+    if _tank01_breaker.is_open():
+        logger.warning("[Tank01] Circuit OPEN — skipping getNFLScoresOnly %s", game_date)
+        return {}
     try:
         resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
         resp.raise_for_status()
         data = resp.json() or {}
+        _tank01_breaker.record_success()
         return data.get("body") or {}
     except requests.exceptions.HTTPError as e:
+        _tank01_breaker.record_failure()
         if e.response.status_code == 429:
-            print(f"[Tank01 API] Rate limited for scores on {game_date}, returning empty data")
+            logger.warning("[Tank01] Rate limited — getNFLScoresOnly %s", game_date)
             return {}
-        else:
-            print(f"[Tank01 API] HTTP error {e.response.status_code} for scores on {game_date}")
-            raise
+        logger.error("[Tank01] HTTP %s — getNFLScoresOnly %s", e.response.status_code, game_date)
+        raise
     except requests.exceptions.RequestException as e:
-        print(f"[Tank01 API] Request error for scores on {game_date}: {e}")
+        logger.error("[Tank01] Request error — getNFLScoresOnly %s: %s", game_date, e)
+        _tank01_breaker.record_failure()
         return {}
     except Exception as e:
-        print(f"[Tank01 API] Unexpected error for scores on {game_date}: {e}")
+        logger.exception("[Tank01] Unexpected error — getNFLScoresOnly %s", game_date)
+        _tank01_breaker.record_failure()
         return {}
 
 
@@ -428,28 +458,32 @@ def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None
 
     params = {"gameID": game_id}
 
+    if _tank01_breaker.is_open():
+        logger.warning("[Tank01] Circuit OPEN — skipping getNFLBoxScore %s", game_id)
+        return {}
     try:
         url = f"{BASE}/getNFLBoxScore"
         resp = sess.get(url, headers=TANK01_HEADERS, params=params, timeout=5)
         resp.raise_for_status()
         data = resp.json()
-
-        # Tank01 usually wraps payload in 'body'
+        _tank01_breaker.record_success()
         if isinstance(data, dict) and "body" in data:
             return data["body"]
         return data
     except requests.exceptions.HTTPError as e:
+        _tank01_breaker.record_failure()
         if e.response.status_code == 429:
-            print(f"[Tank01 API] Rate limited for boxscore {game_id}, returning empty data")
+            logger.warning("[Tank01] Rate limited — getNFLBoxScore %s", game_id)
             return {}
-        else:
-            print(f"[Tank01 API] HTTP error {e.response.status_code} for boxscore {game_id}")
-            raise
+        logger.error("[Tank01] HTTP %s — getNFLBoxScore %s", e.response.status_code, game_id)
+        raise
     except requests.exceptions.RequestException as e:
-        print(f"[Tank01 API] Request error for boxscore {game_id}: {e}")
+        logger.error("[Tank01] Request error — getNFLBoxScore %s: %s", game_id, e)
+        _tank01_breaker.record_failure()
         return {}
     except Exception as e:
-        print(f"[Tank01 API] Unexpected error for boxscore {game_id}: {e}")
+        logger.exception("[Tank01] Unexpected error — getNFLBoxScore %s", game_id)
+        _tank01_breaker.record_failure()
         return {}
 
 
