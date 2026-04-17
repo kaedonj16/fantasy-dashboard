@@ -10698,15 +10698,18 @@ def api_trade_intel_player(player_id: str):
         season = int(request.args.get("season") or datetime.now().year)
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
         value_col = "market_value_sf" if league_type == "sf" else "market_value_1qb"
-        model_col = "value_sf" if league_type == "sf" else "value_1qb"
+        raw_col   = "value_sf" if league_type == "sf" else "value_1qb"
+        cal_col   = "calibrated_value_sf" if league_type == "sf" else "calibrated_value_1qb"
 
         with get_conn() as conn:
             stat_row = conn.execute(
                 f"""
                 SELECT
                     s.*,
-                    s.{value_col}  AS market_value,
-                    pv.{model_col} AS model_value,
+                    s.{value_col}                               AS market_value,
+                    pv.{raw_col}                                AS model_value,
+                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
+                    pv.calibration_source,
                     pv.position, pv.team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
@@ -10761,6 +10764,8 @@ def api_trade_intel_player(player_id: str):
 
         model_val = float(stat_row["model_value"] or 0)
         market_val = float(stat_row["market_value"] or 0)
+        calibrated_val = float(stat_row["calibrated_value"] or 0)
+        # Delta is market vs raw model — shows how much the model diverges from real trades
         delta = round(market_val - model_val, 1) if model_val and market_val else None
 
         return jsonify({
@@ -10771,6 +10776,8 @@ def api_trade_intel_player(player_id: str):
             "trade_count_all": stat_row["trade_count"],
             "market_value": market_val or None,
             "model_value": model_val or None,
+            "calibrated_value": calibrated_val or None,
+            "calibration_source": stat_row["calibration_source"],
             "value_delta": delta,
             "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
             "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,

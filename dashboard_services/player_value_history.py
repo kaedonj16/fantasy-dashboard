@@ -294,8 +294,12 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        value_1qb  AS value,
-                        value_sf   AS sf_value,
+                        COALESCE(calibrated_value_1qb, value_1qb) AS value,
+                        COALESCE(calibrated_value_sf,  value_sf)  AS sf_value,
+                        value_1qb  AS model_value,
+                        value_sf   AS model_sf_value,
+                        calibration_source,
+                        calibration_weight,
                         position,
                         pos_rank,
                         pos_rank_label,
@@ -304,7 +308,7 @@ def load_current_values_from_db() -> list[dict]:
                         years_exp,
                         last_updated
                     FROM player_values
-                    ORDER BY value_1qb DESC NULLS LAST
+                    ORDER BY COALESCE(calibrated_value_1qb, value_1qb) DESC NULLS LAST
                     LIMIT 800
                     """
                 )

@@ -259,12 +259,15 @@ def main():
             from data_building.trade_intel.league_discovery import run_discovery
             from data_building.trade_intel.trade_crawler import run_crawl
             from data_building.trade_intel.analytics import run_analytics
+            from data_building.trade_intel.market_calibration import run_calibration
             discovered = run_discovery(target=500)
             print(f"[cron] Trade intel: discovered {discovered} new leagues")
             crawl_result = run_crawl(batch_size=200)
             print(f"[cron] Trade intel: {crawl_result}")
             analytics_result = run_analytics(season=season)
             print(f"[cron] Trade intel analytics: {analytics_result}")
+            calibration_result = run_calibration(season=season)
+            print(f"[cron] Market calibration: {calibration_result}")
         except Exception as ti_err:
             print(f"[cron] Trade intel failed (non-fatal): {ti_err}")
 
