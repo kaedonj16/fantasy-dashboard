@@ -258,25 +258,25 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 20,  120) * 0.18 +
-            _scale(all_yds_pg,  30,  150) * 0.17 +
-            _scale(tds_pg,       0.4,  1.5) * 0.25 +
-            _scale(dom,          0.12, 0.60) * 0.15 +
-            _scale(ypc,          3.5,  8.0) * 0.25
+            _scale(rush_yds_pg, 20,  150) * 0.18 +
+            _scale(all_yds_pg,  30,  180) * 0.17 +
+            _scale(tds_pg,       0.4,  2.0) * 0.25 +
+            _scale(dom,          0.12, 0.75) * 0.15 +
+            _scale(ypc,          3.5,  9.0) * 0.25
         )
         # Receiving tiers: require meaningful rec share so dedicated pass-catchers
         # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
         rec_share = rec_yds_pg / max(all_yds_pg, 1.0)
         if rec_yds_pg >= 20 and rec_share >= 0.28:
-            prod = _clip(prod * 1.20)   # dedicated pass-catcher
+            prod = _clip(prod * 1.10)   # dedicated pass-catcher (reduced from 1.20)
         elif rec_yds_pg >= 20 and rec_share >= 0.22:
-            prod = _clip(prod * 1.15)   # strong receiving back
+            prod = _clip(prod * 1.08)   # strong receiving back
         elif rec_yds_pg >= 15:
-            prod = _clip(prod * 1.08)   # incidental receiver
+            prod = _clip(prod * 1.05)   # incidental receiver (reduced from 1.08)
         if ypc >= 6.0:
-            prod = _clip(prod * 1.08)
+            prod = _clip(prod * 1.05)   # reduced from 1.08
         if dom >= 0.30:
-            prod = _clip(prod * 1.12)
+            prod = _clip(prod * 1.08)   # reduced from 1.12
         # Red zone proxy: TDs per 100 total yards
         total_yds = _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
         total_tds = _safe(season.get("rush_tds"))   + _safe(season.get("receiving_tds"))
@@ -1164,31 +1164,29 @@ POSITION_WEIGHTS = {
         # the highest hit rate of any position/tier — higher than 1st-round WRs at 64%).
         # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
         "draft_capital": 0.29,
-        "production": 0.18,
+        "production": 0.17,
         "utilization": 0.08,
         "efficiency": 0.10,
-        "age": 0.09,
-        "breakout": 0.11,
+        "age": 0.08,
+        "breakout": 0.10,
         "athleticism": 0.10,
         "competition": 0.04,
-        "environment": 0.00,
+        "environment": 0.03,
         "durability": 0.01,
     },
     "WR": {
-        # WR calibration update from recent backtests:
-        # - Emphasize draft capital + age + raw production signals
-        # - De-emphasize breakout/dominator-heavy proxies that have become noisier
-        #   in recent classes and can overrate certain archetypes.
-        "draft_capital": 0.31,
-        "production": 0.23,
-        "utilization": 0.03,
+        # WR calibration - reduce overgrading by lowering weights on most influential components
+        # Keep draft capital emphasis but reduce production/age to prevent inflation
+        "draft_capital": 0.26,
+        "production": 0.22,
+        "utilization": 0.05,
         "efficiency": 0.11,
-        "age": 0.10,
-        "breakout": 0.04,
+        "age": 0.08,
+        "breakout": 0.06,
         "athleticism": 0.05,
         "competition": 0.04,
-        "environment": 0.09,
-        "durability": 0.00,
+        "environment": 0.10,
+        "durability": 0.03,
     },
     "TE": {
         # Draft capital (r=0.72) and age (TEs develop late; young elite TEs are rare) lead.
