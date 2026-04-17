@@ -1426,8 +1426,7 @@ html[data-theme="dark"] img[src*="logout.png"] {
   align-items: stretch;
   gap: 6px;
   flex-wrap: wrap;
-  border-radius: 9999px;
-  padding: 2px;
+  padding: 4px 4px 4px 8px;
   margin-bottom: 12px;
 }
 
@@ -7699,8 +7698,10 @@ img, svg, canvas {
     display: flex;
     gap: 8px;
     overflow-x: auto;
+    overflow-y: visible;
     -webkit-overflow-scrolling: touch;
     padding-bottom: 4px;
+    padding-left: 8px;
   }
 
   .tab-btn {
@@ -11832,6 +11833,7 @@ img, svg, canvas {
 .btm-window {
   font-size: 12px;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 .btm-avg-pill {
   font-size: 12px;
@@ -12038,7 +12040,7 @@ img, svg, canvas {
 
 /* Slim (sidebar) BTM: 4-column grid — bar + movers are not rendered in DOM */
 .btm-col-header.btm-slim,
-.btm-row.btm-slim { grid-template-columns: 22px 1fr 64px 68px; }
+.btm-row.btm-slim { grid-template-columns: 26px 1fr 64px 68px; }
 .teams-sidebar .btm-meta { flex-wrap: wrap; gap: 4px; }
 .teams-sidebar .btm-window { font-size: 11px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
