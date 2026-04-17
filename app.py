@@ -5535,7 +5535,18 @@ def build_teams_body(ctx: dict) -> str:
             f"<div id='{_chart_div_id}' class='team-value-chart'></div>"
             f"<script>(function(){{"
             f"  var d={_chart_data},l={_chart_layout};"
-            f"  if(typeof Plotly!=='undefined')Plotly.newPlot('{_chart_div_id}',d,l,{{responsive:true,displayModeBar:false}});"
+            f"  function createChart(){{"
+            f"    if(typeof Plotly!=='undefined'){{"
+            f"      Plotly.newPlot('{_chart_div_id}',d,l,{{responsive:true,displayModeBar:false}});"
+            f"    }} else {{"
+            f"      setTimeout(createChart, 100);"
+            f"    }}"
+            f"  }}"
+            f"  if(document.readyState==='loading'){{"
+            f"    document.addEventListener('DOMContentLoaded', createChart);"
+            f"  }} else {{"
+            f"    createChart();"
+            f"  }}"
             f"}})();</script>"
         )
 
@@ -5588,20 +5599,19 @@ def build_teams_body(ctx: dict) -> str:
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">BTM</button>
-          <button class="tab-btn" data-tab="sos">Schedule</button>
-          <button class="tab-btn" data-tab="draft">Draft</button>
+          <button class="tab-btn active" data-tab="btm">Beat the Market</button>
+          <!-- <button class="tab-btn" data-tab="sos">Schedule</button> -->
+          <!-- <button class="tab-btn" data-tab="draft">Draft</button> -->
           <div class="tab-panels">
             <div class="tab-panel active" data-tab="btm" id="btmPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
-            <div class="tab-panel" data-tab="sos" id="sosPanel">
+            <!-- <div class="tab-panel" data-tab="sos" id="sosPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="draft" id="draftPanel">
               <div class="analytics-loading">Loading…</div>
-            </div>
-          </div>
+            </div> -->
         </div>
       </div>
     </div>
@@ -5636,7 +5646,7 @@ def build_teams_body(ctx: dict) -> str:
             var maxVsAvg = Math.max(...rows.map(r => Math.abs(r.vs_avg)), 1);
 
             var html = '<div class="btm-meta">' +
-              '<span class="btm-window">📅 ' + data.baseline_date + ' → ' + data.latest_date + '</span>' +
+              '<span class="btm-window">' + data.baseline_date + ' → ' + data.latest_date + '</span>' +
               '<span class="btm-avg-pill">Avg: ' + avgFmt + '</span>' +
               (slim ? '' : '<span class="btm-legend"><span class="btm-dot btm-dot-pos"></span>Beat avg&nbsp;&nbsp;<span class="btm-dot btm-dot-neg"></span>Below avg</span>') +
             '</div>';
@@ -5776,8 +5786,8 @@ def build_teams_body(ctx: dict) -> str:
           btn.addEventListener('click', function() {{
             var tab = btn.dataset.tab;
             if (tab === 'btm')   loadBtm();
-            if (tab === 'sos')   loadSos();
-            if (tab === 'draft') loadDraft();
+            // if (tab === 'sos')   loadSos();
+            // if (tab === 'draft') loadDraft();
           }});
         }});
         loadBtm();  // load first tab immediately

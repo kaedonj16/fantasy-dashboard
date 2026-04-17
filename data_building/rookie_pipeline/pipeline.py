@@ -1701,26 +1701,46 @@ def run_rookie_pipeline_staged(
     print(f"[pipeline] Fetched combine data for {len(combine_data)} players")
 
     # Back-fill ages for prospects ESPN missed using NFLVerse combine birthdate
+    # Also copy height and weight from combine data if not already present
     from datetime import date as _date
     from .espn_scraper import parse_dob_and_calculate_age as _parse_dob
     _ref = _date(draft_year, 4, 25)
     _combine_ages = 0
+    _combine_height = 0
+    _combine_weight = 0
     for p in sr_prospects:
-        if p.get("age"):
-            continue  # already resolved by ESPN in Stage 1b
         key = p["name"].lower().strip()
-        bd  = (combine_data.get(key) or {}).get("birthdate")
-        if bd:
-            _, age = _parse_dob(bd, _ref)
-            if age:
-                p["age"] = age
-                _combine_ages += 1
-    if _combine_ages:
-        print(f"[pipeline] Resolved {_combine_ages} ages from NFLVerse combine birthdate")
+        combine = combine_data.get(key) or {}
+        
+        # Back-fill age if missing
+        if not p.get("age"):
+            bd = combine.get("birthdate")
+            if bd:
+                _, age = _parse_dob(bd, _ref)
+                if age:
+                    p["age"] = age
+                    _combine_ages += 1
+        
+        # Copy height from combine if missing
+        if not p.get("height_inches"):
+            height = combine.get("height_inches")
+            if height:
+                p["height_inches"] = height
+                _combine_height += 1
+        
+        # Copy weight from combine if missing
+        if not p.get("weight_lbs"):
+            weight = combine.get("weight_lbs")
+            if weight:
+                p["weight_lbs"] = weight
+                _combine_weight += 1
+    
+    if _combine_ages or _combine_height or _combine_weight:
+        print(f"[pipeline] Resolved {_combine_ages} ages, {_combine_height} heights, {_combine_weight} weights from combine data")
         with get_conn() as conn:
             upsert_prospects(sr_prospects, conn)
     else:
-        print("[pipeline] No additional ages from combine birthdate")
+        print("[pipeline] No additional data from combine")
 
     # Save combine data to DB
     with get_conn() as conn:

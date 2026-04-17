@@ -231,7 +231,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
 
         prod = (
-            _scale(rec_yds_pg, 32,  110) * 0.40 +
+            _scale(rec_yds_pg, 32,  120) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
             dom_score                      * 0.30
         )
@@ -352,10 +352,10 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.20)
 
         prod = (
-            _scale(rec_yds_pg, 20,  75)  * 0.35 +
+            _scale(rec_yds_pg, 20,  85)  * 0.35 +
             _scale(rec_tds_pg, 0.12, 0.5) * 0.30 +
             dom_score                      * 0.20 +
-            _scale(rec_pg,     1.0,  5.0) * 0.15
+            _scale(rec_pg,     1.0,  6.5) * 0.15
         )
         # YAC bonus: move TEs who create after the catch are more NFL-translatable
         te_yac = _safe(season.get("yards_after_catch_per_reception"))
@@ -759,7 +759,7 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
 
     # Dominator breakout threshold by position.
     # QB dominator_rating is receiving-based and not meaningful for QBs — use neutral.
-    dom_thresh = {"WR": 0.20, "RB": 0.35, "TE": 0.12}
+    dom_thresh = {"WR": 0.25, "RB": 0.275, "TE": 0.12}
     dom = _safe(ls.get("dominator_rating"))
     thresh = dom_thresh.get(pos)
 
@@ -855,7 +855,7 @@ _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Maximum athleticism score when metric coverage is sparse.
 # Prevents a single elite metric (e.g. one 4.28 40-time) from yielding a top score
 # when we have no idea about the rest of the athletic profile.
-_ATH_DATA_CAPS = {1: 65, 2: 82, 3: 92}   # n_metrics_present → cap
+_ATH_DATA_CAPS = {1: 74, 2: 82, 3: 92}   # n_metrics_present → cap
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -1175,43 +1175,43 @@ POSITION_WEIGHTS = {
         # Draft capital is the single strongest RB predictor (1st-round RBs hit at 83%,
         # the highest hit rate of any position/tier — higher than 1st-round WRs at 64%).
         # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
-        "draft_capital": 0.29,
-        "production": 0.17,
+        "draft_capital": 0.24,
+        "production": 0.18,
         "utilization": 0.08,
         "efficiency": 0.10,
-        "age": 0.08,
-        "breakout": 0.10,
+        "age": 0.09,
+        "breakout": 0.14,
         "athleticism": 0.10,
-        "competition": 0.04,
-        "environment": 0.03,
+        "competition": 0.05,
+        "environment": 0.01,
         "durability": 0.01,
     },
     "WR": {
         # WR calibration - reduce overgrading by lowering weights on most influential components
         # Keep draft capital emphasis but reduce production/age to prevent inflation
-        "draft_capital": 0.26,
-        "production": 0.22,
-        "utilization": 0.05,
-        "efficiency": 0.11,
+        "draft_capital": 0.29,
+        "production": 0.20,
+        "utilization": 0.04,
+        "efficiency": 0.10,
         "age": 0.08,
-        "breakout": 0.06,
-        "athleticism": 0.05,
-        "competition": 0.04,
-        "environment": 0.10,
-        "durability": 0.03,
+        "breakout": 0.09,
+        "athleticism": 0.07,
+        "competition": 0.07,
+        "environment": 0.06,
+        "durability": 0.00,
     },
     "TE": {
         # Draft capital (r=0.72) and age (TEs develop late; young elite TEs are rare) lead.
         # Athleticism defines generational TEs; efficiency (YPR + catch rate) is predictive.
         # College TE production and utilization are less reliable signals due to blocking roles.
         "draft_capital": 0.26,
-        "production": 0.18,
-        "utilization": 0.05,
+        "production": 0.19,
+        "utilization": 0.07,
         "efficiency": 0.12,
-        "age": 0.13,
-        "breakout": 0.05,
-        "athleticism": 0.12,
-        "competition": 0.07,
+        "age": 0.10,
+        "breakout": 0.06,
+        "athleticism": 0.10,
+        "competition": 0.08,
         "environment": 0.01,
         "durability": 0.01,
     },

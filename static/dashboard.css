@@ -11836,7 +11836,7 @@ img, svg, canvas {
 .btm-avg-pill {
   font-size: 12px;
   font-weight: 600;
-  background: var(--bg-secondary, #1e293b);
+  background: var(--info);
   color: var(--text-primary);
   padding: 2px 8px;
   border-radius: 10px;
@@ -11884,9 +11884,21 @@ img, svg, canvas {
   gap: 8px;
   padding: 6px 8px;
   border-radius: 6px;
-  transition: background 0.15s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  cursor: pointer;
+  border: 1px solid transparent;
 }
-.btm-row:hover { background: var(--bg-secondary, #1e293b); }
+.btm-row:hover { 
+  background: var(--accent-soft, #e9eef5); 
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--accent, #122d4b);
+}
+.btm-row:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
 .btm-row.btm-pos { border-left: 3px solid #22c55e; }
 .btm-row.btm-neg { border-left: 3px solid #ef4444; }
 
@@ -11903,18 +11915,29 @@ img, svg, canvas {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: all 0.15s ease;
+}
+.btm-row:hover .btm-team {
+  color: var(--accent-color, #38bdf8);
+  font-weight: 700;
 }
 .btm-delta {
   font-size: 12px;
   color: var(--text-muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  transition: all 0.15s ease;
+}
+.btm-row:hover .btm-delta {
+  color: var(--text);
+  font-weight: 600;
 }
 .btm-vsavg {
   font-size: 13px;
   font-weight: 700;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  transition: all 0.15s ease;
 }
 .btm-vsavg.btm-pos { color: #22c55e; }
 .btm-vsavg.btm-neg { color: #ef4444; }
@@ -11926,11 +11949,37 @@ img, svg, canvas {
   background: var(--bg-tertiary, #0f172a);
   border-radius: 3px;
   overflow: hidden;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.btm-bar-track:hover {
+  height: 8px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .btm-bar-fill {
   height: 100%;
   border-radius: 3px;
-  transition: width 0.4s ease;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+.btm-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.btm-bar-track:hover .btm-bar-fill::after {
+  opacity: 1;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .btm-bar-fill.btm-pos { background: #22c55e; }
 .btm-bar-fill.btm-neg { background: #ef4444; }
@@ -11949,9 +11998,31 @@ img, svg, canvas {
   padding: 1px 5px;
   border-radius: 4px;
   white-space: nowrap;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
 }
-.btm-mover-pos { background: rgba(34,197,94,0.12); color: #4ade80; }
-.btm-mover-neg { background: rgba(239,68,68,0.12);  color: #f87171; }
+.btm-mover:hover {
+  transform: scale(1.05);
+  border-color: currentColor;
+  opacity: 0.9;
+}
+.btm-mover-pos { 
+  background: rgba(34,197,94,0.12); 
+  color: #4ade80; 
+}
+.btm-mover-pos:hover {
+  background: rgba(34,197,94,0.2);
+  box-shadow: 0 2px 6px rgba(34,197,94,0.2);
+}
+.btm-mover-neg { 
+  background: rgba(239,68,68,0.12);  
+  color: #f87171; 
+}
+.btm-mover-neg:hover {
+  background: rgba(239,68,68,0.2);
+  box-shadow: 0 2px 6px rgba(239,68,68,0.2);
+}
 .btm-mover-pos-badge {
   font-size: 9px;
   font-weight: 700;
