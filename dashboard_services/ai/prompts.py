@@ -21,15 +21,14 @@ def build_gm_memo_prompt(team_ctx: dict) -> str:
     return f"""
 Write a personalized dynasty GM memo for this team.
 
-Output format:
-1. One-line team identity
-2. One paragraph team outlook
-3. Three bullet points:
-   - biggest strength
-   - biggest weakness
-   - best next move
-4. One short paragraph on trade posture
-5. Final verdict line: BUY / HOLD / SELL VETERANS / REBUILD AGGRESSIVELY
+Return a JSON object with these fields — each must be a single sentence or short phrase, NOT a list:
+- team_identity: one-line team identity
+- outlook: one paragraph on the team's current situation
+- strength: the single biggest strength of this roster (one sentence only — do NOT include weakness or next move here)
+- weakness: the single biggest weakness of this roster (one sentence only — do NOT include strength or next move here)
+- next_move: the single best next move this team should make (one sentence only)
+- trade_posture: one short paragraph on trade posture
+- verdict: one of BUY / HOLD / SELL VETERANS / REBUILD AGGRESSIVELY
 
 Use only this JSON:
 

@@ -10338,9 +10338,12 @@ def api_beat_the_market():
 
         results.sort(key=lambda x: x["vs_avg"], reverse=True)
 
+        def _iso(d) -> str:
+            return d.isoformat() if hasattr(d, "isoformat") else str(d)
+
         return jsonify({
-            "latest_date": str(latest_date_obj),
-            "baseline_date": str(baseline_date),
+            "latest_date": _iso(latest_date_obj),
+            "baseline_date": _iso(baseline_date),
             "league_avg_delta": avg_delta,
             "rosters": results,
         })
