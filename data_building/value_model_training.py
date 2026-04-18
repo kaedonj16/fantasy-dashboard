@@ -1157,7 +1157,7 @@ def rewrite_value_table_with_model() -> Path:
                         ktc_name_map[raw_name] = (
                             (float(raw_val) - ktc_min) / ktc_range * 899.9 + 100.0
                         )
-                # Blend: if we have both FC and KTC use 75/25; if only KTC use it solo
+                # Blend: if we have both FC and KTC use 50/50; if only KTC use it solo
                 for pid_str, meta in (_load_pi() or {}).items():
                     pid = str(pid_str)
                     pname = (meta.get("name") or "").strip().lower()
@@ -1165,7 +1165,7 @@ def rewrite_value_table_with_model() -> Path:
                     if not ktc_val:
                         continue
                     if pid in vendor_values:
-                        vendor_values[pid] = vendor_values[pid] * 0.75 + ktc_val * 0.25
+                        vendor_values[pid] = vendor_values[pid] * 0.50 + ktc_val * 0.50
                     else:
                         vendor_values[pid] = ktc_val
                 print(f"[DEBUG] KTC blend applied: {len(ktc_name_map)} players from KTC")
@@ -1276,9 +1276,20 @@ def rewrite_value_table_with_model() -> Path:
         dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
         dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
 
-        # Blend: 50% FC, 35% DP 2QB, 15% SF Engine
+        # Superflex blend: 35% vendor (FC+KTC), 40% DP 2QB, 25% SF engine.
+        # DP 2QB is the strongest signal for QB scarcity in SF formats.
+        # Renormalize when a source is missing so values aren't deflated.
         if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            sf_value = (0.35 * fc_val_norm) + (0.35 * dp_2qb_norm) + (0.3 * sf_eng_val)
+            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.35, 0.40, 0.25
+            sf_wsum = 0.0
+            sf_wtot = 0.0
+            if fc_val_norm > 0:
+                sf_wsum += SF_W_VENDOR * fc_val_norm; sf_wtot += SF_W_VENDOR
+            if dp_2qb_norm > 0:
+                sf_wsum += SF_W_DP * dp_2qb_norm;    sf_wtot += SF_W_DP
+            if sf_eng_val > 0:
+                sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
+            sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
             # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
             # In Superflex, elite QBs should be valued like elite RBs/WRs
@@ -1342,29 +1353,24 @@ def rewrite_value_table_with_model() -> Path:
         dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
         eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else 0.0
 
-        active_sources = [v for v in (fc_val, dp_val, eng_val) if v > 0]
+        # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
+        # Missing sources are dropped and remaining weights are renormalized so
+        # a player with no DP entry isn't penalized with a deflated value.
+        W_VENDOR, W_ENGINE, W_DP = 0.40, 0.40, 0.20
+        weighted_sum = 0.0
+        total_weight = 0.0
+        if fc_val > 0:
+            weighted_sum += W_VENDOR * fc_val
+            total_weight += W_VENDOR
+        if eng_val > 0:
+            weighted_sum += W_ENGINE * eng_val
+            total_weight += W_ENGINE
+        if dp_val > 0:
+            weighted_sum += W_DP * dp_val
+            total_weight += W_DP
 
-        if len(active_sources) == 3:
-            fc_val, dp_val, eng_val = active_sources
-            
-            # Check if engine value is 15% above or below either vendor source
-            fc_vs_eng = abs(eng_val - fc_val) / max(fc_val, 1.0) if fc_val > 0 else 0
-            dp_vs_eng = abs(eng_val - dp_val) / max(dp_val, 1.0) if dp_val > 0 else 0
-            
-            if fc_vs_eng > 0.15 or dp_vs_eng > 0.15:
-                # Engine is outlier - use average of the two vendor sources
-                vendor_sources = [v for v in (fc_val, dp_val) if v > 0]
-                final_value = float(np.mean(vendor_sources))
-            else:
-                # No outlier - use average of all three sources
-                final_value = float(np.mean(active_sources))
-
-        elif len(active_sources) == 2:
-            final_value = float(np.mean(active_sources))
-
-        elif len(active_sources) == 1:
-            final_value = active_sources[0]
-
+        if total_weight > 0:
+            final_value = weighted_sum / total_weight
         else:
             final_value = ml_prediction
 
