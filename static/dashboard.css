@@ -4065,6 +4065,52 @@ thead th {
   border-radius: 999px;
 }
 
+/* Champion card — gold treatment */
+.history-card.is-champion {
+  background: linear-gradient(135deg, rgba(251,191,36,0.13) 0%, var(--card) 55%);
+  border-color: rgba(245,158,11,0.45);
+  box-shadow: 0 4px 20px rgba(245,158,11,0.14);
+}
+.history-card.is-champion::before {
+  background: linear-gradient(180deg, #f59e0b 0%, #fbbf24 100%);
+}
+.history-card.is-champion .history-card-label {
+  color: #b45309;
+}
+.history-card.is-champion .history-card-value {
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+/* Runner-up card — silver treatment */
+.history-card.is-runner-up {
+  background: linear-gradient(135deg, rgba(148,163,184,0.11) 0%, var(--card) 55%);
+  border-color: rgba(148,163,184,0.4);
+  box-shadow: 0 4px 16px rgba(100,116,139,0.1);
+}
+.history-card.is-runner-up::before {
+  background: linear-gradient(180deg, #94a3b8 0%, #cbd5e1 100%);
+}
+.history-card.is-runner-up .history-card-label {
+  color: #64748b;
+}
+.history-card.is-runner-up .history-card-value {
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+/* Dark mode overrides */
+.dark .history-card.is-champion {
+  background: linear-gradient(135deg, rgba(251,191,36,0.1) 0%, var(--card) 60%);
+  border-color: rgba(245,158,11,0.35);
+}
+.dark .history-card.is-champion .history-card-label { color: #fbbf24; }
+.dark .history-card.is-runner-up {
+  background: linear-gradient(135deg, rgba(148,163,184,0.09) 0%, var(--card) 60%);
+  border-color: rgba(148,163,184,0.3);
+}
+.dark .history-card.is-runner-up .history-card-label { color: #94a3b8; }
+
 .history-chart-panel {
   padding: 18px;
 }
