@@ -6678,7 +6678,17 @@ def page_players(platform: str, season: int, league_id: str):
         font-size: 12px;
         font-weight: 700;
         color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 3px;
       }
+      .pr-rank-arrow {
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .pr-rank-arrow.up   { color: #22c55e; }
+      .pr-rank-arrow.down { color: #ef4444; }
       .pr-name {
         font-size: 13px;
         font-weight: 600;
@@ -7127,8 +7137,16 @@ def page_players(platform: str, season: int, league_id: str):
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
 
+          const rankChange = p.rank_change_7d;
+          let rankArrow = '';
+          if (rankChange != null && rankChange !== 0 && displayRank) {
+            const dir = rankChange > 0 ? 'up' : 'down';
+            const sym = rankChange > 0 ? '▲' : '▼';
+            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days">${sym}</span>`;
+          }
+
           row.innerHTML =
-            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + rankArrow + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +

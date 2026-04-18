@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS player_values (
     age                  DECIMAL(5,2),
     team                 TEXT,
     years_exp            INTEGER,
+    -- 7-day rank movement (positive = moved up, negative = moved down)
+    rank_change_7d       INTEGER,
+    pos_rank_change_7d   INTEGER,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -26,6 +29,8 @@ ALTER TABLE player_values ADD COLUMN IF NOT EXISTS calibrated_value_sf  DECIMAL(
 ALTER TABLE player_values ADD COLUMN IF NOT EXISTS calibration_weight   DECIMAL(4,3);
 ALTER TABLE player_values ADD COLUMN IF NOT EXISTS calibration_source   TEXT;
 ALTER TABLE player_values ADD COLUMN IF NOT EXISTS years_exp            INTEGER;
+ALTER TABLE player_values ADD COLUMN IF NOT EXISTS rank_change_7d       INTEGER;
+ALTER TABLE player_values ADD COLUMN IF NOT EXISTS pos_rank_change_7d   INTEGER;
 
 -- Existing databases: convert (player_id, date) PK → player_id-only PK
 DO $$

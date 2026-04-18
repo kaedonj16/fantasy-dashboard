@@ -3,7 +3,7 @@ Update player_values table with current rankings and save to player_value_histor
 """
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Dict, Any
 import pandas as pd
 
@@ -11,10 +11,82 @@ from utils.utils import load_model_value_table
 from data_building.save_player_values import save_daily_values_to_db
 
 
+def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
+    """
+    Load per-player overall_rank and pos_rank from the closest snapshot on or
+    before target_date using player_value_history.
+
+    Returns dict keyed by player_id: {'overall_rank': int, 'pos_rank': int}
+    """
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    if not db_url or any(t in db_url for t in ("USER", "PASSWORD", "HOST")):
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+    except Exception:
+        return {}
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # Grab the single snapshot date closest to (but not after) target_date
+                cur.execute(
+                    """
+                    SELECT DISTINCT as_of_date
+                    FROM player_value_history
+                    WHERE as_of_date <= %s AND source = 'model'
+                    ORDER BY as_of_date DESC
+                    LIMIT 1
+                    """,
+                    (target_date,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {}
+                snap_date = row["as_of_date"] if isinstance(row, dict) else row[0]
+
+                cur.execute(
+                    """
+                    SELECT player_id, position, value
+                    FROM player_value_history
+                    WHERE as_of_date = %s AND source = 'model'
+                    """,
+                    (snap_date,),
+                )
+                rows = cur.fetchall()
+
+        if not rows:
+            return {}
+
+        if isinstance(rows[0], dict):
+            hist = pd.DataFrame(rows)
+        else:
+            hist = pd.DataFrame(rows, columns=["player_id", "position", "value"])
+
+        hist["value"] = pd.to_numeric(hist["value"], errors="coerce").fillna(0)
+        hist["overall_rank"] = hist["value"].rank(ascending=False, method="min").astype(int)
+        hist["pos_rank"] = (
+            hist.groupby("position")["value"]
+            .rank(ascending=False, method="min")
+            .astype(int)
+        )
+
+        return {
+            str(r["player_id"]): {
+                "overall_rank": int(r["overall_rank"]),
+                "pos_rank": int(r["pos_rank"]),
+            }
+            for _, r in hist.iterrows()
+        }
+    except Exception as e:
+        print(f"[update_player_values] Could not load historical ranks: {e}")
+        return {}
+
+
 def update_player_values_with_rankings() -> int:
     """
     Update player_values table with current rankings and save to player_value_history.
-    
+
     Returns:
         Number of players updated
     """
@@ -23,33 +95,46 @@ def update_player_values_with_rankings() -> int:
     if not value_table:
         print("[update_player_values] No value table available")
         return 0
-    
+
     df = pd.DataFrame(value_table)
-    
+
     # Add rankings to each player
     df['overall_rank'] = df['value'].rank(ascending=False, method='min')
     df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
-    
+
     # Apply smoothing to reduce steep drop-offs
     df_smoothed = apply_smoothing(df)
-    
+
+    # Load historical ranks from 7 days ago for movement indicators
+    hist_ranks = _load_historical_ranks(date.today() - timedelta(days=7))
+
     # Convert back to list of dicts
     updated_players = []
     for _, row in df_smoothed.iterrows():
+        pid = str(row['id'])
+        cur_overall = int(row['overall_rank'])
+        cur_pos = int(row['pos_rank'])
+
+        hist = hist_ranks.get(pid)
+        rank_change_7d = (hist['overall_rank'] - cur_overall) if hist else None
+        pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
+
         updated_players.append({
-            'id': str(row['id']),
+            'id': pid,
             'name': row['name'],
             'position': row['position'],
             'team': row['team'],
             'age': row['age'],
             'value': round(row['value'], 2),
             'sf_value': round(row['sf_value'], 2),
-            'overall_rank': int(row['overall_rank']),
-            'pos_rank': int(row['pos_rank']),
-            'pos_rank_label': f"{row['position']}{int(row['pos_rank'])}",
-            'sf_pos_rank': int(row['pos_rank']),  # Same for now
-            'sf_pos_rank_label': f"{row['position']}{int(row['pos_rank'])}",  # Same for now
+            'overall_rank': cur_overall,
+            'pos_rank': cur_pos,
+            'pos_rank_label': f"{row['position']}{cur_pos}",
+            'sf_pos_rank': cur_pos,
+            'sf_pos_rank_label': f"{row['position']}{cur_pos}",
             'search_name': row.get('search_name', ''),
+            'rank_change_7d': rank_change_7d,
+            'pos_rank_change_7d': pos_rank_change_7d,
         })
     
     # Save to player_values table

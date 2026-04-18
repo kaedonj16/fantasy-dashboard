@@ -306,7 +306,9 @@ def load_current_values_from_db() -> list[dict]:
                         age,
                         team,
                         years_exp,
-                        last_updated
+                        last_updated,
+                        rank_change_7d,
+                        pos_rank_change_7d
                     FROM player_values
                     ORDER BY COALESCE(calibrated_value_1qb, value_1qb) DESC NULLS LAST
                     LIMIT 800
