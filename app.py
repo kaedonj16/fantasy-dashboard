@@ -6399,8 +6399,11 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         num_teams = ctx.get("total_rosters") or None
         rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
+        viewer_roster_id = viewer.get("viewer_roster_id") or ""
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                           scoring_format=scoring_format)
+                                           scoring_format=scoring_format,
+                                           viewer_roster_id=viewer_roster_id)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)

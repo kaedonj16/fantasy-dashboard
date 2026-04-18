@@ -2250,21 +2250,32 @@ window.initTradePage = function initTradePage(root = document) {
             selector.appendChild(option);
           });
 
-          const currentUsername = getCurrentUsername();
-          if (currentUsername) {
-            const userTeam = teams.find(
-              team =>
-                team.username === currentUsername ||
-                team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
-            );
-            if (userTeam) selector.value = userTeam.roster_id;
+          // Priority 1: viewer_roster_id injected server-side (most reliable)
+          const injectedRosterId = root.querySelector("#viewerRosterIdInput")?.value || "";
+          if (injectedRosterId) {
+            selector.value = injectedRosterId;
           }
 
-          const currentRosterId = getCurrentRosterId();
-          if (!selector.value && currentRosterId) {
-            selector.value = currentRosterId;
+          // Priority 2: username match
+          if (!selector.value) {
+            const currentUsername = getCurrentUsername();
+            if (currentUsername) {
+              const userTeam = teams.find(
+                team =>
+                  team.username === currentUsername ||
+                  team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
+              );
+              if (userTeam) selector.value = userTeam.roster_id;
+            }
           }
 
+          // Priority 3: URL param / existing selection
+          if (!selector.value) {
+            const currentRosterId = getCurrentRosterId();
+            if (currentRosterId) selector.value = currentRosterId;
+          }
+
+          if (selector.value) loadTradeTargets();
           updateAnalyzeButtonState();
         })
         .catch(err => {
@@ -2470,7 +2481,12 @@ function getCurrentUsername() {
 
 function getCurrentRosterId() {
   const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get("viewer_roster_id") || document.querySelector("#teamSelect")?.value || "";
+  return (
+    urlParams.get("viewer_roster_id") ||
+    document.querySelector("#viewerRosterIdInput")?.value ||
+    document.querySelector("#teamSelect")?.value ||
+    ""
+  );
 }
 
 // ------------------------------------------------------------

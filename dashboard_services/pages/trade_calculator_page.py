@@ -10,9 +10,11 @@ def build_trade_calculator_body(
         season: Optional[int],
         num_teams: Optional[int] = None,
         scoring_format: Optional[str] = None,
+        viewer_roster_id: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
+    viewer_roster_val = viewer_roster_id or ""
     is_guest = not league_id
 
     # Clamp logged-in league size to nearest supported value
@@ -110,6 +112,7 @@ def build_trade_calculator_body(
       <main class="otc-main">
         <input type="hidden" id="leagueIdInput" value="{league_val}">
         <input type="hidden" id="seasonInput" value="{season_val}">
+        <input type="hidden" id="viewerRosterIdInput" value="{viewer_roster_val}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
 
