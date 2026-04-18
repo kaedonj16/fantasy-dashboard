@@ -1094,6 +1094,29 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  </div>"
             "</div>"
         )
+    else:
+        # Logged-out user on a league page — offer quick sign-in
+        signin_item = (
+            "<button type='button' class='settings-menu-item' "
+            "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
+            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Sign In' "
+            "       style='transform:scaleX(-1);'>"
+            "  <span class='settings-menu-label'>Sign In</span>"
+            "</button>"
+        )
+        settings_content = signin_item + dark_mode_toggle_html
+        settings_gear = (
+            "<div class='settings-gear-wrapper'>"
+            "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
+            "          aria-label='Settings' title='Settings'>"
+            "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
+            "  </button>"
+            "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
+            f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
+            f"    {settings_content}"
+            "  </div>"
+            "</div>"
+        )
 
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
@@ -1111,6 +1134,35 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</div>"
     )
 
+    signin_modal = (
+        f"<div id='signinModal' style='display:none;position:fixed;inset:0;"
+        f"background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;'>"
+        f"  <div style='background:var(--card-bg,#1e2432);border:1px solid var(--border-color,#2d3748);"
+        f"border-radius:12px;padding:28px 24px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);'>"
+        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign in to your team</h3>"
+        f"    <p style='margin:0 0 16px;font-size:13px;color:var(--text-muted,#94a3b8);'>"
+        f"      Enter your Sleeper username to restore personalized features.</p>"
+        f"    <form method='POST' action='/set-viewer'>"
+        f"      <input type='hidden' name='platform' value='{platform}'>"
+        f"      <input type='hidden' name='season' value='{season}'>"
+        f"      <input type='hidden' name='league_id' value='{league_id}'>"
+        f"      <input type='text' name='username' placeholder='sleeper_username' autofocus"
+        f"             style='width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;"
+        f"border:1px solid var(--border-color,#2d3748);background:var(--input-bg,#0f1623);"
+        f"color:var(--text-primary,#e2e8f0);font-size:14px;margin-bottom:14px;'>"
+        f"      <div style='display:flex;gap:8px;'>"
+        f"        <button type='submit' style='flex:1;padding:9px;border-radius:8px;border:none;"
+        f"background:#3b82f6;color:#fff;font-weight:600;cursor:pointer;font-size:14px;'>Sign In</button>"
+        f"        <button type='button' style='flex:1;padding:9px;border-radius:8px;border:1px solid"
+        f" var(--border-color,#2d3748);background:transparent;color:var(--text-primary,#e2e8f0);"
+        f"cursor:pointer;font-size:14px;'"
+        f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+        f"      </div>"
+        f"    </form>"
+        f"  </div>"
+        f"</div>"
+    )
+
     return (
         "<nav class='top-nav'>"
         "  <div class='nav-left'>"
@@ -1126,6 +1178,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"    {utility_bar}"
         "  </div>"
         "</nav>"
+        f"{signin_modal}"
     )
 
 
@@ -1802,6 +1855,26 @@ def get_trade_ai_analysis(
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    logger.exception("[500] Internal server error")
+    return (
+        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+        "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+        "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+        "</head><body><div class='box'>"
+        "<h2>Something went wrong</h2>"
+        "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
+        "<a href='/'>&#8592; Back to home</a>"
+        "</div></body></html>"
+    ), 500
 
 
 @app.route("/health")
@@ -8009,32 +8082,33 @@ def page_history(platform: str, season: int, league_id: str):
 @app.before_request
 def maybe_run_daily():
     global daily_completed
+    try:
+        today_et: date = datetime.now(EASTERN).date()
 
-    today_et: date = datetime.now(EASTERN).date()
+        if daily_completed == today_et:
+            return
 
-    if daily_completed == today_et:
-        return
+        if daily_lock.acquire(blocking=False):
+            try:
+                if daily_completed != today_et:
+                    logger.info("[daily] Running daily data process for %s (ET)...", today_et)
 
-    if daily_lock.acquire(blocking=False):
-        try:
-            if daily_completed != today_et:
-                print(f"[daily] Running daily data process for {today_et} (ET)...")
+                    state = get_nfl_state() or {}
+                    season = int(state.get("season") or datetime.now().year)
+                    week = int(state.get("week") or 0)
 
-                state = get_nfl_state() or {}
-                season = int(state.get("season") or datetime.now().year)
-                week = int(state.get("week") or 0)
+                    daily_thread = threading.Thread(
+                        target=run_daily_data_async,
+                        args=(season, week),
+                        daemon=True
+                    )
+                    daily_thread.start()
 
-                # Run in background thread
-                daily_thread = threading.Thread(
-                    target=run_daily_data_async,
-                    args=(season, week),
-                    daemon=True
-                )
-                daily_thread.start()
-                
-                daily_completed = today_et
-        finally:
-            daily_lock.release()
+                    daily_completed = today_et
+            finally:
+                daily_lock.release()
+    except Exception as _daily_exc:
+        logger.warning("[daily] before_request check failed (non-fatal): %s", _daily_exc)
 
 
 @app.route("/ads.txt")
@@ -11348,6 +11422,29 @@ def api_nfl_news():
     except Exception:
         logger.exception("[nfl-news] error")
         return jsonify({"news": []}), 200
+
+
+def _run_startup_daily() -> None:
+    """Fire daily data build in the background immediately on startup."""
+    global daily_completed
+    try:
+        today_et: date = datetime.now(EASTERN).date()
+        if daily_lock.acquire(blocking=False):
+            try:
+                if daily_completed != today_et:
+                    logger.info("[startup] Kicking off daily build for %s in background...", today_et)
+                    state = get_nfl_state() or {}
+                    season = int(state.get("season") or datetime.now().year)
+                    week = int(state.get("week") or 0)
+                    run_daily_data_async(season, week)
+                    daily_completed = today_et
+            finally:
+                daily_lock.release()
+    except Exception as e:
+        logger.warning("[startup] Could not kick off daily build: %s", e)
+
+
+threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
 if __name__ == "__main__":
