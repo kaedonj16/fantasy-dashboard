@@ -10311,6 +10311,42 @@ img, svg, canvas {
   .pm-comp-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
 }
 
+/* ── Player Modal News ─────────────────────────────────────────────────────── */
+.pm-news-section { }
+
+.pm-news-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pm-news-item:last-child { border-bottom: none; }
+
+.pm-news-headline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+
+.pm-news-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.pm-news-link:hover { text-decoration: underline; color: #3b82f6; }
+
+.pm-news-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.pm-news-meta {
+  font-size: 11px;
+  color: var(--text-subtle, var(--text-muted));
+  opacity: 0.7;
+}
+
 /* ============================================
    Team Modal Styles
    ============================================ */

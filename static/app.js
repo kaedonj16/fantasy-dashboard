@@ -4067,7 +4067,50 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
+      // ── News placeholder (lazy-loaded after modal renders) ───────────────
+      if (data.position && data.position !== 'PICK') {
+        bodyHTML += `
+          <hr class="pm-section-divider">
+          <div class="pm-news-section" id="pmNewsSection">
+            <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
+            <div id="pmNewsBody" style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--text-muted);">
+              <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
+            </div>
+          </div>
+        `;
+      }
+
       document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
+
+      // Lazy-load news after modal is in the DOM
+      if (data.position && data.position !== 'PICK') {
+        fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
+          .then(r => r.json())
+          .then(nd => {
+            const nb = document.getElementById('pmNewsBody');
+            if (!nb) return;
+            const items = nd.news || [];
+            if (!items.length) {
+              nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">No recent news found.</span>';
+              return;
+            }
+            nb.innerHTML = items.map(n => `
+              <div class="pm-news-item">
+                <div class="pm-news-headline">
+                  ${n.url
+                    ? `<a href="${n.url}" target="_blank" rel="noopener" class="pm-news-link">${n.headline}</a>`
+                    : `<span>${n.headline}</span>`}
+                </div>
+                ${n.description ? `<div class="pm-news-desc">${n.description}</div>` : ''}
+                <div class="pm-news-meta">${[n.source, n.age].filter(Boolean).join(' · ')}</div>
+              </div>
+            `).join('');
+          })
+          .catch(() => {
+            const nb = document.getElementById('pmNewsBody');
+            if (nb) nb.innerHTML = '';
+          });
+      }
 
       // Wire up breakout header button
       const bkBtn = document.getElementById('playerModalBreakoutBtn');

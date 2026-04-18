@@ -4898,10 +4898,65 @@ def build_activity_body(ctx: dict) -> str:
             </div>
           </div>
         </div>
+
+        <div class="card small" id="nflNewsCard" style="margin-top:12px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>NFL News</h3>
+            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
+          </div>
+          <div id="nflNewsList" class="card-body" style="padding:0;">
+            <div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">Loading…</div>
+          </div>
+        </div>
       </aside>
     </div>
 
+    <script>
+    (function() {{
+      function loadNflNews() {{
+        var list = document.getElementById('nflNewsList');
+        if (!list) return;
+        fetch('/api/nfl-news?limit=12')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(data) {{
+            var items = data.news || [];
+            if (!items.length) {{
+              list.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">No news available.</div>';
+              return;
+            }}
+            list.innerHTML = items.map(function(n) {{
+              var linkOpen = n.url ? '<a href="' + n.url + '" target="_blank" rel="noopener" class="act-news-link">' : '<span>';
+              var linkClose = n.url ? '</a>' : '</span>';
+              return '<div class="act-news-item">' +
+                '<div class="act-news-headline">' + linkOpen + n.headline + linkClose + '</div>' +
+                (n.description ? '<div class="act-news-desc">' + n.description + '</div>' : '') +
+                '<div class="act-news-meta">' + [n.source, n.age].filter(Boolean).join(' · ') + '</div>' +
+              '</div>';
+            }}).join('');
+          }})
+          .catch(function() {{ /* fail silently */ }});
+      }}
+
+      if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', loadNflNews);
+      }} else {{
+        loadNflNews();
+      }}
+    }})();
+    </script>
+
     <style>
+      .act-news-item {{
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }}
+      .act-news-item:last-child {{ border-bottom: none; }}
+      .act-news-headline {{ font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 3px; }}
+      .act-news-link {{ color: var(--text); text-decoration: none; }}
+      .act-news-link:hover {{ text-decoration: underline; color: #3b82f6; }}
+      .act-news-desc {{ font-size: 11px; color: var(--text-muted); line-height: 1.35; margin-bottom: 3px; }}
+      .act-news-meta {{ font-size: 10px; color: var(--text-muted); opacity: .7; }}
+
       .bract-summary-grid {{
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -11261,6 +11316,38 @@ def api_trade_targets():
             for pos in needed_positions
         ],
     })
+
+
+@app.route("/api/player-news/<player_id>")
+def api_player_news(player_id: str):
+    """Recent news headlines for a single player (ESPN free API, 30-min cache)."""
+    try:
+        from utils.utils import load_players_index
+        from dashboard_services.news import get_player_news
+
+        players_index = load_players_index() or {}
+        meta = players_index.get(str(player_id)) or {}
+        name = meta.get("name") or meta.get("full_name") or ""
+        headshot = meta.get("espnHeadshot") or ""
+
+        items = get_player_news(player_name=name, espn_headshot=headshot, limit=4)
+        return jsonify({"player_id": player_id, "name": name, "news": items})
+    except Exception:
+        logger.exception("[player-news] error")
+        return jsonify({"player_id": player_id, "news": []}), 200
+
+
+@app.route("/api/nfl-news")
+def api_nfl_news():
+    """Latest NFL headlines for the activity feed sidebar (ESPN free API, 15-min cache)."""
+    try:
+        from dashboard_services.news import get_nfl_news
+        limit = min(int(request.args.get("limit") or 15), 30)
+        items = get_nfl_news(limit=limit)
+        return jsonify({"news": items})
+    except Exception:
+        logger.exception("[nfl-news] error")
+        return jsonify({"news": []}), 200
 
 
 if __name__ == "__main__":
