@@ -308,6 +308,17 @@ def build_trade_calculator_body(
       <aside class="otc-side">
         <div class="otc-side-stack">
 
+          <div class="otc-side-panel" id="tradeTargetsPanel" style="display:none;">
+            <div class="otc-mini-head">
+              <div class="otc-mini-head-row">
+                <h3 class="otc-mini-title">Trade Targets</h3>
+                <span class="otc-mini-badge">Your needs</span>
+              </div>
+              <div class="otc-mini-sub">Players to pursue based on your roster gaps</div>
+            </div>
+            <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
           <div class="otc-side-panel" id="tradeIntelPanel" style="display:none;">
             <div class="otc-mini-head">
               <div class="otc-mini-head-row">

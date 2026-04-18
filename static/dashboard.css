@@ -4672,6 +4672,37 @@ thead th {
   border: 1px solid var(--accent);
 }
 
+.os-waiver-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.os-waiver-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.waiver-signal {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.signal-breakout { background: #fef3c7; color: #92400e; }
+.signal-rising    { background: #dcfce7; color: #166534; }
+.signal-value     { background: #dbeafe; color: #1e40af; }
+.signal-aging     { background: #fee2e2; color: #991b1b; }
+.signal-hold      { background: var(--row); color: var(--text-muted); border: 1px solid var(--border); }
+
+.waiver-arrow-up   { font-size: 10px; font-weight: 700; color: #22c55e; }
+.waiver-arrow-down { font-size: 10px; font-weight: 700; color: #ef4444; }
+
 /* ============================================
    STANDINGS & RANKINGS
    ============================================ */
@@ -12044,3 +12075,60 @@ img, svg, canvas {
 .teams-sidebar .btm-meta { flex-wrap: wrap; gap: 4px; }
 .teams-sidebar .btm-window { font-size: 11px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
+
+/* ── Roster Intel ─────────────────────────────────────────────────────────── */
+.ri-team-block {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ri-team-block:last-child { border-bottom: none; }
+
+.ri-team-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.ri-player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  gap: 8px;
+}
+
+.ri-player-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ri-player-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ri-player-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ri-signal {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}

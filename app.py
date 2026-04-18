@@ -3268,57 +3268,146 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         for pid in (r.get("players") or [])
     }
 
-    top_waiver_assets = []
+    # --- Waiver Recommendations: gather candidates ---
+    waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
             continue
-
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
-
         if not pid or pid in rostered_ids:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-
         try:
             val = float(row.get("value") or 0.0)
         except Exception:
             val = 0.0
-
         if val <= 0:
             continue
 
-        top_waiver_assets.append({
+        try:
+            age = float(row.get("age") or 0)
+        except Exception:
+            age = 0.0
+
+        rank_change = row.get("rank_change_7d")
+
+        waiver_candidates.append({
+            "player_id": pid,
             "name": row.get("name") or players_index.get(pid, {}).get("name", "Unknown"),
             "position": pos,
             "team": row.get("team") or "",
             "value": val,
-            "age": row.get("age"),
+            "age": age,
             "pos_rank_label": row.get("pos_rank_label") or "",
-            "player_id": pid,
+            "rank_change_7d": rank_change,
         })
 
-    top_waiver_assets.sort(key=lambda x: x["value"], reverse=True)
+    # Bulk-fetch breakout scores for waiver candidates from DB
+    waiver_breakout: dict = {}
+    try:
+        _db_url = os.getenv("DATABASE_URL", "").strip()
+        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
+            from dashboard_services.db import get_conn as _gc
+            _pids = [c["player_id"] for c in waiver_candidates[:100]]
+            if _pids:
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """
+                            SELECT DISTINCT ON (player_id)
+                                player_id,
+                                breakout_opportunity_score
+                            FROM breakout_opportunity_scores
+                            WHERE player_id = ANY(%s)
+                            ORDER BY player_id, as_of_date DESC
+                            """,
+                            (_pids,),
+                        )
+                        for _r in _cur.fetchall():
+                            _r = dict(_r)
+                            if _r.get("breakout_opportunity_score") is not None:
+                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+    except Exception:
+        pass
+
+    # Age primes by position (peak dynasty window)
+    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+    def _waiver_pickup_score(c: dict) -> float:
+        val = c["value"]
+        age = c["age"] or 0
+        pos = c["position"]
+        rank_chg = c["rank_change_7d"] or 0
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+
+        # Trend bonus: up to +60 for strong 7d movement
+        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
+        # Breakout bonus: up to +50
+        breakout_bonus = min(bscore * 0.5, 50)
+        # Age bonus: peak age = +30, every year past prime = -10
+        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
+
+        return val + trend_bonus + breakout_bonus + age_bonus
+
+    def _waiver_signal(c: dict) -> tuple[str, str]:
+        """Return (badge_class, label) for the pickup signal."""
+        rank_chg = c["rank_change_7d"] or 0
+        age = c["age"] or 0
+        pos = c["position"]
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+
+        if bscore >= 55:
+            return ("signal-breakout", "Breakout")
+        if rank_chg >= 8:
+            return ("signal-rising", "Rising Fast")
+        if rank_chg >= 3:
+            return ("signal-rising", "Trending Up")
+        if age < prime - 2 and c["value"] >= 300:
+            return ("signal-value", "Value Play")
+        if age > prime + 2:
+            return ("signal-aging", "Sell Window")
+        return ("signal-hold", "Available")
+
+    waiver_candidates.sort(key=_waiver_pickup_score, reverse=True)
 
     waiver_html = []
-    for p in top_waiver_assets[:10]:
+    for p in waiver_candidates[:10]:
         sub_bits = [p["position"]]
         if p["team"]:
             sub_bits.append(p["team"])
         if p["pos_rank_label"]:
             sub_bits.append(p["pos_rank_label"])
-
+        if p["age"]:
+            sub_bits.append(f"Age {p['age']:.1f}")
         subline = " • ".join(sub_bits)
+
+        sig_cls, sig_label = _waiver_signal(p)
+
+        rank_arrow = ""
+        chg = p["rank_change_7d"]
+        if chg and chg != 0:
+            arrow_cls = "waiver-arrow-up" if chg > 0 else "waiver-arrow-down"
+            arrow_sym = "▲" if chg > 0 else "▼"
+            rank_arrow = f'<span class="{arrow_cls}">{arrow_sym}{abs(chg)}</span>'
 
         waiver_html.append(
             f"""
             <div class="os-waiver-row">
               <div class="os-waiver-main">
-                <div class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</div>
+                <div class="os-waiver-name-row">
+                  <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
+                  {rank_arrow}
+                </div>
                 <div class="os-waiver-sub">{subline}</div>
               </div>
-              <div class="os-waiver-value">{p['value']:.0f}</div>
+              <div class="os-waiver-right">
+                <span class="waiver-signal {sig_cls}">{sig_label}</span>
+                <span class="os-waiver-value">{p['value']:.0f}</span>
+              </div>
             </div>
             """
         )
@@ -3482,8 +3571,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Top Waiver Assets</h2>
-              <div class="os-section-subtitle">Best currently unrostered players by BR value</div>
+              <h2 class="os-section-title">Waiver Wire Targets</h2>
+              <div class="os-section-subtitle">Smart pickup recommendations — value + trend + breakout potential</div>
             </div>
             <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
@@ -5600,10 +5689,14 @@ def build_teams_body(ctx: dict) -> str:
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
           <button class="tab-btn active" data-tab="btm">Beat the Market</button>
+          <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
           <!-- <button class="tab-btn" data-tab="sos">Schedule</button> -->
           <!-- <button class="tab-btn" data-tab="draft">Draft</button> -->
           <div class="tab-panels">
             <div class="tab-panel active" data-tab="btm" id="btmPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <!-- <div class="tab-panel" data-tab="sos" id="sosPanel">
@@ -5779,13 +5872,76 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
 
+      function loadRosterIntel() {{
+        if (_loaded.rosterIntel) return;
+        _loaded.rosterIntel = true;
+        var panel = document.getElementById('rosterIntelPanel');
+        if (!panel) return;
+        fetch('/api/roster-intel?platform=' + _platform +
+              '&league_id=' + _leagueId + '&season=' + _season +
+              '&league_type=' + _leagueType)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+            var teams = data.teams || [];
+            if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }}
+
+            var sigColor = {{
+              'Core':           '#22c55e',
+              'Hold — Breakout':'#f59e0b',
+              'Sell High':      '#ef4444',
+              'Buy Window':     '#3b82f6',
+              'Hold':           'var(--text-muted)',
+              'Cut':            '#94a3b8',
+            }};
+            var sigBg = {{
+              'Core':           '#dcfce7',
+              'Hold — Breakout':'#fef3c7',
+              'Sell High':      '#fee2e2',
+              'Buy Window':     '#dbeafe',
+              'Hold':           'var(--row)',
+              'Cut':            'var(--row)',
+            }};
+
+            var html = '';
+            teams.forEach(function(t) {{
+              var actionPlayers = t.players.filter(function(p) {{
+                return p.signal === 'Sell High' || p.signal === 'Buy Window' || p.signal === 'Hold — Breakout';
+              }});
+              if (!actionPlayers.length) return;
+              html += '<div class="ri-team-block">' +
+                '<div class="ri-team-name">' + t.team_name + '</div>';
+              actionPlayers.slice(0, 5).forEach(function(p) {{
+                var chgHtml = '';
+                if (p.rank_change_7d && p.rank_change_7d !== 0) {{
+                  var sym = p.rank_change_7d > 0 ? '▲' : '▼';
+                  var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
+                  chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
+                }}
+                html += '<div class="ri-player-row">' +
+                  '<div class="ri-player-info">' +
+                    '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
+                    '<span class="ri-player-meta">' + p.position + (p.pos_rank_label ? ' · ' + p.pos_rank_label : '') + '</span>' +
+                  '</div>' +
+                  '<span class="ri-signal" style="background:' + (sigBg[p.signal]||'var(--row)') + ';color:' + (sigColor[p.signal]||'var(--text-muted)') + '">' + p.signal + '</span>' +
+                '</div>';
+              }});
+              html += '</div>';
+            }});
+
+            panel.innerHTML = html || '<p class="analytics-empty">All rosters look stable — no urgent actions flagged.</p>';
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
       // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
       function wireAnalyticsTabs() {{
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {{
           btn.addEventListener('click', function() {{
             var tab = btn.dataset.tab;
-            if (tab === 'btm')   loadBtm();
+            if (tab === 'btm')          loadBtm();
+            if (tab === 'roster-intel') loadRosterIntel();
             // if (tab === 'sos')   loadSos();
             // if (tab === 'draft') loadDraft();
           }});
@@ -10838,6 +10994,270 @@ def api_trade_intel_run_crawl():
     except Exception:
         logger.exception("[trade-intel/run-crawl] error")
         return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/roster-intel")
+def api_roster_intel():
+    """
+    Keeper/cut signals for every rostered player in a league.
+    Returns per-player hold/sell/buy/cut signals based on value trend, age, and position curve.
+    """
+    platform  = str(request.args.get("platform")  or "sleeper").strip()
+    league_id = str(request.args.get("league_id") or "").strip()
+    season    = int(request.args.get("season")    or datetime.now().year)
+    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rosters    = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+
+    # Build value lookup keyed by player_id
+    val_key = "sf_value" if league_type == "sf" else "value"
+    values_by_id: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        values_by_id[pid] = {
+            "value":           float(row.get(val_key) or row.get("value") or 0),
+            "age":             row.get("age"),
+            "position":        str(row.get("position") or "").upper(),
+            "pos_rank_label":  row.get("pos_rank_label") or "",
+            "rank_change_7d":  row.get("rank_change_7d"),
+            "name":            row.get("name") or "",
+            "team":            row.get("team") or "",
+        }
+
+    # Bulk-fetch breakout scores
+    all_rostered = [
+        str(pid)
+        for r in rosters
+        for pid in (r.get("players") or [])
+    ]
+    breakout_scores: dict = {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (player_id)
+                        player_id, breakout_opportunity_score
+                    FROM breakout_opportunity_scores
+                    WHERE player_id = ANY(%s)
+                    ORDER BY player_id, as_of_date DESC
+                    """,
+                    (all_rostered,),
+                )
+                for r in cur.fetchall():
+                    r = dict(r)
+                    if r.get("breakout_opportunity_score") is not None:
+                        breakout_scores[r["player_id"]] = float(r["breakout_opportunity_score"])
+    except Exception:
+        pass
+
+    # Prime age ceilings by position
+    prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+    def _signal(pid: str, info: dict) -> str:
+        val        = info["value"]
+        age        = float(info["age"] or 0)
+        pos        = info["position"]
+        rank_chg   = info["rank_change_7d"] or 0
+        prime      = prime_max.get(pos, 28)
+        bscore     = breakout_scores.get(pid, 0)
+        past_prime = age > prime
+
+        if val < 80:
+            return "Cut"
+        if val >= 400 and rank_chg >= 6:
+            return "Sell High"
+        if past_prime and val >= 300 and rank_chg >= 3:
+            return "Sell High"
+        if not past_prime and rank_chg <= -6 and val >= 200:
+            return "Buy Window"
+        if bscore >= 55 and not past_prime:
+            return "Hold — Breakout"
+        if val >= 500 and not past_prime:
+            return "Core"
+        if past_prime and val < 200:
+            return "Cut"
+        return "Hold"
+
+    signal_order = {"Sell High": 0, "Core": 1, "Hold — Breakout": 2,
+                    "Buy Window": 3, "Hold": 4, "Cut": 5}
+
+    result = []
+    players_index = ctx.get("players_index") or {}
+    for roster in rosters:
+        rid       = str(roster.get("roster_id"))
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        players   = []
+        for pid in (roster.get("players") or []):
+            pid = str(pid)
+            info = values_by_id.get(pid)
+            if not info:
+                continue
+            pos = info["position"]
+            if pos not in {"QB", "RB", "WR", "TE"}:
+                continue
+            sig = _signal(pid, info)
+            players.append({
+                "player_id":     pid,
+                "name":          info["name"] or players_index.get(pid, {}).get("name", pid),
+                "position":      pos,
+                "team":          info["team"],
+                "age":           info["age"],
+                "value":         round(info["value"], 0),
+                "pos_rank_label": info["pos_rank_label"],
+                "rank_change_7d": info["rank_change_7d"],
+                "signal":        sig,
+            })
+        players.sort(key=lambda p: signal_order.get(p["signal"], 9))
+        result.append({
+            "roster_id": rid,
+            "team_name": team_name,
+            "players":   players,
+        })
+
+    result.sort(key=lambda t: t["team_name"])
+    return jsonify({"teams": result})
+
+
+@app.route("/api/trade-targets")
+def api_trade_targets():
+    """
+    Suggest trade acquisition targets for the viewer's team based on positional needs.
+    Compares viewer's positional value vs league average, surfaces best available from other teams.
+    """
+    platform        = str(request.args.get("platform")        or "sleeper").strip()
+    league_id       = str(request.args.get("league_id")       or "").strip()
+    season          = int(request.args.get("season")          or datetime.now().year)
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    league_type     = str(request.args.get("league_type")     or "1qb").strip().lower()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "league_id and viewer_roster_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rosters           = ctx.get("rosters") or []
+    roster_map        = ctx.get("roster_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+    players_index     = ctx.get("players_index") or {}
+
+    val_key = "sf_value" if league_type == "sf" else "value"
+    values_by_id: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        values_by_id[pid] = {
+            "value":          float(row.get(val_key) or row.get("value") or 0),
+            "position":       str(row.get("position") or "").upper(),
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "rank_change_7d": row.get("rank_change_7d"),
+            "name":           row.get("name") or players_index.get(pid, {}).get("name", ""),
+            "team":           row.get("team") or "",
+            "age":            row.get("age"),
+        }
+
+    POSITIONS = ["QB", "RB", "WR", "TE"]
+
+    # Compute positional value per roster
+    def _pos_values(player_ids: list) -> dict:
+        totals = {p: 0.0 for p in POSITIONS}
+        for pid in player_ids:
+            info = values_by_id.get(str(pid))
+            if info and info["position"] in POSITIONS:
+                totals[info["position"]] += info["value"]
+        return totals
+
+    all_pos_values = {}
+    for roster in rosters:
+        rid = str(roster.get("roster_id"))
+        all_pos_values[rid] = _pos_values(roster.get("players") or [])
+
+    # League average per position
+    num_teams = len(rosters)
+    league_avg = {
+        pos: sum(all_pos_values[str(r.get("roster_id"))].get(pos, 0) for r in rosters) / max(num_teams, 1)
+        for pos in POSITIONS
+    }
+
+    viewer_vals = all_pos_values.get(viewer_roster_id, {p: 0.0 for p in POSITIONS})
+
+    # Positions where viewer is weakest vs league average (z-score style)
+    pos_gaps = {
+        pos: league_avg[pos] - viewer_vals.get(pos, 0)
+        for pos in POSITIONS
+    }
+    # Rank positions by gap (largest need first)
+    needed_positions = sorted(POSITIONS, key=lambda p: pos_gaps[p], reverse=True)
+
+    # Collect all non-viewer rostered players from other teams
+    other_team_players: list = []
+    for roster in rosters:
+        rid = str(roster.get("roster_id"))
+        if rid == viewer_roster_id:
+            continue
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        for pid in (roster.get("players") or []):
+            pid = str(pid)
+            info = values_by_id.get(pid)
+            if not info or info["position"] not in POSITIONS or info["value"] < 150:
+                continue
+            other_team_players.append({
+                "player_id":      pid,
+                "name":           info["name"],
+                "position":       info["position"],
+                "nfl_team":       info["team"],
+                "age":            info["age"],
+                "value":          round(info["value"], 0),
+                "pos_rank_label": info["pos_rank_label"],
+                "rank_change_7d": info["rank_change_7d"],
+                "owner_team":     team_name,
+                "owner_roster_id": rid,
+            })
+
+    # Score each candidate: high position need + high value + trending up
+    pos_need_rank = {pos: i for i, pos in enumerate(needed_positions)}
+
+    def _target_score(p: dict) -> float:
+        need  = max(0, pos_gaps.get(p["position"], 0))
+        val   = p["value"]
+        chg   = p["rank_change_7d"] or 0
+        return need * 0.4 + val * 0.5 + chg * 10
+
+    other_team_players.sort(key=_target_score, reverse=True)
+
+    # Return top 8 targets plus positional context
+    return jsonify({
+        "targets": other_team_players[:8],
+        "position_needs": [
+            {
+                "position": pos,
+                "gap": round(pos_gaps[pos], 0),
+                "viewer_value": round(viewer_vals.get(pos, 0), 0),
+                "league_avg": round(league_avg[pos], 0),
+            }
+            for pos in needed_positions
+        ],
+    })
 
 
 if __name__ == "__main__":
