@@ -7,7 +7,7 @@ from typing import Optional, List, Dict
 
 import requests
 
-from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values
+from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values, path_ktc_values
 
 # ---------------------------
 # Paths / constants
@@ -30,10 +30,105 @@ HEADERS = {
 }
 
 # ============================================================
-# KEEPTTRADECUT (KTC) SCRAPING VIA PLAYWRIGHT – placeholder
+# KEEPTRADECUT (KTC) – unofficial JSON API
 # ============================================================
 
-KTC_URL = "https://keeptradecut.com/dynasty-rankings?page=0"
+KTC_API_URL = "https://keeptradecut.com/api/rankings"
+
+
+def fetch_ktc_values(is_dynasty: bool = True) -> Optional[List[dict]]:
+    """
+    Fetch KTC dynasty (or redraft) rankings via their unofficial JSON endpoint.
+
+    Returns the raw list of player dicts on success, or None if the request
+    fails or returns unexpected data.  Always degrades gracefully so the
+    caller can continue without KTC data.
+    """
+    params = {
+        "filters": "QB,RB,WR,TE,RDPICKS",
+        "page": "0",
+        "format": "0" if is_dynasty else "1",
+    }
+    try:
+        resp = requests.get(KTC_API_URL, params=params, headers=HEADERS, timeout=15)
+        if not resp.ok:
+            print(f"[KTC] HTTP {resp.status_code} from {resp.url}")
+            return None
+        ct = resp.headers.get("Content-Type", "")
+        if "json" not in ct:
+            print(f"[KTC] Unexpected Content-Type: {ct} — skipping")
+            return None
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            print("[KTC] Response is not a non-empty list — skipping")
+            return None
+        return data
+    except Exception as e:
+        print(f"[KTC] Fetch failed: {e}")
+        return None
+
+
+def write_ktc_to_csv(
+        values: List[dict],
+        out_csv: Path = None,
+) -> None:
+    """Flatten KTC API response into a dated CSV."""
+    if out_csv is None:
+        out_csv = Path(path_ktc_values())
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    out_csv = Path(out_csv)
+    dirname = out_csv.parent
+    yesterday_file = dirname / f"ktc_rankings_{yesterday.isoformat()}.csv"
+    if yesterday_file.exists():
+        try:
+            yesterday_file.unlink()
+        except Exception:
+            pass
+
+    rows = []
+    for entry in values:
+        one_qb = entry.get("oneQBValues") or {}
+        sf = entry.get("superflexValues") or {}
+        rows.append({
+            "source":        "KTC",
+            "ktc_id":        entry.get("playerID") or entry.get("id"),
+            "name":          entry.get("playerName") or entry.get("name"),
+            "position":      entry.get("position"),
+            "team":          entry.get("team"),
+            "age":           entry.get("age"),
+            "ktc_value_1qb": one_qb.get("value"),
+            "ktc_rank_1qb":  one_qb.get("rank"),
+            "ktc_trend_1qb": one_qb.get("trend"),
+            "ktc_value_sf":  sf.get("value"),
+            "ktc_rank_sf":   sf.get("rank"),
+        })
+
+    _FIELDNAMES = [
+        "source", "ktc_id", "name", "position", "team", "age",
+        "ktc_value_1qb", "ktc_rank_1qb", "ktc_trend_1qb",
+        "ktc_value_sf", "ktc_rank_sf",
+    ]
+    print(f"[KTC] Writing {len(rows)} rows to {out_csv}")
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    with out_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def load_ktc_values(
+        csv_path: Path = None,
+) -> Optional[List[dict]]:
+    """Load today's KTC CSV if it exists; otherwise return None."""
+    if csv_path is None:
+        csv_path = Path(path_ktc_values())
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return None
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
 
 
 def fetch_fantasycalc_api_values(
@@ -255,5 +350,14 @@ def scrape_all_vendor_values(
 
     print("[external_values] Downloading DynastyProcess values.csv…")
     download_dynastyprocess_values_csv(out_csv=path_dynastyprocess_values())
+
+    # KTC is fetched last; failure is non-fatal so FC + DP are always written first
+    print("[external_values] Attempting KeepTradeCut rankings…")
+    ktc_data = fetch_ktc_values(is_dynasty=is_dynasty)
+    if ktc_data:
+        write_ktc_to_csv(ktc_data, out_csv=Path(path_ktc_values()))
+        print(f"[external_values] KTC: {len(ktc_data)} players saved.")
+    else:
+        print("[external_values] KTC unavailable — continuing without it.")
 
     print("[external_values] Done.")

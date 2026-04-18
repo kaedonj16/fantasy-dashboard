@@ -206,6 +206,10 @@ def path_dynastyprocess_values() -> str:
     return os.path.join(DATA_DIR, f"dynastyprocess_values_{date.today().isoformat()}.csv")
 
 
+def path_ktc_values() -> str:
+    return os.path.join(DATA_DIR, f"ktc_rankings_{date.today().isoformat()}.csv")
+
+
 # ------------------------------------------------
 # JSON / table IO
 # ------------------------------------------------

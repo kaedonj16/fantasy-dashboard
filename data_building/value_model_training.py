@@ -1131,6 +1131,51 @@ def rewrite_value_table_with_model() -> Path:
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
+    # Blend KTC rankings into 1QB vendor values (25% weight) when available.
+    # KTC uses player names rather than Sleeper IDs so we match by normalised name.
+    # Wrapped in broad try/except so a KTC format change never breaks the pipeline.
+    try:
+        from data_building.external_data.external_values_scraper import load_ktc_values
+        from utils.utils import load_players_index as _load_pi
+        ktc_rows = load_ktc_values()
+        if ktc_rows:
+            ktc_raw_vals = [
+                float(r["ktc_value_1qb"])
+                for r in ktc_rows
+                if r.get("ktc_value_1qb") and float(r["ktc_value_1qb"]) > 0
+            ]
+            if ktc_raw_vals:
+                ktc_max = max(ktc_raw_vals)
+                ktc_min = min(ktc_raw_vals)
+                ktc_range = max(ktc_max - ktc_min, 1.0)
+                # Build normalised name → value lookup
+                ktc_name_map: dict[str, float] = {}
+                for r in ktc_rows:
+                    raw_name = (r.get("name") or "").strip().lower()
+                    raw_val = r.get("ktc_value_1qb")
+                    if raw_name and raw_val and float(raw_val) > 0:
+                        ktc_name_map[raw_name] = (
+                            (float(raw_val) - ktc_min) / ktc_range * 899.9 + 100.0
+                        )
+                # Blend: if we have both FC and KTC use 75/25; if only KTC use it solo
+                for pid_str, meta in (_load_pi() or {}).items():
+                    pid = str(pid_str)
+                    pname = (meta.get("name") or "").strip().lower()
+                    ktc_val = ktc_name_map.get(pname)
+                    if not ktc_val:
+                        continue
+                    if pid in vendor_values:
+                        vendor_values[pid] = vendor_values[pid] * 0.75 + ktc_val * 0.25
+                    else:
+                        vendor_values[pid] = ktc_val
+                print(f"[DEBUG] KTC blend applied: {len(ktc_name_map)} players from KTC")
+            else:
+                print("[DEBUG] KTC rows present but no valid ktc_value_1qb entries")
+        else:
+            print("[DEBUG] KTC CSV not found — skipping KTC blend")
+    except Exception as _ktc_err:
+        print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
+
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
 
