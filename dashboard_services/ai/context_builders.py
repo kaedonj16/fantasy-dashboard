@@ -87,8 +87,8 @@ def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
     ]
     avg_age = sum(ages) / len(ages) if ages else 0.0
 
-    elite_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 6500)
-    strong_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 4500)
+    elite_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 750)
+    strong_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 550)
     firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
 
     if elite_assets >= 3 and avg_age and avg_age <= 27.5:
@@ -123,7 +123,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
     top_assets = roster_players[:8]
     aging_assets = [
         p for p in roster_players
-        if p.get("age") not in (None, "") and _safe_float(p.get("age")) >= 28 and _safe_float(p.get("value")) >= 2500
+        if p.get("age") not in (None, "") and _safe_float(p.get("age")) >= 28 and _safe_float(p.get("value")) >= 300
     ][:5]
 
     direction = detect_team_direction(roster_players, future_picks)
@@ -362,7 +362,7 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
     # Depth Score — positions with 2+ players worth >300
     pos_counts: dict[str, int] = {}
     for p in players:
-        if _safe_float(p.get("value")) >= 300:
+        if _safe_float(p.get("value")) >= 350:
             pos = str(p.get("position") or "?").upper()
             if pos in ("QB", "RB", "WR", "TE"):
                 pos_counts[pos] = pos_counts.get(pos, 0) + 1
@@ -387,8 +387,8 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
             capital += 10
     capital_score = min(int(capital / 3), 100)
 
-    # Elite Core Score — players above 5500
-    elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 5500)
+    # Elite Core Score — players above 700 (top-tier on 0-999 scale)
+    elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 700)
     elite_score = min(elite_count * 33, 100)
 
     total = (
@@ -429,8 +429,8 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
 # Roster Depth Warning (replaces league-wide positional scarcity)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Minimum value to count as "starter-caliber" at each position
-_STARTER_THRESHOLD = {"QB": 4000, "RB": 2500, "WR": 2500, "TE": 2500}
+# Minimum value to count as "starter-caliber" at each position (0-999 scale)
+_STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
 
 # How many starter-caliber players you need to feel safe at each position
 _DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
