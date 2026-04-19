@@ -2775,10 +2775,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorBox = document.getElementById("lookupError");
   const formPlatform = document.getElementById("formPlatform");
 
-  // ESPN elements - DISABLED
-  // const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
-  // const espnTeamName = document.getElementById("espnTeamName");
-  // const espnSubmitBtn = document.getElementById("espnSubmitBtn");
+  const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
+  const espnTeamName = document.getElementById("espnTeamName");
+  const espnSubmitBtn = document.getElementById("espnSubmitBtn");
+  const espnErrorBox = document.getElementById("espnError");
 
   if (!platformBtns.length) return;
 
@@ -2797,25 +2797,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (generateWrap) generateWrap.style.display = "none";
     if (errorBox) errorBox.style.display = "none";
 
-    // ESPN platform disabled
-    // if (platform === "espn") {
-    //   if (sleeperFlow) sleeperFlow.style.display = "none";
-    //   if (espnFlow) espnFlow.style.display = "block";
-    //   if (sleeperHint) sleeperHint.style.display = "none";
-    // } else {
+    if (platform === "espn") {
+      if (sleeperFlow) sleeperFlow.style.display = "none";
+      if (espnFlow) espnFlow.style.display = "block";
+      if (sleeperHint) sleeperHint.style.display = "none";
+    } else {
       if (sleeperFlow) sleeperFlow.style.display = "block";
       if (espnFlow) espnFlow.style.display = "none";
       if (sleeperHint) sleeperHint.style.display = "";
-    // }
+    }
   }
 
   // Platform switching
   platformBtns.forEach(btn => {
     btn.addEventListener("click", () => {
-      // Ignore clicks on disabled ESPN button
-      if (btn.dataset.platform === "espn" && btn.disabled) {
-        return;
-      }
+      if (btn.disabled) return;
       switchPlatform(btn.dataset.platform);
     });
   });
@@ -2931,20 +2927,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ESPN submit - DISABLED
-  /*
   if (espnSubmitBtn) {
     espnSubmitBtn.addEventListener("click", async () => {
       const leagueId = espnLeagueIdInput?.value.trim();
       if (!leagueId || !/^\d+$/.test(leagueId)) {
-        if (errorBox) {
-          errorBox.textContent = "Enter a valid ESPN League ID (numbers only).";
-          errorBox.style.display = "block";
+        if (espnErrorBox) {
+          espnErrorBox.textContent = "Enter a valid ESPN League ID (numbers only).";
+          espnErrorBox.style.display = "block";
         }
         return;
       }
 
-      if (errorBox) errorBox.style.display = "none";
+      if (espnErrorBox) espnErrorBox.style.display = "none";
       espnSubmitBtn.disabled = true;
       espnSubmitBtn.textContent = "Validating...";
 
@@ -2956,27 +2950,39 @@ document.addEventListener("DOMContentLoaded", () => {
           throw new Error(data.error || "Unable to load ESPN league.");
         }
 
-        // Inject league id into the form's league select and submit
-        leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "ESPN League"}</option>`;
+        // Populate the shared league select and submit the form
+        if (leagueSelect) {
+          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "ESPN League"}</option>`;
+        }
         if (formPlatform) formPlatform.value = "espn";
 
-        // Set optional team name as username for viewer matching
         const teamName = espnTeamName?.value.trim() || "";
         const formUsername = document.getElementById("formUsername");
         if (formUsername) formUsername.value = teamName;
 
+        // Save for the "Continue as" returning-user CTA
+        const seasonVal = document.querySelector('input[name="season"]')?.value || new Date().getFullYear();
+        if (teamName) {
+          localStorage.setItem("saved_viewer", JSON.stringify({
+            username: teamName,
+            league_id: leagueId,
+            platform: "espn",
+            season: seasonVal,
+            ts: Date.now(),
+          }));
+        }
+
         document.getElementById("leagueSelectForm")?.submit();
       } catch (err) {
-        if (errorBox) {
-          errorBox.textContent = err.message || "Unable to load ESPN league.";
-          errorBox.style.display = "block";
+        if (espnErrorBox) {
+          espnErrorBox.textContent = err.message || "Unable to load ESPN league.";
+          espnErrorBox.style.display = "block";
         }
         espnSubmitBtn.disabled = false;
-        espnSubmitBtn.textContent = "Go to Dashboard";
+        espnSubmitBtn.textContent = "Find My League";
       }
     });
   }
-  */
 
 });
 

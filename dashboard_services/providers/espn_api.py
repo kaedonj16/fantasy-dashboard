@@ -80,11 +80,15 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 
 @lru_cache(maxsize=16)
 def _league_cached(season: int, league_id: str) -> League:
+    # Credentials are optional — public leagues work without them;
+    # private leagues require ESPN_S2 + ESPN_SWID in the environment.
+    espn_s2 = (os.getenv("ESPN_S2") or "").strip() or None
+    swid = _normalize_swid(os.getenv("ESPN_SWID", "")) or None
     return League(
         league_id=int(league_id),
         year=int(season),
-        espn_s2=_require_env("ESPN_S2"),
-        swid=_normalize_swid(_require_env("ESPN_SWID")),
+        espn_s2=espn_s2,
+        swid=swid,
     )
 
 
@@ -429,13 +433,128 @@ def espn_get_bracket_like(
     return sorted(out, key=lambda x: (x["r"], x["m"]))
 
 
+@lru_cache(maxsize=32)
+def _all_transactions_cached(season: int, league_id: str) -> Dict[int, List[Dict[str, Any]]]:
+    """
+    Fetch all transactions for a season from ESPN's mTransactions2 view and
+    return them keyed by scoring-period (week) number.
+
+    Cached per season+league so the 18 per-week calls in build_week_activity
+    only hit the ESPN API once.
+    """
+    try:
+        lg = _league(season, league_id)
+        data = lg.espn_request.league_get(params={"view": "mTransactions2"})
+    except Exception as exc:
+        print(f"[ESPN] _all_transactions_cached failed: {exc}")
+        return {}
+
+    raw_txs = data.get("transactions") or []
+    espn_to_canon = _espn_to_canon_cached()
+
+    _TYPE_MAP = {
+        "WAIVER": "waiver",
+        "WAIVER_RESOLUTION": "waiver",
+        "FREE_AGENT": "free_agent",
+        "TRADE_ACCEPT": "trade",
+        "TRADE_ACCEPTED": "trade",
+    }
+
+    by_week: Dict[int, List[Dict[str, Any]]] = {}
+
+    for tx in raw_txs:
+        tx_type_raw = (tx.get("type") or "").upper()
+        tx_type = _TYPE_MAP.get(tx_type_raw)
+        if not tx_type:
+            continue
+
+        # Only fully-executed transactions
+        exec_type = (tx.get("executionType") or "").upper()
+        if exec_type not in ("EXECUTE", "EXECUTED", "PROCESS"):
+            continue
+
+        scoring_period = int(tx.get("scoringPeriodId") or 0)
+        process_ms = tx.get("processDate") or tx.get("proposedDate") or 0
+
+        adds: Dict[str, int] = {}
+        drops: Dict[str, int] = {}
+        roster_ids: set = set()
+
+        for item in tx.get("items") or []:
+            item_type = (item.get("type") or "").upper()
+            player_id = item.get("playerId")
+            from_team = item.get("fromTeamId")
+            to_team = item.get("toTeamId")
+
+            if not player_id or int(player_id) <= 0:
+                continue
+
+            cp = canon_pid(str(player_id), espn_to_canon)
+            if not cp:
+                continue
+
+            if item_type in ("ADDED", "WAIVER_ADDED", "PICKED_UP"):
+                if to_team:
+                    adds[cp] = int(to_team)
+                    roster_ids.add(int(to_team))
+            elif item_type in ("DROPPED", "WAIVER_DROPPED"):
+                if from_team:
+                    drops[cp] = int(from_team)
+                    roster_ids.add(int(from_team))
+            elif item_type == "TRADED_TO":
+                if to_team:
+                    adds[cp] = int(to_team)
+                    roster_ids.add(int(to_team))
+            elif item_type == "TRADED_FROM":
+                if from_team:
+                    drops[cp] = int(from_team)
+                    roster_ids.add(int(from_team))
+
+        if not adds and not drops:
+            continue
+
+        entry = {
+            "type": tx_type,
+            "adds": adds or None,
+            "drops": drops or None,
+            "roster_ids": sorted(roster_ids),
+            "draft_picks": [],
+            "status": "complete",
+            "created": int(process_ms),
+            "status_updated": int(process_ms),
+            "leg": scoring_period,
+            "transaction_id": str(tx.get("id") or ""),
+            "consenter_ids": [],
+            "metadata": {},
+        }
+
+        by_week.setdefault(scoring_period, []).append(entry)
+
+    return by_week
+
+
 def get_transactions(season: int, league_id: str, week: int) -> List[Dict[str, Any]]:
-    return []
+    """Return transactions for a specific week, fetching the full season once."""
+    return _all_transactions_cached(season, league_id).get(week, [])
 
 
 def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
-    """ESPN doesn't expose dynasty draft history via the API. Returns empty list."""
-    return []
+    """
+    Return a minimal draft record so has_draft_ended() works correctly.
+    ESPN seasons always have a completed draft; we use Aug 1 of the season
+    year as a conservative start_time so the draft is always treated as ended.
+    """
+    from datetime import datetime
+    start_ts_ms = int(datetime(int(season), 8, 1).timestamp() * 1000)
+    return [{
+        "draft_id": f"espn_{league_id}_{season}",
+        "league_id": str(league_id),
+        "season": int(season),
+        "season_type": "regular",
+        "start_time": start_ts_ms,
+        "status": "complete",
+        "type": "snake",
+    }]
 
 
 # ESPN slot name -> Sleeper roster position

@@ -306,9 +306,7 @@ FORM_BODY = """
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn" disabled style="opacity: 0.6; cursor: not-allowed;">
-              ESPN <span style="font-size: 0.75em; font-weight: 400;">(Coming Soon)</span>
-            </button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
           </div>
         </div>
 
@@ -325,24 +323,23 @@ FORM_BODY = """
         </div>
 
         <!-- ESPN Flow -->
-        <!-- DISABLED
         <div id="espnFlow" style="display:none;">
           <div class="row">
             <label for="espnLeagueIdInput">ESPN League ID</label>
-            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 123456789" autocomplete="off">
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
           <div class="row">
-            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional, to track your team)</span></label>
+            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
             <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
           </div>
           <div class="row">
-            <button type="button" id="espnSubmitBtn">Go to Dashboard</button>
+            <button type="button" id="espnSubmitBtn">Find My League</button>
           </div>
-          <p class="hint" style="margin-top:6px;">
-            ESPN private leagues require <code>ESPN_S2</code> and <code>ESPN_SWID</code> environment variables set on the server.
+          <div id="espnError" class="error-message" style="display:none;"></div>
+          <p class="hint" style="margin-top:6px;" id="espnHint">
+            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
           </p>
         </div>
-        -->
 
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -4922,12 +4919,8 @@ def build_activity_body(ctx: dict) -> str:
         )
 
     if not activity_html:
-        if platform == "espn":
-            _empty_title = "Activity not available for ESPN leagues"
-            _empty_copy = "Transaction history requires Sleeper league data. ESPN leagues currently show scores and standings only."
-        else:
-            _empty_title = "No recent activity yet"
-            _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
+        _empty_title = "No recent activity yet"
+        _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
             "<div class=’card’>"
             "  <div class=’card-body’>"
@@ -8054,20 +8047,6 @@ def page_history(platform: str, season: int, league_id: str):
         selected_history_season=selected_history_season,
         resolved_history_league_id=resolved_history_league_id,
     )
-
-    if platform == "espn":
-        espn_notice = (
-            "<div class='card' style='margin-bottom:16px;'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>Limited history for ESPN leagues</div>"
-            "      <div class='bract-empty-copy'>Full season recaps and AI-powered history analysis are optimized for Sleeper leagues. "
-            "Some data may be incomplete for ESPN.</div>"
-            "    </div>"
-            "  </div>"
-            "</div>"
-        )
-        body_html = espn_notice + body_html
 
     return render_page(
         "League History",
