@@ -1,59 +1,38 @@
 """
-ESPN snap count integration module.
+Snap count estimation and integration module.
 
-Fetches offensive snap counts from ESPN's player gamelog API.
-Falls back to usage-based estimation when the API is unavailable.
+CURRENT STATUS: Estimates snap share from usage statistics (targets + carries).
+This is a reasonable approximation since players with more touches typically
+get more snaps.
 
-Endpoint:
-  https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{id}/gamelog
-  ?season={year}
+FUTURE ENHANCEMENT: Replace with actual snap data from:
+- Official NFL Stats API (requires API key)
+- Paid data provider (FantasyData, SportsRadar, etc.)
+- Manual CSV upload from reliable source
 
-Data is cached to CACHE_DIR/espn_snap_counts_{season}.json so the season-long
-scrape (one request per skill player) only happens once per day.
+Formula: snap_share ≈ (targets + carries) / league_avg_touches × position_coefficient
 """
 
-from __future__ import annotations
-
-import json
-import time
-from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, Optional
-
-import requests
+from typing import Dict
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / "cache" / "snap_counts"
 
-_ESPN_GAMELOG = (
-    "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-    "/athletes/{espn_id}/gamelog"
-)
-
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json",
-    "Referer": "https://www.espn.com/",
-}
-
-# Skill positions we care about
-_SKILL_POSITIONS = {"QB", "RB", "WR", "TE"}
-
-# Position-specific coefficients for snap share estimation (fallback only)
+# Position-specific coefficients for snap share estimation
+# Based on typical NFL usage patterns
 SNAP_SHARE_COEFFICIENTS = {
-    "QB": 0.95,
-    "RB": 0.55,
-    "WR": 0.70,
-    "TE": 0.65,
+    "QB": 0.95,  # QBs play almost all offensive snaps when starting
+    "RB": 0.55,  # RBs typically split snaps more
+    "WR": 0.70,  # WRs often on field but not always targeted
+    "TE": 0.65,  # TEs block or run routes
 }
+
+# Average touches per game for a featured player at each position
 AVG_TOUCHES_FEATURED = {
-    "QB": 35,
-    "RB": 18,
-    "WR": 8,
-    "TE": 6,
+    "QB": 35,  # Passes
+    "RB": 18,  # Carries + targets
+    "WR": 8,  # Targets
+    "TE": 6,  # Targets
 }
 
 
@@ -61,237 +40,121 @@ def estimate_snap_share_from_usage(
         position: str,
         avg_targets: float,
         avg_carries: float,
-        avg_pass_att: float = 0.0,
+        avg_pass_att: float = 0.0
 ) -> float:
     """
-    Estimate offensive snap share from usage stats when real data is unavailable.
+    Estimate offensive snap share from usage statistics.
 
-    Returns estimated snap share (0-1).
+    This is an approximation based on the principle that players with more
+    touches typically play more snaps. The estimate won't be perfect but
+    provides a reasonable proxy when actual snap data isn't available.
+
+    Args:
+        position: Player position (QB, RB, WR, TE)
+        avg_targets: Average targets per game
+        avg_carries: Average carries per game
+        avg_pass_att: Average pass attempts per game (for QBs)
+
+    Returns:
+        Estimated snap share (0-1)
+
+    Examples:
+        - Featured RB with 15 carries + 4 targets = ~0.60 snap share
+        - WR1 with 10 targets = ~0.85 snap share
+        - Starting QB with 35 attempts = ~0.98 snap share
     """
     if position not in SNAP_SHARE_COEFFICIENTS:
         return 0.0
 
-    touches = avg_pass_att if position == "QB" else avg_targets + avg_carries
+    # Calculate total touches
+    if position == "QB":
+        touches = avg_pass_att
+    else:
+        touches = avg_targets + avg_carries
+
     if touches == 0:
         return 0.0
 
+    # Calculate touch rate relative to featured player at this position
     avg_featured = AVG_TOUCHES_FEATURED.get(position, 10)
-    touch_ratio = min(touches / avg_featured, 1.5)
-    estimated = touch_ratio * SNAP_SHARE_COEFFICIENTS[position]
-    return min(max(estimated, 0.0), 1.0)
+    touch_ratio = min(touches / avg_featured, 1.5)  # Cap at 150% of average
 
+    # Apply position coefficient
+    coefficient = SNAP_SHARE_COEFFICIENTS[position]
+    estimated_snap_share = touch_ratio * coefficient
 
-# ---------------------------------------------------------------------------
-# ESPN gamelog helpers
-# ---------------------------------------------------------------------------
+    # Cap between 0 and 1
+    return min(max(estimated_snap_share, 0.0), 1.0)
 
-def _fetch_espn_gamelog_snaps(
-        espn_id: str,
-        season: int,
-        week_set: set,
-        session: requests.Session,
-) -> Optional[Dict]:
-    """
-    Call ESPN's player gamelog endpoint for one player and extract snap counts.
-
-    Returns {avg_snaps, total_snaps, avg_snap_pct, games_played} or None.
-
-    ESPN gamelog structure (regular season = seasonType id "2"):
-      seasonTypes[].categories[].labels   → ["DATE", "OPP", ..., "SNP", "SNPP"]
-      seasonTypes[].categories[].events[] → [{id, stats: [values...]}]
-      events{}                            → {eventId: {week, ...}}
-    """
-    url = _ESPN_GAMELOG.format(espn_id=espn_id)
-    try:
-        resp = session.get(url, params={"season": season}, timeout=10)
-        if not resp.ok:
-            return None
-        data = resp.json()
-    except Exception:
-        return None
-
-    # Build week lookup: event_id → week number
-    event_week: Dict[str, int] = {}
-    for evt_id, evt in (data.get("events") or {}).items():
-        event_week[str(evt_id)] = int(evt.get("week") or 0)
-
-    # Regular season = seasonType id "2"
-    season_type = next(
-        (st for st in (data.get("seasonTypes") or []) if str(st.get("id")) == "2"),
-        None,
-    )
-    if not season_type:
-        return None
-
-    for category in season_type.get("categories") or []:
-        raw_labels = category.get("labels") or []
-        labels_upper = [str(l).upper() for l in raw_labels]
-
-        # SNP = snaps played, SNPP = snap percentage
-        snp_idx = next(
-            (i for i, l in enumerate(labels_upper) if l in ("SNP", "SNPS", "SNAPS")),
-            None,
-        )
-        snpp_idx = next(
-            (i for i, l in enumerate(labels_upper) if "SNP" in l and "%" in l),
-            None,
-        )
-        # some ESPN responses use "SNPP" without a literal "%" character
-        if snpp_idx is None:
-            snpp_idx = next(
-                (i for i, l in enumerate(labels_upper) if l in ("SNPP", "SNAP%", "SNP%")),
-                None,
-            )
-
-        if snp_idx is None:
-            continue
-
-        snaps_list: list[int] = []
-        pct_list: list[float] = []
-
-        for event_entry in category.get("events") or []:
-            evt_id = str(event_entry.get("id") or "")
-            week = event_week.get(evt_id, 0)
-            if week_set and week not in week_set:
-                continue
-
-            stats = event_entry.get("stats") or []
-            try:
-                snaps = int(stats[snp_idx])
-            except (ValueError, TypeError, IndexError):
-                continue
-
-            if snaps <= 0:
-                continue
-
-            snaps_list.append(snaps)
-
-            if snpp_idx is not None and snpp_idx < len(stats):
-                try:
-                    pct_raw = float(str(stats[snpp_idx]).rstrip("%"))
-                    # ESPN returns 0-100 or 0-1 depending on the endpoint version
-                    pct = pct_raw / 100.0 if pct_raw > 1.0 else pct_raw
-                    pct_list.append(pct)
-                except (ValueError, TypeError):
-                    pass
-
-        if not snaps_list:
-            continue
-
-        return {
-            "avg_snaps": sum(snaps_list) / len(snaps_list),
-            "total_snaps": sum(snaps_list),
-            "avg_snap_pct": sum(pct_list) / len(pct_list) if pct_list else 0.0,
-            "games_played": len(snaps_list),
-        }
-
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def fetch_season_snap_counts(
         season: int,
-        weeks: range = range(1, 19),
-        players_index: Optional[Dict] = None,
+        weeks: range = range(1, 19)
 ) -> Dict[str, Dict]:
     """
-    Fetch offensive snap counts for all skill-position players via ESPN gamelog.
+    Fetch offensive snap counts for a season via nfl_data_py.
 
-    Results are cached to CACHE_DIR/espn_snap_counts_{season}.json and reused
-    for the rest of the day so repeated calls within a single build don't
-    re-hit ESPN's API.
+    Returns a dict keyed by player name:
+        {player_name: {avg_off_snap_pct, avg_off_snaps, total_off_snaps,
+                       position, team, games_played}}
 
-    Args:
-        season:         NFL season year (e.g. 2024).
-        weeks:          Regular-season weeks to include (default 1-18).
-        players_index:  Optional pre-loaded players_index dict.  If None the
-                        function loads it from cache automatically.
-
-    Returns:
-        Dict keyed by player name:
-            {avg_off_snap_pct, avg_off_snaps, total_off_snaps, position, team, games_played}
+    Falls back to {} if nfl_data_py is unavailable or returns no data
+    (sleeper_usage.py handles estimation in that case).
     """
-    cache_file = CACHE_DIR / f"espn_snap_counts_{season}.json"
+    try:
+        import nfl_data_py as nfl  # optional dependency; may not be installed
 
-    # Return today's cached file if it exists
-    if cache_file.exists():
-        try:
-            mtime_date = datetime.fromtimestamp(cache_file.stat().st_mtime).date()
-            if mtime_date == date.today():
-                with cache_file.open("r", encoding="utf-8") as fh:
-                    cached = json.load(fh)
-                print(f"[snap_counts] Loaded {len(cached)} players from cache ({season})")
-                return cached
-        except Exception:
-            pass  # stale or corrupt cache — re-fetch
-
-    # Load players_index if not supplied
-    if players_index is None:
-        try:
-            from utils.utils import load_players_index
-            players_index = load_players_index() or {}
-        except Exception as exc:
-            print(f"[snap_counts] Could not load players_index: {exc}")
+        df = nfl.import_snap_counts([season])
+        if df is None or df.empty:
+            print(f"[snap_counts] nfl_data_py returned empty snap data for {season}")
             return {}
 
-    week_set = set(weeks)
-    session = requests.Session()
-    session.headers.update(_HEADERS)
+        # Regular-season weeks only
+        week_set = set(weeks)
+        if "week" in df.columns:
+            df = df[df["week"].isin(week_set)]
+        if "game_type" in df.columns:
+            df = df[df["game_type"] == "REG"]
 
-    result: Dict[str, Dict] = {}
-    total_queried = 0
+        name_col = next((c for c in ("pfr_player_name", "player_name", "player") if c in df.columns), None)
+        if name_col is None:
+            print("[snap_counts] snap data has no recognisable name column — skipping")
+            return {}
 
-    for pid, player in players_index.items():
-        espn_id = player.get("espnID") or player.get("espn_id")
-        if not espn_id:
-            continue
-
-        position = player.get("pos", "")
-        if position not in _SKILL_POSITIONS:
-            continue
-
-        name = player.get("name", "")
-        team = player.get("team", "") or ""
-
-        snap_info = _fetch_espn_gamelog_snaps(str(espn_id), season, week_set, session)
-
-        if snap_info and snap_info["games_played"] > 0:
-            result[name] = {
-                "avg_off_snap_pct": snap_info["avg_snap_pct"],
-                "avg_off_snaps": snap_info["avg_snaps"],
-                "total_off_snaps": snap_info["total_snaps"],
-                "position": position,
-                "team": team,
-                "games_played": snap_info["games_played"],
+        result: Dict[str, Dict] = {}
+        for player_name, grp in df.groupby(name_col):
+            off_snaps = grp["offense_snaps"] if "offense_snaps" in grp.columns else None
+            off_pct = grp["offense_pct"] if "offense_pct" in grp.columns else None
+            result[str(player_name)] = {
+                "avg_off_snap_pct": float(off_pct.mean()) if off_pct is not None else 0.0,
+                "avg_off_snaps": float(off_snaps.mean()) if off_snaps is not None else 0.0,
+                "total_off_snaps": int(off_snaps.sum()) if off_snaps is not None else 0,
+                "position": str(grp["position"].iloc[0]) if "position" in grp.columns else "",
+                "team": str(grp["team"].iloc[-1]) if "team" in grp.columns else "",
+                "games_played": len(grp),
             }
 
-        total_queried += 1
-        if total_queried % 100 == 0:
-            print(f"[snap_counts] {total_queried} players queried, {len(result)} with snap data…")
+        print(f"[snap_counts] Loaded snap counts for {len(result)} players ({season})")
+        return result
 
-        time.sleep(0.12)  # ~8 req/s — polite to ESPN's unofficial API
-
-    print(f"[snap_counts] ESPN: {len(result)}/{total_queried} players have snap data ({season})")
-
-    # Persist cache
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    with cache_file.open("w", encoding="utf-8") as fh:
-        json.dump(result, fh)
-
-    return result
+    except Exception as e:
+        print(f"[snap_counts] nfl_data_py unavailable ({e}) — using usage-based estimation")
+        return {}
 
 
 if __name__ == "__main__":
+    # Test fetching 2024 snap counts
     snap_data = fetch_season_snap_counts(2024, weeks=range(1, 19))
 
-    top = sorted(snap_data.items(), key=lambda x: x[1]["total_off_snaps"], reverse=True)
-    print(f"\nTop 10 players by total snaps ({len(snap_data)} total):")
-    for player_name, d in top[:10]:
-        print(
-            f"  {player_name} ({d['position']}, {d['team']}): "
-            f"{d['total_off_snaps']} snaps, "
-            f"{d['avg_off_snap_pct']:.1%} avg snap%"
-        )
+    # Show top 10 players by total snaps
+    sorted_players = sorted(
+        snap_data.items(),
+        key=lambda x: x[1]["total_off_snaps"],
+        reverse=True
+    )
+
+    print("\nTop 10 players by offensive snaps:")
+    for player_name, data in sorted_players[:10]:
+        print(f"{player_name} ({data['position']}, {data['team']}): "
+              f"{data['total_off_snaps']} snaps, "
+              f"{data['avg_off_snap_pct']:.1%} avg snap %")

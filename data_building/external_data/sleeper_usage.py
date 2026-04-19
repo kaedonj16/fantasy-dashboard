@@ -59,12 +59,12 @@ def build_usage_map_for_season(
     rz_map = fetch_season_redzone_stats(season)
     ts_map = fetch_league_target_share(season)
 
-    # players_index so we can map pid -> (team, name) and pass to snap fetcher
-    players_index = load_players_index() or {}
+    # NEW: Fetch Pro Football Reference snap counts
+    print(f"[build_usage] Fetching PFR snap counts for {season}...")
+    snap_counts_map = fetch_season_snap_counts(season, weeks)
 
-    # Fetch ESPN snap counts (passes players_index to avoid double-loading it)
-    print(f"[build_usage] Fetching ESPN snap counts for {season}...")
-    snap_counts_map = fetch_season_snap_counts(season, weeks, players_index=players_index)
+    # NEW: players_index so we can map pid -> (team, name)
+    players_index = load_players_index() or {}
 
     accum: Dict[str, Dict[str, float]] = {}
 
@@ -252,9 +252,11 @@ def build_usage_map_for_season(
             "target_share": acc.get("target_share", 0.0),
         }
 
-    # ---- Merge ESPN snap count data ----
-    print(f"[build_usage] Merging ESPN snap counts for {len(snap_counts_map)} players...")
+    # ---- Merge PFR snap count data ----
+    # Match players by name + team since PFR doesn't have Sleeper IDs
+    print(f"[build_usage] Merging PFR snap counts for {len(snap_counts_map)} players...")
 
+    players_index = load_players_index() or {}
     snap_matches = 0
 
     for pid, player_usage in usage.items():
