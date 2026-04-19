@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Union
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -303,4 +303,446 @@ def build_trade_ai_context(
             _safe_float(viewer_gets.get("effective_total")) - _safe_float(viewer_gives.get("effective_total")),
             1,
         ),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Roster Grade
+# ──────────────────────────────────────────────────────────────────────────────
+
+_GRADE_THRESHOLDS = [
+    (92, "A+"), (85, "A"), (78, "A-"),
+    (72, "B+"), (65, "B"), (58, "B-"),
+    (50, "C+"), (42, "C"), (35, "C-"),
+    (0, "D"),
+]
+
+_WIN_WINDOW_LABELS = {
+    ("contender", True): "Win-Now Window",
+    ("contender", False): "Aging Contender",
+    ("balanced", True): "Rising Contender",
+    ("balanced", False): "2-3 Year Window",
+    ("retool", True): "Retooling",
+    ("retool", False): "Retooling",
+    ("rebuild", True): "Full Rebuild",
+    ("rebuild", False): "Full Rebuild",
+}
+
+
+def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dict:
+    """
+    Score a dynasty roster across four dimensions and return a letter grade.
+
+    Dimensions:
+      Age Score (30%)  — based on avg age of top-8 players by value
+      Depth Score (25%) — positions with 2+ starters above 300 value
+      Capital Score (25%) — weighted pick capital (1st = 100, 2nd = 40, 3rd = 10)
+      Elite Core (20%) — count players above 5500 value
+
+    Returns dict with score (0-100), grade (A+ ... D), win_window label, breakdown.
+    """
+    top8 = players[:8]
+
+    # Age Score
+    ages = [_safe_float(p.get("age")) for p in top8 if p.get("age") not in (None, "")]
+    avg_age = sum(ages) / len(ages) if ages else 28.0
+    if avg_age <= 23:
+        age_score = 95
+    elif avg_age <= 25:
+        age_score = 85
+    elif avg_age <= 27:
+        age_score = 70
+    elif avg_age <= 28.5:
+        age_score = 55
+    elif avg_age <= 30:
+        age_score = 38
+    else:
+        age_score = 22
+
+    # Depth Score — positions with 2+ players worth >300
+    pos_counts: dict[str, int] = {}
+    for p in players:
+        if _safe_float(p.get("value")) >= 300:
+            pos = str(p.get("position") or "?").upper()
+            if pos in ("QB", "RB", "WR", "TE"):
+                pos_counts[pos] = pos_counts.get(pos, 0) + 1
+    deep_positions = sum(1 for cnt in pos_counts.values() if cnt >= 2)
+    depth_score = min(deep_positions * 25, 100)
+
+    # Capital Score — future picks weighted
+    capital = 0
+    for pk in future_picks:
+        display = str(pk.get("display") or pk.get("id") or "")
+        raw = str(pk.get("id") or "")
+        parts = raw.split("_") if "_" in raw else []
+        try:
+            rnd = int(parts[1]) if len(parts) >= 2 else (1 if "1st" in display or "1." in display else 2)
+        except Exception:
+            rnd = 3
+        if rnd == 1:
+            capital += 100
+        elif rnd == 2:
+            capital += 40
+        else:
+            capital += 10
+    capital_score = min(int(capital / 3), 100)
+
+    # Elite Core Score — players above 5500
+    elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 5500)
+    elite_score = min(elite_count * 33, 100)
+
+    total = (
+        age_score * 0.30
+        + depth_score * 0.25
+        + capital_score * 0.25
+        + elite_score * 0.20
+    )
+    total = round(total, 1)
+
+    grade = "D"
+    for threshold, letter in _GRADE_THRESHOLDS:
+        if total >= threshold:
+            grade = letter
+            break
+
+    direction = detect_team_direction(players, future_picks)
+    young = avg_age <= 26.5
+    win_window = _WIN_WINDOW_LABELS.get((direction, young), "Balanced")
+
+    return {
+        "score": total,
+        "grade": grade,
+        "win_window": win_window,
+        "breakdown": {
+            "age_score": age_score,
+            "depth_score": depth_score,
+            "capital_score": capital_score,
+            "elite_score": elite_score,
+            "avg_age": round(avg_age, 1),
+            "elite_count": elite_count,
+            "deep_positions": deep_positions,
+        },
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Positional Scarcity
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SCARCITY_POSITIONS = ("QB", "RB", "WR", "TE")
+_SCARCITY_TIERS = [
+    (0.85, "extreme"),
+    (0.70, "high"),
+    (0.50, "moderate"),
+    (0.0, "low"),
+]
+
+
+def calculate_positional_scarcity(
+        all_rosters: list[dict],
+        model_value_lookup: dict[str, dict],
+        num_teams: int,
+) -> dict[str, dict]:
+    """
+    Calculate how scarce each position is on the waiver wire.
+
+    For each position, we count the top-N players by value across all rosters
+    and compare to how many are owned vs free agents.
+
+    Returns: {pos: {top_n, owned, free_agents, scarcity_pct, tier}}
+    """
+    if num_teams < 1:
+        num_teams = 12
+
+    top_n_targets = {
+        "QB": max(1, int(num_teams * 0.75)),
+        "RB": max(1, int(num_teams * 1.5)),
+        "WR": max(1, int(num_teams * 1.5)),
+        "TE": max(1, int(num_teams * 0.75)),
+    }
+
+    # Gather all player values sorted by position
+    all_players_by_pos: dict[str, list[tuple[str, float]]] = {p: [] for p in _SCARCITY_POSITIONS}
+    for pid, row in model_value_lookup.items():
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        if pos not in _SCARCITY_POSITIONS:
+            continue
+        val = _safe_float(row.get("value") or row.get("model_value") or row.get("trade_value"))
+        if val > 0:
+            all_players_by_pos[pos].append((str(pid), val))
+
+    for pos in _SCARCITY_POSITIONS:
+        all_players_by_pos[pos].sort(key=lambda x: x[1], reverse=True)
+
+    # Collect owned player IDs
+    owned_ids: set[str] = set()
+    for roster in all_rosters:
+        for pid in roster.get("players") or []:
+            owned_ids.add(str(pid))
+
+    result: dict[str, dict] = {}
+    for pos in _SCARCITY_POSITIONS:
+        top_n = top_n_targets[pos]
+        top_players = all_players_by_pos[pos][:top_n]
+
+        owned = sum(1 for pid, _ in top_players if pid in owned_ids)
+        free_agents = top_n - owned
+        scarcity_pct = 1.0 - (free_agents / top_n) if top_n > 0 else 1.0
+
+        tier = "extreme"
+        for threshold, label in _SCARCITY_TIERS:
+            if scarcity_pct >= threshold:
+                tier = label
+                break
+
+        result[pos] = {
+            "top_n": top_n,
+            "owned": owned,
+            "free_agents": max(free_agents, 0),
+            "scarcity_pct": round(scarcity_pct, 3),
+            "tier": tier,
+        }
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Trade Suggestions Context
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_trade_suggestions_context(
+        ctx: dict,
+        viewer_roster_id: str,
+) -> dict | None:
+    """
+    Build context for proactive trade suggestions.
+
+    Identifies the viewer's positional needs/surplus, then finds leaguemates
+    with complementary surpluses/needs and specific player targets.
+    """
+    rosters = ctx.get("rosters") or []
+    roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+    if not roster:
+        return None
+
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    roster_map = ctx.get("roster_map") or {}
+    picks_by_roster = ctx.get("picks_by_roster") or {}
+
+    def _roster_pos_totals(r: dict) -> dict[str, float]:
+        totals: dict[str, float] = {pos: 0.0 for pos in _SCARCITY_POSITIONS}
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            mv = model_value_lookup.get(spid) or {}
+            pos = str(mv.get("position") or "").upper()
+            if pos in _SCARCITY_POSITIONS:
+                totals[pos] += _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+        return totals
+
+    def _roster_top_players(r: dict, pos: str, exclude_ids: set[str] | None = None) -> list[dict]:
+        out = []
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            mv = model_value_lookup.get(spid) or {}
+            p_pos = str(mv.get("position") or "").upper()
+            if p_pos != pos:
+                continue
+            if exclude_ids and spid in exclude_ids:
+                continue
+            val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+            if val > 0:
+                out.append({"id": spid, "name": str(mv.get("name") or spid), "value": round(val, 1), "position": pos})
+        return sorted(out, key=lambda x: x["value"], reverse=True)
+
+    # League-wide average positional totals
+    all_roster_totals = [_roster_pos_totals(r) for r in rosters]
+    league_avg: dict[str, float] = {}
+    if all_roster_totals:
+        for pos in _SCARCITY_POSITIONS:
+            league_avg[pos] = sum(t.get(pos, 0.0) for t in all_roster_totals) / len(all_roster_totals)
+
+    viewer_totals = _roster_pos_totals(roster)
+    viewer_player_ids = {str(pid) for pid in roster.get("players") or []}
+
+    # Classify viewer positions
+    viewer_needs = []
+    viewer_surplus = []
+    for pos in _SCARCITY_POSITIONS:
+        avg = league_avg.get(pos, 1.0)
+        if avg == 0:
+            continue
+        ratio = viewer_totals.get(pos, 0.0) / avg
+        if ratio < 0.80:
+            viewer_needs.append(pos)
+        elif ratio > 1.20:
+            viewer_surplus.append(pos)
+
+    # Find best trade partners
+    partners = []
+    for r in rosters:
+        rid = str(r.get("roster_id") or "")
+        if rid == str(viewer_roster_id):
+            continue
+
+        partner_totals = _roster_pos_totals(r)
+        partner_needs = []
+        partner_surplus = []
+        for pos in _SCARCITY_POSITIONS:
+            avg = league_avg.get(pos, 1.0)
+            if avg == 0:
+                continue
+            ratio = partner_totals.get(pos, 0.0) / avg
+            if ratio < 0.80:
+                partner_needs.append(pos)
+            elif ratio > 1.20:
+                partner_surplus.append(pos)
+
+        # Score compatibility: viewer's surplus matches partner's need and vice versa
+        match_score = 0
+        mutual_surplus_need = []
+        for pos in viewer_surplus:
+            if pos in partner_needs:
+                match_score += 2
+                mutual_surplus_need.append(pos)
+        for pos in partner_surplus:
+            if pos in viewer_needs:
+                match_score += 2
+
+        if match_score == 0:
+            continue
+
+        # Find specific player targets (partner's surplus positions that viewer needs)
+        targets_they_have = []
+        for pos in partner_surplus:
+            if pos in viewer_needs:
+                top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
+                targets_they_have.extend(top)
+
+        # Find what viewer could send (viewer's surplus that partner needs)
+        targets_viewer_sends = []
+        for pos in viewer_surplus:
+            if pos in partner_needs:
+                top = _roster_top_players(roster, pos)[:2]
+                targets_viewer_sends.extend(top)
+
+        partners.append({
+            "roster_id": rid,
+            "team_name": roster_map.get(rid) or f"Team {rid}",
+            "match_score": match_score,
+            "partner_needs": partner_needs,
+            "partner_surplus": partner_surplus,
+            "targets_they_have": targets_they_have[:3],
+            "targets_viewer_sends": targets_viewer_sends[:3],
+        })
+
+    partners.sort(key=lambda x: x["match_score"], reverse=True)
+
+    viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
+
+    return {
+        "viewer_team": viewer_team_ctx.get("team_name") or f"Roster {viewer_roster_id}",
+        "viewer_direction": viewer_team_ctx.get("direction") or "balanced",
+        "viewer_needs": viewer_needs,
+        "viewer_surplus": viewer_surplus,
+        "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
+        "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
+        "top_partners": partners[:5],
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Power Rankings Context
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_power_rankings_context(ctx: dict) -> dict:
+    """
+    Build context for AI-generated power rankings.
+
+    For each roster, compute a PowerScore:
+      0.30 * Z(PF) + 0.40 * Z(Win%) + 0.30 * Z(avg_roster_value)
+    Then pass top_assets and direction to AI for narrative generation.
+    """
+    rosters = ctx.get("rosters") or []
+    standings_map = ctx.get("standings_map") or {}
+    roster_map = ctx.get("roster_map") or {}
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+
+    team_data = []
+    for roster in rosters:
+        rid = str(roster.get("roster_id") or "")
+        settings = roster.get("settings") or {}
+        wins = _safe_int(settings.get("wins"))
+        losses = _safe_int(settings.get("losses"))
+        total_games = wins + losses
+        win_pct = wins / total_games if total_games > 0 else 0.0
+
+        fpts = _safe_float(settings.get("fpts")) + _safe_float(settings.get("fpts_decimal")) / 100.0
+        standing = standings_map.get(rid) or {}
+        pf = _safe_float(standing.get("PF") or fpts)
+
+        # Compute roster value
+        roster_players_vals = []
+        for pid in roster.get("players") or []:
+            mv = model_value_lookup.get(str(pid)) or {}
+            val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+            roster_players_vals.append(val)
+        avg_value = sum(roster_players_vals) / len(roster_players_vals) if roster_players_vals else 0.0
+
+        players_summary = summarize_roster_players(
+            roster=roster,
+            players_index=ctx.get("players_index") or {},
+            players_map=ctx.get("players_map") or {},
+            model_value_lookup=model_value_lookup,
+        )
+        future_picks = ctx.get("picks_by_roster", {}).get(rid, [])
+        direction = detect_team_direction(players_summary, future_picks)
+
+        team_data.append({
+            "roster_id": rid,
+            "team_name": roster_map.get(rid) or f"Team {rid}",
+            "wins": wins,
+            "losses": losses,
+            "win_pct": win_pct,
+            "pf": pf,
+            "avg_value": round(avg_value, 1),
+            "direction": direction,
+            "top_assets": players_summary[:5],
+            "future_picks": future_picks[:4],
+        })
+
+    if not team_data:
+        return {"teams": []}
+
+    # Z-score normalization
+    def _z_scores(values: list[float]) -> list[float]:
+        if len(values) < 2:
+            return [0.0] * len(values)
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
+        std = variance ** 0.5
+        if std == 0:
+            return [0.0] * len(values)
+        return [(v - mean) / std for v in values]
+
+    pf_vals = [t["pf"] for t in team_data]
+    win_vals = [t["win_pct"] for t in team_data]
+    val_vals = [t["avg_value"] for t in team_data]
+
+    pf_z = _z_scores(pf_vals)
+    win_z = _z_scores(win_vals)
+    val_z = _z_scores(val_vals)
+
+    for i, team in enumerate(team_data):
+        team["power_score"] = round(0.30 * pf_z[i] + 0.40 * win_z[i] + 0.30 * val_z[i], 3)
+
+    team_data.sort(key=lambda t: t["power_score"], reverse=True)
+
+    # Assign rank and momentum hint (prior rank not available without history; use score quartile)
+    for rank, team in enumerate(team_data, start=1):
+        team["rank"] = rank
+
+    return {
+        "season": ctx.get("current_season"),
+        "week": ctx.get("current_week"),
+        "teams": team_data,
     }

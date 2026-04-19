@@ -302,6 +302,165 @@ Trade context:
     return data
 
 
+def generate_power_rankings_result(rankings_ctx: dict) -> dict:
+    """
+    LLM-backed power rankings with narrative for each team.
+    Returns {rankings: [{roster_id, narrative, momentum}]}
+    """
+    client = get_ai_client()
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "rankings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "roster_id": {"type": "string"},
+                        "narrative": {"type": "string"},
+                        "momentum": {"type": "string", "enum": ["rising", "falling", "steady"]},
+                    },
+                    "required": ["roster_id", "narrative", "momentum"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["rankings"],
+        "additionalProperties": False,
+    }
+
+    system_prompt = """
+You are a sharp dynasty fantasy football analyst writing weekly power rankings.
+Write like a beat reporter — vivid, specific, grounded in the data provided.
+For each team, write one punchy sentence (max 30 words) explaining their ranking.
+Use team direction (contender/rebuild/retool/balanced) and top assets to frame the narrative.
+Assign momentum: rising (improving trajectory), falling (declining), or steady (holding).
+Use only the supplied JSON. Do not invent injuries, news, or player traits.
+""".strip()
+
+    user_prompt = f"""
+Generate power rankings narratives for each team.
+
+For each team in the "teams" array, produce:
+- roster_id: exact string from the data
+- narrative: one sentence (max 30 words) explaining their position
+- momentum: rising | falling | steady
+
+Base momentum on: win percentage trend vs avg value, and whether they're a contender/rebuild/retool.
+Contenders with high win% = steady or rising. Rebuilds with low win% = steady or falling.
+
+Return JSON matching the schema exactly.
+
+Rankings context:
+{json_dumps_safe(rankings_ctx)}
+""".strip()
+
+    resp = client.responses.create(
+        model=OPENAI_MODEL,
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "power_rankings",
+                "schema": schema,
+            }
+        },
+    )
+
+    raw = resp.output_text.strip()
+    data = json.loads(raw)
+
+    if not isinstance(data, dict):
+        raise ValueError("LLM power rankings did not return an object")
+
+    return data
+
+
+def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
+    """
+    LLM-backed proactive trade suggestions.
+    Returns {suggestions: [{title, partner_team, you_give, you_get, reasoning, urgency}]}
+    """
+    client = get_ai_client()
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "suggestions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "partner_team": {"type": "string"},
+                        "you_give": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "you_get": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "reasoning": {"type": "string"},
+                        "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
+                    },
+                    "required": ["title", "partner_team", "you_give", "you_get", "reasoning", "urgency"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["suggestions"],
+        "additionalProperties": False,
+    }
+
+    system_prompt = """
+You are a dynasty fantasy football GM assistant generating proactive trade ideas.
+You identify the viewer's positional needs/surplus and match them against leaguemates.
+Be specific: name exact players. Keep reasoning concise (max 2 sentences).
+Urgency: high = critical need or clear win-now move, medium = solid improvement, low = depth upgrade.
+Use only the supplied JSON. Do not invent players or values.
+""".strip()
+
+    user_prompt = f"""
+Generate up to 3 specific trade proposals for this dynasty team.
+
+The viewer's needs and surplus positions are provided, along with the best matching trade partners.
+For each suggestion, specify exact players by name (from targets_they_have and targets_viewer_sends).
+
+Return JSON matching the schema exactly.
+
+Trade suggestions context:
+{json_dumps_safe(suggestions_ctx)}
+""".strip()
+
+    resp = client.responses.create(
+        model=OPENAI_MODEL,
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "trade_suggestions",
+                "schema": schema,
+            }
+        },
+    )
+
+    raw = resp.output_text.strip()
+    data = json.loads(raw)
+
+    if not isinstance(data, dict):
+        raise ValueError("LLM trade suggestions did not return an object")
+
+    return data
+
+
 def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
     """
     LLM-backed team analysis with structured JSON output.

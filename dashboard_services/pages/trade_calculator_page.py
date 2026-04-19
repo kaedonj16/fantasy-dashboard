@@ -278,6 +278,7 @@ def build_trade_calculator_body(
                 <div id="tradeVerdict" class="otc-verdict">
                   Add players to both sides to see the trade balance.
                 </div>
+                <div id="tradeScarcityNotes" style="display:none;"></div>
                 <div id="errorBox" class="error" style="display:none;"></div>
               </div>
             </section>

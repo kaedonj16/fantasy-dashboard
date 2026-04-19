@@ -1842,6 +1842,22 @@ window.initTradePage = function initTradePage(root = document) {
         }
       }
 
+      // Scarcity notes for traded positions
+      const scarcityEl = document.getElementById('tradeScarcityNotes');
+      if (scarcityEl && data.scarcity && Object.keys(data.scarcity).length > 0) {
+        const tierLabel = {extreme: '🔴 Extreme', high: '🟠 High', moderate: '🟡 Moderate', low: '🟢 Low'};
+        let scarcityHtml = '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Position Scarcity</div><div class="scarcity-notes-list">';
+        for (const [pos, sd] of Object.entries(data.scarcity)) {
+          const label = tierLabel[sd.tier] || sd.tier;
+          scarcityHtml += `<div class="scarcity-note-row"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${label} scarcity</span><span class="scarcity-fa">${sd.free_agents} of ${sd.top_n} top players on wire</span></div>`;
+        }
+        scarcityHtml += '</div></div>';
+        scarcityEl.innerHTML = scarcityHtml;
+        scarcityEl.style.display = 'block';
+      } else if (scarcityEl) {
+        scarcityEl.style.display = 'none';
+      }
+
       if (errorBox) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
@@ -5256,6 +5272,78 @@ function closeTeamModal() {
   if (overlay) overlay.remove();
   if (modal) modal.remove();
   document.body.style.overflow = '';
+}
+
+async function checkTradeOutcome(btn) {
+  const card = btn.closest('.trade-card');
+  if (!card) return;
+  const resultEl = card.querySelector('.trade-outcome-result');
+  if (!resultEl) return;
+
+  if (resultEl.style.display === 'block') {
+    resultEl.style.display = 'none';
+    btn.textContent = '📊 Check Outcome';
+    return;
+  }
+
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+
+  try {
+    const teamsData = JSON.parse(btn.dataset.tradeTeams || '[]');
+    const tradeDate = btn.dataset.tradeDate || '';
+
+    // Use first team's perspective: what they received = assets_received, what they sent = assets_sent
+    const firstTeam = teamsData[0] || {};
+    const payload = {
+      assets_received: firstTeam.gets || [],
+      assets_sent: firstTeam.sends || [],
+      trade_date: tradeDate,
+    };
+
+    const res = await fetch('/api/trade-outcome', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      resultEl.innerHTML = `<p class="outcome-error">Could not load outcome data.</p>`;
+    } else {
+      const verdictCls = data.verdict === 'WIN' ? 'outcome-win' : data.verdict === 'LOSS' ? 'outcome-loss' : 'outcome-even';
+      const sign = data.net_delta_now >= 0 ? '+' : '';
+      let rows = '';
+      (data.received || []).forEach(r => {
+        const d = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
+        const cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
+        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-got">GOT</span><span class="outcome-val ${cls}">${d}</span></div>`;
+      });
+      (data.sent || []).forEach(r => {
+        const d = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
+        const cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
+        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-gave">GAVE</span><span class="outcome-val ${cls}">${d}</span></div>`;
+      });
+      resultEl.innerHTML = `
+        <div class="trade-outcome-wrap">
+          <div class="outcome-header">
+            <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
+            <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
+          </div>
+          <div class="outcome-rows">${rows}</div>
+          <div class="outcome-note">Value change since trade date based on current BR model values</div>
+        </div>`;
+    }
+
+    resultEl.style.display = 'block';
+    btn.textContent = '📊 Hide Outcome';
+  } catch (e) {
+    resultEl.innerHTML = `<p class="outcome-error">Error loading outcome.</p>`;
+    resultEl.style.display = 'block';
+    btn.textContent = '📊 Check Outcome';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function fetchTeamDetails(rosterId) {

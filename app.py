@@ -26,7 +26,14 @@ from flask import (
 from plotly.offline import get_plotlyjs
 
 from dashboard_services.ai.history_recap import get_history_ai_recap
-from dashboard_services.ai.renderer import get_team_gm_memo, get_front_office_briefing
+from dashboard_services.ai.renderer import (
+    get_team_gm_memo,
+    get_front_office_briefing,
+    get_power_rankings_html,
+    get_trade_suggestions_html,
+    get_roster_grade,
+    render_roster_grade_badge,
+)
 from dashboard_services.api import (
     avatar_from_users,
     build_league_history_map,
@@ -4806,10 +4813,32 @@ def build_activity_body(ctx: dict) -> str:
                 if pd.notna(txrow["ts"])
                 else ""
             )
+            # Build data payload for outcome check (sent/received per team)
+            trade_date_str = ""
+            if pd.notna(txrow["ts"]):
+                trade_date_str = txrow["ts"].strftime("%Y-%m-%d")
+
+            outcome_data = []
+            for tm in teams:
+                rid = tm.get("roster_id")
+                gets_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("gets") or []) if p.get("pid")]
+                sends_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("sends") or []) if p.get("pid")]
+                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": gets_pids, "sends": sends_pids})
+
+            import json as _json
+            outcome_json = _json.dumps(outcome_data).replace('"', '&quot;')
+            outcome_btn = (
+                f"<button class='outcome-check-btn' "
+                f"data-trade-teams='{outcome_json}' "
+                f"data-trade-date='{trade_date_str}' "
+                f"onclick='checkTradeOutcome(this)'>📊 Check Outcome</button>"
+            )
+            outcome_result_id = f"outcome_{trade_count}"
             return (
                 "<div class='tx trade-card activity-item' data-kind='trade'>"
-                f"  <div class='meta'>{pill('Trade completed')} • {when}</div>"
+                f"  <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
                 f"  <div class='teams'>{''.join(cols)}</div>"
+                f"  <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
                 "</div>"
             )
 
@@ -5597,6 +5626,29 @@ def build_teams_body(ctx: dict) -> str:
         ])
     _chart_y_max = round(max(_chart_all_pos_vals) * 1.15, 1) if _chart_all_pos_vals else 100.0
 
+    # Pre-compute roster grades for all teams
+    from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
+
+    def _grade_for_roster(r_id: int) -> dict:
+        roster_obj = next((r for r in rosters if r.get("roster_id") == r_id), {})
+        flat_players = []
+        for pid in roster_obj.get("players") or []:
+            row = by_id.get(str(pid))
+            if not row:
+                continue
+            pos = str(row.get("position") or row.get("pos") or "").upper()
+            if pos not in CORE_POS:
+                continue
+            val = float(row.get("value") or 0.0)
+            nm = str(row.get("name") or "").strip().lower()
+            age = name_to_age.get(nm)
+            flat_players.append({"position": pos, "value": val, "age": age})
+        flat_players.sort(key=lambda x: x["value"], reverse=True)
+        picks = picks_by_roster.get(str(r_id), [])
+        return _calc_grade(flat_players, picks)
+
+    team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
+
     # ----------------- Build HTML cards -----------------
     cards_html = []
 
@@ -5760,11 +5812,17 @@ def build_teams_body(ctx: dict) -> str:
             f"}})();</script>"
         )
 
+        _gdata = team_grades.get(rid, {})
+        _grade = _gdata.get("grade", "?")
+        _win_window = _gdata.get("win_window", "")
+        _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
+        _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
+
         card_html = (
             "<div class='card team-strength-card'>"
             "  <div class='card-header-row'>"
-            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2></div>"
-            f"    <div class='mini-label'>Positional Index: "
+            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
+            f"    <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
             f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
             "  </div>"
             "  <div class='card-body'>"
@@ -5811,6 +5869,8 @@ def build_teams_body(ctx: dict) -> str:
         <div class="tab-strip" id="teamsAnalyticsTabs">
           <button class="tab-btn active" data-tab="btm">Beat the Market</button>
           <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
+          <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
+          <button class="tab-btn" data-tab="trade-ideas">Trade Ideas</button>
           <!-- <button class="tab-btn" data-tab="sos">Schedule</button> -->
           <!-- <button class="tab-btn" data-tab="draft">Draft</button> -->
           <div class="tab-panels">
@@ -5818,6 +5878,12 @@ def build_teams_body(ctx: dict) -> str:
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="trade-ideas" id="tradeIdeasPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <!-- <div class="tab-panel" data-tab="sos" id="sosPanel">
@@ -6055,14 +6121,57 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
 
+      function loadPowerRankings() {{
+        if (_loaded.powerRankings) return;
+        _loaded.powerRankings = true;
+        var panel = document.getElementById('powerRankingsPanel');
+        if (!panel) return;
+        fetch('/api/power-rankings', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{platform: _platform, league_id: _leagueId, season: _season}})
+        }})
+          .then(r => r.json())
+          .then(data => {{
+            if (!data.success) {{ panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }}
+            panel.innerHTML = data.html || '<p class="analytics-empty">No rankings available.</p>';
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; }});
+      }}
+
+      function loadTradeIdeas() {{
+        if (_loaded.tradeIdeas) return;
+        _loaded.tradeIdeas = true;
+        var panel = document.getElementById('tradeIdeasPanel');
+        if (!panel) return;
+        var viewerRosterId = window._viewerRosterId || '';
+        if (!viewerRosterId) {{
+          panel.innerHTML = '<p class="analytics-empty">Log in and set your team to see trade suggestions.</p>';
+          return;
+        }}
+        fetch('/api/trade-suggestions', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{platform: _platform, league_id: _leagueId, season: _season, viewer_roster_id: viewerRosterId}})
+        }})
+          .then(r => r.json())
+          .then(data => {{
+            if (!data.success) {{ panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }}
+            panel.innerHTML = data.html || '<p class="analytics-empty">No suggestions at this time.</p>';
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load trade ideas.</p>'; }});
+      }}
+
       // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
       function wireAnalyticsTabs() {{
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {{
           btn.addEventListener('click', function() {{
             var tab = btn.dataset.tab;
-            if (tab === 'btm')          loadBtm();
-            if (tab === 'roster-intel') loadRosterIntel();
+            if (tab === 'btm')             loadBtm();
+            if (tab === 'roster-intel')    loadRosterIntel();
+            if (tab === 'power-rankings')  loadPowerRankings();
+            if (tab === 'trade-ideas')     loadTradeIdeas();
             // if (tab === 'sos')   loadSos();
             // if (tab === 'draft') loadDraft();
           }});
@@ -8509,6 +8618,150 @@ def api_gm_memo():
         }), 500
 
 
+@app.route("/api/power-rankings", methods=["POST"])
+@limiter.limit("6 per minute")
+def api_power_rankings():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+
+    if not league_id:
+        return jsonify({"error": "Missing league_id"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        html_out = get_power_rankings_html(ctx)
+        return jsonify({"success": True, "html": html_out})
+    except Exception as e:
+        logger.exception("[api-power-rankings] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/trade-suggestions", methods=["POST"])
+@limiter.limit("6 per minute")
+def api_trade_suggestions():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        html_out = get_trade_suggestions_html(ctx, viewer_roster_id)
+        return jsonify({"success": True, "html": html_out})
+    except Exception as e:
+        logger.exception("[api-trade-suggestions] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/roster-grade", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_roster_grade():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        grade_data = get_roster_grade(ctx, viewer_roster_id)
+        badge_html = render_roster_grade_badge(grade_data)
+        return jsonify({"success": True, "grade_data": grade_data, "badge_html": badge_html})
+    except Exception as e:
+        logger.exception("[api-roster-grade] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/trade-outcome", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_trade_outcome():
+    """
+    Compare the value delta of a past trade vs current values.
+    Expects: {assets_received: [{id, name}], assets_sent: [{id, name}], trade_date: 'YYYY-MM-DD'}
+    """
+    from dashboard_services.player_value_history import get_player_value_history
+
+    payload = request.get_json(force=True)
+    assets_received = payload.get("assets_received") or []
+    assets_sent = payload.get("assets_sent") or []
+
+    if not assets_received and not assets_sent:
+        return jsonify({"error": "No assets provided"}), 400
+
+    try:
+        value_table = get_model_value_table_cached()
+        values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+
+        trade_date = str(payload.get("trade_date") or "")
+
+        def get_value_at_trade(pid: str) -> float:
+            if not trade_date:
+                return 0.0
+            history = get_player_value_history(pid, days=365)
+            for snap in history:
+                if str(snap.get("as_of_date") or "").startswith(trade_date[:7]):
+                    return float(snap.get("value") or 0)
+            return 0.0
+
+        received_rows = []
+        sent_rows = []
+        total_received_now = 0.0
+        total_sent_now = 0.0
+        total_received_then = 0.0
+        total_sent_then = 0.0
+
+        for asset in assets_received:
+            pid = str(asset.get("id") or "")
+            name = str(asset.get("name") or pid)
+            now = values_now.get(pid, 0.0)
+            then = get_value_at_trade(pid) if trade_date else now
+            total_received_now += now
+            total_received_then += then
+            received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+
+        for asset in assets_sent:
+            pid = str(asset.get("id") or "")
+            name = str(asset.get("name") or pid)
+            now = values_now.get(pid, 0.0)
+            then = get_value_at_trade(pid) if trade_date else now
+            total_sent_now += now
+            total_sent_then += then
+            sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+
+        net_delta_now = round(total_received_now - total_sent_now, 1)
+        net_delta_then = round(total_received_then - total_sent_then, 1)
+
+        if net_delta_now > 150:
+            verdict = "WIN"
+        elif net_delta_now < -150:
+            verdict = "LOSS"
+        else:
+            verdict = "EVEN"
+
+        return jsonify({
+            "success": True,
+            "verdict": verdict,
+            "net_delta_now": net_delta_now,
+            "net_delta_then": net_delta_then,
+            "total_received_now": round(total_received_now, 1),
+            "total_sent_now": round(total_sent_now, 1),
+            "received": received_rows,
+            "sent": sent_rows,
+        })
+    except Exception as e:
+        logger.exception("[api-trade-outcome] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/trade-eval", methods=["POST"])
 @limiter.limit("10 per minute")
 def api_trade_eval():
@@ -8696,11 +8949,13 @@ def api_trade_eval():
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
     analysis_html = ""
+    scarcity_data = {}
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
 
     if league_id and viewer_roster_id:
         try:
+            from dashboard_services.ai.context_builders import calculate_positional_scarcity, build_model_value_lookup
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
@@ -8709,6 +8964,19 @@ def api_trade_eval():
                 side_a=side_a,
                 side_b=side_b,
             )
+            # Compute positional scarcity for traded positions
+            traded_positions = {
+                str(a.get("position") or "").upper()
+                for side in (side_a, side_b)
+                for a in (side.get("assets") or [])
+                if str(a.get("position") or "").upper() not in ("PICK", "")
+            }
+            if traded_positions:
+                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+                rosters = ctx.get("rosters") or []
+                num_teams = len(rosters) or 12
+                all_scarcity = calculate_positional_scarcity(rosters, model_value_lookup, num_teams)
+                scarcity_data = {pos: data for pos, data in all_scarcity.items() if pos in traded_positions}
         except Exception as e:
             print(f"[trade-ai] skipped: {e}")
             analysis_html = ""
@@ -8722,6 +8990,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
         "analysis_html": analysis_html,
+        "scarcity": scarcity_data,
     })
 
 
