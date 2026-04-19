@@ -12448,6 +12448,10 @@ img, svg, canvas {
 }
 .scarcity-tier { font-weight: 600; color: var(--text); }
 .scarcity-fa { color: var(--text-muted); }
+.depth-danger .scarcity-tier { color: #991b1b; }
+.depth-caution .scarcity-tier { color: #92400e; }
+.depth-danger { background: #fff5f5; border-radius: 4px; padding: 2px 4px; }
+.depth-caution { background: #fffbeb; border-radius: 4px; padding: 2px 4px; }
 
 /* ── Trade Outcome Tracker ───────────────────────────── */
 .outcome-check-btn {

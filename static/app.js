@@ -1842,20 +1842,24 @@ window.initTradePage = function initTradePage(root = document) {
         }
       }
 
-      // Scarcity notes for traded positions
+      // Roster depth warnings for the viewer's post-trade roster
       const scarcityEl = document.getElementById('tradeScarcityNotes');
-      if (scarcityEl && data.scarcity && Object.keys(data.scarcity).length > 0) {
-        const tierLabel = {extreme: '🔴 Extreme', high: '🟠 High', moderate: '🟡 Moderate', low: '🟢 Low'};
-        let scarcityHtml = '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Position Scarcity</div><div class="scarcity-notes-list">';
-        for (const [pos, sd] of Object.entries(data.scarcity)) {
-          const label = tierLabel[sd.tier] || sd.tier;
-          scarcityHtml += `<div class="scarcity-note-row"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${label} scarcity</span><span class="scarcity-fa">${sd.free_agents} of ${sd.top_n} top players on wire</span></div>`;
+      if (scarcityEl) {
+        const warnings = data.depth_warnings || {};
+        const entries = Object.entries(warnings).filter(([, w]) => w.warning);
+        if (entries.length > 0) {
+          let html = '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Roster Depth</div><div class="scarcity-notes-list">';
+          entries.forEach(([pos, w]) => {
+            const cls = w.severity === 'danger' ? 'depth-danger' : 'depth-caution';
+            const icon = w.severity === 'danger' ? '⚠️' : '⚡';
+            html += `<div class="scarcity-note-row ${cls}"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${icon} ${w.warning}</span></div>`;
+          });
+          html += '</div></div>';
+          scarcityEl.innerHTML = html;
+          scarcityEl.style.display = 'block';
+        } else {
+          scarcityEl.style.display = 'none';
         }
-        scarcityHtml += '</div></div>';
-        scarcityEl.innerHTML = scarcityHtml;
-        scarcityEl.style.display = 'block';
-      } else if (scarcityEl) {
-        scarcityEl.style.display = 'none';
       }
 
       if (errorBox) {

@@ -426,81 +426,105 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Positional Scarcity
+# Roster Depth Warning (replaces league-wide positional scarcity)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_SCARCITY_POSITIONS = ("QB", "RB", "WR", "TE")
-_SCARCITY_TIERS = [
-    (0.85, "extreme"),
-    (0.70, "high"),
-    (0.50, "moderate"),
-    (0.0, "low"),
-]
+# Minimum value to count as "starter-caliber" at each position
+_STARTER_THRESHOLD = {"QB": 4000, "RB": 2500, "WR": 2500, "TE": 2500}
+
+# How many starter-caliber players you need to feel safe at each position
+_DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 
 
-def calculate_positional_scarcity(
-        all_rosters: list[dict],
+def calculate_roster_depth_warning(
+        viewer_roster: dict,
         model_value_lookup: dict[str, dict],
-        num_teams: int,
+        sending_assets: list[dict],
+        receiving_assets: list[dict],
 ) -> dict[str, dict]:
     """
-    Calculate how scarce each position is on the waiver wire.
+    Warn when a trade leaves the viewer dangerously thin at a position.
 
-    For each position, we count the top-N players by value across all rosters
-    and compare to how many are owned vs free agents.
+    Simulates the post-trade roster: removes sent players, adds received players,
+    then counts starter-caliber players at each affected position.
 
-    Returns: {pos: {top_n, owned, free_agents, scarcity_pct, tier}}
+    Returns {pos: {before, after, warning, severity}} only for positions
+    where the trade changes depth or triggers a warning.
+    severity: 'danger' | 'caution' | None
     """
-    if num_teams < 1:
-        num_teams = 12
+    # Build current roster value map
+    roster_values: dict[str, dict] = {}
+    for pid in viewer_roster.get("players") or []:
+        spid = str(pid)
+        mv = model_value_lookup.get(spid) or {}
+        pos = str(mv.get("position") or "").upper()
+        val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+        if pos in _STARTER_THRESHOLD and val > 0:
+            roster_values[spid] = {"pos": pos, "val": val, "name": str(mv.get("name") or spid)}
 
-    top_n_targets = {
-        "QB": max(1, int(num_teams * 0.75)),
-        "RB": max(1, int(num_teams * 1.5)),
-        "WR": max(1, int(num_teams * 1.5)),
-        "TE": max(1, int(num_teams * 0.75)),
-    }
+    sending_ids = {str(a.get("id") or "") for a in sending_assets if a.get("id")}
+    receiving_map: dict[str, dict] = {}
+    for a in receiving_assets:
+        pid = str(a.get("id") or "")
+        pos = str(a.get("position") or "").upper()
+        val = _safe_float(a.get("value"))
+        if pid and pos in _STARTER_THRESHOLD and val > 0:
+            receiving_map[pid] = {"pos": pos, "val": val, "name": str(a.get("name") or pid)}
 
-    # Gather all player values sorted by position
-    all_players_by_pos: dict[str, list[tuple[str, float]]] = {p: [] for p in _SCARCITY_POSITIONS}
-    for pid, row in model_value_lookup.items():
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        if pos not in _SCARCITY_POSITIONS:
-            continue
-        val = _safe_float(row.get("value") or row.get("model_value") or row.get("trade_value"))
-        if val > 0:
-            all_players_by_pos[pos].append((str(pid), val))
-
-    for pos in _SCARCITY_POSITIONS:
-        all_players_by_pos[pos].sort(key=lambda x: x[1], reverse=True)
-
-    # Collect owned player IDs
-    owned_ids: set[str] = set()
-    for roster in all_rosters:
-        for pid in roster.get("players") or []:
-            owned_ids.add(str(pid))
+    # Identify positions actually touched by this trade
+    touched_positions: set[str] = set()
+    for a in sending_assets:
+        pos = str(a.get("position") or "").upper()
+        if pos in _STARTER_THRESHOLD:
+            touched_positions.add(pos)
+    for a in receiving_assets:
+        pos = str(a.get("position") or "").upper()
+        if pos in _STARTER_THRESHOLD:
+            touched_positions.add(pos)
 
     result: dict[str, dict] = {}
-    for pos in _SCARCITY_POSITIONS:
-        top_n = top_n_targets[pos]
-        top_players = all_players_by_pos[pos][:top_n]
+    for pos in touched_positions:
+        threshold = _STARTER_THRESHOLD[pos]
+        floor = _DEPTH_FLOOR[pos]
 
-        owned = sum(1 for pid, _ in top_players if pid in owned_ids)
-        free_agents = top_n - owned
-        scarcity_pct = 1.0 - (free_agents / top_n) if top_n > 0 else 1.0
+        # Count before
+        before = sum(
+            1 for pid, info in roster_values.items()
+            if info["pos"] == pos and info["val"] >= threshold
+        )
 
-        tier = "extreme"
-        for threshold, label in _SCARCITY_TIERS:
-            if scarcity_pct >= threshold:
-                tier = label
-                break
+        # Simulate: remove sent, add received
+        post_roster = {
+            pid: info for pid, info in roster_values.items()
+            if pid not in sending_ids
+        }
+        for pid, info in receiving_map.items():
+            if info["pos"] == pos:
+                post_roster[pid] = info
+
+        after = sum(1 for info in post_roster.values() if info["pos"] == pos and info["val"] >= threshold)
+
+        if after == before and after > floor:
+            continue  # No meaningful change, skip
+
+        warning = None
+        severity = None
+
+        if after == 0:
+            warning = f"You'll have no starter-caliber {pos} after this trade"
+            severity = "danger"
+        elif after < floor:
+            warning = f"Leaves you with only {after} starter-caliber {pos} (need {floor})"
+            severity = "danger" if after == 0 else "caution"
+        elif after < before:
+            warning = f"{pos} depth drops from {before} to {after} starters"
+            severity = "caution"
 
         result[pos] = {
-            "top_n": top_n,
-            "owned": owned,
-            "free_agents": max(free_agents, 0),
-            "scarcity_pct": round(scarcity_pct, 3),
-            "tier": tier,
+            "before": before,
+            "after": after,
+            "warning": warning,
+            "severity": severity,
         }
 
     return result

@@ -8966,13 +8966,13 @@ def api_trade_eval():
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
     analysis_html = ""
-    scarcity_data = {}
+    depth_warnings = {}
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
 
     if league_id and viewer_roster_id:
         try:
-            from dashboard_services.ai.context_builders import calculate_positional_scarcity, build_model_value_lookup
+            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
@@ -8981,19 +8981,16 @@ def api_trade_eval():
                 side_a=side_a,
                 side_b=side_b,
             )
-            # Compute positional scarcity for traded positions
-            traded_positions = {
-                str(a.get("position") or "").upper()
-                for side in (side_a, side_b)
-                for a in (side.get("assets") or [])
-                if str(a.get("position") or "").upper() not in ("PICK", "")
-            }
-            if traded_positions:
+            # Compute post-trade depth warnings for the viewer's roster
+            rosters = ctx.get("rosters") or []
+            viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+            if viewer_roster:
                 model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
-                rosters = ctx.get("rosters") or []
-                num_teams = len(rosters) or 12
-                all_scarcity = calculate_positional_scarcity(rosters, model_value_lookup, num_teams)
-                scarcity_data = {pos: data for pos, data in all_scarcity.items() if pos in traded_positions}
+                viewer_gives = side_b if viewer_side == "b" else side_a
+                viewer_gets = side_a if viewer_side == "a" else side_b
+                sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
+                receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
+                depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
         except Exception as e:
             print(f"[trade-ai] skipped: {e}")
             analysis_html = ""
@@ -9007,7 +9004,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
         "analysis_html": analysis_html,
-        "scarcity": scarcity_data,
+        "depth_warnings": depth_warnings,
     })
 
 
