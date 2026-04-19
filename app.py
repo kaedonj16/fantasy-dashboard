@@ -8698,19 +8698,36 @@ def api_trade_outcome():
         return jsonify({"error": "No assets provided"}), 400
 
     try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         value_table = get_model_value_table_cached()
         values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
 
         trade_date = str(payload.get("trade_date") or "")
+        trade_month = trade_date[:7] if trade_date else ""
 
         def get_value_at_trade(pid: str) -> float:
-            if not trade_date:
+            if not trade_month:
                 return 0.0
             history = get_player_value_history(pid, days=365)
             for snap in history:
-                if str(snap.get("as_of_date") or "").startswith(trade_date[:7]):
+                if str(snap.get("as_of_date") or "").startswith(trade_month):
                     return float(snap.get("value") or 0)
             return 0.0
+
+        all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
+        all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
+
+        # Fetch historical values in parallel
+        then_values: dict[str, float] = {}
+        if trade_date:
+            with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
+                futures = {pool.submit(get_value_at_trade, pid): pid for _, pid, _ in all_pids if pid}
+                for fut in as_completed(futures):
+                    pid = futures[fut]
+                    try:
+                        then_values[pid] = fut.result()
+                    except Exception:
+                        then_values[pid] = 0.0
 
         received_rows = []
         sent_rows = []
@@ -8723,7 +8740,7 @@ def api_trade_outcome():
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
             now = values_now.get(pid, 0.0)
-            then = get_value_at_trade(pid) if trade_date else now
+            then = then_values.get(pid, now) if trade_date else now
             total_received_now += now
             total_received_then += then
             received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
@@ -8732,7 +8749,7 @@ def api_trade_outcome():
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
             now = values_now.get(pid, 0.0)
-            then = get_value_at_trade(pid) if trade_date else now
+            then = then_values.get(pid, now) if trade_date else now
             total_sent_now += now
             total_sent_then += then
             sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
