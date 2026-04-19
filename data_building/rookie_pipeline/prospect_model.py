@@ -1375,6 +1375,68 @@ def calc_loaded_roster_adjustment(
     return min(multiplier, 1.18)
 
 
+def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
+    """
+    Data-driven crowded-room bonus based on CFBD-derived depth chart rank.
+
+    A WR2/RB2 who still puts up meaningful volume despite playing behind an
+    alpha shows elite underlying talent suppressed by opportunity, not a talent
+    deficit.  This generalises calc_loaded_roster_adjustment() to all teams
+    automatically, rather than requiring a manually curated list.
+
+    depth_rank=1  → no adjustment (face-value production)
+    depth_rank=2+ → bonus proportional to production volume and group size
+
+    Returns a multiplier in [1.0, 1.20].  Returns 1.0 when depth data is absent
+    (e.g. seed-only prospects), allowing the manual loaded_roster fallback to apply.
+    """
+    if not seasons:
+        return 1.0
+
+    ls = _latest_season(seasons)
+    if not ls:
+        return 1.0
+
+    depth_rank = ls.get("depth_rank")
+    group_size = ls.get("position_group_size")
+
+    if depth_rank is None or group_size is None:
+        return 1.0
+    if depth_rank == 1 or group_size < 2:
+        return 1.0
+
+    pos = position.upper()
+    gp = max(_safe(ls.get("games_played"), 12), 1)
+
+    # Thresholds (yds/game) that represent "still producing meaningfully"
+    # despite not being the WR1/RB1.
+    if pos in ("WR", "TE"):
+        vol = _safe(ls.get("receiving_yards")) / gp
+        tiers = {2: [(70, 0.12), (50, 0.08), (35, 0.05)],
+                 3: [(60, 0.15), (40, 0.10)]}
+    elif pos == "RB":
+        vol = _safe(ls.get("rush_yards")) / gp
+        tiers = {2: [(80, 0.12), (60, 0.08), (40, 0.05)],
+                 3: [(60, 0.15), (40, 0.10)]}
+    else:
+        return 1.0
+
+    rank_tiers = tiers.get(min(depth_rank, 3), [])
+    base_bonus = 0.0
+    for threshold, bonus in rank_tiers:
+        if vol >= threshold:
+            base_bonus = bonus
+            break
+
+    if base_bonus == 0.0:
+        return 1.0
+
+    # Scale up slightly for larger rooms — harder to carve out volume with more competition
+    group_factor = min(1.0, group_size / 4.0)
+    realized_bonus = base_bonus * (0.60 + 0.40 * group_factor)
+    return min(1.0 + realized_bonus, 1.20)
+
+
 def draft_capital_multiplier(round_selected: int) -> float:
     """
     Nonlinear draft capital modeling with tiered bonuses.
@@ -1629,16 +1691,24 @@ def score_prospect(
     production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics,
                                                 skip_sagarin=skip_sagarin)
     
-    # Apply loaded roster adjustment for players on talent-rich teams
+    # Apply crowded-room bonus: prefer data-driven depth rank when available,
+    # fall back to manually curated loaded_roster list when depth data is absent.
     ls = _latest_season(seasons) or {}
     team = ls.get("team", "")
     season = ls.get("season", 0)
     market_share = _safe(ls.get("market_share_yards"), 0.15)
-    
-    loaded_roster_adjustment = calc_loaded_roster_adjustment(
-        team, pos, season, production_score, market_share,
-        ypc=_safe(ls.get("yds_per_carry")),
-    )
+
+    depth_chart_adjustment = calc_depth_chart_adjustment(seasons, pos)
+
+    if depth_chart_adjustment != 1.0:
+        # CFBD depth rank data available — use data-driven adjustment
+        loaded_roster_adjustment = depth_chart_adjustment
+    else:
+        # No depth data (seed-only) — fall back to manually curated list
+        loaded_roster_adjustment = calc_loaded_roster_adjustment(
+            team, pos, season, production_score, market_share,
+            ypc=_safe(ls.get("yds_per_carry")),
+        )
     production_score = _clip(production_score * loaded_roster_adjustment)
     
     utilization_score   = calc_utilization_score(seasons, pos)
@@ -1883,6 +1953,9 @@ def score_prospect(
         "late_round_upside":             round(late_round_upside, 2),
         "translation_adjustment":        round(translation_adjustment, 2),
         "loaded_roster_adjustment":      round(loaded_roster_adjustment, 3),
+        "depth_chart_adjustment":        round(depth_chart_adjustment, 3),
+        "depth_rank":                    ls.get("depth_rank"),
+        "position_group_size":           ls.get("position_group_size"),
         "production_efficiency_interaction": round(interaction_features["production_efficiency_interaction"], 2),
         "athleticism_draft_capital_interaction": round(interaction_features["athleticism_draft_capital_interaction"], 2),
         "production_athleticism_interaction": round(interaction_features["production_athleticism_interaction"], 2),
