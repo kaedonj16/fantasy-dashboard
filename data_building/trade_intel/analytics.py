@@ -197,11 +197,11 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
     def _empty_acc() -> AccType:
         acc: AccType = {
-            "trade_count":    0,
-            "trade_count_7d": 0,
-            "trade_count_14d": 0,
-            "trade_count_30d": 0,
-            "buy_count":      0,
+            "trade_count":       0,
+            "trade_count_7d":    0,
+            "trade_count_14d":   0,
+            "trade_count_30d":   0,
+            "above_model_count": 0,  # trades where received > player model value
             # All-leagues decay-weighted pairs (primary / backward-compat signal)
             "recv_weighted_1qb": [],
             "recv_weighted_sf":  [],
@@ -248,8 +248,12 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
             s = stats[pid]
             s["trade_count"] += 1
-            s["buy_count"]   += 1
             s["pkg_all_1qb"].append(pkg_1qb)
+
+            # Demand premium: did the other side pay ≥ this player's model value?
+            player_model = values.get(pid, {}).get("value_1qb", 0)
+            if player_model > 0 and recv_1qb >= player_model:
+                s["above_model_count"] += 1
             s["recv_all_1qb"].append(recv_1qb)
             s["recv_all_sf"].append(recv_sf)
 
@@ -303,9 +307,10 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
         trend_1qb = round(m14_1qb - m90_1qb, 2) if (m14_1qb and m90_1qb) else None
         trend_sf  = round(m14_sf  - m90_sf,  2) if (m14_sf  and m90_sf)  else None
 
-        buy_count = s["buy_count"]
-        total     = buy_count
-        bsr       = round(buy_count / total, 3) if total else None
+        # Demand premium rate: fraction of trades where received ≥ player's model value.
+        # >0.6 = consistent buy pressure; <0.4 = sell pressure / owners dumping.
+        tc  = s["trade_count"]
+        bsr = round(s["above_model_count"] / tc, 3) if tc > 0 else None
 
         row = {
             "player_id":               player_id,
@@ -331,8 +336,8 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             "avg_package_value":       _avg(s["pkg_all_1qb"]),
             "avg_received_value":      _avg(s["recv_all_1qb"]),
             "avg_sent_value":          _avg(s["recv_all_1qb"]),
-            "buy_count":               buy_count,
-            "sell_count":              0,
+            "buy_count":               s["above_model_count"],
+            "sell_count":              tc - s["above_model_count"],
             "buy_sell_ratio":          bsr,
         }
 
