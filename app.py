@@ -11197,8 +11197,18 @@ def api_trade_intel_trending():
         season = int(request.args.get("season") or datetime.now().year)
         limit = min(int(request.args.get("limit") or 25), 50)
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
-        value_col = "market_value_sf" if league_type == "sf" else "market_value_1qb"
-        model_col = "value_sf" if league_type == "sf" else "value_1qb"
+        league_size = int(request.args.get("league_size") or 10)
+
+        fmt = "sf" if league_type == "sf" else "1qb"
+        model_col = f"value_{fmt}"
+
+        # Map league_size to the size-bucketed column, fall back to all-leagues
+        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+        sz_suffix = _SZ_MAP.get(league_size, "")
+        if sz_suffix:
+            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
+        else:
+            value_col_expr = f"s.market_value_{fmt}"
 
         with get_conn() as conn:
             rows = conn.execute(
@@ -11208,7 +11218,7 @@ def api_trade_intel_trending():
                     s.trade_count_7d,
                     s.trade_count_30d,
                     s.trade_count,
-                    s.{value_col}          AS market_value,
+                    {value_col_expr}       AS market_value,
                     s.buy_sell_ratio,
                     pv.{model_col}         AS model_value,
                     pv.position,
@@ -11265,16 +11275,25 @@ def api_trade_intel_player(player_id: str):
     try:
         season = int(request.args.get("season") or datetime.now().year)
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
-        value_col = "market_value_sf" if league_type == "sf" else "market_value_1qb"
-        raw_col   = "value_sf" if league_type == "sf" else "value_1qb"
-        cal_col   = "calibrated_value_sf" if league_type == "sf" else "calibrated_value_1qb"
+        league_size = int(request.args.get("league_size") or 10)
+
+        fmt     = "sf" if league_type == "sf" else "1qb"
+        raw_col = f"value_{fmt}"
+        cal_col = f"calibrated_value_{fmt}"
+
+        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+        sz_suffix = _SZ_MAP.get(league_size, "")
+        if sz_suffix:
+            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
+        else:
+            value_col_expr = f"s.market_value_{fmt}"
 
         with get_conn() as conn:
             stat_row = conn.execute(
                 f"""
                 SELECT
                     s.*,
-                    s.{value_col}                               AS market_value,
+                    {value_col_expr}                            AS market_value,
                     pv.{raw_col}                                AS model_value,
                     COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
                     pv.calibration_source,
