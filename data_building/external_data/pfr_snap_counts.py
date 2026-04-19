@@ -92,30 +92,54 @@ def fetch_season_snap_counts(
         weeks: range = range(1, 19)
 ) -> Dict[str, Dict]:
     """
-    STUB FUNCTION: Returns empty dict to disable snap scraping.
+    Fetch offensive snap counts for a season via nfl_data_py.
 
-    To populate snap counts, you have two options:
+    Returns a dict keyed by player name:
+        {player_name: {avg_off_snap_pct, avg_off_snaps, total_off_snaps,
+                       position, team, games_played}}
 
-    1. RECOMMENDED: Use a paid NFL stats API:
-       - NFL Stats API: https://api.nfl.com (requires key)
-       - FantasyData: https://fantasydata.com (paid)
-       - SportsRadar: https://developer.sportradar.com (paid)
-
-    2. MANUAL: Upload CSV file with snap counts:
-       - Export from your preferred source
-       - Place in cache/snap_counts/snap_counts_{season}.json
-       - Format: {player_name: {avg_off_snap_pct, avg_off_snaps, ...}}
-
-    Args:
-        season: NFL season year
-        weeks: Range of weeks (unused in stub)
-
-    Returns:
-        Empty dict (snap estimation happens in sleeper_usage.py instead)
+    Falls back to {} if nfl_data_py is unavailable or returns no data
+    (sleeper_usage.py handles estimation in that case).
     """
-    print(f"[snap_counts] Snap scraping disabled - using estimation from usage stats")
-    print(f"[snap_counts] To use real data, see function docstring for options")
-    return {}
+    try:
+        import nfl_data_py as nfl  # optional dependency; may not be installed
+
+        df = nfl.import_snap_counts([season])
+        if df is None or df.empty:
+            print(f"[snap_counts] nfl_data_py returned empty snap data for {season}")
+            return {}
+
+        # Regular-season weeks only
+        week_set = set(weeks)
+        if "week" in df.columns:
+            df = df[df["week"].isin(week_set)]
+        if "game_type" in df.columns:
+            df = df[df["game_type"] == "REG"]
+
+        name_col = next((c for c in ("pfr_player_name", "player_name", "player") if c in df.columns), None)
+        if name_col is None:
+            print("[snap_counts] snap data has no recognisable name column — skipping")
+            return {}
+
+        result: Dict[str, Dict] = {}
+        for player_name, grp in df.groupby(name_col):
+            off_snaps = grp["offense_snaps"] if "offense_snaps" in grp.columns else None
+            off_pct = grp["offense_pct"] if "offense_pct" in grp.columns else None
+            result[str(player_name)] = {
+                "avg_off_snap_pct": float(off_pct.mean()) if off_pct is not None else 0.0,
+                "avg_off_snaps": float(off_snaps.mean()) if off_snaps is not None else 0.0,
+                "total_off_snaps": int(off_snaps.sum()) if off_snaps is not None else 0,
+                "position": str(grp["position"].iloc[0]) if "position" in grp.columns else "",
+                "team": str(grp["team"].iloc[-1]) if "team" in grp.columns else "",
+                "games_played": len(grp),
+            }
+
+        print(f"[snap_counts] Loaded snap counts for {len(result)} players ({season})")
+        return result
+
+    except Exception as e:
+        print(f"[snap_counts] nfl_data_py unavailable ({e}) — using usage-based estimation")
+        return {}
 
 
 if __name__ == "__main__":
