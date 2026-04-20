@@ -848,6 +848,10 @@ def train_trade_value_model(
     for col in numeric_cols:
         df_model[col] = pd.to_numeric(df_model[col], errors="coerce")
 
+    # Drop columns that are entirely null — the median imputer can't handle them
+    # and emits a UserWarning. They carry no signal anyway.
+    numeric_cols = [c for c in numeric_cols if df_model[c].notna().any()]
+
     for col in cat_cols:
         df_model[col] = df_model[col].fillna("UNK").astype(str)
 
