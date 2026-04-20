@@ -292,26 +292,10 @@ def run_trade_value_model(
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
 
-    # Scale players above the prior ceiling into [prior_max, MAX_VALUE]
-    # so top players spread out rather than all piling at 999.9.
-    def _normalize_above_ceiling(v: np.ndarray, prior: np.ndarray) -> np.ndarray:
-        v = v.copy()
-        ceiling = float(np.max(prior))
-        mask = v > ceiling
-        if mask.any():
-            top = float(np.max(v[mask]))
-            if top > ceiling:
-                scale = (MAX_VALUE - ceiling) / (top - ceiling)
-                v[mask] = ceiling + (v[mask] - ceiling) * scale
-        return np.clip(v, 0.0, MAX_VALUE)
-
-    v_1qb = _normalize_above_ceiling(v_1qb, prior_1qb)
-    v_sf  = _normalize_above_ceiling(v_sf,  prior_sf)
-
     out_rows = []
     for i, pid in enumerate(player_ids):
-        cal_1qb = float(v_1qb[i])
-        cal_sf  = float(v_sf[i])
+        cal_1qb = float(np.clip(v_1qb[i], 0.0, MAX_VALUE))
+        cal_sf  = float(np.clip(v_sf[i],  0.0, MAX_VALUE))
         prior_v = prior[pid]["value_1qb"]
         # calibration_weight = fractional deviation from prior (0 = no change)
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0
