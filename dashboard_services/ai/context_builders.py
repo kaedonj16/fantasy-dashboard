@@ -655,7 +655,12 @@ def build_trade_suggestions_context(
                 })
                 _rookie_idx += 1
             else:
-                _projected_picks.append({"season": _pk.get("season"), "round": _rnd})
+                _projected_picks.append({
+                    "season": _pk.get("season"), 
+                    "round": _rnd,
+                    "proj_name": "TBD",
+                    "proj_pos": "TBD"
+                })
 
     if _pick_pos_credits:
         viewer_totals = {
@@ -738,6 +743,7 @@ def build_trade_suggestions_context(
         #  - If keeping 2 would leave nothing sendable, allow 1 only if the partner
         #    is sending that same position back (positional balance).
         getting_positions = {str(p.get("position", "")).upper() for p in targets_they_have}
+        partner_player_ids = {str(p.get("id")) for p in targets_they_have}
         targets_viewer_sends = []
         for pos in viewer_surplus:
             if pos not in partner_needs:
@@ -752,7 +758,7 @@ def build_trade_suggestions_context(
                     max_sendable = 1  # can spare 1 when getting that position back
                 else:
                     continue  # don't strip down to 0 at a position
-            top = _roster_top_players(roster, pos)[:min(2, max_sendable)]
+            top = _roster_top_players(roster, pos, exclude_ids=partner_player_ids)[:min(2, max_sendable)]
             targets_viewer_sends.extend(top)
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
@@ -795,7 +801,7 @@ def build_trade_suggestions_context(
             p for p in _projected_picks
             if p.get("round") in (1, 2)
         ] or [
-            {"season": pk.get("season"), "round": pk.get("round"), "proj_name": "", "proj_pos": "", "proj_val": 0}
+            {"season": pk.get("season"), "round": pk.get("round"), "proj_name": "TBD", "proj_pos": "TBD", "proj_val": 0}
             for pk in viewer_picks_list
             if pk.get("round") in (1, 2) and int(pk.get("season", 0)) <= _cur_yr + 1
         ]
