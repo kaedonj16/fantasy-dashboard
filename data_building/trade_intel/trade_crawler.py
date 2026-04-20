@@ -47,7 +47,10 @@ def _get(path: str) -> list | dict | None:
 def _current_nfl_week() -> int:
     state = _get("/state/nfl")
     if state and "week" in state:
-        return int(state["week"])
+        week = int(state["week"])
+        # Offseason: Sleeper reports week 0. Treat as end of season so all
+        # completed weeks (1-18) are eligible to crawl.
+        return week if week > 0 else _WEEKS_PER_SEASON
     return _WEEKS_PER_SEASON
 
 
