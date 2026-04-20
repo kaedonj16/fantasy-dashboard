@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -225,37 +226,47 @@ def _mark_crawled(league_id: str, week: int) -> None:
         )
 
 
-def run_crawl(batch_size: int = 200) -> dict:
+def _crawl_one(row: dict, end_week: int) -> tuple[str, int]:
+    """Crawl a single league. Runs inside a thread pool worker."""
+    league_id = row["league_id"]
+    season = row["season"]
+    start_week = (row["last_crawled_week"] or 0) + 1
+    if start_week > end_week:
+        return league_id, 0
+    try:
+        n = crawl_league(league_id, season, start_week=start_week, end_week=end_week)
+        return league_id, n
+    except Exception as exc:
+        logger.warning("[crawler] League %s failed: %s", league_id, exc)
+        return league_id, 0
+
+
+def run_crawl(batch_size: int = 200, workers: int = 5) -> dict:
     """
-    Crawl one batch of leagues. Designed to be called on a schedule
-    (e.g. every hour). Incremental: only fetches weeks since last crawl.
+    Crawl one batch of leagues in parallel.
+    workers controls how many leagues are fetched concurrently (default 5).
     """
     current_week = _current_nfl_week()
     leagues = _leagues_to_crawl(batch_size)
     total_trades = 0
     total_leagues = 0
 
-    logger.info("[crawler] Crawling %d leagues (current week: %d)", len(leagues), current_week)
-    print(f"[crawler] Crawling {len(leagues)} leagues")
+    logger.info("[crawler] Crawling %d leagues (week: %d, workers: %d)",
+                len(leagues), current_week, workers)
+    print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers")
 
-    for row in leagues:
-        league_id = row["league_id"]
-        season = row["season"]
-        start_week = (row["last_crawled_week"] or 0) + 1
-
-        if start_week > current_week:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_crawl_one, row, current_week): row["league_id"]
+            for row in leagues
+        }
+        for future in as_completed(futures):
+            league_id, n = future.result()
             _mark_crawled(league_id, current_week)
-            continue
-
-        try:
-            n = crawl_league(league_id, season, start_week=start_week, end_week=current_week)
-            _mark_crawled(league_id, current_week)
-            total_trades += n
-            total_leagues += 1
             if n > 0:
+                total_trades += n
+                total_leagues += 1
                 logger.info("[crawler] %s: +%d trades", league_id, n)
-        except Exception as exc:
-            logger.warning("[crawler] League %s failed: %s", league_id, exc)
 
     logger.info("[crawler] Done. %d new trades across %d leagues.", total_trades, total_leagues)
     print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")

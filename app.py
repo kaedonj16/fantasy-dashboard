@@ -11608,8 +11608,8 @@ def api_trade_targets():
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
 
-    # Compute positional value per roster
-    def _pos_values(player_ids: list) -> dict:
+    # Compute positional value totals per roster
+    def _pos_totals(player_ids: list) -> dict:
         totals = {p: 0.0 for p in POSITIONS}
         for pid in player_ids:
             info = values_by_id.get(str(pid))
@@ -11617,30 +11617,29 @@ def api_trade_targets():
                 totals[info["position"]] += info["value"]
         return totals
 
-    all_pos_values = {}
-    for roster in rosters:
-        rid = str(roster.get("roster_id"))
-        all_pos_values[rid] = _pos_values(roster.get("players") or [])
+    roster_totals = {str(r.get("roster_id")): _pos_totals(r.get("players") or []) for r in rosters}
+    num_teams = max(len(rosters), 1)
 
-    # League average per position
-    num_teams = len(rosters)
-    league_avg = {
-        pos: sum(all_pos_values[str(r.get("roster_id"))].get(pos, 0) for r in rosters) / max(num_teams, 1)
-        for pos in POSITIONS
-    }
+    # Rank each roster by positional total (1 = best)
+    pos_ranks: dict[str, dict] = {}  # pos -> {rid: rank}
+    for pos in POSITIONS:
+        sorted_rids = sorted(roster_totals.keys(), key=lambda rid: roster_totals[rid].get(pos, 0), reverse=True)
+        pos_ranks[pos] = {rid: i + 1 for i, rid in enumerate(sorted_rids)}
 
-    viewer_vals = all_pos_values.get(viewer_roster_id, {p: 0.0 for p in POSITIONS})
+    # Viewer is needy at a position if they rank in the bottom 35%
+    need_cutoff = max(1, round(num_teams * 0.35))
+    needed_positions = [
+        pos for pos in POSITIONS
+        if pos_ranks[pos].get(viewer_roster_id, num_teams) > num_teams - need_cutoff
+    ]
 
-    # Positions where viewer is weakest vs league average (z-score style)
-    pos_gaps = {
-        pos: league_avg[pos] - viewer_vals.get(pos, 0)
-        for pos in POSITIONS
-    }
-    # Rank positions by gap (largest need first)
-    needed_positions = sorted(POSITIONS, key=lambda p: pos_gaps[p], reverse=True)
+    if not needed_positions:
+        return jsonify({"by_position": {}, "position_ranks": {
+            pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS
+        }})
 
-    # Collect all non-viewer rostered players from other teams
-    other_team_players: list = []
+    # Collect players from other teams at needed positions only
+    by_position: dict[str, list] = {pos: [] for pos in needed_positions}
     for roster in rosters:
         rid = str(roster.get("roster_id"))
         if rid == viewer_roster_id:
@@ -11649,9 +11648,9 @@ def api_trade_targets():
         for pid in (roster.get("players") or []):
             pid = str(pid)
             info = values_by_id.get(pid)
-            if not info or info["position"] not in POSITIONS or info["value"] < 150:
+            if not info or info["position"] not in needed_positions or info["value"] < 150:
                 continue
-            other_team_players.append({
+            by_position[info["position"]].append({
                 "player_id":      pid,
                 "name":           info["name"],
                 "position":       info["position"],
@@ -11664,29 +11663,14 @@ def api_trade_targets():
                 "owner_roster_id": rid,
             })
 
-    # Score each candidate: high position need + high value + trending up
-    pos_need_rank = {pos: i for i, pos in enumerate(needed_positions)}
+    # Within each needed position sort by value desc, take top 4
+    for pos in needed_positions:
+        by_position[pos].sort(key=lambda p: p["value"], reverse=True)
+        by_position[pos] = by_position[pos][:4]
 
-    def _target_score(p: dict) -> float:
-        need  = max(0, pos_gaps.get(p["position"], 0))
-        val   = p["value"]
-        chg   = p["rank_change_7d"] or 0
-        return need * 0.4 + val * 0.5 + chg * 10
-
-    other_team_players.sort(key=_target_score, reverse=True)
-
-    # Return top 8 targets plus positional context
     return jsonify({
-        "targets": other_team_players[:8],
-        "position_needs": [
-            {
-                "position": pos,
-                "gap": round(pos_gaps[pos], 0),
-                "viewer_value": round(viewer_vals.get(pos, 0), 0),
-                "league_avg": round(league_avg[pos], 0),
-            }
-            for pos in needed_positions
-        ],
+        "by_position": {pos: by_position[pos] for pos in needed_positions if by_position[pos]},
+        "position_ranks": {pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS},
     })
 
 

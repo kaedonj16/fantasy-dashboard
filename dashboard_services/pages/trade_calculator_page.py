@@ -312,28 +312,6 @@ def build_trade_calculator_body(
       <aside class="otc-side">
         <div class="otc-side-stack">
 
-          <div class="otc-side-panel" id="tradeTargetsPanel" style="display:none;">
-            <div class="otc-mini-head">
-              <div class="otc-mini-head-row">
-                <h3 class="otc-mini-title">Trade Targets</h3>
-                <span class="otc-mini-badge">Your needs</span>
-              </div>
-              <div class="otc-mini-sub">Players to pursue based on your roster gaps</div>
-            </div>
-            <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;"></div>
-          </div>
-
-          <div class="otc-side-panel" id="tradeIntelPanel" style="display:none;">
-            <div class="otc-mini-head">
-              <div class="otc-mini-head-row">
-                <h3 class="otc-mini-title">Market Intel</h3>
-                <span class="otc-mini-badge">Real trades</span>
-              </div>
-              <div class="otc-mini-sub">How this trade compares across thousands of leagues</div>
-            </div>
-            <div id="tradeIntelBody" class="otc-mini-list" style="padding: 8px 12px; gap: 10px; display: flex; flex-direction: column;"></div>
-          </div>
-
           <div class="otc-side-panel otc-movers-panel">
             <div class="otc-mini-head">
               <div class="otc-mini-head-row">
@@ -341,6 +319,7 @@ def build_trade_calculator_body(
                 <div class="otc-mini-tabs">
                   <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
                   <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
+                  <button class="otc-mini-tab" data-tab="targets">Targets</button>
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
@@ -375,6 +354,14 @@ def build_trade_calculator_body(
                 </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="targetsTabContent" class="otc-tab-content">
+              <div class="otc-mini-section">
+                <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;">
+                  <div class="otc-movers-empty">Set your team to see targets.</div>
                 </div>
               </div>
             </div>

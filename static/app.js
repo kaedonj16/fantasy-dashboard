@@ -1119,6 +1119,7 @@ window.initTradePage = function initTradePage(root = document) {
     const tabButtons = root.querySelectorAll(".otc-mini-tab");
     const moversContent = root.querySelector("#moversTabContent");
     const breakoutsContent = root.querySelector("#breakoutsTabContent");
+    const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-day-filters");
 
@@ -1126,43 +1127,47 @@ window.initTradePage = function initTradePage(root = document) {
       btn.addEventListener("click", () => {
         const tab = btn.dataset.tab;
 
-        // Update active tab button
         tabButtons.forEach(b => b.classList.remove("is-active"));
         btn.classList.add("is-active");
 
-        // Update content visibility
+        moversContent?.classList.remove("is-active");
+        breakoutsContent?.classList.remove("is-active");
+        targetsContent?.classList.remove("is-active");
+
         if (tab === "movers") {
           moversContent?.classList.add("is-active");
-          breakoutsContent?.classList.remove("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
-            // Restore movers subtitle (will be updated by loadTopMovers)
             const leagueType = getLeagueType();
             const leagueSize = getLeagueSize();
             const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
             const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
             moversSub.textContent = `Biggest 7-day changes in ${leagueLabel}${sizeLabel} BR value`;
           }
-          // Show day filters for movers
-          if (dayFilters) {
-            dayFilters.style.display = "flex";
-          }
+          if (dayFilters) dayFilters.style.display = "flex";
+
         } else if (tab === "breakouts") {
-          moversContent?.classList.remove("is-active");
           breakoutsContent?.classList.add("is-active");
           if (moversSub) {
             moversSub.style.display = "block";
             moversSub.textContent = "Top 5 breakouts from Breakout Engine ";
           }
-          // Hide day filters for breakouts
-          if (dayFilters) {
-            dayFilters.style.display = "none";
-          }
-
-          // Load breakouts when tab is opened for the first time
-          if (!breakoutsContent.dataset.loaded) {
+          if (dayFilters) dayFilters.style.display = "none";
+          if (breakoutsContent && !breakoutsContent.dataset.loaded) {
             breakoutsContent.dataset.loaded = "true";
             loadBreakouts();
+          }
+
+        } else if (tab === "targets") {
+          targetsContent?.classList.add("is-active");
+          if (moversSub) {
+            moversSub.style.display = "block";
+            moversSub.textContent = "Players to pursue based on your roster gaps";
+          }
+          if (dayFilters) dayFilters.style.display = "none";
+          if (targetsContent && !targetsContent.dataset.loaded) {
+            targetsContent.dataset.loaded = "true";
+            loadTradeTargets();
           }
         }
       });
@@ -1666,24 +1671,25 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // loadTradeTargets — surfaces players to pursue based on roster gaps
+  // loadTradeTargets — surfaces players to pursue based on positional rank gaps
   // ------------------------------------------------------------
   async function loadTradeTargets() {
-    const panel = root.querySelector("#tradeTargetsPanel");
-    const body  = root.querySelector("#tradeTargetsBody");
-    if (!panel || !body) return;
+    const body = root.querySelector("#tradeTargetsBody");
+    if (!body) return;
 
     const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
     const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
     const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
-    if (!leagueId || !viewerRosterId) return;
 
-    // Extract platform from URL path (/sleeper/2026/<league_id>/trade)
+    if (!leagueId || !viewerRosterId) {
+      body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Set your team above to see targets.</div>';
+      return;
+    }
+
     const pathParts = window.location.pathname.split("/").filter(Boolean);
     const platform = pathParts[0] || "sleeper";
     const leagueType = getLeagueType();
 
-    panel.style.display = "block";
     body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Loading targets…</div>';
 
     try {
@@ -1696,43 +1702,38 @@ window.initTradePage = function initTradePage(root = document) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      const targets = data.targets || [];
-      const needs   = data.position_needs || [];
+      const grouped = data.by_position || {};
+      const needPositions = Object.keys(grouped);
 
-      if (!targets.length) {
-        body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">No targets found — your roster looks balanced.</div>';
+      if (!needPositions.length) {
+        body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Your roster looks balanced — no critical gaps found.</div>';
         return;
       }
 
-      // Show top 2 position needs as context
-      const needsHtml = needs.slice(0, 2).map(n => {
-        const gap = Math.round(n.gap);
-        if (gap <= 0) return "";
-        return `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#fee2e2;color:#991b1b;margin-right:4px;">${n.position} –${gap}</span>`;
-      }).join("");
-
-      let html = needsHtml
-        ? `<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;">${needsHtml}</div>`
-        : "";
-
       const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
 
-      html += targets.map(t => {
-        const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
-          ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
-          : "";
-        const col = posColor[t.position] || "var(--text-muted)";
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-            <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
-          </div>
-        </div>`;
-      }).join("");
+      let html = "";
+      needPositions.forEach(pos => {
+        const players = grouped[pos] || [];
+        if (!players.length) return;
+        const col = posColor[pos] || "var(--text-muted)";
+        html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} — need</div>`;
+        players.forEach(t => {
+          const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
+            ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
+            : "";
+          html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+              <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
+            </div>
+          </div>`;
+        });
+      });
 
       body.innerHTML = html;
     } catch (e) {
@@ -2295,7 +2296,7 @@ window.initTradePage = function initTradePage(root = document) {
             if (currentRosterId) selector.value = currentRosterId;
           }
 
-          if (selector.value) loadTradeTargets();
+          if (selector.value && root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();
           updateAnalyzeButtonState();
         })
         .catch(err => {
@@ -2306,7 +2307,7 @@ window.initTradePage = function initTradePage(root = document) {
     bindOnce(selector, "teamSelectorChange", "change", () => {
       const selectedRosterId = selector.value;
       if (selectedRosterId) {
-        loadTradeTargets();
+        if (root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();
         fetch("/api/set-viewer-roster", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2480,11 +2481,7 @@ window.initTradePage = function initTradePage(root = document) {
     syncEmptyState("B");
     recomputeTrade();
 
-    // Load trade targets on init if a team is already selected (league context)
-    setTimeout(() => {
-      const sel = root.querySelector("#teamSelect");
-      if (sel && sel.value) loadTradeTargets();
-    }, 800);
+    // Targets tab loads lazily when opened — no eager fetch needed
   });
 };
 
