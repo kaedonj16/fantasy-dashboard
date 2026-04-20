@@ -1165,8 +1165,7 @@ window.initTradePage = function initTradePage(root = document) {
             moversSub.textContent = "Players to pursue based on your roster gaps";
           }
           if (dayFilters) dayFilters.style.display = "none";
-          if (targetsContent && !targetsContent.dataset.loaded) {
-            targetsContent.dataset.loaded = "true";
+          if (targetsContent) {
             loadTradeTargets();
           }
         }
@@ -1704,36 +1703,53 @@ window.initTradePage = function initTradePage(root = document) {
 
       const grouped = data.by_position || {};
       const needPositions = Object.keys(grouped);
-
-      if (!needPositions.length) {
-        body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Your roster looks balanced — no critical gaps found.</div>';
-        return;
-      }
+      const allGrouped = data.all_positions || {};
+      const isBalanced = !needPositions.length;
 
       const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
 
-      let html = "";
-      needPositions.forEach(pos => {
-        const players = grouped[pos] || [];
-        if (!players.length) return;
+      function renderPlayerRow(t, pos, label) {
         const col = posColor[pos] || "var(--text-muted)";
-        html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} — need</div>`;
-        players.forEach(t => {
-          const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
-            ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
-            : "";
-          html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
-            <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-              <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
-            </div>
-          </div>`;
+        const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
+          ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
+          : "";
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+            <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
+          </div>
+        </div>`;
+      }
+
+      let html = "";
+
+      if (isBalanced) {
+        const allKeys = Object.keys(allGrouped);
+        if (!allKeys.length) {
+          body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">No player data available.</div>';
+          return;
+        }
+        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Your roster is balanced — top available at each position:</div>`;
+        allKeys.forEach(pos => {
+          const players = allGrouped[pos] || [];
+          if (!players.length) return;
+          const col = posColor[pos] || "var(--text-muted)";
+          html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos}</div>`;
+          players.forEach(t => { html += renderPlayerRow(t, pos, pos); });
         });
-      });
+      } else {
+        needPositions.forEach(pos => {
+          const players = grouped[pos] || [];
+          if (!players.length) return;
+          const col = posColor[pos] || "var(--text-muted)";
+          html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} — need</div>`;
+          players.forEach(t => { html += renderPlayerRow(t, pos, `${pos} — need`); });
+        });
+      }
 
       body.innerHTML = html;
     } catch (e) {

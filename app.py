@@ -11633,13 +11633,8 @@ def api_trade_targets():
         if pos_ranks[pos].get(viewer_roster_id, num_teams) > num_teams - need_cutoff
     ]
 
-    if not needed_positions:
-        return jsonify({"by_position": {}, "position_ranks": {
-            pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS
-        }})
-
-    # Collect players from other teams at needed positions only
-    by_position: dict[str, list] = {pos: [] for pos in needed_positions}
+    # Collect players from other teams (for both needs view and balanced fallback)
+    all_collected: dict[str, list] = {pos: [] for pos in POSITIONS}
     for roster in rosters:
         rid = str(roster.get("roster_id"))
         if rid == viewer_roster_id:
@@ -11648,29 +11643,37 @@ def api_trade_targets():
         for pid in (roster.get("players") or []):
             pid = str(pid)
             info = values_by_id.get(pid)
-            if not info or info["position"] not in needed_positions or info["value"] < 150:
+            if not info or info["position"] not in POSITIONS or info["value"] < 150:
                 continue
-            by_position[info["position"]].append({
-                "player_id":      pid,
-                "name":           info["name"],
-                "position":       info["position"],
-                "nfl_team":       info["team"],
-                "age":            info["age"],
-                "value":          round(info["value"], 0),
-                "pos_rank_label": info["pos_rank_label"],
-                "rank_change_7d": info["rank_change_7d"],
-                "owner_team":     team_name,
+            all_collected[info["position"]].append({
+                "player_id":       pid,
+                "name":            info["name"],
+                "position":        info["position"],
+                "nfl_team":        info["team"],
+                "age":             info["age"],
+                "value":           round(info["value"], 0),
+                "pos_rank_label":  info["pos_rank_label"],
+                "rank_change_7d":  info["rank_change_7d"],
+                "owner_team":      team_name,
                 "owner_roster_id": rid,
             })
 
-    # Within each needed position sort by value desc, take top 4
-    for pos in needed_positions:
-        by_position[pos].sort(key=lambda p: p["value"], reverse=True)
-        by_position[pos] = by_position[pos][:4]
+    for pos in POSITIONS:
+        all_collected[pos].sort(key=lambda p: p["value"], reverse=True)
+
+    position_ranks_out = {pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS}
+
+    if not needed_positions:
+        # Balanced team: return top 2 per position as a discovery/browsing view
+        all_positions = {pos: all_collected[pos][:2] for pos in POSITIONS if all_collected[pos]}
+        return jsonify({"by_position": {}, "all_positions": all_positions, "position_ranks": position_ranks_out})
+
+    by_position = {pos: all_collected[pos][:4] for pos in needed_positions if all_collected[pos]}
 
     return jsonify({
-        "by_position": {pos: by_position[pos] for pos in needed_positions if by_position[pos]},
-        "position_ranks": {pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS},
+        "by_position": by_position,
+        "all_positions": {},
+        "position_ranks": position_ranks_out,
     })
 
 

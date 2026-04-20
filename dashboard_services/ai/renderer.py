@@ -542,7 +542,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     cache_key = build_ai_cache_key(
         "trade_suggestions",
         {"roster_id": viewer_roster_id, "needs": suggestions_ctx.get("viewer_needs"), "surplus": suggestions_ctx.get("viewer_surplus")},
-        "v1",
+        "v2",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
@@ -612,14 +612,30 @@ def _render_trade_suggestions_from_data(suggestions: list[dict]) -> str:
         you_give = [html.escape(str(x)) for x in (s.get("you_give") or [])]
         you_get = [html.escape(str(x)) for x in (s.get("you_get") or [])]
 
-        give_html = "".join(f"<span class='suggestion-asset give'>{x}</span>" for x in you_give) or "<span>TBD</span>"
-        get_html = "".join(f"<span class='suggestion-asset get'>{x}</span>" for x in you_get) or "<span>TBD</span>"
+        if not you_give or not you_get:
+            continue  # skip incomplete suggestions (no named players on one side)
+
+        give_html = "".join(f"<span class='suggestion-asset give'>{x}</span>" for x in you_give)
+        get_html = "".join(f"<span class='suggestion-asset get'>{x}</span>" for x in you_get)
+
+        trade_type = (s.get("trade_type") or "swap").lower()
+        _type_labels = {
+            "up_tier":   ("Up Tier", "#047857"),
+            "down_tier": ("Down Tier", "#b45309"),
+            "swap":      ("Swap", "#0369a1"),
+        }
+        type_label, type_color = _type_labels.get(trade_type, ("Swap", "#0369a1"))
+        type_badge = (
+            f"<span style='font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;"
+            f"background:{type_color}18;color:{type_color};border:1px solid {type_color}40;'>"
+            f"{html.escape(type_label)}</span>"
+        )
 
         cards += f"""
         <div class="suggestion-card">
           <div class="suggestion-header">
             <div class="suggestion-title">{title}</div>
-            <div class="suggestion-urgency urgency-{urgency}">{urgency}</div>
+            <div style="display:flex;gap:5px;align-items:center;">{type_badge}<div class="suggestion-urgency urgency-{urgency}">{urgency}</div></div>
           </div>
           <div class="suggestion-partner">Partner: {partner}</div>
           <div class="suggestion-assets">

@@ -407,8 +407,9 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
                         },
                         "reasoning": {"type": "string"},
                         "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "trade_type": {"type": "string", "enum": ["up_tier", "down_tier", "swap"]},
                     },
-                    "required": ["title", "partner_team", "you_give", "you_get", "reasoning", "urgency"],
+                    "required": ["title", "partner_team", "you_give", "you_get", "reasoning", "urgency", "trade_type"],
                     "additionalProperties": False,
                 },
             }
@@ -419,12 +420,18 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
 
     system_prompt = """
 You are a dynasty fantasy football GM assistant generating proactive trade ideas.
-Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) exactly as given — do NOT override them.
-If viewer_needs is empty, do not suggest acquiring players at positions they don't need.
-Be specific: name exact players from targets_they_have and targets_viewer_sends.
-Keep reasoning concise (max 2 sentences).
-Urgency: high = critical need or clear win-now move, medium = solid improvement, low = depth upgrade.
-Use only the supplied JSON. Do not invent players or values.
+
+CRITICAL RULES — follow exactly:
+1. Only use players listed in targets_they_have for you_get and targets_viewer_sends for you_give.
+   Never invent players or write "TBD". If a list is empty, skip that partner.
+2. Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) as given — do NOT override them.
+3. trade_type must match trade_type_hint from the context exactly:
+   - up_tier: viewer receives more value than they give (acquiring up)
+   - down_tier: viewer gives more value than they receive (selling down for volume/need)
+   - swap: roughly even value exchange at different positions
+4. Keep reasoning concise (max 2 sentences). Lead with football logic, not raw numbers.
+5. Urgency: high = fills a critical need or clear win-now move, medium = solid positional improvement, low = depth upgrade.
+6. Use only the supplied JSON. Do not invent players, values, or roster needs.
 """.strip()
 
     user_prompt = f"""

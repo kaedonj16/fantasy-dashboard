@@ -692,6 +692,21 @@ def build_trade_suggestions_context(
                 top = _roster_top_players(roster, pos)[:2]
                 targets_viewer_sends.extend(top)
 
+        # Only include partners where both sides have named players (avoids TBD suggestions)
+        if not targets_they_have or not targets_viewer_sends:
+            continue
+
+        # Compute value sums and classify the trade type
+        value_you_get = round(sum(p["value"] for p in targets_they_have[:3]), 1)
+        value_you_give = round(sum(p["value"] for p in targets_viewer_sends[:3]), 1)
+
+        if value_you_give > 0 and value_you_get / value_you_give >= 1.20:
+            trade_type_hint = "up_tier"
+        elif value_you_get > 0 and value_you_give / value_you_get >= 1.20:
+            trade_type_hint = "down_tier"
+        else:
+            trade_type_hint = "swap"
+
         partners.append({
             "roster_id": rid,
             "team_name": roster_map.get(rid) or f"Team {rid}",
@@ -700,6 +715,9 @@ def build_trade_suggestions_context(
             "partner_surplus": partner_surplus,
             "targets_they_have": targets_they_have[:3],
             "targets_viewer_sends": targets_viewer_sends[:3],
+            "value_you_get": value_you_get,
+            "value_you_give": value_you_give,
+            "trade_type_hint": trade_type_hint,
         })
 
     partners.sort(key=lambda x: x["match_score"], reverse=True)
