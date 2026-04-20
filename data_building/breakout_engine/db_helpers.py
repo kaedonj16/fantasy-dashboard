@@ -581,17 +581,17 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
     query = """
         SELECT
             player_id::text                                         AS player_id,
-            name                                                    AS player_name,
+            NULL::text                                              AS player_name,
             position,
             team,
             COALESCE(age, 0.0)::float                              AS age,
             COALESCE(years_exp, GREATEST(0, ROUND(COALESCE(age, 22.5) - 22.5)::int)) AS years_exp
         FROM player_values
         WHERE position IN ('QB', 'RB', 'WR', 'TE')
-          AND overall_rank <= %(min_rank)s
-          AND overall_rank IS NOT NULL
+          AND value_1qb IS NOT NULL
           AND team IS NOT NULL AND team <> ''
-        ORDER BY overall_rank ASC
+        ORDER BY value_1qb DESC
+        LIMIT %(min_rank)s
     """
     try:
         with get_conn() as conn:
