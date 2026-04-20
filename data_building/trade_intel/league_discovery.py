@@ -65,14 +65,15 @@ def _seed_league_ids(season: int) -> Set[str]:
         rows = conn.execute(
             """
             SELECT league_id FROM trade_intel_leagues
-            WHERE season = %s
+            WHERE season IN (%s, %s)
             ORDER BY last_crawled_at ASC NULLS FIRST
             LIMIT 200
             """,
-            (season,)
+            (season, season - 1)
         ).fetchall()
     seeds = {r["league_id"] for r in rows}
-    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from", len(seeds))
+    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from (season %d or %d)",
+                len(seeds), season, season - 1)
     return seeds
 
 
