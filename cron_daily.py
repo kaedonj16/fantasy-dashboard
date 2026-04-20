@@ -268,6 +268,10 @@ def main():
             print(f"[cron] Trade intel analytics: {analytics_result}")
             wls_result = run_trade_value_model(season=season)
             print(f"[cron] Trade value model (WLS): {wls_result}")
+            # Rebuild the value JSON so calibrated values are baked in, not just overlaid
+            from data_building.build_daily_value_table import build_daily_model_values
+            build_daily_model_values()
+            print("[cron] Value table rebuilt with calibrated values")
         except Exception as ti_err:
             print(f"[cron] Trade intel failed (non-fatal): {ti_err}")
 

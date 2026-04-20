@@ -11509,12 +11509,18 @@ def api_trade_intel_run_crawl():
 
         def _job():
             try:
+                from data_building.trade_intel.trade_value_model import run_trade_value_model
+                from data_building.build_daily_value_table import build_daily_model_values
                 discovered = run_discovery(target=500)
                 logger.info("[trade-intel] Discovered %d new leagues", discovered)
                 crawl_result = run_crawl(batch_size=100)
                 logger.info("[trade-intel] Crawl: %s", crawl_result)
                 analytics_result = run_analytics()
                 logger.info("[trade-intel] Analytics: %s", analytics_result)
+                wls_result = run_trade_value_model()
+                logger.info("[trade-intel] WLS: %s", wls_result)
+                build_daily_model_values()
+                logger.info("[trade-intel] Value table rebuilt with calibrated values")
             except Exception:
                 logger.exception("[trade-intel] Background job failed")
 
