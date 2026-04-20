@@ -11588,6 +11588,7 @@ def api_trade_targets():
     roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
     players_index     = ctx.get("players_index") or {}
+    picks_by_roster   = ctx.get("picks_by_roster") or {}
 
     val_key = "sf_value" if league_type == "sf" else "value"
     values_by_id: dict = {}
@@ -11620,6 +11621,19 @@ def api_trade_targets():
 
     roster_totals = {str(r.get("roster_id")): _pos_totals(r.get("players") or []) for r in rosters}
     num_teams = max(len(rosters), 1)
+
+    # Credit viewer's upcoming 1st/2nd round picks as projected RB+WR value so
+    # the system doesn't flag those positions as needs when strong picks are pending.
+    viewer_picks_list = picks_by_roster.get(viewer_roster_id, [])
+    _cur_yr = datetime.now().year
+    _r1 = sum(1 for p in viewer_picks_list if p.get("round") == 1 and int(p.get("season", 0)) <= _cur_yr + 1)
+    _r2 = sum(1 for p in viewer_picks_list if p.get("round") == 2 and int(p.get("season", 0)) <= _cur_yr + 1)
+    if (_r1 or _r2) and viewer_roster_id in roster_totals:
+        _credit = _r1 * 325 + _r2 * 110
+        vt = dict(roster_totals[viewer_roster_id])
+        vt["RB"] = vt.get("RB", 0.0) + _credit
+        vt["WR"] = vt.get("WR", 0.0) + _credit
+        roster_totals[viewer_roster_id] = vt
 
     # Rank each roster by positional total (1 = best)
     pos_ranks: dict[str, dict] = {}  # pos -> {rid: rank}

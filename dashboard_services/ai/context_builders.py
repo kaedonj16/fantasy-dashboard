@@ -615,6 +615,26 @@ def build_trade_suggestions_context(
 
     # Rank every roster by positional total (1 = best)
     roster_totals_map = {str(r.get("roster_id") or ""): _roster_pos_totals(r) for r in rosters}
+
+    # Credit the viewer's upcoming 1st/2nd round picks as projected RB+WR value.
+    # Dynasty early picks almost always become RB or WR, so having 1.01+1.02
+    # should suppress those as needs — don't tell the user to trade for RBs when
+    # they're about to draft the best one available.
+    viewer_rid = str(viewer_roster_id)
+    viewer_picks_list = picks_by_roster.get(viewer_rid, [])
+    from datetime import datetime as _dt
+    _cur_yr = _dt.now().year
+    _r1 = sum(1 for p in viewer_picks_list
+              if p.get("round") == 1 and int(p.get("season", 0)) <= _cur_yr + 1)
+    _r2 = sum(1 for p in viewer_picks_list
+              if p.get("round") == 2 and int(p.get("season", 0)) <= _cur_yr + 1)
+    if _r1 or _r2:
+        _credit = _r1 * 325 + _r2 * 110  # ~half mid-round value, split across RB and WR
+        viewer_totals = {
+            pos: viewer_totals.get(pos, 0.0) + (_credit if pos in ("RB", "WR") else 0.0)
+            for pos in _SCARCITY_POSITIONS
+        }
+        roster_totals_map[viewer_rid] = viewer_totals
     pos_rank_map: dict[str, dict[str, int]] = {}  # rid -> {pos -> rank}
     for pos in _SCARCITY_POSITIONS:
         sorted_rids = sorted(
@@ -625,7 +645,6 @@ def build_trade_suggestions_context(
         for i, rid in enumerate(sorted_rids, start=1):
             pos_rank_map.setdefault(rid, {})[pos] = i
 
-    viewer_rid = str(viewer_roster_id)
     viewer_ranks = pos_rank_map.get(viewer_rid, {})
 
     # Need = bottom 35% of league; Surplus = top 30% of league (rank-based)
@@ -686,10 +705,18 @@ def build_trade_suggestions_context(
                 targets_they_have.extend(top)
 
         # Find what viewer could send (viewer's surplus that partner needs)
+        # Guard: never suggest sending all players at a position — keep at least 1.
         targets_viewer_sends = []
         for pos in viewer_surplus:
             if pos in partner_needs:
-                top = _roster_top_players(roster, pos)[:2]
+                pos_depth = sum(
+                    1 for pid in (roster.get("players") or [])
+                    if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
+                )
+                max_sendable = max(0, pos_depth - 1)
+                if max_sendable == 0:
+                    continue
+                top = _roster_top_players(roster, pos)[:min(2, max_sendable)]
                 targets_viewer_sends.extend(top)
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
