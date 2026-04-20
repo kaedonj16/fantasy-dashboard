@@ -174,7 +174,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
 
     logger.info("[discovery] After seed expansion: %d leagues in frontier", len(frontier))
 
-    while frontier and (len(known) + total_new) < target:
+    while frontier and total_new < target:
         league_id = frontier.pop()
         if league_id in known:
             continue
