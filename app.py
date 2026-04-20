@@ -11289,6 +11289,7 @@ def api_trade_intel_player(player_id: str):
     - Model value vs market delta
     - Common trade companions
     """
+    from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
