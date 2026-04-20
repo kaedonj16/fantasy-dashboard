@@ -320,16 +320,25 @@ _GRADE_THRESHOLDS = [
     (0, "D"),
 ]
 
-_WIN_WINDOW_LABELS = {
-    ("contender", True): "Win-Now Window",
-    ("contender", False): "Aging Contender",
-    ("balanced", True): "Rising Contender",
-    ("balanced", False): "2-3 Year Window",
-    ("retool", True): "Retooling",
-    ("retool", False): "Retooling",
-    ("rebuild", True): "Full Rebuild",
-    ("rebuild", False): "Full Rebuild",
-}
+def _compute_win_window(direction: str, young: bool, score: float, rank_score: float) -> str:
+    """Derive the win-window label from actual grade + rank data, not just direction+age."""
+    if direction == "contender":
+        return "Win-Now Window" if young else "Aging Contender"
+    if direction == "rebuild":
+        return "Full Rebuild"
+    if direction == "retool":
+        return "Retooling"
+    # "balanced" — must be above-average on the board to deserve an optimistic label
+    above_avg = rank_score >= 55
+    if young and above_avg and score >= 65:
+        return "Rising Contender"
+    if above_avg and score >= 65:
+        return "2-3 Year Window"
+    if young and score >= 50:
+        return "Building"
+    if score < 50:
+        return "Holding Pattern"
+    return "2-3 Year Window"
 
 
 def calculate_roster_grade(
@@ -437,7 +446,7 @@ def calculate_roster_grade(
 
     direction = detect_team_direction(players, future_picks)
     young = avg_age <= 26.5
-    win_window = _WIN_WINDOW_LABELS.get((direction, young), "Balanced")
+    win_window = _compute_win_window(direction, young, total, rank_score)
 
     return {
         "score": total,
@@ -771,10 +780,9 @@ def build_trade_suggestions_context(
                 targets_they_have.extend(top)
 
         # Find what viewer could send (viewer's surplus that partner needs).
-        # Rules:
-        #  - Always keep at least 2 at each position (starter + backup).
-        #  - If keeping 2 would leave nothing sendable, allow 1 only if the partner
-        #    is sending that same position back (positional balance).
+        # Surplus positions: keep ≥1 (they have a starter and can trade depth).
+        # Non-surplus positions: keep ≥2 (don't gut a weak spot).
+        # Last resort: allow sending 1 if getting that position back.
         getting_positions = {str(p.get("position", "")).upper() for p in targets_they_have}
         partner_player_ids = {str(p.get("id")) for p in targets_they_have}
         targets_viewer_sends = []
@@ -785,12 +793,13 @@ def build_trade_suggestions_context(
                 1 for pid in (roster.get("players") or [])
                 if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
             )
-            max_sendable = max(0, pos_depth - 2)  # keep at least 2
+            min_keep = 1  # surplus positions can trade down to 1 starter
+            max_sendable = max(0, pos_depth - min_keep)
             if max_sendable == 0:
                 if pos in getting_positions:
-                    max_sendable = 1  # can spare 1 when getting that position back
+                    max_sendable = 1
                 else:
-                    continue  # don't strip down to 0 at a position
+                    continue
             top = _roster_top_players(roster, pos, exclude_ids=partner_player_ids)[:min(2, max_sendable)]
             targets_viewer_sends.extend(top)
 

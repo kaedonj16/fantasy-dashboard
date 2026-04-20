@@ -78,10 +78,12 @@ def _seed_league_ids(season: int) -> Set[str]:
 
 
 def _user_leagues(user_id: str, season: int) -> list[str]:
-    data = _get(f"/user/{user_id}/leagues/nfl/{season}")
-    if not data:
-        return []
-    return [str(lg["league_id"]) for lg in data if lg.get("league_id")]
+    ids: list[str] = []
+    for yr in {season, season + 1}:  # also check next year — offseason leagues created early
+        data = _get(f"/user/{user_id}/leagues/nfl/{yr}")
+        if data:
+            ids.extend(str(lg["league_id"]) for lg in data if lg.get("league_id"))
+    return ids
 
 
 def _league_meta(league_id: str) -> dict | None:
@@ -112,9 +114,9 @@ def _save_leagues(leagues: list[dict]) -> int:
             conn.execute(
                 """
                 INSERT INTO trade_intel_leagues
-                    (league_id, season, num_teams, scoring_type, league_type)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (league_id) DO NOTHING
+                    (league_id, season, num_teams, scoring_type, league_type, crawl_enabled)
+                VALUES (%s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (league_id) DO UPDATE SET crawl_enabled = TRUE
                 """,
                 (
                     lg["league_id"],
@@ -197,8 +199,8 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
         })
         known.add(league_id)
 
-        # Expand frontier via roster owners, but cap user fan-out
-        if len(frontier) < 500:
+        # Expand frontier via roster owners
+        if len(frontier) < 2000:
             time.sleep(_REQUEST_DELAY)
             for owner_id in _roster_owner_ids(league_id):
                 if owner_id in visited_users:

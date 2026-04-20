@@ -11698,7 +11698,25 @@ def api_trade_targets():
         if pos_ranks[pos].get(viewer_roster_id, num_teams) > num_teams - need_cutoff
     ]
 
-    # Collect players from other teams (for both needs view and balanced fallback)
+    # Compute the viewer's realistic offer ceiling: best 2 players + pick value.
+    # Targets are filtered to players the viewer could plausibly acquire.
+    viewer_roster_obj = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+    viewer_player_vals = sorted(
+        [float(values_by_id[str(p)]["value"]) for p in (viewer_roster_obj.get("players") or [])
+         if str(p) in values_by_id and values_by_id[str(p)]["value"] >= 150],
+        reverse=True,
+    ) if viewer_roster_obj else []
+    _pick_val_est = sum(
+        650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80
+        for p in picks_by_roster.get(viewer_roster_id, [])
+        if int(p.get("season", 0)) <= _cur_yr + 1
+    )
+    # Max realistic package: top 2 players + picks, with 20% premium the buyer might pay
+    _offer_1for1  = (viewer_player_vals[0] * 1.25) if viewer_player_vals else 300
+    _offer_package = (sum(viewer_player_vals[:2]) + _pick_val_est) * 1.2 if viewer_player_vals else 500
+    _realistic_max = max(_offer_1for1, _offer_package)
+
+    # Collect players from other teams, filtered by realistic acquire value
     all_collected: dict[str, list] = {pos: [] for pos in POSITIONS}
     for roster in rosters:
         rid = str(roster.get("roster_id"))
@@ -11710,6 +11728,8 @@ def api_trade_targets():
             info = values_by_id.get(pid)
             if not info or info["position"] not in POSITIONS or info["value"] < 150:
                 continue
+            if info["value"] > _realistic_max:
+                continue  # not realistically acquirable given viewer's trade assets
             all_collected[info["position"]].append({
                 "player_id":       pid,
                 "name":            info["name"],
