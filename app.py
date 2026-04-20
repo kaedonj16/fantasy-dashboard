@@ -11606,6 +11606,7 @@ def api_trade_targets():
             "name":           row.get("name") or players_index.get(pid, {}).get("name", ""),
             "team":           row.get("team") or "",
             "age":            row.get("age"),
+            "is_rookie":      bool(row.get("is_rookie")),
         }
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
@@ -11622,17 +11623,42 @@ def api_trade_targets():
     roster_totals = {str(r.get("roster_id")): _pos_totals(r.get("players") or []) for r in rosters}
     num_teams = max(len(rosters), 1)
 
-    # Credit viewer's upcoming 1st/2nd round picks as projected RB+WR value so
-    # the system doesn't flag those positions as needs when strong picks are pending.
+    # Project viewer's upcoming picks to actual rookie positions/values using the
+    # live rookie rankings, so need detection suppresses positions they'll draft.
     viewer_picks_list = picks_by_roster.get(viewer_roster_id, [])
     _cur_yr = datetime.now().year
-    _r1 = sum(1 for p in viewer_picks_list if p.get("round") == 1 and int(p.get("season", 0)) <= _cur_yr + 1)
-    _r2 = sum(1 for p in viewer_picks_list if p.get("round") == 2 and int(p.get("season", 0)) <= _cur_yr + 1)
-    if (_r1 or _r2) and viewer_roster_id in roster_totals:
-        _credit = _r1 * 325 + _r2 * 110
+    _top_rookies = sorted(
+        [v for v in values_by_id.values()
+         if v.get("is_rookie") and v.get("position") in POSITIONS],
+        key=lambda r: float(r.get("value") or 0),
+        reverse=True,
+    )
+    _rookie_idx = 0
+    _projected_picks_out: list[dict] = []
+    _pick_credits: dict[str, float] = {}
+    for _rnd in [1, 2]:
+        for _pk in sorted(
+            [p for p in viewer_picks_list
+             if p.get("round") == _rnd and int(p.get("season", 0)) <= _cur_yr + 1],
+            key=lambda p: p.get("season", 9999),
+        ):
+            if _rookie_idx < len(_top_rookies):
+                _proj = _top_rookies[_rookie_idx]
+                _pos  = _proj.get("position", "")
+                _val  = float(_proj.get("value") or 0)
+                _pick_credits[_pos] = _pick_credits.get(_pos, 0.0) + _val
+                _projected_picks_out.append({
+                    "season":    _pk.get("season"),
+                    "round":     _rnd,
+                    "proj_name": _proj.get("name", ""),
+                    "proj_pos":  _pos,
+                    "proj_val":  round(_val, 1),
+                })
+                _rookie_idx += 1
+    if _pick_credits and viewer_roster_id in roster_totals:
         vt = dict(roster_totals[viewer_roster_id])
-        vt["RB"] = vt.get("RB", 0.0) + _credit
-        vt["WR"] = vt.get("WR", 0.0) + _credit
+        for _pos, _val in _pick_credits.items():
+            vt[_pos] = vt.get(_pos, 0.0) + _val
         roster_totals[viewer_roster_id] = vt
 
     # Rank each roster by positional total (1 = best)
@@ -11681,7 +11707,11 @@ def api_trade_targets():
     if not needed_positions:
         # Balanced team: return top 2 per position as a discovery/browsing view
         all_positions = {pos: all_collected[pos][:2] for pos in POSITIONS if all_collected[pos]}
-        return jsonify({"by_position": {}, "all_positions": all_positions, "position_ranks": position_ranks_out})
+        return jsonify({
+            "by_position": {}, "all_positions": all_positions,
+            "position_ranks": position_ranks_out,
+            "projected_picks": _projected_picks_out,
+        })
 
     by_position = {pos: all_collected[pos][:4] for pos in needed_positions if all_collected[pos]}
 
@@ -11689,6 +11719,7 @@ def api_trade_targets():
         "by_position": by_position,
         "all_positions": {},
         "position_ranks": position_ranks_out,
+        "projected_picks": _projected_picks_out,
     })
 
 

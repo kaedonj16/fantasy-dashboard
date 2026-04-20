@@ -616,22 +616,50 @@ def build_trade_suggestions_context(
     # Rank every roster by positional total (1 = best)
     roster_totals_map = {str(r.get("roster_id") or ""): _roster_pos_totals(r) for r in rosters}
 
-    # Credit the viewer's upcoming 1st/2nd round picks as projected RB+WR value.
-    # Dynasty early picks almost always become RB or WR, so having 1.01+1.02
-    # should suppress those as needs — don't tell the user to trade for RBs when
-    # they're about to draft the best one available.
+    # Project the viewer's upcoming picks to actual rookie positions/values using
+    # the live rookie rankings, so needs detection reflects what they're likely to draft.
+    # e.g. if they hold 1.01 and the top rookie is an RB, suppress RB as a need.
     viewer_rid = str(viewer_roster_id)
     viewer_picks_list = picks_by_roster.get(viewer_rid, [])
     from datetime import datetime as _dt
     _cur_yr = _dt.now().year
-    _r1 = sum(1 for p in viewer_picks_list
-              if p.get("round") == 1 and int(p.get("season", 0)) <= _cur_yr + 1)
-    _r2 = sum(1 for p in viewer_picks_list
-              if p.get("round") == 2 and int(p.get("season", 0)) <= _cur_yr + 1)
-    if _r1 or _r2:
-        _credit = _r1 * 325 + _r2 * 110  # ~half mid-round value, split across RB and WR
+
+    top_rookies = sorted(
+        [v for v in model_value_lookup.values()
+         if v.get("is_rookie") and str(v.get("position", "")).upper() in _SCARCITY_POSITIONS],
+        key=lambda r: float(r.get("value") or 0),
+        reverse=True,
+    )
+    _rookie_idx = 0
+    _pick_pos_credits: dict[str, float] = {}
+    _projected_picks: list[dict] = []  # for context output
+    for _rnd in [1, 2]:
+        _rnd_picks = sorted(
+            [p for p in viewer_picks_list
+             if p.get("round") == _rnd and int(p.get("season", 0)) <= _cur_yr + 1],
+            key=lambda p: p.get("season", 9999),
+        )
+        for _pk in _rnd_picks:
+            if _rookie_idx < len(top_rookies):
+                _proj = top_rookies[_rookie_idx]
+                _pos  = str(_proj.get("position", "")).upper()
+                _val  = float(_proj.get("value") or 0)
+                if _pos:
+                    _pick_pos_credits[_pos] = _pick_pos_credits.get(_pos, 0.0) + _val
+                _projected_picks.append({
+                    "season":    _pk.get("season"),
+                    "round":     _rnd,
+                    "proj_name": _proj.get("name", ""),
+                    "proj_pos":  _pos,
+                    "proj_val":  round(_val, 1),
+                })
+                _rookie_idx += 1
+            else:
+                _projected_picks.append({"season": _pk.get("season"), "round": _rnd})
+
+    if _pick_pos_credits:
         viewer_totals = {
-            pos: viewer_totals.get(pos, 0.0) + (_credit if pos in ("RB", "WR") else 0.0)
+            pos: viewer_totals.get(pos, 0.0) + _pick_pos_credits.get(pos, 0.0)
             for pos in _SCARCITY_POSITIONS
         }
         roster_totals_map[viewer_rid] = viewer_totals
@@ -704,20 +732,28 @@ def build_trade_suggestions_context(
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
                 targets_they_have.extend(top)
 
-        # Find what viewer could send (viewer's surplus that partner needs)
-        # Guard: never suggest sending all players at a position — keep at least 1.
+        # Find what viewer could send (viewer's surplus that partner needs).
+        # Rules:
+        #  - Always keep at least 2 at each position (starter + backup).
+        #  - If keeping 2 would leave nothing sendable, allow 1 only if the partner
+        #    is sending that same position back (positional balance).
+        getting_positions = {str(p.get("position", "")).upper() for p in targets_they_have}
         targets_viewer_sends = []
         for pos in viewer_surplus:
-            if pos in partner_needs:
-                pos_depth = sum(
-                    1 for pid in (roster.get("players") or [])
-                    if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
-                )
-                max_sendable = max(0, pos_depth - 1)
-                if max_sendable == 0:
-                    continue
-                top = _roster_top_players(roster, pos)[:min(2, max_sendable)]
-                targets_viewer_sends.extend(top)
+            if pos not in partner_needs:
+                continue
+            pos_depth = sum(
+                1 for pid in (roster.get("players") or [])
+                if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
+            )
+            max_sendable = max(0, pos_depth - 2)  # keep at least 2
+            if max_sendable == 0:
+                if pos in getting_positions:
+                    max_sendable = 1  # can spare 1 when getting that position back
+                else:
+                    continue  # don't strip down to 0 at a position
+            top = _roster_top_players(roster, pos)[:min(2, max_sendable)]
+            targets_viewer_sends.extend(top)
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
         if not targets_they_have or not targets_viewer_sends:
@@ -749,6 +785,37 @@ def build_trade_suggestions_context(
 
     partners.sort(key=lambda x: x["match_score"], reverse=True)
 
+    # Pick-for-player suggestions: viewer offers a pick instead of a player.
+    # Useful when the viewer has no surplus players to give but holds valuable picks.
+    pick_trade_partners = []
+    if _projected_picks and viewer_needs:
+        # Only suggest pick trades for picks the viewer actually has
+        valuable_picks = [p for p in _projected_picks if p.get("proj_val", 0) >= 300]
+        for r in rosters:
+            rid = str(r.get("roster_id") or "")
+            if rid == viewer_rid:
+                continue
+            partner_ranks = pos_rank_map.get(rid, {})
+            partner_surplus = [
+                pos for pos in _SCARCITY_POSITIONS
+                if partner_ranks.get(pos, n_teams) <= surplus_cutoff
+            ]
+            # Find players at the viewer's needed positions on this roster
+            targets = []
+            for pos in partner_surplus:
+                if pos in viewer_needs:
+                    top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
+                    targets.extend(top)
+            if not targets:
+                continue
+            pick_trade_partners.append({
+                "roster_id":       rid,
+                "team_name":       roster_map.get(rid) or f"Team {rid}",
+                "targets_they_have": targets[:2],
+                "picks_you_offer": valuable_picks[:2],
+            })
+        pick_trade_partners = pick_trade_partners[:3]
+
     viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
 
     return {
@@ -761,6 +828,8 @@ def build_trade_suggestions_context(
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
         "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
         "top_partners": partners[:5],
+        "projected_picks": _projected_picks,
+        "pick_trade_partners": pick_trade_partners,
     }
 
 
