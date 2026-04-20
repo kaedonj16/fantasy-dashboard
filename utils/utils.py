@@ -328,6 +328,31 @@ def load_model_value_table(apply_calibration: bool = True):
                         _cal = overrides[_pid]
                         _p["value"]    = _cal["value"]
                         _p["sf_value"] = _cal["sf_value"]
+
+                # Recompute pos_rank / pos_rank_label after calibration changes values.
+                # The JSON ranks are based on raw model values; calibration can reorder
+                # players within a position so the labels must be rebuilt.
+                from collections import defaultdict as _dd
+                _pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(result):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _pos_idx[_pos].append(_i)
+                for _pos, _idxs in _pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(result[_i].get("value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        result[_i]["pos_rank"]       = _rank
+                        result[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+                _sf_pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(result):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _sf_pos_idx[_pos].append(_i)
+                for _pos, _idxs in _sf_pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(result[_i].get("sf_value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        result[_i]["sf_pos_rank"]       = _rank
+                        result[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
         except Exception as _e:
             print(f"[load_model_value_table] Calibration overlay skipped: {_e}")
 
