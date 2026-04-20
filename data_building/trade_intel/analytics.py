@@ -225,8 +225,6 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
     stats: dict[str, AccType] = defaultdict(_empty_acc)
 
-    _debug_printed = 0
-
     for trade in trades:
         assets  = trade["assets"]
         created = trade["created_at"]
@@ -248,14 +246,6 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             recv_sf  = _side_value(assets, other_side, values, "sf")
             pkg_1qb  = _side_value(assets, side, values, "1qb")
 
-            # Debug first 3 trades to diagnose ID mismatches
-            if _debug_printed < 3:
-                other_pids = [a["player_id"] for a in assets if a["side"] == other_side and a["asset_type"] == "player"]
-                in_values = [p for p in other_pids if p in values]
-                print(f"[analytics-debug] pid={pid!r} in_values={pid in values} recv_1qb={recv_1qb} "
-                      f"other_players={other_pids} found_in_values={in_values}")
-                _debug_printed += 1
-
             s = stats[pid]
             s["trade_count"] += 1
             s["pkg_all_1qb"].append(pkg_1qb)
@@ -267,27 +257,35 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             s["recv_all_1qb"].append(recv_1qb)
             s["recv_all_sf"].append(recv_sf)
 
-            # All-leagues decay-weighted pairs (backward-compat primary signal)
-            s["recv_weighted_1qb"].append((recv_1qb, decay))
-            s["recv_weighted_sf"].append((recv_sf, decay))
-
-            # Per-size bucket
-            s[f"recv_weighted_1qb_{bucket}"].append((recv_1qb, decay))
-            s[f"recv_weighted_sf_{bucket}"].append((recv_sf, decay))
+            # Only include trades where the other side has known value.
+            # Trades against fringe/unvalued players (recv=0) pollute the
+            # weighted median and drag it toward zero.
+            if recv_1qb > 0:
+                s["recv_weighted_1qb"].append((recv_1qb, decay))
+                s[f"recv_weighted_1qb_{bucket}"].append((recv_1qb, decay))
+            if recv_sf > 0:
+                s["recv_weighted_sf"].append((recv_sf, decay))
+                s[f"recv_weighted_sf_{bucket}"].append((recv_sf, decay))
 
             if created and created >= cut_7d:
                 s["trade_count_7d"] += 1
             if created and created >= cut_14d:
                 s["trade_count_14d"] += 1
-                s["recv_14d_1qb"].append(recv_1qb)
-                s["recv_14d_sf"].append(recv_sf)
+                if recv_1qb > 0:
+                    s["recv_14d_1qb"].append(recv_1qb)
+                if recv_sf > 0:
+                    s["recv_14d_sf"].append(recv_sf)
             if created and created >= cut_30d:
                 s["trade_count_30d"] += 1
-                s["recv_30d_1qb"].append(recv_1qb)
-                s["recv_30d_sf"].append(recv_sf)
+                if recv_1qb > 0:
+                    s["recv_30d_1qb"].append(recv_1qb)
+                if recv_sf > 0:
+                    s["recv_30d_sf"].append(recv_sf)
             if created and created >= cut_90d:
-                s["recv_90d_1qb"].append(recv_1qb)
-                s["recv_90d_sf"].append(recv_sf)
+                if recv_1qb > 0:
+                    s["recv_90d_1qb"].append(recv_1qb)
+                if recv_sf > 0:
+                    s["recv_90d_sf"].append(recv_sf)
 
     results = []
     for player_id, s in stats.items():
