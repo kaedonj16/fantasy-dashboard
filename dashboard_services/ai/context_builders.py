@@ -786,34 +786,37 @@ def build_trade_suggestions_context(
     partners.sort(key=lambda x: x["match_score"], reverse=True)
 
     # Pick-for-player suggestions: viewer offers a pick instead of a player.
-    # Useful when the viewer has no surplus players to give but holds valuable picks.
+    # Don't require partner_surplus — any team with a good player at a needed
+    # position could be a pick trade target.
     pick_trade_partners = []
-    if _projected_picks and viewer_needs:
-        # Only suggest pick trades for picks the viewer actually has
-        valuable_picks = [p for p in _projected_picks if p.get("proj_val", 0) >= 300]
-        for r in rosters:
-            rid = str(r.get("roster_id") or "")
-            if rid == viewer_rid:
-                continue
-            partner_ranks = pos_rank_map.get(rid, {})
-            partner_surplus = [
-                pos for pos in _SCARCITY_POSITIONS
-                if partner_ranks.get(pos, n_teams) <= surplus_cutoff
-            ]
-            # Find players at the viewer's needed positions on this roster
-            targets = []
-            for pos in partner_surplus:
-                if pos in viewer_needs:
+    if viewer_needs:
+        # Include all upcoming picks as potential offers (with or without rookie projection)
+        all_picks_as_offers = [
+            p for p in _projected_picks
+            if p.get("round") in (1, 2)
+        ] or [
+            {"season": pk.get("season"), "round": pk.get("round"), "proj_name": "", "proj_pos": "", "proj_val": 0}
+            for pk in viewer_picks_list
+            if pk.get("round") in (1, 2) and int(pk.get("season", 0)) <= _cur_yr + 1
+        ]
+        if all_picks_as_offers:
+            for r in rosters:
+                rid = str(r.get("roster_id") or "")
+                if rid == viewer_rid:
+                    continue
+                targets = []
+                for pos in viewer_needs:
                     top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
-                    targets.extend(top)
-            if not targets:
-                continue
-            pick_trade_partners.append({
-                "roster_id":       rid,
-                "team_name":       roster_map.get(rid) or f"Team {rid}",
-                "targets_they_have": targets[:2],
-                "picks_you_offer": valuable_picks[:2],
-            })
+                    targets.extend(p for p in top if p.get("value", 0) >= 250)
+                if not targets:
+                    continue
+                pick_trade_partners.append({
+                    "roster_id":         rid,
+                    "team_name":         roster_map.get(rid) or f"Team {rid}",
+                    "targets_they_have": targets[:2],
+                    "picks_you_offer":   all_picks_as_offers[:2],
+                })
+        pick_trade_partners.sort(key=lambda x: max((t.get("value", 0) for t in x["targets_they_have"]), default=0), reverse=True)
         pick_trade_partners = pick_trade_partners[:3]
 
     viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
