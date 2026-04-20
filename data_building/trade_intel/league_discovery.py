@@ -51,21 +51,29 @@ def _current_season() -> int:
     return 2024
 
 
-def _trending_league_ids(season: int) -> Set[str]:
+def _seed_league_ids(season: int) -> Set[str]:
     """
-    Sleeper trending endpoint returns player objects with a `leagues` list
-    embedded in activity. We pull add/drop trending and extract any league IDs.
+    Seed the discovery frontier from leagues already in the DB.
+
+    Sleeper's trending endpoint only returns {player_id, count} — it does NOT
+    embed league IDs, so we can't use it for seeding.  Instead we BFS-expand
+    from whatever leagues are already stored (populated by manual inserts or
+    previous discovery runs).  On a completely fresh DB the frontier will be
+    empty; the user must insert at least one league_id manually to bootstrap.
     """
-    league_ids: Set[str] = set()
-    for trend_type in ("add", "drop"):
-        data = _get(f"/players/nfl/trending/{trend_type}", {"lookback_hours": 168, "limit": 200})
-        if not data:
-            continue
-        for entry in data:
-            for lid in entry.get("leagues", []):
-                league_ids.add(str(lid))
-    logger.info("[discovery] Trending seeds: %d leagues", len(league_ids))
-    return league_ids
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT league_id FROM trade_intel_leagues
+            WHERE season = %s
+            ORDER BY last_crawled_at ASC NULLS FIRST
+            LIMIT 200
+            """,
+            (season,)
+        ).fetchall()
+    seeds = {r["league_id"] for r in rows}
+    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from", len(seeds))
+    return seeds
 
 
 def _user_leagues(user_id: str, season: int) -> list[str]:
@@ -139,7 +147,9 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
         season = _current_season()
 
     known = _already_known(season)
-    frontier: Set[str] = _trending_league_ids(season) - known
+    # Seed from existing DB leagues (BFS-expands via roster owners).
+    # On a completely fresh DB, manually insert one league_id first.
+    frontier: Set[str] = _seed_league_ids(season)
     visited_users: Set[str] = set()
     to_save: list[dict] = []
     total_new = 0
