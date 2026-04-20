@@ -4551,6 +4551,55 @@ function _updateWatchlistBtn(btn, player_id) {
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
 }
 
+function _refreshWatchlistNav() {
+  const countEl = document.getElementById('watchlistNavCount');
+  const listEl  = document.getElementById('watchlistNavList');
+  const list = _getWatchlist();
+  if (countEl) {
+    countEl.style.display = list.length > 0 ? '' : 'none';
+    countEl.textContent   = list.length > 9 ? '9+' : String(list.length);
+  }
+  if (!listEl) return;
+  if (!list.length) {
+    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click ☆ in a player card to add.</div>';
+    return;
+  }
+  listEl.innerHTML = list.map(p =>
+    '<div class="watchlist-nav-item" onclick="openPlayerModal(' + JSON.stringify(p.player_id) + ',' + JSON.stringify(p.name || '') + ')">' +
+      '<span>' + (p.name || p.player_id) + (p.position ? ' <span style="color:var(--text-muted);font-size:11px">' + p.position + '</span>' : '') + '</span>' +
+      '<button class="watchlist-nav-item-remove" onclick="event.stopPropagation();_removeWatchlistNav(' + JSON.stringify(p.player_id) + ')" title="Remove">&times;</button>' +
+    '</div>'
+  ).join('');
+}
+
+function _removeWatchlistNav(player_id) {
+  const list = _getWatchlist().filter(p => p.player_id !== player_id);
+  _saveWatchlist(list);
+  _refreshWatchlistNav();
+}
+
+function toggleWatchlistPanel() {
+  const panel = document.getElementById('watchlistNavPanel');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  // Close any other open dropdowns
+  document.querySelectorAll('.settings-dropdown, .watchlist-nav-panel').forEach(d => { d.style.display = 'none'; });
+  if (!isOpen) {
+    _refreshWatchlistNav();
+    panel.style.display = '';
+  }
+}
+
+window.addEventListener('watchlist-updated', _refreshWatchlistNav);
+document.addEventListener('click', function(e) {
+  const wrapper = document.querySelector('.watchlist-nav-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    const panel = document.getElementById('watchlistNavPanel');
+    if (panel) panel.style.display = 'none';
+  }
+});
+document.addEventListener('DOMContentLoaded', _refreshWatchlistNav);
+
 function closePlayerModal() {
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
@@ -6436,3 +6485,59 @@ document.addEventListener('click', (e) => {
 
   document.addEventListener('DOMContentLoaded', initTour);
 }());
+
+// ── Pick value modal ──────────────────────────────────────────────────────────
+function showPickModal(el) {
+  var raw = el.getAttribute('data-pick');
+  if (!raw) return;
+  var pick;
+  try { pick = JSON.parse(raw.replace(/&quot;/g, '"')); } catch(e) { return; }
+
+  var label  = pick.label  || 'Draft Pick';
+  var value  = pick.value  || 0;
+  var tiers  = pick.tiers  || {};
+  var rnd    = pick.round  || 0;
+  var season = pick.season || '';
+
+  var suffix = rnd === 1 ? '1st' : rnd === 2 ? '2nd' : rnd === 3 ? '3rd' : rnd + 'th';
+  var roundName = season + ' ' + suffix + ' Round';
+
+  var maxTier = Math.max(tiers.early || 0, tiers.mid || 0, tiers.late || 0, 1);
+  function bar(tierVal, tierName) {
+    if (!tierVal) return '';
+    var pct = Math.round(tierVal / maxTier * 100);
+    var cls = tierName === 'early' ? 'analytics-bar-neg' : tierName === 'late' ? 'analytics-bar-pos' : 'analytics-bar-mid';
+    return '<div class="analytics-bar-row" style="margin:4px 0">' +
+      '<span class="analytics-bar-name" style="width:48px;text-transform:capitalize">' + tierName + '</span>' +
+      '<div class="analytics-bar-track"><div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div></div>' +
+      '<span class="analytics-bar-val">' + tierVal.toFixed(1) + '</span>' +
+    '</div>';
+  }
+
+  var tiersHtml = bar(tiers.early, 'early') + bar(tiers.mid, 'mid') + bar(tiers.late, 'late');
+  var currentVal = value > 0 ? '<div style="margin:8px 0;font-size:14px;color:var(--text-muted)">Current value: <strong>' + value.toFixed(1) + '</strong></div>' : '';
+
+  var html = '<div id="pickModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closePickModal()">' +
+    '<div style="background:var(--card-bg,#1e293b);border-radius:12px;padding:24px;max-width:380px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+        '<h3 style="margin:0;font-size:16px">' + label + '</h3>' +
+        '<button onclick="closePickModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-muted)">&times;</button>' +
+      '</div>' +
+      currentVal +
+      '<div style="margin-top:12px">' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">' + roundName + ' — Value by tier</div>' +
+        tiersHtml +
+      '</div>' +
+      (tiersHtml ? '' : '<p style="color:var(--text-muted);font-size:13px">No value data available for this pick.</p>') +
+    '</div>' +
+  '</div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.body.style.overflow = 'hidden';
+}
+
+function closePickModal() {
+  var overlay = document.getElementById('pickModalOverlay');
+  if (overlay) overlay.remove();
+  document.body.style.overflow = '';
+}

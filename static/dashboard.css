@@ -12545,3 +12545,63 @@ img, svg, canvas {
 .outcome-minus { color: #ef4444; }
 .outcome-note { font-size: 10px; color: var(--text-muted); }
 .outcome-error { font-size: 12px; color: #ef4444; }
+
+/* ── Watchlist nav panel ─────────────────────────────────────────────────── */
+.watchlist-nav-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+#watchlistNavBtn {
+  font-size: 16px;
+  line-height: 1;
+}
+.watchlist-nav-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.15);
+  z-index: 300;
+}
+.watchlist-nav-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  border-bottom: 0.5px solid var(--border);
+}
+.watchlist-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.watchlist-nav-item:last-child { border-bottom: none; }
+.watchlist-nav-item:hover { background: var(--bg-alt); }
+.watchlist-nav-item-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 0 0 0 8px;
+  line-height: 1;
+}
+.watchlist-nav-empty {
+  padding: 16px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}

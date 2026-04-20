@@ -1120,9 +1120,24 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
 
+    watchlist_btn = (
+        "<div class='watchlist-nav-wrapper'>"
+        "  <button type='button' id='watchlistNavBtn' class='utility-icon-btn' "
+        "          aria-label='Watchlist' title='Watchlist' onclick='toggleWatchlistPanel()'>"
+        "    &#9733;"
+        "  </button>"
+        "  <span id='watchlistNavCount' class='nav-notif-dot' style='display:none'></span>"
+        "  <div id='watchlistNavPanel' class='watchlist-nav-panel' style='display:none'>"
+        "    <div class='watchlist-nav-header'>Watchlist</div>"
+        "    <div id='watchlistNavList'></div>"
+        "  </div>"
+        "</div>"
+    )
+
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
         "<div class='nav-utility-bar'>"
+        f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
         "</div>"
@@ -4679,6 +4694,7 @@ def build_activity_body(ctx: dict) -> str:
                 )
 
             def render_pick_row(pick, io_class):
+                import json as _json
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
                 pick_label = format_pick_display_label(
@@ -4691,8 +4707,27 @@ def build_activity_body(ctx: dict) -> str:
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
+
+                yr = _safe_int(pick.get("season"), 0)
+                rnd = _safe_int(pick.get("round"), 0)
+                _pv = pick_values
+                tier_vals = {
+                    "early": float(_pv.get(f"{yr}_{rnd}_early") or _pv.get(f"{yr}_{rnd}") or 0),
+                    "mid":   float(_pv.get(f"{yr}_{rnd}_mid")   or _pv.get(f"{yr}_{rnd}") or 0),
+                    "late":  float(_pv.get(f"{yr}_{rnd}_late")  or _pv.get(f"{yr}_{rnd}") or 0),
+                }
+                pick_data = _json.dumps({
+                    "label": pick_label,
+                    "season": yr,
+                    "round": rnd,
+                    "value": round(val, 1),
+                    "tiers": tier_vals,
+                }, separators=(",", ":"))
+                pick_data_attr = pick_data.replace('"', '&quot;')
+
                 return (
-                    "<div class='player-activity'>"
+                    "<div class='player-activity pick-clickable' style='cursor:pointer'"
+                    f" data-pick='{pick_data_attr}' onclick='showPickModal(this)'>"
                     "<div style='gap: 10px;display: flex;align-items: center;'>"
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
@@ -5891,6 +5926,9 @@ def build_teams_body(ctx: dict) -> str:
     _league_type_js = "sf" if _is_sf else "1qb"
     _league_size_js = int(len(rosters)) if rosters else 10
 
+    _offseason_mode_js = bool(ctx.get("offseason_mode", False))
+    _draft_ended_js = has_draft_ended(league_id, platform, current_season)
+
     analytics_html = f"""
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
@@ -5899,8 +5937,8 @@ def build_teams_body(ctx: dict) -> str:
           <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
           <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
           <button class="tab-btn" data-tab="trade-ideas">Trade Ideas</button>
-          <!-- <button class="tab-btn" data-tab="sos">Schedule</button> -->
-          <!-- <button class="tab-btn" data-tab="draft">Draft</button> -->
+          <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
+          <button class="tab-btn" data-tab="draft" id="draftTabBtn" style="display:none">Draft</button>
           <div class="tab-panels">
             <div class="tab-panel active" data-tab="btm" id="btmPanel">
               <div class="analytics-loading">Loading…</div>
@@ -5914,12 +5952,12 @@ def build_teams_body(ctx: dict) -> str:
             <div class="tab-panel" data-tab="trade-ideas" id="tradeIdeasPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
-            <!-- <div class="tab-panel" data-tab="sos" id="sosPanel">
+            <div class="tab-panel" data-tab="sos" id="sosPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="draft" id="draftPanel">
               <div class="analytics-loading">Loading…</div>
-            </div> -->
+            </div>
         </div>
       </div>
     </div>
@@ -5931,6 +5969,8 @@ def build_teams_body(ctx: dict) -> str:
       var _leagueType      = {repr(_league_type_js)};
       var _leagueSize      = {_league_size_js};
       var _viewerRosterId  = {repr(str(viewer_roster_id or ''))};
+      var _offseasonMode   = {str(_offseason_mode_js).lower()};
+      var _draftEnded      = {str(_draft_ended_js).lower()};
       var _loaded          = {{}};
 
 
@@ -6023,21 +6063,27 @@ def build_teams_body(ctx: dict) -> str:
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No schedule data available.</p>'; return; }}
+            var usingPR = data.using_power_rankings;
             var maxOpp = Math.max(...teams.map(t => t.avg_opp_points), 1);
             var wr = data.weeks_remaining || 0;
+            var sortLabel = usingPR ? 'Based on roster strength (no games played yet)' : 'Sorted by avg opponent score (hardest first)';
             var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
-              '</span><span class="analytics-avg-label">Sorted by avg opponent score (hardest first)</span></div>';
+              '</span><span class="analytics-avg-label">' + sortLabel + '</span></div>';
+            if (usingPR) {{
+              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played — opponent strength estimated from roster values.</p>';
+            }}
             html += '<div class="analytics-bar-list">';
             teams.forEach(function(t) {{
               var pct = Math.min(100, Math.round(t.avg_opp_points / maxOpp * 100));
               var cls = t.avg_opp_points >= maxOpp * 0.75 ? 'analytics-bar-neg' :
                         t.avg_opp_points <= maxOpp * 0.5  ? 'analytics-bar-pos' : 'analytics-bar-mid';
+              var valLabel = usingPR ? '' : t.avg_opp_points.toFixed(1);
               html += '<div class="analytics-bar-row">' +
                 '<span class="analytics-bar-name">' + t.team_name + '</span>' +
                 '<div class="analytics-bar-track">' +
                   '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
                 '</div>' +
-                '<span class="analytics-bar-val">' + t.avg_opp_points.toFixed(1) + '</span>' +
+                '<span class="analytics-bar-val">' + valLabel + '</span>' +
               '</div>';
             }});
             html += '</div>';
@@ -6203,6 +6249,16 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load trade ideas.</p>'; }});
       }}
 
+      // Show Schedule/Draft tabs conditionally
+      (function() {{
+        var sosBtn = document.getElementById('sosTabBtn');
+        var draftBtn = document.getElementById('draftTabBtn');
+        // Schedule: visible when not in pure offseason (in-season or preseason)
+        if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
+        // Draft: visible once the draft has occurred
+        if (draftBtn && _draftEnded) draftBtn.style.display = '';
+      }})();
+
       // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
       function wireAnalyticsTabs() {{
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
@@ -6213,8 +6269,8 @@ def build_teams_body(ctx: dict) -> str:
             if (tab === 'roster-intel')    loadRosterIntel();
             if (tab === 'power-rankings')  loadPowerRankings();
             if (tab === 'trade-ideas')     loadTradeIdeas();
-            // if (tab === 'sos')   loadSos();
-            // if (tab === 'draft') loadDraft();
+            if (tab === 'sos')             loadSos();
+            if (tab === 'draft')           loadDraft();
           }});
         }});
         loadBtm();  // load first tab immediately
@@ -11013,6 +11069,25 @@ def api_schedule_strength():
         for rid, pts_list in weekly_pts.items():
             avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
 
+        # When no games have been played, fall back to power rankings (roster value) as proxy
+        games_played = sum(1 for pts in avg_pts_by_rid.values() if pts > 0)
+        if games_played == 0:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season)
+                model_vals = ctx.get("model_value_table") or []
+                picks_by_roster = ctx.get("picks_by_roster") or {}
+                values_by_id = {str(p["id"]): float(p.get("value") or 0) for p in model_vals if p.get("id")}
+                pick_values = load_pick_value_table() or {}
+                standings_map = ctx.get("standings_map") or {}
+                for r in rosters:
+                    rid = str(r.get("roster_id", ""))
+                    player_ids = [str(pid) for pid in (r.get("players") or [])]
+                    roster_val = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
+                    # Normalize to a "projected points" scale (~100-160 range) for display consistency
+                    avg_pts_by_rid[rid] = round(100.0 + roster_val / 50.0, 2)
+            except Exception:
+                pass
+
         # Build future matchups map: rid -> list of opponent roster_ids
         future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
 
@@ -11055,6 +11130,7 @@ def api_schedule_strength():
             "current_week": current_week,
             "weeks_remaining": max(0, FULL_SEASON_WEEKS - current_week),
             "teams": results,
+            "using_power_rankings": games_played == 0,
         })
 
     except Exception:
