@@ -4999,7 +4999,7 @@ def build_activity_body(ctx: dict) -> str:
             <h3>NFL News</h3>
             <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
           </div>
-          <div id="nflNewsList" class="card-body" style="padding:0;">
+          <div id="nflNewsList" class="card-body" style="padding:0;max-height:340px;overflow-y:auto;">
             <div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">Loading…</div>
           </div>
         </div>
@@ -5629,6 +5629,8 @@ def build_teams_body(ctx: dict) -> str:
     # Pre-compute roster grades for all teams
     from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
 
+    _n_teams = len(team_meta)
+
     def _grade_for_roster(r_id: int) -> dict:
         roster_obj = next((r for r in rosters if r.get("roster_id") == r_id), {})
         flat_players = []
@@ -5645,7 +5647,8 @@ def build_teams_body(ctx: dict) -> str:
             flat_players.append({"position": pos, "value": val, "age": age})
         flat_players.sort(key=lambda x: x["value"], reverse=True)
         picks = picks_by_roster.get(str(r_id), [])
-        return _calc_grade(flat_players, picks)
+        p_ranks = {pos: pos_rank[pos].get(r_id, _n_teams) for pos in POS_ORDER}
+        return _calc_grade(flat_players, picks, position_ranks=p_ranks, num_teams=_n_teams)
 
     team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
 
@@ -5897,12 +5900,13 @@ def build_teams_body(ctx: dict) -> str:
     </div>
     <script>
     (function() {{
-      var _platform   = {repr(platform_js)};
-      var _leagueId   = {repr(league_id)};
-      var _season     = {season_js};
-      var _leagueType = {repr(_league_type_js)};
-      var _leagueSize = {_league_size_js};
-      var _loaded     = {{}};
+      var _platform        = {repr(platform_js)};
+      var _leagueId        = {repr(league_id)};
+      var _season          = {season_js};
+      var _leagueType      = {repr(_league_type_js)};
+      var _leagueSize      = {_league_size_js};
+      var _viewerRosterId  = {repr(str(viewer_roster_id or ''))};
+      var _loaded          = {{}};
 
 
       function loadBtm() {{
@@ -6073,6 +6077,11 @@ def build_teams_body(ctx: dict) -> str:
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }}
 
+            // Show only the logged-in user's team; fall back to all teams if not known
+            if (_viewerRosterId) {{
+              teams = teams.filter(function(t) {{ return String(t.roster_id) === String(_viewerRosterId); }});
+            }}
+
             var sigColor = {{
               'Core':           '#22c55e',
               'Hold — Breakout':'#f59e0b',
@@ -6116,7 +6125,10 @@ def build_teams_body(ctx: dict) -> str:
               html += '</div>';
             }});
 
-            panel.innerHTML = html || '<p class="analytics-empty">All rosters look stable — no urgent actions flagged.</p>';
+            var emptyMsg = _viewerRosterId
+              ? 'Your roster looks stable — no urgent actions flagged.'
+              : 'All rosters look stable — no urgent actions flagged.';
+            panel.innerHTML = html || '<p class="analytics-empty">' + emptyMsg + '</p>';
           }})
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
@@ -6144,7 +6156,7 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.tradeIdeas = true;
         var panel = document.getElementById('tradeIdeasPanel');
         if (!panel) return;
-        var viewerRosterId = window._viewerRosterId || '';
+        var viewerRosterId = _viewerRosterId || '';
         if (!viewerRosterId) {{
           panel.innerHTML = '<p class="analytics-empty">Log in and set your team to see trade suggestions.</p>';
           return;

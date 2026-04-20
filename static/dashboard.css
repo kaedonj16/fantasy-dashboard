@@ -7580,7 +7580,7 @@ img, svg, canvas {
 @media (max-width: 728px) {
   .ad-container {
     max-width: 100%;
-    min-height: 90px;
+    min-height: 60px;
   }
 
   .ad-container ins {
@@ -9452,7 +9452,7 @@ img, svg, canvas {
   background: rgba(0, 0, 0, 0.02);
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.05);
-  min-height: 90px;
+  min-height: 60px;
 }
 
 .ad-top-banner {
@@ -9568,7 +9568,7 @@ img, svg, canvas {
   .ad-container {
     margin: 12px auto;
     padding: 6px;
-    min-height: 90px;
+    min-height: 60px;
   }
 
   .ad-top-banner {

@@ -329,15 +329,21 @@ _WIN_WINDOW_LABELS = {
 }
 
 
-def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dict:
+def calculate_roster_grade(
+    players: list[dict],
+    future_picks: list[dict],
+    position_ranks: dict | None = None,
+    num_teams: int = 12,
+) -> dict:
     """
-    Score a dynasty roster across four dimensions and return a letter grade.
+    Score a dynasty roster across five dimensions and return a letter grade.
 
     Dimensions:
-      Age Score (30%)  — based on avg age of top-8 players by value
-      Depth Score (25%) — positions with 2+ starters above 300 value
-      Capital Score (25%) — weighted pick capital (1st = 100, 2nd = 40, 3rd = 10)
-      Elite Core (20%) — count players above 5500 value
+      Age Score (25%)  — based on avg age of top-8 players by value
+      Depth Score (20%) — positions with 2+ starters above 300 value
+      Capital Score (20%) — weighted pick capital (1st = 100, 2nd = 40, 3rd = 10)
+      Elite Core (15%) — count players above 700 value
+      Rank Score (20%) — positional rankings relative to rest of league
 
     Returns dict with score (0-100), grade (A+ ... D), win_window label, breakdown.
     """
@@ -391,12 +397,33 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
     elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 700)
     elite_score = min(elite_count * 33, 100)
 
-    total = (
-        age_score * 0.30
-        + depth_score * 0.25
-        + capital_score * 0.25
-        + elite_score * 0.20
-    )
+    # Rank Score — positional rankings vs rest of league (1=best → 100, last → 0)
+    if position_ranks and num_teams > 1:
+        ranks = [v for v in position_ranks.values() if v is not None]
+        if ranks:
+            avg_rank = sum(ranks) / len(ranks)
+            rank_score = round(100.0 * (1.0 - (avg_rank - 1.0) / (num_teams - 1.0)), 1)
+            rank_score = max(0.0, min(100.0, rank_score))
+        else:
+            rank_score = 50.0
+    else:
+        rank_score = 50.0  # neutral when no ranking data available
+
+    if position_ranks:
+        total = (
+            age_score * 0.25
+            + depth_score * 0.20
+            + capital_score * 0.20
+            + elite_score * 0.15
+            + rank_score * 0.20
+        )
+    else:
+        total = (
+            age_score * 0.30
+            + depth_score * 0.25
+            + capital_score * 0.25
+            + elite_score * 0.20
+        )
     total = round(total, 1)
 
     grade = "D"
@@ -418,6 +445,7 @@ def calculate_roster_grade(players: list[dict], future_picks: list[dict]) -> dic
             "depth_score": depth_score,
             "capital_score": capital_score,
             "elite_score": elite_score,
+            "rank_score": rank_score,
             "avg_age": round(avg_age, 1),
             "elite_count": elite_count,
             "deep_positions": deep_positions,
