@@ -245,6 +245,19 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             recv_1qb = _side_value(assets, other_side, values, "1qb")
             recv_sf  = _side_value(assets, other_side, values, "sf")
             pkg_1qb  = _side_value(assets, side, values, "1qb")
+            pkg_sf   = _side_value(assets, side, values, "sf")
+
+            # Scale each player's received value by their proportional share of
+            # the package they're in. Without this, every player on a side gets
+            # the full other-side value — a fringe player packaged with a star
+            # would appear to be worth hundreds of points, and multi-player
+            # trades produce received values > 999.9.
+            player_val_1qb = values.get(pid, {}).get("value_1qb", 0)
+            player_val_sf  = values.get(pid, {}).get("value_sf",  0)
+            if pkg_1qb > 0 and player_val_1qb > 0:
+                recv_1qb = recv_1qb * (player_val_1qb / pkg_1qb)
+            if pkg_sf > 0 and player_val_sf > 0:
+                recv_sf = recv_sf * (player_val_sf / pkg_sf)
 
             s = stats[pid]
             s["trade_count"] += 1
