@@ -90,8 +90,10 @@ def update_player_values_with_rankings() -> int:
     Returns:
         Number of players updated
     """
-    # Load current value table
-    value_table = load_model_value_table()
+    # Load raw model values only — must NOT use calibrated values here or
+    # they would be written back into player_values.value_1qb, corrupting
+    # the model prior that calibration depends on.
+    value_table = load_model_value_table(apply_calibration=False)
     if not value_table:
         print("[update_player_values] No value table available")
         return 0

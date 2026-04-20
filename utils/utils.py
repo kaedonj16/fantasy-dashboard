@@ -256,7 +256,7 @@ def load_engine_table():
     return df
 
 
-def load_model_value_table():
+def load_model_value_table(apply_calibration: bool = True):
     # Return ONLY the parsed JSON data, not the path object
     result = read_json(path_model_value_table())
 
@@ -312,6 +312,24 @@ def load_model_value_table():
                                     _p[_k] = 0.0
         except Exception as _e:
             print(f"[load_model_value_table] FC filter skipped: {_e}")
+
+    # Overlay trade-data calibrated values where available.
+    # Only applies when called from the web layer (apply_calibration=True).
+    # The model-update pipeline passes apply_calibration=False to preserve
+    # the raw model prior in player_values.value_1qb.
+    if result and apply_calibration:
+        try:
+            from dashboard_services.player_value_history import load_calibration_overrides
+            overrides = load_calibration_overrides()
+            if overrides:
+                for _p in result:
+                    _pid = str(_p.get("id") or "")
+                    if _pid in overrides:
+                        _cal = overrides[_pid]
+                        _p["value"]    = _cal["value"]
+                        _p["sf_value"] = _cal["sf_value"]
+        except Exception as _e:
+            print(f"[load_model_value_table] Calibration overlay skipped: {_e}")
 
     return result
 

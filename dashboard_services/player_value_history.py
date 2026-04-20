@@ -376,6 +376,36 @@ def load_current_values_from_db() -> list[dict]:
     return players
 
 
+def load_calibration_overrides() -> dict[str, dict]:
+    """
+    Return {player_id: {value, sf_value}} for every player that has been
+    market-calibrated.  Used to overlay trade-data-adjusted values on top
+    of the raw model values without touching the model pipeline.
+    Falls back to empty dict if the DB is unavailable or the columns don't exist.
+    """
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_id,
+                       calibrated_value_1qb  AS value,
+                       COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
+                FROM player_values
+                WHERE calibrated_value_1qb IS NOT NULL
+                  AND calibrated_value_1qb > 0
+                """
+            ).fetchall()
+        return {
+            r["player_id"]: {
+                "value":    float(r["value"]),
+                "sf_value": float(r["sf_value"]),
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
+
+
 def get_top_movers(
         *,
         days: int = 7,

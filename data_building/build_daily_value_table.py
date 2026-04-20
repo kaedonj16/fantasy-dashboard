@@ -94,7 +94,9 @@ def build_daily_model_values():
     """
     print(f"[build_daily_data] Building model values with advanced metrics")
     rewrite_value_table_with_model()
-    model_value_table = load_model_value_table() or []
+    # Must use raw model values here — record_model_value_snapshot records the
+    # model prior; calibrated values belong in player_values.calibrated_value_1qb.
+    model_value_table = load_model_value_table(apply_calibration=False) or []
     record_model_value_snapshot(model_value_table)
 
 
