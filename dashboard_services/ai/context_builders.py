@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Union
 
+# Core fantasy positions used for scarcity analysis
+_SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
+
 
 def _safe_float(v, default: float = 0.0) -> float:
     try:

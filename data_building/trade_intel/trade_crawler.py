@@ -16,6 +16,7 @@ from typing import Any
 
 import requests
 
+from dashboard_services.api import get_transactions
 from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def _extract_assets(txn: dict) -> list[dict]:
     draft_picks: list[dict] = txn.get("draft_picks") or []
 
     # Determine the two roster IDs involved
-    all_roster_ids = sorted(set(list(adds.values()) + list(drops.keys() if drops else [])))
+    all_roster_ids = sorted(set([str(r) for r in list(adds.values()) + list(drops.keys() if drops else [])]))
     # adds: player_id -> roster_id_that_receives
     # We label the side that appears first (lower) as 'a'
     if len(all_roster_ids) < 2:
@@ -172,11 +173,13 @@ def crawl_league(league_id: str, season: int, start_week: int = 1, end_week: int
     """Crawl all trades for one league. Returns count of newly inserted trades."""
     if end_week is None:
         end_week = _current_nfl_week()
+    elif end_week == 0:
+        end_week = 1
 
     new_trades = 0
     for week in range(start_week, end_week + 1):
         time.sleep(_REQUEST_DELAY)
-        transactions = _get(f"/league/{league_id}/transactions/{week}")
+        transactions = get_transactions(league_id, week)
         if not transactions:
             continue
 
@@ -230,6 +233,7 @@ def run_crawl(batch_size: int = 200) -> dict:
     total_leagues = 0
 
     logger.info("[crawler] Crawling %d leagues (current week: %d)", len(leagues), current_week)
+    print(f"[crawler] Crawling {len(leagues)} leagues")
 
     for row in leagues:
         league_id = row["league_id"]
@@ -251,6 +255,7 @@ def run_crawl(batch_size: int = 200) -> dict:
             logger.warning("[crawler] League %s failed: %s", league_id, exc)
 
     logger.info("[crawler] Done. %d new trades across %d leagues.", total_trades, total_leagues)
+    print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")
     return {"leagues_crawled": total_leagues, "new_trades": total_trades}
 
 

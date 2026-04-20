@@ -5360,6 +5360,9 @@ def build_teams_body(ctx: dict) -> str:
     picks_by_roster = ctx.get("picks_by_roster") or {}
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
+    
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
