@@ -147,14 +147,32 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
         season = _current_season()
 
     known = _already_known(season)
-    # Seed from existing DB leagues (BFS-expands via roster owners).
-    # On a completely fresh DB, manually insert one league_id first.
-    frontier: Set[str] = _seed_league_ids(season)
+    # Seed BFS from leagues already in the DB. These won't be re-saved,
+    # but their roster owners are expanded to discover new connected leagues.
+    seeds: Set[str] = _seed_league_ids(season)
+    # Tracks which leagues need owner-expansion (seeds + newly found dynasty leagues)
+    to_expand: Set[str] = set(seeds)
+    # Frontier holds league IDs we haven't processed yet (new, not in DB)
+    frontier: Set[str] = set()
     visited_users: Set[str] = set()
     to_save: list[dict] = []
     total_new = 0
 
-    logger.info("[discovery] Starting. Known=%d, Frontier=%d", len(known), len(frontier))
+    logger.info("[discovery] Starting. Known=%d, Seeds=%d", len(known), len(seeds))
+
+    # First pass: expand all seed leagues to populate the frontier
+    for league_id in to_expand:
+        time.sleep(_REQUEST_DELAY)
+        for owner_id in _roster_owner_ids(league_id):
+            if owner_id in visited_users:
+                continue
+            visited_users.add(owner_id)
+            time.sleep(_REQUEST_DELAY)
+            for new_lid in _user_leagues(owner_id, season):
+                if new_lid not in known:
+                    frontier.add(new_lid)
+
+    logger.info("[discovery] After seed expansion: %d leagues in frontier", len(frontier))
 
     while frontier and (len(known) + total_new) < target:
         league_id = frontier.pop()
