@@ -292,10 +292,19 @@ def run_trade_value_model(
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
 
+    # Normalize so the top player lands at exactly MAX_VALUE rather than
+    # hard-clipping, which collapses all players above the ceiling to the same number.
+    v_1qb_pos = np.clip(v_1qb, 0.0, None)
+    v_sf_pos  = np.clip(v_sf,  0.0, None)
+    max_1qb   = v_1qb_pos.max() or MAX_VALUE
+    max_sf    = v_sf_pos.max()  or MAX_VALUE
+    v_1qb_norm = v_1qb_pos / max_1qb * MAX_VALUE
+    v_sf_norm  = v_sf_pos  / max_sf  * MAX_VALUE
+
     out_rows = []
     for i, pid in enumerate(player_ids):
-        cal_1qb = float(np.clip(v_1qb[i], 0.0, MAX_VALUE))
-        cal_sf  = float(np.clip(v_sf[i],  0.0, MAX_VALUE))
+        cal_1qb = float(v_1qb_norm[i])
+        cal_sf  = float(v_sf_norm[i])
         prior_v = prior[pid]["value_1qb"]
         # calibration_weight = fractional deviation from prior (0 = no change)
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0

@@ -1514,26 +1514,6 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
 
-    # Normalize player values so exactly one player lands at 999.9.
-    # FC normalization clips multiple players at the same fc_max to 999.9; this
-    # pass rescales the fully-blended output so only the #1 player hits the ceiling.
-    _player_assets = [a for a in cleaned_assets if a.get("position") != "PICK"]
-    _max_val = max((float(a.get("value") or 0) for a in _player_assets), default=1.0)
-    _max_sf  = max((float(a.get("sf_value") or 0) for a in _player_assets), default=1.0)
-    if _max_val > 0 and _max_sf > 0:
-        for a in _player_assets:
-            a["value"]    = round(float(a.get("value") or 0) / _max_val * 999.9, 1)
-            a["sf_value"] = round(float(a.get("sf_value") or 0) / _max_sf * 999.9, 1)
-            for n in LEAGUE_SIZES:
-                if n == 10:
-                    continue
-                vk = f"value_{n}"
-                sk = f"sf_value_{n}"
-                if vk in a:
-                    a[vk] = round(float(a[vk]) / _max_val * 999.9, 1)
-                if sk in a:
-                    a[sk] = round(float(a[sk]) / _max_sf * 999.9, 1)
-
     pos_to_indices: dict[str, list[int]] = {}
 
     for idx, asset in enumerate(cleaned_assets):
