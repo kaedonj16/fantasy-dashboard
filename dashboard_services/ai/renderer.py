@@ -548,7 +548,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     if cached:
         return cached
 
-    if not ai_available() or not suggestions_ctx.get("top_partners"):
+    if not ai_available() or (not suggestions_ctx.get("top_partners") and not suggestions_ctx.get("pick_trade_partners")):
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
         save_cached_ai_text(cache_key, html_out)
         return html_out
@@ -568,6 +568,8 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
     needs = ctx.get("viewer_needs") or []
     surplus = ctx.get("viewer_surplus") or []
     partners = ctx.get("top_partners") or []
+    pick_partners = ctx.get("pick_trade_partners") or []
+    projected_picks = ctx.get("projected_picks") or []
 
     needs_str = html.escape(", ".join(needs) if needs else "None identified")
     surplus_str = html.escape(", ".join(surplus) if surplus else "None identified")
@@ -576,17 +578,47 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
     for p in partners[:3]:
         pname = html.escape(str(p.get("team_name") or ""))
         targets = p.get("targets_they_have") or []
+        sends = p.get("targets_viewer_sends") or []
         target_names = html.escape(", ".join(t["name"] for t in targets[:2]) or "players at your needed positions")
+        send_names = html.escape(", ".join(t["name"] for t in sends[:2]))
+        send_part = f" — offer {send_names}" if send_names else ""
         partner_rows += f"""
         <div class="suggestion-card">
           <div class="suggestion-title">Target: {pname}</div>
-          <div class="suggestion-reasoning">They have depth at {html.escape(", ".join(p.get("partner_surplus") or []))} — consider targeting {target_names}.</div>
+          <div class="suggestion-reasoning">They have depth at {html.escape(", ".join(p.get("partner_surplus") or []))} — target {target_names}{send_part}.</div>
           <div class="suggestion-urgency urgency-medium">medium priority</div>
         </div>
         """
 
+    # Pick-for-player suggestions
+    for p in pick_partners[:3]:
+        pname = html.escape(str(p.get("team_name") or ""))
+        targets = p.get("targets_they_have") or []
+        picks = p.get("picks_you_offer") or []
+        target_names = html.escape(", ".join(t["name"] for t in targets[:2]))
+        pick_labels = ", ".join(
+            f"{pk.get('season', '')} R{pk.get('round', '')} (proj. {pk.get('proj_name', '')} {pk.get('proj_pos', '')})"
+            for pk in picks[:2]
+        )
+        if not target_names:
+            continue
+        partner_rows += f"""
+        <div class="suggestion-card">
+          <div class="suggestion-title">Pick Trade: {pname}</div>
+          <div class="suggestion-reasoning">Offer {html.escape(pick_labels)} to acquire {target_names}.</div>
+          <div class="suggestion-urgency urgency-low">pick offer</div>
+        </div>
+        """
+
     if not partner_rows:
-        partner_rows = "<p>No strong trade partners identified based on positional fit.</p>"
+        if projected_picks:
+            pick_preview = ", ".join(
+                f"R{p['round']} → {p.get('proj_name', 'unknown')} ({p.get('proj_pos', '')})"
+                for p in projected_picks[:3]
+            )
+            partner_rows = f"<p>Your picks project to: {html.escape(pick_preview)}. No trade partners with the right positional fit found yet.</p>"
+        else:
+            partner_rows = "<p>No strong trade partners identified based on positional fit.</p>"
 
     return f"""
     <div class="trade-suggestions-wrap">
