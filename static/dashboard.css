@@ -1803,10 +1803,10 @@ button {
 button:active {
   transform: translateY(1px);
 }
-
+/*
 button:hover {
   background: #0ea5e9;
-}
+} */
 
 /* ============================================
    TABLES & ROSTERS
@@ -2801,6 +2801,40 @@ thead th {
 }
 
 .otc-mini-tab.is-active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Teams Analytics Tabs - styled like Player Insights */
+#teamsAnalyticsTabs {
+  display: flex;
+  gap: 4px;
+  background: var(--row);
+  padding: 2px;
+  border-radius: 6px;
+}
+
+#teamsAnalyticsTabs .tab-btn {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#teamsAnalyticsTabs .tab-btn:hover {
+  color: var(--text);
+  background: #e2e8f0;
+}
+
+#teamsAnalyticsTabs .tab-btn.active {
   background: var(--card);
   color: var(--text);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -8224,11 +8258,6 @@ img, svg, canvas {
   .badge {
     font-size: 9px;
     padding: 1px 4px;
-  }
-
-  button {
-    font-size: 11px;
-    padding: 4px 8px;
   }
 
   .search,

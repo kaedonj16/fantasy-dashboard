@@ -5895,7 +5895,7 @@ def build_teams_body(ctx: dict) -> str:
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">Beat the Market</button>
+          <button class="tab-btn active" data-tab="btm">BTM</button>
           <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
           <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
           <button class="tab-btn" data-tab="trade-ideas">Trade Ideas</button>
