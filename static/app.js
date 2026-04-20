@@ -957,7 +957,7 @@ window.initTradePage = function initTradePage(root = document) {
     try {
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
-      const res = await fetch(`/api/value-movers?days=${currentMoversDays}&limit=15&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+      const res = await fetch(`/api/value-movers?days=${currentMoversDays}&limit=5&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
