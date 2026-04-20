@@ -522,14 +522,28 @@ def _upsert_packages(packages: list[dict]) -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _most_recent_trade_season() -> int | None:
+    """Return the most recent season that has completed trades, or None."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT season FROM trade_intel_trades WHERE status = 'complete' ORDER BY season DESC LIMIT 1"
+        ).fetchone()
+    return int(row["season"]) if row else None
+
+
 def run_analytics(season: int | None = None) -> dict:
     if season is None:
-        import requests
-        try:
-            state = requests.get("https://api.sleeper.app/v1/state/nfl", timeout=5).json()
-            season = int(state.get("season", 2024))
-        except Exception:
-            season = 2024
+        # Prefer the season we actually have trade data for — during offseason
+        # Sleeper reports the upcoming season (e.g. 2026) but trades are stored
+        # under the completed season (e.g. 2025).
+        season = _most_recent_trade_season()
+        if season is None:
+            import requests
+            try:
+                state = requests.get("https://api.sleeper.app/v1/state/nfl", timeout=5).json()
+                season = int(state.get("season", 2024))
+            except Exception:
+                season = 2024
 
     logger.info("[analytics] Ensuring per-size columns exist...")
     _ensure_size_columns()

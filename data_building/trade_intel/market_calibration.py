@@ -62,6 +62,10 @@ def _load_market_values(season: int) -> dict[str, dict]:
     """
     Load all time-aware market signals for players with enough trade data.
     Uses weighted_market_value as the primary signal (decay-adjusted median).
+
+    If no rows exist for the requested season, falls back to the most recent
+    season that does have data (handles offseason where Sleeper reports the
+    upcoming season but trade data is stored under the completed season).
     """
     with get_conn() as conn:
         rows = conn.execute(
@@ -79,6 +83,37 @@ def _load_market_values(season: int) -> dict[str, dict]:
             """,
             (season, MIN_TRADES_FOR_SIGNAL)
         ).fetchall()
+
+        if not rows:
+            # Offseason fallback: use the most recent season that has data
+            fallback = conn.execute(
+                """
+                SELECT season FROM trade_intel_player_stats
+                WHERE trade_count >= %s
+                ORDER BY season DESC LIMIT 1
+                """,
+                (MIN_TRADES_FOR_SIGNAL,)
+            ).fetchone()
+            if fallback:
+                logger.info(
+                    "[calibration] No data for season %d — falling back to season %d",
+                    season, fallback["season"]
+                )
+                rows = conn.execute(
+                    """
+                    SELECT
+                        player_id,
+                        trade_count,
+                        trade_count_14d,
+                        weighted_market_value_1qb,
+                        weighted_market_value_sf,
+                        market_trend_1qb,
+                        market_trend_sf
+                    FROM trade_intel_player_stats
+                    WHERE season = %s AND trade_count >= %s
+                    """,
+                    (fallback["season"], MIN_TRADES_FOR_SIGNAL)
+                ).fetchall()
 
     result = {}
     for r in rows:
@@ -285,14 +320,30 @@ def _write_calibrated(rows: list[dict]) -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _most_recent_stats_season() -> int | None:
+    """Return the most recent season in trade_intel_player_stats with enough data."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT season FROM trade_intel_player_stats
+            WHERE trade_count >= %s
+            ORDER BY season DESC LIMIT 1
+            """,
+            (MIN_TRADES_FOR_SIGNAL,)
+        ).fetchone()
+    return int(row["season"]) if row else None
+
+
 def run_calibration(season: int | None = None) -> dict:
     if season is None:
-        import requests
-        try:
-            state = requests.get("https://api.sleeper.app/v1/state/nfl", timeout=5).json()
-            season = int(state.get("season", 2024))
-        except Exception:
-            season = 2024
+        season = _most_recent_stats_season()
+        if season is None:
+            import requests
+            try:
+                state = requests.get("https://api.sleeper.app/v1/state/nfl", timeout=5).json()
+                season = int(state.get("season", 2024))
+            except Exception:
+                season = 2024
 
     logger.info("[calibration] Loading data for season %d...", season)
     model_rows = _load_model_values(season)
