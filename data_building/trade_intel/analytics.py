@@ -225,6 +225,8 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
     stats: dict[str, AccType] = defaultdict(_empty_acc)
 
+    _debug_printed = 0
+
     for trade in trades:
         assets  = trade["assets"]
         created = trade["created_at"]
@@ -245,6 +247,14 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             recv_1qb = _side_value(assets, other_side, values, "1qb")
             recv_sf  = _side_value(assets, other_side, values, "sf")
             pkg_1qb  = _side_value(assets, side, values, "1qb")
+
+            # Debug first 3 trades to diagnose ID mismatches
+            if _debug_printed < 3:
+                other_pids = [a["player_id"] for a in assets if a["side"] == other_side and a["asset_type"] == "player"]
+                in_values = [p for p in other_pids if p in values]
+                print(f"[analytics-debug] pid={pid!r} in_values={pid in values} recv_1qb={recv_1qb} "
+                      f"other_players={other_pids} found_in_values={in_values}")
+                _debug_printed += 1
 
             s = stats[pid]
             s["trade_count"] += 1
