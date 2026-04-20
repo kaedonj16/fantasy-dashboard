@@ -108,7 +108,6 @@ def _save_leagues(leagues: list[dict]) -> int:
     if not leagues:
         return 0
     with get_conn() as conn:
-        inserted = 0
         for lg in leagues:
             conn.execute(
                 """
@@ -125,9 +124,7 @@ def _save_leagues(leagues: list[dict]) -> int:
                     lg.get("league_type"),
                 )
             )
-            if conn.pgresult and conn.pgresult.command_tuples == 1:
-                inserted += 1
-    return inserted
+    return len(leagues)
 
 
 def _classify_scoring(settings: dict) -> str:
