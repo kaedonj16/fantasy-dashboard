@@ -40,14 +40,6 @@ def _decay_weight(days_ago: float) -> float:
 
 
 def diagnose(target_pid: str, limit: int = 30):
-    with get_conn() as conn:
-        # Load model values
-        value_rows = conn.execute(
-            "SELECT player_id, value_1qb, calibrated_value_1qb, name FROM player_values pv "
-            "LEFT JOIN (SELECT player_id AS pid2, name FROM player_values) x ON x.pid2 = pv.player_id "
-            "WHERE pv.value_1qb IS NOT NULL"
-        ).fetchall()
-
     # Just load values + names separately
     with get_conn() as conn:
         val_rows = conn.execute(
