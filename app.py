@@ -1321,6 +1321,29 @@ def _build_roster_map(users: list, rosters: list) -> dict:
     return roster_map
 
 
+def _load_rookie_rankings_for_ctx() -> list[dict]:
+    """Load current draft class rookies sorted by overall_rank for pick projection."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        draft_year = get_active_rookie_class()
+        rows = get_rookie_rankings_from_db(draft_year)
+        return [
+            {
+                "player_id":    r.get("player_id", ""),
+                "name":         r.get("name", ""),
+                "position":     str(r.get("position") or "").upper(),
+                "overall_rank": int(r.get("overall_rank") or 999),
+                "value_1qb":    float(r.get("rookie_value") or 0),
+                "value_sf":     float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+            }
+            for r in rows
+            if r.get("position") in ("QB", "RB", "WR", "TE")
+        ]
+    except Exception as e:
+        print(f"[rookie_rankings] skipped: {e}")
+        return []
+
+
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
@@ -1487,6 +1510,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "drafts": drafts,
         "latest_draft": latest_draft,
         "viewer": get_viewer_session_for_league(users, rosters),
+        "rookie_rankings": _load_rookie_rankings_for_ctx(),
     }
 
 

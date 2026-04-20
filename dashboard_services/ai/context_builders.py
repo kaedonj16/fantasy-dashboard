@@ -616,51 +616,84 @@ def build_trade_suggestions_context(
     # Rank every roster by positional total (1 = best)
     roster_totals_map = {str(r.get("roster_id") or ""): _roster_pos_totals(r) for r in rosters}
 
-    # Project the viewer's upcoming picks to actual rookie positions/values using
-    # the live rookie rankings, so needs detection reflects what they're likely to draft.
-    # e.g. if they hold 1.01 and the top rookie is an RB, suppress RB as a need.
+    # Project the viewer's upcoming picks to actual rookies using the live rankings table.
+    # Pick slot = standings rank of original owner (worst record = 1.01, etc.).
+    # Supports both 1QB (value_1qb) and SF (value_sf).
     viewer_rid = str(viewer_roster_id)
     viewer_picks_list = picks_by_roster.get(viewer_rid, [])
     from datetime import datetime as _dt
     _cur_yr = _dt.now().year
+    _league_type = str(ctx.get("league_type") or "1qb").lower()
 
-    top_rookies = sorted(
-        [v for v in model_value_lookup.values()
-         if v.get("is_rookie") and str(v.get("position", "")).upper() in _SCARCITY_POSITIONS],
-        key=lambda r: float(r.get("value") or 0),
-        reverse=True,
+    # Sorted rookie rankings from ctx (already ordered by overall_rank asc)
+    _rookie_rankings: list[dict] = sorted(
+        ctx.get("rookie_rankings") or [],
+        key=lambda r: int(r.get("overall_rank") or 999),
     )
-    _rookie_idx = 0
+    # For SF use sf value, otherwise 1qb value
+    _val_key = "value_sf" if _league_type == "sf" else "value_1qb"
+
+    # Build pick-slot map: for each season+round, rank original owners by record
+    # (worst record = slot 1 = earliest pick in that round)
+    _standings_map = ctx.get("standings_map") or {}
+
+    def _win_pct(rid: str) -> float:
+        s = _standings_map.get(str(rid)) or {}
+        w = _safe_float(s.get("wins") or s.get("W") or s.get("Wins") or 0)
+        l = _safe_float(s.get("losses") or s.get("L") or s.get("Losses") or 0)
+        return w / (w + l) if (w + l) > 0 else 0.5
+
+    # Group all picks (across all rosters) by season+round to assign slots
+    _all_picks_flat: list[dict] = []
+    for _rid, _plist in picks_by_roster.items():
+        for _pk in _plist:
+            _all_picks_flat.append({**_pk, "current_owner": _rid})
+
+    _slot_cache: dict[tuple, dict[str, int]] = {}  # (season,round) -> {original_owner: slot}
+
+    def _get_slot(season: int, rnd: int, original_owner: str) -> int:
+        key = (season, rnd)
+        if key not in _slot_cache:
+            picks_for_rnd = [p for p in _all_picks_flat
+                             if p.get("season") == season and p.get("round") == rnd]
+            unique_owners = list({str(p.get("original_owner", "")) for p in picks_for_rnd})
+            # Sort worst record first → they get the earliest pick slot
+            unique_owners.sort(key=lambda r: _win_pct(r))
+            _slot_cache[key] = {o: i + 1 for i, o in enumerate(unique_owners)}
+        return _slot_cache[key].get(str(original_owner), len(rosters))
+
     _pick_pos_credits: dict[str, float] = {}
-    _projected_picks: list[dict] = []  # for context output
+    _projected_picks: list[dict] = []
     for _rnd in [1, 2]:
         _rnd_picks = sorted(
             [p for p in viewer_picks_list
              if p.get("round") == _rnd and int(p.get("season", 0)) <= _cur_yr + 1],
-            key=lambda p: p.get("season", 9999),
+            key=lambda p: (p.get("season", 9999), _get_slot(
+                int(p.get("season", _cur_yr)), _rnd, p.get("original_owner", "")
+            )),
         )
         for _pk in _rnd_picks:
-            if _rookie_idx < len(top_rookies):
-                _proj = top_rookies[_rookie_idx]
+            _season = int(_pk.get("season", _cur_yr))
+            _slot   = _get_slot(_season, _rnd, _pk.get("original_owner", ""))
+            # For R1 the rookie index = slot-1; for R2 offset past all R1 rookies
+            _rookie_base = 0 if _rnd == 1 else len(rosters)
+            _rookie_idx  = _rookie_base + _slot - 1
+            if _rookie_idx < len(_rookie_rankings):
+                _proj = _rookie_rankings[_rookie_idx]
                 _pos  = str(_proj.get("position", "")).upper()
-                _val  = float(_proj.get("value") or 0)
-                if _pos:
+                _val  = float(_proj.get(_val_key) or _proj.get("value_1qb") or 0)
+                if _pos in _SCARCITY_POSITIONS:
                     _pick_pos_credits[_pos] = _pick_pos_credits.get(_pos, 0.0) + _val
                 _projected_picks.append({
-                    "season":    _pk.get("season"),
+                    "season":    _season,
                     "round":     _rnd,
+                    "slot":      _slot,
                     "proj_name": _proj.get("name", ""),
                     "proj_pos":  _pos,
                     "proj_val":  round(_val, 1),
                 })
-                _rookie_idx += 1
             else:
-                _projected_picks.append({
-                    "season": _pk.get("season"), 
-                    "round": _rnd,
-                    "proj_name": "TBD",
-                    "proj_pos": "TBD"
-                })
+                _projected_picks.append({"season": _season, "round": _rnd, "slot": _slot})
 
     if _pick_pos_credits:
         viewer_totals = {

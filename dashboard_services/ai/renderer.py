@@ -542,7 +542,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     cache_key = build_ai_cache_key(
         "trade_suggestions",
         {"roster_id": viewer_roster_id, "needs": suggestions_ctx.get("viewer_needs"), "surplus": suggestions_ctx.get("viewer_surplus")},
-        "v4",
+        "v5",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
@@ -562,6 +562,20 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
     save_cached_ai_text(cache_key, html_out)
     return html_out
+
+
+def _fmt_pick_label(pk: dict) -> str:
+    season = pk.get("season", "")
+    rnd    = pk.get("round", "")
+    slot   = pk.get("slot")
+    name   = pk.get("proj_name", "")
+    pos    = pk.get("proj_pos", "")
+    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(int(rnd) if rnd else 0, f"{rnd}th")
+    slot_str = f".{int(slot):02d}" if slot else ""
+    base = f"{season} {suffix} Round Pick{slot_str}"
+    if name:
+        base += f" (proj. {name}, {pos})"
+    return base
 
 
 def _render_trade_suggestions_fallback(ctx: dict) -> str:
@@ -596,11 +610,8 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         targets = p.get("targets_they_have") or []
         picks = p.get("picks_you_offer") or []
         target_names = html.escape(", ".join(t["name"] for t in targets[:2]))
-        pick_labels = ", ".join(
-            f"{pk.get('season', '')} R{pk.get('round', '')} (proj. {pk.get('proj_name', '')} {pk.get('proj_pos', '')})"
-            for pk in picks[:2]
-        )
-        if not target_names:
+        pick_labels = ", ".join(_fmt_pick_label(pk) for pk in picks[:2])
+        if not target_names or not pick_labels:
             continue
         partner_rows += f"""
         <div class="suggestion-card">
@@ -611,14 +622,7 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         """
 
     if not partner_rows:
-        if projected_picks:
-            pick_preview = ", ".join(
-                f"R{p['round']} → {p.get('proj_name', 'unknown')} ({p.get('proj_pos', '')})"
-                for p in projected_picks[:3]
-            )
-            partner_rows = f"<p>Your picks project to: {html.escape(pick_preview)}. No trade partners with the right positional fit found yet.</p>"
-        else:
-            partner_rows = "<p>No strong trade partners identified based on positional fit.</p>"
+        partner_rows = "<p>No strong trade partners identified based on positional fit.</p>"
 
     return f"""
     <div class="trade-suggestions-wrap">
