@@ -170,6 +170,17 @@ def _build_normal_equations(
                      if a["asset_type"] == "pick" and a["side"] == "b")
         b_t = pick_b - pick_a
 
+        # Skip trades where one side has no contribution at all.
+        # Multi-team trades are stored in Sleeper as per-team records, so a
+        # 3-way deal produces fragments where one side appears empty.  These
+        # create constraints like (v_Bijan + others = 0) which force absurd
+        # negative values.  The analytics layer already drops these via
+        # recv_1qb > 0; we apply the same guard here.
+        has_a = any(s > 0 for _, s in terms) or pick_a > 0
+        has_b = any(s < 0 for _, s in terms) or pick_b > 0
+        if not has_a or not has_b:
+            continue
+
         # Accumulate outer product into AtWA and update AtWb.
         # k is typically 2–4 (players per trade), so the inner loop is cheap.
         for idx_i, sign_i in terms:
