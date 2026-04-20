@@ -609,48 +609,60 @@ def build_trade_suggestions_context(
                 out.append({"id": spid, "name": str(mv.get("name") or spid), "value": round(val, 1), "position": pos})
         return sorted(out, key=lambda x: x["value"], reverse=True)
 
-    # League-wide average positional totals
-    all_roster_totals = [_roster_pos_totals(r) for r in rosters]
-    league_avg: dict[str, float] = {}
-    if all_roster_totals:
-        for pos in _SCARCITY_POSITIONS:
-            league_avg[pos] = sum(t.get(pos, 0.0) for t in all_roster_totals) / len(all_roster_totals)
-
+    n_teams = max(len(rosters), 1)
     viewer_totals = _roster_pos_totals(roster)
     viewer_player_ids = {str(pid) for pid in roster.get("players") or []}
 
-    # Classify viewer positions
-    viewer_needs = []
-    viewer_surplus = []
+    # Rank every roster by positional total (1 = best)
+    roster_totals_map = {str(r.get("roster_id") or ""): _roster_pos_totals(r) for r in rosters}
+    pos_rank_map: dict[str, dict[str, int]] = {}  # rid -> {pos -> rank}
     for pos in _SCARCITY_POSITIONS:
-        avg = league_avg.get(pos, 1.0)
-        if avg == 0:
-            continue
-        ratio = viewer_totals.get(pos, 0.0) / avg
-        if ratio < 0.80:
-            viewer_needs.append(pos)
-        elif ratio > 1.20:
-            viewer_surplus.append(pos)
+        sorted_rids = sorted(
+            roster_totals_map.keys(),
+            key=lambda rid: roster_totals_map[rid].get(pos, 0.0),
+            reverse=True,
+        )
+        for i, rid in enumerate(sorted_rids, start=1):
+            pos_rank_map.setdefault(rid, {})[pos] = i
+
+    viewer_rid = str(viewer_roster_id)
+    viewer_ranks = pos_rank_map.get(viewer_rid, {})
+
+    # Need = bottom 35% of league; Surplus = top 30% of league (rank-based)
+    need_cutoff = max(1, round(n_teams * 0.35))
+    surplus_cutoff = max(1, round(n_teams * 0.30))
+
+    viewer_needs = [
+        pos for pos in _SCARCITY_POSITIONS
+        if viewer_ranks.get(pos, n_teams) > n_teams - need_cutoff
+    ]
+    viewer_surplus = [
+        pos for pos in _SCARCITY_POSITIONS
+        if viewer_ranks.get(pos, n_teams) <= surplus_cutoff
+    ]
+
+    # League averages for context only
+    league_avg: dict[str, float] = {}
+    for pos in _SCARCITY_POSITIONS:
+        vals = [roster_totals_map[rid].get(pos, 0.0) for rid in roster_totals_map]
+        league_avg[pos] = sum(vals) / len(vals) if vals else 0.0
 
     # Find best trade partners
     partners = []
     for r in rosters:
         rid = str(r.get("roster_id") or "")
-        if rid == str(viewer_roster_id):
+        if rid == viewer_rid:
             continue
 
-        partner_totals = _roster_pos_totals(r)
-        partner_needs = []
-        partner_surplus = []
-        for pos in _SCARCITY_POSITIONS:
-            avg = league_avg.get(pos, 1.0)
-            if avg == 0:
-                continue
-            ratio = partner_totals.get(pos, 0.0) / avg
-            if ratio < 0.80:
-                partner_needs.append(pos)
-            elif ratio > 1.20:
-                partner_surplus.append(pos)
+        partner_ranks = pos_rank_map.get(rid, {})
+        partner_needs = [
+            pos for pos in _SCARCITY_POSITIONS
+            if partner_ranks.get(pos, n_teams) > n_teams - need_cutoff
+        ]
+        partner_surplus = [
+            pos for pos in _SCARCITY_POSITIONS
+            if partner_ranks.get(pos, n_teams) <= surplus_cutoff
+        ]
 
         # Score compatibility: viewer's surplus matches partner's need and vice versa
         match_score = 0
@@ -699,6 +711,8 @@ def build_trade_suggestions_context(
         "viewer_direction": viewer_team_ctx.get("direction") or "balanced",
         "viewer_needs": viewer_needs,
         "viewer_surplus": viewer_surplus,
+        "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},
+        "league_size": n_teams,
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
         "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
         "top_partners": partners[:5],

@@ -482,11 +482,10 @@ BASE_HTML = """
       <!-- Top Banner Ad -->
       <div class="ad-container ad-top-banner">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block;max-height:90px;overflow:hidden;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="5233061286"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
+             data-ad-format="horizontal"></ins>
       </div>
 
       <main id="page-root" class="overview-layout">
@@ -496,11 +495,10 @@ BASE_HTML = """
       <!-- Bottom Content Ad -->
       <div class="ad-container ad-bottom-content">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block;max-height:90px;overflow:hidden;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="5233061286"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
+             data-ad-format="horizontal"></ins>
       </div>
     </div>
 
@@ -6102,15 +6100,19 @@ def build_teams_body(ctx: dict) -> str:
               'Cut':            'var(--row)',
             }};
 
+            var sigOrder = {{'Sell High':0,'Cut':1,'Hold — Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
             var html = '';
             teams.forEach(function(t) {{
-              var actionPlayers = t.players.filter(function(p) {{
-                return p.signal === 'Sell High' || p.signal === 'Buy Window' || p.signal === 'Hold — Breakout';
-              }});
+              // Show everything except plain Hold — sorted by urgency
+              var actionPlayers = t.players
+                .filter(function(p) {{ return p.signal !== 'Hold'; }})
+                .sort(function(a, b) {{
+                  return (sigOrder[a.signal] ?? 9) - (sigOrder[b.signal] ?? 9);
+                }});
               if (!actionPlayers.length) return;
               html += '<div class="ri-team-block">' +
                 '<div class="ri-team-name">' + t.team_name + '</div>';
-              actionPlayers.slice(0, 5).forEach(function(p) {{
+              actionPlayers.slice(0, 8).forEach(function(p) {{
                 var chgHtml = '';
                 if (p.rank_change_7d && p.rank_change_7d !== 0) {{
                   var sym = p.rank_change_7d > 0 ? '▲' : '▼';

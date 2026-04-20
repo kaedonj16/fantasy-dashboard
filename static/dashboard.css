@@ -9444,15 +9444,17 @@ img, svg, canvas {
 .ad-container {
   width: 100%;
   max-width: 100%;
-  margin: 16px auto;
-  padding: 8px;
+  margin: 8px auto;
+  padding: 4px;
   display: flex;
   justify-content: center;
   align-items: center;
   background: rgba(0, 0, 0, 0.02);
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.05);
-  min-height: 60px;
+  min-height: 50px;
+  max-height: 100px;
+  overflow: hidden;
 }
 
 .ad-top-banner {

@@ -419,8 +419,10 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
 
     system_prompt = """
 You are a dynasty fantasy football GM assistant generating proactive trade ideas.
-You identify the viewer's positional needs/surplus and match them against leaguemates.
-Be specific: name exact players. Keep reasoning concise (max 2 sentences).
+Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) exactly as given — do NOT override them.
+If viewer_needs is empty, do not suggest acquiring players at positions they don't need.
+Be specific: name exact players from targets_they_have and targets_viewer_sends.
+Keep reasoning concise (max 2 sentences).
 Urgency: high = critical need or clear win-now move, medium = solid improvement, low = depth upgrade.
 Use only the supplied JSON. Do not invent players or values.
 """.strip()
