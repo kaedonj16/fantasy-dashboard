@@ -542,7 +542,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     cache_key = build_ai_cache_key(
         "trade_suggestions",
         {"roster_id": viewer_roster_id, "needs": suggestions_ctx.get("viewer_needs"), "surplus": suggestions_ctx.get("viewer_surplus")},
-        "v5",
+        "v6",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
@@ -593,13 +593,20 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         pname = html.escape(str(p.get("team_name") or ""))
         targets = p.get("targets_they_have") or []
         sends = p.get("targets_viewer_sends") or []
+        is_pkg = p.get("is_package_trade", False)
         target_names = html.escape(", ".join(t["name"] for t in targets[:2]) or "players at your needed positions")
         send_names = html.escape(", ".join(t["name"] for t in sends[:2]))
-        send_part = f" — offer {send_names}" if send_names else ""
+        if is_pkg and len(sends) >= 2:
+            title = f"Package Deal: {pname}"
+            reasoning = f"Package {send_names} to acquire {target_names} — converts surplus depth into an elite upgrade."
+        else:
+            title = f"Target: {pname}"
+            send_part = f" — offer {send_names}" if send_names else ""
+            reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} — target {target_names}{send_part}."
         partner_rows += f"""
         <div class="suggestion-card">
-          <div class="suggestion-title">Target: {pname}</div>
-          <div class="suggestion-reasoning">They have depth at {html.escape(", ".join(p.get("partner_surplus") or []))} — target {target_names}{send_part}.</div>
+          <div class="suggestion-title">{html.escape(title)}</div>
+          <div class="suggestion-reasoning">{html.escape(reasoning)}</div>
           <div class="suggestion-urgency urgency-medium">medium priority</div>
         </div>
         """

@@ -779,6 +779,24 @@ def build_trade_suggestions_context(
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
                 targets_they_have.extend(top)
 
+        # Surplus-liquidation path: viewer has surplus to give but no explicit need.
+        # Partner can offer any high-value player at a position viewer is weak/neutral at.
+        is_package_trade = False
+        if not targets_they_have and mutual_surplus_need:
+            is_package_trade = True
+            # Positions viewer isn't in surplus at, prioritized by weakest rank first
+            weaker_positions = sorted(
+                [pos for pos in _SCARCITY_POSITIONS if pos not in viewer_surplus],
+                key=lambda pos: viewer_ranks.get(pos, n_teams), reverse=True,
+            )
+            if not weaker_positions:
+                weaker_positions = list(_SCARCITY_POSITIONS)
+            for pos in weaker_positions:
+                top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
+                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350)
+            targets_they_have.sort(key=lambda x: x["value"], reverse=True)
+            targets_they_have = targets_they_have[:1]
+
         # Find what viewer could send (viewer's surplus that partner needs).
         # Surplus positions: keep ≥1 (they have a starter and can trade depth).
         # Non-surplus positions: keep ≥2 (don't gut a weak spot).
@@ -802,6 +820,29 @@ def build_trade_suggestions_context(
                     continue
             top = _roster_top_players(roster, pos, exclude_ids=partner_player_ids)[:min(2, max_sendable)]
             targets_viewer_sends.extend(top)
+
+        # Package trade fallback: if viewer has a surplus at multiple positions and needs
+        # to package them to match the target's value, pull from all surplus positions.
+        if is_package_trade and not targets_viewer_sends and targets_they_have:
+            target_val = targets_they_have[0]["value"]
+            all_surplus_sendable = []
+            for pos in viewer_surplus:
+                pos_depth = sum(
+                    1 for pid in (roster.get("players") or [])
+                    if str(model_value_lookup.get(str(pid), {}).get("position", "")).upper() == pos
+                )
+                if pos_depth >= 1:
+                    top = _roster_top_players(roster, pos)
+                    # Send 2nd player onward at surplus positions (keep 1 starter)
+                    all_surplus_sendable.extend(top[1:2] if pos_depth > 1 else top[:1])
+            all_surplus_sendable.sort(key=lambda x: x["value"], reverse=True)
+            # Build package until combined value reaches ~80% of target
+            running = 0.0
+            for p in all_surplus_sendable:
+                if running >= target_val * 0.80:
+                    break
+                targets_viewer_sends.append(p)
+                running += p["value"]
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
         if not targets_they_have or not targets_viewer_sends:
@@ -829,6 +870,7 @@ def build_trade_suggestions_context(
             "value_you_get": value_you_get,
             "value_you_give": value_you_give,
             "trade_type_hint": trade_type_hint,
+            "is_package_trade": is_package_trade,
         })
 
     partners.sort(key=lambda x: x["match_score"], reverse=True)
