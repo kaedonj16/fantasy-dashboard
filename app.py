@@ -4888,7 +4888,7 @@ def build_activity_body(ctx: dict) -> str:
                 f"<button class='outcome-check-btn' "
                 f"data-trade-teams='{outcome_json}' "
                 f"data-trade-date='{trade_date_str}' "
-                f"onclick='checkTradeOutcome(this)'>📊 Check Outcome</button>"
+                f"onclick='checkTradeOutcome(this)'>Check Outcome</button>"
             )
             outcome_result_id = f"outcome_{trade_count}"
             return (
@@ -5111,7 +5111,7 @@ def build_activity_body(ctx: dict) -> str:
 
       .bract-summary-grid {{
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
         margin: 0 0 12px 0;
       }}
@@ -5141,7 +5141,7 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-summary-text {{
-        font-size: 16px;
+        font-size: 12px;
         line-height: 1.3;
       }}
 
@@ -6644,6 +6644,21 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     ctx = entry["ctx"]
     ctx["viewer"] = get_viewer_session()
     return ctx
+
+
+@app.route("/api/trade-count")
+def api_trade_count():
+    """Get the count of trades from trade_intel_trades table."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            count = cursor.fetchone()[0]
+        return jsonify({"count": count})
+    except Exception as e:
+        # Return fallback count if table doesn't exist or other error
+        return jsonify({"count": 15000})
 
 
 @app.route("/api/refresh-league", methods=["POST"])
@@ -8791,13 +8806,26 @@ def api_trade_outcome():
     assets_received = payload.get("assets_received") or []
     assets_sent = payload.get("assets_sent") or []
 
+    logger.info("[api-trade-outcome] Received payload: %s", {
+        "assets_received_count": len(assets_received),
+        "assets_sent_count": len(assets_sent),
+        "trade_date": payload.get("trade_date"),
+        "payload_keys": list(payload.keys())
+    })
+
     if not assets_received and not assets_sent:
-        return jsonify({"error": "No assets provided"}), 400
+        logger.warning("[api-trade-outcome] 400 error: No assets provided. Payload: %s", payload)
+        return jsonify({"error": "No assets provided", "debug": payload}), 400
 
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
+        from dashboard_services.picks import load_pick_value_table
+        
         value_table = get_model_value_table_cached()
         values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        
+        # Load pick values for pick asset handling
+        pick_values = load_pick_value_table()
 
         trade_date = str(payload.get("trade_date") or "")
         trade_month = trade_date[:7] if trade_date else ""
@@ -8810,6 +8838,32 @@ def api_trade_outcome():
                 if str(snap.get("as_of_date") or "").startswith(trade_month):
                     return float(snap.get("value") or 0)
             return 0.0
+        
+        def get_pick_value(asset: dict) -> float:
+            """Get current pick value using the same logic as trade value model."""
+            rd = int(asset.get("pick_round") or 4)
+            order = str(asset.get("pick_order") or "mid")
+            year = int(asset.get("pick_year") or trade_date[:4] if trade_date else datetime.now().year)
+            
+            # Try exact slot first (e.g., "2026_1_01")
+            if order.isdigit():
+                key = f"{year}_{rd}_{int(order):02d}"
+                if key in pick_values:
+                    return pick_values[key]
+            
+            # Try bucket format (e.g., "2026_1_early")
+            if order in ("early", "mid", "late"):
+                key = f"{year}_{rd}_{order}"
+                if key in pick_values:
+                    return pick_values[key]
+            
+            # Try generic round (e.g., "2026_1")
+            key = f"{year}_{rd}"
+            if key in pick_values:
+                return pick_values[key]
+            
+            # Fallback to minimal value
+            return 10.0
 
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
@@ -8836,8 +8890,15 @@ def api_trade_outcome():
         for asset in assets_received:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
-            now = values_now.get(pid, 0.0)
-            then = then_values.get(pid, now) if trade_date else now
+            
+            # Handle players vs picks
+            if asset.get("asset_type") == "pick":
+                now = get_pick_value(asset)
+                then = now  # Picks don't have historical values, use current value
+            else:
+                now = values_now.get(pid, 0.0)
+                then = then_values.get(pid, now) if trade_date else now
+                
             total_received_now += now
             total_received_then += then
             received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
@@ -8845,8 +8906,15 @@ def api_trade_outcome():
         for asset in assets_sent:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
-            now = values_now.get(pid, 0.0)
-            then = then_values.get(pid, now) if trade_date else now
+            
+            # Handle players vs picks
+            if asset.get("asset_type") == "pick":
+                now = get_pick_value(asset)
+                then = now  # Picks don't have historical values, use current value
+            else:
+                now = values_now.get(pid, 0.0)
+                then = then_values.get(pid, now) if trade_date else now
+                
             total_sent_now += now
             total_sent_then += then
             sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})

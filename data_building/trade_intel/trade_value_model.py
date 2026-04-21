@@ -36,25 +36,57 @@ from datetime import datetime, timezone
 import numpy as np
 
 from dashboard_services.db import get_conn
+from dashboard_services.picks import load_pick_value_table
 
 logger = logging.getLogger(__name__)
 
 LAMBDA_REG = 15.0   # regularization strength — higher = more model prior
 MAX_VALUE  = 999.9
 
-_PICK_BASE_VALUES_1QB = {
-    (1, "early"): 800, (1, "mid"): 650, (1, "late"): 480,
-    (2, "early"): 320, (2, "mid"): 220, (2, "late"): 140,
-    (3, "early"):  90, (3, "mid"):  60, (3, "late"):  35,
-    (4, "early"):  25, (4, "mid"):  15, (4, "late"):   8,
-}
 
-
-def _pick_value(asset: dict, fmt: str = "1qb") -> float:
-    rd    = int(asset.get("pick_round") or 4)
+def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
+    """
+    Get pick value using dynamic pick value table.
+    
+    Args:
+        asset: Dict with pick_round, pick_order, pick_year
+        pick_values: Loaded pick value table from load_pick_value_table()
+        fmt: "1qb" or "sf" format
+    
+    Returns:
+        Pick value scaled by format
+    """
+    try:
+        rd = int(asset.get("pick_round") or 4)
+    except (ValueError, TypeError):
+        rd = 4
+    
     order = str(asset.get("pick_order") or "mid")
-    base  = _PICK_BASE_VALUES_1QB.get((min(rd, 4), order), 10)
-    return base * (1.5 if fmt == "sf" else 1.0)
+    
+    try:
+        year = int(asset.get("pick_year") or datetime.now().year)
+    except (ValueError, TypeError):
+        year = datetime.now().year
+    
+    # Try exact slot first (e.g., "2026_1_01")
+    if order.isdigit():
+        key = f"{year}_{rd}_{int(order):02d}"
+        if key in pick_values:
+            return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
+    
+    # Try bucket format (e.g., "2026_1_early")
+    if order in ("early", "mid", "late"):
+        key = f"{year}_{rd}_{order}"
+        if key in pick_values:
+            return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
+    
+    # Try generic round (e.g., "2026_1")
+    key = f"{year}_{rd}"
+    if key in pick_values:
+        return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
+    
+    # Fallback to minimal value
+    return 10.0 * (1.5 if fmt == "sf" else 1.0)
 
 
 def _decay_weight(days_ago: float) -> float:
@@ -135,6 +167,7 @@ def _build_normal_equations(
     pid_idx: dict[str, int],
     N: int,
     fmt: str,
+    pick_values: dict,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full
@@ -164,9 +197,9 @@ def _build_normal_equations(
             continue
 
         # Pick value imbalance on the RHS
-        pick_a = sum(_pick_value(a, fmt) for a in assets
+        pick_a = sum(_pick_value(a, pick_values, fmt) for a in assets
                      if a["asset_type"] == "pick" and a["side"] == "a")
-        pick_b = sum(_pick_value(a, fmt) for a in assets
+        pick_b = sum(_pick_value(a, pick_values, fmt) for a in assets
                      if a["asset_type"] == "pick" and a["side"] == "b")
         b_t = pick_b - pick_a
 
@@ -267,10 +300,18 @@ def run_trade_value_model(
 
     prior  = _load_prior()
     trades = _load_trades(season)
+    
+    # Load dynamic pick values
+    try:
+        pick_values = load_pick_value_table()
+        logger.info("[trade_value_model] Loaded %d pick values", len(pick_values))
+    except Exception as e:
+        logger.warning("[trade_value_model] Failed to load pick values: %s", e)
+        pick_values = {}
 
     logger.info(
-        "[trade_value_model] %d players in prior, %d trades loaded",
-        len(prior), len(trades),
+        "[trade_value_model] %d players in prior, %d trades loaded, %d pick values",
+        len(prior), len(trades), len(pick_values),
     )
 
     if not trades or not prior:
@@ -285,8 +326,8 @@ def run_trade_value_model(
     prior_sf  = np.array([prior[pid]["value_sf"]  for pid in player_ids])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    AtWA_1qb, AtWb_1qb, M = _build_normal_equations(trades, pid_idx, N, "1qb")
-    AtWA_sf,  AtWb_sf,  _ = _build_normal_equations(trades, pid_idx, N, "sf")
+    AtWA_1qb, AtWb_1qb, M = _build_normal_equations(trades, pid_idx, N, "1qb", pick_values)
+    AtWA_sf,  AtWb_sf,  _ = _build_normal_equations(trades, pid_idx, N, "sf", pick_values)
 
     logger.info("[trade_value_model] %d trade constraints — solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)

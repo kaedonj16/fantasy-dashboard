@@ -2443,21 +2443,43 @@ window.initTradePage = function initTradePage(root = document) {
   const infoWrapper = root.querySelector(".otc-info-tooltip-wrapper");
 
   if (infoBtn && infoTooltip && infoWrapper) {
-    let isInfoOpen = false;
-
-    bindOnce(infoBtn, "otcInfoClick", "click", (e) => {
-      e.stopPropagation();
-      isInfoOpen = !isInfoOpen;
-      infoTooltip.style.display = isInfoOpen ? "block" : "none";
+    // Show tooltip on hover
+    bindOnce(infoBtn, "otcInfoMouseenter", "mouseenter", (e) => {
+      infoTooltip.style.display = "block";
     });
 
-    // Close on click outside
-    document.addEventListener("click", (e) => {
-      if (infoWrapper && !infoWrapper.contains(e.target) && isInfoOpen) {
-        isInfoOpen = false;
+    // Hide tooltip when mouse leaves
+    bindOnce(infoBtn, "otcInfoMouseleave", "mouseleave", (e) => {
+      infoTooltip.style.display = "none";
+    });
+
+    // Also hide when mouse leaves the tooltip wrapper
+    bindOnce(infoWrapper, "otcWrapperMouseleave", "mouseleave", (e) => {
+      if (!infoWrapper.contains(e.relatedTarget)) {
         infoTooltip.style.display = "none";
       }
     });
+
+    // Fetch trade count from database
+    fetch('/api/trade-count')
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        const tradeCountElement = document.getElementById('tradeCount');
+        if (tradeCountElement && data.count !== undefined) {
+          tradeCountElement.textContent = data.count.toLocaleString();
+        }
+      })
+      .catch(error => {
+        const tradeCountElement = document.getElementById('tradeCount');
+        if (tradeCountElement) {
+          tradeCountElement.textContent = '150,000+';
+        }
+      });
   }
 
   root.querySelectorAll(".pos-filter").forEach(btn => {
@@ -3135,20 +3157,24 @@ document.addEventListener("DOMContentLoaded", () => {
 // Changelog Bell
 // ------------------------------------------------------------
 
+// Global variable to track notification state
+let hasNewNotifications = false;
+
 // Global function for notification dots (accessible from settings dropdown)
 function setChangelogDot(hasNew, showSettingsDot = false) {
+  // Update the global notification state
+  hasNewNotifications = hasNew;
 
-  // Always update gear dot
+  // Update gear dot - hide it when settings dropdown is opened and we want to show the dot there instead
   const gearDot = document.getElementById("gearDot");
   if (gearDot) {
-    gearDot.style.display = hasNew ? "block" : "none";
+    gearDot.style.display = (hasNew && !showSettingsDot) ? "block" : "none";
   }
   
   // Only show settings notification dot when explicitly requested (when settings is opened)
   const settingsDot = document.getElementById("settingsNotifDot");
   if (settingsDot) {
     settingsDot.style.display = (hasNew && showSettingsDot) ? "block" : "none";
-  } else {
   }
 }
 
@@ -3301,8 +3327,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // When opening settings, show bell dot if there are new notifications
     if (isDropdownOpen) {
-      // Check if there are new notifications by checking if gear dot is visible
-      const gearDot = document.getElementById("gearDot");
+      // Move notification dot from gear to notification button if there are new notifications
+      if (hasNewNotifications) {
+        setChangelogDot(true, true); // Keep gear dot hidden, show settings notification dot
+      }
     }
   }
 
@@ -4166,17 +4194,7 @@ function openPlayerModal(playerId, playerName) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
-      // Wire up watchlist button
-      const wlBtn = document.getElementById('playerModalWatchlistBtn');
-      if (wlBtn) {
-        _updateWatchlistBtn(wlBtn, playerId);
-        wlBtn.addEventListener('click', () => {
-          _toggleWatchlist({ player_id: playerId, name: playerName,
-            position: data.position, team: data.nfl_team,
-            value: data.stats?.value, espnHeadshot: data.espnHeadshot });
-          _updateWatchlistBtn(wlBtn, playerId);
-        });
-      }
+      // Watchlist functionality disabled
 
       // Render value history chart if data exists
       if (data.value_history && data.value_history.length > 0) {
@@ -5348,7 +5366,7 @@ async function checkTradeOutcome(btn) {
 
   if (resultEl.style.display === 'block') {
     resultEl.style.display = 'none';
-    btn.textContent = '📊 Check Outcome';
+    btn.textContent = 'Check Outcome';
     return;
   }
 
@@ -5361,11 +5379,21 @@ async function checkTradeOutcome(btn) {
 
     // Use first team's perspective: what they received = assets_received, what they sent = assets_sent
     const firstTeam = teamsData[0] || {};
+    const assets_received = firstTeam.gets || [];
+    const assets_sent = firstTeam.sends || [];
+    
+    // Validate that we have assets to analyze
+    if (!assets_received.length && !assets_sent.length) {
+      throw new Error('No trade assets found to analyze');
+    }
+    
     const payload = {
-      assets_received: firstTeam.gets || [],
-      assets_sent: firstTeam.sends || [],
+      assets_received,
+      assets_sent,
       trade_date: tradeDate,
     };
+
+    console.log('[trade-outcome] Sending payload:', payload);
 
     const res = await fetch('/api/trade-outcome', {
       method: 'POST',
@@ -5402,11 +5430,11 @@ async function checkTradeOutcome(btn) {
     }
 
     resultEl.style.display = 'block';
-    btn.textContent = '📊 Hide Outcome';
+    btn.textContent = 'Hide Outcome';
   } catch (e) {
     resultEl.innerHTML = `<p class="outcome-error">Error loading outcome.</p>`;
     resultEl.style.display = 'block';
-    btn.textContent = '📊 Check Outcome';
+    btn.textContent = 'Check Outcome';
   } finally {
     btn.disabled = false;
   }

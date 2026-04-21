@@ -3001,7 +3001,8 @@ thead th {
 .otc-info-tooltip {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 340px;
   background: var(--card);
   border: 0.5px solid var(--border);

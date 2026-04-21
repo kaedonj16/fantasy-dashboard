@@ -36,7 +36,7 @@ def get_latest_breakout_candidates(
         with conn.cursor() as cur:
             # Build query with optional position filter
             query = """
-                SELECT
+                SELECT 
                     player_id,
                     player_name,
                     team,
@@ -58,9 +58,15 @@ def get_latest_breakout_candidates(
                     vacated_usage_summary,
                     added_competition_summary,
                     projected_role_tag
-                FROM breakout_opportunity_scores
-                WHERE season = %s
-                    AND breakout_opportunity_score >= %s
+                FROM (
+                    SELECT 
+                        *,
+                        ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY as_of_date DESC, breakout_opportunity_score DESC) as rn
+                    FROM breakout_opportunity_scores
+                    WHERE season = %s
+                        AND breakout_opportunity_score >= %s
+                ) ranked
+                WHERE rn = 1
             """
 
             params = [season, min_score]

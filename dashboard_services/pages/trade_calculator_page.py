@@ -17,6 +17,24 @@ def build_trade_calculator_body(
     viewer_roster_val = viewer_roster_id or ""
     is_guest = not league_id
 
+    # Get trade count from database
+    trade_count = "150,000+"
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            result = cursor.fetchone()
+            # Handle both tuple and dictionary return formats
+            if isinstance(result, dict):
+                count = result.get('count', 0)
+            else:
+                count = result[0] if result else 0
+            trade_count = f"{count:,}"
+    except Exception as e:
+        print("Trade count error:", e)
+        pass
+
     # Clamp logged-in league size to nearest supported value
     if num_teams and not is_guest:
         closest = min(SUPPORTED_LEAGUE_SIZES, key=lambda s: abs(s - int(num_teams)))
@@ -126,9 +144,8 @@ def build_trade_calculator_body(
                   <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">
                     <div class="otc-info-tooltip-header">BR Value Model</div>
                     <div class="otc-info-tooltip-body">
-                      <p>Player values derive from a hybrid approach combining production metrics, age-adjusted projections, and market consensus data.</p>
-                      <p>The model incorporates positional scarcity adjustments, role stability indicators, and capital investment signals to generate normalized valuations on a standardized scale.</p>
-                      <p>Values represent long-term dynasty asset worth rather than weekly fantasy output.</p>
+                      <p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p>
+                      <p>We translate over <strong>{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
                     </div>
                   </div>
                 </div>
