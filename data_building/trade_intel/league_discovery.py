@@ -114,9 +114,12 @@ def _save_leagues(leagues: list[dict]) -> int:
             conn.execute(
                 """
                 INSERT INTO trade_intel_leagues
-                    (league_id, season, num_teams, scoring_type, league_type, crawl_enabled)
-                VALUES (%s, %s, %s, %s, %s, TRUE)
-                ON CONFLICT (league_id) DO UPDATE SET crawl_enabled = TRUE
+                    (league_id, season, num_teams, scoring_type, league_type,
+                     is_superflex, crawl_enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (league_id) DO UPDATE SET
+                    crawl_enabled = TRUE,
+                    is_superflex  = EXCLUDED.is_superflex
                 """,
                 (
                     lg["league_id"],
@@ -124,6 +127,7 @@ def _save_leagues(leagues: list[dict]) -> int:
                     lg.get("num_teams"),
                     lg.get("scoring_type"),
                     lg.get("league_type"),
+                    lg.get("is_superflex", False),
                 )
             )
     return len(leagues)
@@ -136,6 +140,12 @@ def _classify_scoring(settings: dict) -> str:
     if ppr >= 0.5:
         return "half"
     return "std"
+
+
+def _is_superflex(meta: dict) -> bool:
+    """True if the league has a SUPER_FLEX roster slot."""
+    rp = meta.get("roster_positions") or []
+    return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
 
 
 def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
@@ -191,11 +201,12 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
 
         lg_season = int(meta.get("season") or season)
         to_save.append({
-            "league_id": league_id,
-            "season": lg_season,
-            "num_teams": meta.get("total_rosters"),
+            "league_id":   league_id,
+            "season":      lg_season,
+            "num_teams":   meta.get("total_rosters"),
             "scoring_type": _classify_scoring(meta),
             "league_type": 2,
+            "is_superflex": _is_superflex(meta),
         })
         known.add(league_id)
 

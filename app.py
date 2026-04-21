@@ -11922,20 +11922,21 @@ def api_trade_ideas_for_target():
 
         target_value = target_info["value"]
 
-        # Dynasty premium: elite young players command a real-market overpay.
-        # Both age and positional rank decay exponentially so the premium
-        # tapers smoothly — no hard tier jumps.
+        # Dynasty premium: elite young skill-position players command a real-market overpay.
+        # QBs in 1QB leagues are valued by current production, not aging curve, so they
+        # get no premium. Only RB/WR/TE (and QBs in SF) warrant dynasty markup.
         #
-        #   age_factor  = e^(-0.25 * max(0, age - 22))
-        #                 → 1.0 at 22,  0.61 at 24,  0.37 at 26,  0.14 at 30
-        #   rank_factor = e^(-0.12 * max(0, rank - 1))
-        #                 → 1.0 at rank 1,  0.62 at rank 5,  0.30 at rank 10
-        #   premium     = 1 + age_factor * rank_factor * 0.35
-        #                 → max ~1.35 (age 22, rank 1), fades to ~1.0 for old/deep players
+        #   age_factor  = e^(-0.25 * max(0, age - 22))  → 1.0 @ 22, ~0.37 @ 26, 0 @ 30+
+        #   rank_factor = e^(-0.12 * max(0, rank - 1))  → 1.0 @ rank 1, ~0.30 @ rank 10
+        #   premium     = 1 + age_factor * rank_factor * 0.25
+        #                 max ~1.25 (age 22, rank 1), fades to 1.0 for old/deep players
         import math as _math
         def _dynasty_premium(info: dict) -> float:
             pos = info.get("position", "")
             if pos in ("PICK", "K", "DEF"):
+                return 1.0
+            # QBs don't carry dynasty premium in 1QB — their value tracks production
+            if pos == "QB" and league_type == "1qb":
                 return 1.0
             age      = float(info.get("age") or 99)
             pos_rank = int(info.get("pos_rank") or 99)
@@ -12032,9 +12033,10 @@ def api_trade_ideas_for_target():
             reverse=True,
         )
 
-        # Match packages against effective_target (face value × dynasty premium)
-        lo = effective_target * 0.88
-        hi = effective_target * 1.15
+        # Match packages against effective_target (face value × dynasty premium).
+        # Tight band so suggestions don't overshoot what the market actually demands.
+        lo = effective_target * 0.93
+        hi = effective_target * 1.06
         packages = []
         seen = set()
 

@@ -117,16 +117,19 @@ def _load_prior() -> dict[str, dict]:
     }
 
 
-def _load_trades(season: int) -> list[dict]:
+def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
     with get_conn() as conn:
         trade_rows = conn.execute(
             """
             SELECT t.id, t.created_at
             FROM trade_intel_trades t
-            WHERE t.season = %s AND t.status = 'complete'
+            JOIN trade_intel_leagues l ON l.league_id = t.league_id
+            WHERE t.season = %s
+              AND t.status = 'complete'
+              AND COALESCE(l.is_superflex, FALSE) = %s
             ORDER BY t.created_at
             """,
-            (season,),
+            (season, is_sf),
         ).fetchall()
 
         if not trade_rows:
@@ -300,9 +303,10 @@ def run_trade_value_model(
 
     logger.info("[trade_value_model] Season %d | λ=%.1f", season, lambda_reg)
 
-    prior  = _load_prior()
-    trades = _load_trades(season)
-    
+    prior         = _load_prior()
+    trades_1qb    = _load_trades(season, is_sf=False)
+    trades_sf     = _load_trades(season, is_sf=True)
+
     # Load dynamic pick values
     try:
         pick_values = load_pick_value_table()
@@ -312,12 +316,24 @@ def run_trade_value_model(
         pick_values = {}
 
     logger.info(
-        "[trade_value_model] %d players in prior, %d trades loaded, %d pick values",
-        len(prior), len(trades), len(pick_values),
+        "[trade_value_model] %d players in prior | 1QB trades=%d | SF trades=%d | picks=%d",
+        len(prior), len(trades_1qb), len(trades_sf), len(pick_values),
     )
 
-    if not trades or not prior:
-        logger.warning("[trade_value_model] No data — nothing to solve.")
+    # Fall back to combined pool if one format has no data at all
+    if not trades_1qb and not trades_sf:
+        logger.warning("[trade_value_model] No trade data — nothing to solve.")
+        return {"written": 0, "trades_used": 0, "players": 0}
+
+    if not trades_1qb:
+        logger.warning("[trade_value_model] No 1QB trades; using SF pool as fallback for 1QB solve")
+        trades_1qb = trades_sf
+    if not trades_sf:
+        logger.warning("[trade_value_model] No SF trades; using 1QB pool as fallback for SF solve")
+        trades_sf = trades_1qb
+
+    if not prior:
+        logger.warning("[trade_value_model] No prior data — nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
     player_ids = sorted(prior.keys())
@@ -328,8 +344,9 @@ def run_trade_value_model(
     prior_sf  = np.array([prior[pid]["value_sf"]  for pid in player_ids])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    AtWA_1qb, AtWb_1qb, M = _build_normal_equations(trades, pid_idx, N, "1qb", pick_values)
-    AtWA_sf,  AtWb_sf,  _ = _build_normal_equations(trades, pid_idx, N, "sf", pick_values)
+    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, pid_idx, N, "1qb", pick_values)
+    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  pid_idx, N, "sf",  pick_values)
+    M = M_1qb  # reported count uses 1QB (primary format)
 
     logger.info("[trade_value_model] %d trade constraints — solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
