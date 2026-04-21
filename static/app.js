@@ -1708,11 +1708,6 @@ window.initTradePage = function initTradePage(root = document) {
 
       const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
 
-      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
-      const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
-      const platform2      = (window.location.pathname.split("/").filter(Boolean)[0]) || "sleeper";
-      const leagueType2    = getLeagueType();
-
       function renderPlayerRow(t, pos) {
         const col = posColor[pos] || "var(--text-muted)";
         const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
@@ -1727,7 +1722,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
             <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
-            <button onclick="generatePackageForTarget(${JSON.stringify(pid)},${JSON.stringify(t.name)},${JSON.stringify(leagueId)},${JSON.stringify(viewerRosterId)},${JSON.stringify(platform2)},${JSON.stringify(leagueType2)},${season})"
+            <button onclick="window._generatePackageForTarget(${JSON.stringify(pid)},${JSON.stringify(t.name)},${JSON.stringify(leagueId)},${JSON.stringify(viewerRosterId)},${JSON.stringify(platform)},${JSON.stringify(leagueType)},${JSON.stringify(season)})"
               style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
               title="Get trade ideas for this player">Get</button>
           </div>
@@ -1769,7 +1764,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
-  async function generatePackageForTarget(playerId, playerName, leagueId, viewerRosterId, platform, leagueType, season) {
+  window._generatePackageForTarget = async function generatePackageForTarget(playerId, playerName, leagueId, viewerRosterId, platform, leagueType, season) {
     const panel = document.getElementById("targetPackagePanel");
     if (!panel) return;
     panel.style.display = "block";
@@ -1814,7 +1809,7 @@ window.initTradePage = function initTradePage(root = document) {
     } catch {
       panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not generate trade ideas.</div>`;
     }
-  }
+  };
 
   // ------------------------------------------------------------
   // analyzeTrade — owns ALL loading/result/empty state transitions

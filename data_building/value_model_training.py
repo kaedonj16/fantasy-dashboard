@@ -1355,18 +1355,22 @@ def rewrite_value_table_with_model() -> Path:
         fc_val  = vendor_values.get(pid, 0.0)
         # DP undervalues TEs vs market consensus; exclude for that position.
         dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
-        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else 0.0
+        # Use None to distinguish "no data" (rookie/prospect) from "0 production" (known bad).
+        # Players in the engine table with 0 production should have that zero count against them.
+        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
 
         # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
-        # Missing sources are dropped and remaining weights are renormalized so
-        # a player with no DP entry isn't penalized with a deflated value.
+        # DP and FC are dropped (renormalized) when missing — they may simply not cover a player.
+        # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
+        # If a player IS in the engine table with 0 production, that zero is included in the blend
+        # so FC hype can't inflate them past what their usage actually supports.
         W_VENDOR, W_ENGINE, W_DP = 0.40, 0.40, 0.20
         weighted_sum = 0.0
         total_weight = 0.0
         if fc_val > 0:
             weighted_sum += W_VENDOR * fc_val
             total_weight += W_VENDOR
-        if eng_val > 0:
+        if eng_val is not None:
             weighted_sum += W_ENGINE * eng_val
             total_weight += W_ENGINE
         if dp_val > 0:
