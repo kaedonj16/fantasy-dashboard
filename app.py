@@ -942,7 +942,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Player Rankings", "/players", "players"),
                 ("Breakouts", "/breakouts", "breakouts"),
                 ("Rookies", "/rookies", "rookies"),
-            ], ["players", "breakouts", "rookies"]),
+                ("Trade Intel", "/trade-intel", "trade-intel"),
+            ], ["players", "breakouts", "rookies", "trade-intel"]),
             simple_pill("FAQ", "/faq", "faq"),
             simple_pill("Privacy", "/privacy", "privacy"),
             simple_pill("Support the site", "/support", "support"),
@@ -1035,7 +1036,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Player Rankings", "page_players",  "players",  False),
         ("Rookie Rankings", "page_rookies",  "rookies",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "breakouts", "rookies"], "playersNavDropdown"))
+        ("Trade Intel",     "page_trade_intel", "trade-intel", False),
+    ], ["players", "breakouts", "rookies", "trade-intel"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -7947,11 +7949,209 @@ def page_players_guest():
     return page_players(platform="sleeper", season=current_season, league_id=None)
 
 
+
 @app.route("/breakouts")
 def page_breakouts_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_breakouts(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/trade-intel")
+def page_trade_intel(platform: str, season: int, league_id: str):
+    body_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Trade Intelligence</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Real market data from thousands of dynasty trades — see what managers are actually paying
+        </div>
+      </div>
+      <div class="card-body">
+
+        <!-- Tab buttons -->
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+          <button class="ti-tab-btn active" data-tab="trending" onclick="switchTITab('trending')">🔥 Trending</button>
+          <button class="ti-tab-btn" data-tab="buylows"  onclick="switchTITab('buylows')">📉 Buy Low</button>
+          <button class="ti-tab-btn" data-tab="sellhigh" onclick="switchTITab('sellhigh')">📈 Sell High</button>
+        </div>
+
+        <!-- Position filter -->
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterTI('ALL')">All</button>
+          <button class="breakout-filter-btn" data-position="QB"  onclick="filterTI('QB')">QB</button>
+          <button class="breakout-filter-btn" data-position="RB"  onclick="filterTI('RB')">RB</button>
+          <button class="breakout-filter-btn" data-position="WR"  onclick="filterTI('WR')">WR</button>
+          <button class="breakout-filter-btn" data-position="TE"  onclick="filterTI('TE')">TE</button>
+        </div>
+
+        <div id="tiLoading" style="text-align:center;padding:40px;color:var(--text-muted);">
+          <div class="spinner" style="margin:0 auto 12px;"></div>
+          Loading trade data...
+        </div>
+
+        <div id="tiContainer" style="display:none;">
+          <div id="tiGrid" class="breakout-grid"></div>
+          <div id="tiEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
+            No data for this filter yet.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .ti-tab-btn {
+        padding: 8px 16px;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all .15s;
+      }
+      .ti-tab-btn.active {
+        background: var(--accent-color, #3b82f6);
+        color: #fff;
+        border-color: var(--accent-color, #3b82f6);
+      }
+      .ti-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 14px;
+        cursor: pointer;
+        transition: transform .1s, box-shadow .1s;
+      }
+      .ti-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+      .ti-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+      .ti-player-name { font-weight:600; font-size:15px; }
+      .ti-player-meta { font-size:12px; color:var(--text-muted); margin-top:2px; }
+      .ti-badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+      .ti-stat-row { display:flex; justify-content:space-between; font-size:12px; margin-top:6px; color:var(--text-muted); }
+      .ti-stat-row span:last-child { color:var(--text-color); font-weight:500; }
+      .ti-delta-pos { color:#10b981; font-weight:600; }
+      .ti-delta-neg { color:#ef4444; font-weight:600; }
+    </style>
+
+    <script>
+    (function() {
+      let allPlayers = [];
+      let currentTab = 'trending';
+      let currentPos = 'ALL';
+
+      fetch('/api/trade-intel/trending')
+        .then(r => r.json())
+        .then(data => {
+          allPlayers = (data.players || []).filter(p => p.trade_count_7d > 0 || p.trade_count_30d > 0);
+          document.getElementById('tiLoading').style.display = 'none';
+          document.getElementById('tiContainer').style.display = 'block';
+          renderTI();
+        })
+        .catch(() => {
+          document.getElementById('tiLoading').innerHTML = '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
+        });
+
+      window.switchTITab = function(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.ti-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        renderTI();
+      };
+
+      window.filterTI = function(pos) {
+        currentPos = pos;
+        document.querySelectorAll('.breakout-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.position === pos));
+        renderTI();
+      };
+
+      function getTabPlayers() {
+        let players = currentPos === 'ALL' ? allPlayers : allPlayers.filter(p => p.position === currentPos);
+        if (currentTab === 'trending') {
+          return [...players].sort((a, b) => (b.trade_count_7d || 0) - (a.trade_count_7d || 0)).slice(0, 30);
+        }
+        const withDelta = players.filter(p => p.value_delta != null && p.model_value > 0);
+        if (currentTab === 'buylows') {
+          return withDelta.filter(p => p.value_delta < -10).sort((a, b) => a.value_delta - b.value_delta).slice(0, 30);
+        }
+        if (currentTab === 'sellhigh') {
+          return withDelta.filter(p => p.value_delta > 10).sort((a, b) => b.value_delta - a.value_delta).slice(0, 30);
+        }
+        return [];
+      }
+
+      function renderTI() {
+        const players = getTabPlayers();
+        const grid = document.getElementById('tiGrid');
+        const empty = document.getElementById('tiEmpty');
+
+        if (players.length === 0) {
+          grid.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+
+        grid.innerHTML = players.map(p => {
+          const name = p.name || 'Unknown';
+          const pos  = p.position || '?';
+          const team = p.team || '?';
+          const cnt7  = p.trade_count_7d  || 0;
+          const cnt30 = p.trade_count_30d || 0;
+          const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
+          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
+          const delta  = p.value_delta;
+          const bsr    = p.buy_sell_ratio;
+
+          // Badge content per tab
+          let badgeBg, badgeText;
+          if (currentTab === 'trending') {
+            badgeBg = '#3b82f6';
+            badgeText = cnt7 + ' trades';
+          } else if (currentTab === 'buylows') {
+            badgeBg = '#10b981';
+            badgeText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          } else {
+            badgeBg = '#f59e0b';
+            badgeText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }
+
+          const bsrLabel = bsr != null
+            ? (bsr >= 1.2 ? '🟢 Buy pressure' : bsr <= 0.8 ? '🔴 Sell pressure' : '⚪ Neutral')
+            : '';
+
+          const deltaHtml = delta != null
+            ? `<span class="${delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}">${delta >= 0 ? '+' : ''}${Math.round(delta)}</span>`
+            : '<span>—</span>';
+
+          return `<div class="ti-card" onclick="openPlayerModal('${p.player_id}','${name.replace(/'/g,"\\'")}')">
+            <div class="ti-card-header">
+              <div>
+                <div class="ti-player-name">${name}</div>
+                <div class="ti-player-meta">${pos} · ${team}</div>
+              </div>
+              <div class="ti-badge" style="background:${badgeBg};color:#fff;">${badgeText}</div>
+            </div>
+            <div class="ti-stat-row"><span>Market value</span><span>${market}</span></div>
+            <div class="ti-stat-row"><span>Model value</span><span>${model}</span></div>
+            <div class="ti-stat-row"><span>Market vs model</span>${deltaHtml}</div>
+            ${bsrLabel ? `<div class="ti-stat-row"><span>Sentiment</span><span>${bsrLabel}</span></div>` : ''}
+            <div class="ti-stat-row"><span>Trades (7d / 30d)</span><span>${cnt7} / ${cnt30}</span></div>
+          </div>`;
+        }).join('');
+      }
+    })();
+    </script>
+    """
+    return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
+
+
+@app.route("/trade-intel")
+def page_trade_intel_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
 
 @app.route("/rookies")
