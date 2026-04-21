@@ -343,6 +343,12 @@ def run_trade_value_model(
     prior_1qb = np.array([prior[pid]["value_1qb"] for pid in player_ids])
     prior_sf  = np.array([prior[pid]["value_sf"]  for pid in player_ids])
 
+    # Show top 5 priors so we can confirm elite players are loaded correctly
+    top_prior_idx = np.argsort(prior_1qb)[::-1][:5]
+    logger.info("[trade_value_model] Top 5 prior values (1QB):")
+    for i in top_prior_idx:
+        logger.info("  pid=%-12s  prior_1qb=%.2f", player_ids[i], prior_1qb[i])
+
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
     AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, pid_idx, N, "1qb", pick_values)
     AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  pid_idx, N, "sf",  pick_values)
