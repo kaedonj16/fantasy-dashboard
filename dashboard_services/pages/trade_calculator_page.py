@@ -324,75 +324,69 @@ def build_trade_calculator_body(
             </section>
           </div>
 
-          <div id="similarTradesSection" style="display:none;margin-top:24px;">
-            <div class="stl-header">
+          <div id="similarTradesSection" style="display:none;margin-top:28px;">
+            <div style="margin-bottom:14px;">
               <h3 class="stl-title">Recent Similar Trades</h3>
-              <div class="stl-sub">Real trades from dynasty leagues involving these players</div>
+              <div class="stl-sub">Real dynasty trades where these players moved to opposite sides</div>
             </div>
             <div id="similarTradesList" class="stl-list"></div>
           </div>
 
           <style>
-            .stl-header {{ margin-bottom:12px; }}
-            .stl-title {{ font-size:15px;font-weight:600;color:var(--text-color);margin:0 0 2px; }}
-            .stl-sub {{ font-size:12px;color:var(--text-muted); }}
-            .stl-list {{ display:flex;flex-direction:column;gap:10px; }}
+            .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
+            .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .stl-list  {{ display:flex;flex-direction:column;gap:8px; }}
             .stl-loading, .stl-empty {{ font-size:13px;color:var(--text-muted);padding:12px 0; }}
+
             .stl-card {{
-              background:var(--card-bg);
               border:1px solid var(--border-color);
-              border-radius:10px;
-              padding:12px 14px;
+              border-radius:12px;
+              overflow:hidden;
+              background:var(--card-bg);
             }}
-            .stl-date {{ font-size:11px;color:var(--text-muted);margin-bottom:8px;text-align:center; }}
-            .stl-sides {{
-              display:grid;
-              grid-template-columns:1fr auto 1fr;
-              gap:8px;
-              align-items:start;
-              margin-bottom:8px;
+            .stl-card-head {{
+              display:flex;
+              justify-content:space-between;
+              align-items:center;
+              padding:7px 12px;
+              border-bottom:1px solid var(--border-color);
+              background:var(--bg-secondary, rgba(0,0,0,.03));
             }}
-            .stl-side {{ display:flex;flex-direction:column;gap:3px; }}
-            .stl-vs {{
-              font-size:11px;
-              font-weight:700;
+            .stl-date {{ font-size:11px;color:var(--text-muted);font-weight:500; }}
+            .stl-badges {{ display:flex;gap:4px;flex-wrap:wrap; }}
+            .stl-badge {{
+              font-size:10px;font-weight:700;
+              padding:2px 7px;border-radius:6px;
+              background:var(--bg-secondary,#1e293b);
               color:var(--text-muted);
-              align-self:center;
-              padding:0 4px;
+              border:1px solid var(--border-color);
             }}
+            .stl-badge-sf {{ background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }}
+
+            .stl-card-body {{
+              display:grid;
+              grid-template-columns:1fr 1px 1fr;
+            }}
+            .stl-col {{ padding:10px 12px;display:flex;flex-direction:column;gap:4px; }}
+            .stl-col-divider {{ background:var(--border-color); }}
+
             .stl-asset {{
               font-size:13px;
               color:var(--text-color);
-              display:flex;
-              align-items:center;
-              gap:5px;
+              display:flex;align-items:center;gap:5px;flex-wrap:wrap;
             }}
-            .stl-asset.stl-key {{ font-weight:700;color:var(--accent-color,#3b82f6); }}
+            .stl-asset.stl-key  {{ font-weight:700;color:var(--accent-color,#3b82f6); }}
+            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:12px; }}
             .stl-asset.stl-muted {{ color:var(--text-muted); }}
             .stl-pos {{
-              font-size:10px;
-              color:var(--text-muted);
+              font-size:10px;font-weight:700;
+              padding:1px 5px;border-radius:4px;
               background:var(--bg-secondary,#1e293b);
-              border-radius:4px;
-              padding:1px 5px;
+              color:var(--text-muted);flex-shrink:0;
             }}
-            .stl-badges {{ display:flex;gap:5px;flex-wrap:wrap;margin-top:6px; }}
-            .stl-badge {{
-              font-size:10px;
-              font-weight:600;
-              padding:2px 7px;
-              border-radius:10px;
-              background:var(--bg-secondary,#1e293b);
-              color:var(--text-muted);
-              border:1px solid var(--border-color);
-            }}
-            .stl-badge.stl-badge-sf {{
-              background:#7c3aed22;
-              color:#a78bfa;
-              border-color:#7c3aed44;
-            }}
-            @media(max-width:600px) {{
-              .stl-asset {{ font-size:12px; }}
+            @media(max-width:480px) {{
+              .stl-card-body {{ grid-template-columns:1fr; }}
+              .stl-col-divider {{ height:1px;width:auto; }}
             }}
           </style>
 

@@ -939,15 +939,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         pills = [
             simple_pill("Home", "/", "home"),
-            simple_pill("Trade Calc", "/trade", "trade"),
             simple_dropdown("Trades", [
-                ("Trade Database", "/trade-database", "trade-database"),
-                ("Trade Intel",    "/trade-intel",    "trade-intel"),
-            ], ["trade-database", "trade-intel"], "tradesNavDropdown"),
+                ("Trade Calculator", "/trade",          "trade"),
+                ("Trade Database",   "/trade-database", "trade-database"),
+                ("Trade Intel",      "/trade-intel",    "trade-intel"),
+            ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
-                ("Player Rankings", "/players", "players"),
-                ("Breakouts", "/breakouts", "breakouts"),
-                ("Rookies", "/rookies", "rookies"),
+                ("Player Rankings", "/players",   "players"),
+                ("Breakouts",       "/breakouts", "breakouts"),
+                ("Rookies",         "/rookies",   "rookies"),
             ], ["players", "breakouts", "rookies"], "playersNavDropdown"),
         ]
 
@@ -1026,11 +1026,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
     nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Database", "page_trade_database", "trade-database", False),
-        ("Trade Intel",    "page_trade_intel",    "trade-intel",    False),
-    ], ["trade-database", "trade-intel"], "tradesNavDropdown"))
+        ("Trade Calculator", "page_trade",          "trade",          False),
+        ("Trade Database",   "page_trade_database", "trade-database", False),
+        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Show Weekly Hub if draft has ended (during offseason) OR if in-season
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -7963,189 +7963,229 @@ def page_breakouts_guest():
 
 @app.route("/<platform>/<int:season>/<league_id>/trade-intel")
 def page_trade_intel(platform: str, season: int, league_id: str):
-    body_html = """
-    <div class="card central">
-      <div class="card-header">
-        <h2>Trade Intelligence</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Real market data from thousands of dynasty trades — see what managers are actually paying
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Real market data from dynasty trades — see what managers are actually paying
         </div>
       </div>
-      <div class="card-body">
+      <div class="card-body" style="padding-top:20px;">
 
-        <!-- Tab buttons -->
-        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
-          <button class="ti-tab-btn active" data-tab="trending" onclick="switchTITab('trending')">🔥 Trending</button>
-          <button class="ti-tab-btn" data-tab="buylows"  onclick="switchTITab('buylows')">📉 Buy Low</button>
-          <button class="ti-tab-btn" data-tab="sellhigh" onclick="switchTITab('sellhigh')">📈 Sell High</button>
+        <div class="ti-controls">
+          <div class="ti-tabs">
+            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')">Trending</button>
+            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')">Buy Low</button>
+            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')">Sell High</button>
+          </div>
+          <div class="ti-pos-filters">
+            <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
+            <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
+            <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
+            <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
+            <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
+          </div>
         </div>
 
-        <!-- Position filter -->
-        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
-          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterTI('ALL')">All</button>
-          <button class="breakout-filter-btn" data-position="QB"  onclick="filterTI('QB')">QB</button>
-          <button class="breakout-filter-btn" data-position="RB"  onclick="filterTI('RB')">RB</button>
-          <button class="breakout-filter-btn" data-position="WR"  onclick="filterTI('WR')">WR</button>
-          <button class="breakout-filter-btn" data-position="TE"  onclick="filterTI('TE')">TE</button>
-        </div>
-
-        <div id="tiLoading" style="text-align:center;padding:40px;color:var(--text-muted);">
+        <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
           <div class="spinner" style="margin:0 auto 12px;"></div>
           Loading trade data...
         </div>
-
-        <div id="tiContainer" style="display:none;">
-          <div id="tiGrid" class="breakout-grid"></div>
-          <div id="tiEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-            No data for this filter yet.
-          </div>
+        <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
+          No data for this filter yet — analytics need to run to populate this view.
         </div>
+        <div id="tiGrid" class="ti-grid" style="display:none;"></div>
 
       </div>
     </div>
 
     <style>
-      .ti-tab-btn {
-        padding: 8px 16px;
-        border-radius: 20px;
-        border: 1px solid var(--border-color);
-        background: var(--card-bg);
-        color: var(--text-color);
+      .ti-controls {{
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }}
+      .ti-tabs {{
+        display: flex;
+        background: var(--bg-secondary, #f1f5f9);
+        border-radius: 10px;
+        padding: 3px;
+        gap: 2px;
+      }}
+      .ti-tab {{
+        padding: 7px 16px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
         cursor: pointer;
         font-size: 13px;
         font-weight: 500;
         transition: all .15s;
-      }
-      .ti-tab-btn.active {
-        background: var(--accent-color, #3b82f6);
-        color: #fff;
-        border-color: var(--accent-color, #3b82f6);
-      }
-      .ti-card {
+      }}
+      .ti-tab.active {{
         background: var(--card-bg);
+        color: var(--text-color);
+        box-shadow: 0 1px 3px rgba(0,0,0,.12);
+      }}
+      .ti-pos-filters {{
+        display: flex;
+        gap: 6px;
+      }}
+      .ti-pos {{
+        padding: 6px 13px;
+        border-radius: 20px;
         border: 1px solid var(--border-color);
-        border-radius: 10px;
+        background: var(--card-bg);
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all .15s;
+      }}
+      .ti-pos.active {{
+        background: var(--text-color);
+        color: var(--card-bg);
+        border-color: var(--text-color);
+      }}
+      .ti-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 12px;
+      }}
+      .ti-card {{
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
         padding: 14px;
         cursor: pointer;
-        transition: transform .1s, box-shadow .1s;
-      }
-      .ti-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
-      .ti-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
-      .ti-player-name { font-weight:600; font-size:15px; }
-      .ti-player-meta { font-size:12px; color:var(--text-muted); margin-top:2px; }
-      .ti-badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; }
-      .ti-stat-row { display:flex; justify-content:space-between; font-size:12px; margin-top:6px; color:var(--text-muted); }
-      .ti-stat-row span:last-child { color:var(--text-color); font-weight:500; }
-      .ti-delta-pos { color:#10b981; font-weight:600; }
-      .ti-delta-neg { color:#ef4444; font-weight:600; }
+        transition: transform .12s, box-shadow .12s;
+        background: var(--card-bg);
+      }}
+      .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
+      .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
+      .ti-name {{ font-weight:700; font-size:14px; line-height:1.3; }}
+      .ti-meta {{ font-size:11px; color:var(--text-muted); margin-top:2px; }}
+      .ti-chip {{
+        font-size:11px; font-weight:700;
+        padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
+      }}
+      .ti-divider {{ height:1px; background:var(--border-color); margin:8px 0; }}
+      .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
+      .ti-row-label {{ color:var(--text-muted); }}
+      .ti-row-val {{ font-weight:600; }}
+      .ti-delta-pos {{ color:#10b981; }}
+      .ti-delta-neg {{ color:#ef4444; }}
+      .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; }}
     </style>
 
     <script>
-    (function() {
+    (function() {{
+      const TI_SEASON = {season};
       let allPlayers = [];
       let currentTab = 'trending';
       let currentPos = 'ALL';
 
-      fetch('/api/trade-intel/trending')
+      fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&limit=100')
         .then(r => r.json())
-        .then(data => {
-          allPlayers = (data.players || []).filter(p => p.trade_count_7d > 0 || p.trade_count_30d > 0);
+        .then(data => {{
+          allPlayers = (data.players || []).filter(p => (p.trade_count_all || 0) > 0);
           document.getElementById('tiLoading').style.display = 'none';
-          document.getElementById('tiContainer').style.display = 'block';
+          document.getElementById('tiGrid').style.display = '';
           renderTI();
-        })
-        .catch(() => {
-          document.getElementById('tiLoading').innerHTML = '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
-        });
+        }})
+        .catch(() => {{
+          document.getElementById('tiLoading').innerHTML =
+            '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
+        }});
 
-      window.switchTITab = function(tab) {
+      window.switchTITab = function(tab) {{
         currentTab = tab;
-        document.querySelectorAll('.ti-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        document.querySelectorAll('.ti-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         renderTI();
-      };
+      }};
 
-      window.filterTI = function(pos) {
+      window.filterTI = function(pos) {{
         currentPos = pos;
-        document.querySelectorAll('.breakout-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.position === pos));
+        document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
         renderTI();
-      };
+      }};
 
-      function getTabPlayers() {
-        let players = currentPos === 'ALL' ? allPlayers : allPlayers.filter(p => p.position === currentPos);
-        if (currentTab === 'trending') {
-          return [...players].sort((a, b) => (b.trade_count_7d || 0) - (a.trade_count_7d || 0)).slice(0, 30);
-        }
-        const withDelta = players.filter(p => p.value_delta != null && p.model_value > 0);
-        if (currentTab === 'buylows') {
-          return withDelta.filter(p => p.value_delta < -10).sort((a, b) => a.value_delta - b.value_delta).slice(0, 30);
-        }
-        if (currentTab === 'sellhigh') {
-          return withDelta.filter(p => p.value_delta > 10).sort((a, b) => b.value_delta - a.value_delta).slice(0, 30);
-        }
+      function getTabPlayers() {{
+        let list = currentPos === 'ALL' ? allPlayers : allPlayers.filter(p => p.position === currentPos);
+        if (currentTab === 'trending') {{
+          return [...list].sort((a, b) => (b.trade_count_7d || b.trade_count_all || 0) - (a.trade_count_7d || a.trade_count_all || 0)).slice(0, 40);
+        }}
+        const withDelta = list.filter(p => p.value_delta != null && p.model_value > 0);
+        if (currentTab === 'buylows')  return withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta).slice(0, 40);
+        if (currentTab === 'sellhigh') return withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta).slice(0, 40);
         return [];
-      }
+      }}
 
-      function renderTI() {
+      function renderTI() {{
         const players = getTabPlayers();
-        const grid = document.getElementById('tiGrid');
+        const grid  = document.getElementById('tiGrid');
         const empty = document.getElementById('tiEmpty');
-
-        if (players.length === 0) {
-          grid.innerHTML = '';
-          empty.style.display = 'block';
+        if (players.length === 0) {{
+          grid.style.display = 'none';
+          empty.style.display = '';
           return;
-        }
+        }}
         empty.style.display = 'none';
+        grid.style.display = '';
 
-        grid.innerHTML = players.map(p => {
-          const name = p.name || 'Unknown';
-          const pos  = p.position || '?';
-          const team = p.team || '?';
-          const cnt7  = p.trade_count_7d  || 0;
-          const cnt30 = p.trade_count_30d || 0;
+        grid.innerHTML = players.map(p => {{
+          const name   = p.name || 'Unknown';
+          const pos    = p.position || '?';
+          const team   = p.team || '?';
+          const cnt7   = p.trade_count_7d  || 0;
+          const cnt30  = p.trade_count_30d || 0;
+          const cntAll = p.trade_count_all || 0;
           const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
           const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
           const delta  = p.value_delta;
           const bsr    = p.buy_sell_ratio;
 
-          // Badge content per tab
-          let badgeBg, badgeText;
-          if (currentTab === 'trending') {
-            badgeBg = '#3b82f6';
-            badgeText = cnt7 + ' trades';
-          } else if (currentTab === 'buylows') {
-            badgeBg = '#10b981';
-            badgeText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
-          } else {
-            badgeBg = '#f59e0b';
-            badgeText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
-          }
+          let chipBg, chipColor, chipText;
+          if (currentTab === 'trending') {{
+            chipBg = '#3b82f620'; chipColor = '#3b82f6';
+            chipText = (cnt7 || cntAll) + ' trades';
+          }} else if (currentTab === 'buylows') {{
+            chipBg = '#10b98120'; chipColor = '#10b981';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }} else {{
+            chipBg = '#f59e0b20'; chipColor = '#f59e0b';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }}
 
-          const bsrLabel = bsr != null
+          const deltaHtml = delta != null
+            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          const sentiment = bsr != null
             ? (bsr >= 1.2 ? '🟢 Buy pressure' : bsr <= 0.8 ? '🔴 Sell pressure' : '⚪ Neutral')
             : '';
 
-          const deltaHtml = delta != null
-            ? `<span class="${delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}">${delta >= 0 ? '+' : ''}${Math.round(delta)}</span>`
-            : '<span>—</span>';
-
-          return `<div class="ti-card" onclick="openPlayerModal('${p.player_id}','${name.replace(/'/g,"\\'")}')">
-            <div class="ti-card-header">
+          return `<div class="ti-card" onclick="openPlayerModal('${{p.player_id}}','${{name.replace(/'/g,"\\\\'")}}')">
+            <div class="ti-card-top">
               <div>
-                <div class="ti-player-name">${name}</div>
-                <div class="ti-player-meta">${pos} · ${team}</div>
+                <div class="ti-name">${{name}}</div>
+                <div class="ti-meta">${{pos}} · ${{team}}</div>
               </div>
-              <div class="ti-badge" style="background:${badgeBg};color:#fff;">${badgeText}</div>
+              <div class="ti-chip" style="background:${{chipBg}};color:${{chipColor}};">${{chipText}}</div>
             </div>
-            <div class="ti-stat-row"><span>Market value</span><span>${market}</span></div>
-            <div class="ti-stat-row"><span>Model value</span><span>${model}</span></div>
-            <div class="ti-stat-row"><span>Market vs model</span>${deltaHtml}</div>
-            ${bsrLabel ? `<div class="ti-stat-row"><span>Sentiment</span><span>${bsrLabel}</span></div>` : ''}
-            <div class="ti-stat-row"><span>Trades (7d / 30d)</span><span>${cnt7} / ${cnt30}</span></div>
+            <div class="ti-divider"></div>
+            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
+            ${{sentiment ? `<div class="ti-sentiment">${{sentiment}}</div>` : ''}}
           </div>`;
-        }).join('');
-      }
-    })();
+        }}).join('');
+      }}
+    }})();
     </script>
     """
     return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
@@ -8160,132 +8200,170 @@ def page_trade_intel_guest():
 
 @app.route("/<platform>/<int:season>/<league_id>/trade-database")
 def page_trade_database(platform: str, season: int, league_id: str):
-    body_html = """
-    <div class="card central">
-      <div class="card-header">
-        <h2>Trade Database</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
           Browse real dynasty trades — search by player name to see how they move
         </div>
       </div>
-      <div class="card-body">
+      <div class="card-body" style="padding-top:20px;">
 
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
-          <div style="flex:1;min-width:200px;position:relative;">
-            <input id="tdbSearch" type="text" placeholder="Search by player name..."
-              style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border-color);
-                     background:var(--card-bg);color:var(--text-color);font-size:14px;box-sizing:border-box;">
+        <div class="tdb-toolbar">
+          <div class="tdb-search-wrap">
+            <svg class="tdb-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3" stroke-linecap="round"/>
+            </svg>
+            <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
           </div>
-          <div style="display:flex;gap:6px;">
-            <button class="tdb-filter active" data-lt="all"  onclick="tdbFilter('all')">All</button>
-            <button class="tdb-filter"        data-lt="1qb"  onclick="tdbFilter('1qb')">1QB</button>
-            <button class="tdb-filter"        data-lt="sf"   onclick="tdbFilter('sf')">SF</button>
+          <div class="tdb-lt-filters">
+            <button class="tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+            <button class="tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+            <button class="tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
           </div>
         </div>
 
-        <div id="tdbStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;"></div>
-        <div id="tdbList"   style="display:flex;flex-direction:column;gap:10px;"></div>
-        <div style="text-align:center;margin-top:20px;">
-          <button id="tdbMore" style="display:none;padding:8px 24px;border-radius:20px;border:1px solid var(--border-color);
-            background:var(--card-bg);color:var(--text-color);cursor:pointer;font-size:13px;">
-            Load more
-          </button>
+        <div id="tdbStatus" class="tdb-status"></div>
+        <div id="tdbList"   class="tdb-list"></div>
+        <div class="tdb-more-wrap">
+          <button id="tdbMore" class="tdb-more-btn" style="display:none;">Load more</button>
         </div>
 
       </div>
     </div>
 
     <style>
-      .tdb-filter {
-        padding:7px 14px;border-radius:16px;border:1px solid var(--border-color);
-        background:var(--card-bg);color:var(--text-color);cursor:pointer;font-size:13px;
-        font-weight:500;transition:all .15s;
-      }
-      .tdb-filter.active {
-        background:var(--accent-color,#3b82f6);color:#fff;border-color:var(--accent-color,#3b82f6);
-      }
-      .tdb-card {
-        background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:14px;
-      }
-      .tdb-date   { font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:10px; }
-      .tdb-sides  { display:grid;grid-template-columns:1fr 28px 1fr;gap:8px;align-items:start;margin-bottom:10px; }
-      .tdb-side   { display:flex;flex-direction:column;gap:4px; }
-      .tdb-vs     { font-size:11px;font-weight:700;color:var(--text-muted);align-self:center;text-align:center; }
-      .tdb-asset  { font-size:13px;color:var(--text-color);display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
-      .tdb-asset.tdb-match { font-weight:700;color:var(--accent-color,#3b82f6); }
-      .tdb-pos    { font-size:10px;color:var(--text-muted);background:var(--bg-secondary,#1e293b);
-                    border-radius:4px;padding:1px 5px;flex-shrink:0; }
-      .tdb-badges { display:flex;gap:5px;flex-wrap:wrap; }
-      .tdb-badge  { font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;
-                    background:var(--bg-secondary,#1e293b);color:var(--text-muted);
-                    border:1px solid var(--border-color); }
-      .tdb-badge-sf { background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }
-      @media(max-width:600px) { .tdb-asset { font-size:12px; } }
+      .tdb-toolbar {{
+        display: flex; gap: 12px; margin-bottom: 16px;
+        flex-wrap: wrap; align-items: center;
+      }}
+      .tdb-search-wrap {{
+        flex: 1; min-width: 200px; position: relative;
+      }}
+      .tdb-search-icon {{
+        position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+        width: 16px; height: 16px; color: var(--text-muted); pointer-events: none;
+      }}
+      .tdb-search {{
+        width: 100%; padding: 9px 12px 9px 34px; border-radius: 8px;
+        border: 1px solid var(--border-color); background: var(--card-bg);
+        color: var(--text-color); font-size: 14px; box-sizing: border-box;
+        outline: none; transition: border-color .15s;
+      }}
+      .tdb-search:focus {{ border-color: var(--accent-color, #3b82f6); }}
+      .tdb-lt-filters {{ display: flex; gap: 4px; }}
+      .tdb-lt {{
+        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-color);
+        background: var(--card-bg); color: var(--text-muted); cursor: pointer;
+        font-size: 13px; font-weight: 600; transition: all .15s;
+      }}
+      .tdb-lt.active {{
+        background: var(--text-color); color: var(--card-bg); border-color: var(--text-color);
+      }}
+      .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
+      .tdb-list {{ display: flex; flex-direction: column; gap: 8px; }}
+      .tdb-more-wrap {{ text-align: center; margin-top: 20px; }}
+      .tdb-more-btn {{
+        padding: 9px 28px; border-radius: 20px; border: 1px solid var(--border-color);
+        background: var(--card-bg); color: var(--text-color); cursor: pointer; font-size: 13px;
+      }}
+
+      /* Trade card */
+      .tdb-card {{
+        border: 1px solid var(--border-color); border-radius: 12px;
+        overflow: hidden; background: var(--card-bg);
+      }}
+      .tdb-card-head {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 14px; border-bottom: 1px solid var(--border-color);
+        background: var(--bg-secondary, rgba(0,0,0,.03));
+      }}
+      .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
+      .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
+      .tdb-badge {{
+        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+        background: var(--bg-secondary, #1e293b); color: var(--text-muted);
+        border: 1px solid var(--border-color);
+      }}
+      .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
+      .tdb-card-body {{
+        display: grid; grid-template-columns: 1fr 1px 1fr;
+      }}
+      .tdb-col {{
+        padding: 12px 14px; display: flex; flex-direction: column; gap: 5px;
+      }}
+      .tdb-col-divider {{ background: var(--border-color); }}
+      .tdb-asset {{
+        font-size: 13px; color: var(--text-color);
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      }}
+      .tdb-asset.tdb-match {{ font-weight: 700; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 12px; }}
+      .tdb-pos {{
+        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+        background: var(--bg-secondary, #1e293b); color: var(--text-muted); flex-shrink: 0;
+      }}
+      @media(max-width: 480px) {{
+        .tdb-card-body {{ grid-template-columns: 1fr; }}
+        .tdb-col-divider {{ height: 1px; width: auto; }}
+      }}
     </style>
 
     <script>
-    (function() {
-      let page = 0;
-      let leagueType = 'all';
-      let searchQuery = '';
-      let loading = false;
-      let hasMore = false;
+    (function() {{
+      const TDB_SEASON = {season};
+      let page = 0, leagueType = 'all', searchQuery = '', loading = false;
 
       const listEl   = document.getElementById('tdbList');
       const statusEl = document.getElementById('tdbStatus');
       const moreBtn  = document.getElementById('tdbMore');
       const searchEl = document.getElementById('tdbSearch');
 
-      function load(reset) {
+      function load(reset) {{
         if (loading) return;
-        if (reset) { page = 0; listEl.innerHTML = ''; }
+        if (reset) {{ page = 0; listEl.innerHTML = ''; }}
         loading = true;
         if (reset) statusEl.textContent = 'Loading...';
 
-        const params = new URLSearchParams({
-          page, limit: 20, league_type: leagueType,
-        });
+        const params = new URLSearchParams({{ page, limit: 20, league_type: leagueType, season: TDB_SEASON }});
         if (searchQuery) params.set('q', searchQuery);
 
         fetch('/api/trade-database?' + params)
           .then(r => r.json())
-          .then(data => {
+          .then(data => {{
             const trades = data.trades || [];
-            hasMore = data.has_more || false;
-            if (reset && trades.length === 0) {
+            if (reset && trades.length === 0) {{
               listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;">No trades found.</div>';
               statusEl.textContent = '';
               moreBtn.style.display = 'none';
               loading = false;
               return;
-            }
-            statusEl.textContent = reset && data.total != null ? `${data.total.toLocaleString()} trades found` : '';
+            }}
+            statusEl.textContent = reset && data.total != null ? data.total.toLocaleString() + ' trades' : '';
             renderTrades(trades, searchQuery);
-            moreBtn.style.display = hasMore ? '' : 'none';
+            moreBtn.style.display = data.has_more ? '' : 'none';
             page++;
             loading = false;
-          })
-          .catch(() => {
-            statusEl.textContent = 'Failed to load trades.';
-            loading = false;
-          });
-      }
+          }})
+          .catch(() => {{ statusEl.textContent = 'Failed to load.'; loading = false; }});
+      }}
 
-      function renderTrades(trades, q) {
+      function renderTrades(trades, q) {{
         const lq = (q || '').toLowerCase();
-        trades.forEach(t => {
-          const date = t.date || '—';
-          const sfBadge   = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
-                          : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
-          const teamsBadge = t.num_teams ? `<span class="tdb-badge">${t.num_teams} Teams</span>` : '';
-          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${t.scoring_type.toUpperCase()}</span>` : '';
+        trades.forEach(t => {{
+          const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
+                           : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
+          const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
+          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
 
-          function renderAsset(a) {
+          function renderAsset(a) {{
             const match = lq && a.name && a.name.toLowerCase().includes(lq);
-            const cls   = 'tdb-asset' + (match ? ' tdb-match' : '');
-            const pos   = a.position && a.type === 'player' ? `<span class="tdb-pos">${a.position}</span>` : '';
-            return `<div class="${cls}">${a.name}${pos}</div>`;
-          }
+            const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
+            const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
+            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
+            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
+          }}
 
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
           const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
@@ -8293,36 +8371,35 @@ def page_trade_database(platform: str, season: int, league_id: str):
           const card = document.createElement('div');
           card.className = 'tdb-card';
           card.innerHTML = `
-            <div class="tdb-date">${date}</div>
-            <div class="tdb-sides">
-              <div class="tdb-side">${sideA}</div>
-              <div class="tdb-vs">vs</div>
-              <div class="tdb-side">${sideB}</div>
+            <div class="tdb-card-head">
+              <span class="tdb-card-date">${{t.date || '—'}}</span>
+              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
             </div>
-            <div class="tdb-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>`;
+            <div class="tdb-card-body">
+              <div class="tdb-col">${{sideA}}</div>
+              <div class="tdb-col-divider"></div>
+              <div class="tdb-col">${{sideB}}</div>
+            </div>`;
           listEl.appendChild(card);
-        });
-      }
+        }});
+      }}
 
-      window.tdbFilter = function(lt) {
+      window.tdbFilter = function(lt) {{
         leagueType = lt;
-        document.querySelectorAll('.tdb-filter').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
+        document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
         load(true);
-      };
+      }};
 
       moreBtn.addEventListener('click', () => load(false));
 
       let debounce;
-      searchEl.addEventListener('input', () => {
+      searchEl.addEventListener('input', () => {{
         clearTimeout(debounce);
-        debounce = setTimeout(() => {
-          searchQuery = searchEl.value.trim();
-          load(true);
-        }, 350);
-      });
+        debounce = setTimeout(() => {{ searchQuery = searchEl.value.trim(); load(true); }}, 350);
+      }});
 
       load(true);
-    })();
+    }})();
     </script>
     """
     return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
@@ -12119,53 +12196,69 @@ def api_trade_database():
 @app.route("/api/trade-intel/similar-trades")
 def api_trade_intel_similar_trades():
     """
-    Returns recent real trades involving any of the given player IDs.
-    Used by the trade calculator to show similar trades below the analysis.
+    Returns real trades where side-A players and side-B players appeared on
+    OPPOSITE sides of the actual trade.  Falls back to any-side if only one
+    side has players.
     """
     try:
-        player_ids_raw = request.args.get("player_ids", "")
-        season = int(request.args.get("season") or datetime.now().year)
-        limit = min(int(request.args.get("limit") or 10), 25)
+        side_a_raw = request.args.get("side_a", "")
+        side_b_raw = request.args.get("side_b", "")
+        season     = int(request.args.get("season") or datetime.now().year)
+        limit      = min(int(request.args.get("limit") or 10), 25)
 
-        if not player_ids_raw:
-            return jsonify({"trades": []})
+        side_a_ids = [p.strip() for p in side_a_raw.split(",") if p.strip()]
+        side_b_ids = [p.strip() for p in side_b_raw.split(",") if p.strip()]
 
-        player_ids = [p.strip() for p in player_ids_raw.split(",") if p.strip()]
-        if not player_ids:
+        if not side_a_ids and not side_b_ids:
             return jsonify({"trades": []})
 
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
         with get_conn() as conn:
-            trade_rows = conn.execute(
-                """
-                SELECT DISTINCT
-                    t.id,
-                    t.transaction_id,
-                    t.season,
-                    t.week,
-                    t.created_at,
-                    l.scoring_type,
-                    l.is_superflex,
-                    l.num_teams
-                FROM trade_intel_trades t
-                JOIN trade_intel_assets a ON a.trade_id = t.id
-                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE a.player_id = ANY(%s)
-                  AND a.asset_type = 'player'
-                  AND t.season = %s
-                ORDER BY t.created_at DESC NULLS LAST
-                LIMIT %s
-                """,
-                (player_ids, season, limit),
-            ).fetchall()
+            if side_a_ids and side_b_ids:
+                # Require players from each side to appear on OPPOSITE sides of the real trade
+                trade_rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
+                        AND a1.player_id = ANY(%s) AND a1.asset_type = 'player'
+                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
+                        AND a2.player_id = ANY(%s) AND a2.asset_type = 'player'
+                        AND a2.side != a1.side
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (side_a_ids, side_b_ids, season, limit),
+                ).fetchall()
+            else:
+                # Only one side populated — match any trade with those players
+                all_ids = side_a_ids or side_b_ids
+                trade_rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                        AND a.player_id = ANY(%s) AND a.asset_type = 'player'
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (all_ids, season, limit),
+                ).fetchall()
 
             if not trade_rows:
                 return jsonify({"trades": []})
 
             trade_ids = [r["id"] for r in trade_rows]
-
             asset_rows = conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
@@ -12185,46 +12278,48 @@ def api_trade_intel_similar_trades():
             assets_by_trade[tid][a["side"]].append(a)
 
         players_map = load_players_index() or {}
-        key_set = set(player_ids)
+        key_set     = set(side_a_ids + side_b_ids)
 
         def describe_asset(a) -> dict:
             if a["asset_type"] == "player":
-                pid = a["player_id"]
+                pid  = a["player_id"]
                 info = players_map.get(pid) or {}
                 return {
-                    "type": "player",
-                    "player_id": pid,
+                    "type": "player", "player_id": pid,
                     "name": info.get("name") or pid,
                     "position": info.get("pos") or "?",
                     "is_key_player": pid in key_set,
                 }
-            s = str(a["pick_season"]) if a["pick_season"] else "?"
-            r = str(a["pick_round"]) if a["pick_round"] else "?"
+            s     = str(a["pick_season"]) if a["pick_season"] else "?"
+            rd    = str(a["pick_round"])  if a["pick_round"]  else "?"
             order = a["pick_order"] or ""
-            label = f"{s} Rd {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": label, "is_key_player": False}
+            return {"type": "pick", "name": f"{s} Rd {rd}" + (f" ({order})" if order else ""),
+                    "is_key_player": False}
 
         result = []
         for r in trade_rows:
-            tid = r["id"]
+            tid   = r["id"]
             sides = assets_by_trade.get(tid, {"a": [], "b": []})
             trade_date = None
             if r["created_at"]:
-                try:
-                    trade_date = r["created_at"].strftime("%m/%d/%y")
-                except Exception:
-                    trade_date = str(r["created_at"])[:10]
+                try:    trade_date = r["created_at"].strftime("%m/%d/%y")
+                except: trade_date = str(r["created_at"])[:10]
             result.append({
-                "trade_id": r["transaction_id"],
-                "date": trade_date,
-                "season": r["season"],
-                "week": r["week"],
+                "trade_id":    r["transaction_id"],
+                "date":        trade_date,
+                "season":      r["season"],
                 "scoring_type": r["scoring_type"],
                 "is_superflex": r["is_superflex"],
-                "num_teams": r["num_teams"],
-                "side_a": [describe_asset(a) for a in sides["a"]],
-                "side_b": [describe_asset(a) for a in sides["b"]],
+                "num_teams":   r["num_teams"],
+                "side_a":      [describe_asset(a) for a in sides["a"]],
+                "side_b":      [describe_asset(a) for a in sides["b"]],
             })
+
+        return jsonify({"trades": result})
+
+    except Exception:
+        logger.exception("[trade-intel/similar-trades] error")
+        return jsonify({"error": "Internal error"}), 500
 
         return jsonify({"trades": result})
 

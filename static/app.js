@@ -1604,12 +1604,12 @@ window.initTradePage = function initTradePage(root = document) {
     const section = root.querySelector("#similarTradesSection");
     if (!section) return;
 
-    const allIds = [
-      ...state.sideAPlayers.map(p => String(p.id)),
-      ...state.sideBPlayers.map(p => String(p.id)),
-    ].filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+    const sideAIds = state.sideAPlayers.map(p => String(p.id))
+      .filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+    const sideBIds = state.sideBPlayers.map(p => String(p.id))
+      .filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
 
-    if (allIds.length === 0) {
+    if (sideAIds.length === 0 && sideBIds.length === 0) {
       section.style.display = "none";
       return;
     }
@@ -1620,45 +1620,47 @@ window.initTradePage = function initTradePage(root = document) {
     section.style.display = "";
 
     try {
-      const res = await fetch(
-        `/api/trade-intel/similar-trades?player_ids=${encodeURIComponent(allIds.join(","))}&season=${season}&limit=8`
-      );
+      const params = new URLSearchParams({ season, limit: 8 });
+      if (sideAIds.length) params.set("side_a", sideAIds.join(","));
+      if (sideBIds.length) params.set("side_b", sideBIds.join(","));
+
+      const res = await fetch("/api/trade-intel/similar-trades?" + params);
       if (!res.ok) throw new Error("fetch failed");
       const data = await res.json();
       const trades = data.trades || [];
 
       if (!listEl) return;
       if (trades.length === 0) {
-        listEl.innerHTML = '<div class="stl-empty">No recent trades found for these players.</div>';
+        listEl.innerHTML = '<div class="stl-empty">No matching trades found yet.</div>';
         return;
       }
 
-      const keySet = new Set(allIds);
-
       listEl.innerHTML = trades.map(t => {
-        const date = t.date || "—";
-        const sfBadge = t.is_superflex === true ? '<span class="stl-badge stl-badge-sf">SF</span>'
-                      : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
-        const teamsBadge = t.num_teams ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
-        const scoringBadge = t.scoring_type ? `<span class="stl-badge">${t.scoring_type.toUpperCase()}</span>` : '';
+        const sfBadge    = t.is_superflex === true  ? '<span class="stl-badge stl-badge-sf">SF</span>'
+                         : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
+        const teamsBadge = t.num_teams    ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
+        const scoreBadge = t.scoring_type ? `<span class="stl-badge">${t.scoring_type.toUpperCase()}</span>` : '';
 
         function renderAsset(a) {
-          const bold = a.is_key_player ? ' stl-key' : '';
-          if (a.type === 'pick') return `<div class="stl-asset${bold}">${a.name}</div>`;
-          return `<div class="stl-asset${bold}">${a.name}<span class="stl-pos">${a.position}</span></div>`;
+          const key  = a.is_key_player ? ' stl-key' : '';
+          const pick = a.type === 'pick' ? ' stl-pick' : '';
+          const pos  = a.type === 'player' ? `<span class="stl-pos">${a.position}</span>` : '';
+          return `<div class="stl-asset${key}${pick}">${a.name}${pos}</div>`;
         }
 
         const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
         const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
 
         return `<div class="stl-card">
-          <div class="stl-date">${date}</div>
-          <div class="stl-sides">
-            <div class="stl-side">${sideA}</div>
-            <div class="stl-vs">vs</div>
-            <div class="stl-side">${sideB}</div>
+          <div class="stl-card-head">
+            <span class="stl-date">${t.date || "—"}</span>
+            <div class="stl-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>
           </div>
-          <div class="stl-badges">${sfBadge}${teamsBadge}${scoringBadge}</div>
+          <div class="stl-card-body">
+            <div class="stl-col">${sideA}</div>
+            <div class="stl-col-divider"></div>
+            <div class="stl-col">${sideB}</div>
+          </div>
         </div>`;
       }).join('');
 
