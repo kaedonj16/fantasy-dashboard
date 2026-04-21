@@ -340,10 +340,16 @@ def main():
         build_weekly_rookie_data(state)
 
         try:
-            from data_building.trade_intel.league_discovery import run_discovery
+            from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
             from data_building.trade_intel.trade_crawler import run_crawl
             from data_building.trade_intel.analytics import run_analytics
             from data_building.trade_intel.trade_value_model import run_trade_value_model
+
+            # One-time backfill: populate is_superflex for leagues discovered before
+            # the column was added.  No-ops once every league has been tagged.
+            backfilled = backfill_superflex(batch_size=500)
+            if backfilled:
+                print(f"[cron] Backfilled is_superflex for {backfilled} leagues")
 
             if _trade_intel_fresh():
                 print("[cron] Trade intel already crawled today, skipping discovery + crawl")

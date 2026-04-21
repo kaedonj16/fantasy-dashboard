@@ -236,7 +236,55 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
     return total_new
 
 
+def backfill_superflex(batch_size: int = 500) -> int:
+    """
+    Fetch roster_positions for existing leagues that don't have is_superflex set yet
+    and update them.  Run once after adding the column.
+
+    Returns the number of leagues updated.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT league_id FROM trade_intel_leagues
+            WHERE is_superflex IS NULL
+            ORDER BY discovered_at ASC
+            LIMIT %s
+            """,
+            (batch_size,),
+        ).fetchall()
+
+    if not rows:
+        logger.info("[backfill_superflex] Nothing to update.")
+        return 0
+
+    updated = 0
+    for row in rows:
+        league_id = row["league_id"]
+        time.sleep(_REQUEST_DELAY)
+        meta = _league_meta(league_id)
+        if meta is None:
+            # Can't reach league — mark False so we don't keep retrying
+            is_sf = False
+        else:
+            is_sf = _is_superflex(meta)
+
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE trade_intel_leagues SET is_superflex = %s WHERE league_id = %s",
+                (is_sf, league_id),
+            )
+        updated += 1
+
+    logger.info("[backfill_superflex] Updated %d leagues.", updated)
+    return updated
+
+
 if __name__ == "__main__":
+    import sys
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    count = run_discovery()
-    print(f"Discovered {count} new leagues.")
+    if len(sys.argv) > 1 and sys.argv[1] == "backfill":
+        print(f"Backfilled {backfill_superflex()} leagues.")
+    else:
+        count = run_discovery()
+        print(f"Discovered {count} new leagues.")
