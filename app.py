@@ -11846,7 +11846,7 @@ def api_trade_targets():
                 "position":        info["position"],
                 "nfl_team":        info["team"],
                 "age":             info["age"],
-                "value":           round(info["value"], 0),
+                "value":           round(info["value"], 1),
                 "pos_rank_label":  info["pos_rank_label"],
                 "rank_change_7d":  info["rank_change_7d"],
                 "owner_team":      team_name,
