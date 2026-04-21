@@ -1877,7 +1877,7 @@ window.initTradePage = function initTradePage(root = document) {
         data.packages.forEach((pkg, i) => {
           const names  = pkg.send.map(p => p.name).join(" + ");
           const sv     = pkg.send_value.toFixed(1);
-          const diff   = sv - tv;
+          const diff   = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
           const diffStr = (diff >= 0 ? "+" : "") + diff;
           const { text: label, color: lc } = fairLabel(pkg.send_value);
           // Store serialized data on the button to avoid closure issues
