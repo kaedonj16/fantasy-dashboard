@@ -12011,12 +12011,19 @@ def api_trade_ideas_for_target():
             if slot is not None:
                 label = f"{yr} {rnd}.{slot:02d}"
                 bucket = "early" if slot <= 4 else "mid" if slot <= 8 else "late"
-                val_keys = [f"{yr}_{rnd}_{bucket}", f"{yr}_{rnd}"]
+                # Prefer exact slot key (both zero-padded-round and plain), then bucket fallback
+                val_keys = [
+                    f"{yr}_{rnd:02d}_{slot:02d}",
+                    f"{yr}_{rnd}_{slot:02d}",
+                    f"{yr}_{rnd}_{bucket}",
+                    f"{yr}_{rnd}",
+                ]
             else:
                 sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
                 label = f"{yr} {rnd}{sfx}"
                 val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
 
+            # Use whichever key is actually in the table so pick_id is always parseable
             pick_id = next((k for k in val_keys if k in pick_val_lookup), val_keys[0])
             value   = pick_val_lookup.get(pick_id)
             if value is None:
