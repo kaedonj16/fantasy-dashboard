@@ -1531,6 +1531,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
       }
+      const stlSec = root.querySelector("#similarTradesSection");
+      if (stlSec) stlSec.style.display = "none";
       return;
     }
 
@@ -1585,12 +1587,83 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       fetchTradeIntel();
+      fetchSimilarTrades();
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
         errorBox.style.display = "block";
         errorBox.textContent = err.message || "Failed to evaluate trade.";
       }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // fetchSimilarTrades — real trades from the DB involving these players
+  // ------------------------------------------------------------
+  async function fetchSimilarTrades() {
+    const section = root.querySelector("#similarTradesSection");
+    if (!section) return;
+
+    const allIds = [
+      ...state.sideAPlayers.map(p => String(p.id)),
+      ...state.sideBPlayers.map(p => String(p.id)),
+    ].filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+
+    if (allIds.length === 0) {
+      section.style.display = "none";
+      return;
+    }
+
+    const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+    const listEl = root.querySelector("#similarTradesList");
+    if (listEl) listEl.innerHTML = '<div class="stl-loading">Loading recent trades...</div>';
+    section.style.display = "";
+
+    try {
+      const res = await fetch(
+        `/api/trade-intel/similar-trades?player_ids=${encodeURIComponent(allIds.join(","))}&season=${season}&limit=8`
+      );
+      if (!res.ok) throw new Error("fetch failed");
+      const data = await res.json();
+      const trades = data.trades || [];
+
+      if (!listEl) return;
+      if (trades.length === 0) {
+        listEl.innerHTML = '<div class="stl-empty">No recent trades found for these players.</div>';
+        return;
+      }
+
+      const keySet = new Set(allIds);
+
+      listEl.innerHTML = trades.map(t => {
+        const date = t.date || "—";
+        const sfBadge = t.is_superflex === true ? '<span class="stl-badge stl-badge-sf">SF</span>'
+                      : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
+        const teamsBadge = t.num_teams ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
+        const scoringBadge = t.scoring_type ? `<span class="stl-badge">${t.scoring_type.toUpperCase()}</span>` : '';
+
+        function renderAsset(a) {
+          const bold = a.is_key_player ? ' stl-key' : '';
+          if (a.type === 'pick') return `<div class="stl-asset${bold}">${a.name}</div>`;
+          return `<div class="stl-asset${bold}">${a.name}<span class="stl-pos">${a.position}</span></div>`;
+        }
+
+        const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
+        const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
+
+        return `<div class="stl-card">
+          <div class="stl-date">${date}</div>
+          <div class="stl-sides">
+            <div class="stl-side">${sideA}</div>
+            <div class="stl-vs">vs</div>
+            <div class="stl-side">${sideB}</div>
+          </div>
+          <div class="stl-badges">${sfBadge}${teamsBadge}${scoringBadge}</div>
+        </div>`;
+      }).join('');
+
+    } catch (e) {
+      if (listEl) listEl.innerHTML = '<div class="stl-empty">Trade data unavailable.</div>';
     }
   }
 

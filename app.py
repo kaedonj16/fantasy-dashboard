@@ -11782,6 +11782,123 @@ def api_trade_intel_player(player_id: str):
         return jsonify({"error": "Internal error"}), 500
 
 
+@app.route("/api/trade-intel/similar-trades")
+def api_trade_intel_similar_trades():
+    """
+    Returns recent real trades involving any of the given player IDs.
+    Used by the trade calculator to show similar trades below the analysis.
+    """
+    try:
+        player_ids_raw = request.args.get("player_ids", "")
+        season = int(request.args.get("season") or datetime.now().year)
+        limit = min(int(request.args.get("limit") or 10), 25)
+
+        if not player_ids_raw:
+            return jsonify({"trades": []})
+
+        player_ids = [p.strip() for p in player_ids_raw.split(",") if p.strip()]
+        if not player_ids:
+            return jsonify({"trades": []})
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+
+        with get_conn() as conn:
+            trade_rows = conn.execute(
+                """
+                SELECT DISTINCT
+                    t.id,
+                    t.transaction_id,
+                    t.season,
+                    t.week,
+                    t.created_at,
+                    l.scoring_type,
+                    l.is_superflex,
+                    l.num_teams
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = ANY(%s)
+                  AND a.asset_type = 'player'
+                  AND t.season = %s
+                ORDER BY t.created_at DESC NULLS LAST
+                LIMIT %s
+                """,
+                (player_ids, season, limit),
+            ).fetchall()
+
+            if not trade_rows:
+                return jsonify({"trades": []})
+
+            trade_ids = [r["id"] for r in trade_rows]
+
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        assets_by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in assets_by_trade:
+                assets_by_trade[tid] = {"a": [], "b": []}
+            assets_by_trade[tid][a["side"]].append(a)
+
+        players_map = load_players_index() or {}
+        key_set = set(player_ids)
+
+        def describe_asset(a) -> dict:
+            if a["asset_type"] == "player":
+                pid = a["player_id"]
+                info = players_map.get(pid) or {}
+                return {
+                    "type": "player",
+                    "player_id": pid,
+                    "name": info.get("name") or pid,
+                    "position": info.get("pos") or "?",
+                    "is_key_player": pid in key_set,
+                }
+            s = str(a["pick_season"]) if a["pick_season"] else "?"
+            r = str(a["pick_round"]) if a["pick_round"] else "?"
+            order = a["pick_order"] or ""
+            label = f"{s} Rd {r}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": label, "is_key_player": False}
+
+        result = []
+        for r in trade_rows:
+            tid = r["id"]
+            sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            trade_date = None
+            if r["created_at"]:
+                try:
+                    trade_date = r["created_at"].strftime("%m/%d/%y")
+                except Exception:
+                    trade_date = str(r["created_at"])[:10]
+            result.append({
+                "trade_id": r["transaction_id"],
+                "date": trade_date,
+                "season": r["season"],
+                "week": r["week"],
+                "scoring_type": r["scoring_type"],
+                "is_superflex": r["is_superflex"],
+                "num_teams": r["num_teams"],
+                "side_a": [describe_asset(a) for a in sides["a"]],
+                "side_b": [describe_asset(a) for a in sides["b"]],
+            })
+
+        return jsonify({"trades": result})
+
+    except Exception:
+        logger.exception("[trade-intel/similar-trades] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
 @app.route("/api/trade-intel/run-crawl", methods=["POST"])
 @limiter.limit("2 per hour")
 def api_trade_intel_run_crawl():
