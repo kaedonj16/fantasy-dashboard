@@ -11994,30 +11994,37 @@ def api_trade_ideas_for_target():
             if str(p.get("position") or "").upper() == "PICK"
         }
 
-        def _pick_val_from_table(p: dict) -> float:
-            yr  = p.get("season") or _cur_yr
-            rnd = p.get("round") or 4
-            for key in (
-                f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late",
-                f"{yr}_{rnd}",
-            ):
-                if key in pick_val_lookup:
-                    return pick_val_lookup[key]
-            return 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
+        def _resolve_pick(p: dict) -> dict:
+            """Return {label, value, is_pick} for a pick, resolving exact slot when possible."""
+            yr  = int(p.get("season") or _cur_yr)
+            rnd = int(p.get("round") or 4)
+            original_owner = p.get("original_owner")
 
-        def _pick_label(p: dict) -> str:
-            yr  = p.get("season") or _cur_yr
-            rnd = p.get("round") or 4
-            sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-            return f"{yr} {rnd}{sfx}"
+            slot = None
+            if original_owner:
+                slot = resolve_exact_pick_slot(
+                    platform, league_id, season,
+                    {"season": yr, "round": rnd, "previous_owner_id": int(original_owner)},
+                )
+
+            if slot is not None:
+                label = f"{yr} {rnd}.{slot:02d}"
+                bucket = "early" if slot <= 4 else "mid" if slot <= 8 else "late"
+                val_keys = [f"{yr}_{rnd}_{bucket}", f"{yr}_{rnd}"]
+            else:
+                sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                label = f"{yr} {rnd}{sfx}"
+                val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
+
+            value = next((pick_val_lookup[k] for k in val_keys if k in pick_val_lookup), None)
+            if value is None:
+                value = 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
+
+            return {"name": label, "value": value, "is_pick": True}
 
         viewer_picks = sorted(
             [
-                {
-                    "name":    _pick_label(p),
-                    "value":   _pick_val_from_table(p),
-                    "is_pick": True,
-                }
+                _resolve_pick(p)
                 for p in picks_by_roster.get(viewer_roster_id, [])
                 if int(p.get("season", 0)) <= _cur_yr + 1
             ],
