@@ -43,22 +43,67 @@ DEFAULT_ALPHA   = 0.55   # gentler than the daily 0.70; more history weight
 DEFAULT_SOURCE  = "model"
 
 
+def _load_calibrated_values() -> dict[str, float]:
+    """Load COALESCE(calibrated_value_1qb, value_1qb) from player_values."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_id, COALESCE(calibrated_value_1qb, value_1qb) AS value
+                FROM player_values
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+                """
+            ).fetchall()
+        return {r["player_id"]: float(r["value"]) for r in rows}
+    except Exception as e:
+        logger.warning("[smooth] Could not load calibrated values: %s", e)
+        return {}
+
+
 def smooth_value_history(
     *,
     alpha: float = DEFAULT_ALPHA,
     source: str  = DEFAULT_SOURCE,
     from_date: date | None = None,
     dry_run: bool = False,
+    use_calibrated: bool = True,
 ) -> dict:
     """
     Re-apply EMA to all (or post-from_date) snapshots in player_value_history.
 
+    use_calibrated: if True (default), seed today's entry with the calibrated
+      value from player_values before smoothing so history blends toward the
+      WLS-adjusted value rather than the raw model value.
+
     Returns a summary dict with counts.
     """
     logger.info(
-        "[smooth] alpha=%.2f  source=%s  from=%s  dry_run=%s",
-        alpha, source, from_date, dry_run,
+        "[smooth] alpha=%.2f  source=%s  from=%s  use_calibrated=%s  dry_run=%s",
+        alpha, source, from_date, use_calibrated, dry_run,
     )
+
+    today = date.today()
+
+    # Seed today's history with calibrated values before EMA
+    if use_calibrated and not dry_run:
+        cal_values = _load_calibrated_values()
+        if cal_values:
+            today_iso = today.isoformat()
+            seeded = 0
+            with get_conn() as conn:
+                for pid, val in cal_values.items():
+                    conn.execute(
+                        """
+                        INSERT INTO player_value_history
+                            (as_of_date, player_id, value, source)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (as_of_date, player_id, source)
+                        DO UPDATE SET value = EXCLUDED.value
+                        """,
+                        (today_iso, pid, val, source),
+                    )
+                    seeded += 1
+            logger.info("[smooth] Seeded %d calibrated values for %s", seeded, today_iso)
 
     # Load all rows ordered chronologically so we can walk them in sequence
     with get_conn() as conn:
@@ -150,6 +195,8 @@ if __name__ == "__main__":
                              "Rows before this date are used as EMA seed only.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print what would be changed without writing to DB.")
+    parser.add_argument("--no-calibrated", action="store_true",
+                        help="Skip seeding today's snapshot with calibrated values.")
     args = parser.parse_args()
 
     from_date = date.fromisoformat(args.from_date) if args.from_date else None
@@ -158,5 +205,6 @@ if __name__ == "__main__":
         source=args.source,
         from_date=from_date,
         dry_run=args.dry_run,
+        use_calibrated=not args.no_calibrated,
     )
     print(result)

@@ -94,10 +94,61 @@ def build_daily_model_values():
     """
     print(f"[build_daily_data] Building model values with advanced metrics")
     rewrite_value_table_with_model()
-    # Must use raw model values here — record_model_value_snapshot records the
-    # model prior; calibrated values belong in player_values.calibrated_value_1qb.
     model_value_table = load_model_value_table(apply_calibration=False) or []
     record_model_value_snapshot(model_value_table)
+
+
+def record_calibrated_history_snapshot() -> int:
+    """
+    Write today's player_value_history snapshot using COALESCE(calibrated, raw)
+    values from player_values — the same values shown on the rankings page.
+
+    Call this AFTER run_trade_value_model() has written calibrated_value_1qb.
+    Uses ON CONFLICT UPDATE so it overwrites any raw-model entry already written
+    today by build_daily_model_values().
+    """
+    from datetime import date
+    from dashboard_services.db import get_conn
+
+    today = date.today().isoformat()
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                player_id,
+                position,
+                team,
+                COALESCE(calibrated_value_1qb, value_1qb) AS value
+            FROM player_values
+            WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+            """
+        ).fetchall()
+
+    if not rows:
+        print("[record_calibrated_history_snapshot] No rows in player_values — skipping")
+        return 0
+
+    written = 0
+    with get_conn() as conn:
+        for r in rows:
+            conn.execute(
+                """
+                INSERT INTO player_value_history
+                    (as_of_date, player_id, position, team, value, source)
+                VALUES (%s, %s, %s, %s, %s, 'model')
+                ON CONFLICT (as_of_date, player_id, source)
+                DO UPDATE SET
+                    value    = EXCLUDED.value,
+                    position = EXCLUDED.position,
+                    team     = EXCLUDED.team
+                """,
+                (today, r["player_id"], r["position"], r["team"], float(r["value"])),
+            )
+            written += 1
+
+    print(f"[record_calibrated_history_snapshot] Wrote {written} calibrated values to player_value_history")
+    return written
 
 
 def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):

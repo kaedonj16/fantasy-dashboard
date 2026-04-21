@@ -361,16 +361,26 @@ def main():
                 analytics_result = run_analytics(season=season)
                 print(f"[cron] Trade intel analytics: {analytics_result}")
 
+        except Exception as ti_err:
+            print(f"[cron] Trade intel discovery/crawl failed (non-fatal): {ti_err}")
+
+        try:
+            from data_building.trade_intel.trade_value_model import run_trade_value_model
+            from data_building.build_daily_value_table import record_calibrated_history_snapshot
+
             if _wls_fresh():
                 print("[cron] WLS calibration already ran today, skipping")
             else:
                 wls_result = run_trade_value_model(season=season)
                 print(f"[cron] Trade value model (WLS): {wls_result}")
-                # Rebuild JSON so calibrated values are baked in
-                build_daily_model_values()
-                print("[cron] Value table rebuilt with calibrated values")
-        except Exception as ti_err:
-            print(f"[cron] Trade intel failed (non-fatal): {ti_err}")
+
+            # Always write calibrated values to history (covers re-runs and first run)
+            cal_n = record_calibrated_history_snapshot()
+            print(f"[cron] Calibrated history snapshot: {cal_n} players")
+        except Exception as wls_err:
+            import traceback
+            print(f"[cron] WLS/calibration failed (non-fatal): {wls_err}")
+            traceback.print_exc()
 
         print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
