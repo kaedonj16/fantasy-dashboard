@@ -359,8 +359,10 @@ def run_trade_value_model(
     v_sf_pos  = np.clip(v_sf,  0.0, None)
     for i in range(N):
         if prior_1qb[i] > 0:
+            v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i])
             v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * MAX_LIFT)
         if prior_sf[i] > 0:
+            v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i])
             v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
 
     # Scale so the TOP_N_AT_MAX-th highest value maps to MAX_VALUE, then clip.
