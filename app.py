@@ -938,16 +938,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         pills = [
             simple_pill("Home", "/", "home"),
             simple_pill("Trade Calc", "/trade", "trade"),
+            simple_pill("Trade Database", "/trade-database", "trade-database"),
+            simple_pill("Trade Intel", "/trade-intel", "trade-intel"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Breakouts", "/breakouts", "breakouts"),
                 ("Rookies", "/rookies", "rookies"),
-                ("Trade Intel", "/trade-intel", "trade-intel"),
-            ], ["players", "breakouts", "rookies", "trade-intel"]),
-            simple_pill("FAQ", "/faq", "faq"),
-            simple_pill("Privacy", "/privacy", "privacy"),
-            simple_pill("Support the site", "/support", "support"),
-            simple_pill("Contact", "/contact", "contact"),
+            ], ["players", "breakouts", "rookies"]),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
@@ -1026,6 +1023,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
+    nav_pills.append(nav_pill("Trade Database", "page_trade_database", "trade-database"))
+    nav_pills.append(nav_pill("Trade Intel", "page_trade_intel", "trade-intel"))
     # Show Weekly Hub if draft has ended (during offseason) OR if in-season
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -1036,8 +1035,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Player Rankings", "page_players",  "players",  False),
         ("Rookie Rankings", "page_rookies",  "rookies",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-        ("Trade Intel",     "page_trade_intel", "trade-intel", False),
-    ], ["players", "breakouts", "rookies", "trade-intel"], "playersNavDropdown"))
+    ], ["players", "breakouts", "rookies"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -8154,6 +8152,183 @@ def page_trade_intel_guest():
     return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
 
+@app.route("/<platform>/<int:season>/<league_id>/trade-database")
+def page_trade_database(platform: str, season: int, league_id: str):
+    body_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Trade Database</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Browse real dynasty trades — search by player name to see how they move
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+          <div style="flex:1;min-width:200px;position:relative;">
+            <input id="tdbSearch" type="text" placeholder="Search by player name..."
+              style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border-color);
+                     background:var(--card-bg);color:var(--text-color);font-size:14px;box-sizing:border-box;">
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="tdb-filter active" data-lt="all"  onclick="tdbFilter('all')">All</button>
+            <button class="tdb-filter"        data-lt="1qb"  onclick="tdbFilter('1qb')">1QB</button>
+            <button class="tdb-filter"        data-lt="sf"   onclick="tdbFilter('sf')">SF</button>
+          </div>
+        </div>
+
+        <div id="tdbStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;"></div>
+        <div id="tdbList"   style="display:flex;flex-direction:column;gap:10px;"></div>
+        <div style="text-align:center;margin-top:20px;">
+          <button id="tdbMore" style="display:none;padding:8px 24px;border-radius:20px;border:1px solid var(--border-color);
+            background:var(--card-bg);color:var(--text-color);cursor:pointer;font-size:13px;">
+            Load more
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .tdb-filter {
+        padding:7px 14px;border-radius:16px;border:1px solid var(--border-color);
+        background:var(--card-bg);color:var(--text-color);cursor:pointer;font-size:13px;
+        font-weight:500;transition:all .15s;
+      }
+      .tdb-filter.active {
+        background:var(--accent-color,#3b82f6);color:#fff;border-color:var(--accent-color,#3b82f6);
+      }
+      .tdb-card {
+        background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:14px;
+      }
+      .tdb-date   { font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:10px; }
+      .tdb-sides  { display:grid;grid-template-columns:1fr 28px 1fr;gap:8px;align-items:start;margin-bottom:10px; }
+      .tdb-side   { display:flex;flex-direction:column;gap:4px; }
+      .tdb-vs     { font-size:11px;font-weight:700;color:var(--text-muted);align-self:center;text-align:center; }
+      .tdb-asset  { font-size:13px;color:var(--text-color);display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
+      .tdb-asset.tdb-match { font-weight:700;color:var(--accent-color,#3b82f6); }
+      .tdb-pos    { font-size:10px;color:var(--text-muted);background:var(--bg-secondary,#1e293b);
+                    border-radius:4px;padding:1px 5px;flex-shrink:0; }
+      .tdb-badges { display:flex;gap:5px;flex-wrap:wrap; }
+      .tdb-badge  { font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;
+                    background:var(--bg-secondary,#1e293b);color:var(--text-muted);
+                    border:1px solid var(--border-color); }
+      .tdb-badge-sf { background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }
+      @media(max-width:600px) { .tdb-asset { font-size:12px; } }
+    </style>
+
+    <script>
+    (function() {
+      let page = 0;
+      let leagueType = 'all';
+      let searchQuery = '';
+      let loading = false;
+      let hasMore = false;
+
+      const listEl   = document.getElementById('tdbList');
+      const statusEl = document.getElementById('tdbStatus');
+      const moreBtn  = document.getElementById('tdbMore');
+      const searchEl = document.getElementById('tdbSearch');
+
+      function load(reset) {
+        if (loading) return;
+        if (reset) { page = 0; listEl.innerHTML = ''; }
+        loading = true;
+        if (reset) statusEl.textContent = 'Loading...';
+
+        const params = new URLSearchParams({
+          page, limit: 20, league_type: leagueType,
+        });
+        if (searchQuery) params.set('q', searchQuery);
+
+        fetch('/api/trade-database?' + params)
+          .then(r => r.json())
+          .then(data => {
+            const trades = data.trades || [];
+            hasMore = data.has_more || false;
+            if (reset && trades.length === 0) {
+              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;">No trades found.</div>';
+              statusEl.textContent = '';
+              moreBtn.style.display = 'none';
+              loading = false;
+              return;
+            }
+            statusEl.textContent = reset && data.total != null ? `${data.total.toLocaleString()} trades found` : '';
+            renderTrades(trades, searchQuery);
+            moreBtn.style.display = hasMore ? '' : 'none';
+            page++;
+            loading = false;
+          })
+          .catch(() => {
+            statusEl.textContent = 'Failed to load trades.';
+            loading = false;
+          });
+      }
+
+      function renderTrades(trades, q) {
+        const lq = (q || '').toLowerCase();
+        trades.forEach(t => {
+          const date = t.date || '—';
+          const sfBadge   = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
+                          : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
+          const teamsBadge = t.num_teams ? `<span class="tdb-badge">${t.num_teams} Teams</span>` : '';
+          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${t.scoring_type.toUpperCase()}</span>` : '';
+
+          function renderAsset(a) {
+            const match = lq && a.name && a.name.toLowerCase().includes(lq);
+            const cls   = 'tdb-asset' + (match ? ' tdb-match' : '');
+            const pos   = a.position && a.type === 'player' ? `<span class="tdb-pos">${a.position}</span>` : '';
+            return `<div class="${cls}">${a.name}${pos}</div>`;
+          }
+
+          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+
+          const card = document.createElement('div');
+          card.className = 'tdb-card';
+          card.innerHTML = `
+            <div class="tdb-date">${date}</div>
+            <div class="tdb-sides">
+              <div class="tdb-side">${sideA}</div>
+              <div class="tdb-vs">vs</div>
+              <div class="tdb-side">${sideB}</div>
+            </div>
+            <div class="tdb-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>`;
+          listEl.appendChild(card);
+        });
+      }
+
+      window.tdbFilter = function(lt) {
+        leagueType = lt;
+        document.querySelectorAll('.tdb-filter').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
+        load(true);
+      };
+
+      moreBtn.addEventListener('click', () => load(false));
+
+      let debounce;
+      searchEl.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          searchQuery = searchEl.value.trim();
+          load(true);
+        }, 350);
+      });
+
+      load(true);
+    })();
+    </script>
+    """
+    return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
+
+
+@app.route("/trade-database")
+def page_trade_database_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_trade_database(platform="sleeper", season=current_season, league_id=None)
+
+
 @app.route("/rookies")
 def page_rookies_guest():
     nfl_state = get_nfl_state() or {}
@@ -11779,6 +11954,159 @@ def api_trade_intel_player(player_id: str):
 
     except Exception:
         logger.exception("[trade-intel/player] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-database")
+def api_trade_database():
+    """
+    Paginated, searchable real-trade log.
+    ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
+    """
+    try:
+        q           = (request.args.get("q") or "").strip().lower()
+        page        = max(0, int(request.args.get("page") or 0))
+        limit       = min(int(request.args.get("limit") or 20), 50)
+        league_type = (request.args.get("league_type") or "all").strip().lower()
+        season      = int(request.args.get("season") or datetime.now().year)
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+
+        players_map = load_players_index() or {}
+
+        # If searching by name, resolve to player_ids first
+        match_ids: list[str] = []
+        if q:
+            match_ids = [
+                pid for pid, info in players_map.items()
+                if q in (info.get("name") or "").lower()
+            ]
+            if not match_ids:
+                return jsonify({"trades": [], "total": 0, "has_more": False})
+
+        sf_filter = ""
+        if league_type == "sf":
+            sf_filter = "AND l.is_superflex = TRUE"
+        elif league_type == "1qb":
+            sf_filter = "AND l.is_superflex = FALSE"
+
+        with get_conn() as conn:
+            if match_ids:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_filter}
+                    """,
+                    (match_ids, season),
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+
+                trade_rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_filter}
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s OFFSET %s
+                    """,
+                    (match_ids, season, limit + 1, page * limit),
+                ).fetchall()
+            else:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS n FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_filter}
+                    """,
+                    (season,),
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+
+                trade_rows = conn.execute(
+                    f"""
+                    SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
+                           l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_filter}
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s OFFSET %s
+                    """,
+                    (season, limit + 1, page * limit),
+                ).fetchall()
+
+            has_more = len(trade_rows) > limit
+            trade_rows = trade_rows[:limit]
+
+            if not trade_rows:
+                return jsonify({"trades": [], "total": total, "has_more": False})
+
+            trade_ids = [r["id"] for r in trade_rows]
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        assets_by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in assets_by_trade:
+                assets_by_trade[tid] = {"a": [], "b": []}
+            assets_by_trade[tid][a["side"]].append(a)
+
+        def describe(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = a["player_id"]
+                info = players_map.get(pid) or {}
+                return {"type": "player", "player_id": pid,
+                        "name": info.get("name") or pid,
+                        "position": info.get("pos") or "?"}
+            s = str(a["pick_season"]) if a["pick_season"] else "?"
+            r = str(a["pick_round"])  if a["pick_round"]  else "?"
+            order = a["pick_order"] or ""
+            return {"type": "pick", "name": f"{s} Rd {r}" + (f" ({order})" if order else "")}
+
+        result = []
+        for r in trade_rows:
+            tid   = r["id"]
+            sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            trade_date = None
+            if r["created_at"]:
+                try:
+                    trade_date = r["created_at"].strftime("%m/%d/%y")
+                except Exception:
+                    trade_date = str(r["created_at"])[:10]
+            result.append({
+                "trade_id":    r["transaction_id"],
+                "date":        trade_date,
+                "season":      r["season"],
+                "scoring_type": r["scoring_type"],
+                "is_superflex": r["is_superflex"],
+                "num_teams":   r["num_teams"],
+                "side_a":      [describe(a) for a in sides["a"]],
+                "side_b":      [describe(a) for a in sides["b"]],
+            })
+
+        return jsonify({"trades": result, "total": total, "has_more": has_more})
+
+    except Exception:
+        logger.exception("[trade-database] error")
         return jsonify({"error": "Internal error"}), 500
 
 
