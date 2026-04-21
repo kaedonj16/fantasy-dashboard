@@ -917,19 +917,21 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             cls = "nav-pill active" if key == active else "nav-pill"
             return f"<a class='{cls}' href='{href}'>{label}</a>"
 
-        def simple_dropdown(label: str, items: list, active_keys: list) -> str:
+        def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
             is_active = active in active_keys
             btn_cls = "nav-pill active" if is_active else "nav-pill"
             item_html = ""
             for item_label, href, item_key in items:
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+            btn_id  = dropdown_id.replace("Dropdown", "Btn")
+            menu_id = dropdown_id.replace("Dropdown", "Menu")
             return (
-                f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
-                f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+                f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
+                f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
                 f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
                 f"  </button>"
-                f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
                 f"    {item_html}"
                 f"  </div>"
                 f"</div>"
@@ -938,13 +940,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         pills = [
             simple_pill("Home", "/", "home"),
             simple_pill("Trade Calc", "/trade", "trade"),
-            simple_pill("Trade Database", "/trade-database", "trade-database"),
-            simple_pill("Trade Intel", "/trade-intel", "trade-intel"),
+            simple_dropdown("Trades", [
+                ("Trade Database", "/trade-database", "trade-database"),
+                ("Trade Intel",    "/trade-intel",    "trade-intel"),
+            ], ["trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Breakouts", "/breakouts", "breakouts"),
                 ("Rookies", "/rookies", "rookies"),
-            ], ["players", "breakouts", "rookies"]),
+            ], ["players", "breakouts", "rookies"], "playersNavDropdown"),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
@@ -1023,8 +1027,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
-    nav_pills.append(nav_pill("Trade Database", "page_trade_database", "trade-database"))
-    nav_pills.append(nav_pill("Trade Intel", "page_trade_intel", "trade-intel"))
+    nav_pills.append(nav_pill_dropdown("Trades", [
+        ("Trade Database", "page_trade_database", "trade-database", False),
+        ("Trade Intel",    "page_trade_intel",    "trade-intel",    False),
+    ], ["trade-database", "trade-intel"], "tradesNavDropdown"))
     # Show Weekly Hub if draft has ended (during offseason) OR if in-season
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
