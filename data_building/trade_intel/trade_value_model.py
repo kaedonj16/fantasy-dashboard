@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 LAMBDA_REG = 15.0   # regularization strength — higher = more model prior
 MAX_VALUE  = 999.9
 MAX_LIFT   = 1.25   # trade data cannot push a player more than 25% above their model prior
-TOP_N_AT_MAX = 6    # aim for roughly this many players at the 999.9 ceiling
+TOP_N_AT_MAX = 2    # aim for roughly this many players at the 999.9 ceiling
 
 
 def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
