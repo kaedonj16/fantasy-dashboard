@@ -1713,7 +1713,8 @@ window.initTradePage = function initTradePage(root = document) {
         const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
           ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
           : "";
-        const pid = t.player_id || "";
+        const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+        const safePid  = (t.player_id || "").replace(/"/g,"&quot;");
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
@@ -1722,7 +1723,8 @@ window.initTradePage = function initTradePage(root = document) {
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
             <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
-            <button onclick="window._generatePackageForTarget(${JSON.stringify(pid)},${JSON.stringify(t.name)},${JSON.stringify(leagueId)},${JSON.stringify(viewerRosterId)},${JSON.stringify(platform)},${JSON.stringify(leagueType)},${JSON.stringify(season)})"
+            <button class="get-target-btn"
+              data-pid="${safePid}" data-name="${safeName}"
               style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
               title="Get trade ideas for this player">Get</button>
           </div>
@@ -1759,6 +1761,16 @@ window.initTradePage = function initTradePage(root = document) {
       html += `<div id="targetPackagePanel" style="display:none;margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-raised, var(--surface));border:1px solid var(--border);"></div>`;
 
       body.innerHTML = html;
+
+      // Delegate clicks — avoids inline onclick quoting issues with player names
+      body.addEventListener("click", function(e) {
+        const btn = e.target.closest(".get-target-btn");
+        if (!btn) return;
+        window._generatePackageForTarget(
+          btn.dataset.pid, btn.dataset.name,
+          leagueId, viewerRosterId, platform, leagueType, season
+        );
+      });
     } catch (e) {
       body.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not load targets.</div>`;
     }
