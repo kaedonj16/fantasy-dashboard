@@ -391,6 +391,11 @@ def run_trade_value_model(
             "calibration_source":    "trade_wls",
         })
 
+    top10 = sorted(out_rows, key=lambda r: r["calibrated_value_1qb"], reverse=True)[:10]
+    logger.info("[trade_value_model] Top 10 calibrated values (1QB):")
+    for r in top10:
+        logger.info("  pid=%-10s  cal=%.2f  prior=%.2f", r["player_id"], r["calibrated_value_1qb"], prior[r["player_id"]]["value_1qb"])
+
     n = _write_calibrated(out_rows)
     logger.info("[trade_value_model] Done — %d players updated.", n)
     return {"written": n, "trades_used": M, "players": N, "season": season}
