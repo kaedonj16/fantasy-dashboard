@@ -1706,7 +1706,7 @@ window.initTradePage = function initTradePage(root = document) {
       const allGrouped = data.all_positions || {};
       const isBalanced = !needPositions.length;
 
-      const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
+      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
 
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
@@ -1720,7 +1720,7 @@ window.initTradePage = function initTradePage(root = document) {
         return `<div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
             <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span>${chgHtml}</div>
               <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -1849,8 +1849,8 @@ window.initTradePage = function initTradePage(root = document) {
       // For elite young players with a dynasty premium, label relative to effective_target
       const hasPremium  = data.premium > 1.0;
       const premiumPct  = Math.round((data.premium - 1) * 100);
-      const tv          = Math.round(data.target_value);
-      const etv         = Math.round(data.effective_target);
+      const tv          = data.target_value.toFixed(1);
+      const etv         = data.effective_target.toFixed(1);
 
       function fairLabel(sendVal) {
         const ratio = sendVal / data.effective_target;
@@ -1867,7 +1867,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (hasPremium) {
         html += `<div style="font-size:10px;color:#f59e0b;margin-bottom:6px;">
-          +${premiumPct}% dynasty premium applied — elite young players command a market overpay
+          +${premiumPct}% dynasty premium applied
         </div>`;
       }
 
@@ -1876,7 +1876,7 @@ window.initTradePage = function initTradePage(root = document) {
       } else {
         data.packages.forEach((pkg, i) => {
           const names  = pkg.send.map(p => p.name).join(" + ");
-          const sv     = Math.round(pkg.send_value);
+          const sv     = pkg.send_value.toFixed(1);
           const diff   = sv - tv;
           const diffStr = (diff >= 0 ? "+" : "") + diff;
           const { text: label, color: lc } = fairLabel(pkg.send_value);

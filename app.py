@@ -11943,7 +11943,7 @@ def api_trade_ideas_for_target():
                 return 1.0
             age_factor  = _math.exp(-0.25 * max(0.0, age - 22))
             rank_factor = _math.exp(-0.12 * max(0.0, pos_rank - 1))
-            return round(1.0 + age_factor * rank_factor * 0.35, 3)
+            return round(1.0 + age_factor * rank_factor * 0.25, 3)
 
         premium       = _dynasty_premium(target_info)
         effective_target = target_value * premium   # what you actually need to send
