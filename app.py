@@ -4329,6 +4329,11 @@ def build_historical_pick_slot_map(
     For a given source season, returns:
       { roster_id: rookie_pick_slot }
 
+    Draft order = reverse of final overall standings:
+      - Non-playoff teams: ordered by regular-season record (worst → slot 1)
+      - Playoff teams: ordered by playoff finish (earliest eliminated → next slot,
+        champion → last slot)
+
     Example:
       source_season=2025 -> order used for 2026 rookie picks
     """
@@ -4351,7 +4356,7 @@ def build_historical_pick_slot_map(
     )
 
     df_weekly = hist_ctx.get("df_weekly", pd.DataFrame())
-    league = hist_ctx.get("league") or {}
+    league    = hist_ctx.get("league") or {}
     roster_map = hist_ctx.get("roster_map") or {}
 
     reg_team_stats = build_regular_season_team_stats(df_weekly, league)
@@ -4361,7 +4366,7 @@ def build_historical_pick_slot_map(
         HISTORICAL_PICK_SLOT_CACHE[cache_key] = {}
         return {}
 
-    # roster_map is expected to look like {roster_id: owner/team_name}
+    # roster_map: {roster_id_str: team_name}
     name_to_roster_id: Dict[str, int] = {}
     for rid, team_name in roster_map.items():
         try:
@@ -4369,21 +4374,76 @@ def build_historical_pick_slot_map(
         except Exception:
             continue
 
-    total_teams = len(reg_team_stats)
-    slot_map: Dict[int, int] = {}
-
-    # Rank 1 = best team, so reverse for rookie draft slot:
-    # worst team -> 1, next worst -> 2, etc.
+    # Regular-season ranks: {roster_id: rank_int}  (rank 1 = best regular-season team)
+    reg_ranks: Dict[int, int] = {}
     for _, row in reg_team_stats.iterrows():
         owner = str(row.get("owner") or "")
-        rank = _safe_int(row.get("Rank"), 0)
-        roster_id = name_to_roster_id.get(owner)
+        rank  = _safe_int(row.get("Rank"), 0)
+        rid   = name_to_roster_id.get(owner)
+        if rid is not None and rank > 0:
+            reg_ranks[rid] = rank
 
-        if not owner or rank <= 0 or roster_id is None:
-            continue
+    total_teams = len(reg_ranks) or len(reg_team_stats)
 
-        slot = total_teams - rank + 1
-        slot_map[int(roster_id)] = int(slot)
+    # ---- Try to get playoff bracket for accurate final standings ----
+    slot_map: Dict[int, int] = {}
+    try:
+        winners_bracket = get_bracket(platform, resolved_league_id, "winners", source_season) or []
+
+        if winners_bracket:
+            # Collect every roster_id that appears in the bracket as a direct integer
+            playoff_rids: set[int] = set()
+            for m in winners_bracket:
+                for key in ("t1", "t2", "w", "l"):
+                    v = m.get(key)
+                    if isinstance(v, int) and v > 0:
+                        playoff_rids.add(v)
+
+            # Determine final placement from matchups that have a "p" field.
+            # Sleeper sets p on the decisive matchup for each placement:
+            #   winner → placement p, loser → placement p+1
+            playoff_placements: Dict[int, int] = {}
+            for m in winners_bracket:
+                p = m.get("p")
+                if p is None:
+                    continue
+                p = int(p)
+                w = m.get("w")
+                l = m.get("l")
+                if isinstance(w, int) and w > 0:
+                    playoff_placements[w] = p
+                if isinstance(l, int) and l > 0:
+                    playoff_placements[l] = p + 1
+
+            if playoff_placements:
+                # Non-playoff teams: assign slots 1…N ordered worst→best regular season
+                non_playoff = sorted(
+                    [(rid, rank) for rid, rank in reg_ranks.items() if rid not in playoff_rids],
+                    key=lambda x: x[1],   # highest rank number = worst record
+                    reverse=True,
+                )
+                # Playoff teams: assign next slots ordered by worst→best playoff finish
+                playoff_ordered = sorted(
+                    [(rid, place) for rid, place in playoff_placements.items()],
+                    key=lambda x: x[1],   # highest placement number = worst finish
+                    reverse=True,
+                )
+
+                slot = 1
+                for rid, _ in non_playoff:
+                    slot_map[rid] = slot
+                    slot += 1
+                for rid, _ in playoff_ordered:
+                    slot_map[rid] = slot
+                    slot += 1
+
+    except Exception:
+        pass  # fall through to regular-season-only fallback
+
+    # ---- Fallback: regular-season standings only ----
+    if not slot_map:
+        for rid, rank in reg_ranks.items():
+            slot_map[rid] = total_teams - rank + 1
 
     HISTORICAL_PICK_SLOT_CACHE[cache_key] = slot_map
     return slot_map
