@@ -5924,7 +5924,6 @@ def build_teams_body(ctx: dict) -> str:
           <button class="tab-btn active" data-tab="btm">BTM</button>
           <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
           <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
-          <button class="tab-btn" data-tab="trade-ideas">Trade Ideas</button>
           <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
           <button class="tab-btn" data-tab="draft" id="draftTabBtn" style="display:none">Draft</button>
           <div class="tab-panels">
@@ -5935,9 +5934,6 @@ def build_teams_body(ctx: dict) -> str:
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
-            <div class="tab-panel" data-tab="trade-ideas" id="tradeIdeasPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="sos" id="sosPanel">
@@ -6214,29 +6210,6 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; }});
       }}
 
-      function loadTradeIdeas() {{
-        if (_loaded.tradeIdeas) return;
-        _loaded.tradeIdeas = true;
-        var panel = document.getElementById('tradeIdeasPanel');
-        if (!panel) return;
-        var viewerRosterId = _viewerRosterId || '';
-        if (!viewerRosterId) {{
-          panel.innerHTML = '<p class="analytics-empty">Log in and set your team to see trade suggestions.</p>';
-          return;
-        }}
-        fetch('/api/trade-suggestions', {{
-          method: 'POST',
-          headers: {{'Content-Type': 'application/json'}},
-          body: JSON.stringify({{platform: _platform, league_id: _leagueId, season: _season, viewer_roster_id: viewerRosterId}})
-        }})
-          .then(r => r.json())
-          .then(data => {{
-            if (!data.success) {{ panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }}
-            panel.innerHTML = data.html || '<p class="analytics-empty">No suggestions at this time.</p>';
-          }})
-          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load trade ideas.</p>'; }});
-      }}
-
       // Show Schedule/Draft tabs conditionally
       (function() {{
         var sosBtn = document.getElementById('sosTabBtn');
@@ -6256,7 +6229,6 @@ def build_teams_body(ctx: dict) -> str:
             if (tab === 'btm')             loadBtm();
             if (tab === 'roster-intel')    loadRosterIntel();
             if (tab === 'power-rankings')  loadPowerRankings();
-            if (tab === 'trade-ideas')     loadTradeIdeas();
             if (tab === 'sos')             loadSos();
             if (tab === 'draft')           loadDraft();
           }});
@@ -11903,6 +11875,173 @@ def api_trade_targets():
         "position_ranks": position_ranks_out,
         "projected_picks": _projected_picks_out,
     })
+
+
+@app.route("/api/trade-ideas-for-target", methods=["POST"])
+@limiter.limit("20 per minute")
+def api_trade_ideas_for_target():
+    """
+    Given a specific target player, return packages the viewer could send to acquire them.
+    Packages are value-matched (85–115% of target value) and never include absurd multi-star sends.
+    """
+    payload          = request.get_json(force=True)
+    league_id        = str(payload.get("league_id")        or "").strip()
+    season           = int(payload.get("season")           or datetime.now().year)
+    platform         = str(payload.get("platform")         or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+    target_player_id = str(payload.get("target_player_id") or "").strip()
+    league_type      = str(payload.get("league_type")      or "1qb").strip()
+
+    if not league_id or not viewer_roster_id or not target_player_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        from utils.utils import load_model_value_table
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+
+        val_key = "sf_value" if league_type == "sf" else "value"
+        value_table = load_model_value_table() or []
+        values_by_id = {}
+        for p in value_table:
+            pid = str(p.get("id") or "")
+            if pid:
+                values_by_id[pid] = {
+                    "name":           p.get("name", ""),
+                    "position":       str(p.get("position") or "").upper(),
+                    "value":          float(p.get(val_key) or p.get("value") or 0),
+                    "pos_rank_label": p.get("pos_rank_label") or "",
+                    "team":           p.get("team") or "",
+                }
+
+        target_info = values_by_id.get(target_player_id)
+        if not target_info:
+            return jsonify({"error": "Target player not found in value table"}), 404
+
+        target_value = target_info["value"]
+        rosters      = ctx.get("rosters") or []
+        roster_map   = ctx.get("roster_map") or {}
+        picks_by_roster = ctx.get("picks_by_roster") or {}
+        _cur_yr      = season
+
+        # Find which roster owns the target
+        target_owner_rid = None
+        for r in rosters:
+            if target_player_id in [str(p) for p in (r.get("players") or [])]:
+                target_owner_rid = str(r.get("roster_id"))
+                break
+        if not target_owner_rid:
+            return jsonify({"error": "Target player not on any roster"}), 404
+
+        target_owner_name = roster_map.get(target_owner_rid, "Unknown")
+
+        # Viewer's roster — players with value ≥50, sorted desc
+        viewer_roster_obj = next(
+            (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
+        )
+        if not viewer_roster_obj:
+            return jsonify({"error": "Viewer roster not found"}), 404
+
+        viewer_players = sorted(
+            [
+                {
+                    "player_id":      pid,
+                    "name":           values_by_id[pid]["name"],
+                    "position":       values_by_id[pid]["position"],
+                    "value":          values_by_id[pid]["value"],
+                    "pos_rank_label": values_by_id[pid]["pos_rank_label"],
+                }
+                for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
+                if pid in values_by_id and values_by_id[pid]["value"] >= 50
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )
+
+        # Viewer's picks (current + next season only)
+        viewer_picks = sorted(
+            [
+                {
+                    "name":    f"{p.get('season')} {p.get('round',4)}{'st' if p.get('round')==1 else 'nd' if p.get('round')==2 else 'rd' if p.get('round')==3 else 'th'}",
+                    "value":   650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80,
+                    "is_pick": True,
+                }
+                for p in picks_by_roster.get(viewer_roster_id, [])
+                if int(p.get("season", 0)) <= _cur_yr + 1
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )
+
+        lo = target_value * 0.85
+        hi = target_value * 1.15
+        packages = []
+        seen = set()
+
+        def _key(*assets):
+            return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
+
+        # 1-for-1: single player in value range
+        for p in viewer_players:
+            if lo <= p["value"] <= hi:
+                k = _key(p)
+                if k not in seen:
+                    seen.add(k)
+                    packages.append({"type": "1-for-1", "send": [p],
+                                     "send_value": p["value"],
+                                     "_delta": abs(p["value"] - target_value)})
+
+        # 2-for-1: two players combined — each must be < 75% of target so neither
+        # player alone could be a fair 1-for-1 (prevents star + scrub packages)
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] > target_value * 0.75:
+                continue
+            for p2 in viewer_players[i + 1:]:
+                if p2["value"] < 60:
+                    break  # sorted desc, all remaining are cheaper
+                combined = p1["value"] + p2["value"]
+                if combined > hi:
+                    continue
+                if combined >= lo:
+                    k = _key(p1, p2)
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "2-for-1", "send": [p1, p2],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - target_value)})
+                    break  # take the cheapest valid second player, avoid explosion
+
+        # Player + pick
+        for p in viewer_players:
+            if p["value"] > target_value * 0.85:
+                continue  # player alone already too close / over target — skip
+            for pick in viewer_picks:
+                combined = p["value"] + pick["value"]
+                if lo <= combined <= hi:
+                    k = _key(p, {"player_id": pick["name"]})
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "player + pick", "send": [p, pick],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - target_value)})
+                    break
+
+        packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
+        for pkg in packages:
+            del pkg["_delta"]
+
+        return jsonify({
+            "success":      True,
+            "target":       {"player_id": target_player_id, "name": target_info["name"],
+                             "value": round(target_value, 1),
+                             "pos_rank_label": target_info["pos_rank_label"]},
+            "owner":        target_owner_name,
+            "packages":     packages[:4],
+            "target_value": round(target_value, 1),
+        })
+
+    except Exception as e:
+        logger.exception("[api-trade-ideas-for-target] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/player-news/<player_id>")

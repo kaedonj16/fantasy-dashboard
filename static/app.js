@@ -1708,11 +1708,17 @@ window.initTradePage = function initTradePage(root = document) {
 
       const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
 
-      function renderPlayerRow(t, pos, label) {
+      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
+      const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+      const platform2      = (window.location.pathname.split("/").filter(Boolean)[0]) || "sleeper";
+      const leagueType2    = getLeagueType();
+
+      function renderPlayerRow(t, pos) {
         const col = posColor[pos] || "var(--text-muted)";
         const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
           ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
           : "";
+        const pid = t.player_id || "";
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
@@ -1721,6 +1727,9 @@ window.initTradePage = function initTradePage(root = document) {
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
             <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
+            <button onclick="generatePackageForTarget(${JSON.stringify(pid)},${JSON.stringify(t.name)},${JSON.stringify(leagueId)},${JSON.stringify(viewerRosterId)},${JSON.stringify(platform2)},${JSON.stringify(leagueType2)},${season})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
+              title="Get trade ideas for this player">Get</button>
           </div>
         </div>`;
       }
@@ -1739,7 +1748,7 @@ window.initTradePage = function initTradePage(root = document) {
           if (!players.length) return;
           const col = posColor[pos] || "var(--text-muted)";
           html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos}</div>`;
-          players.forEach(t => { html += renderPlayerRow(t, pos, pos); });
+          players.forEach(t => { html += renderPlayerRow(t, pos); });
         });
       } else {
         needPositions.forEach(pos => {
@@ -1747,13 +1756,63 @@ window.initTradePage = function initTradePage(root = document) {
           if (!players.length) return;
           const col = posColor[pos] || "var(--text-muted)";
           html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} — need</div>`;
-          players.forEach(t => { html += renderPlayerRow(t, pos, `${pos} — need`); });
+          players.forEach(t => { html += renderPlayerRow(t, pos); });
         });
       }
+
+      // Package ideas panel — populated when user clicks "Get" on a player
+      html += `<div id="targetPackagePanel" style="display:none;margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-raised, var(--surface));border:1px solid var(--border);"></div>`;
 
       body.innerHTML = html;
     } catch (e) {
       body.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not load targets.</div>`;
+    }
+  }
+
+  async function generatePackageForTarget(playerId, playerName, leagueId, viewerRosterId, platform, leagueType, season) {
+    const panel = document.getElementById("targetPackagePanel");
+    if (!panel) return;
+    panel.style.display = "block";
+    panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Building packages for ${playerName}…</div>`;
+
+    try {
+      const res = await fetch("/api/trade-ideas-for-target", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId, season, platform, viewer_roster_id: viewerRosterId,
+                               target_player_id: playerId, league_type: leagueType }),
+      });
+      const data = await res.json();
+      if (!data.success || !data.packages) {
+        panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">${data.error || "No fair packages found."}</div>`;
+        return;
+      }
+
+      const tv = Math.round(data.target_value);
+      let html = `<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;">
+        How to get ${data.target.name} <span style="font-weight:400;color:var(--text-muted);">(from ${data.owner} · value ${tv})</span>
+      </div>`;
+
+      if (!data.packages.length) {
+        html += `<div style="font-size:12px;color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</div>`;
+      } else {
+        data.packages.forEach(pkg => {
+          const names = pkg.send.map(p => p.name).join(" + ");
+          const sv = Math.round(pkg.send_value);
+          const pct = Math.round((pkg.send_value / data.target_value) * 100);
+          const pctColor = pct > 105 ? "#ef4444" : pct < 90 ? "#f59e0b" : "#22c55e";
+          html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);">You send: ${names}</div>
+              <div style="font-size:10px;color:var(--text-muted);">${pkg.type} · send value ${sv}</div>
+            </div>
+            <span style="font-size:11px;font-weight:700;color:${pctColor};">${pct}%</span>
+          </div>`;
+        });
+      }
+      panel.innerHTML = html;
+    } catch {
+      panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not generate trade ideas.</div>`;
     }
   }
 
