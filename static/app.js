@@ -1725,7 +1725,7 @@ window.initTradePage = function initTradePage(root = document) {
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
               <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-              <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
+              <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
               <button class="get-target-btn"
                 data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
                 style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
@@ -1809,7 +1809,9 @@ window.initTradePage = function initTradePage(root = document) {
     // Side B = viewer sends = package
     sendAssets.forEach(asset => {
       if (asset.is_pick) {
-        state.sideBPicks.push({ id: asset.name, display: asset.name });
+        // pick_id is the value-table key (e.g. "2026_1_early") that trade-eval
+        // can parse; asset.name is the human-readable label ("2026 1.05")
+        state.sideBPicks.push({ id: asset.pick_id || asset.name, display: asset.name });
       } else {
         state.sideBPlayers.push(asset);
       }

@@ -12017,11 +12017,12 @@ def api_trade_ideas_for_target():
                 label = f"{yr} {rnd}{sfx}"
                 val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
 
-            value = next((pick_val_lookup[k] for k in val_keys if k in pick_val_lookup), None)
+            pick_id = next((k for k in val_keys if k in pick_val_lookup), val_keys[0])
+            value   = pick_val_lookup.get(pick_id)
             if value is None:
                 value = 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
 
-            return {"name": label, "value": value, "is_pick": True}
+            return {"name": label, "pick_id": pick_id, "value": value, "is_pick": True}
 
         viewer_picks = sorted(
             [
