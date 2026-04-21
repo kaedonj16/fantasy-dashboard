@@ -11996,10 +11996,16 @@ def api_trade_ideas_for_target():
         }
 
         def _resolve_pick(p: dict) -> dict:
-            """Return {label, value, is_pick} for a pick, resolving exact slot when possible."""
+            """Return {name, pick_id, value, is_pick} for a pick, resolving exact slot when possible.
+
+            Accepts both picks_by_roster dicts (original_owner key) and raw Sleeper
+            draft_picks dicts (roster_id = original team).
+            """
             yr  = int(p.get("season") or _cur_yr)
             rnd = int(p.get("round") or 4)
-            original_owner = p.get("original_owner")
+            # draft_picks from Sleeper use roster_id for original team;
+            # picks_by_roster uses original_owner
+            original_owner = p.get("roster_id") or p.get("original_owner")
 
             slot = None
             if original_owner:
@@ -12031,11 +12037,16 @@ def api_trade_ideas_for_target():
 
             return {"name": label, "pick_id": pick_id, "value": value, "is_pick": True}
 
+        # Use Sleeper's draft_picks field directly — it's the authoritative source
+        # of what picks the viewer actually owns (tracks all trades server-side).
+        # picks_by_roster is reconstructed locally and can drift when picks move
+        # multiple times.
+        raw_viewer_picks = viewer_roster_obj.get("draft_picks") or []
         viewer_picks = sorted(
             [
                 _resolve_pick(p)
-                for p in picks_by_roster.get(viewer_roster_id, [])
-                if int(p.get("season", 0)) <= _cur_yr + 1
+                for p in raw_viewer_picks
+                if int(p.get("season") or 0) <= _cur_yr + 1
             ],
             key=lambda x: x["value"],
             reverse=True,
