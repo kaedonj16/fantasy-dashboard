@@ -11923,24 +11923,27 @@ def api_trade_ideas_for_target():
         target_value = target_info["value"]
 
         # Dynasty premium: elite young players command a real-market overpay.
-        # Compute a premium multiplier so the package range reflects what
-        # owners actually demand, not just raw value equivalence.
+        # Both age and positional rank decay exponentially so the premium
+        # tapers smoothly — no hard tier jumps.
+        #
+        #   age_factor  = e^(-0.25 * max(0, age - 22))
+        #                 → 1.0 at 22,  0.61 at 24,  0.37 at 26,  0.14 at 30
+        #   rank_factor = e^(-0.12 * max(0, rank - 1))
+        #                 → 1.0 at rank 1,  0.62 at rank 5,  0.30 at rank 10
+        #   premium     = 1 + age_factor * rank_factor * 0.35
+        #                 → max ~1.35 (age 22, rank 1), fades to ~1.0 for old/deep players
+        import math as _math
         def _dynasty_premium(info: dict) -> float:
+            pos = info.get("position", "")
+            if pos in ("PICK", "K", "DEF"):
+                return 1.0
             age      = float(info.get("age") or 99)
             pos_rank = int(info.get("pos_rank") or 99)
-            pos      = info.get("position", "")
-            if pos == "PICK":
+            if age >= 30:
                 return 1.0
-            # Elite young skill position players: expect 20-30% overpay
-            if age < 24 and pos_rank <= 5:
-                return 1.30
-            if age < 26 and pos_rank <= 10:
-                return 1.20
-            if age < 28 and pos_rank <= 20:
-                return 1.12
-            if age < 24 and pos_rank <= 20:
-                return 1.15
-            return 1.0
+            age_factor  = _math.exp(-0.25 * max(0.0, age - 22))
+            rank_factor = _math.exp(-0.12 * max(0.0, pos_rank - 1))
+            return round(1.0 + age_factor * rank_factor * 0.35, 3)
 
         premium       = _dynasty_premium(target_info)
         effective_target = target_value * premium   # what you actually need to send
