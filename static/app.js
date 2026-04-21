@@ -1795,6 +1795,38 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Load a suggested package into the trade calculator
+  function _loadPackageIntoCalc(targetPlayer, sendAssets) {
+    // Clear both sides
+    state.sideAPlayers.length = 0;
+    state.sideBPlayers.length = 0;
+    state.sideAPicks.length   = 0;
+    state.sideBPicks.length   = 0;
+
+    // Side A = viewer gets = target player
+    state.sideAPlayers.push(targetPlayer);
+
+    // Side B = viewer sends = package
+    sendAssets.forEach(asset => {
+      if (asset.is_pick) {
+        state.sideBPicks.push({ id: asset.name, display: asset.name });
+      } else {
+        state.sideBPlayers.push(asset);
+      }
+    });
+
+    saveState();
+    renderChips("A");
+    renderChips("B");
+    syncEmptyState("A");
+    syncEmptyState("B");
+    analyzeTrade();
+
+    // Scroll calculator into view
+    const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
+    if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
     try {
       const res = await fetch("/api/trade-ideas-for-target", {
@@ -1814,36 +1846,66 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
-      function fairLabel(ratio) {
-        if (ratio <= 0.90) return { text: "underpay",   color: "#22c55e" };
-        if (ratio <= 1.05) return { text: "fair",        color: "#3b82f6" };
-        if (ratio <= 1.12) return { text: "slight overpay", color: "#f59e0b" };
-        return                    { text: "overpay",     color: "#ef4444" };
+      // For elite young players with a dynasty premium, label relative to effective_target
+      const hasPremium  = data.premium > 1.0;
+      const premiumPct  = Math.round((data.premium - 1) * 100);
+      const tv          = Math.round(data.target_value);
+      const etv         = Math.round(data.effective_target);
+
+      function fairLabel(sendVal) {
+        const ratio = sendVal / data.effective_target;
+        if (ratio <= 0.90) return { text: "underpay",        color: "#22c55e" };
+        if (ratio <= 1.05) return { text: "fair",             color: "#3b82f6" };
+        if (ratio <= 1.12) return { text: "slight overpay",   color: "#f59e0b" };
+        return                    { text: "overpay",          color: "#ef4444" };
       }
 
-      const tv = Math.round(data.target_value);
-      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:6px;">
+      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">
         How to get ${data.target.name}
-        <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> · target value ${tv}</span>
+        <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> · value ${tv}</span>
       </div>`;
+
+      if (hasPremium) {
+        html += `<div style="font-size:10px;color:#f59e0b;margin-bottom:6px;">
+          +${premiumPct}% dynasty premium applied — elite young players command a market overpay
+        </div>`;
+      }
 
       if (!data.packages.length) {
         html += `<span style="color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</span>`;
       } else {
-        data.packages.forEach(pkg => {
-          const names = pkg.send.map(p => p.name).join(" + ");
-          const sv    = Math.round(pkg.send_value);
-          const diff  = sv - tv;
+        data.packages.forEach((pkg, i) => {
+          const names  = pkg.send.map(p => p.name).join(" + ");
+          const sv     = Math.round(pkg.send_value);
+          const diff   = sv - tv;
           const diffStr = (diff >= 0 ? "+" : "") + diff;
-          const { text: label, color: lc } = fairLabel(pkg.send_value / data.target_value);
+          const { text: label, color: lc } = fairLabel(pkg.send_value);
+          // Store serialized data on the button to avoid closure issues
+          const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
           html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;">
-              <span style="font-weight:600;color:var(--text);">${names}</span>
-              <span style="font-size:11px;font-weight:700;color:${lc};margin-left:8px;white-space:nowrap;">${label}</span>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
+              <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
+              <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;">${label}</span>
             </div>
-            <div style="font-size:10px;color:var(--text-muted);">${pkg.type} · value ${sv} (${diffStr})</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+              <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
+              <button class="load-in-calc-btn" data-payload="${btnData}"
+                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
+                Load in Calc →
+              </button>
+            </div>
           </div>`;
         });
+
+        // Delegate load-in-calc clicks
+        panel.addEventListener("click", function handler(e) {
+          const btn = e.target.closest(".load-in-calc-btn");
+          if (!btn) return;
+          try {
+            const { pkg, target } = JSON.parse(decodeURIComponent(btn.dataset.payload));
+            _loadPackageIntoCalc(target, pkg.send);
+          } catch {}
+        }, { once: false });
       }
       panel.innerHTML = html;
     } catch {

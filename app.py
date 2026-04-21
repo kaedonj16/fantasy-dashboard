@@ -11909,8 +11909,11 @@ def api_trade_ideas_for_target():
                     "name":           p.get("name", ""),
                     "position":       str(p.get("position") or "").upper(),
                     "value":          float(p.get(val_key) or p.get("value") or 0),
+                    "sf_value":       float(p.get("sf_value") or p.get("value") or 0),
+                    "pos_rank":       int(p.get("pos_rank") or 99),
                     "pos_rank_label": p.get("pos_rank_label") or "",
                     "team":           p.get("team") or "",
+                    "age":            p.get("age"),
                 }
 
         target_info = values_by_id.get(target_player_id)
@@ -11918,6 +11921,30 @@ def api_trade_ideas_for_target():
             return jsonify({"error": "Target player not found in value table"}), 404
 
         target_value = target_info["value"]
+
+        # Dynasty premium: elite young players command a real-market overpay.
+        # Compute a premium multiplier so the package range reflects what
+        # owners actually demand, not just raw value equivalence.
+        def _dynasty_premium(info: dict) -> float:
+            age      = float(info.get("age") or 99)
+            pos_rank = int(info.get("pos_rank") or 99)
+            pos      = info.get("position", "")
+            if pos == "PICK":
+                return 1.0
+            # Elite young skill position players: expect 20-30% overpay
+            if age < 24 and pos_rank <= 5:
+                return 1.30
+            if age < 26 and pos_rank <= 10:
+                return 1.20
+            if age < 28 and pos_rank <= 20:
+                return 1.12
+            if age < 24 and pos_rank <= 20:
+                return 1.15
+            return 1.0
+
+        premium       = _dynasty_premium(target_info)
+        effective_target = target_value * premium   # what you actually need to send
+
         rosters      = ctx.get("rosters") or []
         roster_map   = ctx.get("roster_map") or {}
         picks_by_roster = ctx.get("picks_by_roster") or {}
@@ -11995,15 +12022,16 @@ def api_trade_ideas_for_target():
             reverse=True,
         )
 
-        lo = target_value * 0.85
-        hi = target_value * 1.15
+        # Match packages against effective_target (face value × dynasty premium)
+        lo = effective_target * 0.88
+        hi = effective_target * 1.15
         packages = []
         seen = set()
 
         def _key(*assets):
             return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
-        # 1-for-1: single player in value range
+        # 1-for-1: single player in range
         for p in viewer_players:
             if lo <= p["value"] <= hi:
                 k = _key(p)
@@ -12011,16 +12039,15 @@ def api_trade_ideas_for_target():
                     seen.add(k)
                     packages.append({"type": "1-for-1", "send": [p],
                                      "send_value": p["value"],
-                                     "_delta": abs(p["value"] - target_value)})
+                                     "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: two players combined — each must be < 75% of target so neither
-        # player alone could be a fair 1-for-1 (prevents star + scrub packages)
+        # 2-for-1: neither player alone covers >75% of effective_target
         for i, p1 in enumerate(viewer_players):
-            if p1["value"] > target_value * 0.75:
+            if p1["value"] > effective_target * 0.75:
                 continue
             for p2 in viewer_players[i + 1:]:
                 if p2["value"] < 60:
-                    break  # sorted desc, all remaining are cheaper
+                    break
                 combined = p1["value"] + p2["value"]
                 if combined > hi:
                     continue
@@ -12030,13 +12057,13 @@ def api_trade_ideas_for_target():
                         seen.add(k)
                         packages.append({"type": "2-for-1", "send": [p1, p2],
                                          "send_value": combined,
-                                         "_delta": abs(combined - target_value)})
-                    break  # take the cheapest valid second player, avoid explosion
+                                         "_delta": abs(combined - effective_target)})
+                    break
 
         # Player + pick
         for p in viewer_players:
-            if p["value"] > target_value * 0.85:
-                continue  # player alone already too close / over target — skip
+            if p["value"] > effective_target * 0.85:
+                continue
             for pick in viewer_picks:
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
@@ -12045,21 +12072,46 @@ def api_trade_ideas_for_target():
                         seen.add(k)
                         packages.append({"type": "player + pick", "send": [p, pick],
                                          "send_value": combined,
-                                         "_delta": abs(combined - target_value)})
+                                         "_delta": abs(combined - effective_target)})
                     break
 
         packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
         for pkg in packages:
             del pkg["_delta"]
 
+        # Include full player fields needed by the trade calculator
+        target_calc = {
+            "id":               target_player_id,
+            "name":             target_info["name"],
+            "position":         target_info["position"],
+            "team":             target_info["team"],
+            "value":            round(target_value, 1),
+            "sf_value":         round(target_info["sf_value"], 1),
+            "pos_rank_label":   target_info["pos_rank_label"],
+            "sf_pos_rank_label": target_info["pos_rank_label"],
+        }
+        for pkg in packages:
+            for asset in pkg["send"]:
+                if not asset.get("is_pick"):
+                    info = values_by_id.get(asset.get("player_id") or "")
+                    if info:
+                        asset.update({
+                            "id":               asset["player_id"],
+                            "position":         info["position"],
+                            "team":             info["team"],
+                            "sf_value":         round(info["sf_value"], 1),
+                            "pos_rank_label":   info["pos_rank_label"],
+                            "sf_pos_rank_label": info["pos_rank_label"],
+                        })
+
         return jsonify({
-            "success":      True,
-            "target":       {"player_id": target_player_id, "name": target_info["name"],
-                             "value": round(target_value, 1),
-                             "pos_rank_label": target_info["pos_rank_label"]},
-            "owner":        target_owner_name,
-            "packages":     packages[:4],
-            "target_value": round(target_value, 1),
+            "success":          True,
+            "target":           target_calc,
+            "owner":            target_owner_name,
+            "packages":         packages[:4],
+            "target_value":     round(target_value, 1),
+            "effective_target": round(effective_target, 1),
+            "premium":          round(premium, 2),
         })
 
     except Exception as e:
