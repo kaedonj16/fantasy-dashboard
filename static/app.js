@@ -3954,7 +3954,7 @@ function openPlayerModal(playerId, playerName) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="playerModalBreakoutSlot"></span>
-        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist">☆</button>
+        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;">☆</button>
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>

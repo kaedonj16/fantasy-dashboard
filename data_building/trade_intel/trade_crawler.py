@@ -21,6 +21,7 @@ from dashboard_services.api import get_transactions
 from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 SESSION = requests.Session()
@@ -263,37 +264,56 @@ def run_crawl(batch_size: int = 500, workers: int = 20) -> dict:
     total_leagues = 0
     mark_batch: list[tuple[int, str]] = []
 
-    logger.info("[crawler] Crawling %d leagues (week: %d, workers: %d)",
-                len(leagues), current_week, workers)
+    logger.info("[crawler] Starting crawl. Leagues=%d, Week=%d, Workers=%d", len(leagues), current_week, workers)
+    logger.info("[crawler] Checkpoint: Beginning parallel crawl of %d leagues", len(leagues))
     print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers, week={current_week}")
 
+    completed_count = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
+        logger.info("[crawler] Checkpoint: Submitting %d leagues to thread pool", len(leagues))
         futures = {
             executor.submit(_crawl_one, row, current_week): row["league_id"]
             for row in leagues
         }
+        logger.info("[crawler] Checkpoint: All leagues submitted, waiting for completion")
+        
         for future in as_completed(futures):
+            completed_count += 1
             league_id, n = future.result()
             mark_batch.append((current_week, league_id))
+            
             if n > 0:
                 total_trades += n
                 total_leagues += 1
-                logger.info("[crawler] %s: +%d trades", league_id, n)
+                logger.info("[crawler] Checkpoint: League %s (%d/%d): +%d trades (Total: %d trades, %d leagues)", 
+                           league_id, completed_count, len(leagues), n, total_trades, total_leagues)
+            else:
+                logger.info("[crawler] Checkpoint: League %s (%d/%d): No new trades", league_id, completed_count, len(leagues))
 
             # Flush mark batch every 50 to avoid holding too many updates
             if len(mark_batch) >= 50:
+                logger.info("[crawler] Checkpoint: Flushing mark batch of %d completed leagues", len(mark_batch))
                 _mark_crawled_batch(mark_batch)
                 mark_batch = []
+                logger.info("[crawler] Checkpoint: Mark batch flushed")
 
     if mark_batch:
+        logger.info("[crawler] Checkpoint: Final flush of %d remaining completed leagues", len(mark_batch))
         _mark_crawled_batch(mark_batch)
+        logger.info("[crawler] Checkpoint: Final mark batch flushed")
 
+    logger.info("[crawler] Checkpoint: Crawl complete. Processed %d leagues total", completed_count)
     logger.info("[crawler] Done. %d new trades across %d leagues.", total_trades, total_leagues)
     print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")
     return {"leagues_crawled": total_leagues, "new_trades": total_trades}
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    import sys
+    logging.basicConfig(
+        level=logging.INFO, 
+        format="%(asctime)s %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
     result = run_crawl()
     print(result)
