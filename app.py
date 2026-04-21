@@ -1120,19 +1120,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
 
-    watchlist_btn = (
-        "<div class='watchlist-nav-wrapper'>"
-        "  <button type='button' id='watchlistNavBtn' class='utility-icon-btn' "
-        "          aria-label='Watchlist' title='Watchlist' onclick='toggleWatchlistPanel()'>"
-        "    &#9733;"
-        "  </button>"
-        "  <span id='watchlistNavCount' class='nav-notif-dot' style='display:none'></span>"
-        "  <div id='watchlistNavPanel' class='watchlist-nav-panel' style='display:none'>"
-        "    <div class='watchlist-nav-header'>Watchlist</div>"
-        "    <div id='watchlistNavList'></div>"
-        "  </div>"
-        "</div>"
-    )
+    watchlist_btn = ""  # disabled
 
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (

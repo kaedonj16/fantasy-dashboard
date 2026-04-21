@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 LAMBDA_REG = 15.0   # regularization strength — higher = more model prior
 MAX_VALUE  = 999.9
+MAX_LIFT   = 1.25   # trade data cannot push a player more than 25% above their model prior
+TOP_N_AT_MAX = 3    # aim for roughly this many players at the 999.9 ceiling
 
 
 def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
@@ -333,14 +335,27 @@ def run_trade_value_model(
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
 
-    # Normalize so the top player lands at exactly MAX_VALUE rather than
-    # hard-clipping, which collapses all players above the ceiling to the same number.
+    # Floor at 0, then cap each player's upward deviation from their model prior.
+    # This prevents trade market inflation from overriding production/usage signals
+    # (e.g. a hyped player with no real stats can't be lifted more than MAX_LIFT × prior).
     v_1qb_pos = np.clip(v_1qb, 0.0, None)
     v_sf_pos  = np.clip(v_sf,  0.0, None)
-    max_1qb   = v_1qb_pos.max() or MAX_VALUE
-    max_sf    = v_sf_pos.max()  or MAX_VALUE
-    v_1qb_norm = v_1qb_pos / max_1qb * MAX_VALUE
-    v_sf_norm  = v_sf_pos  / max_sf  * MAX_VALUE
+    for i in range(N):
+        if prior_1qb[i] > 0:
+            v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * MAX_LIFT)
+        if prior_sf[i] > 0:
+            v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
+
+    # Scale so the TOP_N_AT_MAX-th highest value maps to MAX_VALUE, then clip.
+    # Players ranked 1–TOP_N_AT_MAX all land at 999.9; everyone else scales proportionally.
+    def _normalize(vec: np.ndarray) -> np.ndarray:
+        sorted_desc = np.sort(vec)[::-1]
+        idx = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
+        ceiling = sorted_desc[idx] if sorted_desc[idx] > 0 else (vec.max() or MAX_VALUE)
+        return np.clip(vec / ceiling * MAX_VALUE, 0.0, MAX_VALUE)
+
+    v_1qb_norm = _normalize(v_1qb_pos)
+    v_sf_norm  = _normalize(v_sf_pos)
 
     out_rows = []
     for i, pid in enumerate(player_ids):
