@@ -103,17 +103,21 @@ def _decay_weight(days_ago: float) -> float:
 # ---------------------------------------------------------------------------
 
 def _load_prior() -> dict[str, dict]:
-    """Load raw model values (never calibrated) as the regularization prior."""
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT player_id, value_1qb, value_sf FROM player_values WHERE value_1qb IS NOT NULL"
-        ).fetchall()
+    """Load raw model values from the JSON file as the WLS regularization prior.
+
+    Uses the JSON model file (not player_values) because player_values may be
+    partially populated between cron steps, causing elite players to be missing
+    from the prior and getting incorrect WLS floors.
+    """
+    from utils.utils import load_model_value_table
+    value_table = load_model_value_table(apply_calibration=False) or []
     return {
-        r["player_id"]: {
-            "value_1qb": float(r["value_1qb"] or 0),
-            "value_sf":  float(r["value_sf"]  or 0),
+        str(p["id"]): {
+            "value_1qb": float(p.get("value") or 0),
+            "value_sf":  float(p.get("sf_value") or p.get("value") or 0),
         }
-        for r in rows
+        for p in value_table
+        if p.get("id") and (p.get("value") or 0) > 0
     }
 
 
