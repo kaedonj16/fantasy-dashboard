@@ -6275,9 +6275,9 @@ def build_teams_body(ctx: dict) -> str:
         const chevron = row.querySelector('.pos-row-toggle');
         if (chevron) {{
           chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-        }}
-      }});
-    }})();
+        }}}}
+      }}}});}}
+    }}}}}})();
     </script>
     """
 
