@@ -1708,26 +1708,31 @@ window.initTradePage = function initTradePage(root = document) {
 
       const posColor = { QB: "#7c3aed", RB: "#0369a1", WR: "#047857", TE: "#b45309" };
 
+      // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
-        const col = posColor[pos] || "var(--text-muted)";
+        const col     = posColor[pos] || "var(--text-muted)";
         const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
           ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
           : "";
         const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-        const safePid  = (t.player_id || "").replace(/"/g,"&quot;");
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
-          <div style="min-width:0;flex:1;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+        const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+        const panelId  = `pkgpanel-${(t.player_id || "x").replace(/\W/g,"_")}`;
+        return `<div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;">${t.name}${chgHtml}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+              <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
+              <button class="get-target-btn"
+                data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
+                style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
+                title="How to get this player">Get</button>
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-            <span style="font-size:13px;font-weight:800;color:var(--text);">${Math.round(t.value)}</span>
-            <button class="get-target-btn"
-              data-pid="${safePid}" data-name="${safeName}"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
-              title="Get trade ideas for this player">Get</button>
-          </div>
+          <div id="${panelId}" style="display:none;margin:4px 0 8px;padding:8px 10px;border-radius:6px;background:var(--surface-raised,var(--surface));border:1px solid var(--border);font-size:12px;"></div>
         </div>`;
       }
 
@@ -1757,17 +1762,31 @@ window.initTradePage = function initTradePage(root = document) {
         });
       }
 
-      // Package ideas panel — populated when user clicks "Get" on a player
-      html += `<div id="targetPackagePanel" style="display:none;margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-raised, var(--surface));border:1px solid var(--border);"></div>`;
-
       body.innerHTML = html;
 
-      // Delegate clicks — avoids inline onclick quoting issues with player names
+      // Delegate Get clicks
       body.addEventListener("click", function(e) {
         const btn = e.target.closest(".get-target-btn");
         if (!btn) return;
+        // Close any other open panel first
+        body.querySelectorAll(".pkg-inline-panel[data-open]").forEach(p => {
+          p.style.display = "none";
+          p.removeAttribute("data-open");
+        });
+        const panel = document.getElementById(btn.dataset.panel);
+        if (!panel) return;
+        // Toggle: close if already open
+        if (panel.dataset.open) {
+          panel.style.display = "none";
+          panel.removeAttribute("data-open");
+          return;
+        }
+        panel.dataset.open = "1";
+        panel.classList.add("pkg-inline-panel");
+        panel.style.display = "block";
+        panel.innerHTML = `<span style="color:var(--text-muted);">Loading…</span>`;
         window._generatePackageForTarget(
-          btn.dataset.pid, btn.dataset.name,
+          btn.dataset.pid, btn.dataset.name, panel,
           leagueId, viewerRosterId, platform, leagueType, season
         );
       });
@@ -1776,50 +1795,59 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
-  window._generatePackageForTarget = async function generatePackageForTarget(playerId, playerName, leagueId, viewerRosterId, platform, leagueType, season) {
-    const panel = document.getElementById("targetPackagePanel");
-    if (!panel) return;
-    panel.style.display = "block";
-    panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Building packages for ${playerName}…</div>`;
-
+  window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
     try {
       const res = await fetch("/api/trade-ideas-for-target", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ league_id: leagueId, season, platform, viewer_roster_id: viewerRosterId,
+        body: JSON.stringify({ league_id: leagueId, season, platform,
+                               viewer_roster_id: viewerRosterId,
                                target_player_id: playerId, league_type: leagueType }),
       });
       const data = await res.json();
+
+      const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
+        style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
+
       if (!data.success || !data.packages) {
-        panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">${data.error || "No fair packages found."}</div>`;
+        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;
         return;
       }
 
+      function fairLabel(ratio) {
+        if (ratio <= 0.90) return { text: "underpay",   color: "#22c55e" };
+        if (ratio <= 1.05) return { text: "fair",        color: "#3b82f6" };
+        if (ratio <= 1.12) return { text: "slight overpay", color: "#f59e0b" };
+        return                    { text: "overpay",     color: "#ef4444" };
+      }
+
       const tv = Math.round(data.target_value);
-      let html = `<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;">
-        How to get ${data.target.name} <span style="font-weight:400;color:var(--text-muted);">(from ${data.owner} · value ${tv})</span>
+      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:6px;">
+        How to get ${data.target.name}
+        <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> · target value ${tv}</span>
       </div>`;
 
       if (!data.packages.length) {
-        html += `<div style="font-size:12px;color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</div>`;
+        html += `<span style="color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</span>`;
       } else {
         data.packages.forEach(pkg => {
           const names = pkg.send.map(p => p.name).join(" + ");
-          const sv = Math.round(pkg.send_value);
-          const pct = Math.round((pkg.send_value / data.target_value) * 100);
-          const pctColor = pct > 105 ? "#ef4444" : pct < 90 ? "#f59e0b" : "#22c55e";
-          html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text);">You send: ${names}</div>
-              <div style="font-size:10px;color:var(--text-muted);">${pkg.type} · send value ${sv}</div>
+          const sv    = Math.round(pkg.send_value);
+          const diff  = sv - tv;
+          const diffStr = (diff >= 0 ? "+" : "") + diff;
+          const { text: label, color: lc } = fairLabel(pkg.send_value / data.target_value);
+          html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;">
+              <span style="font-weight:600;color:var(--text);">${names}</span>
+              <span style="font-size:11px;font-weight:700;color:${lc};margin-left:8px;white-space:nowrap;">${label}</span>
             </div>
-            <span style="font-size:11px;font-weight:700;color:${pctColor};">${pct}%</span>
+            <div style="font-size:10px;color:var(--text-muted);">${pkg.type} · value ${sv} (${diffStr})</div>
           </div>`;
         });
       }
       panel.innerHTML = html;
     } catch {
-      panel.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not generate trade ideas.</div>`;
+      panel.innerHTML = `<span style="color:var(--text-muted);">Could not generate trade ideas.</span>`;
     }
   };
 

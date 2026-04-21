@@ -11957,12 +11957,35 @@ def api_trade_ideas_for_target():
             reverse=True,
         )
 
-        # Viewer's picks (current + next season only)
+        # Viewer's picks (current + next season only) — use real values from value table
+        pick_val_lookup = {
+            str(p.get("id") or ""): float(p.get("value") or 0)
+            for p in value_table
+            if str(p.get("position") or "").upper() == "PICK"
+        }
+
+        def _pick_val_from_table(p: dict) -> float:
+            yr  = p.get("season") or _cur_yr
+            rnd = p.get("round") or 4
+            for key in (
+                f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late",
+                f"{yr}_{rnd}",
+            ):
+                if key in pick_val_lookup:
+                    return pick_val_lookup[key]
+            return 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
+
+        def _pick_label(p: dict) -> str:
+            yr  = p.get("season") or _cur_yr
+            rnd = p.get("round") or 4
+            sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+            return f"{yr} {rnd}{sfx}"
+
         viewer_picks = sorted(
             [
                 {
-                    "name":    f"{p.get('season')} {p.get('round',4)}{'st' if p.get('round')==1 else 'nd' if p.get('round')==2 else 'rd' if p.get('round')==3 else 'th'}",
-                    "value":   650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80,
+                    "name":    _pick_label(p),
+                    "value":   _pick_val_from_table(p),
                     "is_pick": True,
                 }
                 for p in picks_by_roster.get(viewer_roster_id, [])
