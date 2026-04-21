@@ -12037,16 +12037,25 @@ def api_trade_ideas_for_target():
 
             return {"name": label, "pick_id": pick_id, "value": value, "is_pick": True}
 
-        # Use Sleeper's draft_picks field directly — it's the authoritative source
-        # of what picks the viewer actually owns (tracks all trades server-side).
-        # picks_by_roster is reconstructed locally and can drift when picks move
-        # multiple times.
-        raw_viewer_picks = viewer_roster_obj.get("draft_picks") or []
+        # Build the viewer's pick list from picks_by_roster (which accounts for
+        # traded picks), then remove any picks that the traded list shows the viewer
+        # no longer owns. This handles the case where build_picks_by_roster missed
+        # a multi-hop trade.
+        traded_list = ctx.get("traded") or []
+        viewer_rid_int = int(viewer_roster_id)
+        # Set of (season, round) the viewer has traded away to someone else
+        traded_away = {
+            (int(tp.get("season", 0)), int(tp.get("round", 0)))
+            for tp in traded_list
+            if (int(tp.get("roster_id", -1)) == viewer_rid_int
+                and int(tp.get("owner_id", -1)) != viewer_rid_int)
+        }
         viewer_picks = sorted(
             [
                 _resolve_pick(p)
-                for p in raw_viewer_picks
-                if int(p.get("season") or 0) <= _cur_yr + 1
+                for p in picks_by_roster.get(viewer_roster_id, [])
+                if (int(p.get("season", 0)) <= _cur_yr + 1
+                    and (int(p.get("season", 0)), int(p.get("round", 0))) not in traded_away)
             ],
             key=lambda x: x["value"],
             reverse=True,
