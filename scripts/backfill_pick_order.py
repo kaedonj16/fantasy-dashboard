@@ -107,7 +107,9 @@ def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
         slot_to_roster = detail.get("slot_to_roster_id") or {}
         if slot_to_roster:
             result[season] = {
-                str(roster_id): int(slot) for slot, roster_id in slot_to_roster.items()
+                str(roster_id): int(slot)
+                for slot, roster_id in slot_to_roster.items()
+                if slot and roster_id
             }
 
     return result

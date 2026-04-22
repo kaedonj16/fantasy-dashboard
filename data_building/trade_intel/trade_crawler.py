@@ -108,7 +108,8 @@ def _fetch_draft_slot_map(league_id: str) -> dict[tuple, int]:
             continue
         slot_to_roster: dict = detail.get("slot_to_roster_id") or {}
         for slot, roster_id in slot_to_roster.items():
-            slot_map[(season, str(roster_id))] = int(slot)
+            if slot and roster_id:
+                slot_map[(season, str(roster_id))] = int(slot)
 
     return slot_map
 
