@@ -109,8 +109,12 @@ def record_calibrated_history_snapshot() -> int:
     """
     from datetime import date
     from dashboard_services.db import get_conn
+    from utils.utils import load_players_index
 
     today = date.today().isoformat()
+    
+    # Load players index to get player names
+    players_index = load_players_index() or {}
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -132,18 +136,23 @@ def record_calibrated_history_snapshot() -> int:
     written = 0
     with get_conn() as conn:
         for r in rows:
+            # Get player name from players_index
+            player_info = players_index.get(r["player_id"]) or {}
+            player_name = player_info.get("name", "Unknown")
+            
             conn.execute(
                 """
                 INSERT INTO player_value_history
-                    (as_of_date, player_id, position, team, value, source)
-                VALUES (%s, %s, %s, %s, %s, 'model')
+                    (as_of_date, player_id, name, position, team, value, source)
+                VALUES (%s, %s, %s, %s, %s, %s, 'model')
                 ON CONFLICT (as_of_date, player_id, source)
                 DO UPDATE SET
+                    name     = EXCLUDED.name,
                     value    = EXCLUDED.value,
                     position = EXCLUDED.position,
                     team     = EXCLUDED.team
                 """,
-                (today, r["player_id"], r["position"], r["team"], float(r["value"])),
+                (today, r["player_id"], player_name, r["position"], r["team"], float(r["value"])),
             )
             written += 1
 

@@ -36,6 +36,7 @@ from collections import defaultdict
 from datetime import date
 
 from dashboard_services.db import get_conn
+from utils.utils import load_players_index
 
 logger = logging.getLogger(__name__)
 
@@ -90,17 +91,25 @@ def smooth_value_history(
         if cal_values:
             today_iso = today.isoformat()
             seeded = 0
+            # Load players index to get player names
+            players_index = load_players_index() or {}
             with get_conn() as conn:
                 for pid, val in cal_values.items():
+                    # Get player name from players_index
+                    player_info = players_index.get(str(pid)) or {}
+                    player_name = player_info.get("name", "Unknown")
+                    
                     conn.execute(
                         """
                         INSERT INTO player_value_history
-                            (as_of_date, player_id, value, source)
-                        VALUES (%s, %s, %s, %s)
+                            (as_of_date, player_id, name, value, source)
+                        VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (as_of_date, player_id, source)
-                        DO UPDATE SET value = EXCLUDED.value
+                        DO UPDATE SET 
+                            name = EXCLUDED.name,
+                            value = EXCLUDED.value
                         """,
-                        (today_iso, pid, val, source),
+                        (today_iso, pid, player_name, val, source),
                     )
                     seeded += 1
             logger.info("[smooth] Seeded %d calibrated values for %s", seeded, today_iso)

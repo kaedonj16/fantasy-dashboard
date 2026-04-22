@@ -51,6 +51,8 @@ def main():
                         help="Skip discovery step.")
     parser.add_argument("--analytics",       action="store_true",
                         help="Run analytics + WLS after all crawl batches complete.")
+    parser.add_argument("--workers",         type=int, default=8,
+                        help="Concurrent workers for crawling. Default 8.")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
@@ -84,9 +86,9 @@ def main():
             (_now() - deadline).total_seconds() / -60,
         )
 
-        result = run_crawl(batch_size=args.crawl_batch)
-        trades   = result.get("trades", 0) or result.get("total_trades", 0)
-        leagues  = result.get("leagues", 0) or result.get("total_leagues", 0)
+        result = run_crawl(batch_size=args.crawl_batch, workers=args.workers)
+        trades   = result.get("new_trades", 0)
+        leagues  = result.get("leagues_crawled", 0)
         total_trades += trades
         total_leagues_with_trades += leagues
 

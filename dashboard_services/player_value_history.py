@@ -508,7 +508,19 @@ def get_top_movers(
 
             rows = cur.fetchall()
 
-    movers = [dict(row) for row in rows]
+    # Load players index to get names for records with NULL/empty names
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+
+    movers = []
+    for row in rows:
+        row_dict = dict(row)
+        # If name is None or empty, get it from players_index
+        if not row_dict.get("name") or row_dict.get("name") == "Unknown":
+            player_info = players_index.get(str(row_dict["player_id"])) or {}
+            row_dict["name"] = player_info.get("name", "Unknown")
+        movers.append(row_dict)
+    
     risers = movers[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 

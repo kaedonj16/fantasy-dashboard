@@ -24,7 +24,23 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Configure session with larger connection pool
 SESSION = requests.Session()
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+)
+adapter = HTTPAdapter(
+    pool_connections=20,  # Increase from default 10
+    pool_maxsize=20,      # Increase from default 10  
+    max_retries=retry_strategy
+)
+SESSION.mount("http://", adapter)
+SESSION.mount("https://", adapter)
 SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
 
 _WEEKS_PER_SEASON = 18
@@ -124,7 +140,7 @@ def crawl_league(
     season: int,
     start_week: int = 1,
     end_week: int | None = None,
-    week_workers: int = 8,
+    week_workers: int = 2,
 ) -> int:
     """
     Crawl all trades for one league. Returns count of newly inserted trades.
@@ -251,7 +267,7 @@ def _crawl_one(row: dict, end_week: int) -> tuple[str, int]:
         return league_id, 0
 
 
-def run_crawl(batch_size: int = 500, workers: int = 20) -> dict:
+def run_crawl(batch_size: int = 500, workers: int = 10) -> dict:
     """
     Crawl one batch of leagues in parallel.
 

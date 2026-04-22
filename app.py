@@ -11860,6 +11860,7 @@ def api_trade_intel_trending():
     Most traded players in the last 7 days across all crawled leagues.
     Returns up to 25 players with trade counts and market vs model value delta.
     """
+    from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
         limit = min(int(request.args.get("limit") or 25), 50)
