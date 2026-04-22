@@ -64,11 +64,11 @@ function showPaywall(feature) {
     <div class="paywall-overlay"></div>
     <div class="paywall-content">
       <div class="paywall-header">
-        <h2>🔒 Premium Feature</h2>
+        <h2><i class="fa-solid fa-lock" aria-hidden="true"></i> Premium Feature</h2>
         <button class="paywall-close" onclick="this.closest('.paywall-modal').remove()">×</button>
       </div>
       <div class="paywall-body">
-        <div class="paywall-icon">⭐</div>
+        <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
         <h3>${featureName}</h3>
         <p>This is a premium feature. Upgrade to access:</p>
         <ul class="paywall-features">
@@ -127,7 +127,7 @@ function initiatePurchase(type) {
 function addPremiumBadge(element) {
   const badge = document.createElement('span');
   badge.className = 'premium-badge';
-  badge.innerHTML = '⭐ Premium';
+  badge.innerHTML = '<i class="fa-solid fa-star" aria-hidden="true"></i> Premium';
   badge.style.cssText = `
     display: inline-block;
     padding: 2px 8px;

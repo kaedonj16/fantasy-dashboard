@@ -725,13 +725,13 @@ def get_history_summary_html(history_ctx: dict) -> str:
     featured_cards_html = "".join(
         [
             _summary_card(
-                "🏆 Champion",
+                "<i class='fa-solid fa-trophy' aria-hidden='true'></i> Champion",
                 summary["champion"],
                 f"Regular season record: {summary['champion_record']}",
                 card_type="champion",
             ),
             _summary_card(
-                "🥈 Runner-Up",
+                "<i class='fa-solid fa-medal' aria-hidden='true'></i> Runner-Up",
                 summary["runner_up"],
                 f"Regular season record: {summary['runner_up_record']}",
                 card_type="runner_up",

@@ -34,7 +34,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                    border:1px solid var(--border);background:var(--card-bg);
                    color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                       color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+                       color:var(--text-muted);font-size:14px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
           <button id="rookieSearchClear" onclick="rkClearSearch()"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -122,7 +122,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
     <!-- Empty -->
     <div id="rkEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-      <div style="font-size:24px;margin-bottom:8px;">🏈</div>
+      <div style="font-size:24px;margin-bottom:8px;"><i class="fa-solid fa-football" aria-hidden="true"></i></div>
       No prospects match your filters
     </div>
 
