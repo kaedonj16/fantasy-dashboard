@@ -466,7 +466,7 @@ BASE_HTML = """
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
-    <link rel="stylesheet" href="/static/font-awesome.css">
+    <link rel="stylesheet" href="/static/icons.css">
 
     <script>
       {plotly_js}
@@ -6332,9 +6332,9 @@ def build_teams_body(ctx: dict) -> str:
         const chevron = row.querySelector('.pos-row-toggle');
         if (chevron) {{
           chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-        }}}}
-      }}}});}}
-    }}}}}})();
+        }}
+      }});
+    }})();
     </script>
     """
 
@@ -8157,10 +8157,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
           const sentiment = bsr != null
             ? (bsr >= 1.2
-                ? '<i class="fa-solid fa-circle" style="color:#10b981;font-size:9px;vertical-align:middle;"></i> Buy pressure'
+                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;"></span> Buy pressure'
                 : bsr <= 0.8
-                  ? '<i class="fa-solid fa-circle" style="color:#ef4444;font-size:9px;vertical-align:middle;"></i> Sell pressure'
-                  : '<i class="fa-regular fa-circle" style="color:var(--text-muted);font-size:9px;vertical-align:middle;"></i> Neutral')
+                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;"></span> Sell pressure'
+                  : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--text-muted);vertical-align:middle;"></span> Neutral')
             : '';
 
           return `<div class="ti-card" onclick="openPlayerModal('${{p.player_id}}','${{name.replace(/'/g,"\\\\'")}}')">

@@ -1,0 +1,39 @@
+/* PNG-based icon system — replaces Font Awesome webfont dependency */
+.fa-solid,
+.fa-regular {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    background: no-repeat center / contain;
+}
+
+.fa-solid::before,
+.fa-regular::before { content: none !important; }
+
+/* Icon → PNG mappings (relative to /static/) */
+.fa-arrow-trend-down  { background-image: url('images/arrow-trend-down-solid.png'); }
+.fa-arrow-trend-up    { background-image: url('images/arrow-trend-up-solid.png'); }
+.fa-bars              { background-image: url('images/bars-solid.png'); }
+.fa-bolt              { background-image: url('images/bolt-solid.png'); }
+.fa-bullseye          { background-image: url('images/bullseye-solid.png'); }
+.fa-chart-bar         { background-image: url('images/chart-simple-solid.png'); }
+.fa-chart-line        { background-image: url('images/chart-line-solid.png'); }
+.fa-chart-simple      { background-image: url('images/chart-simple-solid.png'); }
+.fa-chevron-down      { background-image: url('images/chevron-down-solid.png'); }
+.fa-chevron-right     { background-image: url('images/chevron-right-solid.png'); }
+.fa-circle            { background-image: url('images/circle-solid.png'); }
+.fa-clipboard-list    { background-image: url('images/clipboard-list-solid.png'); }
+.fa-dice              { background-image: url('images/triangle-exclamation-solid.png'); }
+.fa-fire              { background-image: url('images/fire-solid.png'); }
+.fa-football          { background-image: url('images/football-solid.png'); }
+.fa-gem               { background-image: url('images/medal-solid.png'); }
+.fa-hand-holding-dollar { background-image: url('images/hand-holding-dollar-solid.png'); }
+.fa-lock              { background-image: url('images/lock-solid.png'); }
+.fa-magnifying-glass  { background-image: url('images/magnifying-glass-solid.png'); }
+.fa-medal             { background-image: url('images/medal-solid.png'); }
+.fa-rocket            { background-image: url('images/rocket-solid.png'); }
+.fa-snowflake         { background-image: url('images/snowflake-solid.png'); }
+.fa-star              { background-image: url('images/star-solid.png'); }
+.fa-trophy            { background-image: url('images/trophy-solid.png'); }
+.fa-xmark             { background-image: url('images/xmark-solid.png'); }
