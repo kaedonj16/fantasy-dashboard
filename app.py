@@ -12212,6 +12212,8 @@ def api_trade_intel_similar_trades():
         side_b_raw = request.args.get("side_b", "")
         season     = int(request.args.get("season") or datetime.now().year)
         limit      = min(int(request.args.get("limit") or 10), 25)
+        # Over-fetch so the empty-side filter doesn't starve the result set
+        fetch_limit = limit * 6
 
         side_a_ids = [p.strip() for p in side_a_raw.split(",") if p.strip()]
         side_b_ids = [p.strip() for p in side_b_raw.split(",") if p.strip()]
@@ -12241,7 +12243,7 @@ def api_trade_intel_similar_trades():
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (side_a_ids, side_b_ids, season, limit),
+                    (side_a_ids, side_b_ids, season, fetch_limit),
                 ).fetchall()
             else:
                 # Only one side populated — match any trade with those players
@@ -12259,7 +12261,7 @@ def api_trade_intel_similar_trades():
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (all_ids, season, limit),
+                    (all_ids, season, fetch_limit),
                 ).fetchall()
 
             if not trade_rows:
@@ -12338,11 +12340,7 @@ def api_trade_intel_similar_trades():
                 "side_b":       side_b,
             })
 
-        return jsonify({"trades": result})
-
-    except Exception:
-        logger.exception("[trade-intel/similar-trades] error")
-        return jsonify({"error": "Internal error"}), 500
+        return jsonify({"trades": result[:limit]})
 
     except Exception:
         logger.exception("[trade-intel/similar-trades] error")

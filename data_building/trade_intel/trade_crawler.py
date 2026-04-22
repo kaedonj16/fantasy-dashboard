@@ -111,6 +111,7 @@ def _extract_assets(txn: dict) -> list[dict]:
     for pick in draft_picks:
         receiver = str(pick.get("owner_id", ""))
         side = side_map.get(receiver, "a")
+        roster_id = pick.get("roster_id")
         assets.append({
             "side": side,
             "asset_type": "pick",
@@ -118,6 +119,7 @@ def _extract_assets(txn: dict) -> list[dict]:
             "pick_season": pick.get("season"),
             "pick_round": pick.get("round"),
             "pick_order": _pick_order(pick),
+            "pick_roster_id": str(roster_id) if roster_id is not None else None,
         })
 
     return assets
@@ -208,11 +210,12 @@ def crawl_league(
                         """
                         INSERT INTO trade_intel_assets
                             (trade_id, side, asset_type, player_id,
-                             pick_season, pick_round, pick_order)
-                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
+                             pick_season, pick_round, pick_order, pick_roster_id)
+                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
                         [v for a in assets for v in (
                             trade_db_id, a["side"], a["asset_type"], a["player_id"],
-                            a["pick_season"], a["pick_round"], a["pick_order"],
+                            a["pick_season"], a["pick_round"],
+                            a["pick_order"], a.get("pick_roster_id"),
                         )]
                     )
                 new_trades += 1
