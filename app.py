@@ -8287,7 +8287,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
       .tdb-badge {{
         font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
-        background: var(--bg-secondary, #1e293b); color: var(--text-muted);
+        background: var(--row, #1e293b); color: var(--text);
         border: 1px solid var(--border-color);
       }}
       .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
@@ -8299,14 +8299,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-col-divider {{ background: var(--border-color); }}
       .tdb-asset {{
-        font-size: 13px; color: var(--text-color);
+        font-size: 14px; color: var(--text); font-weight:500;
         display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
       }}
-      .tdb-asset.tdb-match {{ font-weight: 700; color: var(--accent-color, #3b82f6); }}
-      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 12px; }}
+      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; }}
       .tdb-pos {{
         font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-        background: var(--bg-secondary, #1e293b); color: var(--text-muted); flex-shrink: 0;
+        background: var(--row); color: var(--text); flex-shrink: 0;
       }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
@@ -12165,7 +12165,7 @@ def api_trade_database():
             s = str(a["pick_season"]) if a["pick_season"] else "?"
             r = str(a["pick_round"])  if a["pick_round"]  else "?"
             order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Rd {r}" + (f" ({order})" if order else "")}
+            return {"type": "pick", "name": f"{s} Round {r}" + (f" ({order})" if order else "")}
 
         result = []
         for r in trade_rows:
@@ -12299,7 +12299,7 @@ def api_trade_intel_similar_trades():
             s     = str(a["pick_season"]) if a["pick_season"] else "?"
             rd    = str(a["pick_round"])  if a["pick_round"]  else "?"
             order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Rd {rd}" + (f" ({order})" if order else ""),
+            return {"type": "pick", "name": f"{s} Round {rd}" + (f" ({order})" if order else ""),
                     "is_key_player": False}
 
         side_a_ids_set = set(side_a_ids)

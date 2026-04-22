@@ -358,8 +358,8 @@ def build_trade_calculator_body(
             .stl-badge {{
               font-size:10px;font-weight:700;
               padding:2px 7px;border-radius:6px;
-              background:var(--bg-secondary,#1e293b);
-              color:var(--text-muted);
+              background:var(--row,#1e293b);
+              color:var(--text);
               border:1px solid var(--border-color);
             }}
             .stl-badge-sf {{ background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }}
@@ -372,18 +372,19 @@ def build_trade_calculator_body(
             .stl-col-divider {{ background:var(--border-color); }}
 
             .stl-asset {{
-              font-size:13px;
-              color:var(--text-color);
+              font-size:14px;
+              color:var(--text);
+              font-weight:500;
               display:flex;align-items:center;gap:5px;flex-wrap:wrap;
             }}
-            .stl-asset.stl-key  {{ font-weight:700;color:var(--accent-color,#3b82f6); }}
-            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:12px; }}
+            .stl-asset.stl-key  {{ font-weight:800;color:var(--accent-color,#3b82f6); }}
+            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:14px; }}
             .stl-asset.stl-muted {{ color:var(--text-muted); }}
             .stl-pos {{
               font-size:10px;font-weight:700;
               padding:1px 5px;border-radius:4px;
-              background:var(--bg-secondary,#1e293b);
-              color:var(--text-muted);flex-shrink:0;
+              background:var(--row,#1e293b);
+              color:var(--text);flex-shrink:0;
             }}
             @media(max-width:480px) {{
               .stl-card-body {{ grid-template-columns:1fr; }}
