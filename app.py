@@ -381,7 +381,7 @@ FORM_BODY = """
   <div class="home-content-wrapper">
     <section class="home-feature-grid">
     <div class="home-feature-card">
-      <div class="home-feature-icon">📊</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
       <h3>Trade Calculator</h3>
       <p>
         AI-powered trade analysis personalized to your roster. Get real-time value assessments,
@@ -390,7 +390,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">📈</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i></div>
       <h3>Dynasty Values</h3>
       <p>
         Hybrid valuation model blending market consensus with production metrics, age curves,
@@ -399,7 +399,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">⚡</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-bolt" aria-hidden="true"></i></div>
       <h3>Weekly Hub</h3>
       <p>
         Live scoring context for every matchup. See projections, starters, and real-time updates
@@ -408,7 +408,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">🎯</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></div>
       <h3>Team Analytics</h3>
       <p>
         Position strength breakdowns, roster composition analysis, and competitive advantages
@@ -417,7 +417,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">📉</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i></div>
       <h3>Graphs & Trends</h3>
       <p>
         Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
@@ -426,7 +426,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">🏆</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-trophy" aria-hidden="true"></i></div>
       <h3>Historical Insights</h3>
       <p>
         AI-generated season recaps personalized to your team. Track multi-year trends,
@@ -517,7 +517,7 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          © 2025 BR Fantasy. All rights reserved.
+          &copy; 2025 BR Fantasy. All rights reserved.
         </div>
       </div>
     </footer>
@@ -976,7 +976,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
-            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
+            "    <button class='nav-hamburger' id='navToggle' aria-label='Toggle navigation'><i class='fa-solid fa-bars' aria-hidden='true'></i></button>"
             f"    {home_pills_container}"
             "  </div>"
             "  <div class='nav-right'>"
@@ -1183,7 +1183,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
-        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
+        "    <button class='nav-hamburger' id='navToggle' aria-label='Toggle navigation'><i class='fa-solid fa-bars' aria-hidden='true'></i></button>"
         f"    {pills_container}"
         "  </div>"
         "  <div class='nav-right'>"
@@ -2812,9 +2812,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         chips_html += f"<span class='chip'>PA/G {papg_v:.1f}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
         if streak_chip and streak_frame_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire' aria-hidden='true'></i>{streak_chip}</span>"
         elif streak_chip and streak_frame_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'>❄️{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake' aria-hidden='true'></i>{streak_chip}</span>"
         chips_html += "</div>"
 
         return f"""
@@ -2877,9 +2877,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         )
         css_cls = streak_class(row)
         if streak_chip and css_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire' aria-hidden='true'></i>{streak_chip}</span>"
         elif streak_chip and css_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'>❄️{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake' aria-hidden='true'></i>{streak_chip}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
 
         avatar_url = row.get("avatar")
@@ -3023,7 +3023,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="background: linear-gradient(180deg, #fff8e7, #ffe5b4);border:1px solid #f97316;">
           <div class="card-header">
             <h3 style="color:#dc2626;">Hottest Team</h3>
-            <h3 style="color:#dc2626;">🔥 {hottest['Streak']}</h3>
+            <h3 style="color:#dc2626;"><i class="fa-solid fa-fire" aria-hidden="true"></i> {hottest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -3045,7 +3045,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="border: 1px solid #163b82f6;background: rgb(44 166 173 / 12%);color: #163b82f6;">
           <div class="card-header">
             <h3>Coldest Team</h3>
-            <h3>❄️ {coldest['Streak']}</h3>
+            <h3><i class="fa-solid fa-snowflake" aria-hidden="true"></i> {coldest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -5861,7 +5861,7 @@ def build_teams_body(ctx: dict) -> str:
         table_rows.append(
             "<tr class='pos-row pos-picks-row'>"
             "  <td class='pos-name'>"
-            "    <span style='font-size:11px;opacity:0.7;'>📋</span> PICKS"
+            "    <span style='font-size:11px;opacity:0.7;'><i class='fa-solid fa-clipboard-list' aria-hidden='true'></i></span> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
@@ -6457,7 +6457,7 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None, l
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  💸 Make a donation
+                  <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Make a donation
                 </a>
               </p>
             </div>
@@ -6487,9 +6487,9 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None, l
             <div class="static-section">
               <div class="static-section-title">4. Follow & Subscribe</div>
               <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank"><i class="fa-brands fa-youtube" aria-hidden="true"></i> YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank"><i class="fa-brands fa-twitch" aria-hidden="true"></i> Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> Twitter/X</a>
               </div>
             </div>
 
@@ -6624,9 +6624,9 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None, l
               <p>You can message the creator directly via social platforms:</p>
 
               <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank"><i class="fa-brands fa-youtube" aria-hidden="true"></i> YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank"><i class="fa-brands fa-twitch" aria-hidden="true"></i> Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> Twitter/X</a>
               </div>
             </div>
 
@@ -7086,7 +7086,7 @@ def page_players(platform: str, season: int, league_id: str):
                        border:1px solid var(--border);background:var(--card-bg);
                        color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                           color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+                           color:var(--text-muted);font-size:14px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
               <button id="prSearchClear" onclick="prClearSearch()"
                 style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -7181,7 +7181,7 @@ def page_players(platform: str, season: int, league_id: str):
 
         <!-- Empty state -->
         <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+          <div style="font-size:24px;margin-bottom:8px;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></div>
           No players match your filters
         </div>
 
@@ -7663,7 +7663,7 @@ def page_players(platform: str, season: int, league_id: str):
           let badges = '';
           if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
@@ -7801,7 +7801,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
         <!-- Empty State -->
         <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
-          <div style="font-size: 24px; margin-bottom: 12px;">📊</div>
+          <div style="font-size: 24px; margin-bottom: 12px;"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i></div>
           <div>No breakout candidates found</div>
         </div>
       </div>
@@ -7867,7 +7867,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           // Breakout type classification
           const breakoutType = candidate.breakout_type || {{}};
-          const emoji = breakoutType.emoji || '📊';
+          const iconHtml = breakoutType.icon_html || '<i class="fa-solid fa-chart-simple" aria-hidden="true"></i>';
           const label = breakoutType.profile_label || 'Breakout Candidate';
           const driver = breakoutType.primary_driver || 'balanced';
 
@@ -7902,7 +7902,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div class="breakout-card-body">
                 <!-- Breakout Type Badge -->
                 <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
-                  <span style="font-size: 20px;">${{emoji}}</span>
+                  <span style="font-size: 20px;">${{iconHtml}}</span>
                   <span style="font-weight: 500; flex: 1;">${{label}}</span>
                   <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
@@ -8538,7 +8538,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # ── Career standings table ──────────────────────────────────────────────
     table_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
-        rings = "🏆 " * int(row["Championships"]) if row["Championships"] > 0 else ""
+        rings = "<i class='fa-solid fa-trophy' aria-hidden='true'></i> " * int(row["Championships"]) if row["Championships"] > 0 else ""
         table_rows_html += f"""
         <tr>
           <td>{i + 1}</td>

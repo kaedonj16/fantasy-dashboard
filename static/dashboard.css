@@ -3654,7 +3654,7 @@ thead th {
   border-left: 1px solid var(--border);
 }
 
-/* Pill toggle switch (1QB ↔ SF) */
+/* Pill toggle switch (1QB/SF) */
 .otc-ctrl-group {
   display: flex;
   align-items: center;
