@@ -26,6 +26,7 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -34,9 +35,10 @@ from dashboard_services.db import get_conn
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 RATE_SLEEP   = 0.25
+BATCH_SIZE   = 100  # Process updates in batches
 
 
-def _get(url: str) -> dict | list | None:
+def _get(url: str) -> Union[dict, list, None]:
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 429:
@@ -120,6 +122,8 @@ def stage1(dry_run: bool = False):
     for r in rows:
         groups[(r["league_id"], r["season"], r["week"])].append(r)
 
+    # Collect all updates for bulk operations
+    bulk_updates = []
     updated = 0
     for (league_id, season, week), trade_list in groups.items():
         url  = f"{SLEEPER_BASE}/league/{league_id}/transactions/{week}"
@@ -153,12 +157,24 @@ def stage1(dry_run: bool = False):
                     roster_id = pick.get("roster_id")
                     if roster_id is None:
                         continue
-                    if not dry_run:
-                        conn.execute(
-                            "UPDATE trade_intel_assets SET pick_roster_id = %s WHERE id = %s",
-                            (str(roster_id), asset["id"]),
-                        )
+                    bulk_updates.append((str(roster_id), asset["id"]))
                     updated += 1
+
+    # Perform bulk updates
+    if bulk_updates and not dry_run:
+        with get_conn() as conn:
+            # Update in batches to avoid large transactions
+            for i in range(0, len(bulk_updates), BATCH_SIZE):
+                batch = bulk_updates[i:i + BATCH_SIZE]
+                values_str = ",".join(["(%s, %s)"] * len(batch))
+                flat_values = [v for pair in batch for v in pair]
+                
+                conn.execute(f"""
+                    UPDATE trade_intel_assets 
+                    SET pick_roster_id = v.roster_id
+                    FROM (VALUES {values_str}) AS v(roster_id, asset_id)
+                    WHERE trade_intel_assets.id = v.asset_id
+                """, flat_values)
 
     print(f"Stage 1: {'would update' if dry_run else 'updated'} {updated} rows with roster_id")
 
@@ -200,7 +216,10 @@ def stage2(dry_run: bool = False):
         league_orders[lid] = _build_league_draft_orders(lid)
         print(f"  {lid}: {len(league_orders[lid])} season(s) with draft order")
 
+    # Collect bulk updates
+    bulk_updates = []
     updated = skipped = 0
+    
     for r in rows:
         season_orders = league_orders.get(r["league_id"], {})
         order_map     = season_orders.get(str(r["pick_season"]), {})
@@ -211,13 +230,23 @@ def stage2(dry_run: bool = False):
 
         num_teams  = r["num_teams"] or 12
         pick_order = _slot_to_order(slot, num_teams)
-        if not dry_run:
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE trade_intel_assets SET pick_slot = %s, pick_order = %s WHERE id = %s",
-                    (slot, pick_order, r["asset_id"]),
-                )
+        bulk_updates.append((slot, pick_order, r["asset_id"]))
         updated += 1
+
+    # Perform bulk updates
+    if bulk_updates and not dry_run:
+        with get_conn() as conn:
+            for i in range(0, len(bulk_updates), BATCH_SIZE):
+                batch = bulk_updates[i:i + BATCH_SIZE]
+                values_str = ",".join(["(%s, %s, %s)"] * len(batch))
+                flat_values = [v for triple in batch for v in triple]
+                
+                conn.execute(f"""
+                    UPDATE trade_intel_assets 
+                    SET pick_slot = v.slot, pick_order = v.order
+                    FROM (VALUES {values_str}) AS v(slot, order, asset_id)
+                    WHERE trade_intel_assets.id = v.asset_id
+                """, flat_values)
 
     print(f"Stage 2: {'would update' if dry_run else 'updated'} {updated}, "
           f"skipped {skipped} (draft order not yet set)")
@@ -274,7 +303,10 @@ def stage3(dry_run: bool = False):
         standings_cache[league_id] = order
         return order
 
+    # Collect bulk updates
+    bulk_updates = []
     updated = skipped = 0
+    
     for r in rows:
         num_teams = r["num_teams"] or 12
         order     = get_standings(r["league_id"], num_teams)
@@ -288,13 +320,23 @@ def stage3(dry_run: bool = False):
             continue
 
         pick_order = _slot_to_order(slot, num_teams)
-        if not dry_run:
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE trade_intel_assets SET pick_order = %s WHERE id = %s",
-                    (pick_order, r["asset_id"]),
-                )
+        bulk_updates.append((pick_order, r["asset_id"]))
         updated += 1
+
+    # Perform bulk updates
+    if bulk_updates and not dry_run:
+        with get_conn() as conn:
+            for i in range(0, len(bulk_updates), BATCH_SIZE):
+                batch = bulk_updates[i:i + BATCH_SIZE]
+                values_str = ",".join(["(%s, %s)"] * len(batch))
+                flat_values = [v for pair in batch for v in pair]
+                
+                conn.execute(f"""
+                    UPDATE trade_intel_assets 
+                    SET pick_order = v.order
+                    FROM (VALUES {values_str}) AS v(order, asset_id)
+                    WHERE trade_intel_assets.id = v.asset_id
+                """, flat_values)
 
     print(f"Stage 3 (standings estimate): "
           f"{'would update' if dry_run else 'updated'} {updated}, skipped {skipped}")
