@@ -87,8 +87,8 @@ def _fetch_draft_slot_map(league_id: str) -> dict[tuple, int]:
     Returns {(season_str, roster_id_str): slot} by reading the draft_order
     from every draft in this league.
 
-    In dynasty rookie drafts, draft_order maps roster_id → draft slot within
-    the round (slot 1 = earliest pick = worst previous-season finish).
+    Uses slot_to_roster_id (slot → roster_id) from the draft detail, inverted
+    to roster_id → slot. draft_order maps user_id → slot (not roster_id).
     The slot is round-agnostic: a team at slot 6 has pick X.06 in every round.
 
     Only populated once the commissioner has set the draft order for a season.
@@ -106,8 +106,8 @@ def _fetch_draft_slot_map(league_id: str) -> dict[tuple, int]:
         detail = _get(f"/draft/{draft_id}")
         if not detail:
             continue
-        order: dict = detail.get("draft_order") or {}
-        for roster_id, slot in order.items():
+        slot_to_roster: dict = detail.get("slot_to_roster_id") or {}
+        for slot, roster_id in slot_to_roster.items():
             slot_map[(season, str(roster_id))] = int(slot)
 
     return slot_map

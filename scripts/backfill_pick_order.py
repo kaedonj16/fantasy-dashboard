@@ -83,9 +83,9 @@ def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
         time.sleep(RATE_SLEEP)
         if not detail:
             continue
-        order = detail.get("draft_order") or {}
-        if order:
-            result[season] = {str(k): int(v) for k, v in order.items()}
+        slot_to_roster = detail.get("slot_to_roster_id") or {}
+        if slot_to_roster:
+            result[season] = {str(roster_id): int(slot) for slot, roster_id in slot_to_roster.items()}
 
     return result
 
