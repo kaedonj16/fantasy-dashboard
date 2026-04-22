@@ -2,49 +2,61 @@
 Backfill pick_slot and pick_order for trade_intel_assets rows where they are null.
 
 The Sleeper /traded_picks endpoint gives us the original pick owner (roster_id)
-but NOT the slot. The slot comes from the draft's draft_order mapping
-(roster_id → slot), fetched via /draft/{draft_id}.
+but NOT the slot. The slot comes from the draft's slot_to_roster_id mapping,
+fetched via /draft/{draft_id}.
 
 Three stages:
   Stage 1 — populate pick_roster_id for existing rows by re-fetching the
-             original Sleeper transactions (matched by league_id + week +
-             transaction_id, which we store).
+             original Sleeper transactions (matched by league_id + week).
+             Parallelized: fetches up to --workers (league, week) pairs at once.
 
   Stage 2 — for each league with known pick_roster_id, fetch the Sleeper
-             draft details to get the draft_order map, then write pick_slot
-             and pick_order (early/mid/late).
+             draft details to get slot_to_roster_id, then write pick_slot
+             and pick_order (early/mid/late). Parallelized per league.
 
-  Stage 3 — for leagues whose draft_order isn't set yet (future picks),
+  Stage 3 — for leagues whose draft order isn't set yet (future picks),
              fall back to estimating early/mid/late from current roster
-             standings (wins/points).
+             standings (wins/points). Parallelized per league.
 
 Run:
-    python scripts/backfill_pick_order.py [--stage 1|2|3|all] [--dry-run]
+    python scripts/backfill_pick_order.py [--stage 1|2|3|all] [--dry-run] [--workers N]
 """
 import argparse
 import sys
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from dashboard_services.db import get_conn
 
-SLEEPER_BASE = "https://api.sleeper.app/v1"
-RATE_SLEEP   = 0.25
-BATCH_SIZE   = 100  # Process updates in batches
+SLEEPER_BASE     = "https://api.sleeper.app/v1"
+_RATE_LIMIT_WAIT = 60  # seconds to back off on 429
+
+# Shared session with large pool for concurrent requests
+_SESSION = requests.Session()
+_adapter = HTTPAdapter(
+    pool_connections=100,
+    pool_maxsize=100,
+    max_retries=Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504]),
+)
+_SESSION.mount("http://", _adapter)
+_SESSION.mount("https://", _adapter)
 
 
-def _get(url: str) -> Union[dict, list, None]:
+def _get(url: str) -> dict | list | None:
     try:
-        r = requests.get(url, timeout=10)
+        r = _SESSION.get(url, timeout=10)
         if r.status_code == 429:
-            print("  [rate limit] sleeping 60s")
-            time.sleep(60)
-            r = requests.get(url, timeout=10)
+            print(f"  [rate limit] sleeping {_RATE_LIMIT_WAIT}s")
+            time.sleep(_RATE_LIMIT_WAIT)
+            r = _SESSION.get(url, timeout=10)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -61,17 +73,24 @@ def _slot_to_order(slot: int, num_teams: int) -> str:
     return "late"
 
 
+def _bulk_update(conn, table_update_sql: str, rows: list[tuple]) -> None:
+    """Write updates in chunks of 5000 using parameterized queries."""
+    chunk_size = 5000
+    for i in range(0, len(rows), chunk_size):
+        for params in rows[i : i + chunk_size]:
+            conn.execute(table_update_sql, params)
+
+
 # ---------------------------------------------------------------------------
-# Shared: fetch draft_order for a league across all its seasons
+# Shared: fetch slot_to_roster_id for a league across all its seasons
 # ---------------------------------------------------------------------------
 
 def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
     """
     Returns {season_str: {roster_id_str: slot_int}} for every draft in
-    this league that has a draft_order set.
+    this league that has slot_to_roster_id set.
     """
     drafts = _get(f"{SLEEPER_BASE}/league/{league_id}/drafts")
-    time.sleep(RATE_SLEEP)
     if not drafts:
         return {}
 
@@ -82,21 +101,55 @@ def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
         if not draft_id or not season:
             continue
         detail = _get(f"{SLEEPER_BASE}/draft/{draft_id}")
-        time.sleep(RATE_SLEEP)
         if not detail:
             continue
+        # slot_to_roster_id: {slot_str: roster_id} — invert to roster_id→slot
         slot_to_roster = detail.get("slot_to_roster_id") or {}
         if slot_to_roster:
-            result[season] = {str(roster_id): int(slot) for slot, roster_id in slot_to_roster.items()}
+            result[season] = {
+                str(roster_id): int(slot) for slot, roster_id in slot_to_roster.items()
+            }
 
     return result
 
 
 # ---------------------------------------------------------------------------
-# Stage 1: populate pick_roster_id for rows that have null
+# Stage 1: populate pick_roster_id — parallelized by (league_id, week)
 # ---------------------------------------------------------------------------
 
-def stage1(dry_run: bool = False):
+def _fetch_group(
+    league_id: str,
+    week: int,
+    trade_list: list,
+    asset_map: dict[int, list[int]],
+) -> list[tuple[str, int]]:
+    """
+    Fetch one (league_id, week) batch from Sleeper.
+    Returns [(roster_id_str, asset_id), ...] pairs ready to write.
+    """
+    url  = f"{SLEEPER_BASE}/league/{league_id}/transactions/{week}"
+    txns = _get(url)
+    if not txns:
+        return []
+
+    txn_index = {str(t.get("transaction_id") or ""): t for t in txns}
+    updates: list[tuple[str, int]] = []
+
+    for r in trade_list:
+        txn = txn_index.get(str(r["transaction_id"]))
+        if not txn:
+            continue
+        picks     = txn.get("draft_picks") or []
+        asset_ids = asset_map.get(r["trade_db_id"], [])
+        for asset_id, pick in zip(asset_ids, picks):
+            roster_id = pick.get("roster_id")
+            if roster_id is not None:
+                updates.append((str(roster_id), asset_id))
+
+    return updates
+
+
+def stage1(dry_run: bool = False, workers: int = 20) -> None:
     """Re-fetch original Sleeper transactions to extract roster_id for each pick."""
     with get_conn() as conn:
         rows = conn.execute(
@@ -112,81 +165,77 @@ def stage1(dry_run: bool = False):
             """
         ).fetchall()
 
-    if not rows:
-        print("Stage 1: nothing to do — all picks already have pick_roster_id.")
-        return
+        if not rows:
+            print("Stage 1: nothing to do — all picks already have pick_roster_id.")
+            return
 
-    print(f"Stage 1: {len(rows)} trades with picks missing roster_id")
+        print(f"Stage 1: {len(rows)} trades with picks missing roster_id")
 
+        # Pre-fetch all pick asset IDs per trade in one DB pass to avoid per-trade queries
+        trade_ids = list({r["trade_db_id"] for r in rows})
+        asset_map: dict[int, list[int]] = defaultdict(list)
+        batch = 1000
+        for i in range(0, len(trade_ids), batch):
+            chunk        = trade_ids[i : i + batch]
+            placeholders = ",".join(["%s"] * len(chunk))
+            for ar in conn.execute(
+                f"""
+                SELECT trade_id, id FROM trade_intel_assets
+                WHERE trade_id IN ({placeholders})
+                  AND asset_type = 'pick'
+                  AND pick_roster_id IS NULL
+                ORDER BY trade_id, id
+                """,
+                chunk,
+            ).fetchall():
+                asset_map[ar["trade_id"]].append(ar["id"])
+
+    # Group by (league_id, week) — one API call per group covers all trades that week
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
-        groups[(r["league_id"], r["season"], r["week"])].append(r)
+        groups[(r["league_id"], r["week"])].append(r)
 
-    # Collect all updates for bulk operations
-    bulk_updates = []
-    updated = 0
-    for (league_id, season, week), trade_list in groups.items():
-        url  = f"{SLEEPER_BASE}/league/{league_id}/transactions/{week}"
-        txns = _get(url)
-        time.sleep(RATE_SLEEP)
-        if not txns:
-            continue
+    total_groups = len(groups)
+    print(f"Stage 1: {total_groups} (league, week) groups → parallel fetch with {workers} workers")
 
-        txn_index = {str(t.get("transaction_id") or ""): t for t in txns}
+    all_updates: list[tuple[str, int]] = []
+    completed = 0
 
-        for r in trade_list:
-            txn = txn_index.get(str(r["transaction_id"]))
-            if not txn:
-                continue
-            picks = txn.get("draft_picks") or []
-            if not picks:
-                continue
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_fetch_group, league_id, week, trade_list, asset_map): (league_id, week)
+            for (league_id, week), trade_list in groups.items()
+        }
+        for fut in as_completed(futures):
+            completed += 1
+            if completed % 2000 == 0:
+                print(f"  {completed}/{total_groups} groups done, {len(all_updates)} updates queued")
+            try:
+                all_updates.extend(fut.result())
+            except Exception as e:
+                print(f"  [WARN] group {futures[fut]} failed: {e}")
 
-            with get_conn() as conn:
-                asset_rows = conn.execute(
-                    """
-                    SELECT id FROM trade_intel_assets
-                    WHERE trade_id = %s AND asset_type = 'pick'
-                      AND pick_roster_id IS NULL
-                    ORDER BY id
-                    """,
-                    (r["trade_db_id"],),
-                ).fetchall()
+    print(f"Stage 1: {len(all_updates)} roster_id values to write")
 
-                for asset, pick in zip(asset_rows, picks):
-                    roster_id = pick.get("roster_id")
-                    if roster_id is None:
-                        continue
-                    bulk_updates.append((str(roster_id), asset["id"]))
-                    updated += 1
-
-    # Perform bulk updates
-    if bulk_updates and not dry_run:
+    if not dry_run and all_updates:
         with get_conn() as conn:
-            # Update in batches to avoid large transactions
-            for i in range(0, len(bulk_updates), BATCH_SIZE):
-                batch = bulk_updates[i:i + BATCH_SIZE]
-                values_str = ",".join(["(%s, %s)"] * len(batch))
-                flat_values = [v for pair in batch for v in pair]
-                
-                conn.execute(f"""
-                    UPDATE trade_intel_assets 
-                    SET pick_roster_id = v.roster_id
-                    FROM (VALUES {values_str}) AS v(roster_id, asset_id)
-                    WHERE trade_intel_assets.id = v.asset_id
-                """, flat_values)
+            _bulk_update(
+                conn,
+                "UPDATE trade_intel_assets SET pick_roster_id = %s WHERE id = %s",
+                all_updates,
+            )
 
-    print(f"Stage 1: {'would update' if dry_run else 'updated'} {updated} rows with roster_id")
+    print(f"Stage 1: {'would update' if dry_run else 'updated'} {len(all_updates)} rows with roster_id")
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: populate pick_slot + pick_order via draft_order
+# Stage 2: populate pick_slot + pick_order — parallelized per league
 # ---------------------------------------------------------------------------
 
-def stage2(dry_run: bool = False):
+def stage2(dry_run: bool = False, workers: int = 20) -> None:
     """
-    For picks with known pick_roster_id, fetch each league's draft_order and
-    write pick_slot (exact position, e.g. 6) and pick_order (early/mid/late).
+    For picks with known pick_roster_id, fetch each league's draft slot map
+    and write pick_slot (1-based) and pick_order (early/mid/late).
     """
     with get_conn() as conn:
         rows = conn.execute(
@@ -207,19 +256,23 @@ def stage2(dry_run: bool = False):
         print("Stage 2: nothing to do.")
         return
 
-    print(f"Stage 2: {len(rows)} picks to update")
-
-    # Build draft orders once per league
-    league_orders: dict[str, dict[str, dict[str, int]]] = {}
     league_ids = {r["league_id"] for r in rows}
-    for lid in league_ids:
-        league_orders[lid] = _build_league_draft_orders(lid)
-        print(f"  {lid}: {len(league_orders[lid])} season(s) with draft order")
+    print(f"Stage 2: {len(rows)} picks across {len(league_ids)} leagues — fetching draft orders in parallel")
 
-    # Collect bulk updates
-    bulk_updates = []
-    updated = skipped = 0
-    
+    league_orders: dict[str, dict[str, dict[str, int]]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_build_league_draft_orders, lid): lid for lid in league_ids}
+        for fut in as_completed(futures):
+            lid = futures[fut]
+            try:
+                league_orders[lid] = fut.result()
+            except Exception as e:
+                print(f"  [WARN] league {lid} draft fetch failed: {e}")
+                league_orders[lid] = {}
+
+    all_updates: list[tuple[int, str, int]] = []  # (slot, pick_order, asset_id)
+    skipped = 0
+
     for r in rows:
         season_orders = league_orders.get(r["league_id"], {})
         order_map     = season_orders.get(str(r["pick_season"]), {})
@@ -227,40 +280,44 @@ def stage2(dry_run: bool = False):
         if slot is None:
             skipped += 1
             continue
-
         num_teams  = r["num_teams"] or 12
-        pick_order = _slot_to_order(slot, num_teams)
-        bulk_updates.append((slot, pick_order, r["asset_id"]))
-        updated += 1
+        all_updates.append((slot, _slot_to_order(slot, num_teams), r["asset_id"]))
 
-    # Perform bulk updates
-    if bulk_updates and not dry_run:
+    print(f"Stage 2: {len(all_updates)} picks resolved, {skipped} skipped (draft order not set)")
+
+    if not dry_run and all_updates:
         with get_conn() as conn:
-            for i in range(0, len(bulk_updates), BATCH_SIZE):
-                batch = bulk_updates[i:i + BATCH_SIZE]
-                values_str = ",".join(["(%s, %s, %s)"] * len(batch))
-                flat_values = [v for triple in batch for v in triple]
-                
-                conn.execute(f"""
-                    UPDATE trade_intel_assets 
-                    SET pick_slot = v.slot, pick_order = v.order
-                    FROM (VALUES {values_str}) AS v(slot, order, asset_id)
-                    WHERE trade_intel_assets.id = v.asset_id
-                """, flat_values)
+            _bulk_update(
+                conn,
+                "UPDATE trade_intel_assets SET pick_slot = %s, pick_order = %s WHERE id = %s",
+                all_updates,
+            )
 
-    print(f"Stage 2: {'would update' if dry_run else 'updated'} {updated}, "
-          f"skipped {skipped} (draft order not yet set)")
+    print(f"Stage 2: {'would update' if dry_run else 'updated'} {len(all_updates)} picks")
 
 
 # ---------------------------------------------------------------------------
-# Stage 3: fallback — estimate early/mid/late from current standings
+# Stage 3: fallback — estimate early/mid/late from standings, parallelized
 # ---------------------------------------------------------------------------
 
-def stage3(dry_run: bool = False):
+def _fetch_standings(league_id: str) -> tuple[str, list[str]]:
+    """Returns (league_id, [roster_id, ...] sorted worst→best record)."""
+    rosters = _get(f"{SLEEPER_BASE}/league/{league_id}/rosters")
+    if not rosters:
+        return league_id, []
+
+    def sort_key(r: dict) -> tuple:
+        s = r.get("settings") or {}
+        return (s.get("wins", 0), s.get("fpts", 0) + s.get("fpts_decimal", 0) * 0.01)
+
+    return league_id, [str(r["roster_id"]) for r in sorted(rosters, key=sort_key)]
+
+
+def stage3(dry_run: bool = False, workers: int = 20) -> None:
     """
-    For picks that still have no pick_order after stage 2 (draft order not set),
-    estimate from current league standings: worst record → early pick.
-    Only used for future picks where the draft order hasn't been decided.
+    For picks that still have no pick_order after stage 2, estimate from
+    current standings: worst record → early pick. Only meaningful for future
+    picks where the draft order hasn't been decided yet.
     """
     with get_conn() as conn:
         rows = conn.execute(
@@ -281,65 +338,48 @@ def stage3(dry_run: bool = False):
         print("Stage 3: nothing to do.")
         return
 
-    print(f"Stage 3: {len(rows)} picks to estimate from standings")
+    league_ids = {r["league_id"] for r in rows}
+    print(f"Stage 3: {len(rows)} picks across {len(league_ids)} leagues — fetching standings in parallel")
 
-    # Cache standings per league
-    standings_cache: dict[str, list[str]] = {}  # league_id → [roster_id, ...] worst→best
+    standings: dict[str, list[str]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_fetch_standings, lid): lid for lid in league_ids}
+        for fut in as_completed(futures):
+            lid = futures[fut]
+            try:
+                _, order = fut.result()
+                standings[lid] = order
+            except Exception as e:
+                print(f"  [WARN] league {lid} standings fetch failed: {e}")
+                standings[lid] = []
 
-    def get_standings(league_id: str, num_teams: int) -> list[str]:
-        if league_id in standings_cache:
-            return standings_cache[league_id]
-        rosters = _get(f"{SLEEPER_BASE}/league/{league_id}/rosters")
-        time.sleep(RATE_SLEEP)
-        if not rosters:
-            standings_cache[league_id] = []
-            return []
-        # Sort by wins ASC then points ASC → worst team first (earliest pick)
-        def sort_key(r):
-            s = r.get("settings") or {}
-            return (s.get("wins", 0), s.get("fpts", 0) + s.get("fpts_decimal", 0) * 0.01)
-        sorted_rosters = sorted(rosters, key=sort_key)
-        order = [str(r["roster_id"]) for r in sorted_rosters]
-        standings_cache[league_id] = order
-        return order
+    all_updates: list[tuple[str, int]] = []  # (pick_order, asset_id)
+    skipped = 0
 
-    # Collect bulk updates
-    bulk_updates = []
-    updated = skipped = 0
-    
     for r in rows:
-        num_teams = r["num_teams"] or 12
-        order     = get_standings(r["league_id"], num_teams)
+        order = standings.get(r["league_id"], [])
         if not order:
             skipped += 1
             continue
         try:
-            slot = order.index(str(r["pick_roster_id"])) + 1  # 1-based
+            slot = order.index(str(r["pick_roster_id"])) + 1
         except ValueError:
             skipped += 1
             continue
+        num_teams = r["num_teams"] or 12
+        all_updates.append((_slot_to_order(slot, num_teams), r["asset_id"]))
 
-        pick_order = _slot_to_order(slot, num_teams)
-        bulk_updates.append((pick_order, r["asset_id"]))
-        updated += 1
+    print(f"Stage 3: {len(all_updates)} picks estimated, {skipped} skipped")
 
-    # Perform bulk updates
-    if bulk_updates and not dry_run:
+    if not dry_run and all_updates:
         with get_conn() as conn:
-            for i in range(0, len(bulk_updates), BATCH_SIZE):
-                batch = bulk_updates[i:i + BATCH_SIZE]
-                values_str = ",".join(["(%s, %s)"] * len(batch))
-                flat_values = [v for pair in batch for v in pair]
-                
-                conn.execute(f"""
-                    UPDATE trade_intel_assets 
-                    SET pick_order = v.order
-                    FROM (VALUES {values_str}) AS v(order, asset_id)
-                    WHERE trade_intel_assets.id = v.asset_id
-                """, flat_values)
+            _bulk_update(
+                conn,
+                "UPDATE trade_intel_assets SET pick_order = %s WHERE id = %s",
+                all_updates,
+            )
 
-    print(f"Stage 3 (standings estimate): "
-          f"{'would update' if dry_run else 'updated'} {updated}, skipped {skipped}")
+    print(f"Stage 3: {'would update' if dry_run else 'updated'} {len(all_updates)} picks (standings estimate)")
 
 
 # ---------------------------------------------------------------------------
@@ -348,20 +388,22 @@ def stage3(dry_run: bool = False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", choices=["1", "2", "3", "all"], default="all")
+    parser.add_argument("--stage",   choices=["1", "2", "3", "all"], default="all")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--workers", type=int, default=20,
+                        help="Parallel workers for HTTP fetches (default 20)")
     args = parser.parse_args()
 
     if args.dry_run:
         print("[DRY RUN] no DB writes will be made\n")
 
     if args.stage in ("1", "all"):
-        stage1(dry_run=args.dry_run)
+        stage1(dry_run=args.dry_run, workers=args.workers)
 
     if args.stage in ("2", "all"):
-        stage2(dry_run=args.dry_run)
+        stage2(dry_run=args.dry_run, workers=args.workers)
 
     if args.stage in ("3", "all"):
-        stage3(dry_run=args.dry_run)
+        stage3(dry_run=args.dry_run, workers=args.workers)
 
     print("\nDone.")
