@@ -466,6 +466,7 @@ BASE_HTML = """
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-VSFIQE83CvDpvB8HZFT0tkygIYSuFv09e3hXI4hgzH7VJ3jYMD/ZCnJNj0P5GqvRr9m7dg+Y1Xkz8AUjI2LQ==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <script>
       {plotly_js}
     </script>
@@ -7975,9 +7976,9 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
         <div class="ti-controls">
           <div class="ti-tabs">
-            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')">Trending</button>
-            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')">Buy Low</button>
-            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')">Sell High</button>
+            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')"><i class="fa-solid fa-fire"></i> Trending</button>
+            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
+            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
           </div>
           <div class="ti-pos-filters">
             <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
@@ -8165,7 +8166,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             : '<span style="color:var(--text-muted)">—</span>';
 
           const sentiment = bsr != null
-            ? (bsr >= 1.2 ? '🟢 Buy pressure' : bsr <= 0.8 ? '🔴 Sell pressure' : '⚪ Neutral')
+            ? (bsr >= 1.2
+                ? '<i class="fa-solid fa-circle" style="color:#10b981;font-size:9px;vertical-align:middle;"></i> Buy pressure'
+                : bsr <= 0.8
+                  ? '<i class="fa-solid fa-circle" style="color:#ef4444;font-size:9px;vertical-align:middle;"></i> Sell pressure'
+                  : '<i class="fa-regular fa-circle" style="color:var(--text-muted);font-size:9px;vertical-align:middle;"></i> Neutral')
             : '';
 
           return `<div class="ti-card" onclick="openPlayerModal('${{p.player_id}}','${{name.replace(/'/g,"\\\\'")}}')">
@@ -8212,9 +8217,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
 
         <div class="tdb-toolbar">
           <div class="tdb-search-wrap">
-            <svg class="tdb-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
-              <circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3" stroke-linecap="round"/>
-            </svg>
+            <i class="fa-solid fa-magnifying-glass tdb-search-icon"></i>
             <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
           </div>
           <div class="tdb-lt-filters">
@@ -8242,8 +8245,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         flex: 1; min-width: 200px; position: relative;
       }}
       .tdb-search-icon {{
-        position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-        width: 16px; height: 16px; color: var(--text-muted); pointer-events: none;
+        position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+        font-size: 13px; color: var(--text-muted); pointer-events: none;
       }}
       .tdb-search {{
         width: 100%; padding: 9px 12px 9px 34px; border-radius: 8px;
@@ -11873,27 +11876,25 @@ def api_trade_intel_trending():
         else:
             value_col_expr = f"s.market_value_{fmt}"
 
+        _q = f"""
+            SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
+                   {value_col_expr} AS market_value, s.buy_sell_ratio,
+                   pv.{model_col} AS model_value, pv.position, pv.team
+            FROM trade_intel_player_stats s
+            LEFT JOIN player_values pv ON pv.player_id = s.player_id
+            WHERE s.season = %s AND s.trade_count > 0
+            ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
+            LIMIT %s
+            """
         with get_conn() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT
-                    s.player_id,
-                    s.trade_count_7d,
-                    s.trade_count_30d,
-                    s.trade_count,
-                    {value_col_expr}       AS market_value,
-                    s.buy_sell_ratio,
-                    pv.{model_col}         AS model_value,
-                    pv.position,
-                    pv.team
-                FROM trade_intel_player_stats s
-                LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                WHERE s.season = %s AND s.trade_count_7d > 0
-                ORDER BY s.trade_count_7d DESC
-                LIMIT %s
-                """,
-                (season, limit)
-            ).fetchall()
+            rows = conn.execute(_q, (season, limit)).fetchall()
+            # Fall back to most recent season that has data
+            if not rows:
+                fallback_season = conn.execute(
+                    "SELECT season FROM trade_intel_player_stats WHERE trade_count > 0 ORDER BY season DESC LIMIT 1"
+                ).fetchone()
+                if fallback_season:
+                    rows = conn.execute(_q, (fallback_season["season"], limit)).fetchall()
 
         from utils.utils import load_players_index
         players_map = load_players_index() or {}
@@ -12169,6 +12170,10 @@ def api_trade_database():
         for r in trade_rows:
             tid   = r["id"]
             sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            side_a_assets = [describe(a) for a in sides["a"]]
+            side_b_assets = [describe(a) for a in sides["b"]]
+            if not side_a_assets or not side_b_assets:
+                continue
             trade_date = None
             if r["created_at"]:
                 try:
@@ -12182,8 +12187,8 @@ def api_trade_database():
                 "scoring_type": r["scoring_type"],
                 "is_superflex": r["is_superflex"],
                 "num_teams":   r["num_teams"],
-                "side_a":      [describe(a) for a in sides["a"]],
-                "side_b":      [describe(a) for a in sides["b"]],
+                "side_a":      side_a_assets,
+                "side_b":      side_b_assets,
             })
 
         return jsonify({"trades": result, "total": total, "has_more": has_more})
@@ -12300,19 +12305,24 @@ def api_trade_intel_similar_trades():
         for r in trade_rows:
             tid   = r["id"]
             sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            side_a = [describe_asset(a) for a in sides["a"]]
+            side_b = [describe_asset(a) for a in sides["b"]]
+            # Skip trades missing one side (incomplete data)
+            if not side_a or not side_b:
+                continue
             trade_date = None
             if r["created_at"]:
                 try:    trade_date = r["created_at"].strftime("%m/%d/%y")
                 except: trade_date = str(r["created_at"])[:10]
             result.append({
-                "trade_id":    r["transaction_id"],
-                "date":        trade_date,
-                "season":      r["season"],
+                "trade_id":     r["transaction_id"],
+                "date":         trade_date,
+                "season":       r["season"],
                 "scoring_type": r["scoring_type"],
                 "is_superflex": r["is_superflex"],
-                "num_teams":   r["num_teams"],
-                "side_a":      [describe_asset(a) for a in sides["a"]],
-                "side_b":      [describe_asset(a) for a in sides["b"]],
+                "num_teams":    r["num_teams"],
+                "side_a":       side_a,
+                "side_b":       side_b,
             })
 
         return jsonify({"trades": result})
@@ -12320,8 +12330,6 @@ def api_trade_intel_similar_trades():
     except Exception:
         logger.exception("[trade-intel/similar-trades] error")
         return jsonify({"error": "Internal error"}), 500
-
-        return jsonify({"trades": result})
 
     except Exception:
         logger.exception("[trade-intel/similar-trades] error")
