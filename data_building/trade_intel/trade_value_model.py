@@ -63,24 +63,30 @@ def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
     except (ValueError, TypeError):
         rd = 4
     
-    order = str(asset.get("pick_order") or "mid")
-    
     try:
         year = int(asset.get("pick_year") or datetime.now().year)
     except (ValueError, TypeError):
         year = datetime.now().year
-    
-    # Try exact slot first (e.g., "2026_1_01")
-    if order.isdigit():
-        key = f"{year}_{rd}_{int(order):02d}"
-        if key in pick_values:
-            return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
-    
+
+    sf = 1.5 if fmt == "sf" else 1.0
+
+    # Try exact slot first via pick_slot column (e.g., "2026_1_06")
+    slot = asset.get("pick_slot")
+    if slot:
+        try:
+            key = f"{year}_{rd}_{int(slot):02d}"
+            if key in pick_values:
+                return pick_values[key] * sf
+        except (ValueError, TypeError):
+            pass
+
+    order = str(asset.get("pick_order") or "mid")
+
     # Try bucket format (e.g., "2026_1_early")
     if order in ("early", "mid", "late"):
         key = f"{year}_{rd}_{order}"
         if key in pick_values:
-            return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
+            return pick_values[key] * sf
     
     # Try generic round (e.g., "2026_1")
     key = f"{year}_{rd}"
@@ -88,7 +94,7 @@ def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
         return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
     
     # Fallback to minimal value
-    return 10.0 * (1.5 if fmt == "sf" else 1.0)
+    return 10.0 * sf
 
 
 def _decay_weight(days_ago: float) -> float:
@@ -142,7 +148,7 @@ def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
         trade_ids = [r["id"] for r in trade_rows]
         asset_rows = conn.execute(
             """
-            SELECT trade_id, side, asset_type, player_id, pick_round, pick_order
+            SELECT trade_id, side, asset_type, player_id, pick_round, pick_order, pick_slot
             FROM trade_intel_assets
             WHERE trade_id = ANY(%s)
             """,
