@@ -8265,8 +8265,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         background: var(--text-color); color: var(--card-bg); border-color: var(--text-color);
       }}
       .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
-      .tdb-list {{ display: flex; flex-direction: column; gap: 8px; }}
-      .tdb-more-wrap {{ text-align: center; margin-top: 20px; }}
+      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+      @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
+      .tdb-more-wrap {{ text-align: center; margin-top: 20px; grid-column: 1 / -1; }}
       .tdb-more-btn {{
         padding: 9px 28px; border-radius: 20px; border: 1px solid var(--border-color);
         background: var(--card-bg); color: var(--text-color); cursor: pointer; font-size: 13px;
@@ -8337,7 +8338,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
           .then(data => {{
             const trades = data.trades || [];
             if (reset && trades.length === 0) {{
-              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;">No trades found.</div>';
+              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
               statusEl.textContent = '';
               moreBtn.style.display = 'none';
               loading = false;
@@ -12301,15 +12302,26 @@ def api_trade_intel_similar_trades():
             return {"type": "pick", "name": f"{s} Rd {rd}" + (f" ({order})" if order else ""),
                     "is_key_player": False}
 
+        side_a_ids_set = set(side_a_ids)
+
         result = []
         for r in trade_rows:
             tid   = r["id"]
             sides = assets_by_trade.get(tid, {"a": [], "b": []})
-            side_a = [describe_asset(a) for a in sides["a"]]
-            side_b = [describe_asset(a) for a in sides["b"]]
+            side_a_raw = [describe_asset(a) for a in sides["a"]]
+            side_b_raw = [describe_asset(a) for a in sides["b"]]
             # Skip trades missing one side (incomplete data)
-            if not side_a or not side_b:
+            if not side_a_raw or not side_b_raw:
                 continue
+            # Orient so user's side_a players appear on the left column.
+            # The cross-side SQL guarantees they're on opposite sides but the
+            # DB's 'a'/'b' labeling might be inverted relative to the user's.
+            if side_a_ids_set and any(
+                a.get("player_id") in side_a_ids_set for a in side_b_raw
+            ):
+                side_a, side_b = side_b_raw, side_a_raw
+            else:
+                side_a, side_b = side_a_raw, side_b_raw
             trade_date = None
             if r["created_at"]:
                 try:    trade_date = r["created_at"].strftime("%m/%d/%y")

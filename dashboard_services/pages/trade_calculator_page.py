@@ -335,8 +335,9 @@ def build_trade_calculator_body(
           <style>
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
-            .stl-list  {{ display:flex;flex-direction:column;gap:8px; }}
-            .stl-loading, .stl-empty {{ font-size:13px;color:var(--text-muted);padding:12px 0; }}
+            .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}
+            @media(max-width:600px) {{ .stl-list {{ grid-template-columns:1fr; }} }}
+            .stl-loading, .stl-empty {{ font-size:13px;color:var(--text-muted);padding:12px 0;grid-column:1/-1; }}
 
             .stl-card {{
               border:1px solid var(--border-color);
