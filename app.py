@@ -12141,7 +12141,7 @@ def api_trade_database():
             asset_rows = conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
-                       pick_season, pick_round, pick_order
+                       pick_season, pick_round, pick_order, pick_slot, pick_roster_id
                 FROM trade_intel_assets
                 WHERE trade_id = ANY(%s)
                 ORDER BY trade_id, side, id
@@ -12163,10 +12163,15 @@ def api_trade_database():
                 return {"type": "player", "player_id": pid,
                         "name": info.get("name") or pid,
                         "position": info.get("pos") or "?"}
-            s = str(a["pick_season"]) if a["pick_season"] else "?"
-            r = str(a["pick_round"])  if a["pick_round"]  else "?"
-            order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Rd {r}" + (f" ({order})" if order else "")}
+            s    = str(a["pick_season"]) if a["pick_season"] else "?"
+            r    = str(a["pick_round"])  if a["pick_round"]  else "?"
+            slot = a["pick_slot"]
+            if slot:
+                name = f"{s} Pick {r}.{str(slot).zfill(2)}"
+            else:
+                order = a["pick_order"] or ""
+                name  = f"{s} Rd {r}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": name}
 
         result = []
         for r in trade_rows:
@@ -12271,7 +12276,7 @@ def api_trade_intel_similar_trades():
             asset_rows = conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
-                       pick_season, pick_round, pick_order
+                       pick_season, pick_round, pick_order, pick_slot, pick_roster_id
                 FROM trade_intel_assets
                 WHERE trade_id = ANY(%s)
                 ORDER BY trade_id, side, id
@@ -12299,11 +12304,15 @@ def api_trade_intel_similar_trades():
                     "position": info.get("pos") or "?",
                     "is_key_player": pid in key_set,
                 }
-            s     = str(a["pick_season"]) if a["pick_season"] else "?"
-            rd    = str(a["pick_round"])  if a["pick_round"]  else "?"
-            order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Rd {rd}" + (f" ({order})" if order else ""),
-                    "is_key_player": False}
+            s    = str(a["pick_season"]) if a["pick_season"] else "?"
+            rd   = str(a["pick_round"])  if a["pick_round"]  else "?"
+            slot = a["pick_slot"]
+            if slot:
+                name = f"{s} Pick {rd}.{str(slot).zfill(2)}"
+            else:
+                order = a["pick_order"] or ""
+                name  = f"{s} Rd {rd}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": name, "is_key_player": False}
 
         side_a_ids_set = set(side_a_ids)
 

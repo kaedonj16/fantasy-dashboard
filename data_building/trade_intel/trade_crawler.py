@@ -82,7 +82,38 @@ def _pick_order(pick: dict) -> str | None:
     return "late"
 
 
-def _extract_assets(txn: dict) -> list[dict]:
+def _fetch_draft_slot_map(league_id: str) -> dict[tuple, int]:
+    """
+    Returns {(season_str, roster_id_str): slot} by reading the draft_order
+    from every draft in this league.
+
+    In dynasty rookie drafts, draft_order maps roster_id → draft slot within
+    the round (slot 1 = earliest pick = worst previous-season finish).
+    The slot is round-agnostic: a team at slot 6 has pick X.06 in every round.
+
+    Only populated once the commissioner has set the draft order for a season.
+    """
+    drafts = _get(f"/league/{league_id}/drafts")
+    if not drafts:
+        return {}
+
+    slot_map: dict[tuple, int] = {}
+    for d in drafts:
+        season   = str(d.get("season", ""))
+        draft_id = d.get("draft_id")
+        if not draft_id or not season:
+            continue
+        detail = _get(f"/draft/{draft_id}")
+        if not detail:
+            continue
+        order: dict = detail.get("draft_order") or {}
+        for roster_id, slot in order.items():
+            slot_map[(season, str(roster_id))] = int(slot)
+
+    return slot_map
+
+
+def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list[dict]:
     assets: list[dict] = []
     adds: dict[str, Any] = txn.get("adds") or {}
     drops: dict[str, Any] = txn.get("drops") or {}
@@ -109,17 +140,23 @@ def _extract_assets(txn: dict) -> list[dict]:
         })
 
     for pick in draft_picks:
-        receiver = str(pick.get("owner_id", ""))
-        side = side_map.get(receiver, "a")
+        receiver  = str(pick.get("owner_id", ""))
+        side      = side_map.get(receiver, "a")
         roster_id = pick.get("roster_id")
+        p_season  = pick.get("season")
+        p_round   = pick.get("round")
+        slot: int | None = None
+        if slot_map and roster_id is not None and p_season is not None:
+            slot = slot_map.get((str(p_season), str(roster_id)))
         assets.append({
-            "side": side,
-            "asset_type": "pick",
-            "player_id": None,
-            "pick_season": pick.get("season"),
-            "pick_round": pick.get("round"),
-            "pick_order": _pick_order(pick),
-            "pick_roster_id": str(roster_id) if roster_id is not None else None,
+            "side":            side,
+            "asset_type":      "pick",
+            "player_id":       None,
+            "pick_season":     p_season,
+            "pick_round":      p_round,
+            "pick_order":      _pick_order(pick),
+            "pick_roster_id":  str(roster_id) if roster_id is not None else None,
+            "pick_slot":       slot,
         })
 
     return assets
@@ -174,6 +211,9 @@ def crawl_league(
     if not week_trades:
         return 0
 
+    # Build slot map once per league so every pick gets its exact draft position
+    slot_map = _fetch_draft_slot_map(league_id)
+
     # Write everything in one DB connection
     new_trades = 0
     with get_conn() as conn:
@@ -204,18 +244,20 @@ def crawl_league(
                     continue
 
                 trade_db_id = result["id"]
-                assets = _extract_assets(txn)
+                assets = _extract_assets(txn, slot_map=slot_map)
                 if assets:
                     conn.execute(
                         """
                         INSERT INTO trade_intel_assets
                             (trade_id, side, asset_type, player_id,
-                             pick_season, pick_round, pick_order, pick_roster_id)
-                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
+                             pick_season, pick_round, pick_order,
+                             pick_roster_id, pick_slot)
+                        VALUES """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s,%s)"] * len(assets)),
                         [v for a in assets for v in (
                             trade_db_id, a["side"], a["asset_type"], a["player_id"],
                             a["pick_season"], a["pick_round"],
                             a["pick_order"], a.get("pick_roster_id"),
+                            a.get("pick_slot"),
                         )]
                     )
                 new_trades += 1

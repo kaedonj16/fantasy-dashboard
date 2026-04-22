@@ -1,42 +1,56 @@
 """
-Backfill pick_order (early/mid/late) for trade_intel_assets rows where it is null.
+Backfill pick_slot and pick_order for trade_intel_assets rows where they are null.
 
-Two-stage process:
-  Stage 1 — populate pick_roster_id for existing rows by re-fetching the original
-             Sleeper transactions (we have league_id + week + transaction_id).
-  Stage 2 — for each league/season with known pick_roster_id, fetch the Sleeper
-             draft's draft_order mapping (roster_id → slot) and update pick_order.
+The Sleeper /traded_picks endpoint gives us the original pick owner (roster_id)
+but NOT the slot. The slot comes from the draft's draft_order mapping
+(roster_id → slot), fetched via /draft/{draft_id}.
+
+Three stages:
+  Stage 1 — populate pick_roster_id for existing rows by re-fetching the
+             original Sleeper transactions (matched by league_id + week +
+             transaction_id, which we store).
+
+  Stage 2 — for each league with known pick_roster_id, fetch the Sleeper
+             draft details to get the draft_order map, then write pick_slot
+             and pick_order (early/mid/late).
+
+  Stage 3 — for leagues whose draft_order isn't set yet (future picks),
+             fall back to estimating early/mid/late from current roster
+             standings (wins/points).
 
 Run:
-    python scripts/backfill_pick_order.py [--stage 1|2|both] [--dry-run]
+    python scripts/backfill_pick_order.py [--stage 1|2|3|all] [--dry-run]
 """
 import argparse
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
-# Allow imports from project root
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests
 from dashboard_services.db import get_conn
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
-RATE_SLEEP   = 0.3   # seconds between Sleeper API calls
+RATE_SLEEP   = 0.25
 
 
 def _get(url: str) -> dict | list | None:
     try:
         r = requests.get(url, timeout=10)
+        if r.status_code == 429:
+            print("  [rate limit] sleeping 60s")
+            time.sleep(60)
+            r = requests.get(url, timeout=10)
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        print(f"  [WARN] GET {url} failed: {e}")
+        print(f"  [WARN] {url} → {e}")
         return None
 
 
-def _pick_order_from_slot(slot: int, num_teams: int) -> str:
-    """Convert a 1-based draft slot to early/mid/late."""
+def _slot_to_order(slot: int, num_teams: int) -> str:
     third = num_teams / 3
     if slot <= third:
         return "early"
@@ -46,18 +60,47 @@ def _pick_order_from_slot(slot: int, num_teams: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Shared: fetch draft_order for a league across all its seasons
+# ---------------------------------------------------------------------------
+
+def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
+    """
+    Returns {season_str: {roster_id_str: slot_int}} for every draft in
+    this league that has a draft_order set.
+    """
+    drafts = _get(f"{SLEEPER_BASE}/league/{league_id}/drafts")
+    time.sleep(RATE_SLEEP)
+    if not drafts:
+        return {}
+
+    result: dict[str, dict[str, int]] = {}
+    for d in drafts:
+        season   = str(d.get("season", ""))
+        draft_id = d.get("draft_id")
+        if not draft_id or not season:
+            continue
+        detail = _get(f"{SLEEPER_BASE}/draft/{draft_id}")
+        time.sleep(RATE_SLEEP)
+        if not detail:
+            continue
+        order = detail.get("draft_order") or {}
+        if order:
+            result[season] = {str(k): int(v) for k, v in order.items()}
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Stage 1: populate pick_roster_id for rows that have null
 # ---------------------------------------------------------------------------
 
-def stage1_populate_roster_id(dry_run: bool = False):
-    """
-    Re-fetch original Sleeper transactions to extract roster_id for each pick.
-    Groups work by (league_id, season, week) to minimise API calls.
-    """
+def stage1(dry_run: bool = False):
+    """Re-fetch original Sleeper transactions to extract roster_id for each pick."""
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT DISTINCT tit.league_id, tit.season, tit.week, tit.transaction_id, tit.id AS trade_db_id
+            SELECT DISTINCT tit.league_id, tit.season, tit.week,
+                            tit.transaction_id, tit.id AS trade_db_id
             FROM trade_intel_trades tit
             JOIN trade_intel_assets tia ON tia.trade_id = tit.id
             WHERE tia.asset_type = 'pick'
@@ -68,26 +111,23 @@ def stage1_populate_roster_id(dry_run: bool = False):
         ).fetchall()
 
     if not rows:
-        print("Stage 1: no rows need pick_roster_id — already done or no picks.")
+        print("Stage 1: nothing to do — all picks already have pick_roster_id.")
         return
 
     print(f"Stage 1: {len(rows)} trades with picks missing roster_id")
 
-    # Group by (league_id, season, week) so we fetch each week once
-    from collections import defaultdict
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
         groups[(r["league_id"], r["season"], r["week"])].append(r)
 
     updated = 0
     for (league_id, season, week), trade_list in groups.items():
-        url = f"{SLEEPER_BASE}/league/{league_id}/transactions/{week}"
+        url  = f"{SLEEPER_BASE}/league/{league_id}/transactions/{week}"
         txns = _get(url)
         time.sleep(RATE_SLEEP)
         if not txns:
             continue
 
-        # Build index: transaction_id → pick list
         txn_index = {str(t.get("transaction_id") or ""): t for t in txns}
 
         for r in trade_list:
@@ -99,18 +139,16 @@ def stage1_populate_roster_id(dry_run: bool = False):
                 continue
 
             with get_conn() as conn:
-                # Fetch asset rows for this trade
                 asset_rows = conn.execute(
                     """
-                    SELECT id, pick_season, pick_round
-                    FROM trade_intel_assets
-                    WHERE trade_id = %s AND asset_type = 'pick' AND pick_roster_id IS NULL
+                    SELECT id FROM trade_intel_assets
+                    WHERE trade_id = %s AND asset_type = 'pick'
+                      AND pick_roster_id IS NULL
                     ORDER BY id
                     """,
                     (r["trade_db_id"],),
                 ).fetchall()
 
-                # Match picks by order (both lists should align since we insert in order)
                 for asset, pick in zip(asset_rows, picks):
                     roster_id = pick.get("roster_id")
                     if roster_id is None:
@@ -122,24 +160,84 @@ def stage1_populate_roster_id(dry_run: bool = False):
                         )
                     updated += 1
 
-    print(f"Stage 1: {'would update' if dry_run else 'updated'} {updated} pick rows with roster_id")
+    print(f"Stage 1: {'would update' if dry_run else 'updated'} {updated} rows with roster_id")
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: populate pick_order using Sleeper draft_order
+# Stage 2: populate pick_slot + pick_order via draft_order
 # ---------------------------------------------------------------------------
 
-def stage2_populate_pick_order(dry_run: bool = False):
+def stage2(dry_run: bool = False):
     """
-    For each league/season with picks that have pick_roster_id but no pick_order,
-    fetch the Sleeper draft for that season and map roster_id → draft_slot.
+    For picks with known pick_roster_id, fetch each league's draft_order and
+    write pick_slot (exact position, e.g. 6) and pick_order (early/mid/late).
     """
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT DISTINCT tit.league_id, tia.pick_season, tia.pick_round,
-                            tia.pick_roster_id, tia.id AS asset_id,
-                            til.num_teams
+            SELECT tia.id AS asset_id, tit.league_id,
+                   tia.pick_season, tia.pick_roster_id, til.num_teams
+            FROM trade_intel_assets tia
+            JOIN trade_intel_trades tit ON tit.id = tia.trade_id
+            LEFT JOIN trade_intel_leagues til ON til.league_id = tit.league_id
+            WHERE tia.asset_type = 'pick'
+              AND tia.pick_slot IS NULL
+              AND tia.pick_roster_id IS NOT NULL
+              AND tia.pick_season IS NOT NULL
+            """
+        ).fetchall()
+
+    if not rows:
+        print("Stage 2: nothing to do.")
+        return
+
+    print(f"Stage 2: {len(rows)} picks to update")
+
+    # Build draft orders once per league
+    league_orders: dict[str, dict[str, dict[str, int]]] = {}
+    league_ids = {r["league_id"] for r in rows}
+    for lid in league_ids:
+        league_orders[lid] = _build_league_draft_orders(lid)
+        print(f"  {lid}: {len(league_orders[lid])} season(s) with draft order")
+
+    updated = skipped = 0
+    for r in rows:
+        season_orders = league_orders.get(r["league_id"], {})
+        order_map     = season_orders.get(str(r["pick_season"]), {})
+        slot          = order_map.get(str(r["pick_roster_id"]))
+        if slot is None:
+            skipped += 1
+            continue
+
+        num_teams  = r["num_teams"] or 12
+        pick_order = _slot_to_order(slot, num_teams)
+        if not dry_run:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE trade_intel_assets SET pick_slot = %s, pick_order = %s WHERE id = %s",
+                    (slot, pick_order, r["asset_id"]),
+                )
+        updated += 1
+
+    print(f"Stage 2: {'would update' if dry_run else 'updated'} {updated}, "
+          f"skipped {skipped} (draft order not yet set)")
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: fallback — estimate early/mid/late from current standings
+# ---------------------------------------------------------------------------
+
+def stage3(dry_run: bool = False):
+    """
+    For picks that still have no pick_order after stage 2 (draft order not set),
+    estimate from current league standings: worst record → early pick.
+    Only used for future picks where the draft order hasn't been decided.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT tia.id AS asset_id, tit.league_id,
+                   tia.pick_season, tia.pick_roster_id, til.num_teams
             FROM trade_intel_assets tia
             JOIN trade_intel_trades tit ON tit.id = tia.trade_id
             LEFT JOIN trade_intel_leagues til ON til.league_id = tit.league_id
@@ -151,57 +249,45 @@ def stage2_populate_pick_order(dry_run: bool = False):
         ).fetchall()
 
     if not rows:
-        print("Stage 2: no rows need pick_order — already done or missing roster_id.")
+        print("Stage 3: nothing to do.")
         return
 
-    print(f"Stage 2: {len(rows)} pick assets to update")
+    print(f"Stage 3: {len(rows)} picks to estimate from standings")
 
-    # Cache draft orders: (league_id, season) → {roster_id: slot}
-    draft_order_cache: dict[tuple, dict] = {}
+    # Cache standings per league
+    standings_cache: dict[str, list[str]] = {}  # league_id → [roster_id, ...] worst→best
 
-    def get_draft_order(league_id: str, season: int) -> dict:
-        key = (league_id, season)
-        if key in draft_order_cache:
-            return draft_order_cache[key]
-
-        drafts = _get(f"{SLEEPER_BASE}/league/{league_id}/drafts")
+    def get_standings(league_id: str, num_teams: int) -> list[str]:
+        if league_id in standings_cache:
+            return standings_cache[league_id]
+        rosters = _get(f"{SLEEPER_BASE}/league/{league_id}/rosters")
         time.sleep(RATE_SLEEP)
-        if not drafts:
-            draft_order_cache[key] = {}
-            return {}
-
-        # Find the rookie/regular draft for this season
-        order = {}
-        for d in drafts:
-            if str(d.get("season")) != str(season):
-                continue
-            draft_id = d.get("draft_id")
-            if not draft_id:
-                continue
-            detail = _get(f"{SLEEPER_BASE}/draft/{draft_id}")
-            time.sleep(RATE_SLEEP)
-            if not detail:
-                continue
-            do = detail.get("draft_order") or {}
-            if do:
-                # draft_order maps roster_id (as string) → slot (1-based)
-                order = {str(k): int(v) for k, v in do.items()}
-                break  # use first draft that has an order
-
-        draft_order_cache[key] = order
+        if not rosters:
+            standings_cache[league_id] = []
+            return []
+        # Sort by wins ASC then points ASC → worst team first (earliest pick)
+        def sort_key(r):
+            s = r.get("settings") or {}
+            return (s.get("wins", 0), s.get("fpts", 0) + s.get("fpts_decimal", 0) * 0.01)
+        sorted_rosters = sorted(rosters, key=sort_key)
+        order = [str(r["roster_id"]) for r in sorted_rosters]
+        standings_cache[league_id] = order
         return order
 
-    updated = 0
-    skipped = 0
+    updated = skipped = 0
     for r in rows:
         num_teams = r["num_teams"] or 12
-        order_map = get_draft_order(r["league_id"], r["pick_season"])
-        slot = order_map.get(str(r["pick_roster_id"]))
-        if slot is None:
+        order     = get_standings(r["league_id"], num_teams)
+        if not order:
+            skipped += 1
+            continue
+        try:
+            slot = order.index(str(r["pick_roster_id"])) + 1  # 1-based
+        except ValueError:
             skipped += 1
             continue
 
-        pick_order = _pick_order_from_slot(slot, num_teams)
+        pick_order = _slot_to_order(slot, num_teams)
         if not dry_run:
             with get_conn() as conn:
                 conn.execute(
@@ -210,7 +296,8 @@ def stage2_populate_pick_order(dry_run: bool = False):
                 )
         updated += 1
 
-    print(f"Stage 2: {'would update' if dry_run else 'updated'} {updated} rows, skipped {skipped} (draft order not found)")
+    print(f"Stage 3 (standings estimate): "
+          f"{'would update' if dry_run else 'updated'} {updated}, skipped {skipped}")
 
 
 # ---------------------------------------------------------------------------
@@ -218,18 +305,21 @@ def stage2_populate_pick_order(dry_run: bool = False):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Backfill pick_order for trade_intel_assets")
-    parser.add_argument("--stage", choices=["1", "2", "both"], default="both")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=["1", "2", "3", "all"], default="all")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     if args.dry_run:
-        print("[DRY RUN] no DB writes will be made")
+        print("[DRY RUN] no DB writes will be made\n")
 
-    if args.stage in ("1", "both"):
-        stage1_populate_roster_id(dry_run=args.dry_run)
+    if args.stage in ("1", "all"):
+        stage1(dry_run=args.dry_run)
 
-    if args.stage in ("2", "both"):
-        stage2_populate_pick_order(dry_run=args.dry_run)
+    if args.stage in ("2", "all"):
+        stage2(dry_run=args.dry_run)
 
-    print("Done.")
+    if args.stage in ("3", "all"):
+        stage3(dry_run=args.dry_run)
+
+    print("\nDone.")
