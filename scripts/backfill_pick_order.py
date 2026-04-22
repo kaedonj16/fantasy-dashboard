@@ -355,7 +355,7 @@ def stage3(dry_run: bool = False, workers: int = 20) -> None:
                 print(f"  [WARN] league {lid} standings fetch failed: {e}")
                 standings[lid] = []
 
-    all_updates: list[tuple[str, int]] = []  # (pick_order, asset_id)
+    all_updates: list[tuple[int, int]] = []  # (slot, asset_id)
     skipped = 0
 
     for r in rows:
@@ -368,8 +368,7 @@ def stage3(dry_run: bool = False, workers: int = 20) -> None:
         except ValueError:
             skipped += 1
             continue
-        num_teams = r["num_teams"] or 12
-        all_updates.append((_slot_to_order(slot, num_teams), r["asset_id"]))
+        all_updates.append((slot, r["asset_id"]))
 
     print(f"Stage 3: {len(all_updates)} picks estimated, {skipped} skipped")
 
@@ -377,7 +376,7 @@ def stage3(dry_run: bool = False, workers: int = 20) -> None:
         with get_conn() as conn:
             _bulk_update(
                 conn,
-                "UPDATE trade_intel_assets SET pick_order = %s WHERE id = %s",
+                "UPDATE trade_intel_assets SET pick_slot = %s WHERE id = %s",
                 all_updates,
             )
 
