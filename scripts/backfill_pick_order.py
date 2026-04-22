@@ -27,6 +27,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -50,7 +51,7 @@ _SESSION.mount("http://", _adapter)
 _SESSION.mount("https://", _adapter)
 
 
-def _get(url: str) -> dict | list | None:
+def _get(url: str) -> Union[dict, list, None]:
     try:
         r = _SESSION.get(url, timeout=10)
         if r.status_code == 429:
