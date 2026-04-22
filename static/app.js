@@ -808,7 +808,7 @@ window.initTradePage = function initTradePage(root = document) {
       metaBits.push('<span class="player-badge player-badge-rookie">PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+      metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
     }
 
     metaSpan.innerHTML = metaBits.join(" • ");
@@ -852,7 +852,7 @@ window.initTradePage = function initTradePage(root = document) {
       metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+      metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
     }
 
     sub.innerHTML = metaBits.join(" • ");
@@ -1389,7 +1389,7 @@ window.initTradePage = function initTradePage(root = document) {
         metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
       }
       if (isBreakout(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
       }
 
       metaEl.innerHTML = metaBits.join(" • ");
@@ -1719,7 +1719,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const bsr = r.buy_sell_ratio;
       const bsrLabel = bsr != null
-        ? (bsr > 0.6 ? "🟢 Buy pressure" : bsr < 0.4 ? "🔴 Sell pressure" : "⚪ Neutral")
+        ? (bsr > 0.6 ? "<i class=\"fa-solid fa-circle\" style=\"color:#10b981;font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Buy pressure" : bsr < 0.4 ? "<i class=\"fa-solid fa-circle\" style=\"color:#ef4444;font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Sell pressure" : "<i class=\"fa-regular fa-circle\" style=\"color:var(--text-muted);font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Neutral")
         : "";
 
       const packages = (r.common_packages || []).slice(0, 2).map(pkg => {
@@ -2101,7 +2101,7 @@ window.initTradePage = function initTradePage(root = document) {
           let html = '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Roster Depth</div><div class="scarcity-notes-list">';
           entries.forEach(([pos, w]) => {
             const cls = w.severity === 'danger' ? 'depth-danger' : 'depth-caution';
-            const icon = w.severity === 'danger' ? '⚠️' : '⚡';
+            const icon = w.severity === 'danger' ? '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>' : '<i class="fa-solid fa-bolt" aria-hidden="true"></i>';
             html += `<div class="scarcity-note-row ${cls}"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${icon} ${w.warning}</span></div>`;
           });
           html += '</div></div>';
@@ -3727,14 +3727,14 @@ document.addEventListener('DOMContentLoaded', function() {
       navPillsContainer.classList.toggle('nav-open');
 
       // Update hamburger icon
-      navToggle.textContent = navPillsContainer.classList.contains('nav-open') ? '✕' : '☰';
+      navToggle.innerHTML = navPillsContainer.classList.contains('nav-open') ? '<i class="fa-solid fa-xmark" aria-hidden="true"></i>' : '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
     });
 
     // Close menu when clicking outside
     document.addEventListener('click', function(e) {
       if (!navToggle.contains(e.target) && !navPillsContainer.contains(e.target)) {
         navPillsContainer.classList.remove('nav-open');
-        navToggle.textContent = '☰';
+        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
       }
     });
 
@@ -3743,7 +3743,7 @@ document.addEventListener('DOMContentLoaded', function() {
       pill.addEventListener('click', function() {
         if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger — keep hamburger open
         navPillsContainer.classList.remove('nav-open');
-        navToggle.textContent = '☰';
+        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
       });
     });
 
@@ -3751,7 +3751,7 @@ document.addEventListener('DOMContentLoaded', function() {
     navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(item => {
       item.addEventListener('click', function() {
         navPillsContainer.classList.remove('nav-open');
-        navToggle.textContent = '☰';
+        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
         const wrapper = document.getElementById('playersNavDropdown');
         if (wrapper) wrapper.classList.remove('open');
       });
@@ -3814,12 +3814,12 @@ document.addEventListener('DOMContentLoaded', function() {
           // Expand
           targetBody.classList.remove('collapsed');
           this.classList.remove('collapsed');
-          this.textContent = '▼';
+          this.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
         } else {
           // Collapse
           targetBody.classList.add('collapsed');
           this.classList.add('collapsed');
-          this.textContent = '▶';
+          this.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
         }
       }
     });
@@ -4029,7 +4029,7 @@ function openPlayerModal(playerId, playerName) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="playerModalBreakoutSlot"></span>
-        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;">☆</button>
+        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;"><i class="fa-regular fa-star" aria-hidden="true"></i></button>
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
@@ -4101,7 +4101,7 @@ function openPlayerModal(playerId, playerName) {
         badges += '<span class="rookie-badge">ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
-        badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+        badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
 
       // Name with inline badges
@@ -4725,7 +4725,7 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (metrics.efficiency_trend != null) {
     const trend = metrics.efficiency_trend;
-    const icon = trend > 5 ? '↗ ' : trend < -5 ? '↘ ' : '';
+    const icon = trend > 5 ? '<i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> ' : trend < -5 ? '<i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i> ' : '';
     defs.push({
       label: 'Eff Trend',
       fill: Math.min(Math.max((trend + 50) / 100 * 100, 0), 100),
@@ -4763,10 +4763,10 @@ function toggleGameLogYear(year) {
 
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
-    toggle.textContent = '▶';
+    toggle.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
   } else {
     content.classList.add('expanded');
-    toggle.textContent = '▼';
+    toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
   }
 }
 
@@ -4797,7 +4797,7 @@ function _toggleWatchlist(player) {
 
 function _updateWatchlistBtn(btn, player_id) {
   const watched = _isWatched(player_id);
-  btn.textContent = watched ? '★' : '☆';
+  btn.innerHTML = watched ? '<i class="fa-solid fa-star" aria-hidden="true"></i>' : '<i class="fa-regular fa-star" aria-hidden="true"></i>';
   btn.title = watched ? 'Remove from watchlist' : 'Add to watchlist';
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
 }
@@ -4812,7 +4812,7 @@ function _refreshWatchlistNav() {
   }
   if (!listEl) return;
   if (!list.length) {
-    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click ☆ in a player card to add.</div>';
+    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click the <i class="fa-regular fa-star" aria-hidden="true"></i> icon in a player card to add.</div>';
     return;
   }
   listEl.innerHTML = list.map(p =>
@@ -5485,7 +5485,7 @@ function addBreakoutBadgesToTeamsPage() {
       
       // Only show breakout badge if player is not elite
       if (!isElite && isBreakout(playerId)) {
-        badges.push('<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>');
+        badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
       }
       
       // Add badges after player name
@@ -5825,7 +5825,7 @@ function _renderBkModalContent(data, playerId) {
   const scoreStr = score.toFixed(1);
 
   const breakoutType = data.breakout_type || {};
-  const emoji  = breakoutType.emoji || '📊';
+  const iconHtml  = breakoutType.icon_html || '<i class="fa-solid fa-chart-simple" aria-hidden="true"></i>';
   const label  = breakoutType.profile_label || 'Breakout Candidate';
   const driver = breakoutType.primary_driver || 'balanced';
   const formattedPhase = data.phase
@@ -6035,7 +6035,7 @@ function renderTeamDetails(data) {
         badges += '<span class="rookie-badge">ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
-        badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+        badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
 
       rosterHTML += `
@@ -6370,15 +6370,15 @@ document.addEventListener('click', (e) => {
               <div class="tour-mock-data">
                 <h4>2024 Season Awards</h4>
                 <div class="award-item">
-                  <span class="award-winner">🏆 Team Alpha</span>
+                  <span class="award-winner"><i class="fa-solid fa-trophy" aria-hidden="true"></i> Team Alpha</span>
                   <span class="award-desc">League Champion</span>
                 </div>
                 <div class="award-item">
-                  <span class="award-winner">⭐ Player One</span>
+                  <span class="award-winner"><i class="fa-solid fa-star" aria-hidden="true"></i> Player One</span>
                   <span class="award-desc">MVP</span>
                 </div>
                 <div class="award-item">
-                  <span class="award-winner">🚀 Player Two</span>
+                  <span class="award-winner"><i class="fa-solid fa-rocket" aria-hidden="true"></i> Player Two</span>
                   <span class="award-desc">Breakout Player</span>
                 </div>
               </div>

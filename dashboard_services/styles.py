@@ -2167,7 +2167,7 @@ TRADE_HTML = """
               <div class="search-wrapper">
                 <input id="sideASearch" class="search-input" type="text" autocomplete="off"
                        placeholder="Start typing a name..." />
-                <span class="search-icon">🔍</span>
+                <span class="search-icon"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
                 <div id="sideADropdown" class="dropdown" style="display:none;"></div>
               </div>
               <div class="chips" id="sideAChips"></div>
@@ -2187,7 +2187,7 @@ TRADE_HTML = """
               <div class="search-wrapper">
                 <input id="sideBSearch" class="search-input" type="text" autocomplete="off"
                        placeholder="Start typing a name..." />
-                <span class="search-icon">🔍</span>
+                <span class="search-icon"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
                 <div id="sideBDropdown" class="dropdown" style="display:none;"></div>
               </div>
               <div class="chips" id="sideBChips"></div>
