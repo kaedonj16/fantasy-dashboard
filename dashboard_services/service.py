@@ -1114,11 +1114,11 @@ def playoff_bracket(
         """
         if total_rounds == 1:
             # just a championship game
-            return "Finals 🏆"
+            return "Finals"
 
         # final is always "Finals"
         if r == total_rounds:
-            return "Finals 🏆"
+            return "Finals"
 
         if total_rounds == 2:
             # 4-team bracket: R1 = Semis, R2 = Finals

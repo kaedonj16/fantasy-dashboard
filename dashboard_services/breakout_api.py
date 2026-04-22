@@ -53,42 +53,42 @@ def classify_breakout_type(
         if primary_driver == 'opportunity':
             profile = 'elite_opportunity'
             profile_label = 'Elite Opportunity Breakout'
-            emoji = '🚀'
+            icon_class = 'fa-rocket'
         elif primary_driver == 'readiness':
             profile = 'elite_readiness'
             profile_label = 'Elite Talent Breakout'
-            emoji = '⭐'
+            icon_class = 'fa-star'
         else:
             profile = 'balanced_elite'
             profile_label = 'Elite Balanced Breakout'
-            emoji = '💎'
+            icon_class = 'fa-gem'
     elif overall_score >= 45:
         if primary_driver == 'opportunity':
             profile = 'strong_opportunity'
             profile_label = 'Strong Opportunity Situation'
-            emoji = '📈'
+            icon_class = 'fa-arrow-trend-up'
         elif primary_driver == 'readiness':
             profile = 'strong_readiness'
             profile_label = 'High-Talent Prospect'
-            emoji = '✨'
+            icon_class = 'fa-bolt'
         else:
             profile = 'balanced_strong'
             profile_label = 'Strong Balanced Profile'
-            emoji = '🎯'
+            icon_class = 'fa-bullseye'
     elif overall_score >= 35:
         profile = 'moderate'
         profile_label = 'Moderate Breakout Potential'
-        emoji = '📊'
+        icon_class = 'fa-chart-bar'
     else:
         profile = 'longshot'
         profile_label = 'Longshot Candidate'
-        emoji = '🎲'
+        icon_class = 'fa-dice'
 
     return {
         'primary_driver': primary_driver,
         'profile': profile,
         'profile_label': profile_label,
-        'emoji': emoji
+        'icon_class': icon_class,
     }
 
 

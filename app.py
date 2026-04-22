@@ -381,7 +381,7 @@ FORM_BODY = """
   <div class="home-content-wrapper">
     <section class="home-feature-grid">
     <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
       <h3>Trade Calculator</h3>
       <p>
         AI-powered trade analysis personalized to your roster. Get real-time value assessments,
@@ -390,7 +390,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i></div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
       <h3>Dynasty Values</h3>
       <p>
         Hybrid valuation model blending market consensus with production metrics, age curves,
@@ -399,7 +399,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-bolt" aria-hidden="true"></i></div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
       <h3>Weekly Hub</h3>
       <p>
         Live scoring context for every matchup. See projections, starters, and real-time updates
@@ -408,7 +408,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
       <h3>Team Analytics</h3>
       <p>
         Position strength breakdowns, roster composition analysis, and competitive advantages
@@ -417,7 +417,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i></div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
       <h3>Graphs & Trends</h3>
       <p>
         Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
@@ -466,7 +466,8 @@ BASE_HTML = """
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-VSFIQE83CvDpvB8HZFT0tkygIYSuFv09e3hXI4hgzH7VJ3jYMD/ZCnJNj0P5GqvRr9m7dg+Y1Xkz8AUjI2LQ==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link rel="stylesheet" href="/static/font-awesome.css">
+
     <script>
       {plotly_js}
     </script>
@@ -517,7 +518,7 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          &copy; 2025 BR Fantasy. All rights reserved.
+          © 2025 BR Fantasy. All rights reserved.
         </div>
       </div>
     </footer>
@@ -976,7 +977,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
-            "    <button class='nav-hamburger' id='navToggle' aria-label='Toggle navigation'><i class='fa-solid fa-bars' aria-hidden='true'></i></button>"
+            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
             f"    {home_pills_container}"
             "  </div>"
             "  <div class='nav-right'>"
@@ -1183,7 +1184,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
-        "    <button class='nav-hamburger' id='navToggle' aria-label='Toggle navigation'><i class='fa-solid fa-bars' aria-hidden='true'></i></button>"
+        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
         f"    {pills_container}"
         "  </div>"
         "  <div class='nav-right'>"
@@ -2812,9 +2813,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         chips_html += f"<span class='chip'>PA/G {papg_v:.1f}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
         if streak_chip and streak_frame_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire' aria-hidden='true'></i>{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
         elif streak_chip and streak_frame_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake' aria-hidden='true'></i>{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
         chips_html += "</div>"
 
         return f"""
@@ -2877,9 +2878,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         )
         css_cls = streak_class(row)
         if streak_chip and css_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire' aria-hidden='true'></i>{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
         elif streak_chip and css_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake' aria-hidden='true'></i>{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
 
         avatar_url = row.get("avatar")
@@ -3023,7 +3024,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="background: linear-gradient(180deg, #fff8e7, #ffe5b4);border:1px solid #f97316;">
           <div class="card-header">
             <h3 style="color:#dc2626;">Hottest Team</h3>
-            <h3 style="color:#dc2626;"><i class="fa-solid fa-fire" aria-hidden="true"></i> {hottest['Streak']}</h3>
+            <h3 style="color:#dc2626;"><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -3045,7 +3046,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="border: 1px solid #163b82f6;background: rgb(44 166 173 / 12%);color: #163b82f6;">
           <div class="card-header">
             <h3>Coldest Team</h3>
-            <h3><i class="fa-solid fa-snowflake" aria-hidden="true"></i> {coldest['Streak']}</h3>
+            <h3><i class="fa-solid fa-snowflake"></i> {coldest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -5861,7 +5862,7 @@ def build_teams_body(ctx: dict) -> str:
         table_rows.append(
             "<tr class='pos-row pos-picks-row'>"
             "  <td class='pos-name'>"
-            "    <span style='font-size:11px;opacity:0.7;'><i class='fa-solid fa-clipboard-list' aria-hidden='true'></i></span> PICKS"
+            "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
@@ -6457,7 +6458,7 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None, l
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Make a donation
+                  💸 Make a donation
                 </a>
               </p>
             </div>
@@ -6487,9 +6488,9 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None, l
             <div class="static-section">
               <div class="static-section-title">4. Follow & Subscribe</div>
               <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank"><i class="fa-brands fa-youtube" aria-hidden="true"></i> YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank"><i class="fa-brands fa-twitch" aria-hidden="true"></i> Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> Twitter/X</a>
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
               </div>
             </div>
 
@@ -6624,9 +6625,9 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None, l
               <p>You can message the creator directly via social platforms:</p>
 
               <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank"><i class="fa-brands fa-youtube" aria-hidden="true"></i> YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank"><i class="fa-brands fa-twitch" aria-hidden="true"></i> Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> Twitter/X</a>
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
               </div>
             </div>
 
@@ -7086,7 +7087,7 @@ def page_players(platform: str, season: int, league_id: str):
                        border:1px solid var(--border);background:var(--card-bg);
                        color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                           color:var(--text-muted);font-size:14px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+                           color:var(--text-muted);font-size:13px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
               <button id="prSearchClear" onclick="prClearSearch()"
                 style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -7181,7 +7182,7 @@ def page_players(platform: str, season: int, league_id: str):
 
         <!-- Empty state -->
         <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></div>
+          <div style="font-size:24px;margin-bottom:8px;opacity:0.4;"><i class="fa-solid fa-magnifying-glass"></i></div>
           No players match your filters
         </div>
 
@@ -7663,7 +7664,7 @@ def page_players(platform: str, season: int, league_id: str):
           let badges = '';
           if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
+          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
@@ -7801,7 +7802,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
         <!-- Empty State -->
         <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
-          <div style="font-size: 24px; margin-bottom: 12px;"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i></div>
+          <div style="font-size: 24px; margin-bottom: 12px; opacity:0.4;"><i class="fa-solid fa-chart-bar"></i></div>
           <div>No breakout candidates found</div>
         </div>
       </div>
@@ -7867,7 +7868,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           // Breakout type classification
           const breakoutType = candidate.breakout_type || {{}};
-          const iconHtml = breakoutType.icon_html || '<i class="fa-solid fa-chart-simple" aria-hidden="true"></i>';
+          const iconClass = breakoutType.icon_class || 'fa-chart-bar';
           const label = breakoutType.profile_label || 'Breakout Candidate';
           const driver = breakoutType.primary_driver || 'balanced';
 
@@ -7902,7 +7903,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div class="breakout-card-body">
                 <!-- Breakout Type Badge -->
                 <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
-                  <span style="font-size: 20px;">${{iconHtml}}</span>
+                  <i class="fa-solid ${{iconClass}}" style="font-size:18px;width:20px;text-align:center;"></i>
                   <span style="font-weight: 500; flex: 1;">${{label}}</span>
                   <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
@@ -8287,7 +8288,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
       .tdb-badge {{
         font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
-        background: var(--row, #1e293b); color: var(--text);
+        background: var(--bg-secondary, #1e293b); color: var(--text-muted);
         border: 1px solid var(--border-color);
       }}
       .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
@@ -8299,14 +8300,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-col-divider {{ background: var(--border-color); }}
       .tdb-asset {{
-        font-size: 14px; color: var(--text); font-weight:500;
+        font-size: 13px; color: var(--text-color);
         display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
       }}
-      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
-      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; }}
+      .tdb-asset.tdb-match {{ font-weight: 700; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 12px; }}
       .tdb-pos {{
         font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-        background: var(--row); color: var(--text); flex-shrink: 0;
+        background: var(--bg-secondary, #1e293b); color: var(--text-muted); flex-shrink: 0;
       }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
@@ -8538,7 +8539,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # ── Career standings table ──────────────────────────────────────────────
     table_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
-        rings = "<i class='fa-solid fa-trophy' aria-hidden='true'></i> " * int(row["Championships"]) if row["Championships"] > 0 else ""
+        rings = ('<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])) if row["Championships"] > 0 else ""
         table_rows_html += f"""
         <tr>
           <td>{i + 1}</td>
@@ -11860,7 +11861,6 @@ def api_trade_intel_trending():
     Most traded players in the last 7 days across all crawled leagues.
     Returns up to 25 players with trade counts and market vs model value delta.
     """
-    from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
         limit = min(int(request.args.get("limit") or 25), 50)
@@ -12166,7 +12166,7 @@ def api_trade_database():
             s = str(a["pick_season"]) if a["pick_season"] else "?"
             r = str(a["pick_round"])  if a["pick_round"]  else "?"
             order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Round {r}" + (f" ({order})" if order else "")}
+            return {"type": "pick", "name": f"{s} Rd {r}" + (f" ({order})" if order else "")}
 
         result = []
         for r in trade_rows:
@@ -12300,7 +12300,7 @@ def api_trade_intel_similar_trades():
             s     = str(a["pick_season"]) if a["pick_season"] else "?"
             rd    = str(a["pick_round"])  if a["pick_round"]  else "?"
             order = a["pick_order"] or ""
-            return {"type": "pick", "name": f"{s} Round {rd}" + (f" ({order})" if order else ""),
+            return {"type": "pick", "name": f"{s} Rd {rd}" + (f" ({order})" if order else ""),
                     "is_key_player": False}
 
         side_a_ids_set = set(side_a_ids)
