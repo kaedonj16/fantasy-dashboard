@@ -9323,29 +9323,46 @@ def api_trade_outcome():
             return 0.0
         
         def get_pick_value(asset: dict) -> float:
-            """Get current pick value using the same logic as trade value model."""
-            rd = int(asset.get("pick_round") or 4)
-            order = str(asset.get("pick_order") or "mid")
-            year = int(asset.get("pick_year") or trade_date[:4] if trade_date else datetime.now().year)
-            
-            # Try exact slot first (e.g., "2026_1_01")
-            if order.isdigit():
-                key = f"{year}_{rd}_{int(order):02d}"
-                if key in pick_values:
-                    return pick_values[key]
-            
-            # Try bucket format (e.g., "2026_1_early")
+            """Get current pick value, preferring WLS-derived bucket values."""
+            try:
+                rd = int(asset.get("pick_round") or 4)
+            except (ValueError, TypeError):
+                rd = 4
+            try:
+                year = int(asset.get("pick_season") or asset.get("pick_year") or
+                           (trade_date[:4] if trade_date else datetime.now().year))
+            except (ValueError, TypeError):
+                year = datetime.now().year
+
+            # Exact slot lookup (e.g. "2026_1_06")
+            slot = asset.get("pick_slot")
+            if slot:
+                try:
+                    key = f"{year}_{rd}_{int(slot):02d}"
+                    if key in pick_values:
+                        return float(pick_values[key])
+                except (ValueError, TypeError):
+                    pass
+
+            # Bucket lookup — derive bucket from slot if pick_order is absent
+            order = asset.get("pick_order")
+            if not order and slot:
+                try:
+                    s = int(slot)
+                    order = "early" if s <= 4 else ("mid" if s <= 8 else "late")
+                except (ValueError, TypeError):
+                    pass
+            order = order or "mid"
+
             if order in ("early", "mid", "late"):
                 key = f"{year}_{rd}_{order}"
                 if key in pick_values:
-                    return pick_values[key]
-            
-            # Try generic round (e.g., "2026_1")
+                    return float(pick_values[key])
+
             key = f"{year}_{rd}"
             if key in pick_values:
-                return pick_values[key]
-            
-            # Fallback to minimal value
+                return float(pick_values[key])
+
             return 10.0
 
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
