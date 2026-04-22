@@ -1,37 +1,43 @@
 """
 Trade-Derived Value Model.
 
-Solves for the set of player values that best explains observed trade behavior
-via weighted least squares (WLS) with regularization toward the model prior.
+Solves jointly for player values AND pick values that best explain observed
+trade behavior via weighted least squares (WLS) with regularization toward
+the model prior.
 
 Formulation
 -----------
-    min_v  Σ_t w_t · (Σ_{i∈A_t} v_i  −  Σ_{j∈B_t} v_j  −  b_t)²
+    min_v  Σ_t w_t · (Σ_{i∈A_t} v_i  −  Σ_{j∈B_t} v_j)²
            +  λ · Σ_i (v_i − prior_i)²
 
-    A[t, i] = +1  if player i is on side A of trade t
-              −1  if player i is on side B of trade t
-    b_t      = (pick values on side B_t) − (pick values on side A_t)
+    A[t, i] = +1  if asset i is on side A of trade t
+              −1  if asset i is on side B of trade t
     w_t      = time-decay weight (≤14d=1.0, 15-30d=0.6, 31-60d=0.25, 61+d=0.08)
     λ        = regularization strength  (LAMBDA_REG)
-    prior_i  = model value for player i
+    prior_i  = model value for player i  /  FantasyCalc value for pick bucket i
+
+    Unknowns: every player with trade data  +  every pick bucket with trade data
+    (e.g. "pick_2026_1_early", "pick_2026_2_mid", …)
 
 Closed-form normal equations:
-    (AᵀWA + λI) v = AᵀWb + λ·prior
+    (AᵀWA + λI) v = λ·prior        (b_t = 0: nothing left on RHS)
 
 Properties
 ----------
-• Multi-player packages handled naturally — each player appears at ±1; no
-  proportional splitting heuristics needed.
-• Triangulation: A→B 1:1 and B→C 2:1 implies C≈A/2, even if A↔C never traded.
+• Picks are first-class unknowns — their values are derived from the same
+  trade market that prices players, not from external tables.
+• External pick table (FantasyCalc / DynastyProcess blend) serves as the
+  regularization prior for picks, anchoring the solution when data is thin.
 • Players with no trade data stay at their model prior (λ term dominates).
-• LAMBDA_REG=15 → ~50 trades ≈ 65% market influence (mirrors MAX_BLEND logic).
+• LAMBDA_REG=15 → ~50 trades ≈ 65% market influence.
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -40,68 +46,55 @@ from dashboard_services.picks import load_pick_value_table
 
 logger = logging.getLogger(__name__)
 
-LAMBDA_REG = 15.0   # regularization strength — higher = more model prior
-MAX_VALUE  = 999.9
-MAX_LIFT   = 1.25   # trade data cannot push a player more than 25% above their model prior
-TOP_N_AT_MAX = 2    # aim for roughly this many players at the 999.9 ceiling
+LAMBDA_REG   = 15.0   # regularization strength
+MAX_VALUE    = 999.9
+MAX_LIFT     = 1.25   # player values capped at 125% of prior; picks float freely
+TOP_N_AT_MAX = 2      # players ranked 1-TOP_N land at MAX_VALUE ceiling
+
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
-def _pick_value(asset: dict, pick_values: dict, fmt: str = "1qb") -> float:
+# ---------------------------------------------------------------------------
+# Pick bucket helpers
+# ---------------------------------------------------------------------------
+
+def _slot_to_bucket(slot: int, num_teams: int = 12) -> str:
+    third = num_teams / 3
+    if slot <= third:
+        return "early"
+    if slot <= third * 2:
+        return "mid"
+    return "late"
+
+
+def _pick_key(asset: dict) -> str:
     """
-    Get pick value using dynamic pick value table.
-    
-    Args:
-        asset: Dict with pick_round, pick_order, pick_year
-        pick_values: Loaded pick value table from load_pick_value_table()
-        fmt: "1qb" or "sf" format
-    
-    Returns:
-        Pick value scaled by format
+    Map a pick asset to its WLS bucket key, e.g. 'pick_2026_1_early'.
+    Uses pick_slot → bucket when available, then pick_order, then round only.
     """
     try:
         rd = int(asset.get("pick_round") or 4)
     except (ValueError, TypeError):
         rd = 4
-    
     try:
-        year = int(asset.get("pick_year") or datetime.now().year)
+        year = int(asset.get("pick_season") or datetime.now().year)
     except (ValueError, TypeError):
         year = datetime.now().year
 
-    sf = 1.5 if fmt == "sf" else 1.0
-
-    # Try exact slot first via pick_slot column (e.g., "2026_1_06")
     slot = asset.get("pick_slot")
+    bucket: str | None = None
     if slot:
         try:
-            key = f"{year}_{rd}_{int(slot):02d}"
-            if key in pick_values:
-                return pick_values[key] * sf
+            bucket = _slot_to_bucket(int(slot))
         except (ValueError, TypeError):
             pass
 
-    order = str(asset.get("pick_order") or "mid")
+    if bucket is None:
+        order = asset.get("pick_order")
+        if order in ("early", "mid", "late"):
+            bucket = order
 
-    # Try bucket format (e.g., "2026_1_early")
-    if order in ("early", "mid", "late"):
-        key = f"{year}_{rd}_{order}"
-        if key in pick_values:
-            return pick_values[key] * sf
-    
-    # Try generic round (e.g., "2026_1")
-    key = f"{year}_{rd}"
-    if key in pick_values:
-        return pick_values[key] * (1.5 if fmt == "sf" else 1.0)
-    
-    # Fallback to minimal value
-    return 10.0 * sf
-
-
-def _decay_weight(days_ago: float) -> float:
-    if days_ago <= 14: return 1.0
-    if days_ago <= 30: return 0.6
-    if days_ago <= 60: return 0.25
-    return 0.08
+    return f"pick_{year}_{rd}_{bucket}" if bucket else f"pick_{year}_{rd}"
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +102,7 @@ def _decay_weight(days_ago: float) -> float:
 # ---------------------------------------------------------------------------
 
 def _load_prior() -> dict[str, dict]:
-    """Load raw model values from the JSON file as the WLS regularization prior.
-
-    Uses the JSON model file (not player_values) because player_values may be
-    partially populated between cron steps, causing elite players to be missing
-    from the prior and getting incorrect WLS floors.
-    """
+    """Load raw model values as the WLS regularization prior for players."""
     from utils.utils import load_model_value_table
     value_table = load_model_value_table(apply_calibration=False) or []
     return {
@@ -148,7 +136,8 @@ def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
         trade_ids = [r["id"] for r in trade_rows]
         asset_rows = conn.execute(
             """
-            SELECT trade_id, side, asset_type, player_id, pick_round, pick_order, pick_slot
+            SELECT trade_id, side, asset_type, player_id,
+                   pick_season, pick_round, pick_order, pick_slot
             FROM trade_intel_assets
             WHERE trade_id = ANY(%s)
             """,
@@ -173,20 +162,25 @@ def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
     return trades
 
 
+def _decay_weight(days_ago: float) -> float:
+    if days_ago <= 14: return 1.0
+    if days_ago <= 30: return 0.6
+    if days_ago <= 60: return 0.25
+    return 0.08
+
+
 # ---------------------------------------------------------------------------
-# Normal equations — incremental outer-product accumulation
+# Normal equations — picks and players as joint unknowns
 # ---------------------------------------------------------------------------
 
 def _build_normal_equations(
     trades: list[dict],
-    pid_idx: dict[str, int],
+    all_idx: dict[str, int],
     N: int,
-    fmt: str,
-    pick_values: dict,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """
-    Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full
-    M×N matrix — uses incremental outer products, one trade at a time.
+    Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full matrix.
+    Both players and pick buckets are unknowns — b_t = 0 for every trade.
 
     Returns (AtWA, AtWb, n_constraints).
     """
@@ -198,43 +192,33 @@ def _build_normal_equations(
         assets = trade["assets"]
         w      = trade["decay_weight"]
 
-        # (player_index, ±1) pairs for this trade
         terms: list[tuple[int, float]] = []
         for a in assets:
-            if a["asset_type"] != "player" or not a["player_id"]:
+            if a["asset_type"] == "player" and a["player_id"]:
+                key = a["player_id"]
+            elif a["asset_type"] == "pick":
+                key = _pick_key(a)
+            else:
                 continue
-            if a["player_id"] not in pid_idx:
+            if key not in all_idx:
                 continue
             sign = 1.0 if a["side"] == "a" else -1.0
-            terms.append((pid_idx[a["player_id"]], sign))
+            terms.append((all_idx[key], sign))
 
         if not terms:
             continue
 
-        # Pick value imbalance on the RHS
-        pick_a = sum(_pick_value(a, pick_values, fmt) for a in assets
-                     if a["asset_type"] == "pick" and a["side"] == "a")
-        pick_b = sum(_pick_value(a, pick_values, fmt) for a in assets
-                     if a["asset_type"] == "pick" and a["side"] == "b")
-        b_t = pick_b - pick_a
-
-        # Skip trades where one side has no contribution at all.
-        # Multi-team trades are stored in Sleeper as per-team records, so a
-        # 3-way deal produces fragments where one side appears empty.  These
-        # create constraints like (v_Bijan + others = 0) which force absurd
-        # negative values.  The analytics layer already drops these via
-        # recv_1qb > 0; we apply the same guard here.
-        has_a = any(s > 0 for _, s in terms) or pick_a > 0
-        has_b = any(s < 0 for _, s in terms) or pick_b > 0
+        # Drop one-sided trades (multi-team fragments stored as separate records)
+        has_a = any(s > 0 for _, s in terms)
+        has_b = any(s < 0 for _, s in terms)
         if not has_a or not has_b:
             continue
 
-        # Accumulate outer product into AtWA and update AtWb.
-        # k is typically 2–4 (players per trade), so the inner loop is cheap.
+        # b_t = 0: picks are in the matrix, nothing left on the RHS
         for idx_i, sign_i in terms:
             for idx_j, sign_j in terms:
                 AtWA[idx_i, idx_j] += w * sign_i * sign_j
-            AtWb[idx_i] += w * sign_i * b_t
+            # AtWb stays 0 for this trade
 
         n += 1
 
@@ -262,7 +246,7 @@ def _solve(
 
 
 # ---------------------------------------------------------------------------
-# DB write
+# DB / file writes
 # ---------------------------------------------------------------------------
 
 def _write_calibrated(rows: list[dict]) -> int:
@@ -284,6 +268,23 @@ def _write_calibrated(rows: list[dict]) -> int:
     return len(rows)
 
 
+def _write_pick_values(pick_values_1qb: dict[str, float], pick_values_sf: dict[str, float]) -> None:
+    """
+    Write WLS-derived pick values to a JSON file consumed by load_pick_value_table().
+    Keys are in load_pick_value_table() format: '{year}_{rd}_{bucket}'.
+    """
+    today = date.today().isoformat()
+    payload = {"date": today, "1qb": pick_values_1qb, "sf": pick_values_sf}
+
+    for path in [
+        DATA_DIR / f"pick_values_wls_{today}.json",
+        DATA_DIR / "pick_values_wls_latest.json",
+    ]:
+        path.write_text(json.dumps(payload, indent=2))
+
+    logger.info("[trade_value_model] Wrote %d WLS pick values", len(pick_values_1qb))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -301,7 +302,11 @@ def run_trade_value_model(
     lambda_reg: float  = LAMBDA_REG,
 ) -> dict:
     """
-    Derive player values from trade patterns and write to calibrated_value columns.
+    Derive player AND pick values from trade patterns.
+
+    Players:  written to calibrated_value columns in player_values table.
+    Picks:    written to data/pick_values_wls_latest.json, consumed by
+              load_pick_value_table() as a higher-priority source.
 
     lambda_reg: regularization strength.
         Higher  → values stay closer to the model prior.
@@ -313,91 +318,115 @@ def run_trade_value_model(
 
     logger.info("[trade_value_model] Season %d | λ=%.1f", season, lambda_reg)
 
-    prior         = _load_prior()
+    player_prior  = _load_prior()
     trades_1qb    = _load_trades(season, is_sf=False)
     trades_sf     = _load_trades(season, is_sf=True)
 
-    # Load dynamic pick values
+    # External pick table is the regularization prior for pick buckets
     try:
-        pick_values = load_pick_value_table()
-        logger.info("[trade_value_model] Loaded %d pick values", len(pick_values))
+        ext_pick_values = load_pick_value_table()
+        logger.info("[trade_value_model] Loaded %d external pick values (prior)", len(ext_pick_values))
     except Exception as e:
-        logger.warning("[trade_value_model] Failed to load pick values: %s", e)
-        pick_values = {}
+        logger.warning("[trade_value_model] Failed to load pick value prior: %s", e)
+        ext_pick_values = {}
 
-    logger.info(
-        "[trade_value_model] %d players in prior | 1QB trades=%d | SF trades=%d | picks=%d",
-        len(prior), len(trades_1qb), len(trades_sf), len(pick_values),
-    )
-
-    # Fall back to combined pool if one format has no data at all
     if not trades_1qb and not trades_sf:
         logger.warning("[trade_value_model] No trade data — nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
     if not trades_1qb:
-        logger.warning("[trade_value_model] No 1QB trades; using SF pool as fallback for 1QB solve")
         trades_1qb = trades_sf
     if not trades_sf:
-        logger.warning("[trade_value_model] No SF trades; using 1QB pool as fallback for SF solve")
         trades_sf = trades_1qb
 
-    if not prior:
+    if not player_prior:
         logger.warning("[trade_value_model] No prior data — nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
-    player_ids = sorted(prior.keys())
-    pid_idx    = {pid: i for i, pid in enumerate(player_ids)}
-    N          = len(player_ids)
+    # Collect all pick bucket keys seen in trades
+    pick_keys_seen: set[str] = set()
+    for trade in trades_1qb + trades_sf:
+        for a in trade["assets"]:
+            if a["asset_type"] == "pick":
+                pick_keys_seen.add(_pick_key(a))
 
-    prior_1qb = np.array([prior[pid]["value_1qb"] for pid in player_ids])
-    prior_sf  = np.array([prior[pid]["value_sf"]  for pid in player_ids])
+    player_ids = sorted(player_prior.keys())
+    pick_keys  = sorted(pick_keys_seen)
 
-    # Show top 5 priors so we can confirm elite players are loaded correctly
-    top_prior_idx = np.argsort(prior_1qb)[::-1][:5]
-    logger.info("[trade_value_model] Top 5 prior values (1QB):")
+    # Unified index: players first, then pick buckets
+    all_ids = player_ids + pick_keys
+    all_idx = {aid: i for i, aid in enumerate(all_ids)}
+    N       = len(all_ids)
+    n_pl    = len(player_ids)
+
+    logger.info(
+        "[trade_value_model] %d players + %d pick buckets = %d unknowns | "
+        "1QB trades=%d | SF trades=%d",
+        n_pl, len(pick_keys), N, len(trades_1qb), len(trades_sf),
+    )
+
+    # Build prior vectors: player priors then pick priors
+    def _pick_prior(key: str, fmt: str) -> float:
+        # key format: "pick_{year}_{rd}_{bucket}" — strip prefix for lookup
+        lookup = key[len("pick_"):]  # e.g. "2026_1_early"
+        val = ext_pick_values.get(lookup) or ext_pick_values.get(lookup.rsplit("_", 1)[0])
+        return float(val) if val else 50.0  # 50-point floor if no external prior
+
+    prior_1qb = np.array(
+        [player_prior[pid]["value_1qb"] for pid in player_ids] +
+        [_pick_prior(k, "1qb") for k in pick_keys]
+    )
+    prior_sf = np.array(
+        [player_prior[pid]["value_sf"] for pid in player_ids] +
+        [_pick_prior(k, "sf") * 1.5 for k in pick_keys]
+    )
+
+    # Log top 5 player priors
+    top_prior_idx = np.argsort(prior_1qb[:n_pl])[::-1][:5]
+    logger.info("[trade_value_model] Top 5 player priors (1QB):")
     for i in top_prior_idx:
-        logger.info("  pid=%-12s  prior_1qb=%.2f", player_ids[i], prior_1qb[i])
+        logger.info("  pid=%-12s  prior=%.2f", player_ids[i], prior_1qb[i])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, pid_idx, N, "1qb", pick_values)
-    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  pid_idx, N, "sf",  pick_values)
-    M = M_1qb  # reported count uses 1QB (primary format)
+    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N)
+    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N)
+    M = M_1qb
 
     logger.info("[trade_value_model] %d trade constraints — solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
 
-    # Floor at 0, then cap each player's upward deviation from their model prior.
-    # This prevents trade market inflation from overriding production/usage signals
-    # (e.g. a hyped player with no real stats can't be lifted more than MAX_LIFT × prior).
+    # Players: floor at prior, cap at MAX_LIFT × prior
     v_1qb_pos = np.clip(v_1qb, 0.0, None)
     v_sf_pos  = np.clip(v_sf,  0.0, None)
-    for i in range(N):
+    for i in range(n_pl):
         if prior_1qb[i] > 0:
             v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i])
             v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * MAX_LIFT)
         if prior_sf[i] > 0:
             v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i])
             v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
+    # Picks: just floor at 0 (let market move them freely)
+    v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
+    v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 
-    # Scale so the TOP_N_AT_MAX-th highest value maps to MAX_VALUE, then clip.
-    # Players ranked 1–TOP_N_AT_MAX all land at 999.9; everyone else scales proportionally.
+    # Normalize so TOP_N_AT_MAX players land at MAX_VALUE
     def _normalize(vec: np.ndarray) -> np.ndarray:
-        sorted_desc = np.sort(vec)[::-1]
-        idx = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
-        ceiling = sorted_desc[idx] if sorted_desc[idx] > 0 else (vec.max() or MAX_VALUE)
+        player_vec   = vec[:n_pl]
+        sorted_desc  = np.sort(player_vec)[::-1]
+        idx          = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
+        ceiling      = sorted_desc[idx] if sorted_desc[idx] > 0 else (player_vec.max() or MAX_VALUE)
         return np.clip(vec / ceiling * MAX_VALUE, 0.0, MAX_VALUE)
 
     v_1qb_norm = _normalize(v_1qb_pos)
     v_sf_norm  = _normalize(v_sf_pos)
 
+    # --- Player output ---
     out_rows = []
     for i, pid in enumerate(player_ids):
         cal_1qb = float(v_1qb_norm[i])
         cal_sf  = float(v_sf_norm[i])
-        prior_v = prior[pid]["value_1qb"]
-        # calibration_weight = fractional deviation from prior (0 = no change)
+        prior_v = player_prior[pid]["value_1qb"]
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0
         out_rows.append({
             "player_id":             pid,
@@ -408,13 +437,36 @@ def run_trade_value_model(
         })
 
     top10 = sorted(out_rows, key=lambda r: r["calibrated_value_1qb"], reverse=True)[:10]
-    logger.info("[trade_value_model] Top 10 calibrated values (1QB):")
+    logger.info("[trade_value_model] Top 10 calibrated player values (1QB):")
     for r in top10:
-        logger.info("  pid=%-10s  cal=%.2f  prior=%.2f", r["player_id"], r["calibrated_value_1qb"], prior[r["player_id"]]["value_1qb"])
+        logger.info("  pid=%-10s  cal=%.2f  prior=%.2f",
+                    r["player_id"], r["calibrated_value_1qb"],
+                    player_prior[r["player_id"]]["value_1qb"])
+
+    # --- Pick output ---
+    pick_vals_1qb: dict[str, float] = {}
+    pick_vals_sf:  dict[str, float] = {}
+    for i, key in enumerate(pick_keys):
+        lookup = key[len("pick_"):]  # strip prefix → load_pick_value_table() format
+        pick_vals_1qb[lookup] = round(float(v_1qb_norm[n_pl + i]), 2)
+        pick_vals_sf[lookup]  = round(float(v_sf_norm[n_pl + i]),  2)
+
+    logger.info("[trade_value_model] Sample WLS pick values (1QB):")
+    for k in sorted(pick_vals_1qb)[:8]:
+        logger.info("  %-25s  %.2f  (prior: %.2f)", k,
+                    pick_vals_1qb[k], ext_pick_values.get(k, 0))
 
     n = _write_calibrated(out_rows)
-    logger.info("[trade_value_model] Done — %d players updated.", n)
-    return {"written": n, "trades_used": M, "players": N, "season": season}
+    _write_pick_values(pick_vals_1qb, pick_vals_sf)
+
+    logger.info("[trade_value_model] Done — %d players + %d pick buckets updated.", n, len(pick_keys))
+    return {
+        "written":      n,
+        "trades_used":  M,
+        "players":      n_pl,
+        "pick_buckets": len(pick_keys),
+        "season":       season,
+    }
 
 
 if __name__ == "__main__":
