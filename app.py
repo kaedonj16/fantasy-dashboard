@@ -3269,14 +3269,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
-    # Build pick-value lookup (PICK entries keyed by their model-values ID)
-    pick_by_key: Dict[str, float] = {
-        str(row["id"]): float(row.get("value") or 0.0)
-        for row in model_value_table
-        if isinstance(row, dict)
-        and str(row.get("position", "")).upper() == "PICK"
-        and row.get("id")
-    }
+    # Build pick-value lookup from WLS-derived table (overlays FantasyCalc/DynastyProcess)
+    pick_by_key: Dict[str, float] = load_pick_value_table() or {}
 
     roster_cards = []
 
@@ -5573,12 +5567,7 @@ def build_teams_body(ctx: dict) -> str:
             team_pos_values[rid].setdefault(pos, [])
 
     # ----------------- Compute per-team draft capital value -----------------
-    # by_id already contains PICK entries from model_vals; use it for pick lookups
-    pick_by_key: Dict[str, float] = {
-        str(p["id"]): float(p.get("value") or 0.0)
-        for p in model_vals
-        if isinstance(p, dict) and str(p.get("position", "")).upper() == "PICK" and p.get("id")
-    }
+    pick_by_key: Dict[str, float] = load_pick_value_table() or {}
     team_pick_value: Dict[int, float] = {}
     for r in rosters:
         rid = r.get("roster_id")
