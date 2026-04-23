@@ -142,7 +142,7 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
             """,
             (source,),
         ).fetchone()
-    return row["latest_date"] if row and row["latest_date"] else None
+    return str(row["latest_date"]) if row and row["latest_date"] else None
 
 
 def get_player_value_history(

@@ -6071,7 +6071,7 @@ async function checkTradeOutcome(btn) {
             <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
           </div>
           ${thenSection}
-          <div class="outcome-section-label outcome-section-label--current">Calibrated Value</div>
+          <div class="outcome-section-label outcome-section-label--current">Current Value</div>
           <div class="outcome-rows">${nowRows}</div>
         </div>`;
     }

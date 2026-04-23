@@ -9428,6 +9428,7 @@ def api_trade_outcome():
     Expects: {assets_received: [{id, name}], assets_sent: [{id, name}], trade_date: 'YYYY-MM-DD'}
     """
     from dashboard_services.player_value_history import get_player_value_history
+    from dashboard_services.db import get_conn
 
     payload = request.get_json(force=True)
     assets_received = payload.get("assets_received") or []
@@ -9525,6 +9526,7 @@ def api_trade_outcome():
                         best_val = float(snap.get("value") or 0)
                 except (ValueError, TypeError):
                     continue
+            print(best_val)
             return best_val
         
         def get_pick_value(asset: dict) -> float:
