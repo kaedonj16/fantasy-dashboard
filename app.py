@@ -7997,12 +7997,27 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           </div>
         </div>
 
-        <p class="ti-key">
-          <strong>Market</strong> = real trade median &nbsp;·&nbsp;
-          <strong>Model</strong> = dynasty model value &nbsp;·&nbsp;
-          <strong>Delta</strong> = Market − Model (+ means market pays above model) &nbsp;·&nbsp;
-          <strong>Pressure</strong> = demand relative to peers
-        </p>
+        <div class="ti-key">
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">Market</span> Real trade-weighted median value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">Model</span> WLS dynasty model value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch ti-key-delta"></span>
+            <span><span class="ti-key-label">Delta</span> Market minus Model — positive means market pays a premium</span>
+          </div>
+          <div class="ti-key-item">
+            <span style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
+              <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
+              <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+            </span>
+            <span><span class="ti-key-label">Pressure</span> Demand relative to peers — top 30% = buy, bottom 30% = sell</span>
+          </div>
+        </div>
 
         <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
           <div class="spinner" style="margin:0 auto 12px;"></div>
@@ -8096,11 +8111,30 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-delta-neg {{ color:#ef4444; }}
       .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; align-items:center; }}
       .ti-key {{
-        font-size: 11.5px; color: var(--text-muted);
-        margin: 0 0 18px; padding: 0; line-height: 1.6;
-        border: none; background: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 24px;
+        font-size: 12px; color: var(--text-muted);
+        background: var(--bg-secondary, #f8fafc);
+        border: 1px solid var(--border-color);
+        border-radius: 10px; padding: 12px 16px;
+        margin-bottom: 20px; line-height: 1.4;
       }}
-      .ti-key strong {{ color: var(--text-color); font-weight: 600; }}
+      .ti-key-item {{
+        display: flex; align-items: flex-start; gap: 8px;
+      }}
+      .ti-key-swatch {{
+        display: inline-block; width: 12px; height: 12px;
+        flex-shrink: 0; margin-top: 1px;
+      }}
+      .ti-key-delta {{
+        background: linear-gradient(135deg, #10b981 50%, #ef4444 50%);
+        border-radius: 3px; opacity: .8;
+      }}
+      .ti-key-label {{
+        font-weight: 600; color: var(--text-color);
+        margin-right: 4px;
+      }}
     </style>
 
     <script>
