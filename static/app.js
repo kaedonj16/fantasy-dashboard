@@ -6043,39 +6043,43 @@ async function checkTradeOutcome(btn) {
     } else {
       const verdictCls = data.verdict === 'WIN' ? 'outcome-win' : data.verdict === 'LOSS' ? 'outcome-loss' : 'outcome-even';
       const sign = data.net_delta_now >= 0 ? '+' : '';
-      let rows = '';
-      (data.received || []).forEach(r => {
-        // For picks, show actual value instead of delta (since picks have no historical value change)
-        let displayValue, cls;
-        if (r.name.includes('Pick') && r.delta === 0) {
-          displayValue = `+${r.value_now.toFixed(0)}`;
+
+      function buildOutcomeRow(r, tag, tagCls, valField) {
+        const val = r[valField] ?? 0;
+        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val">${val.toFixed(0)}</span></div>`;
+      }
+
+      function buildCurrentRow(r, tag, tagCls) {
+        const isPick = r.name.includes('Pick') && r.delta === 0;
+        let deltaStr, cls;
+        if (isPick) {
+          deltaStr = '';
           cls = 'outcome-neutral';
         } else {
-          displayValue = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
+          deltaStr = r.delta >= 0 ? ` (+${r.delta.toFixed(0)})` : ` (${r.delta.toFixed(0)})`;
           cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
         }
-        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-got">GOT</span><span class="outcome-val ${cls}">${displayValue}</span></div>`;
-      });
-      (data.sent || []).forEach(r => {
-        // For picks, show actual value instead of delta (since picks have no historical value change)
-        let displayValue, cls;
-        if (r.name.includes('Pick') && r.delta === 0) {
-          displayValue = `-${r.value_now.toFixed(0)}`;
-          cls = 'outcome-neutral';
-        } else {
-          displayValue = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
-          cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
-        }
-        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-gave">GAVE</span><span class="outcome-val ${cls}">${displayValue}</span></div>`;
-      });
+        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val ${cls}">${(r.value_now ?? 0).toFixed(0)}${deltaStr}</span></div>`;
+      }
+
+      let thenRows = '';
+      (data.received || []).forEach(r => { thenRows += buildOutcomeRow(r, 'GOT', 'outcome-got', 'value_then'); });
+      (data.sent    || []).forEach(r => { thenRows += buildOutcomeRow(r, 'GAVE', 'outcome-gave', 'value_then'); });
+
+      let nowRows = '';
+      (data.received || []).forEach(r => { nowRows += buildCurrentRow(r, 'GOT', 'outcome-got'); });
+      (data.sent    || []).forEach(r => { nowRows += buildCurrentRow(r, 'GAVE', 'outcome-gave'); });
+
       resultEl.innerHTML = `
         <div class="trade-outcome-wrap">
           <div class="outcome-header">
             <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
             <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
           </div>
-          <div class="outcome-rows">${rows}</div>
-          <div class="outcome-note">Value change since trade date based on current BR model values</div>
+          <div class="outcome-section-label">At Trade Date</div>
+          <div class="outcome-rows">${thenRows}</div>
+          <div class="outcome-section-label outcome-section-label--current">Current (player_values)</div>
+          <div class="outcome-rows">${nowRows}</div>
         </div>`;
     }
 
