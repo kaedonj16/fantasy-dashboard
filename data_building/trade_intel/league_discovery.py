@@ -150,6 +150,61 @@ def _is_superflex(meta: dict) -> bool:
     return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
 
 
+def bootstrap_from_usernames(usernames: list[str], season: int | None = None) -> int:
+    """
+    Seed the DB from one or more Sleeper usernames.
+
+    For each username: look up the user, fetch their leagues for the current
+    (and next) season, filter to dynasty (type==2), and insert them into
+    trade_intel_leagues so that subsequent BFS discovery has a non-empty frontier.
+
+    Returns the number of new leagues inserted.
+    """
+    if season is None:
+        season = _current_season()
+
+    known = _already_known(season)
+    to_save: list[dict] = []
+
+    for username in usernames:
+        user = _get(f"/user/{username}")
+        if not user or not user.get("user_id"):
+            logger.warning("[bootstrap] Username '%s' not found or no user_id returned", username)
+            continue
+        user_id = str(user["user_id"])
+        logger.info("[bootstrap] User '%s' → user_id=%s", username, user_id)
+
+        league_ids = _user_leagues(user_id, season)
+        logger.info("[bootstrap] Found %d leagues for user '%s'", len(league_ids), username)
+
+        for lid in league_ids:
+            if lid in known:
+                continue
+            time.sleep(_REQUEST_DELAY)
+            meta = _league_meta(lid)
+            if not meta:
+                continue
+            league_type = meta.get("settings", {}).get("type")
+            if league_type != 2:
+                continue
+            lg_season = int(meta.get("season") or season)
+            to_save.append({
+                "league_id":    lid,
+                "season":       lg_season,
+                "num_teams":    meta.get("total_rosters", 0),
+                "scoring_type": _classify_scoring(meta),
+                "league_type":  2,
+                "is_superflex": _is_superflex(meta),
+            })
+            known.add(lid)
+            logger.info("[bootstrap] Seeded dynasty league %s (%d teams) from user '%s'",
+                        lid, meta.get("total_rosters", 0), username)
+
+    n = _save_leagues(to_save)
+    logger.info("[bootstrap] Inserted %d new dynasty league(s) as BFS seeds.", n)
+    return n
+
+
 def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
     """
     Discover up to `target` dynasty Sleeper leagues and store them.
