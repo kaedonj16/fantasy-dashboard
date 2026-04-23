@@ -1804,7 +1804,7 @@ window.initTradePage = function initTradePage(root = document) {
     const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
 
     if (!leagueId || !viewerRosterId) {
-      body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Set your team above to see targets.</div>';
+      body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Sign in to see targets.</div>';
       return;
     }
 

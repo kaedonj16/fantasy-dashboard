@@ -50,7 +50,7 @@ def build_trade_calculator_body(
     # Create dynamic breakouts URL based on login status
     if is_guest:
         breakouts_url = "#"
-        breakouts_link_text = "Log in to see more →"
+        breakouts_link_text = "Sign in to see more →"
         breakouts_link_class = "otc-view-all-link otc-guest-link"
     else:
         # For logged-in users, link to their league's breakouts page
@@ -69,7 +69,7 @@ def build_trade_calculator_body(
     side_b_owner_tag = '<div class="otc-team-owner-tag otc-team-owner-tag-muted" id="sideBOwnerTag">Other side</div>'
 
     analyze_btn_disabled = 'disabled' if is_guest else ''
-    analyze_btn_label = 'Log In to Analyze' if is_guest else 'Analyze Trade'
+    analyze_btn_label = 'Sign In to Analyze' if is_guest else 'Analyze Trade'
 
     ai_sub_text = 'AI-powered trade analysis for dynasty leagues' if is_guest else 'Personalized to your team direction and roster lens'
 
@@ -81,7 +81,7 @@ def build_trade_calculator_body(
                 </div>
     """
 
-    ai_empty_title = 'Log In for AI Analysis' if is_guest else 'Waiting on a deal'
+    ai_empty_title = 'Sign In for AI Analysis' if is_guest else 'Waiting on a deal'
     ai_empty_sub = (
         'Connect your league to get personalized trade analysis powered by AI.'
         if is_guest else
@@ -487,7 +487,7 @@ def build_trade_calculator_body(
         <div class="trade-login-overlay"></div>
         <div class="trade-login-content">
           <button type="button" class="trade-login-close" id="closeLoginModal">&times;</button>
-          <h2 class="trade-login-title">Log In to Analyze Trade</h2>
+          <h2 class="trade-login-title">Sign In to Analyze Trade</h2>
           <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis</p>
 
           <div class="trade-login-form">

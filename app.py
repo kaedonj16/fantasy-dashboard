@@ -1152,7 +1152,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;'>"
         f"  <div style='background:var(--card-bg,#1e2432);border:1px solid var(--border-color,#2d3748);"
         f"border-radius:12px;padding:28px 24px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);'>"
-        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign in to your team</h3>"
+        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign In to your team</h3>"
         f"    <p style='margin:0 0 16px;font-size:13px;color:var(--text-muted,#94a3b8);'>"
         f"      Enter your Sleeper username to restore personalized features.</p>"
         f"    <form method='POST' action='/set-viewer'>"
@@ -8000,22 +8000,22 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         <div class="ti-key">
           <div class="ti-key-item">
             <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
-            <span><span class="ti-key-label">Market</span> Real trade-weighted median value</span>
+            <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
           </div>
           <div class="ti-key-item">
             <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
-            <span><span class="ti-key-label">Model</span> WLS dynasty model value</span>
+            <span><span class="ti-key-label">BR Model</span> BR Production Model Value</span>
           </div>
           <div class="ti-key-item">
             <span class="ti-key-swatch ti-key-delta"></span>
-            <span><span class="ti-key-label">Delta</span> Market minus Model — positive means market pays a premium</span>
+            <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
           </div>
           <div class="ti-key-item">
             <span style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
               <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
               <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
             </span>
-            <span><span class="ti-key-label">Momentum</span> 14-day vs 90-day trade value — rising or falling market price</span>
+            <span><span class="ti-key-label">Momentum</span> Rising or Falling Market Price</span>
           </div>
         </div>
 
@@ -8121,7 +8121,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         margin-bottom: 20px; line-height: 1.4;
       }}
       .ti-key-item {{
-        display: flex; align-items: flex-start; gap: 8px;
+        display: flex; align-items: center; gap: 8px;
       }}
       .ti-key-swatch {{
         display: inline-block; width: 12px; height: 12px;
@@ -8246,7 +8246,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             </div>
             <div class="ti-divider"></div>
             <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
