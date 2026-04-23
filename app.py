@@ -8055,7 +8055,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Real market data from dynasty trades — see what managers are actually paying
+          Actionable insights from thousands of real dynasty trades across multiple platforms
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">
@@ -8089,11 +8089,26 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
           </div>
           <div class="ti-key-item">
-            <span style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
-              <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
-              <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+            <span style="display:inline-flex;align-items:center;vertical-align:middle;">
+              <span style="width:8px;height:8px;border-radius:50%;color:#10b981;display:flex;align-items:center;line-height:1;">▲</span>
+              <span style="width:8px;height:8px;border-radius:50%;color:#ef4444;display:inline-block;line-height:1;">▼</span>
             </span>
             <span><span class="ti-key-label">Momentum</span> Rising or Falling Market Price</span>
+          </div>
+        </div>
+
+        <div id="tiPagination" class="ti-pagination" style="display:none;">
+          <div class="ti-pagination-info">
+            <span id="tiPaginationText">Showing 1-20 of 100 players</span>
+          </div>
+          <div class="ti-pagination-controls">
+            <button id="tiPrevBtn" class="ti-pagination-btn" onclick="loadTIPage('prev')" disabled>
+              <i class="fa-solid fa-chevron-left"></i> Previous
+            </button>
+            <div id="tiPageNumbers" class="ti-page-numbers"></div>
+            <button id="tiNextBtn" class="ti-pagination-btn" onclick="loadTIPage('next')" disabled>
+              Next <i class="fa-solid fa-chevron-right"></i>
+            </button>
           </div>
         </div>
 
@@ -8213,28 +8228,154 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         font-weight: 600; color: var(--text-color);
         margin-right: 4px;
       }}
+      .ti-pagination {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 20px 0;
+        padding: 12px 0;
+        border-top: 1px solid var(--border-color);
+      }}
+      .ti-pagination-info {{
+        font-size: 13px;
+        color: var(--text-muted);
+      }}
+      .ti-pagination-controls {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }}
+      .ti-pagination-btn {{
+        padding: 6px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--card-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all .15s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }}
+      .ti-pagination-btn:hover:not(:disabled) {{
+        background: var(--bg-secondary);
+        border-color: var(--primary-color);
+      }}
+      .ti-pagination-btn:disabled {{
+        opacity: 0.5;
+        cursor: not-allowed;
+      }}
+      .ti-page-numbers {{
+        display: flex;
+        gap: 4px;
+      }}
+      .ti-page-number {{
+        padding: 4px 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--card-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 28px;
+        text-align: center;
+      }}
+      .ti-page-number:hover {{
+        background: var(--bg-secondary);
+      }}
+      .ti-page-number.active {{
+        background: var(--accent-color);
+        color: var(--card);
+        border-color: var(--accent-color);
+        font-weight: 700;
+      }}
     </style>
 
     <script>
     (function() {{
       const TI_SEASON = {season};
-      let allPlayers = [];
+      let currentPage = 1;
+      let paginationData = null;
       let currentTab = 'trending';
       let currentPos = 'ALL';
 
-      // Percentile thresholds for buy/sell pressure (computed from loaded data)
-      fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&limit=100')
-        .then(r => r.json())
-        .then(data => {{
-          allPlayers = (data.players || []).filter(p => (p.trade_count_all || 0) > 0);
-          document.getElementById('tiLoading').style.display = 'none';
-          document.getElementById('tiGrid').style.display = '';
-          renderTI();
-        }})
-        .catch(() => {{
-          document.getElementById('tiLoading').innerHTML =
-            '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
-        }});
+      // Load initial page
+      loadTIPage(1);
+
+      function loadTIPage(page) {{
+        if (typeof page === 'string') {{
+          if (page === 'prev' && currentPage > 1) {{
+            page = currentPage - 1;
+          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
+            page = currentPage + 1;
+          }} else {{
+            return;
+          }}
+        }}
+        
+        currentPage = page;
+        document.getElementById('tiLoading').style.display = '';
+        document.getElementById('tiGrid').style.display = 'none';
+        document.getElementById('tiPagination').style.display = 'none';
+        
+        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{
+              throw new Error(data.error);
+            }}
+            paginationData = data.pagination;
+            document.getElementById('tiLoading').style.display = 'none';
+            document.getElementById('tiGrid').style.display = '';
+            updatePaginationControls();
+            renderTI(data.players || []);
+          }})
+          .catch(() => {{
+            document.getElementById('tiLoading').innerHTML =
+              '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
+          }});
+      }}
+
+      function updatePaginationControls() {{
+        if (!paginationData) return;
+        
+        const prevBtn = document.getElementById('tiPrevBtn');
+        const nextBtn = document.getElementById('tiNextBtn');
+        const pageNumbers = document.getElementById('tiPageNumbers');
+        const paginationText = document.getElementById('tiPaginationText');
+        
+        // Update button states
+        prevBtn.disabled = !paginationData.has_prev;
+        nextBtn.disabled = !paginationData.has_next;
+        
+        // Update text
+        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
+        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
+        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} players`;
+        
+        // Update page numbers
+        pageNumbers.innerHTML = '';
+        const maxPages = 5;
+        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
+        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
+        
+        if (endPage - startPage < maxPages - 1) {{
+          startPage = Math.max(1, endPage - maxPages + 1);
+        }}
+        
+        for (let i = startPage; i <= endPage; i++) {{
+          const pageBtn = document.createElement('button');
+          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
+          pageBtn.textContent = i;
+          pageBtn.onclick = () => loadTIPage(i);
+          pageNumbers.appendChild(pageBtn);
+        }}
+        
+        document.getElementById('tiPagination').style.display = 'flex';
+      }}
 
       window.switchTITab = function(tab) {{
         currentTab = tab;
@@ -8245,25 +8386,33 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       window.filterTI = function(pos) {{
         currentPos = pos;
         document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
-        renderTI();
+        loadTIPage(currentPage); // Reload current page with new filter
       }};
 
-      function getTabPlayers() {{
-        let list = currentPos === 'ALL' ? allPlayers : allPlayers.filter(p => p.position === currentPos);
-        if (currentTab === 'trending') {{
-          return [...list].sort((a, b) => (b.trade_count_7d || b.trade_count_all || 0) - (a.trade_count_7d || a.trade_count_all || 0)).slice(0, 40);
+      function renderTI(players = null) {{
+        // If no players provided, we need to load current page data
+        if (!players) {{
+          loadTIPage(currentPage);
+          return;
         }}
-        const withDelta = list.filter(p => p.value_delta != null && p.model_value > 0);
-        if (currentTab === 'buylows')  return withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta).slice(0, 40);
-        if (currentTab === 'sellhigh') return withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta).slice(0, 40);
-        return [];
-      }}
-
-      function renderTI() {{
-        const players = getTabPlayers();
+        
+        // Apply position filtering
+        let filteredPlayers = currentPos === 'ALL' ? players : players.filter(p => p.position === currentPos);
+        
+        // Apply tab filtering for non-trending tabs
+        if (currentTab !== 'trending') {{
+          const withDelta = filteredPlayers.filter(p => p.value_delta != null && p.model_value > 0);
+          if (currentTab === 'buylows') {{
+            filteredPlayers = withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta);
+          }} else if (currentTab === 'sellhigh') {{
+            filteredPlayers = withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta);
+          }}
+        }}
+        
         const grid  = document.getElementById('tiGrid');
         const empty = document.getElementById('tiEmpty');
-        if (players.length === 0) {{
+        
+        if (filteredPlayers.length === 0) {{
           grid.style.display = 'none';
           empty.style.display = '';
           return;
@@ -8271,7 +8420,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         empty.style.display = 'none';
         grid.style.display = '';
 
-        grid.innerHTML = players.map(p => {{
+        grid.innerHTML = filteredPlayers.map(p => {{
           const name   = p.name || 'Unknown';
           const pos    = p.position || '?';
           const team   = p.team || '?';
@@ -8286,7 +8435,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           let chipBg, chipColor, chipText;
           if (currentTab === 'trending') {{
             chipBg = '#3b82f620'; chipColor = '#3b82f6';
-            chipText = (cnt7 || cntAll) + ' trades';
+            chipText = (cntAll) + ' trades';
           }} else if (currentTab === 'buylows') {{
             chipBg = '#10b98120'; chipColor = '#10b981';
             chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
@@ -8312,7 +8461,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           // Pre-process strings to avoid backslashes
           const player_json = JSON.stringify(p).replace(/"/g, '\\"');
           const escaped_name = name.replace(/'/g, "\\'");
-          const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal({{player_json}})` : `openPlayerModal('{{p.player_id}}','{{escaped_name}}')`;
+          const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal(${{player_json}})` : `openPlayerModal(${{p.player_id}},'${{escaped_name}}')`;
 
           return `<div class="ti-card" onclick="${{onclick_js}}">
             <div class="ti-card-top">
@@ -8331,6 +8480,9 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           </div>`;
         }}).join('');
       }}
+      
+      // Expose functions to global scope for onclick handlers
+      window.loadTIPage = loadTIPage;
     }})();
     </script>
     """
@@ -8351,7 +8503,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Browse real dynasty trades — search by player name to see how they move
+          Explore thousands of real dynasty trades to understand player values and market trends
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">
@@ -8370,8 +8522,25 @@ def page_trade_database(platform: str, season: int, league_id: str):
 
         <div id="tdbStatus" class="tdb-status"></div>
         <div id="tdbList"   class="tdb-list"></div>
-        <div class="tdb-more-wrap">
-          <button id="tdbMore" class="tdb-more-btn" style="display:none;">Load more</button>
+        
+        <div id="tdbLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);display:none;">
+          <div class="spinner" style="margin:0 auto 12px;"></div>
+          Loading trade data...
+        </div>
+        
+        <div id="tdbPagination" class="ti-pagination" style="display:none;">
+          <div class="ti-pagination-info">
+            <span id="tdbPaginationText">Showing 1-20 of 100 trades</span>
+          </div>
+          <div class="ti-pagination-controls">
+            <button id="tdbPrevBtn" class="ti-pagination-btn" onclick="loadTDBPage('prev')" disabled>
+              <i class="fa-solid fa-chevron-left"></i> Previous
+            </button>
+            <div id="tdbPageNumbers" class="ti-page-numbers"></div>
+            <button id="tdbNextBtn" class="ti-pagination-btn" onclick="loadTDBPage('next')" disabled>
+              Next <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -8457,45 +8626,183 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
       }}
+      .ti-pagination {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 20px 0;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+      }}
+      .ti-pagination-info {{
+        font-size: 13px;
+        color: var(--text-muted);
+      }}
+      .ti-pagination-controls {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }}
+      .ti-pagination-btn {{
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all .15s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }}
+      .ti-pagination-btn:hover:not(:disabled) {{
+        background: var(--bg-alt);
+        border-color: var(--accent-color);
+      }}
+      .ti-pagination-btn:disabled {{
+        opacity: 0.5;
+        cursor: not-allowed;
+      }}
+      .ti-page-numbers {{
+        display: flex;
+        gap: 4px;
+      }}
+      .ti-page-number {{
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 28px;
+        text-align: center;
+      }}
+      .ti-page-number:hover {{
+        background: var(--bg-alt);
+      }}
+      .ti-page-number.active {{
+        background: var(--accent-color);
+        color: var(--card);
+        border-color: var(--accent-color);
+        font-weight: 700;
+      }}
     </style>
 
     <script>
     (function() {{
       const TDB_SEASON = {season};
-      let page = 0, leagueType = 'all', searchQuery = '', loading = false;
+      let currentPage = 1;
+      let paginationData = null;
+      let leagueType = 'all';
+      let searchQuery = '';
+      let loading = false;
 
       const listEl   = document.getElementById('tdbList');
       const statusEl = document.getElementById('tdbStatus');
-      const moreBtn  = document.getElementById('tdbMore');
       const searchEl = document.getElementById('tdbSearch');
 
-      function load(reset) {{
-        if (loading) return;
-        if (reset) {{ page = 0; listEl.innerHTML = ''; }}
-        loading = true;
-        if (reset) statusEl.textContent = 'Loading...';
+      // Load initial page
+      loadTDBPage(1);
 
-        const params = new URLSearchParams({{ page, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+      function loadTDBPage(page) {{
+        if (loading) return;
+        if (typeof page === 'string') {{
+          if (page === 'prev' && currentPage > 1) {{
+            page = currentPage - 1;
+          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
+            page = currentPage + 1;
+          }} else {{
+            return;
+          }}
+        }}
+        
+        currentPage = page;
+        loading = true;
+        statusEl.textContent = '';
+        listEl.style.display = 'none';
+        document.getElementById('tdbLoading').style.display = '';
+        document.getElementById('tdbPagination').style.display = 'none';
+        
+        const apiPage = page - 1; // Convert to 0-based for API
+        const params = new URLSearchParams({{ page: apiPage, limit: 20, league_type: leagueType, season: TDB_SEASON }});
         if (searchQuery) params.set('q', searchQuery);
 
         fetch('/api/trade-database?' + params)
           .then(r => r.json())
           .then(data => {{
+            if (data.error) {{
+              throw new Error(data.error);
+            }}
             const trades = data.trades || [];
-            if (reset && trades.length === 0) {{
+            if (trades.length === 0) {{
+              document.getElementById('tdbLoading').style.display = 'none';
               listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
               statusEl.textContent = '';
-              moreBtn.style.display = 'none';
+              document.getElementById('tdbPagination').style.display = 'none';
               loading = false;
               return;
             }}
-            statusEl.textContent = reset && data.total != null ? data.total.toLocaleString() + ' trades' : '';
-            renderTrades(trades, searchQuery);
-            moreBtn.style.display = data.has_more ? '' : 'none';
-            page++;
+            
+            document.getElementById('tdbLoading').style.display = 'none';
+            paginationData = data.pagination;
+            statusEl.textContent = '';
+            listEl.style.display = '';
+            updateTDBPaginationControls();
+            renderTDBTrades(trades);
             loading = false;
           }})
-          .catch(() => {{ statusEl.textContent = 'Failed to load.'; loading = false; }});
+          .catch(err => {{
+            console.error('Error loading trades:', err);
+            document.getElementById('tdbLoading').style.display = 'none';
+            statusEl.textContent = 'Error loading trades';
+            loading = false;
+          }});
+      }}
+
+      function updateTDBPaginationControls() {{
+        if (!paginationData) return;
+        
+        const prevBtn = document.getElementById('tdbPrevBtn');
+        const nextBtn = document.getElementById('tdbNextBtn');
+        const pageNumbers = document.getElementById('tdbPageNumbers');
+        const paginationText = document.getElementById('tdbPaginationText');
+        
+        // Update button states
+        prevBtn.disabled = !paginationData.has_prev;
+        nextBtn.disabled = !paginationData.has_next;
+        
+        // Update text
+        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
+        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
+        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} trades`;
+        
+        // Update page numbers
+        pageNumbers.innerHTML = '';
+        const maxPages = 5;
+        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
+        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
+        
+        if (endPage - startPage < maxPages - 1) {{
+          startPage = Math.max(1, endPage - maxPages + 1);
+        }}
+        
+        for (let i = startPage; i <= endPage; i++) {{
+          const pageBtn = document.createElement('button');
+          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
+          pageBtn.textContent = i;
+          pageBtn.onclick = () => loadTDBPage(i);
+          pageNumbers.appendChild(pageBtn);
+        }}
+        
+        document.getElementById('tdbPagination').style.display = 'flex';
+      }}
+
+      function renderTDBTrades(trades) {{
+        renderTrades(trades, searchQuery);
       }}
 
       function renderTrades(trades, q) {{
@@ -8536,18 +8843,20 @@ def page_trade_database(platform: str, season: int, league_id: str):
       window.tdbFilter = function(lt) {{
         leagueType = lt;
         document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
-        load(true);
+        loadTDBPage(1); // Reset to first page when filtering
       }};
-
-      moreBtn.addEventListener('click', () => load(false));
 
       let debounce;
       searchEl.addEventListener('input', () => {{
         clearTimeout(debounce);
-        debounce = setTimeout(() => {{ searchQuery = searchEl.value.trim(); load(true); }}, 350);
+        debounce = setTimeout(() => {{ 
+          searchQuery = searchEl.value.trim(); 
+          loadTDBPage(1); // Reset to first page when searching
+        }}, 350);
       }});
 
-      load(true);
+      // Expose pagination function to global scope
+      window.loadTDBPage = loadTDBPage;
     }})();
     </script>
     """
@@ -12148,12 +12457,14 @@ def api_draft_grades():
 def api_trade_intel_trending():
     """
     Most traded players in the last 7 days across all crawled leagues.
-    Returns up to 25 players with trade counts and market vs model value delta.
+    Returns paginated players with trade counts and market vs model value delta.
     """
     from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
-        limit = min(int(request.args.get("limit") or 25), 50)
+        page = max(int(request.args.get("page") or 1), 1)
+        per_page = 20  # Fixed at 20 per page
+        offset = (page - 1) * per_page
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
         league_size = int(request.args.get("league_size") or 10)
 
@@ -12168,6 +12479,13 @@ def api_trade_intel_trending():
         else:
             value_col_expr = f"s.market_value_{fmt}"
 
+        # First get total count for pagination
+        count_q = f"""
+            SELECT COUNT(*) as total
+            FROM trade_intel_player_stats s
+            WHERE s.season = %s AND s.trade_count > 0
+            """
+        
         _q = f"""
             SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                    {value_col_expr} AS market_value, s.buy_sell_ratio,
@@ -12177,17 +12495,25 @@ def api_trade_intel_trending():
             LEFT JOIN player_values pv ON pv.player_id = s.player_id
             WHERE s.season = %s AND s.trade_count > 0
             ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
-            LIMIT %s
+            LIMIT %s OFFSET %s
             """
         with get_conn() as conn:
-            rows = conn.execute(_q, (season, limit)).fetchall()
+            # Get total count
+            count_result = conn.execute(count_q, (season,)).fetchone()
+            total_players = count_result["total"] if count_result else 0
+            
+            # Get paginated results
+            rows = conn.execute(_q, (season, per_page, offset)).fetchall()
             # Fall back to most recent season that has data
             if not rows:
                 fallback_season = conn.execute(
                     "SELECT season FROM trade_intel_player_stats WHERE trade_count > 0 ORDER BY season DESC LIMIT 1"
                 ).fetchone()
                 if fallback_season:
-                    rows = conn.execute(_q, (fallback_season["season"], limit)).fetchall()
+                    # Recalculate count for fallback season
+                    count_result = conn.execute(count_q, (fallback_season["season"],)).fetchone()
+                    total_players = count_result["total"] if count_result else 0
+                    rows = conn.execute(_q, (fallback_season["season"], per_page, offset)).fetchall()
 
         from utils.utils import load_players_index
         players_map = load_players_index() or {}
@@ -12213,7 +12539,21 @@ def api_trade_intel_trending():
                 "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
             })
 
-        return jsonify({"season": season, "players": result})
+        # Calculate pagination info
+        total_pages = (total_players + per_page - 1) // per_page
+        
+        return jsonify({
+            "season": season, 
+            "players": result,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_players": total_players,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        })
 
     except Exception:
         logger.exception("[trade-intel/trending] error")
@@ -12489,7 +12829,24 @@ def api_trade_database():
                 "side_b":      side_b_assets,
             })
 
-        return jsonify({"trades": result, "total": total, "has_more": has_more})
+        # Calculate pagination info
+        current_page = page + 1  # Convert 0-based to 1-based
+        per_page = limit
+        total_pages = (total + per_page - 1) // per_page
+        
+        return jsonify({
+            "trades": result, 
+            "total": total, 
+            "has_more": has_more,
+            "pagination": {
+                "current_page": current_page,
+                "per_page": per_page,
+                "total_players": total,  # Using total_players for consistency with trade intel
+                "total_pages": total_pages,
+                "has_next": has_more,
+                "has_prev": current_page > 1
+            }
+        })
 
     except Exception:
         logger.exception("[trade-database] error")

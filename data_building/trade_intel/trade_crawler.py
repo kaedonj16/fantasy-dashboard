@@ -266,19 +266,72 @@ def crawl_league(
     return new_trades
 
 
-def _leagues_to_crawl(batch_size: int = 500) -> list[dict]:
-    """Return leagues ordered by least-recently crawled."""
+def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_days: int = 7) -> list[dict]:
+    """Return leagues based on crawl mode."""
     with get_conn() as conn:
-        return conn.execute(
+        if crawl_mode == "new":
+            # Only uncrawled dynasty leagues
+            query = """
+                SELECT league_id, season, last_crawled_week
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND last_crawled_week IS NULL
+                  AND league_type = 2  -- Dynasty leagues only
+                ORDER BY discovered_at ASC
+                LIMIT %s
             """
-            SELECT league_id, season, last_crawled_week
-            FROM trade_intel_leagues
-            WHERE crawl_enabled = TRUE
-            ORDER BY last_crawled_at ASC NULLS FIRST
-            LIMIT %s
-            """,
-            (batch_size,)
-        ).fetchall()
+            params = (batch_size,)
+        elif crawl_mode == "existing":
+            # Only previously crawled dynasty leagues, but not recently
+            query = """
+                SELECT league_id, season, last_crawled_week
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND last_crawled_week IS NOT NULL
+                  AND last_crawled_at < NOW() - INTERVAL '%s days'
+                  AND league_type = 2  -- Dynasty leagues only
+                ORDER BY last_crawled_at ASC
+                LIMIT %s
+            """
+            params = (recrawl_days, batch_size)
+        else:  # both
+            # Mix of new and existing, prioritize new
+            query = """
+                WITH new_leagues AS (
+                    SELECT league_id, season, last_crawled_week, 1 as priority
+                    FROM trade_intel_leagues
+                    WHERE crawl_enabled = TRUE
+                      AND last_crawled_week IS NULL
+                      AND league_type = 2
+                    ORDER BY discovered_at ASC
+                    LIMIT %s
+                ),
+                existing_leagues AS (
+                    SELECT league_id, season, last_crawled_week, 2 as priority
+                    FROM trade_intel_leagues
+                    WHERE crawl_enabled = TRUE
+                      AND last_crawled_week IS NOT NULL
+                      AND last_crawled_at < NOW() - INTERVAL '%s days'
+                      AND league_type = 2
+                    ORDER BY last_crawled_at ASC
+                    LIMIT %s
+                ),
+                combined AS (
+                    SELECT * FROM new_leagues
+                    UNION ALL
+                    SELECT * FROM existing_leagues
+                )
+                SELECT league_id, season, last_crawled_week
+                FROM combined
+                ORDER BY priority ASC, league_id
+                LIMIT %s
+            """
+            # Split batch between new and existing (70% new, 30% existing)
+            new_batch = int(batch_size * 0.7)
+            existing_batch = batch_size - new_batch
+            params = (new_batch, recrawl_days, existing_batch, batch_size)
+        
+        return conn.execute(query, params).fetchall()
 
 
 def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
@@ -313,15 +366,18 @@ def _crawl_one(row: dict, end_week: int) -> tuple[str, int]:
         return league_id, 0
 
 
-def run_crawl(batch_size: int = 500, workers: int = 10) -> dict:
+def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new", recrawl_days: int = 7) -> dict:
     """
     Crawl one batch of leagues in parallel.
 
     workers: concurrent leagues (default 20 — safe for I/O-bound HTTP workload)
     Each league internally fetches its weeks in parallel (up to 8 concurrent week requests).
+    
+    crawl_mode: 'new' (uncrawled leagues), 'existing' (re-crawl), 'both' (mixed)
+    recrawl_days: for 'existing' mode, only re-crawl leagues not crawled in X days
     """
     current_week = _current_nfl_week()
-    leagues = _leagues_to_crawl(batch_size)
+    leagues = _leagues_to_crawl(batch_size, crawl_mode, recrawl_days)
     total_trades = 0
     total_leagues = 0
     mark_batch: list[tuple[int, str]] = []

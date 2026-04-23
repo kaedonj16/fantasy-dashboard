@@ -22,6 +22,7 @@
 .fa-chart-simple      { background-image: url('images/chart-simple-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-chevron-down      { background-image: url('images/chevron-down-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-chevron-right     { background-image: url('images/chevron-right-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
+.fa-chevron-left     { background-image: url('images/chevron-left-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-circle            { background-image: url('images/circle-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-clipboard-list    { background-image: url('images/clipboard-list-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-dice              { background-image: url('images/triangle-exclamation-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(100%) saturate(749%) hue-rotate(358deg) brightness(101%) contrast(102%); }

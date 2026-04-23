@@ -53,6 +53,10 @@ def main():
                         help="Run analytics + WLS after all crawl batches complete.")
     parser.add_argument("--workers",         type=int, default=8,
                         help="Concurrent workers for crawling. Default 8.")
+    parser.add_argument("--crawl-mode",       choices=["new", "existing", "both"], default="new",
+                        help="Crawl mode: 'new' (uncrawled leagues), 'existing' (re-crawl), 'both' (mixed). Default: new.")
+    parser.add_argument("--recrawl-days",    type=int, default=7,
+                        help="For 'existing' mode: only re-crawl leagues not crawled in X days. Default: 7.")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
@@ -86,7 +90,8 @@ def main():
             (_now() - deadline).total_seconds() / -60,
         )
 
-        result = run_crawl(batch_size=args.crawl_batch, workers=args.workers)
+        result = run_crawl(batch_size=args.crawl_batch, workers=args.workers, 
+                        crawl_mode=args.crawl_mode, recrawl_days=args.recrawl_days)
         trades   = result.get("new_trades", 0)
         leagues  = result.get("leagues_crawled", 0)
         total_trades += trades
