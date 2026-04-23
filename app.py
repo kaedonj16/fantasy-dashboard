@@ -4928,18 +4928,18 @@ def build_activity_body(ctx: dict) -> str:
             outcome_data = []
             for tm in teams:
                 rid = tm.get("roster_id")
-                
+
                 # Include players
                 gets_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("gets") or []) if p.get("pid")]
                 sends_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("sends") or []) if p.get("pid")]
-                
+
                 # Include picks with asset_type and pick details
                 gets_picks = []
                 for pick in picks_by_receiver.get(rid, []):
                     season = pick.get('season', '')
                     round_num = pick.get('round', '')
                     roster_id = pick.get('roster_id', '')
-                    
+
                     # Try to resolve exact slot from roster_id
                     exact_slot = None
                     if roster_id:
@@ -4947,7 +4947,7 @@ def build_activity_body(ctx: dict) -> str:
                             exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
                         except Exception:
                             pass
-                    
+
                     # Use exact slot if available, otherwise use roster_id as fallback
                     _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
                     if exact_slot:
@@ -4968,13 +4968,13 @@ def build_activity_body(ctx: dict) -> str:
                         "pick_order": pick.get("order"),
                         "pick_slot": slot_value,
                     })
-                
+
                 sends_picks = []
                 for pick in picks_by_sender.get(rid, []):
                     season = pick.get('season', '')
                     round_num = pick.get('round', '')
                     roster_id = pick.get('roster_id', '')
-                    
+
                     # Try to resolve exact slot from roster_id
                     exact_slot = None
                     if roster_id:
@@ -4982,7 +4982,7 @@ def build_activity_body(ctx: dict) -> str:
                             exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
                         except Exception:
                             pass
-                    
+
                     # Use exact slot if available, otherwise use roster_id as fallback
                     _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
                     if exact_slot:
@@ -5003,11 +5003,11 @@ def build_activity_body(ctx: dict) -> str:
                         "pick_order": pick.get("order"),
                         "pick_slot": slot_value,
                     })
-                
+
                 # Combine players and picks
                 all_gets = gets_pids + gets_picks
                 all_sends = sends_pids + sends_picks
-                
+
                 outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": all_gets, "sends": all_sends})
 
             import json as _json
