@@ -7997,17 +7997,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           </div>
         </div>
 
-        <div class="ti-key">
-          <span class="ti-key-item"><span class="ti-key-dot" style="background:#3b82f6;"></span>Trades = volume in window</span>
-          <span class="ti-key-sep">·</span>
-          <span class="ti-key-item"><span class="ti-key-dot" style="background:#6366f1;"></span>Market = trade-weighted median value</span>
-          <span class="ti-key-sep">·</span>
-          <span class="ti-key-item"><span class="ti-key-dot" style="background:#8b5cf6;"></span>Model = WLS dynasty value</span>
-          <span class="ti-key-sep">·</span>
-          <span class="ti-key-item"><span class="ti-key-dot" style="background:#10b981;"></span>Delta = Market − Model</span>
-          <span class="ti-key-sep">·</span>
-          <span class="ti-key-item"><span class="ti-key-dot" style="background:#10b981;"></span>Buy pressure = traded above model &gt;60% of the time</span>
-        </div>
+        <p class="ti-key">
+          <strong>Market</strong> = real trade median &nbsp;·&nbsp;
+          <strong>Model</strong> = dynasty model value &nbsp;·&nbsp;
+          <strong>Delta</strong> = Market − Model (+ means market pays above model) &nbsp;·&nbsp;
+          <strong>Pressure</strong> = demand relative to peers
+        </p>
 
         <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
           <div class="spinner" style="margin:0 auto 12px;"></div>
@@ -8101,16 +8096,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-delta-neg {{ color:#ef4444; }}
       .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; align-items:center; }}
       .ti-key {{
-        display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px;
-        font-size: 11px; color: var(--text-muted);
-        background: var(--bg-secondary, #f8fafc);
-        border: 1px solid var(--border-color);
-        border-radius: 8px; padding: 7px 12px;
-        margin-bottom: 16px; line-height: 1.5;
+        font-size: 11.5px; color: var(--text-muted);
+        margin: 0 0 18px; padding: 0; line-height: 1.6;
+        border: none; background: none;
       }}
-      .ti-key-item {{ display:flex; align-items:center; gap:5px; white-space:nowrap; }}
-      .ti-key-dot {{ display:inline-block; width:7px; height:7px; border-radius:50%; flex-shrink:0; }}
-      .ti-key-sep {{ color:var(--border-color); padding:0 4px; }}
+      .ti-key strong {{ color: var(--text-color); font-weight: 600; }}
     </style>
 
     <script>
@@ -8120,10 +8110,24 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       let currentTab = 'trending';
       let currentPos = 'ALL';
 
+      // Percentile thresholds for buy/sell pressure (computed from loaded data)
+      let bsrHigh = 0.6, bsrLow = 0.4;
+
+      function computeBsrThresholds(players) {{
+        const vals = players
+          .map(p => p.buy_sell_ratio)
+          .filter(v => v != null && !isNaN(v))
+          .sort((a, b) => a - b);
+        if (vals.length < 4) return;
+        bsrHigh = vals[Math.floor(vals.length * 0.70)] ?? 0.6; // top 30%
+        bsrLow  = vals[Math.floor(vals.length * 0.30)] ?? 0.4; // bottom 30%
+      }}
+
       fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&limit=100')
         .then(r => r.json())
         .then(data => {{
           allPlayers = (data.players || []).filter(p => (p.trade_count_all || 0) > 0);
+          computeBsrThresholds(allPlayers);
           document.getElementById('tiLoading').style.display = 'none';
           document.getElementById('tiGrid').style.display = '';
           renderTI();
@@ -8197,11 +8201,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             : '<span style="color:var(--text-muted)">—</span>';
 
           const sentiment = bsr != null
-            ? (bsr >= 0.6
-                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;margin-right:5px;"></span>Buy pressure'
-                : bsr <= 0.4
-                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:5px;"></span>Sell pressure'
-                  : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--text-muted);vertical-align:middle;margin-right:5px;"></span>Neutral')
+            ? (bsr >= bsrHigh
+                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>Buy pressure'
+                : bsr <= bsrLow
+                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>Sell pressure'
+                  : '')
             : '';
 
           // Pre-process strings to avoid backslashes
