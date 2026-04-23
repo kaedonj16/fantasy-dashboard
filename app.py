@@ -8015,7 +8015,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
               <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
               <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
             </span>
-            <span><span class="ti-key-label">Pressure</span> Demand relative to peers — top 30% = buy, bottom 30% = sell</span>
+            <span><span class="ti-key-label">Momentum</span> 14-day vs 90-day trade value — rising or falling market price</span>
           </div>
         </div>
 
@@ -8109,7 +8109,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-row-val {{ font-weight:600; }}
       .ti-delta-pos {{ color:#10b981; }}
       .ti-delta-neg {{ color:#ef4444; }}
-      .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; align-items:center; }}
+      .ti-momentum {{ font-size:11px; font-weight:600; margin-top:6px; display:flex; align-items:center; gap:4px; }}
       .ti-key {{
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -8145,23 +8145,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       let currentPos = 'ALL';
 
       // Percentile thresholds for buy/sell pressure (computed from loaded data)
-      let bsrHigh = 0.6, bsrLow = 0.4;
-
-      function computeBsrThresholds(players) {{
-        const vals = players
-          .map(p => p.buy_sell_ratio)
-          .filter(v => v != null && !isNaN(v))
-          .sort((a, b) => a - b);
-        if (vals.length < 4) return;
-        bsrHigh = vals[Math.floor(vals.length * 0.70)] ?? 0.6; // top 30%
-        bsrLow  = vals[Math.floor(vals.length * 0.30)] ?? 0.4; // bottom 30%
-      }}
-
       fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&limit=100')
         .then(r => r.json())
         .then(data => {{
           allPlayers = (data.players || []).filter(p => (p.trade_count_all || 0) > 0);
-          computeBsrThresholds(allPlayers);
           document.getElementById('tiLoading').style.display = 'none';
           document.getElementById('tiGrid').style.display = '';
           renderTI();
@@ -8216,7 +8203,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
           const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
           const delta  = p.value_delta;
-          const bsr    = p.buy_sell_ratio;
+          const trend  = p.market_trend;
 
           let chipBg, chipColor, chipText;
           if (currentTab === 'trending') {{
@@ -8234,19 +8221,21 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
             : '<span style="color:var(--text-muted)">—</span>';
 
-          const sentiment = bsr != null
-            ? (bsr >= bsrHigh
-                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>Buy pressure'
-                : bsr <= bsrLow
-                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>Sell pressure'
-                  : '')
-            : '';
+          // Momentum: 14d median minus 90d median. Threshold ±5 to avoid noise.
+          let momentumHtml = '';
+          if (trend != null) {{
+            if (trend >= 5) {{
+              momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
+            }} else if (trend <= -5) {{
+              momentumHtml = '<span style="color:#ef4444;">▼</span> Falling';
+            }}
+          }}
 
           // Pre-process strings to avoid backslashes
           const player_json = JSON.stringify(p).replace(/"/g, '\\"');
           const escaped_name = name.replace(/'/g, "\\'");
           const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal({{player_json}})` : `openPlayerModal('{{p.player_id}}','{{escaped_name}}')`;
-          
+
           return `<div class="ti-card" onclick="${{onclick_js}}">
             <div class="ti-card-top">
               <div>
@@ -8260,7 +8249,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <div class="ti-row"><span class="ti-row-label">Model</span><span class="ti-row-val">${{model}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
-            ${{sentiment ? `<div class="ti-sentiment">${{sentiment}}</div>` : ''}}
+            ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
           </div>`;
         }}).join('');
       }}
@@ -12033,6 +12022,7 @@ def api_trade_intel_trending():
         _q = f"""
             SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                    {value_col_expr} AS market_value, s.buy_sell_ratio,
+                   s.market_trend_1qb,
                    pv.{model_col} AS model_value, pv.position, pv.team
             FROM trade_intel_player_stats s
             LEFT JOIN player_values pv ON pv.player_id = s.player_id
@@ -12071,7 +12061,7 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "buy_sell_ratio": float(r["buy_sell_ratio"]) if r["buy_sell_ratio"] else None,
+                "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
             })
 
         return jsonify({"season": season, "players": result})
