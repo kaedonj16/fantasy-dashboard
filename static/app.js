@@ -783,7 +783,7 @@ window.initTradePage = function initTradePage(root = document) {
       row.style.cursor = "pointer";
       row.onclick = (e) => {
         e.stopPropagation();
-        if (p.is_rookie && p.is_rookie != 'False') {
+        if (p.is_rookie && p.is_rookie != 'False' && typeof rkOpenModal === 'function') {
           rkOpenModal(p);
         } else {
           openPlayerModal(p.id, p.name || "Unknown");
@@ -816,11 +816,13 @@ window.initTradePage = function initTradePage(root = document) {
     metaSpan.className = "otc-value-sub";
 
     const metaBits = buildMetaBits(p);
-    if (isRookie(p.id)) {
+    if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+    } else if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
-    if (p.is_rookie) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> PROSPECT</span>');
+    if (!p.is_rookie && isProspect(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -863,8 +865,16 @@ window.initTradePage = function initTradePage(root = document) {
     sub.className = "otc-dropdown-sub";
 
     const metaBits = buildMetaBits(p);
-    if (isRookie(p.id)) {
+    if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+    } else if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
+    }
+    if (isElite(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
+    }
+    if (!p.is_rookie && isProspect(p.id)) {
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -1399,18 +1409,20 @@ window.initTradePage = function initTradePage(root = document) {
 
       const metaBits = buildMetaBits(p);
 
-      // Add rookie/breakout badges
-      if (isRookie(p.id)) {
+      // Add rookie/breakout/elite/prospect badges
+      if (p.is_rookie) {
+        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      } else if (isRookie(p.id)) {
         metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
-      }
-      if (isBreakout(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
       }
       if (isElite(p.id)) {
         metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
       }
-      if (isProspect(p.id)) {
+      if (!p.is_rookie && isProspect(p.id)) {
         metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      }
+      if (isBreakout(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
       }
 
       metaEl.innerHTML = metaBits.join(" • ");
@@ -4072,8 +4084,11 @@ function openPlayerModal(playerId, playerName) {
     .then(res => res.json())
     .then(data => {
 
+      const modalBody = document.getElementById('playerModalBody');
+      if (!modalBody) return; // modal was closed before fetch completed
+
       if (data.error) {
-        document.getElementById('playerModalBody').innerHTML = `
+        modalBody.innerHTML = `
           <div class="player-modal-loading">
             <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
             <div style="font-size: 13px;">${data.error}</div>
@@ -4081,52 +4096,39 @@ function openPlayerModal(playerId, playerName) {
         `;
         return;
       }
-      
+
       // Check if data has expected structure
       if (!data.name) {
-        document.getElementById('playerModalBody').innerHTML = `
+        modalBody.innerHTML = `
           <div class="player-modal-loading">
             <div style="color: #f59e0b; font-weight: 500;">Player data incomplete</div>
             <div style="font-size: 13px;">Player ID: ${playerId}</div>
-            <div style="font-size: 11px; color: #6b7280;">Raw data: ${JSON.stringify(data, null, 2)}</div>
           </div>
         `;
         return;
       }
 
-      // Determine badges with position-aware thresholds
+      // Determine badges using playerIndicators (same source as all other badge displays)
       let badges = '';
-      const value = data.stats?.value || 0;
-      const pos = data.position;
       const yearsExp = data.stats?.years_exp;
+      const pid = String(data.player_id || playerId);
 
-      // Position-specific elite thresholds (players who would make any team better)
-      const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
-        'TE': 500,   // Premium TE scarcity
-        'QB': 360,   // Solid QB1s
-        'K': 9999,   // No elite kickers
-        'DEF': 9999  // No elite defenses
-      };
-
-      const threshold = eliteThresholds[pos] || 750;
-      const isElite = value >= threshold;
-      const isRookie = yearsExp != null && yearsExp === 0;
-      const isBreakoutPlayer = !isElite && isBreakout(data.player_id);
-
-      if (isElite) {
-        badges += '<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
+      if (isElite(pid)) {
+        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
-      if (isRookie) {
-        badges += '<span class="rookie-badge"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
+      if (yearsExp != null && yearsExp === 0) {
+        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
-      if (isBreakoutPlayer) {
+      if (isProspect(pid)) {
+        badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
+      }
+      if (isBreakout(pid)) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
 
       // Name with inline badges
       const nameEl = document.querySelector('.player-modal-name');
+      if (!nameEl) return;
       nameEl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
       nameEl.innerHTML = `<span>${playerName || 'Unknown Player'}</span>${badges}`;
 
@@ -4563,7 +4565,8 @@ function openPlayerModal(playerId, playerName) {
     })
     .catch(err => {
       console.error('Error loading player data:', err);
-      document.getElementById('playerModalBody').innerHTML = `
+      const b = document.getElementById('playerModalBody');
+      if (b) b.innerHTML = `
         <div class="player-modal-loading">
           <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
           <div style="font-size: 13px;">Please try again</div>
@@ -5503,13 +5506,11 @@ function addBreakoutBadgesToTeamsPage() {
       const isRookie = yearsExp !== null && yearsExp !== '' && parseInt(yearsExp) === 0;
       
       if (isElite) {
-        badges.push('<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>');
+        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
       }
       if (isRookie) {
-        badges.push('<span class="rookie-badge"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
+        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
       }
-      
-      // Only show breakout badge if player is not elite
       if (!isElite && isBreakout(playerId)) {
         badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
       }
@@ -6055,10 +6056,10 @@ function renderTeamDetails(data) {
       const isBreakoutPlayer = !isElite && isBreakout(player.player_id);
 
       if (isElite) {
-        badges += '<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
+        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
       if (isRookie) {
-        badges += '<span class="rookie-badge"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> ROOKIE</span>';
+        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';

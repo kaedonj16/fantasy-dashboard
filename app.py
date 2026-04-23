@@ -7666,7 +7666,7 @@ def page_players(platform: str, season: int, league_id: str):
           const val = prGetValue(p);
 
           let badges = '';
-          if (p.is_rookie)           badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> PROSPECT</span>';
+          if (p.is_rookie)           badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
           if (prIsElite(p.id))    badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-bolt" aria-hidden="true"></i> ELITE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
