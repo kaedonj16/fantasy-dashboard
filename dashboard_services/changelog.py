@@ -8,7 +8,7 @@ CHANGELOG = [
         "date": "2026-04-23",
         "tag": "new",
         "text": "Trade Outcome: New historical value analysis for past trades. Shows what players were worth at trade date vs current value to evaluate trade performance over time",
-        "link": "/trade"
+        "link": "/activity"
     },
     {
         "date": "2026-04-23",
