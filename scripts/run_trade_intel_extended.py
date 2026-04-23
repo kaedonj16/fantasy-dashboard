@@ -102,6 +102,12 @@ def main():
             batch_num, trades, leagues, total_trades, total_leagues_with_trades,
         )
 
+        # Auto-discover leagues when we hit 0 leagues
+        if leagues == 0 and not args.no_discovery:
+            logger.info("No leagues found in batch %d - running league discovery...", batch_num)
+            discovered = run_discovery(target=min(500, args.discover_target if args.discover_target > 0 else 500))
+            logger.info("Discovery complete: %d new leagues added.", discovered)
+
         if _now() >= deadline:
             break
 
