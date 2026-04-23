@@ -351,11 +351,14 @@ def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
         )
 
 
-def _crawl_one(row: dict, end_week: int) -> tuple[str, int]:
+def _crawl_one(row: dict, end_week: int, override_start_week: int | None = None) -> tuple[str, int]:
     """Crawl a single league. Runs inside a thread pool worker."""
     league_id = row["league_id"]
     season = row["season"]
-    start_week = (row["last_crawled_week"] or 0) + 1
+    if override_start_week is not None:
+        start_week = override_start_week
+    else:
+        start_week = (row["last_crawled_week"] or 0) + 1
     if start_week > end_week:
         return league_id, 0
     try:
@@ -382,6 +385,11 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     total_leagues = 0
     mark_batch: list[tuple[int, str]] = []
 
+    # For existing-mode re-crawls, always start from week 1 so we pick up the
+    # full season — including any weeks whose start_week would otherwise exceed
+    # current_week (common in the offseason when last_crawled_week == 18).
+    start_week_override = 1 if crawl_mode == "existing" else None
+
     logger.info("[crawler] Starting crawl. Leagues=%d, Week=%d, Workers=%d", len(leagues), current_week, workers)
     logger.info("[crawler] Checkpoint: Beginning parallel crawl of %d leagues", len(leagues))
     print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers, week={current_week}")
@@ -390,7 +398,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     with ThreadPoolExecutor(max_workers=workers) as executor:
         logger.info("[crawler] Checkpoint: Submitting %d leagues to thread pool", len(leagues))
         futures = {
-            executor.submit(_crawl_one, row, current_week): row["league_id"]
+            executor.submit(_crawl_one, row, current_week, start_week_override): row["league_id"]
             for row in leagues
         }
         logger.info("[crawler] Checkpoint: All leagues submitted, waiting for completion")

@@ -68,6 +68,7 @@ def _seed_league_ids(season: int) -> Set[str]:
             """
             SELECT league_id FROM trade_intel_leagues
             WHERE season IN (%s, %s)
+              AND league_type = 2
             ORDER BY last_crawled_at ASC NULLS FIRST
             LIMIT 200
             """,
