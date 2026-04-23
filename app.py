@@ -7998,6 +7998,18 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           </div>
         </div>
 
+        <div class="ti-key">
+          <span class="ti-key-item"><span class="ti-key-dot" style="background:#3b82f6;"></span>Trades = volume in window</span>
+          <span class="ti-key-sep">·</span>
+          <span class="ti-key-item"><span class="ti-key-dot" style="background:#6366f1;"></span>Market = trade-weighted median value</span>
+          <span class="ti-key-sep">·</span>
+          <span class="ti-key-item"><span class="ti-key-dot" style="background:#8b5cf6;"></span>Model = WLS dynasty value</span>
+          <span class="ti-key-sep">·</span>
+          <span class="ti-key-item"><span class="ti-key-dot" style="background:#10b981;"></span>Delta = Market − Model</span>
+          <span class="ti-key-sep">·</span>
+          <span class="ti-key-item"><span class="ti-key-dot" style="background:#10b981;"></span>Buy pressure = traded above model &gt;60% of the time</span>
+        </div>
+
         <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
           <div class="spinner" style="margin:0 auto 12px;"></div>
           Loading trade data...
@@ -8088,7 +8100,18 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-row-val {{ font-weight:600; }}
       .ti-delta-pos {{ color:#10b981; }}
       .ti-delta-neg {{ color:#ef4444; }}
-      .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; }}
+      .ti-sentiment {{ font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; align-items:center; }}
+      .ti-key {{
+        display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px;
+        font-size: 11px; color: var(--text-muted);
+        background: var(--bg-secondary, #f8fafc);
+        border: 1px solid var(--border-color);
+        border-radius: 8px; padding: 7px 12px;
+        margin-bottom: 16px; line-height: 1.5;
+      }}
+      .ti-key-item {{ display:flex; align-items:center; gap:5px; white-space:nowrap; }}
+      .ti-key-dot {{ display:inline-block; width:7px; height:7px; border-radius:50%; flex-shrink:0; }}
+      .ti-key-sep {{ color:var(--border-color); padding:0 4px; }}
     </style>
 
     <script>
@@ -8175,11 +8198,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             : '<span style="color:var(--text-muted)">—</span>';
 
           const sentiment = bsr != null
-            ? (bsr >= 1.2
-                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;"></span> Buy pressure'
-                : bsr <= 0.8
-                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;"></span> Sell pressure'
-                  : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--text-muted);vertical-align:middle;"></span> Neutral')
+            ? (bsr >= 0.6
+                ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;vertical-align:middle;margin-right:5px;"></span>Buy pressure'
+                : bsr <= 0.4
+                  ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:5px;"></span>Sell pressure'
+                  : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--text-muted);vertical-align:middle;margin-right:5px;"></span>Neutral')
             : '';
 
           // Pre-process strings to avoid backslashes
@@ -8231,7 +8254,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
 
         <div class="tdb-toolbar">
           <div class="tdb-search-wrap">
-            <i class="fa-solid fa-magnifying-glass tdb-search-icon"></i>
+            <span class="tdb-search-icon" aria-hidden="true"></span>
             <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
           </div>
           <div class="tdb-lt-filters">
@@ -8256,19 +8279,23 @@ def page_trade_database(platform: str, season: int, league_id: str):
         flex-wrap: wrap; align-items: center;
       }}
       .tdb-search-wrap {{
-        flex: 1; min-width: 200px; position: relative;
+        flex: 1; min-width: 200px;
+        display: flex; align-items: center;
+        border: 1px solid var(--border-color); border-radius: 8px;
+        background: var(--card-bg); padding: 0 12px; gap: 8px;
       }}
       .tdb-search-icon {{
-        position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
-        font-size: 13px; color: var(--text-muted); pointer-events: none;
+        display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+        background: url('/static/images/magnifying-glass-solid.png') no-repeat center / contain;
+        filter: brightness(0) saturate(100%) invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(85%) contrast(90%);
+        pointer-events: none;
       }}
       .tdb-search {{
-        width: 100%; padding: 9px 12px 9px 34px; border-radius: 8px;
-        border: 1px solid var(--border-color); background: var(--card-bg);
-        color: var(--text-color); font-size: 14px; box-sizing: border-box;
-        outline: none; transition: border-color .15s;
+        flex: 1; padding: 9px 0; border: none; background: transparent;
+        color: var(--text-color); font-size: 14px; outline: none;
+        min-width: 0;
       }}
-      .tdb-search:focus {{ border-color: var(--accent-color, #3b82f6); }}
+      .tdb-search-wrap:focus-within {{ border-color: var(--accent-color, #3b82f6); }}
       .tdb-lt-filters {{ display: flex; gap: 4px; }}
       .tdb-lt {{
         padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-color);
