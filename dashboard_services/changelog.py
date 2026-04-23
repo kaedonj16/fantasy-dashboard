@@ -11,6 +11,30 @@ CHANGELOG = [
         "link": "/trade"
     },
     {
+        "date": "2026-04-23",
+        "tag": "new",
+        "text": "Trade Database: Browse real dynasty trades from thousands of leagues, search by player name, filter by league type, and see actual trade packages.",
+        "link": "/trade-database"
+    },
+    {
+        "date": "2026-04-23",
+        "tag": "new",
+        "text": "Trade Intelligence: Advanced market analytics showing real trade frequency, market values, and momentum trends.",
+        "link": "/trade-intel"
+    },
+    {
+        "date": "2026-04-23",
+        "tag": "new",
+        "text": "Roster Grades: AI-powered roster evaluation with letter grades based on positional strength, age curves, and championship probability.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-04-23",
+        "tag": "new",
+        "text": "Roster Archetypes: Identify your team's competitive window: Win-Now Window, Rising Contender, 2-3 Year Window, Full Rebuild, or Retooling.",
+        "link": "/teams"
+    },
+    {
         "date": "2026-04-18",
         "tag": "new",
         "text": "Live NFL News: Player modals now show real ESPN headlines for each player. Activity page includes a live NFL news feed with the latest league headlines.",
