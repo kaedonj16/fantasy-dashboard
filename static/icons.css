@@ -34,6 +34,8 @@
 .fa-medal             { background-image: url('images/medal-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-rocket            { background-image: url('images/rocket-solid.png'); filter: brightness(0) saturate(100%) invert(59%) sepia(56%) saturate(527%) hue-rotate(87deg) brightness(98%) contrast(89%); }
 .fa-snowflake         { background-image: url('images/snowflake-solid.png'); filter: brightness(0) saturate(100%) invert(82%) sepia(43%) saturate(470%) hue-rotate(175deg) brightness(101%) contrast(101%); }
+.fa-registered-solid  { background-image: url('images/registered-solid.png'); filter: brightness(0) saturate(100%) invert(29%) sepia(91%) saturate(1165%) hue-rotate(211deg) brightness(94%) contrast(87%); }
+.fa-seedling          { background-image: url('images/seedling-solid.png'); filter: brightness(0) saturate(100%) invert(34%) sepia(72%) saturate(500%) hue-rotate(87deg) brightness(98%) contrast(89%); }
 .fa-star              { background-image: url('images/star-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-trophy            { background-image: url('images/trophy-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-xmark             { background-image: url('images/xmark-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }

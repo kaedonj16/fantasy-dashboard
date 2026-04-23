@@ -777,12 +777,12 @@ window.initTradePage = function initTradePage(root = document) {
     const row = document.createElement("div");
     row.className = "otc-value-row";
 
-    // Make row clickable
+    // Make row clickable — use only onclick, not data-player-id, to avoid double-fire
+    // from the global delegated handler in initGlobalPlayerModals
     if (p.id) {
       row.style.cursor = "pointer";
-      row.dataset.playerId = p.id;
-      row.dataset.playerName = p.name || "Unknown";
-      row.onclick = () => {
+      row.onclick = (e) => {
+        e.stopPropagation();
         if (p.is_rookie && p.is_rookie != 'False') {
           rkOpenModal(p);
         } else {

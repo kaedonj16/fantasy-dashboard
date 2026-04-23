@@ -7477,6 +7477,14 @@ def page_players(platform: str, season: int, league_id: str):
         return prIndicators.breakouts && prIndicators.breakouts.includes(String(id));
       }
 
+      function prIsElite(id) {
+        return prIndicators.elites && prIndicators.elites.includes(String(id));
+      }
+
+      function prIsProspect(id) {
+        return prIndicators.prospects && prIndicators.prospects.includes(String(id));
+      }
+
       // Settings panel toggle
       function prToggleSettings() {
         const panel = document.getElementById('prSettingsPanel');
@@ -7640,8 +7648,15 @@ def page_players(platform: str, season: int, league_id: str):
         players.forEach((p, idx) => {
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
-          row.setAttribute('data-player-id', p.id);
-          row.setAttribute('data-player-name', p.name || '');
+          row.style.cursor = 'pointer';
+          row.onclick = function(e) {
+            e.stopPropagation();
+            if (p.is_rookie && typeof rkOpenModal === 'function') {
+              rkOpenModal(p);
+            } else {
+              openPlayerModal(p.id, p.name || 'Unknown');
+            }
+          };
 
           const displayRank = (p.position === 'PICK' || p.is_rookie) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
           const posRank = prLeagueType === 'sf'
@@ -7651,9 +7666,11 @@ def page_players(platform: str, season: int, league_id: str):
           const val = prGetValue(p);
 
           let badges = '';
-          if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
+          if (p.is_rookie)           badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire"></i> BREAKOUT</span>';
+          if (prIsElite(p.id))    badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-bolt" aria-hidden="true"></i> ELITE</span>';
+          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
+          if (!p.is_rookie && !prIsRookie(p.id) && prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-rocket" aria-hidden="true"></i> PROSPECT</span>';
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
@@ -7673,8 +7690,6 @@ def page_players(platform: str, season: int, league_id: str):
 
           list.appendChild(row);
         });
-
-        if (typeof initGlobalPlayerModals === 'function') initGlobalPlayerModals();
       }
 
       // Wire up search input
@@ -9998,43 +10013,44 @@ def api_player_indicators():
                         if pid:
                             breakouts.append(pid)
 
-        # Get elites based on value thresholds
+        # Get elites based on positional rank cutoffs (12-man PPR dynasty)
         elites = []
         prospects = []
-        
+
         # Load model value table to get current player values (same as /api/players)
         value_table = load_model_value_table() or []
         value_map = {str(p.get("id")): p for p in value_table}
-        
-        # Position-specific elite thresholds (matching JavaScript)
-        elite_thresholds = {
-            'RB': 650,   # Elite young backs
-            'WR': 650,   # Elite WRs
-            'TE': 500,   # Premium TE scarcity
-            'QB': 360,   # Solid QB1s
-            'K': 9999,   # No elite kickers
-            'DEF': 9999  # No elite defenses
-        }
-        
+
+        # Top-N positional rank cutoffs for a 12-man PPR dynasty league
+        elite_rank_cutoffs = {'QB': 5, 'RB': 12, 'WR': 12, 'TE': 5}
+
+        from collections import defaultdict as _defaultdict
+        pos_players: dict = _defaultdict(list)
+        for player_id, player_data in value_map.items():
+            pos = str(player_data.get("position", "")).upper()
+            val = float(player_data.get("value", 0) or 0)
+            if val > 0 and pos in elite_rank_cutoffs:
+                pos_players[pos].append((val, str(player_id)))
+
+        elite_set: set = set()
+        for pos, cutoff in elite_rank_cutoffs.items():
+            for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
+                elites.append(pid)
+                elite_set.add(pid)
+
         for player_id, player_data in value_map.items():
             position = str(player_data.get("position", "")).upper()
             value = float(player_data.get("value", 0) or 0)
-            
-            # Check if elite
-            threshold = elite_thresholds.get(position, 750)
-            if value >= threshold:
-                elites.append(str(player_id))
-            
-            # Check if prospect (young players with potential but not yet elite)
+
+            if str(player_id) in elite_set:
+                continue
+
+            # Prospects: players with 0-2 years experience OR age <= 23, with moderate value
             years_exp = player_data.get("years_exp")
             age = player_data.get("age")
-            
-            # Prospects: players with 0-2 years experience OR age <= 23, with moderate value
             is_young = (years_exp in [0, 1, 2] or (age and float(age) <= 23))
-            has_value = value >= 50  # Some demonstrated value
-            not_elite = value < threshold  # Not yet elite
-            
-            if is_young and has_value and not_elite:
+            has_value = value >= 50
+            if is_young and has_value:
                 prospects.append(str(player_id))
 
         return jsonify({
