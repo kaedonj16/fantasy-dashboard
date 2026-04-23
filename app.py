@@ -4949,21 +4949,24 @@ def build_activity_body(ctx: dict) -> str:
                             pass
                     
                     # Use exact slot if available, otherwise use roster_id as fallback
+                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
                         slot_value = None
-                    
+
                     gets_picks.append({
                         "id": pick_id,
-                        "name": pick_id,  # Use actual pick ID like "2026 1.01" instead of generic format
+                        "name": display_name,
                         "asset_type": "pick",
                         "pick_season": season,
                         "pick_round": round_num,
                         "pick_order": pick.get("order"),
-                        "pick_slot": slot_value,  # Use exact slot if resolved
+                        "pick_slot": slot_value,
                     })
                 
                 sends_picks = []
@@ -4981,21 +4984,24 @@ def build_activity_body(ctx: dict) -> str:
                             pass
                     
                     # Use exact slot if available, otherwise use roster_id as fallback
+                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
                         slot_value = None
-                    
+
                     sends_picks.append({
                         "id": pick_id,
-                        "name": pick_id,  # Use actual pick ID like "2026 1.01" instead of generic format
+                        "name": display_name,
                         "asset_type": "pick",
                         "pick_season": season,
                         "pick_round": round_num,
                         "pick_order": pick.get("order"),
-                        "pick_slot": slot_value,  # Use exact slot if resolved
+                        "pick_slot": slot_value,
                     })
                 
                 # Combine players and picks
@@ -9495,13 +9501,31 @@ def api_trade_outcome():
         trade_month = trade_date[:7] if trade_date else ""
 
         def get_value_at_trade(pid: str) -> float:
-            if not trade_month:
+            """Return the closest historical value to trade_date; returns 0.0 if no history."""
+            if not trade_date:
                 return 0.0
-            history = get_player_value_history(pid, days=365)
+            from datetime import date as _date
+            try:
+                target = _date.fromisoformat(trade_date[:10])
+            except ValueError:
+                return 0.0
+            history = get_player_value_history(pid, days=800)
+            if not history:
+                return 0.0
+            best_val = 0.0
+            best_diff = float("inf")
             for snap in history:
-                if str(snap.get("as_of_date") or "").startswith(trade_month):
-                    return float(snap.get("value") or 0)
-            return 0.0
+                snap_date_str = str(snap.get("as_of_date") or "")[:10]
+                if not snap_date_str:
+                    continue
+                try:
+                    diff = abs((_date.fromisoformat(snap_date_str) - target).days)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_val = float(snap.get("value") or 0)
+                except (ValueError, TypeError):
+                    continue
+            return best_val
         
         def get_pick_value(asset: dict) -> float:
             """Get current pick value, preferring WLS-derived bucket values."""
@@ -9568,50 +9592,53 @@ def api_trade_outcome():
         total_received_then = 0.0
         total_sent_then = 0.0
 
-        for asset in assets_received:
+        def _pick_now_value(pid: str, asset: dict) -> float:
+            """Look up calibrated pick value trying multiple ID formats."""
+            # Try as-is (e.g. "2026 1.01")
+            v = values_now.get(pid, 0.0)
+            if v:
+                return v
+            # Try underscore format (e.g. "2026_1_01")
+            underscore_pid = pid.replace(" ", "_", 1).replace(".", "_", 1)
+            v = values_now.get(underscore_pid, 0.0)
+            if v:
+                return v
+            # Fall back to pick table
+            return get_pick_value(asset)
+
+        def _build_row(asset: dict, side: str) -> dict:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
             is_pick = asset.get("asset_type") == "pick"
-
             if is_pick:
-                # Prefer calibrated value from values_now; fall back to pick table
-                now = values_now.get(pid, 0.0) or get_pick_value(asset)
-                then = None  # picks have no historical value
-            else:
-                now = values_now.get(pid, 0.0)
-                then = then_values.get(pid, None) if trade_date else None
-
-            total_received_now += now
-            if then is not None:
-                total_received_then += then
-            received_rows.append({
-                "id": pid, "name": name, "is_pick": is_pick,
-                "value_now": round(now, 1),
-                "value_then": round(then, 1) if then is not None else None,
-                "delta": round(now - then, 1) if then is not None else None,
-            })
-
-        for asset in assets_sent:
-            pid = str(asset.get("id") or "")
-            name = str(asset.get("name") or pid)
-            is_pick = asset.get("asset_type") == "pick"
-
-            if is_pick:
-                now = values_now.get(pid, 0.0) or get_pick_value(asset)
+                now = _pick_now_value(pid, asset)
                 then = None
             else:
                 now = values_now.get(pid, 0.0)
                 then = then_values.get(pid, None) if trade_date else None
-
-            total_sent_now += now
-            if then is not None:
-                total_sent_then += then
-            sent_rows.append({
+            return {
                 "id": pid, "name": name, "is_pick": is_pick,
                 "value_now": round(now, 1),
                 "value_then": round(then, 1) if then is not None else None,
                 "delta": round(now - then, 1) if then is not None else None,
-            })
+                "_now": now, "_then": then,
+            }
+
+        for asset in assets_received:
+            row = _build_row(asset, "received")
+            total_received_now += row["_now"]
+            if row["_then"] is not None:
+                total_received_then += row["_then"]
+            del row["_now"], row["_then"]
+            received_rows.append(row)
+
+        for asset in assets_sent:
+            row = _build_row(asset, "sent")
+            total_sent_now += row["_now"]
+            if row["_then"] is not None:
+                total_sent_then += row["_then"]
+            del row["_now"], row["_then"]
+            sent_rows.append(row)
 
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)
