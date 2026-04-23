@@ -6045,14 +6045,28 @@ async function checkTradeOutcome(btn) {
       const sign = data.net_delta_now >= 0 ? '+' : '';
       let rows = '';
       (data.received || []).forEach(r => {
-        const d = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
-        const cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
-        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-got">GOT</span><span class="outcome-val ${cls}">${d}</span></div>`;
+        // For picks, show actual value instead of delta (since picks have no historical value change)
+        let displayValue, cls;
+        if (r.name.includes('Pick') && r.delta === 0) {
+          displayValue = `+${r.value_now.toFixed(0)}`;
+          cls = 'outcome-neutral';
+        } else {
+          displayValue = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
+          cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
+        }
+        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-got">GOT</span><span class="outcome-val ${cls}">${displayValue}</span></div>`;
       });
       (data.sent || []).forEach(r => {
-        const d = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
-        const cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
-        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-gave">GAVE</span><span class="outcome-val ${cls}">${d}</span></div>`;
+        // For picks, show actual value instead of delta (since picks have no historical value change)
+        let displayValue, cls;
+        if (r.name.includes('Pick') && r.delta === 0) {
+          displayValue = `-${r.value_now.toFixed(0)}`;
+          cls = 'outcome-neutral';
+        } else {
+          displayValue = r.delta >= 0 ? `+${r.delta.toFixed(0)}` : r.delta.toFixed(0);
+          cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
+        }
+        rows += `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag outcome-gave">GAVE</span><span class="outcome-val ${cls}">${displayValue}</span></div>`;
       });
       resultEl.innerHTML = `
         <div class="trade-outcome-wrap">

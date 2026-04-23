@@ -735,14 +735,26 @@ def build_week_activity(
                 ts = None
 
             # ---------- WAIVERS ----------
-            if ttype in ("waiver", "waiver_add"):
-                adds = t.get("adds")
-                if not isinstance(adds, dict) or not adds:
-                    continue
+            if ttype in ("waiver", "waiver_add", "free_agent"):
+                # Handle Sleeper's free_agent format
+                if ttype == "free_agent":
+                    adds = t.get("adds")
+                    # Only process actual waiver adds, not drops
+                    if not isinstance(adds, dict) or not adds:
+                        continue
 
-                by_rid: dict[str, list[dict]] = defaultdict(list)
-                for pid, rid in adds.items():
-                    by_rid[str(rid)].append(pinfo(pid))
+                    by_rid: dict[str, list[dict]] = defaultdict(list)
+                    for pid, rid in adds.items():
+                        by_rid[str(rid)].append(pinfo(pid))
+                else:
+                    # Original format for other platforms
+                    adds = t.get("adds")
+                    if not isinstance(adds, dict) or not adds:
+                        continue
+
+                    by_rid: dict[str, list[dict]] = defaultdict(list)
+                    for pid, rid in adds.items():
+                        by_rid[str(rid)].append(pinfo(pid))
 
                 for rid, players in by_rid.items():
                     rows_append(

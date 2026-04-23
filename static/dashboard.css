@@ -12554,6 +12554,7 @@ img, svg, canvas {
 .outcome-val { font-weight: 700; min-width: 40px; text-align: right; }
 .outcome-plus { color: #22c55e; }
 .outcome-minus { color: #ef4444; }
+.outcome-neutral { color: #6b7280; }
 .outcome-note { font-size: 10px; color: var(--text-muted); }
 .outcome-error { font-size: 12px; color: #ef4444; }
 

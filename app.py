@@ -4702,7 +4702,7 @@ def build_activity_body(ctx: dict) -> str:
     if activity_df is not None and not activity_df.empty:
 
         def html_trade(txrow):
-            nonlocal trade_count, biggest_trade_label, biggest_trade_delta
+            nonlocal trade_count, biggest_trade_label, biggest_trade_delta, season
 
             data = txrow["data"]
             teams = data["teams"]
@@ -4928,9 +4928,81 @@ def build_activity_body(ctx: dict) -> str:
             outcome_data = []
             for tm in teams:
                 rid = tm.get("roster_id")
+                
+                # Include players
                 gets_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("gets") or []) if p.get("pid")]
                 sends_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("sends") or []) if p.get("pid")]
-                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": gets_pids, "sends": sends_pids})
+                
+                # Include picks with asset_type and pick details
+                gets_picks = []
+                for pick in picks_by_receiver.get(rid, []):
+                    season = pick.get('season', '')
+                    round_num = pick.get('round', '')
+                    roster_id = pick.get('roster_id', '')
+                    
+                    # Try to resolve exact slot from roster_id
+                    exact_slot = None
+                    if roster_id:
+                        try:
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                        except Exception:
+                            pass
+                    
+                    # Use exact slot if available, otherwise use roster_id as fallback
+                    if exact_slot:
+                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        slot_value = exact_slot
+                    else:
+                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        slot_value = None
+                    
+                    gets_picks.append({
+                        "id": pick_id,
+                        "name": pick_id,  # Use actual pick ID like "2026 1.01" instead of generic format
+                        "asset_type": "pick",
+                        "pick_season": season,
+                        "pick_round": round_num,
+                        "pick_order": pick.get("order"),
+                        "pick_slot": slot_value,  # Use exact slot if resolved
+                    })
+                
+                sends_picks = []
+                for pick in picks_by_sender.get(rid, []):
+                    season = pick.get('season', '')
+                    round_num = pick.get('round', '')
+                    roster_id = pick.get('roster_id', '')
+                    
+                    # Try to resolve exact slot from roster_id
+                    exact_slot = None
+                    if roster_id:
+                        try:
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                        except Exception:
+                            pass
+                    
+                    # Use exact slot if available, otherwise use roster_id as fallback
+                    if exact_slot:
+                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        slot_value = exact_slot
+                    else:
+                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        slot_value = None
+                    
+                    sends_picks.append({
+                        "id": pick_id,
+                        "name": pick_id,  # Use actual pick ID like "2026 1.01" instead of generic format
+                        "asset_type": "pick",
+                        "pick_season": season,
+                        "pick_round": round_num,
+                        "pick_order": pick.get("order"),
+                        "pick_slot": slot_value,  # Use exact slot if resolved
+                    })
+                
+                # Combine players and picks
+                all_gets = gets_pids + gets_picks
+                all_sends = sends_pids + sends_picks
+                
+                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": all_gets, "sends": all_sends})
 
             import json as _json
             outcome_json = _json.dumps(outcome_data).replace('"', '&quot;')
@@ -9370,8 +9442,40 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        value_table = get_model_value_table_cached()
-        values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        # Try to load player and pick values directly from database table first
+        try:
+            from dashboard_services.player_value_history import load_current_values_from_db
+            db_values = load_current_values_from_db()
+            if db_values:
+                # Handle both players and picks from database
+                values_now = {}
+                pick_count = 0
+                player_count = 0
+                for p in db_values:
+                    asset_id = str(p.get("id", ""))
+                    if asset_id:
+                        # Use calibrated value if available, otherwise fallback to model value
+                        value = float(p.get("calibrated_value_1qb") or p.get("value_1qb") or 0.0)
+                        values_now[asset_id] = value
+                        
+                        if str(p.get("position", "")).upper() == "PICK":
+                            pick_count += 1
+                            # For picks, also map the space format (frontend) to underscore format (database)
+                            if "_" in asset_id:
+                                # Convert "2026_1_01" to "2026 1.01" for frontend compatibility
+                                space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
+                                values_now[space_format_id] = value
+                                logger.debug("[api-trade-outcome] Mapped pick %s -> %s with value %s", asset_id, space_format_id, value)
+                        else:
+                            player_count += 1
+                logger.info("[api-trade-outcome] Loaded %d assets from database (players: %d, picks: %d)", len(values_now), player_count, pick_count)
+            else:
+                raise ValueError("No database values loaded")
+        except Exception as db_error:
+            logger.warning("[api-trade-outcome] Database values unavailable, falling back to model table: %s", db_error)
+            # Fallback to original method
+            value_table = get_model_value_table_cached()
+            values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
         
         # Load pick values for pick asset handling
         pick_values = load_pick_value_table()
@@ -9461,9 +9565,11 @@ def api_trade_outcome():
             if asset.get("asset_type") == "pick":
                 now = get_pick_value(asset)
                 then = now  # Picks don't have historical values, use current value
+                logger.debug("[api-trade-outcome] Pick %s: get_pick_value=%s, values_now lookup=%s", pid, now, values_now.get(pid, 0.0))
             else:
                 now = values_now.get(pid, 0.0)
                 then = then_values.get(pid, now) if trade_date else now
+                logger.debug("[api-trade-outcome] Player %s: values_now lookup=%s", pid, now)
                 
             total_received_now += now
             total_received_then += then

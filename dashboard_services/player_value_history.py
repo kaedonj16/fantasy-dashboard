@@ -304,7 +304,7 @@ def load_latest_value_snapshot(source: str = "model") -> list[dict]:
 
 def load_current_values_from_db() -> list[dict]:
     """
-    Load current player values from the player_values table (one row per player,
+    Load current player and pick values from the player_values table (one row per player/pick,
     updated daily by cron_daily).  Falls back gracefully if the table doesn't
     exist yet or the DB is unavailable.
     """
@@ -334,7 +334,6 @@ def load_current_values_from_db() -> list[dict]:
                         pos_rank_change_7d
                     FROM player_values
                     ORDER BY COALESCE(calibrated_value_1qb, value_1qb) DESC NULLS LAST
-                    LIMIT 800
                     """
                 )
                 rows = cur.fetchall()
@@ -345,35 +344,55 @@ def load_current_values_from_db() -> list[dict]:
     if not rows:
         return []
 
-    players = []
+    assets = []
     for row in rows:
-        player = dict(row)
+        asset = dict(row)
         # Normalise field names expected by the rest of the app
-        player.setdefault("sf_value", player.get("value") or 0.0)
-        player["search_name"] = normalize_name(str(player.get("id") or ""))
+        asset.setdefault("sf_value", asset.get("value") or 0.0)
+        
+        # Handle search_name differently for picks vs players
+        if str(asset.get("position") or "").upper() == "PICK":
+            # For picks, use the ID as search name (e.g., "2026_1_01")
+            asset["search_name"] = str(asset.get("id") or "")
+        else:
+            # For players, normalize the actual name
+            asset["search_name"] = normalize_name(str(asset.get("name") or asset.get("id") or ""))
+        
         # Add league-size variants as the current value (no per-size data in player_values)
-        val    = float(player.get("value")    or 0.0)
-        sf_val = float(player.get("sf_value") or 0.0)
+        val    = float(asset.get("value")    or 0.0)
+        sf_val = float(asset.get("sf_value") or 0.0)
         for sz in (8, 12, 14):
-            player.setdefault(f"value_{sz}",    val)
-            player.setdefault(f"sf_value_{sz}", sf_val)
-        players.append(player)
+            asset.setdefault(f"value_{sz}",    val)
+            asset.setdefault(f"sf_value_{sz}", sf_val)
+        
+        # Set name for picks if not present
+        if str(asset.get("position") or "").upper() == "PICK":
+            asset["name"] = str(asset.get("id") or "")
+        elif not asset.get("name"):
+            asset["name"] = str(asset.get("id") or "")
+            
+        assets.append(asset)
 
-    # Compute pos_rank if not already stored
-    if players and players[0].get("pos_rank") is None:
+    # Compute pos_rank if not already stored (only for players, not picks)
+    player_assets = [a for a in assets if str(a.get("position") or "").upper() != "PICK"]
+    if player_assets and player_assets[0].get("pos_rank") is None:
         from collections import defaultdict
         pos_groups: dict[str, list[int]] = defaultdict(list)
-        for i, p in enumerate(players):
+        # Create index map from assets list to player_assets list
+        asset_to_player_idx = {id(assets[i]): i for i, a in enumerate(assets) if str(a.get("position") or "").upper() != "PICK"}
+        
+        for i, p in enumerate(player_assets):
             pos = str(p.get("position") or "").upper()
             if pos and pos != "PICK":
                 pos_groups[pos].append(i)
         for pos, idxs in pos_groups.items():
-            idxs.sort(key=lambda i: float(players[i].get("value") or 0.0), reverse=True)
+            idxs.sort(key=lambda i: float(player_assets[i].get("value") or 0.0), reverse=True)
             for rank, i in enumerate(idxs, 1):
-                players[i]["pos_rank"] = rank
-                players[i]["pos_rank_label"] = f"{pos}{rank}"
+                original_idx = asset_to_player_idx[id(player_assets[i])]
+                assets[original_idx]["pos_rank"] = rank
+                assets[original_idx]["pos_rank_label"] = f"{pos}{rank}"
 
-    return players
+    return assets
 
 
 def load_calibration_overrides() -> dict[str, dict]:
