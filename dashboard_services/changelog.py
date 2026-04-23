@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-04-23",
         "tag": "new",
+        "text": "Trade Outcome: New historical value analysis for past trades. Shows what players were worth at trade date vs current value to evaluate trade performance over time",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-04-23",
+        "tag": "new",
         "text": "Trade Database: Browse real dynasty trades from thousands of leagues, search by player name, filter by league type, and see actual trade packages.",
         "link": "/trade-database"
     },

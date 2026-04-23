@@ -4702,7 +4702,7 @@ def build_activity_body(ctx: dict) -> str:
     if activity_df is not None and not activity_df.empty:
 
         def html_trade(txrow):
-            nonlocal trade_count, biggest_trade_label, biggest_trade_delta
+            nonlocal trade_count, biggest_trade_label, biggest_trade_delta, season
 
             data = txrow["data"]
             teams = data["teams"]
@@ -4928,9 +4928,87 @@ def build_activity_body(ctx: dict) -> str:
             outcome_data = []
             for tm in teams:
                 rid = tm.get("roster_id")
+
+                # Include players
                 gets_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("gets") or []) if p.get("pid")]
                 sends_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("sends") or []) if p.get("pid")]
-                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": gets_pids, "sends": sends_pids})
+
+                # Include picks with asset_type and pick details
+                gets_picks = []
+                for pick in picks_by_receiver.get(rid, []):
+                    season = pick.get('season', '')
+                    round_num = pick.get('round', '')
+                    roster_id = pick.get('roster_id', '')
+
+                    # Try to resolve exact slot from roster_id
+                    exact_slot = None
+                    if roster_id:
+                        try:
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                        except Exception:
+                            pass
+
+                    # Use exact slot if available, otherwise use roster_id as fallback
+                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    if exact_slot:
+                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        display_name = pick_id
+                        slot_value = exact_slot
+                    else:
+                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        slot_value = None
+
+                    gets_picks.append({
+                        "id": pick_id,
+                        "name": display_name,
+                        "asset_type": "pick",
+                        "pick_season": season,
+                        "pick_round": round_num,
+                        "pick_order": pick.get("order"),
+                        "pick_slot": slot_value,
+                    })
+
+                sends_picks = []
+                for pick in picks_by_sender.get(rid, []):
+                    season = pick.get('season', '')
+                    round_num = pick.get('round', '')
+                    roster_id = pick.get('roster_id', '')
+
+                    # Try to resolve exact slot from roster_id
+                    exact_slot = None
+                    if roster_id:
+                        try:
+                            exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
+                        except Exception:
+                            pass
+
+                    # Use exact slot if available, otherwise use roster_id as fallback
+                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    if exact_slot:
+                        pick_id = f"{season} {round_num}.{exact_slot:02d}"
+                        display_name = pick_id
+                        slot_value = exact_slot
+                    else:
+                        pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
+                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        slot_value = None
+
+                    sends_picks.append({
+                        "id": pick_id,
+                        "name": display_name,
+                        "asset_type": "pick",
+                        "pick_season": season,
+                        "pick_round": round_num,
+                        "pick_order": pick.get("order"),
+                        "pick_slot": slot_value,
+                    })
+
+                # Combine players and picks
+                all_gets = gets_pids + gets_picks
+                all_sends = sends_pids + sends_picks
+
+                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": all_gets, "sends": all_sends})
 
             import json as _json
             outcome_json = _json.dumps(outcome_data).replace('"', '&quot;')
@@ -9350,17 +9428,11 @@ def api_trade_outcome():
     Expects: {assets_received: [{id, name}], assets_sent: [{id, name}], trade_date: 'YYYY-MM-DD'}
     """
     from dashboard_services.player_value_history import get_player_value_history
+    from dashboard_services.db import get_conn
 
     payload = request.get_json(force=True)
     assets_received = payload.get("assets_received") or []
     assets_sent = payload.get("assets_sent") or []
-
-    logger.info("[api-trade-outcome] Received payload: %s", {
-        "assets_received_count": len(assets_received),
-        "assets_sent_count": len(assets_sent),
-        "trade_date": payload.get("trade_date"),
-        "payload_keys": list(payload.keys())
-    })
 
     if not assets_received and not assets_sent:
         logger.warning("[api-trade-outcome] 400 error: No assets provided. Payload: %s", payload)
@@ -9370,8 +9442,50 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        value_table = get_model_value_table_cached()
-        values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        # Load calibrated values: weighted_market_value_1qb from trade intel (primary),
+        # falling back to calibrated_value_1qb / value_1qb from player_values.
+        try:
+            current_season = datetime.now().year
+            with get_conn() as conn:
+                cal_rows = conn.execute(
+                    """
+                    SELECT
+                        pv.player_id,
+                        COALESCE(
+                            tips.weighted_market_value_1qb,
+                            pv.calibrated_value_1qb,
+                            pv.value_1qb
+                        ) AS calibrated_value,
+                        pv.position
+                    FROM player_values pv
+                    LEFT JOIN trade_intel_player_stats tips
+                        ON tips.player_id = pv.player_id AND tips.season = %s
+                    WHERE pv.player_id IS NOT NULL
+                    """,
+                    (current_season,),
+                ).fetchall()
+            if not cal_rows:
+                raise ValueError("No calibrated values loaded")
+            values_now = {}
+            pick_count = 0
+            player_count = 0
+            for row in cal_rows:
+                asset_id = str(row["player_id"] or "")
+                if not asset_id:
+                    continue
+                value = float(row["calibrated_value"] or 0.0)
+                values_now[asset_id] = value
+                if str(row.get("position") or "").upper() == "PICK":
+                    pick_count += 1
+                    if "_" in asset_id:
+                        space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
+                        values_now[space_format_id] = value
+                else:
+                    player_count += 1
+        except Exception as db_error:
+            logger.warning("[api-trade-outcome] Calibrated values unavailable, falling back to model table: %s", db_error)
+            value_table = get_model_value_table_cached()
+            values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
         
         # Load pick values for pick asset handling
         pick_values = load_pick_value_table()
@@ -9380,13 +9494,32 @@ def api_trade_outcome():
         trade_month = trade_date[:7] if trade_date else ""
 
         def get_value_at_trade(pid: str) -> float:
-            if not trade_month:
+            """Return the closest historical value to trade_date; returns 0.0 if no history."""
+            if not trade_date:
                 return 0.0
-            history = get_player_value_history(pid, days=365)
+            from datetime import date as _date
+            try:
+                target = _date.fromisoformat(trade_date[:10])
+            except ValueError:
+                return 0.0
+            history = get_player_value_history(pid, days=800)
+            if not history:
+                return 0.0
+            best_val = 0.0
+            best_diff = float("inf")
             for snap in history:
-                if str(snap.get("as_of_date") or "").startswith(trade_month):
-                    return float(snap.get("value") or 0)
-            return 0.0
+                snap_date_str = str(snap.get("as_of_date") or "")[:10]
+                if not snap_date_str:
+                    continue
+                try:
+                    diff = abs((_date.fromisoformat(snap_date_str) - target).days)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_val = float(snap.get("value") or 0)
+                except (ValueError, TypeError):
+                    continue
+            print(best_val)
+            return best_val
         
         def get_pick_value(asset: dict) -> float:
             """Get current pick value, preferring WLS-derived bucket values."""
@@ -9453,37 +9586,53 @@ def api_trade_outcome():
         total_received_then = 0.0
         total_sent_then = 0.0
 
-        for asset in assets_received:
+        def _pick_now_value(pid: str, asset: dict) -> float:
+            """Look up calibrated pick value trying multiple ID formats."""
+            # Try as-is (e.g. "2026 1.01")
+            v = values_now.get(pid, 0.0)
+            if v:
+                return v
+            # Try underscore format (e.g. "2026_1_01")
+            underscore_pid = pid.replace(" ", "_", 1).replace(".", "_", 1)
+            v = values_now.get(underscore_pid, 0.0)
+            if v:
+                return v
+            # Fall back to pick table
+            return get_pick_value(asset)
+
+        def _build_row(asset: dict, side: str) -> dict:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
-            
-            # Handle players vs picks
-            if asset.get("asset_type") == "pick":
-                now = get_pick_value(asset)
-                then = now  # Picks don't have historical values, use current value
+            is_pick = asset.get("asset_type") == "pick"
+            if is_pick:
+                now = _pick_now_value(pid, asset)
+                then = None
             else:
                 now = values_now.get(pid, 0.0)
-                then = then_values.get(pid, now) if trade_date else now
-                
-            total_received_now += now
-            total_received_then += then
-            received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+                then = then_values.get(pid, None) if trade_date else None
+            return {
+                "id": pid, "name": name, "is_pick": is_pick,
+                "value_now": round(now, 1),
+                "value_then": round(then, 1) if then is not None else None,
+                "delta": round(now - then, 1) if then is not None else None,
+                "_now": now, "_then": then,
+            }
+
+        for asset in assets_received:
+            row = _build_row(asset, "received")
+            total_received_now += row["_now"]
+            if row["_then"] is not None:
+                total_received_then += row["_then"]
+            del row["_now"], row["_then"]
+            received_rows.append(row)
 
         for asset in assets_sent:
-            pid = str(asset.get("id") or "")
-            name = str(asset.get("name") or pid)
-            
-            # Handle players vs picks
-            if asset.get("asset_type") == "pick":
-                now = get_pick_value(asset)
-                then = now  # Picks don't have historical values, use current value
-            else:
-                now = values_now.get(pid, 0.0)
-                then = then_values.get(pid, now) if trade_date else now
-                
-            total_sent_now += now
-            total_sent_then += then
-            sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+            row = _build_row(asset, "sent")
+            total_sent_now += row["_now"]
+            if row["_then"] is not None:
+                total_sent_then += row["_then"]
+            del row["_now"], row["_then"]
+            sent_rows.append(row)
 
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)

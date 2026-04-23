@@ -12554,8 +12554,18 @@ img, svg, canvas {
 .outcome-val { font-weight: 700; min-width: 40px; text-align: right; }
 .outcome-plus { color: #22c55e; }
 .outcome-minus { color: #ef4444; }
+.outcome-neutral { color: #6b7280; }
 .outcome-note { font-size: 10px; color: var(--text-muted); }
 .outcome-error { font-size: 12px; color: #ef4444; }
+.outcome-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.outcome-section-label--current { margin-top: 8px; }
 
 /* ── Watchlist nav panel ─────────────────────────────────────────────────── */
 .watchlist-nav-wrapper {
