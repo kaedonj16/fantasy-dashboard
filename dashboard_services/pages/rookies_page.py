@@ -2,19 +2,19 @@
 Rookies page HTML builder.
 
 Returns the full body HTML for the /<platform>/<season>/<league_id>/rookies route.
-Data is loaded client-side from /api/rookies/rankings so the page is fast and
+Data is loaded client-side from /api/prospects/rankings so the page is fast and
 the filters/sorts are instant without round-trips.
 """
 from __future__ import annotations
 
 
-def build_rookies_body(platform: str, season: int, league_id: str) -> str:
+def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     return """
 <div class="card central">
   <div class="card-header">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
-        <h2 id="rookiesTitle">Rookie Rankings</h2>
+        <h2 id="rookiesTitle">Prospect Rankings</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Dynasty prospect rankings — production, athleticism, and draft capital combined
         </div>
@@ -895,13 +895,13 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     }
   });
 
-  fetch('/api/rookies/active-class')
+  fetch('/api/prospects/active-class')
     .then(function(r){ return r.json(); })
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
-      document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Rookie Rankings';
+      document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Prospect Rankings';
 
-      return fetch('/api/rookies/rankings?year=' + rkDraftYear);
+      return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })
     .then(function(data) {

@@ -820,10 +820,10 @@ window.initTradePage = function initTradePage(root = document) {
     metaSpan.className = "otc-value-sub";
 
     const metaBits = buildMetaBits(p);
-    if (p.is_rookie) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
-    } else if (isRookie(p.id)) {
+    if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
+    } else if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (!p.is_rookie && isProspect(p.id)) {
       metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
@@ -1407,7 +1407,7 @@ window.initTradePage = function initTradePage(root = document) {
         nameEl.style.cursor = 'pointer';
         nameEl.onclick = (e) => {
           e.stopPropagation();
-          if (p.is_rookie) {
+          if (isProspect(p.id)) {
             if (typeof rkOpenModal === 'function') {
               rkOpenModal(p);
             } else {
@@ -1425,19 +1425,19 @@ window.initTradePage = function initTradePage(root = document) {
       const metaBits = buildMetaBits(p);
 
       // Add rookie/breakout/elite/prospect badges
-      if (p.is_rookie) {
-        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
-      } else if (isRookie(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
+      if (isRookie(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+      } else if (p.is_rookie) {
+        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
       }
       if (isElite(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
+        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
       if (!p.is_rookie && isProspect(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
       }
       if (isBreakout(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
+        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
       }
 
       metaEl.innerHTML = metaBits.join(" • ");
@@ -4164,6 +4164,12 @@ function openPlayerModal(playerId, playerName) {
       // Build modal body
       let bodyHTML = '';
 
+      // Extract player position
+      const pos = data.position;
+
+      // Calculate breakout player status
+      const isBreakoutPlayer = !isElite(pid) && isBreakout(pid);
+
       // Breakout button in header slot (shown when player has a breakout score)
       if (isBreakoutPlayer) {
         const slot = document.getElementById('playerModalBreakoutSlot');
@@ -4890,102 +4896,358 @@ document.addEventListener('click', function(e) {
 });
 document.addEventListener('DOMContentLoaded', _refreshWatchlistNav);
 
-// Global prospect modal — used when rkOpenModal (rookies page only) is not defined
-function openProspectModal(playerId, playerName) {
-  const existing = document.querySelector('.player-modal-overlay');
-  if (existing) existing.remove();
+// Create rkModal structure and CSS if they don't exist (for pages other than rookies page)
+function createRkModalIfMissing() {
+  // Check if modal already exists
+  if (document.getElementById('rkModal')) return;
+  
+  // Add CSS styles if not already present
+  if (!document.getElementById('rkModalStyles')) {
+    var css = `
+      /* Modal */
+      .rk-modal-header {
+        padding: 24px 24px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .rk-modal-close {
+        background: var(--accent-soft);
+        border: none;
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: var(--accent);
+        font-size: 18px;
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .rk-modal-body { padding: 16px 24px 24px; }
 
-  const overlay = document.createElement('div');
-  overlay.className = 'player-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      /* Hero row */
+      .rk-hero-row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .rk-hero-stat {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+        text-align: center;
+      }
+      .rk-hero-primary {
+        background: var(--accent-soft);
+        border-color: transparent;
+      }
+      .rk-hero-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
+      }
+      .rk-hero-val {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--text);
+        line-height: 1;
+      }
+      .rk-hero-sub {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-  const modal = document.createElement('div');
-  modal.className = 'player-modal';
-  modal.style.cssText = 'position:relative;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;border-radius:18px;background:var(--card,#fff);';
-  modal.innerHTML = `
-    <div style="padding:24px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
-        <div class="player-modal-name" style="font-size:22px;font-weight:700;color:var(--text);">${playerName || 'Prospect'}</div>
-        <button onclick="this.closest('.player-modal-overlay').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;padding:4px;">✕</button>
-      </div>
-      <div id="prospectModalBody" style="display:flex;align-items:center;justify-content:center;padding:32px;">
-        <div class="loading-spinner"></div>
+      /* Draft + measurables */
+      .rk-info-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 9px 14px;
+        margin-bottom: 10px;
+      }
+      .rk-meas-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .rk-meas-cell {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 8px;
+        text-align: center;
+      }
+      .rk-meas-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-bottom: 4px;
+      }
+      .rk-meas-val {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      /* Section divider */
+      .rk-section-divider {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 14px 0;
+      }
+
+      /* Component breakdown with bars */
+      .rk-comp-list {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .rk-comp-row {
+        display: grid;
+        grid-template-columns: 90px 1fr 32px;
+        align-items: center;
+        gap: 10px;
+      }
+      .rk-comp-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+      .rk-comp-bar-wrap {
+        height: 6px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .rk-comp-bar {
+        height: 100%;
+        border-radius: 3px;
+      }
+      .rk-comp-val {
+        font-size: 12px;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      /* Modal mobile */
+      @media (max-width: 480px) {
+        .rk-hero-row { grid-template-columns: 1fr 1fr; }
+        .rk-hero-primary { grid-column: 1 / -1; }
+        .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
+        .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
+      }
+    `;
+    
+    var style = document.createElement('style');
+    style.id = 'rkModalStyles';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+  
+  // Create modal HTML structure
+  var modalHtml = `
+    <div id="rkModal" style="display:none;position:fixed;inset:0;z-index:10500;
+         align-items:center;justify-content:center;padding:20px;
+         background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">
+      <div id="rkModalContent"
+        style="background:var(--card);border-radius:16px;max-width:680px;width:100%;
+               max-height:90vh;overflow-y:auto;
+               box-shadow:0 24px 48px rgba(15,23,42,0.25);">
       </div>
     </div>
   `;
+  
+  var tempDiv = document.createElement('div');
+  tempDiv.innerHTML = modalHtml;
+  document.body.appendChild(tempDiv.firstElementChild);
+  
+  // Add close on backdrop click
+  document.getElementById('rkModal').addEventListener('click', function(e) {
+    if (e.target === this) rkCloseModal();
+  });
+}
 
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+// Global rkCloseModal function if it doesn't exist
+if (typeof rkCloseModal === 'undefined') {
+  function rkCloseModal() {
+    var modal = document.getElementById('rkModal');
+    if (modal) {
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+  }
+}
+
+// Global prospect modal — used when rkOpenModal (rookies page only) is not defined
+function openProspectModal(playerId, playerName) {
+  // Use the existing rkModal from the rankings page, or create it if it doesn't exist
+  var modal   = document.getElementById('rkModal');
+  var content = document.getElementById('rkModalContent');
+  
+  if (!modal || !content) {
+    createRkModalIfMissing();
+    modal   = document.getElementById('rkModal');
+    content = document.getElementById('rkModalContent');
+  }
+
+  // Show loading state
+  content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="loading-spinner" style="margin:0 auto 12px;"></div>Loading prospect data…</div>';
+  modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
-  fetch(`/api/prospect/${encodeURIComponent(playerId)}`)
-    .then(r => r.json())
+  // Fetch prospect data using the correct API endpoint
+  fetch(`/api/prospects/player/${encodeURIComponent(playerId)}`)
     .then(r => {
-      const body = document.getElementById('prospectModalBody');
-      if (!body) return;
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
+      return r.json();
+    })
+    .then(r => {
       if (r.error) {
-        body.innerHTML = `<div style="color:var(--text-muted);font-size:14px;">${r.error}</div>`;
+        content.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">${r.error}</div>`;
         return;
       }
-      const tier = r.tier || '?';
-      const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
-      const tc = tierColors[tier] || '#9ca3af';
-      const age = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-      const val1qb = parseFloat(r.rookie_value || 0).toFixed(0);
-      const valsf  = parseFloat(r.rookie_sf_value || 0).toFixed(0);
-      const score  = parseFloat(r.prospect_score || 0).toFixed(0);
-      const draft  = r.draft_capital_label || (r.projected_pick ? `Pick #${r.projected_pick}` : 'Unknown');
-      const comps = [
-        {l:'Production',  v:r.production_score,              c:'#10b981'},
-        {l:'Efficiency',  v:r.efficiency_score,              c:'#3b82f6'},
-        {l:'Age',         v:r.age_score,                     c:'#8b5cf6'},
-        {l:'Breakout',    v:r.breakout_profile_score,        c:'#f59e0b'},
-        {l:'Athleticism', v:r.athleticism_score,             c:'#ef4444'},
-        {l:'Competition', v:r.competition_score,             c:'#06b6d4'},
-        {l:'Draft Cap.',  v:r.projected_draft_capital_score, c:'#f97316'},
-      ].filter(c => c.v != null);
-      const compsHtml = comps.map(c => {
-        const pct = Math.round(parseFloat(c.v || 0));
-        return `<div style="display:grid;grid-template-columns:90px 1fr 32px;align-items:center;gap:8px;margin-bottom:6px;">
-          <span style="font-size:12px;color:var(--text-muted);">${c.l}</span>
-          <div style="background:var(--border,#e5e7eb);border-radius:4px;height:6px;"><div style="width:${pct}%;height:100%;border-radius:4px;background:${c.c};"></div></div>
-          <span style="font-size:12px;color:${c.c};font-weight:600;">${pct}</span>
-        </div>`;
+
+      // Use the same data processing as the rankings page
+      var val1qb = parseFloat(r.rookie_value||0);
+      var valsf  = parseFloat(r.rookie_sf_value||0);
+      var score  = parseFloat(r.prospect_score||0);
+      var conf   = parseFloat(r.confidence_score||0);
+      var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
+      var tier   = r.tier || '?';
+      var tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+      var tierColor  = tierColors[tier] || '#9ca3af';
+
+      var reasons = (r.key_reasons||'').split('\\n').filter(function(l){ return l.trim(); });
+
+      // Measurables
+      var ht = r.height_inches;
+      var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
+      var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '—';
+      var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '—';
+      var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '—';
+
+      // Draft info — single consolidated line
+      var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
+      var draftStr = draftCapLabel
+        ? draftCapLabel + (r.num_mocks_used ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
+        : 'Undrafted / Unknown';
+
+      // Component scores (Confidence lives in the section header, not here)
+      var components = [
+        {label:'Production',  val: r.production_score,              color:'#10b981'},
+        {label:'Efficiency',  val: r.efficiency_score,              color:'#3b82f6'},
+        {label:'Age',         val: r.age_score,                     color:'#8b5cf6'},
+        {label:'Breakout',    val: r.breakout_profile_score,        color:'#f59e0b'},
+        {label:'Athleticism', val: r.athleticism_score,             color:'#ef4444'},
+        {label:'Competition', val: r.competition_score,             color:'#06b6d4'},
+        {label:'Draft Cap.',  val: r.projected_draft_capital_score, color:'#f97316'},
+      ];
+
+      var compsHtml = components.map(function(c) {
+        var v = parseFloat(c.val||0);
+        return '<div class="rk-comp-row">' +
+          '<div class="rk-comp-label">' + c.label + '</div>' +
+          '<div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:' + Math.round(v) + '%;background:' + c.color + ';"></div></div>' +
+          '<div class="rk-comp-val" style="color:' + c.color + ';">' + v.toFixed(0) + '</div>' +
+        '</div>';
       }).join('');
-      const reasons = (r.key_reasons || '').split('\\n').filter(l => l.trim());
-      const reasonsHtml = reasons.length
-        ? `<div style="margin-top:16px;font-size:13px;color:var(--text-muted);line-height:1.7;">${reasons.map(l => `<div>• ${l}</div>`).join('')}</div>`
+
+      var reasonsHtml = reasons.length > 0
+        ? '<div class="rk-section-divider"></div>' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">Scouting Notes</div>' +
+          '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;">' +
+            reasons.map(function(l){ return '<div style="padding:2px 0;">' + l + '</div>'; }).join('') +
+          '</div>'
         : '';
-      const nameEl = modal.querySelector('.player-modal-name');
-      if (nameEl) nameEl.innerHTML = `${r.name || playerName} <span style="padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">Tier ${tier}</span> <span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling"></i> PROSPECT</span>`;
-      body.innerHTML = `
-        <div style="width:100%;">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px;text-align:center;">
-            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
-              <div style="font-size:22px;font-weight:700;color:var(--accent,#3b82f6);">${score}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Prospect Score</div>
-            </div>
-            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
-              <div style="font-size:22px;font-weight:700;color:var(--text);">${val1qb}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">1QB Value</div>
-            </div>
-            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
-              <div style="font-size:22px;font-weight:700;color:var(--text);">${valsf}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">SF Value</div>
-            </div>
-          </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">
-            ${r.position || ''} · ${age} yrs${r.school ? ' · ' + r.school : ''} · ${draft}
-          </div>
-          <div style="margin-top:16px;">${compsHtml}</div>
-          ${reasonsHtml}
-        </div>
-      `;
+
+      // Build the modal content using the same structure as rankings page
+      content.innerHTML =
+        // ── Header: name + tier badge + close ───────────────────────────────
+        '<div class="rk-modal-header">' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+              '<span style="font-size:22px;font-weight:700;color:var(--text);">' + (r.name||playerName||'') + '</span>' +
+              '<span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;' +
+                    'background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + '44;">' +
+                'Tier ' + tier +
+              '</span>' +
+            '</div>' +
+            '<div style="font-size:13px;color:var(--text-muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+              '<span style="font-weight:600;color:var(--text);">' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
+              (r.school ? '<span style="opacity:.4;">·</span><span>' + r.school + '</span>' : '') +
+              '<span style="opacity:.4;">·</span><span>' + age + ' yrs</span>' +
+              (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<button class="rk-modal-close" onclick="rkCloseModal()">✕</button>' +
+        '</div>' +
+
+        '<div class="rk-modal-body">' +
+
+          // ── Hero: Prospect Score + 1QB Value + SF Value ──────────────────
+          '<div class="rk-hero-row">' +
+            '<div class="rk-hero-stat rk-hero-primary">' +
+              '<div class="rk-hero-label">Prospect Score</div>' +
+              '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(1) + '</div>' +
+              '<div class="rk-hero-sub">' + (r.tier_label||'') + '</div>' +
+            '</div>' +
+            '<div class="rk-hero-stat">' +
+              '<div class="rk-hero-label">1QB Value</div>' +
+              '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div>' +
+              '<div class="rk-hero-sub">10-team</div>' +
+            '</div>' +
+            '<div class="rk-hero-stat">' +
+              '<div class="rk-hero-label">SF Value</div>' +
+              '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div>' +
+              '<div class="rk-hero-sub">10-team</div>' +
+            '</div>' +
+          '</div>' +
+
+          // ── Draft (consolidated) ─────────────────────────────────────────
+          '<div class="rk-info-row">' +
+            '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;">Draft</span>' +
+            '<span style="font-size:13px;font-weight:600;color:var(--text);">' + draftStr + '</span>' +
+          '</div>' +
+
+          // ── Measurables ──────────────────────────────────────────────────
+          '<div class="rk-meas-grid">' +
+            '<div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">' + heightStr + '</div></div>' +
+            '<div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">' + weightStr + '</div></div>' +
+            '<div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">' + fortyStr + '</div></div>' +
+            '<div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">' + rasStr + '</div></div>' +
+          '</div>' +
+
+          // ── Component scores with bars ───────────────────────────────────
+          '<div class="rk-section-divider"></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+            '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Component Scores</span>' +
+            '<span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">' + conf.toFixed(0) + '</strong></span>' +
+          '</div>' +
+          '<div class="rk-comp-list">' + compsHtml + '</div>' +
+
+          reasonsHtml +
+        '</div>';
     })
-    .catch(() => {
-      const body = document.getElementById('prospectModalBody');
-      if (body) body.innerHTML = '<div style="color:var(--text-muted);">Could not load prospect data.</div>';
+    .catch(function(err) {
+      console.error('Error loading prospect data:', err);
+      content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Could not load prospect data.</div>';
     });
 }
 

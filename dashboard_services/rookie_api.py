@@ -2,11 +2,11 @@
 Rookie prospect API blueprint.
 
 Endpoints:
-    GET  /api/rookies/rankings?year=2026&pos=WR&league_type=1qb
-    GET  /api/rookies/player/<player_id>
-    GET  /api/rookies/active-class
-    POST /api/rookies/prospects        (add/update one or more prospects)
-    POST /api/rookies/refresh          (triggers pipeline re-run)
+    GET  /api/prospects/rankings?year=2026&pos=WR&league_type=1qb
+    GET  /api/prospects/player/<player_id>
+    GET  /api/prospects/active-class
+    POST /api/prospects/prospects        (add/update one or more prospects)
+    POST /api/prospects/refresh          (triggers pipeline re-run)
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, request
 
 log = logging.getLogger(__name__)
 
-rookie_bp = Blueprint("rookies", __name__, url_prefix="/api/rookies")
+rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 
 # In-memory cache so we don't re-run the pipeline on every page load.
 # Invalidated on refresh or on first hit per process.

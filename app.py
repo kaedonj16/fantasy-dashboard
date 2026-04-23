@@ -1041,9 +1041,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings", "page_players",  "players",  False),
-        ("Rookie Rankings", "page_rookies",  "rookies",   False),
+        ("Prospect Rankings", "page_prospects",  "prospects",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "breakouts", "rookies"], "playersNavDropdown"))
+    ], ["players", "breakouts", "prospects"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -7672,7 +7672,6 @@ def page_players(platform: str, season: int, league_id: str):
           let badges = '';
           if (p.is_rookie)           badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsElite(p.id))    badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-bolt" aria-hidden="true"></i> ELITE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
           if (!p.is_rookie && !prIsRookie(p.id) && prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-rocket" aria-hidden="true"></i> PROSPECT</span>';
 
@@ -7770,12 +7769,12 @@ def page_players(platform: str, season: int, league_id: str):
     return render_page("Player Rankings", league_id, "players", body_html, platform, season)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/rookies")
-def page_rookies(platform: str, season: int, league_id: str):
+@app.route("/<platform>/<int:season>/<league_id>/prospects")
+def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page — active class auto-detected."""
-    from dashboard_services.pages.rookies_page import build_rookies_body
-    body_html = build_rookies_body(platform, season, league_id)
-    return render_page("Rookie Rankings", league_id, "rookies", body_html, platform, season)
+    from dashboard_services.pages.rookies_page import build_prospects_body
+    body_html = build_prospects_body(platform, season, league_id)
+    return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
@@ -8328,7 +8327,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
       .tdb-badge {{
         font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
-        background: var(--bg-secondary, #1e293b); color: var(--text-muted);
+        background: var(--row, #1e293b); color: var(--text);
         border: 1px solid var(--border-color);
       }}
       .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
@@ -8340,14 +8339,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-col-divider {{ background: var(--border-color); }}
       .tdb-asset {{
-        font-size: 13px; color: var(--text-color);
+        font-size: 14px; color: var(--text); font-weight: 500;
         display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
       }}
-      .tdb-asset.tdb-match {{ font-weight: 700; color: var(--accent-color, #3b82f6); }}
-      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 12px; }}
+      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; font-weight: 500; }}
       .tdb-pos {{
         font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-        background: var(--bg-secondary, #1e293b); color: var(--text-muted); flex-shrink: 0;
+        background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
       }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
@@ -8457,11 +8456,11 @@ def page_trade_database_guest():
     return page_trade_database(platform="sleeper", season=current_season, league_id=None)
 
 
-@app.route("/rookies")
-def page_rookies_guest():
+@app.route("/prospects")
+def page_prospects_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_rookies(platform="sleeper", season=current_season, league_id=None)
+    return page_prospects(platform="sleeper", season=current_season, league_id=None)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")
@@ -12285,7 +12284,7 @@ def api_trade_database():
                 name = f"{s} Pick {r}.{str(slot).zfill(2)}"
             else:
                 order = a["pick_order"] or ""
-                name  = f"{s} Rd {r}" + (f" ({order})" if order else "")
+                name  = f"{s} Round {r}" + (f" ({order})" if order else "")
             return {"type": "pick", "name": name}
 
         result = []
@@ -12426,7 +12425,7 @@ def api_trade_intel_similar_trades():
                 name = f"{s} Pick {rd}.{str(slot).zfill(2)}"
             else:
                 order = a["pick_order"] or ""
-                name  = f"{s} Rd {rd}" + (f" ({order})" if order else "")
+                name  = f"{s} Round {rd}" + (f" ({order})" if order else "")
             return {"type": "pick", "name": name, "is_key_player": False}
 
         side_a_ids_set = set(side_a_ids)

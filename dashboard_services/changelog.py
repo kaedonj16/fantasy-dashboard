@@ -62,7 +62,7 @@ CHANGELOG = [
         "date": "2026-04-09",
         "tag": "new",
         "text": "Rookie Rankings: Full prospect evaluation system: production, athleticism, draft capital, and dynasty value for the active draft class",
-        "link": "/rookies"
+        "link": "/prospects"
     },
     {
         "date": "2026-04-09",
