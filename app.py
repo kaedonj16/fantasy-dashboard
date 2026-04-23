@@ -9434,13 +9434,6 @@ def api_trade_outcome():
     assets_received = payload.get("assets_received") or []
     assets_sent = payload.get("assets_sent") or []
 
-    logger.info("[api-trade-outcome] Received payload: %s", {
-        "assets_received_count": len(assets_received),
-        "assets_sent_count": len(assets_sent),
-        "trade_date": payload.get("trade_date"),
-        "payload_keys": list(payload.keys())
-    })
-
     if not assets_received and not assets_sent:
         logger.warning("[api-trade-outcome] 400 error: No assets provided. Payload: %s", payload)
         return jsonify({"error": "No assets provided", "debug": payload}), 400
@@ -9489,7 +9482,6 @@ def api_trade_outcome():
                         values_now[space_format_id] = value
                 else:
                     player_count += 1
-            logger.info("[api-trade-outcome] Loaded calibrated values for %d assets (players: %d, picks: %d)", len(values_now), player_count, pick_count)
         except Exception as db_error:
             logger.warning("[api-trade-outcome] Calibrated values unavailable, falling back to model table: %s", db_error)
             value_table = get_model_value_table_cached()
