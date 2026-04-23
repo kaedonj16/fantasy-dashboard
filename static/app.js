@@ -6044,40 +6044,33 @@ async function checkTradeOutcome(btn) {
       const verdictCls = data.verdict === 'WIN' ? 'outcome-win' : data.verdict === 'LOSS' ? 'outcome-loss' : 'outcome-even';
       const sign = data.net_delta_now >= 0 ? '+' : '';
 
-      function buildOutcomeRow(r, tag, tagCls, valField) {
-        const val = r[valField] ?? 0;
-        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val">${val.toFixed(0)}</span></div>`;
+      function buildThenRow(r, tag, tagCls) {
+        if (r.is_pick || r.value_then == null) return '';
+        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val">${r.value_then.toFixed(0)}</span></div>`;
       }
 
-      function buildCurrentRow(r, tag, tagCls) {
-        const isPick = r.name.includes('Pick') && r.delta === 0;
-        let deltaStr, cls;
-        if (isPick) {
-          deltaStr = '';
-          cls = 'outcome-neutral';
-        } else {
-          deltaStr = r.delta >= 0 ? ` (+${r.delta.toFixed(0)})` : ` (${r.delta.toFixed(0)})`;
-          cls = r.delta >= 0 ? 'outcome-plus' : 'outcome-minus';
-        }
+      function buildNowRow(r, tag, tagCls) {
+        const deltaStr = r.delta != null ? (r.delta >= 0 ? ` (+${r.delta.toFixed(0)})` : ` (${r.delta.toFixed(0)})`) : '';
+        const cls = r.delta == null ? 'outcome-neutral' : (r.delta >= 0 ? 'outcome-plus' : 'outcome-minus');
         return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val ${cls}">${(r.value_now ?? 0).toFixed(0)}${deltaStr}</span></div>`;
       }
 
       let thenRows = '';
-      (data.received || []).forEach(r => { thenRows += buildOutcomeRow(r, 'GOT', 'outcome-got', 'value_then'); });
-      (data.sent    || []).forEach(r => { thenRows += buildOutcomeRow(r, 'GAVE', 'outcome-gave', 'value_then'); });
+      (data.received || []).forEach(r => { thenRows += buildThenRow(r, 'GOT', 'outcome-got'); });
+      (data.sent    || []).forEach(r => { thenRows += buildThenRow(r, 'GAVE', 'outcome-gave'); });
 
       let nowRows = '';
-      (data.received || []).forEach(r => { nowRows += buildCurrentRow(r, 'GOT', 'outcome-got'); });
-      (data.sent    || []).forEach(r => { nowRows += buildCurrentRow(r, 'GAVE', 'outcome-gave'); });
+      (data.received || []).forEach(r => { nowRows += buildNowRow(r, 'GOT', 'outcome-got'); });
+      (data.sent    || []).forEach(r => { nowRows += buildNowRow(r, 'GAVE', 'outcome-gave'); });
 
+      const thenSection = thenRows ? `<div class="outcome-section-label">At Trade Date</div><div class="outcome-rows">${thenRows}</div>` : '';
       resultEl.innerHTML = `
         <div class="trade-outcome-wrap">
           <div class="outcome-header">
             <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
             <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
           </div>
-          <div class="outcome-section-label">At Trade Date</div>
-          <div class="outcome-rows">${thenRows}</div>
+          ${thenSection}
           <div class="outcome-section-label outcome-section-label--current">Calibrated Value</div>
           <div class="outcome-rows">${nowRows}</div>
         </div>`;

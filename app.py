@@ -9571,36 +9571,47 @@ def api_trade_outcome():
         for asset in assets_received:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
-            
-            # Handle players vs picks
-            if asset.get("asset_type") == "pick":
-                now = get_pick_value(asset)
-                then = now  # Picks don't have historical values, use current value
-                logger.debug("[api-trade-outcome] Pick %s: get_pick_value=%s, values_now lookup=%s", pid, now, values_now.get(pid, 0.0))
+            is_pick = asset.get("asset_type") == "pick"
+
+            if is_pick:
+                # Prefer calibrated value from values_now; fall back to pick table
+                now = values_now.get(pid, 0.0) or get_pick_value(asset)
+                then = None  # picks have no historical value
             else:
                 now = values_now.get(pid, 0.0)
-                then = then_values.get(pid, now) if trade_date else now
-                logger.debug("[api-trade-outcome] Player %s: values_now lookup=%s", pid, now)
-                
+                then = then_values.get(pid, None) if trade_date else None
+
             total_received_now += now
-            total_received_then += then
-            received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+            if then is not None:
+                total_received_then += then
+            received_rows.append({
+                "id": pid, "name": name, "is_pick": is_pick,
+                "value_now": round(now, 1),
+                "value_then": round(then, 1) if then is not None else None,
+                "delta": round(now - then, 1) if then is not None else None,
+            })
 
         for asset in assets_sent:
             pid = str(asset.get("id") or "")
             name = str(asset.get("name") or pid)
-            
-            # Handle players vs picks
-            if asset.get("asset_type") == "pick":
-                now = get_pick_value(asset)
-                then = now  # Picks don't have historical values, use current value
+            is_pick = asset.get("asset_type") == "pick"
+
+            if is_pick:
+                now = values_now.get(pid, 0.0) or get_pick_value(asset)
+                then = None
             else:
                 now = values_now.get(pid, 0.0)
-                then = then_values.get(pid, now) if trade_date else now
-                
+                then = then_values.get(pid, None) if trade_date else None
+
             total_sent_now += now
-            total_sent_then += then
-            sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+            if then is not None:
+                total_sent_then += then
+            sent_rows.append({
+                "id": pid, "name": name, "is_pick": is_pick,
+                "value_now": round(now, 1),
+                "value_then": round(then, 1) if then is not None else None,
+                "delta": round(now - then, 1) if then is not None else None,
+            })
 
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)
