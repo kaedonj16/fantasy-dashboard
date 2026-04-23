@@ -783,8 +783,12 @@ window.initTradePage = function initTradePage(root = document) {
       row.style.cursor = "pointer";
       row.onclick = (e) => {
         e.stopPropagation();
-        if (p.is_rookie && p.is_rookie != 'False' && typeof rkOpenModal === 'function') {
-          rkOpenModal(p);
+        if (p.is_rookie && p.is_rookie != 'False') {
+          if (typeof rkOpenModal === 'function') {
+            rkOpenModal(p);
+          } else {
+            openProspectModal(p.id, p.name || "Unknown");
+          }
         } else {
           openPlayerModal(p.id, p.name || "Unknown");
         }
@@ -1398,10 +1402,21 @@ window.initTradePage = function initTradePage(root = document) {
       nameEl.className = "otc-chip-name player-clickable";
       nameEl.textContent = p.name || "Unknown";
 
-      // Make player name clickable
+      // Make player name clickable — route prospects to prospect modal
       if (p.id) {
-        nameEl.dataset.playerId = p.id;
-        nameEl.dataset.playerName = p.name || "Unknown";
+        nameEl.style.cursor = 'pointer';
+        nameEl.onclick = (e) => {
+          e.stopPropagation();
+          if (p.is_rookie) {
+            if (typeof rkOpenModal === 'function') {
+              rkOpenModal(p);
+            } else {
+              openProspectModal(p.id, p.name || 'Unknown');
+            }
+          } else {
+            openPlayerModal(p.id, p.name || 'Unknown');
+          }
+        };
       }
 
       const metaEl = document.createElement("div");
@@ -4875,6 +4890,105 @@ document.addEventListener('click', function(e) {
 });
 document.addEventListener('DOMContentLoaded', _refreshWatchlistNav);
 
+// Global prospect modal — used when rkOpenModal (rookies page only) is not defined
+function openProspectModal(playerId, playerName) {
+  const existing = document.querySelector('.player-modal-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'player-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const modal = document.createElement('div');
+  modal.className = 'player-modal';
+  modal.style.cssText = 'position:relative;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;border-radius:18px;background:var(--card,#fff);';
+  modal.innerHTML = `
+    <div style="padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+        <div class="player-modal-name" style="font-size:22px;font-weight:700;color:var(--text);">${playerName || 'Prospect'}</div>
+        <button onclick="this.closest('.player-modal-overlay').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;padding:4px;">✕</button>
+      </div>
+      <div id="prospectModalBody" style="display:flex;align-items:center;justify-content:center;padding:32px;">
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  fetch(`/api/prospect/${encodeURIComponent(playerId)}`)
+    .then(r => r.json())
+    .then(r => {
+      const body = document.getElementById('prospectModalBody');
+      if (!body) return;
+      if (r.error) {
+        body.innerHTML = `<div style="color:var(--text-muted);font-size:14px;">${r.error}</div>`;
+        return;
+      }
+      const tier = r.tier || '?';
+      const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+      const tc = tierColors[tier] || '#9ca3af';
+      const age = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
+      const val1qb = parseFloat(r.rookie_value || 0).toFixed(0);
+      const valsf  = parseFloat(r.rookie_sf_value || 0).toFixed(0);
+      const score  = parseFloat(r.prospect_score || 0).toFixed(0);
+      const draft  = r.draft_capital_label || (r.projected_pick ? `Pick #${r.projected_pick}` : 'Unknown');
+      const comps = [
+        {l:'Production',  v:r.production_score,              c:'#10b981'},
+        {l:'Efficiency',  v:r.efficiency_score,              c:'#3b82f6'},
+        {l:'Age',         v:r.age_score,                     c:'#8b5cf6'},
+        {l:'Breakout',    v:r.breakout_profile_score,        c:'#f59e0b'},
+        {l:'Athleticism', v:r.athleticism_score,             c:'#ef4444'},
+        {l:'Competition', v:r.competition_score,             c:'#06b6d4'},
+        {l:'Draft Cap.',  v:r.projected_draft_capital_score, c:'#f97316'},
+      ].filter(c => c.v != null);
+      const compsHtml = comps.map(c => {
+        const pct = Math.round(parseFloat(c.v || 0));
+        return `<div style="display:grid;grid-template-columns:90px 1fr 32px;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:12px;color:var(--text-muted);">${c.l}</span>
+          <div style="background:var(--border,#e5e7eb);border-radius:4px;height:6px;"><div style="width:${pct}%;height:100%;border-radius:4px;background:${c.c};"></div></div>
+          <span style="font-size:12px;color:${c.c};font-weight:600;">${pct}</span>
+        </div>`;
+      }).join('');
+      const reasons = (r.key_reasons || '').split('\\n').filter(l => l.trim());
+      const reasonsHtml = reasons.length
+        ? `<div style="margin-top:16px;font-size:13px;color:var(--text-muted);line-height:1.7;">${reasons.map(l => `<div>• ${l}</div>`).join('')}</div>`
+        : '';
+      const nameEl = modal.querySelector('.player-modal-name');
+      if (nameEl) nameEl.innerHTML = `${r.name || playerName} <span style="padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">Tier ${tier}</span> <span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling"></i> PROSPECT</span>`;
+      body.innerHTML = `
+        <div style="width:100%;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px;text-align:center;">
+            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
+              <div style="font-size:22px;font-weight:700;color:var(--accent,#3b82f6);">${score}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Prospect Score</div>
+            </div>
+            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
+              <div style="font-size:22px;font-weight:700;color:var(--text);">${val1qb}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">1QB Value</div>
+            </div>
+            <div style="background:var(--surface,#f8fafc);border-radius:12px;padding:14px;">
+              <div style="font-size:22px;font-weight:700;color:var(--text);">${valsf}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">SF Value</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">
+            ${r.position || ''} · ${age} yrs${r.school ? ' · ' + r.school : ''} · ${draft}
+          </div>
+          <div style="margin-top:16px;">${compsHtml}</div>
+          ${reasonsHtml}
+        </div>
+      `;
+    })
+    .catch(() => {
+      const body = document.getElementById('prospectModalBody');
+      if (body) body.innerHTML = '<div style="color:var(--text-muted);">Could not load prospect data.</div>';
+    });
+}
+
 function closePlayerModal() {
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
@@ -5733,7 +5847,7 @@ async function fetchTeamDetails(rosterId) {
 }
 
 // Global player indicators for team modal
-let globalPlayerIndicators = { rookies: [], breakouts: [] };
+let globalPlayerIndicators = { rookies: [], breakouts: [], elites: [], prospects: [] };
 
 // Load player indicators globally
 async function loadGlobalPlayerIndicators() {
@@ -5746,9 +5860,18 @@ async function loadGlobalPlayerIndicators() {
   }
 }
 
-// Global isBreakout function
+// Global indicator helpers (used by openPlayerModal and any non-trade-calc context)
 function isBreakout(playerId) {
   return globalPlayerIndicators.breakouts && globalPlayerIndicators.breakouts.includes(String(playerId));
+}
+function isElite(playerId) {
+  return globalPlayerIndicators.elites && globalPlayerIndicators.elites.includes(String(playerId));
+}
+function isProspect(playerId) {
+  return globalPlayerIndicators.prospects && globalPlayerIndicators.prospects.includes(String(playerId));
+}
+function isRookie(playerId) {
+  return globalPlayerIndicators.rookies && globalPlayerIndicators.rookies.includes(String(playerId));
 }
 
 // =============================================================================

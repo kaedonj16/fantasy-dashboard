@@ -7651,8 +7651,12 @@ def page_players(platform: str, season: int, league_id: str):
           row.style.cursor = 'pointer';
           row.onclick = function(e) {
             e.stopPropagation();
-            if (p.is_rookie && typeof rkOpenModal === 'function') {
-              rkOpenModal(p);
+            if (p.is_rookie) {
+              if (typeof rkOpenModal === 'function') {
+                rkOpenModal(p);
+              } else {
+                openProspectModal(p.id, p.name || 'Unknown');
+              }
             } else {
               openPlayerModal(p.id, p.name || 'Unknown');
             }
@@ -9954,16 +9958,15 @@ def api_player_indicators():
         nfl_state = get_nfl_state() or {}
         current_season = int(nfl_state.get("season") or datetime.now().year)
 
-        # Load all players to check for rookies
+        # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
         players_index = load_players_index() or {}
         rookies = []
 
         for player_id, player_data in players_index.items():
-            # Check if rookie (years_exp == 0 or rookie_year == current_season)
             years_exp = player_data.get("years_exp")
             rookie_year = player_data.get("rookie_year")
 
-            if years_exp == 0 or years_exp == "0":
+            if years_exp in (0, 1, "0", "1"):
                 rookies.append(str(player_id))
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
@@ -10015,14 +10018,13 @@ def api_player_indicators():
 
         # Get elites based on positional rank cutoffs (12-man PPR dynasty)
         elites = []
-        prospects = []
 
-        # Load model value table to get current player values (same as /api/players)
+        # Load model value table to get current player values
         value_table = load_model_value_table() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
         # Top-N positional rank cutoffs for a 12-man PPR dynasty league
-        elite_rank_cutoffs = {'QB': 5, 'RB': 12, 'WR': 12, 'TE': 5}
+        elite_rank_cutoffs = {'QB': 5, 'RB': 6, 'WR': 6, 'TE': 5}
 
         from collections import defaultdict as _defaultdict
         pos_players: dict = _defaultdict(list)
@@ -10032,26 +10034,21 @@ def api_player_indicators():
             if val > 0 and pos in elite_rank_cutoffs:
                 pos_players[pos].append((val, str(player_id)))
 
-        elite_set: set = set()
         for pos, cutoff in elite_rank_cutoffs.items():
             for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
                 elites.append(pid)
-                elite_set.add(pid)
 
-        for player_id, player_data in value_map.items():
-            position = str(player_data.get("position", "")).upper()
-            value = float(player_data.get("value", 0) or 0)
-
-            if str(player_id) in elite_set:
-                continue
-
-            # Prospects: players with 0-2 years experience OR age <= 23, with moderate value
-            years_exp = player_data.get("years_exp")
-            age = player_data.get("age")
-            is_young = (years_exp in [0, 1, 2] or (age and float(age) <= 23))
-            has_value = value >= 50
-            if is_young and has_value:
-                prospects.append(str(player_id))
+        # Prospects = only pre-draft class players (is_rookie=True in cached table)
+        prospects = []
+        try:
+            model_tbl = get_model_value_table_cached() or []
+            for entry in model_tbl:
+                if entry.get("is_rookie") is True:
+                    pid = str(entry.get("id") or "")
+                    if pid:
+                        prospects.append(pid)
+        except Exception as _pe:
+            print(f"[player-indicators] prospects skipped: {_pe}")
 
         return jsonify({
             "rookies": rookies,
@@ -10063,6 +10060,28 @@ def api_player_indicators():
     except Exception as e:
         print(f"[player-indicators] Error: {e}")
         return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
+
+
+@app.route("/api/prospect/<player_id>")
+def api_prospect_profile(player_id: str):
+    """Return full prospect profile data for a single pre-draft player."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        draft_year = get_active_rookie_class()
+        rows = get_rookie_rankings_from_db(draft_year)
+        player_id = str(player_id).strip()
+        for r in rows:
+            if str(r.get("player_id") or "") == player_id:
+                d = dict(r)
+                d["draft_capital_label"] = (
+                    f"Round {d['projected_round']} · Pick #{d['projected_pick']}"
+                    if d.get("projected_round") and d.get("projected_pick") else None
+                )
+                return jsonify(_sanitize_for_json(d))
+        return jsonify({"error": "not found"}), 404
+    except Exception as e:
+        print(f"[api/prospect] {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/breakout-candidates")
