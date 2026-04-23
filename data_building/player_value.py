@@ -1236,17 +1236,28 @@ def build_value_table_for_usage(
     FLOOR = 0.03
     ELITE_BOOST_SCALE = 0.035
 
-    value_table: Dict[str, float] = {}
-
+    # Pass 1: compute raw combined scores without clipping.
+    # elite_bonus can push top players above 1.0, which is intentional —
+    # we want the relative ordering preserved before normalizing.
+    raw_combined: Dict[str, float] = {}
     for pid, v in final_scores.items():
         if gmax <= gmin:
             s01 = 0.0
         else:
             s01 = (v - gmin) / (gmax - gmin)
-
         s_curve = s01 ** GAMMA
         elite_bonus = ELITE_BOOST_SCALE * (elite_norm.get(pid, 0.0) ** 1.8)
-        s_mix = FLOOR + (1.0 - FLOOR) * _clip(s_curve + elite_bonus)
+        raw_combined[pid] = s_curve + elite_bonus  # may exceed 1.0 for true elites
+
+    # Pass 2: normalize so the top player lands at exactly 999.9.
+    # This preserves all relative gaps instead of hard-clipping everyone
+    # above 1.0 to the same ceiling (which caused multiple players at 999.9).
+    combined_max = max(raw_combined.values()) if raw_combined else 1.0
+
+    value_table: Dict[str, float] = {}
+    for pid, raw in raw_combined.items():
+        normalized = raw / combined_max if combined_max > 0 else 0.0
+        s_mix = FLOOR + (1.0 - FLOOR) * _clip(normalized)
         value_table[pid] = round(s_mix * 999.9, 1)
 
     if not include_confidence:

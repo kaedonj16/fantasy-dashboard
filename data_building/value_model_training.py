@@ -848,6 +848,10 @@ def train_trade_value_model(
     for col in numeric_cols:
         df_model[col] = pd.to_numeric(df_model[col], errors="coerce")
 
+    # Drop columns that are entirely null — the median imputer can't handle them
+    # and emits a UserWarning. They carry no signal anyway.
+    numeric_cols = [c for c in numeric_cols if df_model[c].notna().any()]
+
     for col in cat_cols:
         df_model[col] = df_model[col].fillna("UNK").astype(str)
 
@@ -1131,6 +1135,51 @@ def rewrite_value_table_with_model() -> Path:
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
+    # Blend KTC rankings into 1QB vendor values (25% weight) when available.
+    # KTC uses player names rather than Sleeper IDs so we match by normalised name.
+    # Wrapped in broad try/except so a KTC format change never breaks the pipeline.
+    try:
+        from data_building.external_data.external_values_scraper import load_ktc_values
+        from utils.utils import load_players_index as _load_pi
+        ktc_rows = load_ktc_values()
+        if ktc_rows:
+            ktc_raw_vals = [
+                float(r["ktc_value_1qb"])
+                for r in ktc_rows
+                if r.get("ktc_value_1qb") and float(r["ktc_value_1qb"]) > 0
+            ]
+            if ktc_raw_vals:
+                ktc_max = max(ktc_raw_vals)
+                ktc_min = min(ktc_raw_vals)
+                ktc_range = max(ktc_max - ktc_min, 1.0)
+                # Build normalised name → value lookup
+                ktc_name_map: dict[str, float] = {}
+                for r in ktc_rows:
+                    raw_name = (r.get("name") or "").strip().lower()
+                    raw_val = r.get("ktc_value_1qb")
+                    if raw_name and raw_val and float(raw_val) > 0:
+                        ktc_name_map[raw_name] = (
+                            (float(raw_val) - ktc_min) / ktc_range * 899.9 + 100.0
+                        )
+                # Blend: if we have both FC and KTC use 50/50; if only KTC use it solo
+                for pid_str, meta in (_load_pi() or {}).items():
+                    pid = str(pid_str)
+                    pname = (meta.get("name") or "").strip().lower()
+                    ktc_val = ktc_name_map.get(pname)
+                    if not ktc_val:
+                        continue
+                    if pid in vendor_values:
+                        vendor_values[pid] = vendor_values[pid] * 0.50 + ktc_val * 0.50
+                    else:
+                        vendor_values[pid] = ktc_val
+                print(f"[DEBUG] KTC blend applied: {len(ktc_name_map)} players from KTC")
+            else:
+                print("[DEBUG] KTC rows present but no valid ktc_value_1qb entries")
+        else:
+            print("[DEBUG] KTC CSV not found — skipping KTC blend")
+    except Exception as _ktc_err:
+        print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
+
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
 
@@ -1231,9 +1280,20 @@ def rewrite_value_table_with_model() -> Path:
         dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
         dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
 
-        # Blend: 50% FC, 35% DP 2QB, 15% SF Engine
+        # Superflex blend: 35% vendor (FC+KTC), 40% DP 2QB, 25% SF engine.
+        # DP 2QB is the strongest signal for QB scarcity in SF formats.
+        # Renormalize when a source is missing so values aren't deflated.
         if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            sf_value = (0.35 * fc_val_norm) + (0.35 * dp_2qb_norm) + (0.3 * sf_eng_val)
+            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.35, 0.40, 0.25
+            sf_wsum = 0.0
+            sf_wtot = 0.0
+            if fc_val_norm > 0:
+                sf_wsum += SF_W_VENDOR * fc_val_norm; sf_wtot += SF_W_VENDOR
+            if dp_2qb_norm > 0:
+                sf_wsum += SF_W_DP * dp_2qb_norm;    sf_wtot += SF_W_DP
+            if sf_eng_val > 0:
+                sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
+            sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
             # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
             # In Superflex, elite QBs should be valued like elite RBs/WRs
@@ -1295,31 +1355,30 @@ def rewrite_value_table_with_model() -> Path:
         fc_val  = vendor_values.get(pid, 0.0)
         # DP undervalues TEs vs market consensus; exclude for that position.
         dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
-        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else 0.0
+        # Use None to distinguish "no data" (rookie/prospect) from "0 production" (known bad).
+        # Players in the engine table with 0 production should have that zero count against them.
+        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
 
-        active_sources = [v for v in (fc_val, dp_val, eng_val) if v > 0]
+        # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
+        # DP and FC are dropped (renormalized) when missing — they may simply not cover a player.
+        # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
+        # If a player IS in the engine table with 0 production, that zero is included in the blend
+        # so FC hype can't inflate them past what their usage actually supports.
+        W_VENDOR, W_ENGINE, W_DP = 0.40, 0.40, 0.20
+        weighted_sum = 0.0
+        total_weight = 0.0
+        if fc_val > 0:
+            weighted_sum += W_VENDOR * fc_val
+            total_weight += W_VENDOR
+        if eng_val is not None:
+            weighted_sum += W_ENGINE * eng_val
+            total_weight += W_ENGINE
+        if dp_val > 0:
+            weighted_sum += W_DP * dp_val
+            total_weight += W_DP
 
-        if len(active_sources) == 3:
-            fc_val, dp_val, eng_val = active_sources
-            
-            # Check if engine value is 15% above or below either vendor source
-            fc_vs_eng = abs(eng_val - fc_val) / max(fc_val, 1.0) if fc_val > 0 else 0
-            dp_vs_eng = abs(eng_val - dp_val) / max(dp_val, 1.0) if dp_val > 0 else 0
-            
-            if fc_vs_eng > 0.15 or dp_vs_eng > 0.15:
-                # Engine is outlier - use average of the two vendor sources
-                vendor_sources = [v for v in (fc_val, dp_val) if v > 0]
-                final_value = float(np.mean(vendor_sources))
-            else:
-                # No outlier - use average of all three sources
-                final_value = float(np.mean(active_sources))
-
-        elif len(active_sources) == 2:
-            final_value = float(np.mean(active_sources))
-
-        elif len(active_sources) == 1:
-            final_value = active_sources[0]
-
+        if total_weight > 0:
+            final_value = weighted_sum / total_weight
         else:
             final_value = ml_prediction
 
@@ -1458,7 +1517,6 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"value_{n}"] = float(val)
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
-
 
     pos_to_indices: dict[str, list[int]] = {}
 

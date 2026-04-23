@@ -652,10 +652,16 @@ def _history_chart(df_weekly: pd.DataFrame) -> str:
     )
 
 
-def _summary_card(label: str, value: str, sub: str = "", featured: bool = False) -> str:
-    featured_cls = " is-featured" if featured else ""
+def _summary_card(label: str, value: str, sub: str = "", featured: bool = False, card_type: str = "") -> str:
+    cls = "history-card"
+    if card_type == "champion":
+        cls += " is-featured is-champion"
+    elif card_type == "runner_up":
+        cls += " is-featured is-runner-up"
+    elif featured:
+        cls += " is-featured"
     return f"""
-    <div class="history-card{featured_cls}">
+    <div class="{cls}">
       <div class="history-card-label">{label}</div>
       <div class="history-card-value">{value}</div>
       {f'<div class="history-card-sub">{sub}</div>' if sub else ''}
@@ -719,16 +725,16 @@ def get_history_summary_html(history_ctx: dict) -> str:
     featured_cards_html = "".join(
         [
             _summary_card(
-                "Champion",
+                "<i class='fa-solid fa-trophy' aria-hidden='true'></i> Champion",
                 summary["champion"],
                 f"Regular season record: {summary['champion_record']}",
-                featured=True,
+                card_type="champion",
             ),
             _summary_card(
-                "Runner-Up",
+                "<i class='fa-solid fa-medal' aria-hidden='true'></i> Runner-Up",
                 summary["runner_up"],
                 f"Regular season record: {summary['runner_up_record']}",
-                featured=True,
+                card_type="runner_up",
             ),
             _summary_card(
                 "Scoring Leader",

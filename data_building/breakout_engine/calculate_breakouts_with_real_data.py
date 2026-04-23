@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Tuple, Optional
 
 from dashboard_services.service import age_from_bday
 from data_building.breakout_engine import BreakoutEngine
+from data_building.breakout_engine.db_helpers import get_all_players_with_opportunity
 from data_building.external_data.player_history import usage_rows_json_path_for_season
 from utils.utils import load_players_index, load_usage_table, read_json
 
@@ -725,27 +726,37 @@ def main() -> Dict[str, Any]:
 
     usage_by_id, age_by_id = build_usage_maps(usage_table)
 
-    all_players = []
-    for player_id, player_data in players_index.items():
-        pos = player_data.get("pos")
-        team = player_data.get("team")
+    # Primary: pull dynasty-relevant players from player_values (top 600 by rank).
+    # This respects calibrated dynasty value rather than a hard age cutoff, so
+    # a 27-year-old WR2 who just inherited a starting role is included while a
+    # fringe backup is not — regardless of their age.
+    db_players = get_all_players_with_opportunity(season, min_value_rank=600)
 
-        if pos in ["QB", "RB", "WR", "TE"] and team:
-            age = age_from_bday(player_data.get("bDay"))
+    if db_players:
+        all_players = db_players
+        print(f"[main] Using DB candidate pool: {len(all_players)} players from player_values")
+    else:
+        # Fallback: build from players_index if DB is unavailable or empty.
+        # Keeps the original age < 26 filter since we have no value signal here.
+        print("[main] DB candidate pool unavailable — falling back to players_index (age < 26)")
+        all_players = []
+        for player_id, player_data in players_index.items():
+            pos = player_data.get("pos")
+            team = player_data.get("team")
 
-            if age is not None and age < 26:
-                # Adjusted to 22.5 to better align with typical NFL entry age
-                # Most players enter at 22-23, so this gives more accurate year classification
-                years_exp = max(0, int(age - 22.5))
+            if pos in ["QB", "RB", "WR", "TE"] and team:
+                age = age_from_bday(player_data.get("bDay"))
 
-                all_players.append({
-                    "player_id": player_id,
-                    "player_name": player_data.get("name", "Unknown"),
-                    "team": team,
-                    "position": pos,
-                    "age": age,
-                    "years_exp": years_exp,
-                })
+                if age is not None and age < 26:
+                    years_exp = max(0, int(age - 22.5))
+                    all_players.append({
+                        "player_id": player_id,
+                        "player_name": player_data.get("name", "Unknown"),
+                        "team": team,
+                        "position": pos,
+                        "age": age,
+                        "years_exp": years_exp,
+                    })
 
     filtered_candidates, filter_summary = apply_candidate_filter(all_players, usage_by_id)
     print("Filtered candidates:", len(filtered_candidates))

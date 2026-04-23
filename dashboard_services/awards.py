@@ -45,7 +45,7 @@ def render_awards_section(awards: dict) -> str:
 
     return f"""
     <div class="card awards-card" data-section="awards">
-        <h2 class="awards-title">🏆 League Awards</h2>
+        <h2 class="awards-title"><i class="fa-solid fa-trophy" aria-hidden="true"></i> League Awards</h2>
       <div class="awards-grid">{''.join(rows)}</div>
     </div>
     """

@@ -79,7 +79,7 @@ TABLE_CONFIG = [
     {
         "table": "player_values",
         "conflict_cols": ["player_id"],
-        "skip_cols": [],
+        "skip_cols": ["value_8", "value_10", "value_12", "value_14", "sf_value_8", "sf_value_10", "sf_value_12", "sf_value_14", "sf_pos_rank", "sf_pos_rank_label"],
     },
     {
         "table": "player_value_history",
@@ -122,6 +122,32 @@ TABLE_CONFIG = [
     {
         "table": "player_advanced_metrics",
         "conflict_cols": ["player_id", "as_of_date"],
+        "skip_cols": ["id"],
+    },
+    # Trade Intelligence (migrate in FK order)
+    {
+        "table": "trade_intel_leagues",
+        "conflict_cols": ["league_id"],
+        "skip_cols": [],
+    },
+    {
+        "table": "trade_intel_trades",
+        "conflict_cols": ["transaction_id"],
+        "skip_cols": ["id"],
+    },
+    {
+        "table": "trade_intel_assets",
+        "conflict_cols": ["trade_id", "side", "asset_type"],
+        "skip_cols": ["id"],
+    },
+    {
+        "table": "trade_intel_player_stats",
+        "conflict_cols": ["player_id", "season"],
+        "skip_cols": [],
+    },
+    {
+        "table": "trade_intel_packages",
+        "conflict_cols": ["anchor_player_id", "package_key", "season"],
         "skip_cols": ["id"],
     },
     # Rookie tables — migrate in FK order (active_class and prospects first)

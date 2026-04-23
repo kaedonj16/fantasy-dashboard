@@ -26,7 +26,14 @@ from flask import (
 from plotly.offline import get_plotlyjs
 
 from dashboard_services.ai.history_recap import get_history_ai_recap
-from dashboard_services.ai.renderer import get_team_gm_memo, get_front_office_briefing
+from dashboard_services.ai.renderer import (
+    get_team_gm_memo,
+    get_front_office_briefing,
+    get_power_rankings_html,
+    get_trade_suggestions_html,
+    get_roster_grade,
+    render_roster_grade_badge,
+)
 from dashboard_services.api import (
     avatar_from_users,
     build_league_history_map,
@@ -306,9 +313,7 @@ FORM_BODY = """
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn" disabled style="opacity: 0.6; cursor: not-allowed;">
-              ESPN <span style="font-size: 0.75em; font-weight: 400;">(Coming Soon)</span>
-            </button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
           </div>
         </div>
 
@@ -325,24 +330,23 @@ FORM_BODY = """
         </div>
 
         <!-- ESPN Flow -->
-        <!-- DISABLED
         <div id="espnFlow" style="display:none;">
           <div class="row">
             <label for="espnLeagueIdInput">ESPN League ID</label>
-            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 123456789" autocomplete="off">
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
           <div class="row">
-            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional, to track your team)</span></label>
+            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
             <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
           </div>
           <div class="row">
-            <button type="button" id="espnSubmitBtn">Go to Dashboard</button>
+            <button type="button" id="espnSubmitBtn">Find My League</button>
           </div>
-          <p class="hint" style="margin-top:6px;">
-            ESPN private leagues require <code>ESPN_S2</code> and <code>ESPN_SWID</code> environment variables set on the server.
+          <div id="espnError" class="error-message" style="display:none;"></div>
+          <p class="hint" style="margin-top:6px;" id="espnHint">
+            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
           </p>
         </div>
-        -->
 
         <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -377,7 +381,7 @@ FORM_BODY = """
   <div class="home-content-wrapper">
     <section class="home-feature-grid">
     <div class="home-feature-card">
-      <div class="home-feature-icon">📊</div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
       <h3>Trade Calculator</h3>
       <p>
         AI-powered trade analysis personalized to your roster. Get real-time value assessments,
@@ -386,7 +390,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">📈</div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
       <h3>Dynasty Values</h3>
       <p>
         Hybrid valuation model blending market consensus with production metrics, age curves,
@@ -395,7 +399,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">⚡</div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
       <h3>Weekly Hub</h3>
       <p>
         Live scoring context for every matchup. See projections, starters, and real-time updates
@@ -404,7 +408,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">🎯</div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
       <h3>Team Analytics</h3>
       <p>
         Position strength breakdowns, roster composition analysis, and competitive advantages
@@ -413,7 +417,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">📉</div>
+      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
       <h3>Graphs & Trends</h3>
       <p>
         Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
@@ -422,7 +426,7 @@ FORM_BODY = """
     </div>
 
     <div class="home-feature-card">
-      <div class="home-feature-icon">🏆</div>
+      <div class="home-feature-icon"><i class="fa-solid fa-trophy" aria-hidden="true"></i></div>
       <h3>Historical Insights</h3>
       <p>
         AI-generated season recaps personalized to your team. Track multi-year trends,
@@ -462,6 +466,8 @@ BASE_HTML = """
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/icons.css">
+
     <script>
       {plotly_js}
     </script>
@@ -478,11 +484,10 @@ BASE_HTML = """
       <!-- Top Banner Ad -->
       <div class="ad-container ad-top-banner">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block;max-height:90px;overflow:hidden;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="5233061286"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
+             data-ad-format="horizontal"></ins>
       </div>
 
       <main id="page-root" class="overview-layout">
@@ -492,11 +497,10 @@ BASE_HTML = """
       <!-- Bottom Content Ad -->
       <div class="ad-container ad-bottom-content">
         <ins class="adsbygoogle"
-             style="display:block"
+             style="display:block;max-height:90px;overflow:hidden;"
              data-ad-client="ca-pub-9164153092633845"
              data-ad-slot="5233061286"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
+             data-ad-format="horizontal"></ins>
       </div>
     </div>
 
@@ -915,19 +919,21 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             cls = "nav-pill active" if key == active else "nav-pill"
             return f"<a class='{cls}' href='{href}'>{label}</a>"
 
-        def simple_dropdown(label: str, items: list, active_keys: list) -> str:
+        def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
             is_active = active in active_keys
             btn_cls = "nav-pill active" if is_active else "nav-pill"
             item_html = ""
             for item_label, href, item_key in items:
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+            btn_id  = dropdown_id.replace("Dropdown", "Btn")
+            menu_id = dropdown_id.replace("Dropdown", "Menu")
             return (
-                f"<div class='nav-pill-dropdown-wrapper' id='playersNavDropdown'>"
-                f"  <button type='button' class='{btn_cls}' id='playersNavBtn' onclick='togglePlayersNav(event)'>"
+                f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
+                f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
                 f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
                 f"  </button>"
-                f"  <div class='nav-pill-dropdown-menu' id='playersNavMenu'>"
+                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
                 f"    {item_html}"
                 f"  </div>"
                 f"</div>"
@@ -935,16 +941,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         pills = [
             simple_pill("Home", "/", "home"),
-            simple_pill("Trade Calc", "/trade", "trade"),
+            simple_dropdown("Trades", [
+                ("Trade Calculator", "/trade",          "trade"),
+                ("Trade Database",   "/trade-database", "trade-database"),
+                ("Trade Intel",      "/trade-intel",    "trade-intel"),
+            ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
-                ("Player Rankings", "/players", "players"),
-                ("Breakouts", "/breakouts", "breakouts"),
-                ("Rookies", "/rookies", "rookies"),
-            ], ["players", "breakouts", "rookies"]),
-            simple_pill("FAQ", "/faq", "faq"),
-            simple_pill("Privacy", "/privacy", "privacy"),
-            simple_pill("Support the site", "/support", "support"),
-            simple_pill("Contact", "/contact", "contact"),
+                ("Player Rankings", "/players",   "players"),
+                ("Breakouts",       "/breakouts", "breakouts"),
+                ("Rookies",         "/rookies",   "rookies"),
+            ], ["players", "breakouts", "rookies"], "playersNavDropdown"),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
@@ -1022,7 +1028,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    nav_pills.append(nav_pill("Trade Calc", "page_trade", "trade"))
+    nav_pills.append(nav_pill_dropdown("Trades", [
+        ("Trade Calculator", "page_trade",          "trade",          False),
+        ("Trade Database",   "page_trade_database", "trade-database", False),
+        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Show Weekly Hub if draft has ended (during offseason) OR if in-season
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -1031,9 +1041,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings", "page_players",  "players",  False),
-        ("Rookie Rankings", "page_rookies",  "rookies",   False),
+        ("Prospect Rankings", "page_prospects",  "prospects",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "breakouts", "rookies"], "playersNavDropdown"))
+    ], ["players", "breakouts", "prospects"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -1094,10 +1104,36 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  </div>"
             "</div>"
         )
+    else:
+        # Logged-out user on a league page — offer quick sign-in
+        signin_item = (
+            "<button type='button' class='settings-menu-item' "
+            "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
+            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Sign In' "
+            "       style='transform:scaleX(-1);'>"
+            "  <span class='settings-menu-label'>Sign In</span>"
+            "</button>"
+        )
+        settings_content = signin_item + dark_mode_toggle_html
+        settings_gear = (
+            "<div class='settings-gear-wrapper'>"
+            "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
+            "          aria-label='Settings' title='Settings'>"
+            "    <img src='/static/gear.png' style='width: 16px; height: 16px;' alt='Settings'>"
+            "  </button>"
+            "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
+            f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
+            f"    {settings_content}"
+            "  </div>"
+            "</div>"
+        )
+
+    watchlist_btn = ""  # disabled
 
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
         "<div class='nav-utility-bar'>"
+        f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
         "</div>"
@@ -1109,6 +1145,35 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "<div class='nav-pills-container'>"
         f"  {pills_html}"
         "</div>"
+    )
+
+    signin_modal = (
+        f"<div id='signinModal' style='display:none;position:fixed;inset:0;"
+        f"background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;'>"
+        f"  <div style='background:var(--card-bg,#1e2432);border:1px solid var(--border-color,#2d3748);"
+        f"border-radius:12px;padding:28px 24px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);'>"
+        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign In to your team</h3>"
+        f"    <p style='margin:0 0 16px;font-size:13px;color:var(--text-muted,#94a3b8);'>"
+        f"      Enter your Sleeper username to restore personalized features.</p>"
+        f"    <form method='POST' action='/set-viewer'>"
+        f"      <input type='hidden' name='platform' value='{platform}'>"
+        f"      <input type='hidden' name='season' value='{season}'>"
+        f"      <input type='hidden' name='league_id' value='{league_id}'>"
+        f"      <input type='text' name='username' placeholder='sleeper_username' autofocus"
+        f"             style='width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;"
+        f"border:1px solid var(--border-color,#2d3748);background:var(--input-bg,#0f1623);"
+        f"color:var(--text-primary,#e2e8f0);font-size:14px;margin-bottom:14px;'>"
+        f"      <div style='display:flex;gap:8px;'>"
+        f"        <button type='submit' style='flex:1;padding:9px;border-radius:8px;border:none;"
+        f"background:#3b82f6;color:#fff;font-weight:600;cursor:pointer;font-size:14px;'>Sign In</button>"
+        f"        <button type='button' style='flex:1;padding:9px;border-radius:8px;border:1px solid"
+        f" var(--border-color,#2d3748);background:transparent;color:var(--text-primary,#e2e8f0);"
+        f"cursor:pointer;font-size:14px;'"
+        f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+        f"      </div>"
+        f"    </form>"
+        f"  </div>"
+        f"</div>"
     )
 
     return (
@@ -1126,6 +1191,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"    {utility_bar}"
         "  </div>"
         "</nav>"
+        f"{signin_modal}"
     )
 
 
@@ -1264,6 +1330,29 @@ def _build_roster_map(users: list, rosters: list) -> dict:
             owner_id, f"Roster {rid}"
         )
     return roster_map
+
+
+def _load_rookie_rankings_for_ctx() -> list[dict]:
+    """Load current draft class rookies sorted by overall_rank for pick projection."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        draft_year = get_active_rookie_class()
+        rows = get_rookie_rankings_from_db(draft_year)
+        return [
+            {
+                "player_id":    r.get("player_id", ""),
+                "name":         r.get("name", ""),
+                "position":     str(r.get("position") or "").upper(),
+                "overall_rank": int(r.get("overall_rank") or 999),
+                "value_1qb":    float(r.get("rookie_value") or 0),
+                "value_sf":     float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+            }
+            for r in rows
+            if r.get("position") in ("QB", "RB", "WR", "TE")
+        ]
+    except Exception as e:
+        print(f"[rookie_rankings] skipped: {e}")
+        return []
 
 
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
@@ -1432,6 +1521,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "drafts": drafts,
         "latest_draft": latest_draft,
         "viewer": get_viewer_session_for_league(users, rosters),
+        "rookie_rankings": _load_rookie_rankings_for_ctx(),
     }
 
 
@@ -1802,6 +1892,26 @@ def get_trade_ai_analysis(
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    logger.exception("[500] Internal server error")
+    return (
+        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+        "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+        "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+        "</head><body><div class='box'>"
+        "<h2>Something went wrong</h2>"
+        "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
+        "<a href='/'>&#8592; Back to home</a>"
+        "</div></body></html>"
+    ), 500
 
 
 @app.route("/health")
@@ -2703,9 +2813,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         chips_html += f"<span class='chip'>PA/G {papg_v:.1f}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
         if streak_chip and streak_frame_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
         elif streak_chip and streak_frame_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'>❄️{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
         chips_html += "</div>"
 
         return f"""
@@ -2768,9 +2878,9 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
         )
         css_cls = streak_class(row)
         if streak_chip and css_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'>🔥{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
         elif streak_chip and css_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'>❄️{streak_chip}</span>"
+            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
         chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
 
         avatar_url = row.get("avatar")
@@ -2914,7 +3024,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="background: linear-gradient(180deg, #fff8e7, #ffe5b4);border:1px solid #f97316;">
           <div class="card-header">
             <h3 style="color:#dc2626;">Hottest Team</h3>
-            <h3 style="color:#dc2626;">🔥 {hottest['Streak']}</h3>
+            <h3 style="color:#dc2626;"><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -2936,7 +3046,7 @@ def render_standings_sidebar(team_stats) -> str:
         <div class="card small" style="border: 1px solid #163b82f6;background: rgb(44 166 173 / 12%);color: #163b82f6;">
           <div class="card-header">
             <h3>Coldest Team</h3>
-            <h3>❄️ {coldest['Streak']}</h3>
+            <h3><i class="fa-solid fa-snowflake"></i> {coldest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -3159,14 +3269,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
-    # Build pick-value lookup (PICK entries keyed by their model-values ID)
-    pick_by_key: Dict[str, float] = {
-        str(row["id"]): float(row.get("value") or 0.0)
-        for row in model_value_table
-        if isinstance(row, dict)
-        and str(row.get("position", "")).upper() == "PICK"
-        and row.get("id")
-    }
+    # Build pick-value lookup from WLS-derived table (overlays FantasyCalc/DynastyProcess)
+    pick_by_key: Dict[str, float] = load_pick_value_table() or {}
 
     roster_cards = []
 
@@ -3268,57 +3372,146 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         for pid in (r.get("players") or [])
     }
 
-    top_waiver_assets = []
+    # --- Waiver Recommendations: gather candidates ---
+    waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
             continue
-
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
-
         if not pid or pid in rostered_ids:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-
         try:
             val = float(row.get("value") or 0.0)
         except Exception:
             val = 0.0
-
         if val <= 0:
             continue
 
-        top_waiver_assets.append({
+        try:
+            age = float(row.get("age") or 0)
+        except Exception:
+            age = 0.0
+
+        rank_change = row.get("rank_change_7d")
+
+        waiver_candidates.append({
+            "player_id": pid,
             "name": row.get("name") or players_index.get(pid, {}).get("name", "Unknown"),
             "position": pos,
             "team": row.get("team") or "",
             "value": val,
-            "age": row.get("age"),
+            "age": age,
             "pos_rank_label": row.get("pos_rank_label") or "",
-            "player_id": pid,
+            "rank_change_7d": rank_change,
         })
 
-    top_waiver_assets.sort(key=lambda x: x["value"], reverse=True)
+    # Bulk-fetch breakout scores for waiver candidates from DB
+    waiver_breakout: dict = {}
+    try:
+        _db_url = os.getenv("DATABASE_URL", "").strip()
+        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
+            from dashboard_services.db import get_conn as _gc
+            _pids = [c["player_id"] for c in waiver_candidates[:100]]
+            if _pids:
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """
+                            SELECT DISTINCT ON (player_id)
+                                player_id,
+                                breakout_opportunity_score
+                            FROM breakout_opportunity_scores
+                            WHERE player_id = ANY(%s)
+                            ORDER BY player_id, as_of_date DESC
+                            """,
+                            (_pids,),
+                        )
+                        for _r in _cur.fetchall():
+                            _r = dict(_r)
+                            if _r.get("breakout_opportunity_score") is not None:
+                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+    except Exception:
+        pass
+
+    # Age primes by position (peak dynasty window)
+    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+    def _waiver_pickup_score(c: dict) -> float:
+        val = c["value"]
+        age = c["age"] or 0
+        pos = c["position"]
+        rank_chg = c["rank_change_7d"] or 0
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+
+        # Trend bonus: up to +60 for strong 7d movement
+        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
+        # Breakout bonus: up to +50
+        breakout_bonus = min(bscore * 0.5, 50)
+        # Age bonus: peak age = +30, every year past prime = -10
+        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
+
+        return val + trend_bonus + breakout_bonus + age_bonus
+
+    def _waiver_signal(c: dict) -> tuple[str, str]:
+        """Return (badge_class, label) for the pickup signal."""
+        rank_chg = c["rank_change_7d"] or 0
+        age = c["age"] or 0
+        pos = c["position"]
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+
+        if bscore >= 55:
+            return ("signal-breakout", "Breakout")
+        if rank_chg >= 8:
+            return ("signal-rising", "Rising Fast")
+        if rank_chg >= 3:
+            return ("signal-rising", "Trending Up")
+        if age < prime - 2 and c["value"] >= 300:
+            return ("signal-value", "Value Play")
+        if age > prime + 2:
+            return ("signal-aging", "Sell Window")
+        return ("signal-hold", "Available")
+
+    waiver_candidates.sort(key=_waiver_pickup_score, reverse=True)
 
     waiver_html = []
-    for p in top_waiver_assets[:10]:
+    for p in waiver_candidates[:10]:
         sub_bits = [p["position"]]
         if p["team"]:
             sub_bits.append(p["team"])
         if p["pos_rank_label"]:
             sub_bits.append(p["pos_rank_label"])
-
+        if p["age"]:
+            sub_bits.append(f"Age {p['age']:.1f}")
         subline = " • ".join(sub_bits)
+
+        sig_cls, sig_label = _waiver_signal(p)
+
+        rank_arrow = ""
+        chg = p["rank_change_7d"]
+        if chg and chg != 0:
+            arrow_cls = "waiver-arrow-up" if chg > 0 else "waiver-arrow-down"
+            arrow_sym = "▲" if chg > 0 else "▼"
+            rank_arrow = f'<span class="{arrow_cls}">{arrow_sym}{abs(chg)}</span>'
 
         waiver_html.append(
             f"""
             <div class="os-waiver-row">
               <div class="os-waiver-main">
-                <div class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</div>
+                <div class="os-waiver-name-row">
+                  <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
+                  {rank_arrow}
+                </div>
                 <div class="os-waiver-sub">{subline}</div>
               </div>
-              <div class="os-waiver-value">{p['value']:.0f}</div>
+              <div class="os-waiver-right">
+                <span class="waiver-signal {sig_cls}">{sig_label}</span>
+                <span class="os-waiver-value">{p['value']:.0f}</span>
+              </div>
             </div>
             """
         )
@@ -3482,8 +3675,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Top Waiver Assets</h2>
-              <div class="os-section-subtitle">Best currently unrostered players by BR value</div>
+              <h2 class="os-section-title">Waiver Wire Targets</h2>
+              <div class="os-section-subtitle">Smart pickup recommendations — value + trend + breakout potential</div>
             </div>
             <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
@@ -4138,6 +4331,11 @@ def build_historical_pick_slot_map(
     For a given source season, returns:
       { roster_id: rookie_pick_slot }
 
+    Draft order = reverse of final overall standings:
+      - Non-playoff teams: ordered by regular-season record (worst → slot 1)
+      - Playoff teams: ordered by playoff finish (earliest eliminated → next slot,
+        champion → last slot)
+
     Example:
       source_season=2025 -> order used for 2026 rookie picks
     """
@@ -4160,7 +4358,7 @@ def build_historical_pick_slot_map(
     )
 
     df_weekly = hist_ctx.get("df_weekly", pd.DataFrame())
-    league = hist_ctx.get("league") or {}
+    league    = hist_ctx.get("league") or {}
     roster_map = hist_ctx.get("roster_map") or {}
 
     reg_team_stats = build_regular_season_team_stats(df_weekly, league)
@@ -4170,7 +4368,7 @@ def build_historical_pick_slot_map(
         HISTORICAL_PICK_SLOT_CACHE[cache_key] = {}
         return {}
 
-    # roster_map is expected to look like {roster_id: owner/team_name}
+    # roster_map: {roster_id_str: team_name}
     name_to_roster_id: Dict[str, int] = {}
     for rid, team_name in roster_map.items():
         try:
@@ -4178,21 +4376,76 @@ def build_historical_pick_slot_map(
         except Exception:
             continue
 
-    total_teams = len(reg_team_stats)
-    slot_map: Dict[int, int] = {}
-
-    # Rank 1 = best team, so reverse for rookie draft slot:
-    # worst team -> 1, next worst -> 2, etc.
+    # Regular-season ranks: {roster_id: rank_int}  (rank 1 = best regular-season team)
+    reg_ranks: Dict[int, int] = {}
     for _, row in reg_team_stats.iterrows():
         owner = str(row.get("owner") or "")
-        rank = _safe_int(row.get("Rank"), 0)
-        roster_id = name_to_roster_id.get(owner)
+        rank  = _safe_int(row.get("Rank"), 0)
+        rid   = name_to_roster_id.get(owner)
+        if rid is not None and rank > 0:
+            reg_ranks[rid] = rank
 
-        if not owner or rank <= 0 or roster_id is None:
-            continue
+    total_teams = len(reg_ranks) or len(reg_team_stats)
 
-        slot = total_teams - rank + 1
-        slot_map[int(roster_id)] = int(slot)
+    # ---- Try to get playoff bracket for accurate final standings ----
+    slot_map: Dict[int, int] = {}
+    try:
+        winners_bracket = get_bracket(platform, resolved_league_id, "winners", source_season) or []
+
+        if winners_bracket:
+            # Collect every roster_id that appears in the bracket as a direct integer
+            playoff_rids: set[int] = set()
+            for m in winners_bracket:
+                for key in ("t1", "t2", "w", "l"):
+                    v = m.get(key)
+                    if isinstance(v, int) and v > 0:
+                        playoff_rids.add(v)
+
+            # Determine final placement from matchups that have a "p" field.
+            # Sleeper sets p on the decisive matchup for each placement:
+            #   winner → placement p, loser → placement p+1
+            playoff_placements: Dict[int, int] = {}
+            for m in winners_bracket:
+                p = m.get("p")
+                if p is None:
+                    continue
+                p = int(p)
+                w = m.get("w")
+                l = m.get("l")
+                if isinstance(w, int) and w > 0:
+                    playoff_placements[w] = p
+                if isinstance(l, int) and l > 0:
+                    playoff_placements[l] = p + 1
+
+            if playoff_placements:
+                # Non-playoff teams: assign slots 1…N ordered worst→best regular season
+                non_playoff = sorted(
+                    [(rid, rank) for rid, rank in reg_ranks.items() if rid not in playoff_rids],
+                    key=lambda x: x[1],   # highest rank number = worst record
+                    reverse=True,
+                )
+                # Playoff teams: assign next slots ordered by worst→best playoff finish
+                playoff_ordered = sorted(
+                    [(rid, place) for rid, place in playoff_placements.items()],
+                    key=lambda x: x[1],   # highest placement number = worst finish
+                    reverse=True,
+                )
+
+                slot = 1
+                for rid, _ in non_playoff:
+                    slot_map[rid] = slot
+                    slot += 1
+                for rid, _ in playoff_ordered:
+                    slot_map[rid] = slot
+                    slot += 1
+
+    except Exception:
+        pass  # fall through to regular-season-only fallback
+
+    # ---- Fallback: regular-season standings only ----
+    if not slot_map:
+        for rid, rank in reg_ranks.items():
+            slot_map[rid] = total_teams - rank + 1
 
     HISTORICAL_PICK_SLOT_CACHE[cache_key] = slot_map
     return slot_map
@@ -4491,6 +4744,7 @@ def build_activity_body(ctx: dict) -> str:
                 )
 
             def render_pick_row(pick, io_class):
+                import json as _json
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
                 pick_label = format_pick_display_label(
@@ -4503,8 +4757,27 @@ def build_activity_body(ctx: dict) -> str:
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
+
+                yr = _safe_int(pick.get("season"), 0)
+                rnd = _safe_int(pick.get("round"), 0)
+                _pv = pick_values
+                tier_vals = {
+                    "early": float(_pv.get(f"{yr}_{rnd}_early") or _pv.get(f"{yr}_{rnd}") or 0),
+                    "mid":   float(_pv.get(f"{yr}_{rnd}_mid")   or _pv.get(f"{yr}_{rnd}") or 0),
+                    "late":  float(_pv.get(f"{yr}_{rnd}_late")  or _pv.get(f"{yr}_{rnd}") or 0),
+                }
+                pick_data = _json.dumps({
+                    "label": pick_label,
+                    "season": yr,
+                    "round": rnd,
+                    "value": round(val, 1),
+                    "tiers": tier_vals,
+                }, separators=(",", ":"))
+                pick_data_attr = pick_data.replace('"', '&quot;')
+
                 return (
-                    "<div class='player-activity'>"
+                    "<div class='player-activity pick-clickable' style='cursor:pointer'"
+                    f" data-pick='{pick_data_attr}' onclick='showPickModal(this)'>"
                     "<div style='gap: 10px;display: flex;align-items: center;'>"
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
@@ -4647,10 +4920,32 @@ def build_activity_body(ctx: dict) -> str:
                 if pd.notna(txrow["ts"])
                 else ""
             )
+            # Build data payload for outcome check (sent/received per team)
+            trade_date_str = ""
+            if pd.notna(txrow["ts"]):
+                trade_date_str = txrow["ts"].strftime("%Y-%m-%d")
+
+            outcome_data = []
+            for tm in teams:
+                rid = tm.get("roster_id")
+                gets_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("gets") or []) if p.get("pid")]
+                sends_pids = [{"id": str(p.get("pid") or ""), "name": str(p.get("name") or "")} for p in (tm.get("sends") or []) if p.get("pid")]
+                outcome_data.append({"roster_id": rid, "team_name": tm.get("name", ""), "gets": gets_pids, "sends": sends_pids})
+
+            import json as _json
+            outcome_json = _json.dumps(outcome_data).replace('"', '&quot;')
+            outcome_btn = (
+                f"<button class='outcome-check-btn' "
+                f"data-trade-teams='{outcome_json}' "
+                f"data-trade-date='{trade_date_str}' "
+                f"onclick='checkTradeOutcome(this)'>Check Outcome</button>"
+            )
+            outcome_result_id = f"outcome_{trade_count}"
             return (
                 "<div class='tx trade-card activity-item' data-kind='trade'>"
-                f"  <div class='meta'>{pill('Trade completed')} • {when}</div>"
+                f"  <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
                 f"  <div class='teams'>{''.join(cols)}</div>"
+                f"  <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
                 "</div>"
             )
 
@@ -4760,12 +5055,8 @@ def build_activity_body(ctx: dict) -> str:
         )
 
     if not activity_html:
-        if platform == "espn":
-            _empty_title = "Activity not available for ESPN leagues"
-            _empty_copy = "Transaction history requires Sleeper league data. ESPN leagues currently show scores and standings only."
-        else:
-            _empty_title = "No recent activity yet"
-            _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
+        _empty_title = "No recent activity yet"
+        _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
             "<div class=’card’>"
             "  <div class=’card-body’>"
@@ -4809,13 +5100,68 @@ def build_activity_body(ctx: dict) -> str:
             </div>
           </div>
         </div>
+
+        <div class="card small" id="nflNewsCard" style="margin-top:12px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>NFL News</h3>
+            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
+          </div>
+          <div id="nflNewsList" class="card-body" style="padding:0;max-height:340px;overflow-y:auto;">
+            <div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">Loading…</div>
+          </div>
+        </div>
       </aside>
     </div>
 
+    <script>
+    (function() {{
+      function loadNflNews() {{
+        var list = document.getElementById('nflNewsList');
+        if (!list) return;
+        fetch('/api/nfl-news?limit=12')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(data) {{
+            var items = data.news || [];
+            if (!items.length) {{
+              list.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">No news available.</div>';
+              return;
+            }}
+            list.innerHTML = items.map(function(n) {{
+              var linkOpen = n.url ? '<a href="' + n.url + '" target="_blank" rel="noopener" class="act-news-link">' : '<span>';
+              var linkClose = n.url ? '</a>' : '</span>';
+              return '<div class="act-news-item">' +
+                '<div class="act-news-headline">' + linkOpen + n.headline + linkClose + '</div>' +
+                (n.description ? '<div class="act-news-desc">' + n.description + '</div>' : '') +
+                '<div class="act-news-meta">' + [n.source, n.age].filter(Boolean).join(' · ') + '</div>' +
+              '</div>';
+            }}).join('');
+          }})
+          .catch(function() {{ /* fail silently */ }});
+      }}
+
+      if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', loadNflNews);
+      }} else {{
+        loadNflNews();
+      }}
+    }})();
+    </script>
+
     <style>
+      .act-news-item {{
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }}
+      .act-news-item:last-child {{ border-bottom: none; }}
+      .act-news-headline {{ font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 3px; }}
+      .act-news-link {{ color: var(--text); text-decoration: none; }}
+      .act-news-link:hover {{ text-decoration: underline; color: #3b82f6; }}
+      .act-news-desc {{ font-size: 11px; color: var(--text-muted); line-height: 1.35; margin-bottom: 3px; }}
+      .act-news-meta {{ font-size: 10px; color: var(--text-muted); opacity: .7; }}
+
       .bract-summary-grid {{
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
         margin: 0 0 12px 0;
       }}
@@ -4845,7 +5191,7 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-summary-text {{
-        font-size: 16px;
+        font-size: 12px;
         line-height: 1.3;
       }}
 
@@ -5121,6 +5467,9 @@ def build_teams_body(ctx: dict) -> str:
     picks_by_roster = ctx.get("picks_by_roster") or {}
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
+    
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
@@ -5218,12 +5567,7 @@ def build_teams_body(ctx: dict) -> str:
             team_pos_values[rid].setdefault(pos, [])
 
     # ----------------- Compute per-team draft capital value -----------------
-    # by_id already contains PICK entries from model_vals; use it for pick lookups
-    pick_by_key: Dict[str, float] = {
-        str(p["id"]): float(p.get("value") or 0.0)
-        for p in model_vals
-        if isinstance(p, dict) and str(p.get("position", "")).upper() == "PICK" and p.get("id")
-    }
+    pick_by_key: Dict[str, float] = load_pick_value_table() or {}
     team_pick_value: Dict[int, float] = {}
     for r in rosters:
         rid = r.get("roster_id")
@@ -5387,6 +5731,32 @@ def build_teams_body(ctx: dict) -> str:
         ])
     _chart_y_max = round(max(_chart_all_pos_vals) * 1.15, 1) if _chart_all_pos_vals else 100.0
 
+    # Pre-compute roster grades for all teams
+    from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
+
+    _n_teams = len(team_meta)
+
+    def _grade_for_roster(r_id: int) -> dict:
+        roster_obj = next((r for r in rosters if r.get("roster_id") == r_id), {})
+        flat_players = []
+        for pid in roster_obj.get("players") or []:
+            row = by_id.get(str(pid))
+            if not row:
+                continue
+            pos = str(row.get("position") or row.get("pos") or "").upper()
+            if pos not in CORE_POS:
+                continue
+            val = float(row.get("value") or 0.0)
+            nm = str(row.get("name") or "").strip().lower()
+            age = name_to_age.get(nm)
+            flat_players.append({"position": pos, "value": val, "age": age})
+        flat_players.sort(key=lambda x: x["value"], reverse=True)
+        picks = picks_by_roster.get(str(r_id), [])
+        p_ranks = {pos: pos_rank[pos].get(r_id, _n_teams) for pos in POS_ORDER}
+        return _calc_grade(flat_players, picks, position_ranks=p_ranks, num_teams=_n_teams)
+
+    team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
+
     # ----------------- Build HTML cards -----------------
     cards_html = []
 
@@ -5481,7 +5851,7 @@ def build_teams_body(ctx: dict) -> str:
         table_rows.append(
             "<tr class='pos-row pos-picks-row'>"
             "  <td class='pos-name'>"
-            "    <span style='font-size:11px;opacity:0.7;'>📋</span> PICKS"
+            "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
@@ -5550,11 +5920,17 @@ def build_teams_body(ctx: dict) -> str:
             f"}})();</script>"
         )
 
+        _gdata = team_grades.get(rid, {})
+        _grade = _gdata.get("grade", "?")
+        _win_window = _gdata.get("win_window", "")
+        _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
+        _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
+
         card_html = (
             "<div class='card team-strength-card'>"
             "  <div class='card-header-row'>"
-            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2></div>"
-            f"    <div class='mini-label'>Positional Index: "
+            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
+            f"    <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
             f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
             "  </div>"
             "  <div class='card-body'>"
@@ -5595,34 +5971,48 @@ def build_teams_body(ctx: dict) -> str:
     _league_type_js = "sf" if _is_sf else "1qb"
     _league_size_js = int(len(rosters)) if rosters else 10
 
+    _offseason_mode_js = bool(ctx.get("offseason_mode", False))
+    _draft_ended_js = has_draft_ended(league_id, platform, current_season)
+
     analytics_html = f"""
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">Beat the Market</button>
-          <!-- <button class="tab-btn" data-tab="sos">Schedule</button> -->
-          <!-- <button class="tab-btn" data-tab="draft">Draft</button> -->
+          <button class="tab-btn active" data-tab="btm">BTM</button>
+          <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
+          <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
+          <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
+          <button class="tab-btn" data-tab="draft" id="draftTabBtn" style="display:none">Draft</button>
           <div class="tab-panels">
             <div class="tab-panel active" data-tab="btm" id="btmPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
-            <!-- <div class="tab-panel" data-tab="sos" id="sosPanel">
+            <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
+              <div class="analytics-loading">Loading…</div>
+            </div>
+            <div class="tab-panel" data-tab="sos" id="sosPanel">
               <div class="analytics-loading">Loading…</div>
             </div>
             <div class="tab-panel" data-tab="draft" id="draftPanel">
               <div class="analytics-loading">Loading…</div>
-            </div> -->
+            </div>
         </div>
       </div>
     </div>
     <script>
     (function() {{
-      var _platform   = {repr(platform_js)};
-      var _leagueId   = {repr(league_id)};
-      var _season     = {season_js};
-      var _leagueType = {repr(_league_type_js)};
-      var _leagueSize = {_league_size_js};
-      var _loaded     = {{}};
+      var _platform        = {repr(platform_js)};
+      var _leagueId        = {repr(league_id)};
+      var _season          = {season_js};
+      var _leagueType      = {repr(_league_type_js)};
+      var _leagueSize      = {_league_size_js};
+      var _viewerRosterId  = {repr(str(viewer_roster_id or ''))};
+      var _offseasonMode   = {str(_offseason_mode_js).lower()};
+      var _draftEnded      = {str(_draft_ended_js).lower()};
+      var _loaded          = {{}};
 
 
       function loadBtm() {{
@@ -5714,21 +6104,27 @@ def build_teams_body(ctx: dict) -> str:
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No schedule data available.</p>'; return; }}
+            var usingPR = data.using_power_rankings;
             var maxOpp = Math.max(...teams.map(t => t.avg_opp_points), 1);
             var wr = data.weeks_remaining || 0;
+            var sortLabel = usingPR ? 'Based on roster strength (no games played yet)' : 'Sorted by avg opponent score (hardest first)';
             var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
-              '</span><span class="analytics-avg-label">Sorted by avg opponent score (hardest first)</span></div>';
+              '</span><span class="analytics-avg-label">' + sortLabel + '</span></div>';
+            if (usingPR) {{
+              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played — opponent strength estimated from roster values.</p>';
+            }}
             html += '<div class="analytics-bar-list">';
             teams.forEach(function(t) {{
               var pct = Math.min(100, Math.round(t.avg_opp_points / maxOpp * 100));
               var cls = t.avg_opp_points >= maxOpp * 0.75 ? 'analytics-bar-neg' :
                         t.avg_opp_points <= maxOpp * 0.5  ? 'analytics-bar-pos' : 'analytics-bar-mid';
+              var valLabel = usingPR ? '' : t.avg_opp_points.toFixed(1);
               html += '<div class="analytics-bar-row">' +
                 '<span class="analytics-bar-name">' + t.team_name + '</span>' +
                 '<div class="analytics-bar-track">' +
                   '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
                 '</div>' +
-                '<span class="analytics-bar-val">' + t.avg_opp_points.toFixed(1) + '</span>' +
+                '<span class="analytics-bar-val">' + valLabel + '</span>' +
               '</div>';
             }});
             html += '</div>';
@@ -5779,15 +6175,119 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
 
+      function loadRosterIntel() {{
+        if (_loaded.rosterIntel) return;
+        _loaded.rosterIntel = true;
+        var panel = document.getElementById('rosterIntelPanel');
+        if (!panel) return;
+        fetch('/api/roster-intel?platform=' + _platform +
+              '&league_id=' + _leagueId + '&season=' + _season +
+              '&league_type=' + _leagueType)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+            var teams = data.teams || [];
+            if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }}
+
+            // Show only the logged-in user's team; fall back to all teams if not known
+            if (_viewerRosterId) {{
+              teams = teams.filter(function(t) {{ return String(t.roster_id) === String(_viewerRosterId); }});
+            }}
+
+            var sigColor = {{
+              'Core':           '#22c55e',
+              'Hold — Breakout':'#f59e0b',
+              'Sell High':      '#ef4444',
+              'Buy Window':     '#3b82f6',
+              'Hold':           'var(--text-muted)',
+              'Cut':            '#94a3b8',
+            }};
+            var sigBg = {{
+              'Core':           '#dcfce7',
+              'Hold — Breakout':'#fef3c7',
+              'Sell High':      '#fee2e2',
+              'Buy Window':     '#dbeafe',
+              'Hold':           'var(--row)',
+              'Cut':            'var(--row)',
+            }};
+
+            var sigOrder = {{'Sell High':0,'Cut':1,'Hold — Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
+            var html = '';
+            teams.forEach(function(t) {{
+              // Show everything except plain Hold — sorted by urgency
+              var actionPlayers = t.players
+                .filter(function(p) {{ return p.signal !== 'Hold'; }})
+                .sort(function(a, b) {{
+                  return (sigOrder[a.signal] ?? 9) - (sigOrder[b.signal] ?? 9);
+                }});
+              if (!actionPlayers.length) return;
+              html += '<div class="ri-team-block">' +
+                '<div class="ri-team-name">' + t.team_name + '</div>';
+              actionPlayers.slice(0, 8).forEach(function(p) {{
+                var chgHtml = '';
+                if (p.rank_change_7d && p.rank_change_7d !== 0) {{
+                  var sym = p.rank_change_7d > 0 ? '▲' : '▼';
+                  var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
+                  chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
+                }}
+                html += '<div class="ri-player-row">' +
+                  '<div class="ri-player-info">' +
+                    '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
+                    '<span class="ri-player-meta">' + p.position + (p.pos_rank_label ? ' · ' + p.pos_rank_label : '') + '</span>' +
+                  '</div>' +
+                  '<span class="ri-signal" style="background:' + (sigBg[p.signal]||'var(--row)') + ';color:' + (sigColor[p.signal]||'var(--text-muted)') + '">' + p.signal + '</span>' +
+                '</div>';
+              }});
+              html += '</div>';
+            }});
+
+            var emptyMsg = _viewerRosterId
+              ? 'Your roster looks stable — no urgent actions flagged.'
+              : 'All rosters look stable — no urgent actions flagged.';
+            panel.innerHTML = html || '<p class="analytics-empty">' + emptyMsg + '</p>';
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
+      function loadPowerRankings() {{
+        if (_loaded.powerRankings) return;
+        _loaded.powerRankings = true;
+        var panel = document.getElementById('powerRankingsPanel');
+        if (!panel) return;
+        fetch('/api/power-rankings', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{platform: _platform, league_id: _leagueId, season: _season}})
+        }})
+          .then(r => r.json())
+          .then(data => {{
+            if (!data.success) {{ panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }}
+            panel.innerHTML = data.html || '<p class="analytics-empty">No rankings available.</p>';
+          }})
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; }});
+      }}
+
+      // Show Schedule/Draft tabs conditionally
+      (function() {{
+        var sosBtn = document.getElementById('sosTabBtn');
+        var draftBtn = document.getElementById('draftTabBtn');
+        // Schedule: visible when not in pure offseason (in-season or preseason)
+        if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
+        // Draft: visible once the draft has occurred
+        if (draftBtn && _draftEnded) draftBtn.style.display = '';
+      }})();
+
       // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
       function wireAnalyticsTabs() {{
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {{
           btn.addEventListener('click', function() {{
             var tab = btn.dataset.tab;
-            if (tab === 'btm')   loadBtm();
-            // if (tab === 'sos')   loadSos();
-            // if (tab === 'draft') loadDraft();
+            if (tab === 'btm')             loadBtm();
+            if (tab === 'roster-intel')    loadRosterIntel();
+            if (tab === 'power-rankings')  loadPowerRankings();
+            if (tab === 'sos')             loadSos();
+            if (tab === 'draft')           loadDraft();
           }});
         }});
         loadBtm();  // load first tab immediately
@@ -6163,6 +6663,21 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     return ctx
 
 
+@app.route("/api/trade-count")
+def api_trade_count():
+    """Get the count of trades from trade_intel_trades table."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            count = cursor.fetchone()[0]
+        return jsonify({"count": count})
+    except Exception as e:
+        # Return fallback count if table doesn't exist or other error
+        return jsonify({"count": 15000})
+
+
 @app.route("/api/refresh-league", methods=["POST"])
 def api_refresh_league():
     """Force-expire a league context so the next request rebuilds it from source."""
@@ -6243,8 +6758,11 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         num_teams = ctx.get("total_rosters") or None
         rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
+        viewer_roster_id = viewer.get("viewer_roster_id") or ""
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                           scoring_format=scoring_format)
+                                           scoring_format=scoring_format,
+                                           viewer_roster_id=viewer_roster_id)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
@@ -6558,7 +7076,7 @@ def page_players(platform: str, season: int, league_id: str):
                        border:1px solid var(--border);background:var(--card-bg);
                        color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                           color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+                           color:var(--text-muted);font-size:13px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
               <button id="prSearchClear" onclick="prClearSearch()"
                 style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -6653,7 +7171,7 @@ def page_players(platform: str, season: int, league_id: str):
 
         <!-- Empty state -->
         <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+          <div style="font-size:24px;margin-bottom:8px;opacity:0.4;"><i class="fa-solid fa-magnifying-glass"></i></div>
           No players match your filters
         </div>
 
@@ -6678,7 +7196,17 @@ def page_players(platform: str, season: int, league_id: str):
         font-size: 12px;
         font-weight: 700;
         color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 3px;
       }
+      .pr-rank-arrow {
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .pr-rank-arrow.up   { color: #22c55e; }
+      .pr-rank-arrow.down { color: #ef4444; }
       .pr-name {
         font-size: 13px;
         font-weight: 600;
@@ -6949,6 +7477,14 @@ def page_players(platform: str, season: int, league_id: str):
         return prIndicators.breakouts && prIndicators.breakouts.includes(String(id));
       }
 
+      function prIsElite(id) {
+        return prIndicators.elites && prIndicators.elites.includes(String(id));
+      }
+
+      function prIsProspect(id) {
+        return prIndicators.prospects && prIndicators.prospects.includes(String(id));
+      }
+
       // Settings panel toggle
       function prToggleSettings() {
         const panel = document.getElementById('prSettingsPanel');
@@ -7112,8 +7648,19 @@ def page_players(platform: str, season: int, league_id: str):
         players.forEach((p, idx) => {
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
-          row.setAttribute('data-player-id', p.id);
-          row.setAttribute('data-player-name', p.name || '');
+          row.style.cursor = 'pointer';
+          row.onclick = function(e) {
+            e.stopPropagation();
+            if (p.is_rookie) {
+              if (typeof rkOpenModal === 'function') {
+                rkOpenModal(p);
+              } else {
+                openProspectModal(p.id, p.name || 'Unknown');
+              }
+            } else {
+              openPlayerModal(p.id, p.name || 'Unknown');
+            }
+          };
 
           const displayRank = (p.position === 'PICK' || p.is_rookie) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
           const posRank = prLeagueType === 'sf'
@@ -7123,12 +7670,21 @@ def page_players(platform: str, season: int, league_id: str):
           const val = prGetValue(p);
 
           let badges = '';
-          if (p.is_rookie)        badges += '<span class="player-badge player-badge-rookie">PROSPECT</span>';
+          if (p.is_rookie)           badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
           else if (prIsRookie(p.id)) badges += '<span class="player-badge player-badge-rookie">ROOKIE</span>';
-          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout">🔥 BREAKOUT</span>';
+          if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
+          if (!p.is_rookie && !prIsRookie(p.id) && prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-rocket" aria-hidden="true"></i> PROSPECT</span>';
+
+          const rankChange = p.rank_change_7d;
+          let rankArrow = '';
+          if (rankChange != null && rankChange !== 0 && displayRank) {
+            const dir = rankChange > 0 ? 'up' : 'down';
+            const sym = rankChange > 0 ? '▲' : '▼';
+            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days">${sym}</span>`;
+          }
 
           row.innerHTML =
-            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + rankArrow + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
@@ -7137,8 +7693,6 @@ def page_players(platform: str, season: int, league_id: str):
 
           list.appendChild(row);
         });
-
-        if (typeof initGlobalPlayerModals === 'function') initGlobalPlayerModals();
       }
 
       // Wire up search input
@@ -7215,12 +7769,12 @@ def page_players(platform: str, season: int, league_id: str):
     return render_page("Player Rankings", league_id, "players", body_html, platform, season)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/rookies")
-def page_rookies(platform: str, season: int, league_id: str):
+@app.route("/<platform>/<int:season>/<league_id>/prospects")
+def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page — active class auto-detected."""
-    from dashboard_services.pages.rookies_page import build_rookies_body
-    body_html = build_rookies_body(platform, season, league_id)
-    return render_page("Rookie Rankings", league_id, "rookies", body_html, platform, season)
+    from dashboard_services.pages.rookies_page import build_prospects_body
+    body_html = build_prospects_body(platform, season, league_id)
+    return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
@@ -7255,7 +7809,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
         <!-- Empty State -->
         <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
-          <div style="font-size: 24px; margin-bottom: 12px;">📊</div>
+          <div style="font-size: 24px; margin-bottom: 12px; opacity:0.4;"><i class="fa-solid fa-chart-bar"></i></div>
           <div>No breakout candidates found</div>
         </div>
       </div>
@@ -7321,7 +7875,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           // Breakout type classification
           const breakoutType = candidate.breakout_type || {{}};
-          const emoji = breakoutType.emoji || '📊';
+          const iconClass = breakoutType.icon_class || 'fa-chart-bar';
           const label = breakoutType.profile_label || 'Breakout Candidate';
           const driver = breakoutType.primary_driver || 'balanced';
 
@@ -7356,7 +7910,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
               <div class="breakout-card-body">
                 <!-- Breakout Type Badge -->
                 <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
-                  <span style="font-size: 20px;">${{emoji}}</span>
+                  <i class="fa-solid ${{iconClass}}" style="font-size:18px;width:20px;text-align:center;"></i>
                   <span style="font-weight: 500; flex: 1;">${{label}}</span>
                   <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
@@ -7408,6 +7962,7 @@ def page_players_guest():
     return page_players(platform="sleeper", season=current_season, league_id=None)
 
 
+
 @app.route("/breakouts")
 def page_breakouts_guest():
     nfl_state = get_nfl_state() or {}
@@ -7415,11 +7970,524 @@ def page_breakouts_guest():
     return page_breakouts(platform="sleeper", season=current_season, league_id=None)
 
 
-@app.route("/rookies")
-def page_rookies_guest():
+@app.route("/<platform>/<int:season>/<league_id>/trade-intel")
+def page_trade_intel(platform: str, season: int, league_id: str):
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Real market data from dynasty trades — see what managers are actually paying
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:20px;">
+
+        <div class="ti-controls">
+          <div class="ti-tabs">
+            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')"><i class="fa-solid fa-fire"></i> Trending</button>
+            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
+            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
+          </div>
+          <div class="ti-pos-filters">
+            <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
+            <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
+            <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
+            <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
+            <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
+          </div>
+        </div>
+
+        <div class="ti-key">
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">BR Model</span> BR Production Model Value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch ti-key-delta"></span>
+            <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
+          </div>
+          <div class="ti-key-item">
+            <span style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
+              <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
+              <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+            </span>
+            <span><span class="ti-key-label">Momentum</span> Rising or Falling Market Price</span>
+          </div>
+        </div>
+
+        <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
+          <div class="spinner" style="margin:0 auto 12px;"></div>
+          Loading trade data...
+        </div>
+        <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
+          No data for this filter yet — analytics need to run to populate this view.
+        </div>
+        <div id="tiGrid" class="ti-grid" style="display:none;"></div>
+
+      </div>
+    </div>
+
+    <style>
+      .ti-controls {{
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }}
+      .ti-tabs {{
+        display: flex;
+        background: var(--bg-secondary, #f1f5f9);
+        border-radius: 10px;
+        padding: 3px;
+        gap: 2px;
+      }}
+      .ti-tab {{
+        padding: 7px 16px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all .15s;
+      }}
+      .ti-tab.active {{
+        background: var(--card-bg);
+        color: var(--text-color);
+        box-shadow: 0 1px 3px rgba(0,0,0,.12);
+      }}
+      .ti-pos-filters {{
+        display: flex;
+        gap: 6px;
+      }}
+      .ti-pos {{
+        padding: 6px 13px;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all .15s;
+      }}
+      .ti-pos.active {{
+        background: var(--text-color);
+        color: var(--card-bg);
+        border-color: var(--text-color);
+      }}
+      .ti-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 12px;
+      }}
+      .ti-card {{
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 14px;
+        cursor: pointer;
+        transition: transform .12s, box-shadow .12s;
+        background: var(--card-bg);
+      }}
+      .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
+      .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
+      .ti-name {{ font-weight:700; font-size:14px; line-height:1.3; }}
+      .ti-meta {{ font-size:11px; color:var(--text-muted); margin-top:2px; }}
+      .ti-chip {{
+        font-size:11px; font-weight:700;
+        padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
+      }}
+      .ti-divider {{ height:1px; background:var(--border-color); margin:8px 0; }}
+      .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
+      .ti-row-label {{ color:var(--text-muted); }}
+      .ti-row-val {{ font-weight:600; }}
+      .ti-delta-pos {{ color:#10b981; }}
+      .ti-delta-neg {{ color:#ef4444; }}
+      .ti-momentum {{ font-size:11px; font-weight:600; margin-top:6px; display:flex; align-items:center; gap:4px; }}
+      .ti-key {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 24px;
+        font-size: 12px; color: var(--text-muted);
+        background: var(--bg-secondary, #f8fafc);
+        border: 1px solid var(--border-color);
+        border-radius: 10px; padding: 12px 16px;
+        margin-bottom: 20px; line-height: 1.4;
+      }}
+      .ti-key-item {{
+        display: flex; align-items: center; gap: 8px;
+      }}
+      .ti-key-swatch {{
+        display: inline-block; width: 12px; height: 12px;
+        flex-shrink: 0; margin-top: 1px;
+      }}
+      .ti-key-delta {{
+        background: linear-gradient(135deg, #10b981 50%, #ef4444 50%);
+        border-radius: 3px; opacity: .8;
+      }}
+      .ti-key-label {{
+        font-weight: 600; color: var(--text-color);
+        margin-right: 4px;
+      }}
+    </style>
+
+    <script>
+    (function() {{
+      const TI_SEASON = {season};
+      let allPlayers = [];
+      let currentTab = 'trending';
+      let currentPos = 'ALL';
+
+      // Percentile thresholds for buy/sell pressure (computed from loaded data)
+      fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&limit=100')
+        .then(r => r.json())
+        .then(data => {{
+          allPlayers = (data.players || []).filter(p => (p.trade_count_all || 0) > 0);
+          document.getElementById('tiLoading').style.display = 'none';
+          document.getElementById('tiGrid').style.display = '';
+          renderTI();
+        }})
+        .catch(() => {{
+          document.getElementById('tiLoading').innerHTML =
+            '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
+        }});
+
+      window.switchTITab = function(tab) {{
+        currentTab = tab;
+        document.querySelectorAll('.ti-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        renderTI();
+      }};
+
+      window.filterTI = function(pos) {{
+        currentPos = pos;
+        document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
+        renderTI();
+      }};
+
+      function getTabPlayers() {{
+        let list = currentPos === 'ALL' ? allPlayers : allPlayers.filter(p => p.position === currentPos);
+        if (currentTab === 'trending') {{
+          return [...list].sort((a, b) => (b.trade_count_7d || b.trade_count_all || 0) - (a.trade_count_7d || a.trade_count_all || 0)).slice(0, 40);
+        }}
+        const withDelta = list.filter(p => p.value_delta != null && p.model_value > 0);
+        if (currentTab === 'buylows')  return withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta).slice(0, 40);
+        if (currentTab === 'sellhigh') return withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta).slice(0, 40);
+        return [];
+      }}
+
+      function renderTI() {{
+        const players = getTabPlayers();
+        const grid  = document.getElementById('tiGrid');
+        const empty = document.getElementById('tiEmpty');
+        if (players.length === 0) {{
+          grid.style.display = 'none';
+          empty.style.display = '';
+          return;
+        }}
+        empty.style.display = 'none';
+        grid.style.display = '';
+
+        grid.innerHTML = players.map(p => {{
+          const name   = p.name || 'Unknown';
+          const pos    = p.position || '?';
+          const team   = p.team || '?';
+          const cnt7   = p.trade_count_7d  || 0;
+          const cnt30  = p.trade_count_30d || 0;
+          const cntAll = p.trade_count_all || 0;
+          const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
+          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
+          const delta  = p.value_delta;
+          const trend  = p.market_trend;
+
+          let chipBg, chipColor, chipText;
+          if (currentTab === 'trending') {{
+            chipBg = '#3b82f620'; chipColor = '#3b82f6';
+            chipText = (cnt7 || cntAll) + ' trades';
+          }} else if (currentTab === 'buylows') {{
+            chipBg = '#10b98120'; chipColor = '#10b981';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }} else {{
+            chipBg = '#f59e0b20'; chipColor = '#f59e0b';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }}
+
+          const deltaHtml = delta != null
+            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          // Momentum: 14d median minus 90d median. Threshold ±5 to avoid noise.
+          let momentumHtml = '';
+          if (trend != null) {{
+            if (trend >= 5) {{
+              momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
+            }} else if (trend <= -5) {{
+              momentumHtml = '<span style="color:#ef4444;">▼</span> Falling';
+            }}
+          }}
+
+          // Pre-process strings to avoid backslashes
+          const player_json = JSON.stringify(p).replace(/"/g, '\\"');
+          const escaped_name = name.replace(/'/g, "\\'");
+          const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal({{player_json}})` : `openPlayerModal('{{p.player_id}}','{{escaped_name}}')`;
+
+          return `<div class="ti-card" onclick="${{onclick_js}}">
+            <div class="ti-card-top">
+              <div>
+                <div class="ti-name">${{name}}</div>
+                <div class="ti-meta">${{pos}} · ${{team}}</div>
+              </div>
+              <div class="ti-chip" style="background:${{chipBg}};color:${{chipColor}};">${{chipText}}</div>
+            </div>
+            <div class="ti-divider"></div>
+            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
+            ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
+          </div>`;
+        }}).join('');
+      }}
+    }})();
+    </script>
+    """
+    return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
+
+
+@app.route("/trade-intel")
+def page_trade_intel_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_rookies(platform="sleeper", season=current_season, league_id=None)
+    return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/trade-database")
+def page_trade_database(platform: str, season: int, league_id: str):
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Browse real dynasty trades — search by player name to see how they move
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:20px;">
+
+        <div class="tdb-toolbar">
+          <div class="tdb-search-wrap">
+            <span class="tdb-search-icon" aria-hidden="true"></span>
+            <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
+          </div>
+          <div class="tdb-lt-filters">
+            <button class="tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+            <button class="tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+            <button class="tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+          </div>
+        </div>
+
+        <div id="tdbStatus" class="tdb-status"></div>
+        <div id="tdbList"   class="tdb-list"></div>
+        <div class="tdb-more-wrap">
+          <button id="tdbMore" class="tdb-more-btn" style="display:none;">Load more</button>
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .tdb-toolbar {{
+        display: flex; gap: 12px; margin-bottom: 16px;
+        flex-wrap: wrap; align-items: center;
+      }}
+      .tdb-search-wrap {{
+        flex: 1; min-width: 200px;
+        display: flex; align-items: center;
+        border: 1px solid var(--border-color); border-radius: 8px;
+        background: var(--card-bg); padding: 0 12px; gap: 8px;
+      }}
+      .tdb-search-icon {{
+        display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+        background: url('/static/images/magnifying-glass-solid.png') no-repeat center / contain;
+        filter: brightness(0) saturate(100%) invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(85%) contrast(90%);
+        pointer-events: none;
+      }}
+      .tdb-search {{
+        flex: 1; padding: 9px 0; border: none; background: transparent;
+        color: var(--text-color); font-size: 14px; outline: none;
+        min-width: 0;
+      }}
+      .tdb-search-wrap:focus-within {{ border-color: var(--accent-color, #3b82f6); }}
+      .tdb-lt-filters {{ display: flex; gap: 4px; }}
+      .tdb-lt {{
+        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-color);
+        background: var(--card-bg); color: var(--text-muted); cursor: pointer;
+        font-size: 13px; font-weight: 600; transition: all .15s;
+      }}
+      .tdb-lt.active {{
+        background: var(--text-color); color: var(--card-bg); border-color: var(--text-color);
+      }}
+      .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
+      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+      @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
+      .tdb-more-wrap {{ text-align: center; margin-top: 20px; grid-column: 1 / -1; }}
+      .tdb-more-btn {{
+        padding: 9px 28px; border-radius: 20px; border: 1px solid var(--border-color);
+        background: var(--card-bg); color: var(--text-color); cursor: pointer; font-size: 13px;
+      }}
+
+      /* Trade card */
+      .tdb-card {{
+        border: 1px solid var(--border-color); border-radius: 12px;
+        overflow: hidden; background: var(--card-bg);
+      }}
+      .tdb-card-head {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 14px; border-bottom: 1px solid var(--border-color);
+        background: var(--bg-secondary, rgba(0,0,0,.03));
+      }}
+      .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
+      .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
+      .tdb-badge {{
+        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+        background: var(--row, #1e293b); color: var(--text);
+        border: 1px solid var(--border-color);
+      }}
+      .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
+      .tdb-card-body {{
+        display: grid; grid-template-columns: 1fr 1px 1fr;
+      }}
+      .tdb-col {{
+        padding: 12px 14px; display: flex; flex-direction: column; gap: 5px;
+      }}
+      .tdb-col-divider {{ background: var(--border-color); }}
+      .tdb-asset {{
+        font-size: 14px; color: var(--text); font-weight: 500;
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      }}
+      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; font-weight: 500; }}
+      .tdb-pos {{
+        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+        background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
+      }}
+      @media(max-width: 480px) {{
+        .tdb-card-body {{ grid-template-columns: 1fr; }}
+        .tdb-col-divider {{ height: 1px; width: auto; }}
+      }}
+    </style>
+
+    <script>
+    (function() {{
+      const TDB_SEASON = {season};
+      let page = 0, leagueType = 'all', searchQuery = '', loading = false;
+
+      const listEl   = document.getElementById('tdbList');
+      const statusEl = document.getElementById('tdbStatus');
+      const moreBtn  = document.getElementById('tdbMore');
+      const searchEl = document.getElementById('tdbSearch');
+
+      function load(reset) {{
+        if (loading) return;
+        if (reset) {{ page = 0; listEl.innerHTML = ''; }}
+        loading = true;
+        if (reset) statusEl.textContent = 'Loading...';
+
+        const params = new URLSearchParams({{ page, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+        if (searchQuery) params.set('q', searchQuery);
+
+        fetch('/api/trade-database?' + params)
+          .then(r => r.json())
+          .then(data => {{
+            const trades = data.trades || [];
+            if (reset && trades.length === 0) {{
+              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
+              statusEl.textContent = '';
+              moreBtn.style.display = 'none';
+              loading = false;
+              return;
+            }}
+            statusEl.textContent = reset && data.total != null ? data.total.toLocaleString() + ' trades' : '';
+            renderTrades(trades, searchQuery);
+            moreBtn.style.display = data.has_more ? '' : 'none';
+            page++;
+            loading = false;
+          }})
+          .catch(() => {{ statusEl.textContent = 'Failed to load.'; loading = false; }});
+      }}
+
+      function renderTrades(trades, q) {{
+        const lq = (q || '').toLowerCase();
+        trades.forEach(t => {{
+          const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
+                           : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
+          const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
+          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
+
+          function renderAsset(a) {{
+            const match = lq && a.name && a.name.toLowerCase().includes(lq);
+            const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
+            const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
+            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
+            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
+          }}
+
+          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+
+          const card = document.createElement('div');
+          card.className = 'tdb-card';
+          card.innerHTML = `
+            <div class="tdb-card-head">
+              <span class="tdb-card-date">${{t.date || '—'}}</span>
+              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
+            </div>
+            <div class="tdb-card-body">
+              <div class="tdb-col">${{sideA}}</div>
+              <div class="tdb-col-divider"></div>
+              <div class="tdb-col">${{sideB}}</div>
+            </div>`;
+          listEl.appendChild(card);
+        }});
+      }}
+
+      window.tdbFilter = function(lt) {{
+        leagueType = lt;
+        document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
+        load(true);
+      }};
+
+      moreBtn.addEventListener('click', () => load(false));
+
+      let debounce;
+      searchEl.addEventListener('input', () => {{
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {{ searchQuery = searchEl.value.trim(); load(true); }}, 350);
+      }});
+
+      load(true);
+    }})();
+    </script>
+    """
+    return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
+
+
+@app.route("/trade-database")
+def page_trade_database_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_trade_database(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/prospects")
+def page_prospects_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_prospects(platform="sleeper", season=current_season, league_id=None)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")
@@ -7537,7 +8605,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # ── Career standings table ──────────────────────────────────────────────
     table_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
-        rings = "🏆 " * int(row["Championships"]) if row["Championships"] > 0 else ""
+        rings = ('<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])) if row["Championships"] > 0 else ""
         table_rows_html += f"""
         <tr>
           <td>{i + 1}</td>
@@ -7750,20 +8818,6 @@ def page_history(platform: str, season: int, league_id: str):
         resolved_history_league_id=resolved_history_league_id,
     )
 
-    if platform == "espn":
-        espn_notice = (
-            "<div class='card' style='margin-bottom:16px;'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>Limited history for ESPN leagues</div>"
-            "      <div class='bract-empty-copy'>Full season recaps and AI-powered history analysis are optimized for Sleeper leagues. "
-            "Some data may be incomplete for ESPN.</div>"
-            "    </div>"
-            "  </div>"
-            "</div>"
-        )
-        body_html = espn_notice + body_html
-
     return render_page(
         "League History",
         league_id,
@@ -7777,32 +8831,33 @@ def page_history(platform: str, season: int, league_id: str):
 @app.before_request
 def maybe_run_daily():
     global daily_completed
+    try:
+        today_et: date = datetime.now(EASTERN).date()
 
-    today_et: date = datetime.now(EASTERN).date()
+        if daily_completed == today_et:
+            return
 
-    if daily_completed == today_et:
-        return
+        if daily_lock.acquire(blocking=False):
+            try:
+                if daily_completed != today_et:
+                    logger.info("[daily] Running daily data process for %s (ET)...", today_et)
 
-    if daily_lock.acquire(blocking=False):
-        try:
-            if daily_completed != today_et:
-                print(f"[daily] Running daily data process for {today_et} (ET)...")
+                    state = get_nfl_state() or {}
+                    season = int(state.get("season") or datetime.now().year)
+                    week = int(state.get("week") or 0)
 
-                state = get_nfl_state() or {}
-                season = int(state.get("season") or datetime.now().year)
-                week = int(state.get("week") or 0)
+                    daily_thread = threading.Thread(
+                        target=run_daily_data_async,
+                        args=(season, week),
+                        daemon=True
+                    )
+                    daily_thread.start()
 
-                # Run in background thread
-                daily_thread = threading.Thread(
-                    target=run_daily_data_async,
-                    args=(season, week),
-                    daemon=True
-                )
-                daily_thread.start()
-                
-                daily_completed = today_et
-        finally:
-            daily_lock.release()
+                    daily_completed = today_et
+            finally:
+                daily_lock.release()
+    except Exception as _daily_exc:
+        logger.warning("[daily] before_request check failed (non-fatal): %s", _daily_exc)
 
 
 @app.route("/ads.txt")
@@ -8224,6 +9279,237 @@ def api_gm_memo():
         }), 500
 
 
+@app.route("/api/power-rankings", methods=["POST"])
+@limiter.limit("6 per minute")
+def api_power_rankings():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+
+    if not league_id:
+        return jsonify({"error": "Missing league_id"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        html_out = get_power_rankings_html(ctx)
+        return jsonify({"success": True, "html": html_out})
+    except Exception as e:
+        logger.exception("[api-power-rankings] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/trade-suggestions", methods=["POST"])
+@limiter.limit("6 per minute")
+def api_trade_suggestions():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        html_out = get_trade_suggestions_html(ctx, viewer_roster_id)
+        return jsonify({"success": True, "html": html_out})
+    except Exception as e:
+        logger.exception("[api-trade-suggestions] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/roster-grade", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_roster_grade():
+    payload = request.get_json(force=True)
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        grade_data = get_roster_grade(ctx, viewer_roster_id)
+        badge_html = render_roster_grade_badge(grade_data)
+        return jsonify({"success": True, "grade_data": grade_data, "badge_html": badge_html})
+    except Exception as e:
+        logger.exception("[api-roster-grade] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/trade-outcome", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_trade_outcome():
+    """
+    Compare the value delta of a past trade vs current values.
+    Expects: {assets_received: [{id, name}], assets_sent: [{id, name}], trade_date: 'YYYY-MM-DD'}
+    """
+    from dashboard_services.player_value_history import get_player_value_history
+
+    payload = request.get_json(force=True)
+    assets_received = payload.get("assets_received") or []
+    assets_sent = payload.get("assets_sent") or []
+
+    logger.info("[api-trade-outcome] Received payload: %s", {
+        "assets_received_count": len(assets_received),
+        "assets_sent_count": len(assets_sent),
+        "trade_date": payload.get("trade_date"),
+        "payload_keys": list(payload.keys())
+    })
+
+    if not assets_received and not assets_sent:
+        logger.warning("[api-trade-outcome] 400 error: No assets provided. Payload: %s", payload)
+        return jsonify({"error": "No assets provided", "debug": payload}), 400
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from dashboard_services.picks import load_pick_value_table
+        
+        value_table = get_model_value_table_cached()
+        values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        
+        # Load pick values for pick asset handling
+        pick_values = load_pick_value_table()
+
+        trade_date = str(payload.get("trade_date") or "")
+        trade_month = trade_date[:7] if trade_date else ""
+
+        def get_value_at_trade(pid: str) -> float:
+            if not trade_month:
+                return 0.0
+            history = get_player_value_history(pid, days=365)
+            for snap in history:
+                if str(snap.get("as_of_date") or "").startswith(trade_month):
+                    return float(snap.get("value") or 0)
+            return 0.0
+        
+        def get_pick_value(asset: dict) -> float:
+            """Get current pick value, preferring WLS-derived bucket values."""
+            try:
+                rd = int(asset.get("pick_round") or 4)
+            except (ValueError, TypeError):
+                rd = 4
+            try:
+                year = int(asset.get("pick_season") or asset.get("pick_year") or
+                           (trade_date[:4] if trade_date else datetime.now().year))
+            except (ValueError, TypeError):
+                year = datetime.now().year
+
+            # Exact slot lookup (e.g. "2026_1_06")
+            slot = asset.get("pick_slot")
+            if slot:
+                try:
+                    key = f"{year}_{rd}_{int(slot):02d}"
+                    if key in pick_values:
+                        return float(pick_values[key])
+                except (ValueError, TypeError):
+                    pass
+
+            # Bucket lookup — derive bucket from slot if pick_order is absent
+            order = asset.get("pick_order")
+            if not order and slot:
+                try:
+                    s = int(slot)
+                    order = "early" if s <= 4 else ("mid" if s <= 8 else "late")
+                except (ValueError, TypeError):
+                    pass
+            order = order or "mid"
+
+            if order in ("early", "mid", "late"):
+                key = f"{year}_{rd}_{order}"
+                if key in pick_values:
+                    return float(pick_values[key])
+
+            key = f"{year}_{rd}"
+            if key in pick_values:
+                return float(pick_values[key])
+
+            return 10.0
+
+        all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
+        all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
+
+        # Fetch historical values in parallel
+        then_values: dict[str, float] = {}
+        if trade_date:
+            with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
+                futures = {pool.submit(get_value_at_trade, pid): pid for _, pid, _ in all_pids if pid}
+                for fut in as_completed(futures):
+                    pid = futures[fut]
+                    try:
+                        then_values[pid] = fut.result()
+                    except Exception:
+                        then_values[pid] = 0.0
+
+        received_rows = []
+        sent_rows = []
+        total_received_now = 0.0
+        total_sent_now = 0.0
+        total_received_then = 0.0
+        total_sent_then = 0.0
+
+        for asset in assets_received:
+            pid = str(asset.get("id") or "")
+            name = str(asset.get("name") or pid)
+            
+            # Handle players vs picks
+            if asset.get("asset_type") == "pick":
+                now = get_pick_value(asset)
+                then = now  # Picks don't have historical values, use current value
+            else:
+                now = values_now.get(pid, 0.0)
+                then = then_values.get(pid, now) if trade_date else now
+                
+            total_received_now += now
+            total_received_then += then
+            received_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+
+        for asset in assets_sent:
+            pid = str(asset.get("id") or "")
+            name = str(asset.get("name") or pid)
+            
+            # Handle players vs picks
+            if asset.get("asset_type") == "pick":
+                now = get_pick_value(asset)
+                then = now  # Picks don't have historical values, use current value
+            else:
+                now = values_now.get(pid, 0.0)
+                then = then_values.get(pid, now) if trade_date else now
+                
+            total_sent_now += now
+            total_sent_then += then
+            sent_rows.append({"id": pid, "name": name, "value_now": round(now, 1), "value_then": round(then, 1), "delta": round(now - then, 1)})
+
+        net_delta_now = round(total_received_now - total_sent_now, 1)
+        net_delta_then = round(total_received_then - total_sent_then, 1)
+
+        if net_delta_now > 150:
+            verdict = "WIN"
+        elif net_delta_now < -150:
+            verdict = "LOSS"
+        else:
+            verdict = "EVEN"
+
+        return jsonify({
+            "success": True,
+            "verdict": verdict,
+            "net_delta_now": net_delta_now,
+            "net_delta_then": net_delta_then,
+            "total_received_now": round(total_received_now, 1),
+            "total_sent_now": round(total_sent_now, 1),
+            "received": received_rows,
+            "sent": sent_rows,
+        })
+    except Exception as e:
+        logger.exception("[api-trade-outcome] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/trade-eval", methods=["POST"])
 @limiter.limit("10 per minute")
 def api_trade_eval():
@@ -8411,11 +9697,13 @@ def api_trade_eval():
         verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
 
     analysis_html = ""
+    depth_warnings = {}
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
 
     if league_id and viewer_roster_id:
         try:
+            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
@@ -8424,6 +9712,16 @@ def api_trade_eval():
                 side_a=side_a,
                 side_b=side_b,
             )
+            # Compute post-trade depth warnings for the viewer's roster
+            rosters = ctx.get("rosters") or []
+            viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+            if viewer_roster:
+                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+                viewer_gives = side_b if viewer_side == "b" else side_a
+                viewer_gets = side_a if viewer_side == "a" else side_b
+                sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
+                receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
+                depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
         except Exception as e:
             print(f"[trade-ai] skipped: {e}")
             analysis_html = ""
@@ -8437,6 +9735,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
         "analysis_html": analysis_html,
+        "depth_warnings": depth_warnings,
     })
 
 
@@ -8712,16 +10011,15 @@ def api_player_indicators():
         nfl_state = get_nfl_state() or {}
         current_season = int(nfl_state.get("season") or datetime.now().year)
 
-        # Load all players to check for rookies
+        # Load all players to check for rookies (years_exp 0 or 1 = first two seasons)
         players_index = load_players_index() or {}
         rookies = []
 
         for player_id, player_data in players_index.items():
-            # Check if rookie (years_exp == 0 or rookie_year == current_season)
             years_exp = player_data.get("years_exp")
             rookie_year = player_data.get("rookie_year")
 
-            if years_exp == 0 or years_exp == "0":
+            if years_exp in (0, 1, "0", "1"):
                 rookies.append(str(player_id))
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
@@ -8771,14 +10069,72 @@ def api_player_indicators():
                         if pid:
                             breakouts.append(pid)
 
+        # Get elites based on positional rank cutoffs (12-man PPR dynasty)
+        elites = []
+
+        # Load model value table to get current player values
+        value_table = load_model_value_table() or []
+        value_map = {str(p.get("id")): p for p in value_table}
+
+        # Top-N positional rank cutoffs for a 12-man PPR dynasty league
+        elite_rank_cutoffs = {'QB': 5, 'RB': 6, 'WR': 6, 'TE': 5}
+
+        from collections import defaultdict as _defaultdict
+        pos_players: dict = _defaultdict(list)
+        for player_id, player_data in value_map.items():
+            pos = str(player_data.get("position", "")).upper()
+            val = float(player_data.get("value", 0) or 0)
+            if val > 0 and pos in elite_rank_cutoffs:
+                pos_players[pos].append((val, str(player_id)))
+
+        for pos, cutoff in elite_rank_cutoffs.items():
+            for _, pid in sorted(pos_players[pos], reverse=True)[:cutoff]:
+                elites.append(pid)
+
+        # Prospects = only pre-draft class players (is_rookie=True in cached table)
+        prospects = []
+        try:
+            model_tbl = get_model_value_table_cached() or []
+            for entry in model_tbl:
+                if entry.get("is_rookie") is True:
+                    pid = str(entry.get("id") or "")
+                    if pid:
+                        prospects.append(pid)
+        except Exception as _pe:
+            print(f"[player-indicators] prospects skipped: {_pe}")
+
         return jsonify({
             "rookies": rookies,
-            "breakouts": breakouts
+            "breakouts": breakouts,
+            "elites": elites,
+            "prospects": prospects
         })
 
     except Exception as e:
         print(f"[player-indicators] Error: {e}")
-        return jsonify({"rookies": [], "breakouts": []})
+        return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
+
+
+@app.route("/api/prospect/<player_id>")
+def api_prospect_profile(player_id: str):
+    """Return full prospect profile data for a single pre-draft player."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        draft_year = get_active_rookie_class()
+        rows = get_rookie_rankings_from_db(draft_year)
+        player_id = str(player_id).strip()
+        for r in rows:
+            if str(r.get("player_id") or "") == player_id:
+                d = dict(r)
+                d["draft_capital_label"] = (
+                    f"Round {d['projected_round']} · Pick #{d['projected_pick']}"
+                    if d.get("projected_round") and d.get("projected_pick") else None
+                )
+                return jsonify(_sanitize_for_json(d))
+        return jsonify({"error": "not found"}), 404
+    except Exception as e:
+        print(f"[api/prospect] {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/breakout-candidates")
@@ -10404,6 +11760,25 @@ def api_schedule_strength():
         for rid, pts_list in weekly_pts.items():
             avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
 
+        # When no games have been played, fall back to power rankings (roster value) as proxy
+        games_played = sum(1 for pts in avg_pts_by_rid.values() if pts > 0)
+        if games_played == 0:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season)
+                model_vals = ctx.get("model_value_table") or []
+                picks_by_roster = ctx.get("picks_by_roster") or {}
+                values_by_id = {str(p["id"]): float(p.get("value") or 0) for p in model_vals if p.get("id")}
+                pick_values = load_pick_value_table() or {}
+                standings_map = ctx.get("standings_map") or {}
+                for r in rosters:
+                    rid = str(r.get("roster_id", ""))
+                    player_ids = [str(pid) for pid in (r.get("players") or [])]
+                    roster_val = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
+                    # Normalize to a "projected points" scale (~100-160 range) for display consistency
+                    avg_pts_by_rid[rid] = round(100.0 + roster_val / 50.0, 2)
+            except Exception:
+                pass
+
         # Build future matchups map: rid -> list of opponent roster_ids
         future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
 
@@ -10446,6 +11821,7 @@ def api_schedule_strength():
             "current_week": current_week,
             "weeks_remaining": max(0, FULL_SEASON_WEEKS - current_week),
             "teams": results,
+            "using_power_rankings": games_played == 0,
         })
 
     except Exception:
@@ -10613,6 +11989,1206 @@ def api_draft_grades():
     except Exception:
         logger.exception("[draft-grades] Unexpected error")
         return jsonify({"error": "Internal error"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Trade Intelligence Engine API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/trade-intel/trending")
+def api_trade_intel_trending():
+    """
+    Most traded players in the last 7 days across all crawled leagues.
+    Returns up to 25 players with trade counts and market vs model value delta.
+    """
+    from dashboard_services.db import get_conn
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        limit = min(int(request.args.get("limit") or 25), 50)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        league_size = int(request.args.get("league_size") or 10)
+
+        fmt = "sf" if league_type == "sf" else "1qb"
+        model_col = f"value_{fmt}"
+
+        # Map league_size to the size-bucketed column, fall back to all-leagues
+        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+        sz_suffix = _SZ_MAP.get(league_size, "")
+        if sz_suffix:
+            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
+        else:
+            value_col_expr = f"s.market_value_{fmt}"
+
+        _q = f"""
+            SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
+                   {value_col_expr} AS market_value, s.buy_sell_ratio,
+                   s.market_trend_1qb,
+                   pv.{model_col} AS model_value, pv.position, pv.team
+            FROM trade_intel_player_stats s
+            LEFT JOIN player_values pv ON pv.player_id = s.player_id
+            WHERE s.season = %s AND s.trade_count > 0
+            ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
+            LIMIT %s
+            """
+        with get_conn() as conn:
+            rows = conn.execute(_q, (season, limit)).fetchall()
+            # Fall back to most recent season that has data
+            if not rows:
+                fallback_season = conn.execute(
+                    "SELECT season FROM trade_intel_player_stats WHERE trade_count > 0 ORDER BY season DESC LIMIT 1"
+                ).fetchone()
+                if fallback_season:
+                    rows = conn.execute(_q, (fallback_season["season"], limit)).fetchall()
+
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+
+        result = []
+        for r in rows:
+            pid = r["player_id"]
+            info = players_map.get(pid, {})
+            model_val = float(r["model_value"] or 0)
+            market_val = float(r["market_value"] or 0)
+            delta = round(market_val - model_val, 1) if model_val and market_val else None
+            result.append({
+                "player_id": pid,
+                "name": info.get("name", pid),
+                "position": r["position"] or info.get("pos"),
+                "team": r["team"] or info.get("team"),
+                "trade_count_7d": r["trade_count_7d"],
+                "trade_count_30d": r["trade_count_30d"],
+                "trade_count_all": r["trade_count"],
+                "market_value": market_val or None,
+                "model_value": model_val or None,
+                "value_delta": delta,
+                "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
+            })
+
+        return jsonify({"season": season, "players": result})
+
+    except Exception:
+        logger.exception("[trade-intel/trending] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/player/<player_id>")
+def api_trade_intel_player(player_id: str):
+    """
+    Trade market data for a specific player:
+    - Real trade frequency
+    - Market value implied by actual trades
+    - Model value vs market delta
+    - Common trade companions
+    """
+    from dashboard_services.db import get_conn
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        league_size = int(request.args.get("league_size") or 10)
+
+        fmt     = "sf" if league_type == "sf" else "1qb"
+        raw_col = f"value_{fmt}"
+        cal_col = f"calibrated_value_{fmt}"
+
+        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+        sz_suffix = _SZ_MAP.get(league_size, "")
+        if sz_suffix:
+            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
+        else:
+            value_col_expr = f"s.market_value_{fmt}"
+
+        with get_conn() as conn:
+            stat_row = conn.execute(
+                f"""
+                SELECT
+                    s.*,
+                    {value_col_expr}                            AS market_value,
+                    pv.{raw_col}                                AS model_value,
+                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
+                    pv.calibration_source,
+                    pv.position, pv.team
+                FROM trade_intel_player_stats s
+                LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                WHERE s.player_id = %s AND s.season = %s
+                """,
+                (player_id, season)
+            ).fetchone()
+
+            package_rows = conn.execute(
+                """
+                SELECT package_key, occurrence_count
+                FROM trade_intel_packages
+                WHERE anchor_player_id = %s AND season = %s
+                ORDER BY occurrence_count DESC
+                LIMIT 10
+                """,
+                (player_id, season)
+            ).fetchall()
+
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+
+        def _resolve_package(pkg_key: str) -> list[dict]:
+            companions = []
+            for pid in pkg_key.split("|"):
+                if not pid:
+                    continue
+                info = players_map.get(pid, {})
+                companions.append({
+                    "player_id": pid,
+                    "name": info.get("name", pid),
+                    "position": info.get("pos"),
+                })
+            return companions
+
+        common_packages = [
+            {
+                "companions": _resolve_package(r["package_key"]),
+                "occurrence_count": r["occurrence_count"],
+            }
+            for r in package_rows
+            if r["package_key"]
+        ]
+
+        if not stat_row:
+            return jsonify({
+                "player_id": player_id,
+                "season": season,
+                "trade_count": 0,
+                "common_packages": common_packages,
+            })
+
+        model_val = float(stat_row["model_value"] or 0)
+        market_val = float(stat_row["market_value"] or 0)
+        calibrated_val = float(stat_row["calibrated_value"] or 0)
+        # Delta is market vs raw model — shows how much the model diverges from real trades
+        delta = round(market_val - model_val, 1) if model_val and market_val else None
+
+        return jsonify({
+            "player_id": player_id,
+            "season": season,
+            "trade_count_7d": stat_row["trade_count_7d"],
+            "trade_count_30d": stat_row["trade_count_30d"],
+            "trade_count_all": stat_row["trade_count"],
+            "market_value": market_val or None,
+            "model_value": model_val or None,
+            "calibrated_value": calibrated_val or None,
+            "calibration_source": stat_row["calibration_source"],
+            "value_delta": delta,
+            "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
+            "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
+            "common_packages": common_packages,
+        })
+
+    except Exception:
+        logger.exception("[trade-intel/player] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-database")
+def api_trade_database():
+    """
+    Paginated, searchable real-trade log.
+    ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
+    """
+    try:
+        q           = (request.args.get("q") or "").strip().lower()
+        page        = max(0, int(request.args.get("page") or 0))
+        limit       = min(int(request.args.get("limit") or 20), 50)
+        league_type = (request.args.get("league_type") or "all").strip().lower()
+        season      = int(request.args.get("season") or datetime.now().year)
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+
+        players_map = load_players_index() or {}
+
+        # If searching by name, resolve to player_ids first
+        match_ids: list[str] = []
+        if q:
+            match_ids = [
+                pid for pid, info in players_map.items()
+                if q in (info.get("name") or "").lower()
+            ]
+            if not match_ids:
+                return jsonify({"trades": [], "total": 0, "has_more": False})
+
+        sf_filter = ""
+        if league_type == "sf":
+            sf_filter = "AND l.is_superflex = TRUE"
+        elif league_type == "1qb":
+            sf_filter = "AND l.is_superflex = FALSE"
+
+        with get_conn() as conn:
+            if match_ids:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_filter}
+                    """,
+                    (match_ids, season),
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+
+                trade_rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_filter}
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s OFFSET %s
+                    """,
+                    (match_ids, season, limit + 1, page * limit),
+                ).fetchall()
+            else:
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS n FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_filter}
+                    """,
+                    (season,),
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+
+                trade_rows = conn.execute(
+                    f"""
+                    SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
+                           l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_filter}
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s OFFSET %s
+                    """,
+                    (season, limit + 1, page * limit),
+                ).fetchall()
+
+            has_more = len(trade_rows) > limit
+            trade_rows = trade_rows[:limit]
+
+            if not trade_rows:
+                return jsonify({"trades": [], "total": total, "has_more": False})
+
+            trade_ids = [r["id"] for r in trade_rows]
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order, pick_slot, pick_roster_id
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        assets_by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in assets_by_trade:
+                assets_by_trade[tid] = {"a": [], "b": []}
+            assets_by_trade[tid][a["side"]].append(a)
+
+        def describe(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = a["player_id"]
+                info = players_map.get(pid) or {}
+                return {"type": "player", "player_id": pid,
+                        "name": info.get("name") or pid,
+                        "position": info.get("pos") or "?"}
+            s    = str(a["pick_season"]) if a["pick_season"] else "?"
+            r    = str(a["pick_round"])  if a["pick_round"]  else "?"
+            slot = a["pick_slot"]
+            if slot:
+                name = f"{s} Pick {r}.{str(slot).zfill(2)}"
+            else:
+                order = a["pick_order"] or ""
+                name  = f"{s} Round {r}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": name}
+
+        result = []
+        for r in trade_rows:
+            tid   = r["id"]
+            sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            side_a_assets = [describe(a) for a in sides["a"]]
+            side_b_assets = [describe(a) for a in sides["b"]]
+            if not side_a_assets or not side_b_assets:
+                continue
+            trade_date = None
+            if r["created_at"]:
+                try:
+                    trade_date = r["created_at"].strftime("%m/%d/%y")
+                except Exception:
+                    trade_date = str(r["created_at"])[:10]
+            result.append({
+                "trade_id":    r["transaction_id"],
+                "date":        trade_date,
+                "season":      r["season"],
+                "scoring_type": r["scoring_type"],
+                "is_superflex": r["is_superflex"],
+                "num_teams":   r["num_teams"],
+                "side_a":      side_a_assets,
+                "side_b":      side_b_assets,
+            })
+
+        return jsonify({"trades": result, "total": total, "has_more": has_more})
+
+    except Exception:
+        logger.exception("[trade-database] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/similar-trades")
+def api_trade_intel_similar_trades():
+    """
+    Returns real trades where side-A players and side-B players appeared on
+    OPPOSITE sides of the actual trade.  Falls back to any-side if only one
+    side has players.
+    """
+    try:
+        side_a_raw = request.args.get("side_a", "")
+        side_b_raw = request.args.get("side_b", "")
+        season     = int(request.args.get("season") or datetime.now().year)
+        limit      = min(int(request.args.get("limit") or 10), 25)
+        # Over-fetch so the empty-side filter doesn't starve the result set
+        fetch_limit = limit * 6
+
+        side_a_ids = [p.strip() for p in side_a_raw.split(",") if p.strip()]
+        side_b_ids = [p.strip() for p in side_b_raw.split(",") if p.strip()]
+
+        if not side_a_ids and not side_b_ids:
+            return jsonify({"trades": []})
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+
+        with get_conn() as conn:
+            if side_a_ids and side_b_ids:
+                # Require players from each side to appear on OPPOSITE sides of the real trade
+                trade_rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
+                        AND a1.player_id = ANY(%s) AND a1.asset_type = 'player'
+                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
+                        AND a2.player_id = ANY(%s) AND a2.asset_type = 'player'
+                        AND a2.side != a1.side
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (side_a_ids, side_b_ids, season, fetch_limit),
+                ).fetchall()
+            else:
+                # Only one side populated — match any trade with those players
+                all_ids = side_a_ids or side_b_ids
+                trade_rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                        AND a.player_id = ANY(%s) AND a.asset_type = 'player'
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (all_ids, season, fetch_limit),
+                ).fetchall()
+
+            if not trade_rows:
+                return jsonify({"trades": []})
+
+            trade_ids = [r["id"] for r in trade_rows]
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order, pick_slot, pick_roster_id
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        assets_by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in assets_by_trade:
+                assets_by_trade[tid] = {"a": [], "b": []}
+            assets_by_trade[tid][a["side"]].append(a)
+
+        players_map = load_players_index() or {}
+        key_set     = set(side_a_ids + side_b_ids)
+
+        def describe_asset(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = a["player_id"]
+                info = players_map.get(pid) or {}
+                return {
+                    "type": "player", "player_id": pid,
+                    "name": info.get("name") or pid,
+                    "position": info.get("pos") or "?",
+                    "is_key_player": pid in key_set,
+                }
+            s    = str(a["pick_season"]) if a["pick_season"] else "?"
+            rd   = str(a["pick_round"])  if a["pick_round"]  else "?"
+            slot = a["pick_slot"]
+            if slot:
+                name = f"{s} Pick {rd}.{str(slot).zfill(2)}"
+            else:
+                order = a["pick_order"] or ""
+                name  = f"{s} Round {rd}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": name, "is_key_player": False}
+
+        side_a_ids_set = set(side_a_ids)
+
+        result = []
+        for r in trade_rows:
+            tid   = r["id"]
+            sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            side_a_raw = [describe_asset(a) for a in sides["a"]]
+            side_b_raw = [describe_asset(a) for a in sides["b"]]
+            # Skip trades missing one side (incomplete data)
+            if not side_a_raw or not side_b_raw:
+                continue
+            # Orient so user's side_a players appear on the left column.
+            # The cross-side SQL guarantees they're on opposite sides but the
+            # DB's 'a'/'b' labeling might be inverted relative to the user's.
+            if side_a_ids_set and any(
+                a.get("player_id") in side_a_ids_set for a in side_b_raw
+            ):
+                side_a, side_b = side_b_raw, side_a_raw
+            else:
+                side_a, side_b = side_a_raw, side_b_raw
+            trade_date = None
+            if r["created_at"]:
+                try:    trade_date = r["created_at"].strftime("%m/%d/%y")
+                except: trade_date = str(r["created_at"])[:10]
+            result.append({
+                "trade_id":     r["transaction_id"],
+                "date":         trade_date,
+                "season":       r["season"],
+                "scoring_type": r["scoring_type"],
+                "is_superflex": r["is_superflex"],
+                "num_teams":    r["num_teams"],
+                "side_a":       side_a,
+                "side_b":       side_b,
+            })
+
+        return jsonify({"trades": result[:limit]})
+
+    except Exception:
+        logger.exception("[trade-intel/similar-trades] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/run-crawl", methods=["POST"])
+@limiter.limit("2 per hour")
+def api_trade_intel_run_crawl():
+    """
+    Trigger a crawl batch manually (admin use). Runs discovery + crawl in background.
+    In production this should be called by a cron job rather than the UI.
+    """
+    try:
+        import threading
+        from data_building.trade_intel.league_discovery import run_discovery
+        from data_building.trade_intel.trade_crawler import run_crawl
+        from data_building.trade_intel.analytics import run_analytics
+
+        def _job():
+            try:
+                from data_building.trade_intel.trade_value_model import run_trade_value_model
+                from data_building.build_daily_value_table import build_daily_model_values
+                discovered = run_discovery(target=500)
+                logger.info("[trade-intel] Discovered %d new leagues", discovered)
+                crawl_result = run_crawl(batch_size=100)
+                logger.info("[trade-intel] Crawl: %s", crawl_result)
+                analytics_result = run_analytics()
+                logger.info("[trade-intel] Analytics: %s", analytics_result)
+                wls_result = run_trade_value_model()
+                logger.info("[trade-intel] WLS: %s", wls_result)
+                build_daily_model_values()
+                logger.info("[trade-intel] Value table rebuilt with calibrated values")
+            except Exception:
+                logger.exception("[trade-intel] Background job failed")
+
+        t = threading.Thread(target=_job, daemon=True)
+        t.start()
+        return jsonify({"status": "started"})
+
+    except Exception:
+        logger.exception("[trade-intel/run-crawl] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/roster-intel")
+def api_roster_intel():
+    """
+    Keeper/cut signals for every rostered player in a league.
+    Returns per-player hold/sell/buy/cut signals based on value trend, age, and position curve.
+    """
+    platform  = str(request.args.get("platform")  or "sleeper").strip()
+    league_id = str(request.args.get("league_id") or "").strip()
+    season    = int(request.args.get("season")    or datetime.now().year)
+    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rosters    = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+
+    # Build value lookup keyed by player_id
+    val_key = "sf_value" if league_type == "sf" else "value"
+    values_by_id: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        values_by_id[pid] = {
+            "value":           float(row.get(val_key) or row.get("value") or 0),
+            "age":             row.get("age"),
+            "position":        str(row.get("position") or "").upper(),
+            "pos_rank_label":  row.get("pos_rank_label") or "",
+            "rank_change_7d":  row.get("rank_change_7d"),
+            "name":            row.get("name") or "",
+            "team":            row.get("team") or "",
+        }
+
+    # Bulk-fetch breakout scores
+    all_rostered = [
+        str(pid)
+        for r in rosters
+        for pid in (r.get("players") or [])
+    ]
+    breakout_scores: dict = {}
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (player_id)
+                        player_id, breakout_opportunity_score
+                    FROM breakout_opportunity_scores
+                    WHERE player_id = ANY(%s)
+                    ORDER BY player_id, as_of_date DESC
+                    """,
+                    (all_rostered,),
+                )
+                for r in cur.fetchall():
+                    r = dict(r)
+                    if r.get("breakout_opportunity_score") is not None:
+                        breakout_scores[r["player_id"]] = float(r["breakout_opportunity_score"])
+    except Exception:
+        pass
+
+    # Prime age ceilings by position
+    prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+    def _signal(pid: str, info: dict) -> str:
+        val        = info["value"]
+        age        = float(info["age"] or 0)
+        pos        = info["position"]
+        rank_chg   = info["rank_change_7d"] or 0
+        prime      = prime_max.get(pos, 28)
+        bscore     = breakout_scores.get(pid, 0)
+        past_prime = age > prime
+
+        if val < 80:
+            return "Cut"
+        if val >= 400 and rank_chg >= 6:
+            return "Sell High"
+        if past_prime and val >= 300 and rank_chg >= 3:
+            return "Sell High"
+        if not past_prime and rank_chg <= -6 and val >= 200:
+            return "Buy Window"
+        if bscore >= 55 and not past_prime:
+            return "Hold — Breakout"
+        if val >= 500 and not past_prime:
+            return "Core"
+        if past_prime and val < 200:
+            return "Cut"
+        return "Hold"
+
+    signal_order = {"Sell High": 0, "Core": 1, "Hold — Breakout": 2,
+                    "Buy Window": 3, "Hold": 4, "Cut": 5}
+
+    result = []
+    players_index = ctx.get("players_index") or {}
+    for roster in rosters:
+        rid       = str(roster.get("roster_id"))
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        players   = []
+        for pid in (roster.get("players") or []):
+            pid = str(pid)
+            info = values_by_id.get(pid)
+            if not info:
+                continue
+            pos = info["position"]
+            if pos not in {"QB", "RB", "WR", "TE"}:
+                continue
+            sig = _signal(pid, info)
+            players.append({
+                "player_id":     pid,
+                "name":          info["name"] or players_index.get(pid, {}).get("name", pid),
+                "position":      pos,
+                "team":          info["team"],
+                "age":           info["age"],
+                "value":         round(info["value"], 0),
+                "pos_rank_label": info["pos_rank_label"],
+                "rank_change_7d": info["rank_change_7d"],
+                "signal":        sig,
+            })
+        players.sort(key=lambda p: signal_order.get(p["signal"], 9))
+        result.append({
+            "roster_id": rid,
+            "team_name": team_name,
+            "players":   players,
+        })
+
+    result.sort(key=lambda t: t["team_name"])
+    return jsonify({"teams": result})
+
+
+@app.route("/api/trade-targets")
+def api_trade_targets():
+    """
+    Suggest trade acquisition targets for the viewer's team based on positional needs.
+    Compares viewer's positional value vs league average, surfaces best available from other teams.
+    """
+    platform        = str(request.args.get("platform")        or "sleeper").strip()
+    league_id       = str(request.args.get("league_id")       or "").strip()
+    season          = int(request.args.get("season")          or datetime.now().year)
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    league_type     = str(request.args.get("league_type")     or "1qb").strip().lower()
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "league_id and viewer_roster_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rosters           = ctx.get("rosters") or []
+    roster_map        = ctx.get("roster_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+    players_index     = ctx.get("players_index") or {}
+    picks_by_roster   = ctx.get("picks_by_roster") or {}
+
+    val_key = "sf_value" if league_type == "sf" else "value"
+    values_by_id: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        values_by_id[pid] = {
+            "value":          float(row.get(val_key) or row.get("value") or 0),
+            "position":       str(row.get("position") or "").upper(),
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "rank_change_7d": row.get("rank_change_7d"),
+            "name":           row.get("name") or players_index.get(pid, {}).get("name", ""),
+            "team":           row.get("team") or "",
+            "age":            row.get("age"),
+            "is_rookie":      bool(row.get("is_rookie")),
+        }
+
+    POSITIONS = ["QB", "RB", "WR", "TE"]
+
+    # Compute positional value totals per roster
+    def _pos_totals(player_ids: list) -> dict:
+        totals = {p: 0.0 for p in POSITIONS}
+        for pid in player_ids:
+            info = values_by_id.get(str(pid))
+            if info and info["position"] in POSITIONS:
+                totals[info["position"]] += info["value"]
+        return totals
+
+    roster_totals = {str(r.get("roster_id")): _pos_totals(r.get("players") or []) for r in rosters}
+    num_teams = max(len(rosters), 1)
+
+    # Project viewer's upcoming picks to actual rookie positions/values using the
+    # live rookie rankings, so need detection suppresses positions they'll draft.
+    viewer_picks_list = picks_by_roster.get(viewer_roster_id, [])
+    _cur_yr = datetime.now().year
+    _top_rookies = sorted(
+        [v for v in values_by_id.values()
+         if v.get("is_rookie") and v.get("position") in POSITIONS],
+        key=lambda r: float(r.get("value") or 0),
+        reverse=True,
+    )
+    _rookie_idx = 0
+    _projected_picks_out: list[dict] = []
+    _pick_credits: dict[str, float] = {}
+    for _rnd in [1, 2]:
+        for _pk in sorted(
+            [p for p in viewer_picks_list
+             if p.get("round") == _rnd and int(p.get("season", 0)) <= _cur_yr + 1],
+            key=lambda p: p.get("season", 9999),
+        ):
+            if _rookie_idx < len(_top_rookies):
+                _proj = _top_rookies[_rookie_idx]
+                _pos  = _proj.get("position", "")
+                _val  = float(_proj.get("value") or 0)
+                _pick_credits[_pos] = _pick_credits.get(_pos, 0.0) + _val
+                _projected_picks_out.append({
+                    "season":    _pk.get("season"),
+                    "round":     _rnd,
+                    "proj_name": _proj.get("name", ""),
+                    "proj_pos":  _pos,
+                    "proj_val":  round(_val, 1),
+                })
+                _rookie_idx += 1
+    if _pick_credits and viewer_roster_id in roster_totals:
+        vt = dict(roster_totals[viewer_roster_id])
+        for _pos, _val in _pick_credits.items():
+            vt[_pos] = vt.get(_pos, 0.0) + _val
+        roster_totals[viewer_roster_id] = vt
+
+    # Rank each roster by positional total (1 = best)
+    pos_ranks: dict[str, dict] = {}  # pos -> {rid: rank}
+    for pos in POSITIONS:
+        sorted_rids = sorted(roster_totals.keys(), key=lambda rid: roster_totals[rid].get(pos, 0), reverse=True)
+        pos_ranks[pos] = {rid: i + 1 for i, rid in enumerate(sorted_rids)}
+
+    # Viewer is needy at a position if they rank in the bottom 35%
+    need_cutoff = max(1, round(num_teams * 0.35))
+    needed_positions = [
+        pos for pos in POSITIONS
+        if pos_ranks[pos].get(viewer_roster_id, num_teams) > num_teams - need_cutoff
+    ]
+
+    # Compute the viewer's realistic offer ceiling: best 2 players + pick value.
+    # Targets are filtered to players the viewer could plausibly acquire.
+    viewer_roster_obj = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+    viewer_player_vals = sorted(
+        [float(values_by_id[str(p)]["value"]) for p in (viewer_roster_obj.get("players") or [])
+         if str(p) in values_by_id and values_by_id[str(p)]["value"] >= 150],
+        reverse=True,
+    ) if viewer_roster_obj else []
+    _pick_val_est = sum(
+        650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80
+        for p in picks_by_roster.get(viewer_roster_id, [])
+        if int(p.get("season", 0)) <= _cur_yr + 1
+    )
+    # Max realistic package: top 2 players + picks, with 20% premium the buyer might pay
+    _offer_1for1  = (viewer_player_vals[0] * 1.25) if viewer_player_vals else 300
+    _offer_package = (sum(viewer_player_vals[:2]) + _pick_val_est) * 1.2 if viewer_player_vals else 500
+    _realistic_max = max(_offer_1for1, _offer_package)
+
+    # Collect players from other teams, filtered by realistic acquire value
+    all_collected: dict[str, list] = {pos: [] for pos in POSITIONS}
+    for roster in rosters:
+        rid = str(roster.get("roster_id"))
+        if rid == viewer_roster_id:
+            continue
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        for pid in (roster.get("players") or []):
+            pid = str(pid)
+            info = values_by_id.get(pid)
+            if not info or info["position"] not in POSITIONS or info["value"] < 150:
+                continue
+            if info["value"] > _realistic_max:
+                continue  # not realistically acquirable given viewer's trade assets
+            all_collected[info["position"]].append({
+                "player_id":       pid,
+                "name":            info["name"],
+                "position":        info["position"],
+                "nfl_team":        info["team"],
+                "age":             info["age"],
+                "value":           round(info["value"], 1),
+                "pos_rank_label":  info["pos_rank_label"],
+                "rank_change_7d":  info["rank_change_7d"],
+                "owner_team":      team_name,
+                "owner_roster_id": rid,
+            })
+
+    for pos in POSITIONS:
+        all_collected[pos].sort(key=lambda p: p["value"], reverse=True)
+
+    position_ranks_out = {pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS}
+
+    if not needed_positions:
+        # Balanced team: return top 2 per position as a discovery/browsing view
+        all_positions = {pos: all_collected[pos][:2] for pos in POSITIONS if all_collected[pos]}
+        return jsonify({
+            "by_position": {}, "all_positions": all_positions,
+            "position_ranks": position_ranks_out,
+            "projected_picks": _projected_picks_out,
+        })
+
+    by_position = {pos: all_collected[pos][:4] for pos in needed_positions if all_collected[pos]}
+
+    return jsonify({
+        "by_position": by_position,
+        "all_positions": {},
+        "position_ranks": position_ranks_out,
+        "projected_picks": _projected_picks_out,
+    })
+
+
+@app.route("/api/trade-ideas-for-target", methods=["POST"])
+@limiter.limit("20 per minute")
+def api_trade_ideas_for_target():
+    """
+    Given a specific target player, return packages the viewer could send to acquire them.
+    Packages are value-matched (85–115% of target value) and never include absurd multi-star sends.
+    """
+    payload          = request.get_json(force=True)
+    league_id        = str(payload.get("league_id")        or "").strip()
+    season           = int(payload.get("season")           or datetime.now().year)
+    platform         = str(payload.get("platform")         or "sleeper").strip()
+    viewer_roster_id = str(payload.get("viewer_roster_id") or "").strip()
+    target_player_id = str(payload.get("target_player_id") or "").strip()
+    league_type      = str(payload.get("league_type")      or "1qb").strip()
+
+    if not league_id or not viewer_roster_id or not target_player_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        from utils.utils import load_model_value_table
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+
+        val_key = "sf_value" if league_type == "sf" else "value"
+        value_table = load_model_value_table() or []
+        values_by_id = {}
+        for p in value_table:
+            pid = str(p.get("id") or "")
+            if pid:
+                values_by_id[pid] = {
+                    "name":           p.get("name", ""),
+                    "position":       str(p.get("position") or "").upper(),
+                    "value":          float(p.get(val_key) or p.get("value") or 0),
+                    "sf_value":       float(p.get("sf_value") or p.get("value") or 0),
+                    "pos_rank":       int(p.get("pos_rank") or 99),
+                    "pos_rank_label": p.get("pos_rank_label") or "",
+                    "team":           p.get("team") or "",
+                    "age":            p.get("age"),
+                }
+
+        target_info = values_by_id.get(target_player_id)
+        if not target_info:
+            return jsonify({"error": "Target player not found in value table"}), 404
+
+        target_value = target_info["value"]
+
+        # Dynasty premium: elite young skill-position players command a real-market overpay.
+        # QBs in 1QB leagues are valued by current production, not aging curve, so they
+        # get no premium. Only RB/WR/TE (and QBs in SF) warrant dynasty markup.
+        #
+        #   age_factor  = e^(-0.25 * max(0, age - 22))  → 1.0 @ 22, ~0.37 @ 26, 0 @ 30+
+        #   rank_factor = e^(-0.12 * max(0, rank - 1))  → 1.0 @ rank 1, ~0.30 @ rank 10
+        #   premium     = 1 + age_factor * rank_factor * 0.25
+        #                 max ~1.25 (age 22, rank 1), fades to 1.0 for old/deep players
+        import math as _math
+        def _dynasty_premium(info: dict) -> float:
+            pos = info.get("position", "")
+            if pos in ("PICK", "K", "DEF"):
+                return 1.0
+            # QBs don't carry dynasty premium in 1QB — their value tracks production
+            if pos == "QB" and league_type == "1qb":
+                return 1.0
+            age      = float(info.get("age") or 99)
+            pos_rank = int(info.get("pos_rank") or 99)
+            if age >= 30:
+                return 1.0
+            age_factor  = _math.exp(-0.25 * max(0.0, age - 22))
+            rank_factor = _math.exp(-0.12 * max(0.0, pos_rank - 1))
+            return round(1.0 + age_factor * rank_factor * 0.25, 3)
+
+        premium       = _dynasty_premium(target_info)
+        effective_target = target_value * premium   # what you actually need to send
+
+        rosters      = ctx.get("rosters") or []
+        roster_map   = ctx.get("roster_map") or {}
+        picks_by_roster = ctx.get("picks_by_roster") or {}
+        _cur_yr      = season
+
+        # Find which roster owns the target
+        target_owner_rid = None
+        for r in rosters:
+            if target_player_id in [str(p) for p in (r.get("players") or [])]:
+                target_owner_rid = str(r.get("roster_id"))
+                break
+        if not target_owner_rid:
+            return jsonify({"error": "Target player not on any roster"}), 404
+
+        target_owner_name = roster_map.get(target_owner_rid, "Unknown")
+
+        # Viewer's roster — players with value ≥50, sorted desc
+        viewer_roster_obj = next(
+            (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
+        )
+        if not viewer_roster_obj:
+            return jsonify({"error": "Viewer roster not found"}), 404
+
+        viewer_players = sorted(
+            [
+                {
+                    "player_id":      pid,
+                    "name":           values_by_id[pid]["name"],
+                    "position":       values_by_id[pid]["position"],
+                    "value":          values_by_id[pid]["value"],
+                    "pos_rank_label": values_by_id[pid]["pos_rank_label"],
+                }
+                for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
+                if pid in values_by_id and values_by_id[pid]["value"] >= 50
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )
+
+        # Viewer's picks (current + next season only) — use real values from value table
+        pick_val_lookup = {
+            str(p.get("id") or ""): float(p.get("value") or 0)
+            for p in value_table
+            if str(p.get("position") or "").upper() == "PICK"
+        }
+
+        def _resolve_pick(p: dict) -> dict:
+            """Return {name, pick_id, value, is_pick} for a pick, resolving exact slot when possible.
+
+            Accepts both picks_by_roster dicts (original_owner key) and raw Sleeper
+            draft_picks dicts (roster_id = original team).
+            """
+            yr  = int(p.get("season") or _cur_yr)
+            rnd = int(p.get("round") or 4)
+            # draft_picks from Sleeper use roster_id for original team;
+            # picks_by_roster uses original_owner
+            original_owner = p.get("roster_id") or p.get("original_owner")
+
+            slot = None
+            if original_owner:
+                slot = resolve_exact_pick_slot(
+                    platform, league_id, season,
+                    {"season": yr, "round": rnd, "previous_owner_id": int(original_owner)},
+                )
+
+            if slot is not None:
+                label = f"{yr} {rnd}.{slot:02d}"
+                bucket = "early" if slot <= 4 else "mid" if slot <= 8 else "late"
+                # Prefer exact slot key (both zero-padded-round and plain), then bucket fallback
+                val_keys = [
+                    f"{yr}_{rnd:02d}_{slot:02d}",
+                    f"{yr}_{rnd}_{slot:02d}",
+                    f"{yr}_{rnd}_{bucket}",
+                    f"{yr}_{rnd}",
+                ]
+            else:
+                sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                label = f"{yr} {rnd}{sfx}"
+                val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
+
+            # Use whichever key is actually in the table so pick_id is always parseable
+            pick_id = next((k for k in val_keys if k in pick_val_lookup), val_keys[0])
+            value   = pick_val_lookup.get(pick_id)
+            if value is None:
+                value = 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
+
+            return {"name": label, "pick_id": pick_id, "value": value, "is_pick": True}
+
+        # Build the viewer's pick list from picks_by_roster (which accounts for
+        # traded picks), then remove any picks that the traded list shows the viewer
+        # no longer owns. This handles the case where build_picks_by_roster missed
+        # a multi-hop trade.
+        traded_list = ctx.get("traded") or []
+        viewer_rid_int = int(viewer_roster_id)
+        # Set of (season, round) the viewer has traded away to someone else
+        traded_away = {
+            (int(tp.get("season", 0)), int(tp.get("round", 0)))
+            for tp in traded_list
+            if (int(tp.get("roster_id", -1)) == viewer_rid_int
+                and int(tp.get("owner_id", -1)) != viewer_rid_int)
+        }
+        viewer_picks = sorted(
+            [
+                _resolve_pick(p)
+                for p in picks_by_roster.get(viewer_roster_id, [])
+                if (int(p.get("season", 0)) <= _cur_yr + 1
+                    and (int(p.get("season", 0)), int(p.get("round", 0))) not in traded_away)
+            ],
+            key=lambda x: x["value"],
+            reverse=True,
+        )
+
+        # Match packages against effective_target (face value × dynasty premium).
+        # Tight band so suggestions don't overshoot what the market actually demands.
+        lo = effective_target * 0.93
+        hi = effective_target * 1.06
+        packages = []
+        seen = set()
+
+        def _key(*assets):
+            return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
+
+        # 1-for-1: single player in range
+        for p in viewer_players:
+            if lo <= p["value"] <= hi:
+                k = _key(p)
+                if k not in seen:
+                    seen.add(k)
+                    packages.append({"type": "1-for-1", "send": [p],
+                                     "send_value": p["value"],
+                                     "_delta": abs(p["value"] - effective_target)})
+
+        # 2-for-1: neither player alone covers >75% of effective_target
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] > effective_target * 0.75:
+                continue
+            for p2 in viewer_players[i + 1:]:
+                if p2["value"] < 60:
+                    break
+                combined = p1["value"] + p2["value"]
+                if combined > hi:
+                    continue
+                if combined >= lo:
+                    k = _key(p1, p2)
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "2-for-1", "send": [p1, p2],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective_target)})
+                    break
+
+        # Player + pick
+        for p in viewer_players:
+            if p["value"] > effective_target * 0.85:
+                continue
+            for pick in viewer_picks:
+                combined = p["value"] + pick["value"]
+                if lo <= combined <= hi:
+                    k = _key(p, {"player_id": pick["name"]})
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "player + pick", "send": [p, pick],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective_target)})
+                    break
+
+        packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
+        for pkg in packages:
+            del pkg["_delta"]
+
+        # Include full player fields needed by the trade calculator
+        target_calc = {
+            "id":               target_player_id,
+            "name":             target_info["name"],
+            "position":         target_info["position"],
+            "team":             target_info["team"],
+            "value":            round(target_value, 1),
+            "sf_value":         round(target_info["sf_value"], 1),
+            "pos_rank_label":   target_info["pos_rank_label"],
+            "sf_pos_rank_label": target_info["pos_rank_label"],
+        }
+        for pkg in packages:
+            for asset in pkg["send"]:
+                if not asset.get("is_pick"):
+                    info = values_by_id.get(asset.get("player_id") or "")
+                    if info:
+                        asset.update({
+                            "id":               asset["player_id"],
+                            "position":         info["position"],
+                            "team":             info["team"],
+                            "sf_value":         round(info["sf_value"], 1),
+                            "pos_rank_label":   info["pos_rank_label"],
+                            "sf_pos_rank_label": info["pos_rank_label"],
+                        })
+
+        return jsonify({
+            "success":          True,
+            "target":           target_calc,
+            "owner":            target_owner_name,
+            "packages":         packages[:4],
+            "target_value":     round(target_value, 1),
+            "effective_target": round(effective_target, 1),
+            "premium":          round(premium, 2),
+        })
+
+    except Exception as e:
+        logger.exception("[api-trade-ideas-for-target] Error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/player-news/<player_id>")
+def api_player_news(player_id: str):
+    """Recent news headlines for a single player (ESPN free API, 30-min cache)."""
+    try:
+        from utils.utils import load_players_index
+        from dashboard_services.news import get_player_news
+
+        players_index = load_players_index() or {}
+        meta = players_index.get(str(player_id)) or {}
+        name = meta.get("name") or meta.get("full_name") or ""
+        headshot = meta.get("espnHeadshot") or ""
+
+        items = get_player_news(player_name=name, espn_headshot=headshot, limit=4)
+        return jsonify({"player_id": player_id, "name": name, "news": items})
+    except Exception:
+        logger.exception("[player-news] error")
+        return jsonify({"player_id": player_id, "news": []}), 200
+
+
+@app.route("/api/nfl-news")
+def api_nfl_news():
+    """Latest NFL headlines for the activity feed sidebar (ESPN free API, 15-min cache)."""
+    try:
+        from dashboard_services.news import get_nfl_news
+        limit = min(int(request.args.get("limit") or 15), 30)
+        items = get_nfl_news(limit=limit)
+        return jsonify({"news": items})
+    except Exception:
+        logger.exception("[nfl-news] error")
+        return jsonify({"news": []}), 200
+
+
+def _run_startup_daily() -> None:
+    """Fire daily data build in the background immediately on startup."""
+    global daily_completed
+    try:
+        today_et: date = datetime.now(EASTERN).date()
+        if daily_lock.acquire(blocking=False):
+            try:
+                if daily_completed != today_et:
+                    logger.info("[startup] Kicking off daily build for %s in background...", today_et)
+                    state = get_nfl_state() or {}
+                    season = int(state.get("season") or datetime.now().year)
+                    week = int(state.get("week") or 0)
+                    run_daily_data_async(season, week)
+                    daily_completed = today_et
+            finally:
+                daily_lock.release()
+    except Exception as e:
+        logger.warning("[startup] Could not kick off daily build: %s", e)
+
+
+threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
 if __name__ == "__main__":

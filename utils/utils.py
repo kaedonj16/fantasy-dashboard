@@ -206,6 +206,10 @@ def path_dynastyprocess_values() -> str:
     return os.path.join(DATA_DIR, f"dynastyprocess_values_{date.today().isoformat()}.csv")
 
 
+def path_ktc_values() -> str:
+    return os.path.join(DATA_DIR, f"ktc_rankings_{date.today().isoformat()}.csv")
+
+
 # ------------------------------------------------
 # JSON / table IO
 # ------------------------------------------------
@@ -252,7 +256,7 @@ def load_engine_table():
     return df
 
 
-def load_model_value_table():
+def load_model_value_table(apply_calibration: bool = True):
     # Return ONLY the parsed JSON data, not the path object
     result = read_json(path_model_value_table())
 
@@ -308,6 +312,49 @@ def load_model_value_table():
                                     _p[_k] = 0.0
         except Exception as _e:
             print(f"[load_model_value_table] FC filter skipped: {_e}")
+
+    # Overlay trade-data calibrated values where available.
+    # Only applies when called from the web layer (apply_calibration=True).
+    # The model-update pipeline passes apply_calibration=False to preserve
+    # the raw model prior in player_values.value_1qb.
+    if result and apply_calibration:
+        try:
+            from dashboard_services.player_value_history import load_calibration_overrides
+            overrides = load_calibration_overrides()
+            if overrides:
+                for _p in result:
+                    _pid = str(_p.get("id") or "")
+                    if _pid in overrides:
+                        _cal = overrides[_pid]
+                        _p["value"]    = _cal["value"]
+                        _p["sf_value"] = _cal["sf_value"]
+
+                # Recompute pos_rank / pos_rank_label after calibration changes values.
+                # The JSON ranks are based on raw model values; calibration can reorder
+                # players within a position so the labels must be rebuilt.
+                from collections import defaultdict as _dd
+                _pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(result):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _pos_idx[_pos].append(_i)
+                for _pos, _idxs in _pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(result[_i].get("value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        result[_i]["pos_rank"]       = _rank
+                        result[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+                _sf_pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(result):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _sf_pos_idx[_pos].append(_i)
+                for _pos, _idxs in _sf_pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(result[_i].get("sf_value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        result[_i]["sf_pos_rank"]       = _rank
+                        result[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
+        except Exception as _e:
+            print(f"[load_model_value_table] Calibration overlay skipped: {_e}")
 
     return result
 

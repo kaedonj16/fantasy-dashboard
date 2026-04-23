@@ -62,6 +62,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     age = row.get("age")
                     team = row.get("team")
                     years_exp = row.get("years_exp")
+                    rank_change_7d = row.get("rank_change_7d")
+                    pos_rank_change_7d = row.get("pos_rank_change_7d")
 
                     # Insert or update — one row per player, keyed by player_id only.
                     # last_updated tracks when the value was last refreshed.
@@ -77,8 +79,10 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             pos_rank_label,
                             age,
                             team,
-                            years_exp
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            years_exp,
+                            rank_change_7d,
+                            pos_rank_change_7d
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
                             last_updated = EXCLUDED.last_updated,
@@ -89,7 +93,9 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             pos_rank_label = EXCLUDED.pos_rank_label,
                             age = EXCLUDED.age,
                             team = EXCLUDED.team,
-                            years_exp = EXCLUDED.years_exp
+                            years_exp = EXCLUDED.years_exp,
+                            rank_change_7d = EXCLUDED.rank_change_7d,
+                            pos_rank_change_7d = EXCLUDED.pos_rank_change_7d
                         """,
                         (
                             str(player_id),
@@ -102,6 +108,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             age,
                             team,
                             years_exp,
+                            rank_change_7d,
+                            pos_rank_change_7d,
                         ),
                     )
                     saved_count += 1

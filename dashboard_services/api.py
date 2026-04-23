@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import time
 from typing import Any, List, Dict, Optional, Union
 
 import requests
@@ -113,10 +114,13 @@ def ttl_cache(ttl: int = 300):
             key = (func.__name__, frozen_args, frozen_kwargs)
 
             if key in _cache:
-                return _cache[key]
+                ts, cached_result = _cache[key]
+                if time.time() - ts < ttl:
+                    return cached_result
+                del _cache[key]
 
             result = func(*args, **kwargs)
-            _cache[key] = result
+            _cache[key] = (time.time(), result)
             return result
 
         # expose cache and a convenience clearer if you ever want it
@@ -161,11 +165,24 @@ def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> O
     return None
 
 
-def fetch_json(path: str, timeout: int = 25) -> dict:
+def fetch_json(path: str, timeout: int = 25, retries: int = 3) -> dict:
     url = f"{SLEEPER_BASE}{path}"
-    r = SESSION.get(url, timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+    last_err: Exception = RuntimeError("fetch_json: no attempts made")
+    for attempt in range(retries):
+        try:
+            r = SESSION.get(url, timeout=timeout)
+            if r.status_code == 429:
+                wait = 2 ** attempt
+                logger.warning("Sleeper rate-limited, retrying in %ds (attempt %d/%d)", wait, attempt + 1, retries)
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r.json()
+        except requests.RequestException as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+    raise last_err
 
 
 @ttl_cache(ttl=300)

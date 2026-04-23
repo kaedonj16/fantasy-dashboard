@@ -5,6 +5,42 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-04-18",
+        "tag": "new",
+        "text": "Live NFL News: Player modals now show real ESPN headlines for each player. Activity page includes a live NFL news feed with the latest league headlines.",
+        "link": "/activity"
+    },
+    {
+        "date": "2026-04-18",
+        "tag": "new",
+        "text": "Trade Targets: Trade Calculator sidebar shows position-gap-based trade targets for your roster—identifies what you need most and which players to target by owner.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-04-18",
+        "tag": "feature",
+        "text": "Trade Calculator: Auto-selects your team on load so you see your roster and trade targets immediately without manual selection.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-04-18",
+        "tag": "new",
+        "text": "Roster Intel: Team analytics now includes a Roster Intel tab with per-player signals — Core, Sell High, Buy Window, Breakout Hold, and Cut recommendations based on value trends and age curves.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-04-18",
+        "tag": "new",
+        "text": "Waiver Wire Targets: Offseason waiver recommendations ranked by pickup score — combines value, 7-day trend, breakout signals, and age-prime windows to surface the best available adds.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-04-18",
+        "tag": "feature",
+        "text": "Player Rankings: 7-day rank movement indicators (▲/▼) on every player showing how many spots they've moved in the last week.",
+        "link": "/players"
+    },
+    {
         "date": "2026-04-17",
         "tag": "new",
         "text": "Team Analytics: Beat the Market portfolio analytics showing 30-day value changes compared to league average, plus new graphs and charts showing portfolio value trends. See which teams are gaining or losing value with key mover breakdowns.",
@@ -26,7 +62,7 @@ CHANGELOG = [
         "date": "2026-04-09",
         "tag": "new",
         "text": "Rookie Rankings: Full prospect evaluation system: production, athleticism, draft capital, and dynasty value for the active draft class",
-        "link": "/rookies"
+        "link": "/prospects"
     },
     {
         "date": "2026-04-09",

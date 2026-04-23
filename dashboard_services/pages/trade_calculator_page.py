@@ -10,10 +10,30 @@ def build_trade_calculator_body(
         season: Optional[int],
         num_teams: Optional[int] = None,
         scoring_format: Optional[str] = None,
+        viewer_roster_id: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
+    viewer_roster_val = viewer_roster_id or ""
     is_guest = not league_id
+
+    # Get trade count from database
+    trade_count = "150,000+"
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            result = cursor.fetchone()
+            # Handle both tuple and dictionary return formats
+            if isinstance(result, dict):
+                count = result.get('count', 0)
+            else:
+                count = result[0] if result else 0
+            trade_count = f"{count:,}"
+    except Exception as e:
+        print("Trade count error:", e)
+        pass
 
     # Clamp logged-in league size to nearest supported value
     if num_teams and not is_guest:
@@ -30,7 +50,7 @@ def build_trade_calculator_body(
     # Create dynamic breakouts URL based on login status
     if is_guest:
         breakouts_url = "#"
-        breakouts_link_text = "Log in to see more →"
+        breakouts_link_text = "Sign in to see more →"
         breakouts_link_class = "otc-view-all-link otc-guest-link"
     else:
         # For logged-in users, link to their league's breakouts page
@@ -49,7 +69,7 @@ def build_trade_calculator_body(
     side_b_owner_tag = '<div class="otc-team-owner-tag otc-team-owner-tag-muted" id="sideBOwnerTag">Other side</div>'
 
     analyze_btn_disabled = 'disabled' if is_guest else ''
-    analyze_btn_label = 'Log In to Analyze' if is_guest else 'Analyze Trade'
+    analyze_btn_label = 'Sign In to Analyze' if is_guest else 'Analyze Trade'
 
     ai_sub_text = 'AI-powered trade analysis for dynasty leagues' if is_guest else 'Personalized to your team direction and roster lens'
 
@@ -61,7 +81,7 @@ def build_trade_calculator_body(
                 </div>
     """
 
-    ai_empty_title = 'Log In for AI Analysis' if is_guest else 'Waiting on a deal'
+    ai_empty_title = 'Sign In for AI Analysis' if is_guest else 'Waiting on a deal'
     ai_empty_sub = (
         'Connect your league to get personalized trade analysis powered by AI.'
         if is_guest else
@@ -110,6 +130,7 @@ def build_trade_calculator_body(
       <main class="otc-main">
         <input type="hidden" id="leagueIdInput" value="{league_val}">
         <input type="hidden" id="seasonInput" value="{season_val}">
+        <input type="hidden" id="viewerRosterIdInput" value="{viewer_roster_val}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
 
@@ -123,9 +144,8 @@ def build_trade_calculator_body(
                   <div class="otc-info-tooltip" id="otcInfoTooltip" style="display:none;">
                     <div class="otc-info-tooltip-header">BR Value Model</div>
                     <div class="otc-info-tooltip-body">
-                      <p>Player values derive from a hybrid approach combining production metrics, age-adjusted projections, and market consensus data.</p>
-                      <p>The model incorporates positional scarcity adjustments, role stability indicators, and capital investment signals to generate normalized valuations on a standardized scale.</p>
-                      <p>Values represent long-term dynasty asset worth rather than weekly fantasy output.</p>
+                      <p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p>
+                      <p>We translate over <strong>{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
                     </div>
                   </div>
                 </div>
@@ -275,6 +295,7 @@ def build_trade_calculator_body(
                 <div id="tradeVerdict" class="otc-verdict">
                   Add players to both sides to see the trade balance.
                 </div>
+                <div id="tradeScarcityNotes" style="display:none;"></div>
                 <div id="errorBox" class="error" style="display:none;"></div>
               </div>
             </section>
@@ -302,11 +323,81 @@ def build_trade_calculator_body(
               </div>
             </section>
           </div>
+
+          <div id="similarTradesSection" style="display:none;margin-top:28px;">
+            <div style="margin-bottom:14px;">
+              <h3 class="stl-title">Recent Similar Trades</h3>
+              <div class="stl-sub">Real dynasty trades where these players moved to opposite sides</div>
+            </div>
+            <div id="similarTradesList" class="stl-list"></div>
+          </div>
+
+          <style>
+            .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
+            .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}
+            @media(max-width:600px) {{ .stl-list {{ grid-template-columns:1fr; }} }}
+            .stl-loading, .stl-empty {{ font-size:13px;color:var(--text-muted);padding:12px 0;grid-column:1/-1; }}
+
+            .stl-card {{
+              border:1px solid var(--border-color);
+              border-radius:12px;
+              overflow:hidden;
+              background:var(--card-bg);
+            }}
+            .stl-card-head {{
+              display:flex;
+              justify-content:space-between;
+              align-items:center;
+              padding:7px 12px;
+              border-bottom:1px solid var(--border-color);
+              background:var(--bg-secondary, rgba(0,0,0,.03));
+            }}
+            .stl-date {{ font-size:11px;color:var(--text-muted);font-weight:500; }}
+            .stl-badges {{ display:flex;gap:4px;flex-wrap:wrap; }}
+            .stl-badge {{
+              font-size:10px;font-weight:700;
+              padding:2px 7px;border-radius:6px;
+              background:var(--row,#1e293b);
+              color:var(--text);
+              border:1px solid var(--border-color);
+            }}
+            .stl-badge-sf {{ background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }}
+
+            .stl-card-body {{
+              display:grid;
+              grid-template-columns:1fr 1px 1fr;
+            }}
+            .stl-col {{ padding:10px 12px;display:flex;flex-direction:column;gap:4px; }}
+            .stl-col-divider {{ background:var(--border-color); }}
+
+            .stl-asset {{
+              font-size:14px;
+              color:var(--text);
+              font-weight:500;
+              display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+            }}
+            .stl-asset.stl-key  {{ font-weight:800;color:var(--accent-color,#3b82f6); }}
+            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:14px; }}
+            .stl-asset.stl-muted {{ color:var(--text-muted); }}
+            .stl-pos {{
+              font-size:10px;font-weight:700;
+              padding:1px 5px;border-radius:4px;
+              background:var(--row,#1e293b);
+              color:var(--text);flex-shrink:0;
+            }}
+            @media(max-width:480px) {{
+              .stl-card-body {{ grid-template-columns:1fr; }}
+              .stl-col-divider {{ height:1px;width:auto; }}
+            }}
+          </style>
+
         </div>
       </main>
 
       <aside class="otc-side">
         <div class="otc-side-stack">
+
           <div class="otc-side-panel otc-movers-panel">
             <div class="otc-mini-head">
               <div class="otc-mini-head-row">
@@ -314,6 +405,7 @@ def build_trade_calculator_body(
                 <div class="otc-mini-tabs">
                   <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
                   <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
+                  <button class="otc-mini-tab" data-tab="targets">Targets</button>
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
@@ -348,6 +440,14 @@ def build_trade_calculator_body(
                 </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="targetsTabContent" class="otc-tab-content">
+              <div class="otc-mini-section">
+                <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;">
+                  <div class="otc-movers-empty">Set your team to see targets.</div>
                 </div>
               </div>
             </div>
@@ -387,7 +487,7 @@ def build_trade_calculator_body(
         <div class="trade-login-overlay"></div>
         <div class="trade-login-content">
           <button type="button" class="trade-login-close" id="closeLoginModal">&times;</button>
-          <h2 class="trade-login-title">Log In to Analyze Trade</h2>
+          <h2 class="trade-login-title">Sign In to Analyze Trade</h2>
           <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis</p>
 
           <div class="trade-login-form">

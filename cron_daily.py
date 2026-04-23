@@ -1,5 +1,6 @@
 from datetime import date, datetime
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -7,6 +8,83 @@ load_dotenv()
 
 from dashboard_services.api import get_nfl_state
 from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse
+from utils.paths import DATA_DIR
+
+
+# ---------------------------------------------------------------------------
+# Freshness guards — skip expensive steps that already ran today
+# ---------------------------------------------------------------------------
+
+def _today() -> date:
+    return date.today()
+
+
+def _model_values_fresh() -> bool:
+    """True if model_values JSON was already built today."""
+    return (DATA_DIR / f"model_values_{_today().isoformat()}.json").exists()
+
+
+def _vendor_values_fresh() -> bool:
+    """True if FC and DP source CSVs were already fetched today."""
+    fc  = DATA_DIR / f"fantasycalc_api_values_{_today().isoformat()}.csv"
+    dp  = DATA_DIR / f"dynastyprocess_values_{_today().isoformat()}.csv"
+    eng = DATA_DIR / f"engine_values_{_today().isoformat()}.csv"
+    return fc.exists() and dp.exists() and eng.exists()
+
+
+def _usage_table_fresh() -> bool:
+    """True if the usage snapshot was already written today."""
+    return (DATA_DIR / f"usage_table_{_today().isoformat()}.json").exists()
+
+
+def _player_values_fresh() -> bool:
+    """True if player_values rows were saved to DB today."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(last_updated) AS t FROM player_values"
+            ).fetchone()
+        if row and row["t"]:
+            t = row["t"]
+            return (t.date() if hasattr(t, "date") else t) == _today()
+    except Exception:
+        pass
+    return False
+
+
+def _trade_intel_fresh() -> bool:
+    """True if the trade intel crawl ran today."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(last_crawled_at) AS t FROM trade_intel_leagues "
+                "WHERE last_crawled_at IS NOT NULL"
+            ).fetchone()
+        if row and row["t"]:
+            t = row["t"]
+            return (t.date() if hasattr(t, "date") else t) == _today()
+    except Exception:
+        pass
+    return False
+
+
+def _wls_fresh() -> bool:
+    """True if WLS calibration already ran today."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(last_updated) AS t FROM player_values "
+                "WHERE calibration_source = 'trade_wls'"
+            ).fetchone()
+        if row and row["t"]:
+            t = row["t"]
+            return (t.date() if hasattr(t, "date") else t) == _today()
+    except Exception:
+        pass
+    return False
 
 
 def build_daily_advanced_metrics():
@@ -227,33 +305,82 @@ def main():
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
 
     try:
-        build_daily_data(season, week)
+        if _vendor_values_fresh() and _usage_table_fresh():
+            print("[cron] Vendor + usage data already fresh today, skipping build_daily_data")
+        else:
+            build_daily_data(season, week)
+
         build_daily_advanced_metrics()
 
         from data_building.build_daily_value_table import build_daily_model_values
-        build_daily_model_values()
-
-        from data_building.save_player_values import save_daily_values_to_db
-        from data_building.update_player_values_with_rankings import update_player_values_with_rankings
         from utils.utils import load_model_value_table
         from utils.email_notifications import send_cron_failure_notification, send_database_save_notification
+
+        if _model_values_fresh():
+            print("[cron] Model values already built today, skipping")
+        else:
+            build_daily_model_values()
 
         value_table = load_model_value_table()
         if not value_table:
             raise RuntimeError("No value table available after build_daily_model_values")
 
-        # Expected count based on typical roster size
-        expected_count = len(value_table)
-        value_count = update_player_values_with_rankings()
-        print(f"[cron] Saved {value_count} player values")
-
-        # Check if save count is unexpectedly low
-        if value_count < expected_count * 0.8:  # Less than 80% of expected
-            send_database_save_notification(value_count, expected_count)
+        if _player_values_fresh():
+            print("[cron] Player values already saved to DB today, skipping")
+        else:
+            from data_building.update_player_values_with_rankings import update_player_values_with_rankings
+            expected_count = len(value_table)
+            value_count = update_player_values_with_rankings()
+            print(f"[cron] Saved {value_count} player values")
+            if value_count < expected_count * 0.8:
+                send_database_save_notification(value_count, expected_count)
 
         # build_daily_market_pulse()
         build_daily_breakout_candidates(season, week, state)
         build_weekly_rookie_data(state)
+
+        try:
+            from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
+            from data_building.trade_intel.trade_crawler import run_crawl
+            from data_building.trade_intel.analytics import run_analytics
+            from data_building.trade_intel.trade_value_model import run_trade_value_model
+
+            # One-time backfill: populate is_superflex for leagues discovered before
+            # the column was added.  No-ops once every league has been tagged.
+            backfilled = backfill_superflex(batch_size=500)
+            if backfilled:
+                print(f"[cron] Backfilled is_superflex for {backfilled} leagues")
+
+            if _trade_intel_fresh():
+                print("[cron] Trade intel already crawled today, skipping discovery + crawl")
+            else:
+                discovered = run_discovery(target=500)
+                print(f"[cron] Trade intel: discovered {discovered} new leagues")
+                crawl_result = run_crawl(batch_size=200)
+                print(f"[cron] Trade intel: {crawl_result}")
+                analytics_result = run_analytics(season=season)
+                print(f"[cron] Trade intel analytics: {analytics_result}")
+
+        except Exception as ti_err:
+            print(f"[cron] Trade intel discovery/crawl failed (non-fatal): {ti_err}")
+
+        try:
+            from data_building.trade_intel.trade_value_model import run_trade_value_model
+            from data_building.build_daily_value_table import record_calibrated_history_snapshot
+
+            if _wls_fresh():
+                print("[cron] WLS calibration already ran today, skipping")
+            else:
+                wls_result = run_trade_value_model(season=season)
+                print(f"[cron] Trade value model (WLS): {wls_result}")
+
+            # Always write calibrated values to history (covers re-runs and first run)
+            cal_n = record_calibrated_history_snapshot()
+            print(f"[cron] Calibrated history snapshot: {cal_n} players")
+        except Exception as wls_err:
+            import traceback
+            print(f"[cron] WLS/calibration failed (non-fatal): {wls_err}")
+            traceback.print_exc()
 
         print(f"[cron] Daily run completed - Season {season}, Week {week}")
 

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
+import time
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Iterator
 
 import psycopg
+
+logger = logging.getLogger(__name__)
 from psycopg.rows import dict_row
 from psycopg.types.json import set_json_dumps
 
@@ -58,8 +62,22 @@ def get_database_url() -> str:
 
 
 @contextmanager
-def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
-    conn = psycopg.connect(get_database_url(), row_factory=dict_row)
+def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Connection]:
+    url = get_database_url()
+    last_err: Exception = RuntimeError("get_conn: no attempts made")
+    conn = None
+    for attempt in range(retries):
+        try:
+            conn = psycopg.connect(url, row_factory=dict_row)
+            break
+        except psycopg.OperationalError as e:
+            last_err = e
+            if attempt < retries - 1:
+                wait = 2 ** attempt
+                logger.warning("DB connection failed (attempt %d/%d), retrying in %ds: %s", attempt + 1, retries, wait, e)
+                time.sleep(wait)
+    if conn is None:
+        raise last_err
     try:
         conn.autocommit = autocommit
         yield conn
@@ -67,13 +85,13 @@ def get_conn(autocommit: bool = False) -> Iterator[psycopg.Connection]:
             try:
                 conn.commit()
             except Exception as commit_error:
-                print(f"[db] COMMIT FAILED for {id(conn)}: {commit_error}")
+                logger.error("COMMIT FAILED for conn %d: %s", id(conn), commit_error)
                 raise
     except Exception as e:
-        print(f"[db] Exception in connection {id(conn)}: {type(e).__name__}: {e}")
+        logger.error("Exception in conn %d: %s: %s", id(conn), type(e).__name__, e)
         if not autocommit:
             conn.rollback()
-            print(f"[db] Rollback complete: {id(conn)}")
+            logger.info("Rollback complete: conn %d", id(conn))
         raise
     finally:
         conn.close()

@@ -2,19 +2,19 @@
 Rookies page HTML builder.
 
 Returns the full body HTML for the /<platform>/<season>/<league_id>/rookies route.
-Data is loaded client-side from /api/rookies/rankings so the page is fast and
+Data is loaded client-side from /api/prospects/rankings so the page is fast and
 the filters/sorts are instant without round-trips.
 """
 from __future__ import annotations
 
 
-def build_rookies_body(platform: str, season: int, league_id: str) -> str:
+def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     return """
 <div class="card central">
   <div class="card-header">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
-        <h2 id="rookiesTitle">Rookie Rankings</h2>
+        <h2 id="rookiesTitle">Prospect Rankings</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Dynasty prospect rankings — production, athleticism, and draft capital combined
         </div>
@@ -34,7 +34,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
                    border:1px solid var(--border);background:var(--card-bg);
                    color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                       color:var(--text-muted);font-size:14px;pointer-events:none;">🔍</span>
+                       color:var(--text-muted);font-size:14px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
           <button id="rookieSearchClear" onclick="rkClearSearch()"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -122,7 +122,7 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
 
     <!-- Empty -->
     <div id="rkEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-      <div style="font-size:24px;margin-bottom:8px;">🏈</div>
+      <div style="font-size:24px;margin-bottom:8px;"><i class="fa-solid fa-football" aria-hidden="true"></i></div>
       No prospects match your filters
     </div>
 
@@ -895,13 +895,13 @@ def build_rookies_body(platform: str, season: int, league_id: str) -> str:
     }
   });
 
-  fetch('/api/rookies/active-class')
+  fetch('/api/prospects/active-class')
     .then(function(r){ return r.json(); })
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
-      document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Rookie Rankings';
+      document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Prospect Rankings';
 
-      return fetch('/api/rookies/rankings?year=' + rkDraftYear);
+      return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })
     .then(function(data) {

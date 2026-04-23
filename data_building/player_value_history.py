@@ -114,33 +114,29 @@ def record_model_value_snapshot(
         *,
         as_of: Optional[date] = None,
         source: str = "model",
+        ema_alpha: float = 0.70,
+        min_change_pct: float = 0.005,
 ) -> int:
     """
-    Expects rows shaped like:
-      {
-        "id": "9509",
-        "name": "Bijan Robinson",
-        "position": "RB",
-        "team": "ATL",
-        "value": 968.0,
-        "sf_value": 980.0,
-        "value_8": 950.0,
-        "value_12": 985.0,
-        "value_14": 995.0,
-        "sf_value_8": 960.0,
-        "sf_value_12": 995.0,
-        "sf_value_14": 999.0
-      }
+    Write a smoothed daily value snapshot using EMA blending.
+
+    ema_alpha: weight for new value (0.70 = 70% new, 30% previous).
+      Softens step-function jumps when the model is retrained.
+    min_change_pct: skip writing if ALL value columns changed less than
+      this fraction (reduces DB noise from micro-fluctuations).
+    Pass ema_alpha=1.0 for an intentional hard reset (no blending).
     """
     init_value_history_db()
 
     snapshot_date = (as_of or date.today()).isoformat()
-    rows_to_insert: list[tuple] = []
 
+    _VALUE_COLS = ["value", "sf_value", "value_8", "value_12", "value_14",
+                   "sf_value_8", "sf_value_12", "sf_value_14"]
+
+    player_list = []
     for p in players or []:
         if not isinstance(p, dict):
             continue
-
         pid = str(p.get("id") or "").strip()
         if not pid:
             continue
@@ -151,33 +147,74 @@ def record_model_value_snapshot(
             except (TypeError, ValueError):
                 return default
 
-        value = safe_float("value")
-        sf_value = safe_float("sf_value", value)
-        value_8 = safe_float("value_8")
-        value_12 = safe_float("value_12")
-        value_14 = safe_float("value_14")
-        sf_value_8 = safe_float("sf_value_8")
-        sf_value_12 = safe_float("sf_value_12")
-        sf_value_14 = safe_float("sf_value_14")
+        player_list.append({
+            "pid": pid,
+            "name": p.get("name"),
+            "position": p.get("position"),
+            "team": p.get("team"),
+            "value": safe_float("value"),
+            "sf_value": safe_float("sf_value", safe_float("value")),
+            "value_8": safe_float("value_8"),
+            "value_12": safe_float("value_12"),
+            "value_14": safe_float("value_14"),
+            "sf_value_8": safe_float("sf_value_8"),
+            "sf_value_12": safe_float("sf_value_12"),
+            "sf_value_14": safe_float("sf_value_14"),
+        })
 
-        rows_to_insert.append(
-            (
-                snapshot_date,
-                pid,
-                p.get("name"),
-                p.get("position"),
-                p.get("team"),
-                value,
-                sf_value,
-                value_8,
-                value_12,
-                value_14,
-                sf_value_8,
-                sf_value_12,
-                sf_value_14,
-                source,
-            )
-        )
+    if not player_list:
+        return 0
+
+    # Batch-fetch the most recent previous values for all players in one query
+    all_pids = [row["pid"] for row in player_list]
+    prev_rows: dict[str, dict] = {}
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (player_id)
+                player_id, value, sf_value,
+                value_8, value_12, value_14,
+                sf_value_8, sf_value_12, sf_value_14
+            FROM player_value_history
+            WHERE source = %s
+              AND player_id = ANY(%s)
+              AND as_of_date < %s
+            ORDER BY player_id, as_of_date DESC
+            """,
+            (source, all_pids, snapshot_date),
+        ).fetchall()
+        for r in rows:
+            prev_rows[r["player_id"]] = {col: (float(r[col]) if r[col] is not None else 0.0) for col in _VALUE_COLS}
+
+    rows_to_insert: list[tuple] = []
+    for p in player_list:
+        pid = p["pid"]
+        prev = prev_rows.get(pid)
+
+        blended = {}
+        changed = False
+        for col in _VALUE_COLS:
+            new_val = p[col]
+            if prev is not None and prev.get(col, 0.0) > 0:
+                old_val = prev[col]
+                b = ema_alpha * new_val + (1.0 - ema_alpha) * old_val
+                if abs(b - old_val) / old_val >= min_change_pct:
+                    changed = True
+                blended[col] = round(b, 2)
+            else:
+                blended[col] = round(new_val, 2)
+                changed = True
+
+        if not changed:
+            continue
+
+        rows_to_insert.append((
+            snapshot_date, pid, p["name"], p["position"], p["team"],
+            blended["value"], blended["sf_value"],
+            blended["value_8"], blended["value_12"], blended["value_14"],
+            blended["sf_value_8"], blended["sf_value_12"], blended["sf_value_14"],
+            source,
+        ))
 
     if not rows_to_insert:
         return 0
@@ -413,7 +450,19 @@ def get_top_movers(
 
             rows = cur.fetchall()
 
-    movers = [dict(row) for row in rows]
+    # Load players index to get names for records with NULL/empty names
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+
+    movers = []
+    for row in rows:
+        row_dict = dict(row)
+        # If name is None or empty, get it from players_index
+        if not row_dict.get("name") or row_dict.get("name") == "Unknown":
+            player_info = players_index.get(str(row_dict["player_id"])) or {}
+            row_dict["name"] = player_info.get("name", "Unknown")
+        movers.append(row_dict)
+    
     risers = movers[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 

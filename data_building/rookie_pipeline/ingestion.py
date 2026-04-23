@@ -509,6 +509,59 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
     print(f"[cfbd] {path} FAILED after {retries} attempts - Last error: {last_error}")
     return None
 
+def _compute_depth_ranks(by_name: Dict[int, Dict[str, List]], years: List[int]) -> Dict:
+    """
+    Infer positional depth chart ranks from CFBD raw stat rows.
+
+    For each (year, team, position) group, players are ranked by primary volume
+    metric descending.  depth_rank=1 is the starter/alpha; depth_rank=2 is the
+    clear backup; etc.
+
+    Returns {(name_lower, yr): {"depth_rank": int, "position_group_size": int}}
+    """
+    _PRIMARY_CAT_STAT = {
+        "WR": ("receiving", "YDS"),
+        "TE": ("receiving", "YDS"),
+        "RB": ("rushing",   "YDS"),
+        "QB": ("passing",   "YDS"),
+    }
+
+    depth_ranks: Dict = {}
+
+    for yr in years:
+        # {(team, position): {name_lower: volume}}
+        group_vols: Dict = {}
+
+        for name_lower, rows in (by_name.get(yr) or {}).items():
+            for row in rows:
+                pos = (row.get("position") or "").upper()
+                if pos not in _PRIMARY_CAT_STAT:
+                    continue
+                cat_want, stat_want = _PRIMARY_CAT_STAT[pos]
+                cat = (row.get("category") or "").lower()
+                stat_type = row.get("statType", "")
+                if cat != cat_want or stat_type != stat_want:
+                    continue
+                team = (row.get("team") or "").strip()
+                if not team:
+                    continue
+                val = float(row.get("stat") or 0)
+                key = (team, pos)
+                group_vols.setdefault(key, {})
+                group_vols[key][name_lower] = group_vols[key].get(name_lower, 0.0) + val
+
+        for (team, pos), player_vols in group_vols.items():
+            sorted_players = sorted(player_vols.items(), key=lambda x: x[1], reverse=True)
+            group_size = len(sorted_players)
+            for rank, (name_lower, _) in enumerate(sorted_players, start=1):
+                depth_ranks[(name_lower, yr)] = {
+                    "depth_rank": rank,
+                    "position_group_size": group_size,
+                }
+
+    return depth_ranks
+
+
 def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
                        games: Optional[int], skip_sagarin: bool = False) -> Dict:
     """Fold CFBD stat rows for one player-season into a single normalized dict."""
@@ -777,6 +830,15 @@ def fetch_cfbd_college_stats(
                 by_name[yr] = {}
                 by_id[yr] = {}
 
+        # Compute depth chart ranks before building season summaries
+        print("[cfbd] Computing depth chart ranks")
+        try:
+            depth_ranks = _compute_depth_ranks(by_name, years)
+            print(f"[cfbd] Depth rank computed for {len(depth_ranks)} player-year combinations")
+        except Exception as exc:
+            print(f"[cfbd] WARNING: depth rank computation failed ({exc}), skipping")
+            depth_ranks = {}
+
         # Collapse into per-player season lists keyed by lowercase name
         print("[cfbd] Building player season summaries")
         all_names: set = set()
@@ -793,8 +855,12 @@ def fetch_cfbd_college_stats(
                         continue
                     try:
                         gp = (games_played_map.get(name) or {}).get(yr)
-                        seasons.append(_build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp,
-                                                          skip_sagarin=skip_sagarin))
+                        season_dict = _build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp,
+                                                         skip_sagarin=skip_sagarin)
+                        dr_info = depth_ranks.get((name, yr), {})
+                        season_dict["depth_rank"] = dr_info.get("depth_rank")
+                        season_dict["position_group_size"] = dr_info.get("position_group_size")
+                        seasons.append(season_dict)
                     except Exception as exc:
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
                 if seasons:
@@ -1198,7 +1264,8 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
                     "yds_per_carry", "yds_per_reception", "yds_per_attempt",
                     "completion_pct", "td_int_ratio", "team_pass_rate",
                     "team_total_yards", "team_total_tds", "team", "conference",
-                    "team_pass_yards", "sagarin_team_rating"):
+                    "team_pass_yards", "sagarin_team_rating",
+                    "depth_rank", "position_group_size"):
             s.setdefault(fld, None)
 
     return p

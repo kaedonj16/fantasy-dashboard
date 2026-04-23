@@ -565,22 +565,41 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
     """
     Get all players who should be considered for breakout scoring.
 
-    Filters to fantasy-relevant players based on value rank.
+    Queries player_values for dynasty-relevant players (within the top
+    min_value_rank by overall_rank) at skill positions on active rosters.
+    Falls back to empty list on any DB error so the caller can use
+    the players_index approach instead.
 
     Args:
-        season: Season year
+        season: Season year (unused currently, reserved for future filtering)
         min_value_rank: Only include players ranked within this threshold
 
     Returns:
-        List of player dictionaries with id, name, position, team, age, years_exp
+        List of player dicts with keys: player_id, player_name, position,
+        team, age, years_exp — compatible with the breakout engine.
     """
-    # This would query from players_index or player_values
-    # For now, placeholder implementation
-
-    # TODO: Implement actual query from player_values or usage_table
-    # Should return top ~600 players by dynasty value
-
-    return []
+    query = """
+        SELECT
+            player_id::text                                         AS player_id,
+            NULL::text                                              AS player_name,
+            position,
+            team,
+            COALESCE(age, 0.0)::float                              AS age,
+            COALESCE(years_exp, GREATEST(0, ROUND(COALESCE(age, 22.5) - 22.5)::int)) AS years_exp
+        FROM player_values
+        WHERE position IN ('QB', 'RB', 'WR', 'TE')
+          AND value_1qb IS NOT NULL
+          AND team IS NOT NULL AND team <> ''
+        ORDER BY value_1qb DESC
+        LIMIT %(min_rank)s
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, {"min_rank": min_value_rank})
+                return [dict(row) for row in cur.fetchall()]
+    except Exception:
+        return []
 
 
 # =============================================================================

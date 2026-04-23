@@ -8,18 +8,7 @@ Includes key reasons, directional trends, and contextual summaries.
 from typing import Optional
 
 from .config import *
-
-
-def get_previous_breakout_score(player_id: str, season: int, as_of_date) -> Optional[float]:
-    """
-    Get previous breakout score for trend calculation.
-    
-    For now, returns None to avoid database dependency issues.
-    In a full implementation, this would query the database for the most recent
-    breakout score for this player before the current date.
-    """
-    # TODO: Implement database query to get previous score
-    return None
+from .db_helpers import get_previous_breakout_score
 
 
 class ExplainabilityEngine:

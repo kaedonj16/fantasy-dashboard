@@ -43,47 +43,70 @@ def record_model_value_snapshot(
         *,
         as_of: Optional[date] = None,
         source: str = "model",
+        ema_alpha: float = 0.70,
+        min_change_pct: float = 0.005,
 ) -> int:
     """
-    Expects rows shaped like:
-      {
-        "id": "9509",
-        "name": "Bijan Robinson",
-        "position": "RB",
-        "team": "ATL",
-        "value": 968.0
-      }
+    Write a smoothed daily value snapshot using EMA blending.
+
+    ema_alpha: weight for new value (0.70 = 70% new, 30% previous).
+      Softens step-function jumps when the model is retrained.
+    min_change_pct: skip writing if the blended value changed less than
+      this fraction from the previous snapshot (reduces DB noise).
     """
     init_value_history_db()
 
     snapshot_date = (as_of or date.today()).isoformat()
-    rows_to_insert: list[tuple] = []
 
+    player_list = []
     for p in players or []:
         if not isinstance(p, dict):
             continue
-
         pid = str(p.get("id") or "").strip()
         if not pid:
             continue
-
-        raw_val = p.get("value", 0)
         try:
-            value = float(raw_val or 0.0)
+            value = float(p.get("value") or 0.0)
         except (TypeError, ValueError):
             value = 0.0
+        player_list.append((pid, p.get("name"), p.get("position"), p.get("team"), value))
 
-        rows_to_insert.append(
-            (
-                snapshot_date,
-                pid,
-                p.get("name"),
-                p.get("position"),
-                p.get("team"),
-                value,
-                source,
-            )
-        )
+    if not player_list:
+        return 0
+
+    # Fetch the most recent previous value for every player in one batch query
+    all_pids = [row[0] for row in player_list]
+    prev_values: dict[str, float] = {}
+    with get_conn() as conn:
+        # Get the latest value per player before today using a lateral/distinct-on query
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (player_id)
+                player_id, value
+            FROM player_value_history
+            WHERE source = %s
+              AND player_id = ANY(%s)
+              AND as_of_date < %s
+            ORDER BY player_id, as_of_date DESC
+            """,
+            (source, all_pids, snapshot_date),
+        ).fetchall()
+        for r in rows:
+            prev_values[r["player_id"]] = float(r["value"])
+
+    # Build smoothed rows, skipping tiny changes
+    rows_to_insert: list[tuple] = []
+    for pid, name, position, team, new_val in player_list:
+        prev = prev_values.get(pid)
+        if prev is not None and prev > 0:
+            blended = ema_alpha * new_val + (1.0 - ema_alpha) * prev
+            # Skip if change from previous is below threshold
+            if abs(blended - prev) / prev < min_change_pct:
+                continue
+        else:
+            blended = new_val
+
+        rows_to_insert.append((snapshot_date, pid, name, position, team, round(blended, 2), source))
 
     if not rows_to_insert:
         return 0
@@ -294,17 +317,23 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        value_1qb  AS value,
-                        value_sf   AS sf_value,
+                        COALESCE(calibrated_value_1qb, value_1qb) AS value,
+                        COALESCE(calibrated_value_sf,  value_sf)  AS sf_value,
+                        value_1qb  AS model_value,
+                        value_sf   AS model_sf_value,
+                        calibration_source,
+                        calibration_weight,
                         position,
                         pos_rank,
                         pos_rank_label,
                         age,
                         team,
                         years_exp,
-                        last_updated
+                        last_updated,
+                        rank_change_7d,
+                        pos_rank_change_7d
                     FROM player_values
-                    ORDER BY value_1qb DESC NULLS LAST
+                    ORDER BY COALESCE(calibrated_value_1qb, value_1qb) DESC NULLS LAST
                     LIMIT 800
                     """
                 )
@@ -345,6 +374,36 @@ def load_current_values_from_db() -> list[dict]:
                 players[i]["pos_rank_label"] = f"{pos}{rank}"
 
     return players
+
+
+def load_calibration_overrides() -> dict[str, dict]:
+    """
+    Return {player_id: {value, sf_value}} for every player that has been
+    market-calibrated.  Used to overlay trade-data-adjusted values on top
+    of the raw model values without touching the model pipeline.
+    Falls back to empty dict if the DB is unavailable or the columns don't exist.
+    """
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_id,
+                       calibrated_value_1qb  AS value,
+                       COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
+                FROM player_values
+                WHERE calibrated_value_1qb IS NOT NULL
+                  AND calibrated_value_1qb > 0
+                """
+            ).fetchall()
+        return {
+            r["player_id"]: {
+                "value":    float(r["value"]),
+                "sf_value": float(r["sf_value"]),
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
 
 
 def get_top_movers(
@@ -449,7 +508,19 @@ def get_top_movers(
 
             rows = cur.fetchall()
 
-    movers = [dict(row) for row in rows]
+    # Load players index to get names for records with NULL/empty names
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+
+    movers = []
+    for row in rows:
+        row_dict = dict(row)
+        # If name is None or empty, get it from players_index
+        if not row_dict.get("name") or row_dict.get("name") == "Unknown":
+            player_info = players_index.get(str(row_dict["player_id"])) or {}
+            row_dict["name"] = player_info.get("name", "Unknown")
+        movers.append(row_dict)
+    
     risers = movers[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 

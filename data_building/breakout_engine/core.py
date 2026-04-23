@@ -24,7 +24,8 @@ from .db_helpers import (
     save_breakout_scores,
     load_all_player_usage,
     batch_load_all_breakout_data,
-    load_all_team_stats
+    load_all_team_stats,
+    get_all_players_with_opportunity
 )
 from .explainability import ExplainabilityEngine
 from .phases import PhaseDetector
@@ -149,9 +150,7 @@ class BreakoutEngine:
             List of BreakoutCandidate objects sorted by score (descending)
         """
         if player_list is None:
-            # TODO: Fetch from database
-            # For now, return empty list
-            player_list = []
+            player_list = get_all_players_with_opportunity(self.season)
 
         candidates = []
 
