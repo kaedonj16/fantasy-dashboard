@@ -8163,7 +8163,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--text-muted);vertical-align:middle;"></span> Neutral')
             : '';
 
-          return `<div class="ti-card" onclick="openPlayerModal('${{p.player_id}}','${{name.replace(/'/g,"\\\\'")}}')">
+          // Pre-process strings to avoid backslashes
+          const player_json = JSON.stringify(p).replace(/"/g, '\\"');
+          const escaped_name = name.replace(/'/g, "\\'");
+          const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal({{player_json}})` : `openPlayerModal('{{p.player_id}}','{{escaped_name}}')`;
+          
+          return `<div class="ti-card" onclick="${{onclick_js}}">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{name}}</div>
@@ -9993,14 +9998,55 @@ def api_player_indicators():
                         if pid:
                             breakouts.append(pid)
 
+        # Get elites based on value thresholds
+        elites = []
+        prospects = []
+        
+        # Load model value table to get current player values (same as /api/players)
+        value_table = load_model_value_table() or []
+        value_map = {str(p.get("id")): p for p in value_table}
+        
+        # Position-specific elite thresholds (matching JavaScript)
+        elite_thresholds = {
+            'RB': 650,   # Elite young backs
+            'WR': 650,   # Elite WRs
+            'TE': 500,   # Premium TE scarcity
+            'QB': 360,   # Solid QB1s
+            'K': 9999,   # No elite kickers
+            'DEF': 9999  # No elite defenses
+        }
+        
+        for player_id, player_data in value_map.items():
+            position = str(player_data.get("position", "")).upper()
+            value = float(player_data.get("value", 0) or 0)
+            
+            # Check if elite
+            threshold = elite_thresholds.get(position, 750)
+            if value >= threshold:
+                elites.append(str(player_id))
+            
+            # Check if prospect (young players with potential but not yet elite)
+            years_exp = player_data.get("years_exp")
+            age = player_data.get("age")
+            
+            # Prospects: players with 0-2 years experience OR age <= 23, with moderate value
+            is_young = (years_exp in [0, 1, 2] or (age and float(age) <= 23))
+            has_value = value >= 50  # Some demonstrated value
+            not_elite = value < threshold  # Not yet elite
+            
+            if is_young and has_value and not_elite:
+                prospects.append(str(player_id))
+
         return jsonify({
             "rookies": rookies,
-            "breakouts": breakouts
+            "breakouts": breakouts,
+            "elites": elites,
+            "prospects": prospects
         })
 
     except Exception as e:
         print(f"[player-indicators] Error: {e}")
-        return jsonify({"rookies": [], "breakouts": []})
+        return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
 
 
 @app.route("/api/breakout-candidates")
@@ -11867,6 +11913,7 @@ def api_trade_intel_trending():
     Most traded players in the last 7 days across all crawled leagues.
     Returns up to 25 players with trade counts and market vs model value delta.
     """
+    from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
         limit = min(int(request.args.get("limit") or 25), 50)
@@ -12450,6 +12497,7 @@ def api_roster_intel():
         for pid in (r.get("players") or [])
     ]
     breakout_scores: dict = {}
+    from dashboard_services.db import get_conn
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:

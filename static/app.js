@@ -560,6 +560,14 @@ window.initTradePage = function initTradePage(root = document) {
     return playerIndicators.breakouts && playerIndicators.breakouts.includes(String(playerId));
   }
 
+  function isElite(playerId) {
+    return playerIndicators.elites && playerIndicators.elites.includes(String(playerId));
+  }
+
+  function isProspect(playerId) {
+    return playerIndicators.prospects && playerIndicators.prospects.includes(String(playerId));
+  }
+
   function getStorageKey() {
     const leagueId = leagueInput?.value || "";
     const season = root.querySelector("#seasonInput")?.value || "";
@@ -774,6 +782,13 @@ window.initTradePage = function initTradePage(root = document) {
       row.style.cursor = "pointer";
       row.dataset.playerId = p.id;
       row.dataset.playerName = p.name || "Unknown";
+      row.onclick = () => {
+        if (p.is_rookie && p.is_rookie != 'False') {
+          rkOpenModal(p);
+        } else {
+          openPlayerModal(p.id, p.name || "Unknown");
+        }
+      };
     }
 
     const rankWrap = document.createElement("div");
@@ -802,10 +817,10 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (p.is_rookie) {
-      metaBits.push('<span class="player-badge player-badge-rookie">PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -849,7 +864,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -1386,10 +1401,16 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Add rookie/breakout badges
       if (isRookie(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie">ROOKIE</span>');
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
       }
       if (isBreakout(p.id)) {
         metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
+      }
+      if (isElite(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
+      }
+      if (isProspect(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
       }
 
       metaEl.innerHTML = metaBits.join(" • ");
@@ -4081,10 +4102,10 @@ function openPlayerModal(playerId, playerName) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 600,   // Elite young backs
-        'WR': 700,   // Elite WRs
-        'TE': 550,   // Premium TE scarcity
-        'QB': 450,   // Solid QB1s
+        'RB': 650,   // Elite young backs
+        'WR': 650,   // Elite WRs
+        'TE': 500,   // Premium TE scarcity
+        'QB': 360,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };
@@ -4095,10 +4116,10 @@ function openPlayerModal(playerId, playerName) {
       const isBreakoutPlayer = !isElite && isBreakout(data.player_id);
 
       if (isElite) {
-        badges += '<span class="elite-badge">ELITE</span>';
+        badges += '<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
       }
       if (isRookie) {
-        badges += '<span class="rookie-badge">ROOKIE</span>';
+        badges += '<span class="rookie-badge"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
@@ -5470,17 +5491,22 @@ function addBreakoutBadgesToTeamsPage() {
       
       // Position-specific elite thresholds
       const eliteThresholds = {
-        'RB': 900, 'WR': 900, 'TE': 900, 'QB': 900, 'K': 9999, 'DEF': 9999
+        'RB': 650,   // Elite young backs
+        'WR': 650,   // Elite WRs
+        'TE': 500,   // Premium TE scarcity
+        'QB': 360,   // Solid QB1s
+        'K': 9999,   // No elite kickers
+        'DEF': 9999  // No elite defenses
       };
       const threshold = eliteThresholds[position] || 750;
       const isElite = value >= threshold;
       const isRookie = yearsExp !== null && yearsExp !== '' && parseInt(yearsExp) === 0;
       
       if (isElite) {
-        badges.push('<span class="elite-badge">ELITE</span>');
+        badges.push('<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>');
       }
       if (isRookie) {
-        badges.push('<span class="rookie-badge">ROOKIE</span>');
+        badges.push('<span class="rookie-badge"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
       }
       
       // Only show breakout badge if player is not elite
@@ -6015,10 +6041,10 @@ function renderTeamDetails(data) {
 
       // Position-specific elite thresholds (players who would make any team better)
       const eliteThresholds = {
-        'RB': 900,   // Elite young backs
-        'WR': 900,   // Elite WRs
-        'TE': 900,   // Premium TE scarcity
-        'QB': 900,   // Solid QB1s
+        'RB': 650,   // Elite young backs
+        'WR': 650,   // Elite WRs
+        'TE': 500,   // Premium TE scarcity
+        'QB': 360,   // Solid QB1s
         'K': 9999,   // No elite kickers
         'DEF': 9999  // No elite defenses
       };
@@ -6029,10 +6055,10 @@ function renderTeamDetails(data) {
       const isBreakoutPlayer = !isElite && isBreakout(player.player_id);
 
       if (isElite) {
-        badges += '<span class="elite-badge">ELITE</span>';
+        badges += '<span class="elite-badge"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
       }
       if (isRookie) {
-        badges += '<span class="rookie-badge">ROOKIE</span>';
+        badges += '<span class="rookie-badge"><i class="fa-solid fa-product-hunt-brands" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
