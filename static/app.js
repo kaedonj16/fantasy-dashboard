@@ -6078,7 +6078,7 @@ async function checkTradeOutcome(btn) {
           </div>
           <div class="outcome-section-label">At Trade Date</div>
           <div class="outcome-rows">${thenRows}</div>
-          <div class="outcome-section-label outcome-section-label--current">Current (player_values)</div>
+          <div class="outcome-section-label outcome-section-label--current">Calibrated Value</div>
           <div class="outcome-rows">${nowRows}</div>
         </div>`;
     }

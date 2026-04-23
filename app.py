@@ -9442,38 +9442,49 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        # Try to load player and pick values directly from database table first
+        # Load calibrated values: weighted_market_value_1qb from trade intel (primary),
+        # falling back to calibrated_value_1qb / value_1qb from player_values.
         try:
-            from dashboard_services.player_value_history import load_current_values_from_db
-            db_values = load_current_values_from_db()
-            if db_values:
-                # Handle both players and picks from database
-                values_now = {}
-                pick_count = 0
-                player_count = 0
-                for p in db_values:
-                    asset_id = str(p.get("id", ""))
-                    if asset_id:
-                        # Use calibrated value if available, otherwise fallback to model value
-                        value = float(p.get("calibrated_value_1qb") or p.get("value_1qb") or 0.0)
-                        values_now[asset_id] = value
-                        
-                        if str(p.get("position", "")).upper() == "PICK":
-                            pick_count += 1
-                            # For picks, also map the space format (frontend) to underscore format (database)
-                            if "_" in asset_id:
-                                # Convert "2026_1_01" to "2026 1.01" for frontend compatibility
-                                space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
-                                values_now[space_format_id] = value
-                                logger.debug("[api-trade-outcome] Mapped pick %s -> %s with value %s", asset_id, space_format_id, value)
-                        else:
-                            player_count += 1
-                logger.info("[api-trade-outcome] Loaded %d assets from database (players: %d, picks: %d)", len(values_now), player_count, pick_count)
-            else:
-                raise ValueError("No database values loaded")
+            current_season = datetime.now().year
+            with get_conn() as conn:
+                cal_rows = conn.execute(
+                    """
+                    SELECT
+                        pv.player_id,
+                        COALESCE(
+                            tips.weighted_market_value_1qb,
+                            pv.calibrated_value_1qb,
+                            pv.value_1qb
+                        ) AS calibrated_value,
+                        pv.position
+                    FROM player_values pv
+                    LEFT JOIN trade_intel_player_stats tips
+                        ON tips.player_id = pv.player_id AND tips.season = %s
+                    WHERE pv.player_id IS NOT NULL
+                    """,
+                    (current_season,),
+                ).fetchall()
+            if not cal_rows:
+                raise ValueError("No calibrated values loaded")
+            values_now = {}
+            pick_count = 0
+            player_count = 0
+            for row in cal_rows:
+                asset_id = str(row["player_id"] or "")
+                if not asset_id:
+                    continue
+                value = float(row["calibrated_value"] or 0.0)
+                values_now[asset_id] = value
+                if str(row.get("position") or "").upper() == "PICK":
+                    pick_count += 1
+                    if "_" in asset_id:
+                        space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
+                        values_now[space_format_id] = value
+                else:
+                    player_count += 1
+            logger.info("[api-trade-outcome] Loaded calibrated values for %d assets (players: %d, picks: %d)", len(values_now), player_count, pick_count)
         except Exception as db_error:
-            logger.warning("[api-trade-outcome] Database values unavailable, falling back to model table: %s", db_error)
-            # Fallback to original method
+            logger.warning("[api-trade-outcome] Calibrated values unavailable, falling back to model table: %s", db_error)
             value_table = get_model_value_table_cached()
             values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
         
