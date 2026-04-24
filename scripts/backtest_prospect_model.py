@@ -1096,6 +1096,114 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# All-time top-10 tables
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
+    """
+    Print top-N by model score across all tested classes, overall and per position.
+    Uses PPR-per-season average for fair cross-year comparison (a 2021 player
+    with 4 seasons isn't penalised vs a 2024 player with 1).
+    """
+    # Only include players who actually played (ppr_cum > 0) so we can
+    # show meaningful hit/miss context.  Players with no NFL data are
+    # noted separately at the end.
+    with_nfl  = [r for r in all_rows if r.get("ppr_cum", 0) > 0]
+    no_nfl    = [r for r in all_rows if r.get("ppr_cum", 0) == 0]
+
+    for r in with_nfl:
+        r["ppr_avg"] = round(r["ppr_cum"] / max(r.get("seasons_avail", 1), 1), 0)
+
+    header = (
+        f"  {'#':>2}  {'Year':>4}  {'Player':<24} {'Pos':>3}  {'Pick':>4}  "
+        f"{'Score':>5}  {'PPR-Y1':>6}  {'PPR-Y2':>6}  {'PPR/seas':>8}  {'Peak':>6}  Match"
+    )
+    divider = f"  {'─' * 95}"
+
+    def _match(model_rank: int, actual_rank: int) -> str:
+        delta = actual_rank - model_rank
+        if abs(delta) <= 2:
+            return f"≈ (Δ{delta:+d})"
+        elif delta > 0:
+            return f"↓ overrated  (actual #{actual_rank})"
+        else:
+            return f"↑ underrated (actual #{actual_rank})"
+
+    # ── Overall top-N ────────────────────────────────────────────────────────
+    print(f"\n{'═' * 100}")
+    print(f"  ALL-TIME TOP {top_n} BY MODEL SCORE  (across all tested classes, PPR/season for fair cross-year compare)")
+    print(f"{'═' * 100}")
+
+    by_model_overall = sorted(with_nfl, key=lambda x: x["model_score"], reverse=True)
+    by_actual_overall = sorted(with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
+    actual_rank_overall = {r["name"]: i + 1 for i, r in enumerate(by_actual_overall)}
+
+    print(header)
+    print(divider)
+    for i, r in enumerate(by_model_overall[:top_n], 1):
+        ar = actual_rank_overall.get(r["name"], 999)
+        y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+        print(
+            f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
+            f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
+            f"{r['ppr_y1']:>6.0f}  {y2}  "
+            f"{r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}  "
+            f"{_match(i, ar)}"
+        )
+
+    # Players with high model score but no NFL data yet
+    no_nfl_top = sorted(no_nfl, key=lambda x: x["model_score"], reverse=True)[:3]
+    if no_nfl_top:
+        print(f"\n  (Players with high model score but no NFL data yet:)")
+        for r in no_nfl_top:
+            print(f"       {r['draft_year']}  {r['name']:<24} {r['position']:>3}  #{r['draft_pick']:>3}  score={r['model_score']:.1f}")
+
+    # ── Per-position top-N ───────────────────────────────────────────────────
+    for pos in ("WR", "RB", "QB", "TE"):
+        pos_with_nfl = [r for r in with_nfl if r["position"] == pos]
+        if not pos_with_nfl:
+            continue
+
+        by_model_pos  = sorted(pos_with_nfl, key=lambda x: x["model_score"], reverse=True)
+        by_actual_pos = sorted(pos_with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
+        actual_rank_pos = {r["name"]: i + 1 for i, r in enumerate(by_actual_pos)}
+
+        print(f"\n{'═' * 100}")
+        print(f"  ALL-TIME TOP {top_n} {pos}s BY MODEL SCORE")
+        print(f"{'═' * 100}")
+        print(header)
+        print(divider)
+
+        for i, r in enumerate(by_model_pos[:top_n], 1):
+            ar = actual_rank_pos.get(r["name"], 999)
+            y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+            print(
+                f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
+                f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
+                f"{r['ppr_y1']:>6.0f}  {y2}  "
+                f"{r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}  "
+                f"{_match(i, ar)}"
+            )
+
+        # Show actual top-N for this position so you can compare who the model missed
+        print(f"\n  Actual top {top_n} {pos}s by PPR/season:")
+        print(f"  {'#':>2}  {'Year':>4}  {'Player':<24} {'Pick':>4}  {'Model#':>6}  {'PPR/seas':>8}  {'Peak':>6}")
+        print(f"  {'─' * 65}")
+        for i, r in enumerate(by_actual_pos[:top_n], 1):
+            model_pos_rank = next(
+                (j + 1 for j, x in enumerate(by_model_pos) if x["name"] == r["name"]), 999
+            )
+            delta = model_pos_rank - i
+            arrow = "≈" if abs(delta) <= 2 else ("↓" if delta > 0 else "↑")
+            print(
+                f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} #{r['draft_pick']:>3}  "
+                f"Model#{model_pos_rank:>3} {arrow}  {r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}"
+            )
+
+    print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1129,6 +1237,7 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
         _print_positional_summary(all_rows)
         _print_benchmark_hit_rates(all_rows)
         _print_summary(all_rows)
+        _print_all_time_top10(all_rows, top_n=TOP_N_PER_CLASS)
 
     return all_rows
 
