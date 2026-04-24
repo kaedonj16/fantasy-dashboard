@@ -7625,7 +7625,8 @@ img, svg, canvas {
 @media (max-width: 728px) {
   .ad-container {
     max-width: 100%;
-    min-height: 60px;
+    min-height: 70px;
+    max-height: 80px;
   }
 
   .ad-container ins {
@@ -7644,6 +7645,13 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
+  .ad-container {
+    min-height: 60px;
+    max-height: 70px;
+    margin: 8px auto;
+    padding: 4px;
+  }
+  
   .adsbygoogle {
     margin: 10px auto;
   }
@@ -9492,7 +9500,7 @@ img, svg, canvas {
   background: rgba(0, 0, 0, 0.02);
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.05);
-  min-height: 50px;
+  min-height: 90px;
   max-height: 100px;
   overflow: hidden;
 }
@@ -9610,7 +9618,8 @@ img, svg, canvas {
   .ad-container {
     margin: 12px auto;
     padding: 6px;
-    min-height: 60px;
+    min-height: 70px;
+    max-height: 80px;
   }
 
   .ad-top-banner {
