@@ -3408,11 +3408,18 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         rank_change = row.get("rank_change_7d")
 
+        # Prioritize name from the current value table row, then fallback to players_index
+        player_name = (
+            row.get("name") or 
+            players_index.get(pid, {}).get("name") or 
+            f"Player {pid}"  # More informative fallback than "Unknown"
+        )
+        
         waiver_candidates.append({
             "player_id": pid,
-            "name": row.get("name") or players_index.get(pid, {}).get("name", "Unknown"),
+            "name": player_name,
             "position": pos,
-            "team": row.get("team") or "",
+            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
             "value": val,
             "age": age,
             "pos_rank_label": row.get("pos_rank_label") or "",
@@ -13185,7 +13192,7 @@ def api_roster_intel():
             sig = _signal(pid, info)
             players.append({
                 "player_id":     pid,
-                "name":          info["name"] or players_index.get(pid, {}).get("name", pid),
+                "name":          info["name"] or players_index.get(pid, {}).get("name", f"Player {pid}"),
                 "position":      pos,
                 "team":          info["team"],
                 "age":           info["age"],
@@ -13244,7 +13251,7 @@ def api_trade_targets():
             "position":       str(row.get("position") or "").upper(),
             "pos_rank_label": row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
-            "name":           row.get("name") or players_index.get(pid, {}).get("name", ""),
+            "name":           row.get("name") or players_index.get(pid, {}).get("name", f"Player {pid}"),
             "team":           row.get("team") or "",
             "age":            row.get("age"),
             "is_rookie":      bool(row.get("is_rookie")),
