@@ -122,7 +122,8 @@ def _save_leagues(leagues: list[dict]) -> int:
                 VALUES (%s, %s, %s, %s, %s, %s, TRUE)
                 ON CONFLICT (league_id) DO UPDATE SET
                     crawl_enabled = TRUE,
-                    is_superflex  = EXCLUDED.is_superflex
+                    is_superflex  = EXCLUDED.is_superflex,
+                    league_type   = EXCLUDED.league_type
                 """,
                 (
                     lg["league_id"],
