@@ -52,7 +52,7 @@ RP_FILES = {
 def _player_id(name: str) -> str:
     slug = re.sub(r"[^A-Z0-9]", "_", name.upper())
     slug = re.sub(r"_+", "_", slug).strip("_")
-    return f"ROOKIE_2025_{slug}"
+    return f"ROOKIE_2026_{slug}"
 
 
 def _to_float(raw: str) -> float | None:
@@ -63,7 +63,7 @@ def _to_float(raw: str) -> float | None:
         return None
 
 
-def import_rp(season: int = 2025, source: str = "pff_college") -> None:
+def import_rp(season: int = 2024) -> None:
     total_updated = 0
     total_skipped = 0
 
@@ -113,12 +113,12 @@ def import_rp(season: int = 2025, source: str = "pff_college") -> None:
                     cur.execute(
                         f"UPDATE rookie_prospect_source_data "
                         f"SET {set_clause} "
-                        f"WHERE player_id = %s AND season = %s AND source = %s",
-                        [*update_data.values(), player_id, season, source],
+                        f"WHERE player_id = %s AND season = %s AND source = 'cfbd'",
+                        [*update_data.values(), player_id, season],
                     )
                     if cur.rowcount == 0:
                         cols = ["player_id", "season", "source", *update_data]
-                        vals = [player_id, season, source, *update_data.values()]
+                        vals = [player_id, season, "cfbd", *update_data.values()]
                         cur.execute(
                             f"INSERT INTO rookie_prospect_source_data "
                             f"({', '.join(cols)}) VALUES ({', '.join(['%s']*len(cols))})",
@@ -137,7 +137,6 @@ def import_rp(season: int = 2025, source: str = "pff_college") -> None:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2025)
-    parser.add_argument("--source", default="pff_college")
+    parser.add_argument("--season", type=int, default=2024)
     args = parser.parse_args()
-    import_rp(season=args.season, source=args.source)
+    import_rp(season=args.season)
