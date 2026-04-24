@@ -6468,6 +6468,15 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, l
             </div>
 
             <div class="static-section">
+              <div class="static-section-title">Trade Analytics</div>
+              <p>
+                When you enter your Sleeper username, your connected league IDs and Sleeper
+                user ID may be used to improve trade value accuracy across the platform.
+                This data is not sold or shared with third parties.
+              </p>
+            </div>
+
+            <div class="static-section">
               <div class="static-section-title">Advertising</div>
               <p>
                 This site displays advertisements through Google AdSense. Google uses cookies
