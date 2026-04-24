@@ -425,40 +425,52 @@ def _build_result(
     score: float,
     pos_rank: int,
 ) -> Dict[str, Any]:
-    """Build a result dict in the same format as prospect_model.score_prospect."""
+    """Build a result dict matching the format expected by the pipeline and DB."""
     seasons = prospect.get("seasons") or []
-    ath = prospect.get("athleticism") or {}
+    ath     = prospect.get("athleticism") or {}
 
     latest: Dict = {}
     if seasons:
         latest = max(seasons, key=lambda s: _sf(s.get("season"), 0))
     gp = max(_sf(latest.get("games_played"), 12.0), 1.0)
 
-    rec_yds  = _sf(latest.get("receiving_yards"))
-    rush_yds = _sf(latest.get("rush_yards"))
-    pass_yds = _sf(latest.get("pass_yards"))
+    rec_yds = _sf(latest.get("receiving_yards"))
+    conf_q  = _cq(latest.get("conference") or prospect.get("conference"))
+    ras     = _sf(ath.get("ras_score")) if ath.get("ras_score") is not None else None
+
+    # Map the single ML score back to a confidence value (higher score = more confident)
+    confidence = max(30.0, min(90.0, score * 0.8 + 10.0))
 
     return {
+        # Identity
         "player_id":                    prospect.get("player_id", ""),
         "name":                         prospect.get("name", ""),
         "position":                     (prospect.get("position") or "").upper(),
-        "overall_rank":                 0,  # filled in after sorting
+        "draft_class_year":             prospect.get("draft_class_year"),
+        # Ranks — overall_rank filled in after full sort
+        "overall_rank":                 0,
         "position_rank":                pos_rank,
+        # Primary score
         "prospect_score":               round(score, 2),
         "tier":                         _tier(score),
-        # Component scores — ML model doesn't decompose, report NaN-safe proxies
+        "confidence_score":             round(confidence, 1),
+        # Component scores — ML model doesn't decompose; store None so the DB
+        # stores NULL rather than stale rule-based values.
         "projected_draft_capital_score": _sf((consensus or {}).get("projected_draft_capital_score")),
-        "production_score":             round(rec_yds / gp if rec_yds > 0 else 0.0, 1),
-        "athleticism_score":            _sf(ath.get("ras_score", 0.0)) * 10.0,
-        "efficiency_score":             50.0,
-        "age_score":                    50.0,
-        "breakout_profile_score":       50.0,
-        "competition_score":            round(_cq(latest.get("conference")) * 100.0, 1),
-        "utilization_score":            50.0,
-        "environment_score":            50.0,
-        "durability_score":             50.0,
-        "rookie_value":                 round(score * 0.9, 2),
-        "dynasty_value":                round(score * 0.9, 2),
+        "production_score":             None,
+        "efficiency_score":             None,
+        "age_score":                    None,
+        "breakout_profile_score":       None,
+        "athleticism_score":            round(ras * 10.0, 1) if ras is not None else None,
+        "competition_score":            round(conf_q * 100.0, 1),
+        "utilization_score":            None,
+        "environment_adjustment":       None,
+        "durability_score":             None,
+        "fantasy_translation_score":    None,
+        "key_reasons":                  None,
+        # Dynasty value (kept simple — translate_all will overwrite with full calc)
+        "rookie_value":                 round(score, 2),
+        "dynasty_value":                round(score, 2),
     }
 
 
@@ -479,26 +491,40 @@ def score_all_prospects_ml(
     prospects: List[Dict[str, Any]],
     consensus_map: Dict[str, Any],
     skip_sagarin: bool = True,
+    position_weights_override: Optional[Dict] = None,
+    **kwargs: Any,
 ) -> List[Dict[str, Any]]:
     """
     Drop-in replacement for prospect_model.score_all_prospects().
 
     Loads the trained ML model on first call and caches it.  Falls back
-    silently to the rule-based model if the ML model has not been trained.
+    to the rule-based model if the pkl hasn't been created yet.
+
+    `position_weights_override` and extra kwargs are forwarded to the
+    rule-based fallback only (the ML model ignores them — it learned
+    weights from data).
     """
     global _cached_scorer
 
     if not MLProspectScorer.is_trained():
-        # No trained model yet — fall back to rule-based
         from data_building.rookie_pipeline.prospect_model import score_all_prospects
-        return score_all_prospects(prospects, consensus_map, skip_sagarin=skip_sagarin)
+        return score_all_prospects(
+            prospects, consensus_map,
+            skip_sagarin=skip_sagarin,
+            position_weights_override=position_weights_override,
+        )
 
     if _cached_scorer is None:
         try:
             _cached_scorer = MLProspectScorer.load()
+            print("[ml_model] ML model loaded ✓")
         except Exception as e:
-            print(f"[ml_model] Failed to load model: {e} — falling back to rule-based")
+            print(f"[ml_model] Failed to load model ({e}) — falling back to rule-based")
             from data_building.rookie_pipeline.prospect_model import score_all_prospects
-            return score_all_prospects(prospects, consensus_map, skip_sagarin=skip_sagarin)
+            return score_all_prospects(
+                prospects, consensus_map,
+                skip_sagarin=skip_sagarin,
+                position_weights_override=position_weights_override,
+            )
 
     return _cached_scorer.score_prospects(prospects, consensus_map)
