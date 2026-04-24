@@ -19,7 +19,7 @@ Component weights:
     ──────────────────────────────────
     Total                       100 %
 
-Position-weighted draft capital + day 3 penalty (pick > 64: 0.80x)
+Position-weighted draft capital, day-tier multipliers (Day 1 R1 > Day 2 R2-3 > Day 3 R4-7)
 
 Position-specific adjustments are baked into each scorer to handle the
 different stat profiles of QB / RB / WR / TE.
@@ -591,11 +591,11 @@ def calc_efficiency_score(
         ms  = _safe(ls.get("market_share_yards"))
         eff = _scale(ypr, 8.5, 17.0) * 0.55 + _scale(ms, 0.08, 0.40) * 0.35
 
-        # Real PFF YPRR — high confidence, replaces large portion of base formula
+        # Real PFF YPRR — centered adjustment: 2.0 = neutral, 2.8 = +8, 1.2 = -8
         yprr = _eval_metric_value(eval_metrics, "yprr", min_confidence=0.75)
         if yprr is not None:
             yprr_score = _scale(float(yprr), 1.2, 2.8)
-            eff = eff * 0.80 + yprr_score * 0.20
+            eff = _clip(eff + (yprr_score - 50.0) * 0.16)
 
         # PFF route running grade — strong predictor of NFL separation ability
         route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.75)
@@ -609,13 +609,12 @@ def calc_efficiency_score(
             press_score = _scale(float(press_sr), 55.0, 85.0)
             eff = _clip(eff + (press_score - 50.0) * 0.06)
 
-        # Route target rate from RP (high-confidence tprr replacement)
+        # Route target rate from RP — centered adjustment: 30% = neutral, 42% = +6, 18% = -6
         rtr = _eval_metric_value(eval_metrics, "route_target_rate", min_confidence=0.75)
         if rtr is not None:
-            # route_target_rate is stored as %, convert to tprr scale (18% → 0.18)
             tprr_equiv = float(rtr) / 100.0
             rtr_score  = _scale(tprr_equiv, 0.18, 0.42)
-            eff = eff * 0.88 + rtr_score * 0.12
+            eff = _clip(eff + (rtr_score - 50.0) * 0.12)
         else:
             # Tprr proxy — lower priority fallback when RP data absent
             tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
@@ -1472,24 +1471,24 @@ def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
 
 def draft_capital_multiplier(round_selected: int) -> float:
     """
-    Nonlinear draft capital modeling with tiered bonuses.
-    
-    Args:
-        round_selected: Draft round (1-7)
-    
-    Returns:
-        Multiplier to apply to draft capital score
+    Draft capital multiplier aligned with the NFL's 3-day structure.
+
+    Day 1  — Round 1 (picks 1-32):    highest signal, team commits first resource
+    Day 2  — Rounds 2-3 (picks 33-96): solid investment, starter likelihood meaningful
+    Day 3  — Rounds 4-7 (picks 97+):  developmental, far less predictive for dynasty
     """
-    if round_selected == 1:
-        return 1.10
-    elif round_selected == 2:
-        return 1.10
-    elif round_selected == 3:
+    if round_selected == 1:        # Day 1
+        return 1.15
+    elif round_selected == 2:      # Day 2 early
+        return 1.08
+    elif round_selected == 3:      # Day 2 late
         return 1.00
-    elif round_selected <= 5:
-        return 0.85
-    else:
-        return 0.70
+    elif round_selected == 4:      # Day 3 early
+        return 0.88
+    elif round_selected == 5:      # Day 3 mid
+        return 0.78
+    else:                          # Day 3 late (rounds 6-7)
+        return 0.65
 
 
 def calc_experience_score(seasons: List[Dict], position: str) -> float:
@@ -1779,27 +1778,27 @@ def score_prospect(
     dc_multiplier = {"TE": 0.85}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
-    # A pick-200 prospect should never outscore a pick-8 prospect even with
-    # elite college stats.  Tiered by draft depth: rounds 5-7 penalised harder
-    # than rounds 3-4.  Applied after position adjustment so the penalty is
-    # on the already position-calibrated score.
+    # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
+    # Day 2 picks (rounds 2-3, picks 33-96) are not penalised here — their
+    # reduced value is already captured by draft_capital_multiplier.
+    # Tiered within Day 3: late Day 3 (round 6-7, pick > 141) hit harder.
     if draft_capital:
         projected_pick = draft_capital.get("projected_pick")
-        if projected_pick and projected_pick > 64:
-            if projected_pick > 128:   # rounds 5-7
+        if projected_pick and projected_pick > 96:   # Day 3 starts at Round 4
+            if projected_pick > 140:                 # Late Day 3 (rounds 6-7)
                 day3_penalty = {
                     "QB": 0.55,
                     "WR": 0.65,
                     "RB": 0.68,
                     "TE": 0.75,
                 }.get(pos, 0.65)
-            else:                      # rounds 3-4 (pick 65-128)
+            else:                                    # Early Day 3 (rounds 4-5, pick 97-140)
                 day3_penalty = {
-                    "QB": 0.65,
-                    "WR": 0.78,
-                    "RB": 0.80,
-                    "TE": 0.87,
-                }.get(pos, 0.78)
+                    "QB": 0.70,
+                    "WR": 0.82,
+                    "RB": 0.84,
+                    "TE": 0.90,
+                }.get(pos, 0.82)
             dc_multiplier *= day3_penalty
 
     dc_score_adjusted = _clip(dc_score * dc_multiplier)
