@@ -665,7 +665,7 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_team_name"] = viewer.get("viewer_team_name")
 
 
-def _background_seed_user(user_id: str, username: str | None) -> None:
+def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     """Fire-and-forget: seed dynasty leagues for a Sleeper user on first login."""
     def _run():
         try:

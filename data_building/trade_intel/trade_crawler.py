@@ -13,7 +13,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional, Tuple
 
 import requests
 
@@ -146,7 +146,7 @@ def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list
         roster_id = pick.get("roster_id")
         p_season  = pick.get("season")
         p_round   = pick.get("round")
-        slot: int | None = None
+        slot: Optional[int] = None
         if slot_map and roster_id is not None and p_season is not None:
             slot = slot_map.get((str(p_season), str(roster_id)))
         assets.append({
@@ -179,7 +179,7 @@ def crawl_league(
     league_id: str,
     season: int,
     start_week: int = 1,
-    end_week: int | None = None,
+    end_week: Optional[int] = None,
     week_workers: int = 2,
 ) -> int:
     """
@@ -351,7 +351,7 @@ def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
         )
 
 
-def _crawl_one(row: dict, end_week: int, override_start_week: int | None = None) -> tuple[str, int]:
+def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = None) -> Tuple[str, int]:
     """Crawl a single league. Runs inside a thread pool worker."""
     league_id = row["league_id"]
     season = row["season"]

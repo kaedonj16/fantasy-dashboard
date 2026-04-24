@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Set
+from typing import Set, Optional, List, Dict, Tuple
 
 import requests
 
@@ -80,8 +80,8 @@ def _seed_league_ids(season: int) -> Set[str]:
     return seeds
 
 
-def _user_leagues(user_id: str, season: int) -> list[str]:
-    ids: list[str] = []
+def _user_leagues(user_id: str, season: int) -> List[str]:
+    ids: List[str] = []
     for yr in {season, season + 1}:  # also check next year — offseason leagues created early
         data = _get(f"/user/{user_id}/leagues/nfl/{yr}")
         if data:
@@ -89,11 +89,11 @@ def _user_leagues(user_id: str, season: int) -> list[str]:
     return ids
 
 
-def _league_meta(league_id: str) -> dict | None:
+def _league_meta(league_id: str) -> Optional[Dict]:
     return _get(f"/league/{league_id}")
 
 
-def _roster_owner_ids(league_id: str) -> list[str]:
+def _roster_owner_ids(league_id: str) -> List[str]:
     rosters = _get(f"/league/{league_id}/rosters")
     if not rosters:
         return []
@@ -109,7 +109,7 @@ def _already_known(season: int) -> Set[str]:
     return {r["league_id"] for r in rows}
 
 
-def _save_users(user_ids: list[str], source: str = "bfs", usernames: dict[str, str] | None = None) -> None:
+def _save_users(user_ids: List[str], source: str = "bfs", usernames: Optional[Dict[str, str]] = None) -> None:
     """Upsert user IDs into trade_intel_users. Skips on conflict (first write wins)."""
     if not user_ids:
         return
@@ -169,7 +169,7 @@ def _is_superflex(meta: dict) -> bool:
     return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
 
 
-def bootstrap_from_usernames(usernames: list[str], season: int | None = None) -> int:
+def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None) -> int:
     """
     Seed the DB from one or more Sleeper usernames.
 
@@ -224,7 +224,7 @@ def bootstrap_from_usernames(usernames: list[str], season: int | None = None) ->
     return n
 
 
-def seed_user(user_id: str, username: str | None = None, season: int | None = None) -> int:
+def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int] = None) -> int:
     """
     Seed dynasty leagues for a single Sleeper user_id into trade_intel_leagues,
     and record the user in trade_intel_users.  Safe to call on every login —
@@ -272,7 +272,7 @@ def seed_user(user_id: str, username: str | None = None, season: int | None = No
     return n
 
 
-def seed_from_stored_users(batch_size: int = 200, season: int | None = None) -> int:
+def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) -> int:
     """
     Pull users from trade_intel_users that haven't been seeded recently,
     fetch their Sleeper leagues, and insert any new dynasty leagues.
@@ -334,7 +334,7 @@ def seed_from_stored_users(batch_size: int = 200, season: int | None = None) -> 
     return n
 
 
-def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
+def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> int:
     """
     Discover up to `target` dynasty Sleeper leagues and store them.
     Returns total count of newly inserted leagues.
@@ -351,14 +351,14 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
     # Frontier holds league IDs we haven't processed yet (new, not in DB)
     frontier: Set[str] = set()
     visited_users: Set[str] = set()
-    to_save: list[dict] = []
+    to_save: List[Dict] = []
     total_new = 0
 
     logger.info("[discovery] Starting. Known=%d, Seeds=%d, Target=%d", len(known), len(seeds), target)
     logger.info("[discovery] Checkpoint: Beginning seed expansion phase")
 
     # First pass: expand all seed leagues to populate the frontier (parallelized)
-    def expand_seed_league(league_id: str) -> tuple[str, list[str], dict]:
+    def expand_seed_league(league_id: str) -> Tuple[str, List[str], Dict]:
         """Expand a single seed league and return (league_id, new_leagues, league_type_counts)"""
         time.sleep(_REQUEST_DELAY)
         owner_ids = _roster_owner_ids(league_id)
@@ -411,7 +411,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
     logger.info("[discovery] Checkpoint: Seed expansion complete. %d leagues in frontier, %d new from seeds", len(frontier), total_new_from_seeds)
     logger.info("[discovery] Checkpoint: Beginning main discovery loop")
 
-    def process_frontier_batch(batch_leagues: list[str]) -> tuple[list[dict], list[str], int]:
+    def process_frontier_batch(batch_leagues: List[str]) -> Tuple[List[Dict], List[str], int]:
         """Process a batch of frontier leagues and return (to_save, new_frontier_leagues, processed_count)"""
         batch_to_save = []
         batch_new_frontier = []
@@ -419,7 +419,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
         redraft_count = 0
         other_count = 0
         
-        def process_single_frontier_league(league_id: str) -> tuple[dict | None, list[str], str]:
+        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str], str]:
             """Process a single frontier league and return (league_data, new_frontier_leagues, league_type_label)"""
             time.sleep(_REQUEST_DELAY)
             meta = _league_meta(league_id)
