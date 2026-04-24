@@ -95,7 +95,7 @@ def _convert(value: str, db_col: str):
 # Core import logic
 # ---------------------------------------------------------------------------
 
-def import_stats(stat_type: str, season: int = 2024) -> bool:
+def import_stats(stat_type: str, season: int = 2025) -> bool:
     config = CONFIGS[stat_type]
     csv_file = config['csv']
     column_mapping = config['columns']
@@ -192,7 +192,7 @@ def main():
         choices=['passing', 'receiving', 'rushing', 'all'],
         help='Stat type to import',
     )
-    parser.add_argument('--season', type=int, default=2024)
+    parser.add_argument('--season', type=int, default=2025)
     args = parser.parse_args()
 
     types = list(CONFIGS.keys()) if args.type == 'all' else [args.type]

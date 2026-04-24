@@ -64,7 +64,7 @@ def _to_float(raw: str) -> Union[float, None]:
         return None
 
 
-def import_rp(season: int = 2024) -> None:
+def import_rp(season: int = 2025) -> None:
     total_updated = 0
     total_skipped = 0
 
@@ -138,6 +138,6 @@ def import_rp(season: int = 2024) -> None:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2024)
+    parser.add_argument("--season", type=int, default=2025)
     args = parser.parse_args()
     import_rp(season=args.season)
