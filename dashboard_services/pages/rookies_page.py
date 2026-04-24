@@ -855,10 +855,55 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         '<div class="rk-comp-list">' + compsHtml + '</div>' +
 
         reasonsHtml +
+
+        // ── Historical Comparables ────────────────────────────────────────
+        '<div class="rk-section-divider"></div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>' +
+        '<div id="rkComparablesBody" style="font-size:13px;color:var(--text-muted);">' +
+          '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
+        '</div>' +
+
+        // ── Link Sleeper ID ───────────────────────────────────────────────
+        '<div class="rk-section-divider"></div>' +
+        '<div id="rkLinkSleeperSection">' + _buildLinkSleeperHtml(r.player_id, r.sleeper_id) + '</div>' +
+
       '</div>';
 
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+
+    // Fetch historical comparables
+    fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
+      .then(function(res){ return res.json(); })
+      .then(function(cd) {
+        var cb = document.getElementById('rkComparablesBody');
+        if (!cb) return;
+        var comps = cd.comparables || [];
+        if (!comps.length) {
+          cb.innerHTML = '<span>No close historical comps found.</span>';
+          return;
+        }
+        var tc_ = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+        cb.innerHTML = comps.map(function(c) {
+          var tc = tc_[c.tier] || '#9ca3af';
+          var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
+            '<div>' +
+              '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
+              '<span style="color:var(--text-muted);font-size:12px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
+              (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+              '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(1) + '</span>' +
+              '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      })
+      .catch(function() {
+        var cb = document.getElementById('rkComparablesBody');
+        if (cb) cb.innerHTML = '<span>Could not load comparables.</span>';
+      });
   }
 
   function rkCloseModal() {

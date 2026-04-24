@@ -4224,8 +4224,105 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
+      // ── Prospect Profile (rookies with linked prospect data) ─────────────
+      const pd = data.prospect_data;
+      const isRookieWithProspectData = (yearsExp === 0 || yearsExp === null) && pd && pd.prospect_score != null;
+
+      if (isRookieWithProspectData) {
+        const pdScore = parseFloat(pd.prospect_score || 0);
+        const pdConf  = parseFloat(pd.confidence_score || 0);
+        const pdTier  = pd.tier || '?';
+        const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+        const tierColor  = tierColors[pdTier] || '#9ca3af';
+
+        const ht = pd.height_inches;
+        const heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
+        const weightStr = pd.weight_lbs ? pd.weight_lbs + ' lbs' : '—';
+        const fortyStr  = pd.forty_yard ? pd.forty_yard + 's' : '—';
+        const rasStr    = pd.ras_score  ? parseFloat(pd.ras_score).toFixed(1) + '/10' : '—';
+
+        const draftCapLabel = pd.draft_capital_label || (pd.projected_pick ? 'Pick #' + pd.projected_pick : null);
+        const draftStr = draftCapLabel
+          ? draftCapLabel + (pd.num_mocks_used ? '  ·  ' + pd.num_mocks_used + ' mocks' : '')
+          : 'Undrafted / Unknown';
+
+        const pdComponents = [
+          {label:'Production',  val: pd.production_score,              color:'#10b981'},
+          {label:'Efficiency',  val: pd.efficiency_score,              color:'#3b82f6'},
+          {label:'Age',         val: pd.age_score,                     color:'#8b5cf6'},
+          {label:'Breakout',    val: pd.breakout_profile_score,        color:'#f59e0b'},
+          {label:'Athleticism', val: pd.athleticism_score,             color:'#ef4444'},
+          {label:'Competition', val: pd.competition_score,             color:'#06b6d4'},
+          {label:'Draft Cap.',  val: pd.projected_draft_capital_score, color:'#f97316'},
+        ];
+        const pdCompsHtml = pdComponents.map(c => {
+          const v = parseFloat(c.val || 0);
+          return `<div class="rk-comp-row">
+            <div class="rk-comp-label">${c.label}</div>
+            <div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:${Math.round(v)}%;background:${c.color};"></div></div>
+            <div class="rk-comp-val" style="color:${c.color};">${v.toFixed(0)}</div>
+          </div>`;
+        }).join('');
+
+        const pdReasons = (pd.key_reasons || '').split('\n').filter(l => l.trim());
+        const pdReasonsHtml = pdReasons.length > 0
+          ? `<div class="rk-section-divider"></div>
+             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Scouting Notes</div>
+             <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">${pdReasons.map(l => `<div style="padding:2px 0;">${l}</div>`).join('')}</div>`
+          : '';
+
+        bodyHTML += `
+          <hr class="pm-section-divider">
+          <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
+            <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
+          </div>
+          <div class="rk-hero-row" style="margin-bottom:0;">
+            <div class="rk-hero-stat rk-hero-primary">
+              <div class="rk-hero-label">Prospect Score</div>
+              <div class="rk-hero-val" style="color:var(--accent);">${pdScore.toFixed(1)}</div>
+              <div class="rk-hero-sub">${pd.tier_label || ''}</div>
+            </div>
+            <div class="rk-hero-stat">
+              <div class="rk-hero-label">1QB Value</div>
+              <div class="rk-hero-val">${pd.rookie_value > 0 ? parseFloat(pd.rookie_value).toFixed(1) : '—'}</div>
+              <div class="rk-hero-sub">10-team</div>
+            </div>
+            <div class="rk-hero-stat">
+              <div class="rk-hero-label">SF Value</div>
+              <div class="rk-hero-val">${pd.rookie_sf_value > 0 ? parseFloat(pd.rookie_sf_value).toFixed(1) : '—'}</div>
+              <div class="rk-hero-sub">10-team</div>
+            </div>
+          </div>
+          <div class="rk-info-row" style="margin-top:12px;">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Draft</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text);">${draftStr}</span>
+          </div>
+          <div class="rk-meas-grid">
+            <div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">${heightStr}</div></div>
+            <div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">${weightStr}</div></div>
+            <div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">${fortyStr}</div></div>
+            <div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">${rasStr}</div></div>
+          </div>
+          <div class="rk-section-divider"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
+            <span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
+          </div>
+          <div class="rk-comp-list">${pdCompsHtml}</div>
+          ${pdReasonsHtml}
+          <div id="pmProspectComparables" style="margin-top:4px;">
+            <div class="rk-section-divider"></div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>
+            <div id="pmComparablesBody" style="font-size:13px;color:var(--text-muted);">
+              <div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>
+            </div>
+          </div>
+        `;
+      }
+
       // ── Advanced Metrics + Value History (side by side) ───────────────────
-      const hasMetrics = pos && pos !== 'K' && pos !== 'DEF';
+      const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       if (hasMetrics || hasChart) {
@@ -4425,6 +4522,41 @@ function openPlayerModal(playerId, playerName) {
       }
 
       document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
+
+      // Lazy-load prospect comparables for rookies
+      if (isRookieWithProspectData && pd.player_id) {
+        fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
+          .then(r => r.json())
+          .then(cd => {
+            const cb = document.getElementById('pmComparablesBody');
+            if (!cb) return;
+            const comps = cd.comparables || [];
+            if (!comps.length) {
+              cb.innerHTML = '<span style="color:var(--text-muted);">No close historical comps found.</span>';
+              return;
+            }
+            const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+            cb.innerHTML = comps.map(c => {
+              const tc = tierColors[c.tier] || '#9ca3af';
+              const pickStr = c.actual_pick ? ` · Pick ${c.actual_pick}` : '';
+              return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
+                <div>
+                  <span style="font-weight:600;color:var(--text);font-size:13px;">${c.name}</span>
+                  <span style="color:var(--text-muted);font-size:12px;margin-left:6px;">${c.draft_class_year}${pickStr}</span>
+                  ${c.school ? `<span style="color:var(--text-muted);font-size:12px;"> · ${c.school}</span>` : ''}
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                  <span style="font-size:12px;color:var(--text-muted);">${parseFloat(c.prospect_score).toFixed(1)}</span>
+                  <span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${c.tier}</span>
+                </div>
+              </div>`;
+            }).join('');
+          })
+          .catch(() => {
+            const cb = document.getElementById('pmComparablesBody');
+            if (cb) cb.innerHTML = '';
+          });
+      }
 
       // Lazy-load news after modal is in the DOM
       if (data.position && data.position !== 'PICK') {
@@ -5243,12 +5375,97 @@ function openProspectModal(playerId, playerName) {
           '<div class="rk-comp-list">' + compsHtml + '</div>' +
 
           reasonsHtml +
+
+          // ── Historical Comparables ────────────────────────────────────────
+          '<div class="rk-section-divider"></div>' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>' +
+          '<div id="rkComparablesBody" style="font-size:13px;color:var(--text-muted);">' +
+            '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
+          '</div>' +
+
+          // ── Link Sleeper ID ───────────────────────────────────────────────
+          '<div class="rk-section-divider"></div>' +
+          '<div id="rkLinkSleeperSection">' +
+            _buildLinkSleeperHtml(r.player_id, r.sleeper_id) +
+          '</div>' +
+
         '</div>';
+
+      // Fetch comparables
+      fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
+        .then(function(res){ return res.json(); })
+        .then(function(cd) {
+          var cb = document.getElementById('rkComparablesBody');
+          if (!cb) return;
+          var comps = cd.comparables || [];
+          if (!comps.length) {
+            cb.innerHTML = '<span>No close historical comps found.</span>';
+            return;
+          }
+          var tc_ = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+          cb.innerHTML = comps.map(function(c) {
+            var tc = tc_[c.tier] || '#9ca3af';
+            var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
+              '<div>' +
+                '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
+                '<span style="color:var(--text-muted);font-size:12px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
+                (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+                '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(1) + '</span>' +
+                '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+        })
+        .catch(function() {
+          var cb = document.getElementById('rkComparablesBody');
+          if (cb) cb.innerHTML = '<span>Could not load comparables.</span>';
+        });
     })
     .catch(function(err) {
       console.error('Error loading prospect data:', err);
       content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Could not load prospect data.</div>';
     });
+}
+
+function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
+  if (existingSleeperIdVal) {
+    return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
+  }
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+    '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +
+    '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
+    '<button onclick="rkLinkSleeper(\'' + playerId + '\')" style="font-size:12px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
+  '</div>';
+}
+
+function rkLinkSleeper(playerId) {
+  var inp = document.getElementById('rkSleeperIdInput');
+  if (!inp) return;
+  var sleeperIdVal = inp.value.trim();
+  if (!sleeperIdVal) { inp.focus(); return; }
+  var btn = inp.nextElementSibling;
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+  fetch('/api/prospects/link-sleeper', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({player_id: playerId, sleeper_id: sleeperIdVal, promote: true})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d) {
+    var sec = document.getElementById('rkLinkSleeperSection');
+    if (d.ok) {
+      if (sec) sec.innerHTML = '<div style="font-size:12px;color:#10b981;font-weight:600;">✓ Linked to Sleeper ID ' + sleeperIdVal + (d.promoted ? ' and added to value chart' : '') + '</div>';
+    } else {
+      if (sec) sec.innerHTML = '<div style="font-size:12px;color:#ef4444;">Error: ' + (d.error || 'unknown') + '</div>';
+    }
+  })
+  .catch(function() {
+    var sec = document.getElementById('rkLinkSleeperSection');
+    if (sec) sec.innerHTML = '<div style="font-size:12px;color:#ef4444;">Failed to link Sleeper ID.</div>';
+  });
 }
 
 function closePlayerModal() {

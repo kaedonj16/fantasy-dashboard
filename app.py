@@ -11493,6 +11493,72 @@ def api_player_details(player_id: str):
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
 
+        # For rookies (years_exp == 0), try to attach prospect data via sleeper_id lookup
+        prospect_data = None
+        years_exp = player_meta.get("years_exp")
+        if years_exp == 0:
+            try:
+                from dashboard_services.rookie_api import _cache as _rookie_cache
+                from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+                from data_building.rookie_pipeline.value_translation import format_draft_capital
+
+                active_year = get_active_rookie_class()
+                found_row = None
+                for check_year in [active_year, active_year - 1]:
+                    if check_year not in _rookie_cache:
+                        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
+                        _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
+                    for r in _rookie_cache.get(check_year, []):
+                        if str(r.get("sleeper_id") or "") == str(player_id):
+                            found_row = r
+                            break
+                    if found_row:
+                        break
+
+                if found_row:
+                    def _sf(v):
+                        try:
+                            return float(v) if v is not None else None
+                        except (TypeError, ValueError):
+                            return None
+
+                    prospect_data = {
+                        "player_id":                     found_row.get("player_id"),
+                        "draft_class_year":              found_row.get("draft_class_year"),
+                        "school":                        found_row.get("school"),
+                        "prospect_score":                _sf(found_row.get("prospect_score")),
+                        "tier":                          found_row.get("tier"),
+                        "tier_label":                    found_row.get("tier_label"),
+                        "overall_rank":                  found_row.get("overall_rank"),
+                        "position_rank":                 found_row.get("position_rank"),
+                        "production_score":              _sf(found_row.get("production_score")),
+                        "efficiency_score":              _sf(found_row.get("efficiency_score")),
+                        "age_score":                     _sf(found_row.get("age_score")),
+                        "breakout_profile_score":        _sf(found_row.get("breakout_profile_score")),
+                        "athleticism_score":             _sf(found_row.get("athleticism_score")),
+                        "competition_score":             _sf(found_row.get("competition_score")),
+                        "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
+                        "confidence_score":              _sf(found_row.get("confidence_score")),
+                        "key_reasons":                   found_row.get("key_reasons"),
+                        "rookie_value":                  _sf(found_row.get("rookie_value")),
+                        "rookie_sf_value":               _sf(found_row.get("rookie_sf_value")),
+                        "projected_round":               found_row.get("projected_round"),
+                        "projected_pick":                found_row.get("projected_pick"),
+                        "num_mocks_used":                found_row.get("num_mocks_used"),
+                        "height_inches":                 found_row.get("height_inches"),
+                        "weight_lbs":                    found_row.get("weight_lbs"),
+                        "forty_yard":                    _sf(found_row.get("forty_yard")),
+                        "ras_score":                     _sf(found_row.get("ras_score")),
+                        "draft_capital_label":           format_draft_capital(
+                            found_row.get("projected_round"),
+                            found_row.get("projected_pick"),
+                            found_row.get("projected_pick_low"),
+                            found_row.get("projected_pick_high"),
+                        ),
+                    }
+            except Exception as pe:
+                print(f"[api_player_details] prospect lookup error: {pe}")
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -11511,6 +11577,7 @@ def api_player_details(player_id: str):
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
+            "prospect_data": prospect_data,
         }
 
         return jsonify(response)
