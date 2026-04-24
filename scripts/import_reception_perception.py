@@ -11,6 +11,7 @@ import csv
 import re
 import sys
 from pathlib import Path
+from typing import Union
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -55,7 +56,7 @@ def _player_id(name: str) -> str:
     return f"ROOKIE_2026_{slug}"
 
 
-def _to_float(raw: str) -> float | None:
+def _to_float(raw: str) -> Union[float, None]:
     raw = raw.strip().rstrip("%")
     try:
         return float(raw) if raw else None
