@@ -1680,15 +1680,17 @@ def calc_translation_adjustment(
         target_share = _safe(latest.get("target_share"), 0.0)
         draft_age = _safe(prospect.get("age"), 0.0)
 
-        # TE shrinkage: de-emphasize risky profiles with weak receiving usage
+        # TE shrinkage: de-emphasize risky profiles with weak receiving usage.
+        # Penalties doubled vs original values to preserve effective magnitude now
+        # that the translation adjustment is applied once (post-scaling) instead of twice.
         if rec_yds_pg > 0 and rec_yds_pg < 35:
-            adj -= 1.5
+            adj -= 3.0
         if target_share > 0 and target_share < 0.14:
-            adj -= 1.0
+            adj -= 2.0
         if draft_age and draft_age > 23.0 and age_score < 50:
-            adj -= 0.5
-        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42:
             adj -= 1.0
+        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42:
+            adj -= 2.0
 
     # Keep the adjustment bounded; this is a corrective signal, not the main model.
     return max(-10.0, min(6.0, adj))
