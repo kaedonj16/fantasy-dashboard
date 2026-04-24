@@ -589,13 +589,32 @@ def calc_efficiency_score(
     if pos == "WR":
         ypr = _safe(ls.get("yds_per_reception"), 10.0)
         ms  = _safe(ls.get("market_share_yards"))
-        eff = _scale(ypr, 8.5, 17.0) * 0.60 + _scale(ms, 0.08, 0.40) * 0.40
-        # Supplement with tprr proxy when available (target share per route)
+        eff = _scale(ypr, 8.5, 17.0) * 0.55 + _scale(ms, 0.08, 0.40) * 0.35
+
+        # Real PFF YPRR — high confidence, replaces large portion of base formula
+        yprr = _eval_metric_value(eval_metrics, "yprr", min_confidence=0.75)
+        if yprr is not None:
+            yprr_score = _scale(float(yprr), 1.2, 2.8)
+            eff = eff * 0.80 + yprr_score * 0.20
+
+        # PFF route running grade — strong predictor of NFL separation ability
+        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.75)
+        if route_grade is not None:
+            route_score = _scale(float(route_grade), 58.0, 90.0)
+            eff = _clip(eff + (route_score - 50.0) * 0.10)
+
+        # Success rate vs. press — key NFL readiness indicator
+        press_sr = _eval_metric_value(eval_metrics, "success_rate_vs_press", min_confidence=0.70)
+        if press_sr is not None:
+            press_score = _scale(float(press_sr), 55.0, 85.0)
+            eff = _clip(eff + (press_score - 50.0) * 0.06)
+
+        # Tprr proxy — lower priority fallback when PFF data absent
         tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
         if tprr is not None:
-            tprr_score = _scale(float(tprr), 0.18, 0.42)  # 0.18 → low, 0.42 → elite
+            tprr_score = _scale(float(tprr), 0.18, 0.42)
             tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
-            eff = eff * (1.0 - 0.10 * tprr_conf) + tprr_score * (0.10 * tprr_conf)
+            eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
     elif pos == "RB":
         ypc   = _safe(ls.get("yds_per_carry"), 4.25)

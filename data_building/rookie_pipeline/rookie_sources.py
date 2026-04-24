@@ -116,10 +116,17 @@ class ProspectSeasonStatsSource(RookieSource):
         "drop_rate": ("drop_rate", 0.84),
         "grades_offense": ("grades_offense", 0.90),
         "grades_pass_block": ("grades_pass_block", 0.90),
+        "grades_pass_route": ("grades_pass_route", 0.90),
+        "yprr": ("yprr", 0.88),
         "elusive_rating": ("elusive_rating", 0.90),
         "pff_rushing_grade": ("pff_rushing_grade", 0.90),
         "pff_passing_grade": ("pff_passing_grade", 0.90),
         "nfl_passer_rating": ("nfl_passer_rating", 0.88),
+        "success_rate_vs_press": ("success_rate_vs_press", 0.85),
+        "success_rate_vs_man":   ("success_rate_vs_man",   0.85),
+        "success_rate_vs_zone":  ("success_rate_vs_zone",  0.85),
+        "contested_catch_rate_rp": ("contested_catch_rate_rp", 0.86),
+        "tackle_break_rate": ("tackle_break_rate", 0.80),
     }
 
     # QB-only metrics — skipped automatically for non-QB positions in fetch_player_season_metrics
@@ -170,10 +177,17 @@ class ProspectSeasonStatsSource(RookieSource):
         "big_time_throw_rate",
         "grades_offense",
         "grades_pass_block",
+        "grades_pass_route",
+        "yprr",
         "elusive_rating",
         "pff_rushing_grade",
         "pff_passing_grade",
         "nfl_passer_rating",
+        "success_rate_vs_press",
+        "success_rate_vs_man",
+        "success_rate_vs_zone",
+        "contested_catch_rate_rp",
+        "tackle_break_rate",
     })
 
     def fetch_player_season_metrics(

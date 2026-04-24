@@ -53,6 +53,8 @@ CONFIGS = {
             'pass_block_rate': 'pass_block_rate',
             'grades_offense': 'grades_offense',
             'grades_pass_block': 'grades_pass_block',
+            'grades_pass_route': 'grades_pass_route',
+            'yprr': 'yprr',
             'explosive_runs_10_plus': 'explosive_runs_10_plus',
             'breakaway_percentage': 'breakaway_percentage',
             'elusive_rating': 'elusive_rating',
