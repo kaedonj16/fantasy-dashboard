@@ -1387,7 +1387,7 @@ def run_rookie_pipeline_inmemory(
     """
     from .ingestion          import load_prospects_for_year
     from .mock_draft_consensus import build_mock_draft_consensus
-    from .prospect_model     import score_all_prospects
+    from .ml_model           import score_all_prospects_ml as score_all_prospects
     from .value_translation  import translate_all
 
     if draft_year is None:
@@ -1442,7 +1442,7 @@ def _score_from_db(
       5. Build mock-draft consensus from existing rookie_mock_draft_entries
       6. Load prospects + eval metrics → score → translate → upsert rankings
     """
-    from .prospect_model import score_all_prospects
+    from .ml_model import score_all_prospects_ml as score_all_prospects
     from .value_translation import translate_all
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
@@ -1534,7 +1534,7 @@ def run_rookie_pipeline_staged(
     )
     from .sagarin import get_team_rating as _sagarin_get_team_rating
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
-    from .prospect_model import score_all_prospects
+    from .ml_model import score_all_prospects_ml as score_all_prospects
     from .value_translation import translate_all
 
     if draft_year is None:
