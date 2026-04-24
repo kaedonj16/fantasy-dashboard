@@ -1171,7 +1171,7 @@ def calc_durability_score(seasons: List[Dict]) -> float:
 # Position-level adjustment reflecting long-run fantasy value scarcity.
 # TE premium is negative because TE translation to fantasy is hardest.
 POSITION_FANTASY_MULT: Dict[str, float] = {
-    "WR": 1.05,
+    "WR": 1.00,
     "RB": 1.00,
     "QB": 0.90,   # QBs are less valued in 1QB dynasty
     "TE": 0.85,   # TEs face a 2-3 year development delay; lower per-game ceiling vs WRs

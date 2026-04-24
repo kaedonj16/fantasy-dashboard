@@ -1101,15 +1101,19 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
 def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
     """
-    Print top-N by model score across all tested classes, overall and per position.
-    Uses PPR-per-season average for fair cross-year comparison (a 2021 player
-    with 4 seasons isn't penalised vs a 2024 player with 1).
+    Print top-N across all tested classes, balanced and per position.
+
+    The "overall" table shows the top-N/4 from each position by model score
+    (i.e. top-3 per position for top_n=10, rounded up).  Raw cross-position
+    score comparison is misleading without CFBD data because draft capital
+    alone drives 30% of the score and WRs are systematically drafted earlier
+    than RBs/TEs — making busts like Jalen Reagor look better than any RB
+    in the class purely on pick number.
+
+    Uses PPR-per-season average for fair cross-year comparison.
     """
-    # Only include players who actually played (ppr_cum > 0) so we can
-    # show meaningful hit/miss context.  Players with no NFL data are
-    # noted separately at the end.
-    with_nfl  = [r for r in all_rows if r.get("ppr_cum", 0) > 0]
-    no_nfl    = [r for r in all_rows if r.get("ppr_cum", 0) == 0]
+    with_nfl = [r for r in all_rows if r.get("ppr_cum", 0) > 0]
+    no_nfl   = [r for r in all_rows if r.get("ppr_cum", 0) == 0]
 
     for r in with_nfl:
         r["ppr_avg"] = round(r["ppr_cum"] / max(r.get("seasons_avail", 1), 1), 0)
@@ -1129,18 +1133,48 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
         else:
             return f"↑ underrated (actual #{actual_rank})"
 
-    # ── Overall top-N ────────────────────────────────────────────────────────
-    print(f"\n{'═' * 100}")
-    print(f"  ALL-TIME TOP {top_n} BY MODEL SCORE  (across all tested classes, PPR/season for fair cross-year compare)")
-    print(f"{'═' * 100}")
+    # ── Balanced overall top-N: pick ceiling(top_n / 4) from each position ──
+    per_pos = max(1, math.ceil(top_n / 4))
+    positions_ordered = ["WR", "RB", "QB", "TE"]
 
-    by_model_overall = sorted(with_nfl, key=lambda x: x["model_score"], reverse=True)
-    by_actual_overall = sorted(with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
+    balanced: List[Dict] = []
+    for pos in positions_ordered:
+        pos_rows = sorted(
+            [r for r in with_nfl if r["position"] == pos],
+            key=lambda x: x["model_score"],
+            reverse=True,
+        )
+        balanced.extend(pos_rows[:per_pos])
+
+    # Sort the combined balanced list by model score for display
+    balanced_sorted = sorted(balanced, key=lambda x: x["model_score"], reverse=True)
+
+    by_actual_overall  = sorted(with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
     actual_rank_overall = {r["name"]: i + 1 for i, r in enumerate(by_actual_overall)}
 
+    cfbd_pct = sum(1 for r in with_nfl if r.get("has_cfbd")) / max(len(with_nfl), 1) * 100
+
+    print(f"\n{'═' * 100}")
+    print(
+        f"  ALL-TIME TOP {per_pos} PER POSITION BY MODEL SCORE  "
+        f"(balanced; {len(balanced_sorted)} players shown)"
+    )
+    if cfbd_pct < 30:
+        print(
+            f"  ⚠  Only {cfbd_pct:.0f}% of players have CFBD college stats — scores are draft capital + "
+            f"athleticism only."
+        )
+        print(
+            f"     Without production data the model cannot separate busts from stars at the same pick."
+        )
+        print(
+            f"     Add CFBD_API_KEY to enable the full model (production, breakout, efficiency components)."
+        )
+    print(f"{'═' * 100}")
     print(header)
     print(divider)
-    for i, r in enumerate(by_model_overall[:top_n], 1):
+
+    for i, r in enumerate(balanced_sorted, 1):
         ar = actual_rank_overall.get(r["name"], 999)
         y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
         print(
@@ -1156,10 +1190,11 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
     if no_nfl_top:
         print(f"\n  (Players with high model score but no NFL data yet:)")
         for r in no_nfl_top:
-            print(f"       {r['draft_year']}  {r['name']:<24} {r['position']:>3}  #{r['draft_pick']:>3}  score={r['model_score']:.1f}")
+            print(f"       {r['draft_year']}  {r['name']:<24} {r['position']:>3}  "
+                  f"#{r['draft_pick']:>3}  score={r['model_score']:.1f}")
 
     # ── Per-position top-N ───────────────────────────────────────────────────
-    for pos in ("WR", "RB", "QB", "TE"):
+    for pos in positions_ordered:
         pos_with_nfl = [r for r in with_nfl if r["position"] == pos]
         if not pos_with_nfl:
             continue
