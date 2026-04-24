@@ -25,8 +25,6 @@ import sys
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from utils.utils import read_json
-
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
