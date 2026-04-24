@@ -1387,7 +1387,7 @@ def run_rookie_pipeline_inmemory(
     """
     from .ingestion          import load_prospects_for_year
     from .mock_draft_consensus import build_mock_draft_consensus
-    from .ml_model           import score_all_prospects_ml as score_all_prospects
+    from .prospect_model     import score_all_prospects
     from .value_translation  import translate_all
 
     if draft_year is None:
@@ -1398,13 +1398,6 @@ def run_rookie_pipeline_inmemory(
     prospects    = load_prospects_for_year(draft_year)
     prospects    = _filter_active_nfl_players(prospects, draft_year)
     consensus    = build_mock_draft_consensus(draft_year)
-
-    # Fallback: estimate picks from production metrics when scraping unavailable
-    if not consensus and prospects:
-        from .mock_draft_consensus import build_metrics_based_consensus
-        consensus = build_metrics_based_consensus(prospects)
-        n_picks = sum(1 for c in consensus.values() if c.get("projected_pick"))
-        print(f"[pipeline] Using metrics-based pick estimates for {n_picks} prospects (scraping unavailable)")
 
     # If no prospects but we have mock draft data, create prospects from mocks
     if not prospects and consensus:
@@ -1449,7 +1442,7 @@ def _score_from_db(
       5. Build mock-draft consensus from existing rookie_mock_draft_entries
       6. Load prospects + eval metrics → score → translate → upsert rankings
     """
-    from .ml_model import score_all_prospects_ml as score_all_prospects
+    from .prospect_model import score_all_prospects
     from .value_translation import translate_all
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
@@ -1541,7 +1534,7 @@ def run_rookie_pipeline_staged(
     )
     from .sagarin import get_team_rating as _sagarin_get_team_rating
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
-    from .ml_model import score_all_prospects_ml as score_all_prospects
+    from .prospect_model import score_all_prospects
     from .value_translation import translate_all
 
     if draft_year is None:

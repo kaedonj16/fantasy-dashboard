@@ -336,18 +336,11 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     except:
                         pass
                 
-                # Broad jump — NFL format: FTI where F=feet, TI=two-digit inches
-                # e.g. 910 = 9'10" = 118 inches
+                # Broad jump (inches)
                 broad = row.get('BROAD')
                 if pd.notna(broad) and broad != '':
                     try:
-                        broad_raw = str(int(float(broad)))
-                        if len(broad_raw) == 3:
-                            feet   = int(broad_raw[0])
-                            inches = int(broad_raw[1:3])
-                            athleticism['broad_jump_in'] = feet * 12 + inches
-                        else:
-                            athleticism['broad_jump_in'] = int(float(broad))
+                        athleticism['broad_jump_in'] = int(float(broad))
                     except:
                         pass
                 
@@ -1285,73 +1278,6 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
     return p
 
 
-def _load_dynastyprocess_prospects(
-    draft_year: int,
-    existing_names: set,
-) -> List[Dict[str, Any]]:
-    """
-    Load top prospects from dynastyprocess_values CSV that are missing from
-    the seed data.  The dynastyprocess file uses draft_year = draft_year-1
-    (e.g. 2026 class is labeled draft_year=2025 because they played in 2025).
-
-    Returns normalized prospect dicts for players not in existing_names.
-    """
-    import csv
-    import os as _os
-
-    data_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", "data")
-    # Find the most recent dynastyprocess file for this year
-    candidates = [
-        f for f in _os.listdir(data_dir)
-        if f.startswith("dynastyprocess_values_") and f.endswith(".csv")
-    ]
-    if not candidates:
-        return []
-    csv_path = _os.path.join(data_dir, sorted(candidates)[-1])
-
-    # dynastyprocess labels the 2026 NFL draft class as draft_year=2025
-    dp_draft_year = str(draft_year - 1)
-    skill_pos = {"WR", "RB", "QB", "TE"}
-
-    added = []
-    try:
-        with open(csv_path) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row.get("draft_year") != dp_draft_year:
-                    continue
-                pos = (row.get("pos") or "").upper()
-                if pos not in skill_pos:
-                    continue
-                name = (row.get("player") or "").strip()
-                if not name or name.lower() in existing_names:
-                    continue
-
-                try:
-                    age = float(row.get("age") or 22)
-                except (TypeError, ValueError):
-                    age = 22.0
-
-                pid = f"ROOKIE_{draft_year}_" + name.upper().replace(" ", "_").replace("'", "")
-                p = normalize_prospect({
-                    "player_id":       pid,
-                    "name":            name,
-                    "position":        pos,
-                    "age":             age,
-                    "draft_class_year": draft_year,
-                    "school":          None,
-                    "seasons":         [],
-                    "athleticism":     {},
-                    "rookie_profile":  {},
-                })
-                added.append(p)
-                existing_names.add(name.lower())
-    except Exception as exc:
-        print(f"[ingestion] _load_dynastyprocess_prospects: {exc}")
-
-    return added
-
-
 def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     """
     Entry point: return normalized prospect list for `draft_year`.
@@ -1383,55 +1309,10 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         seed = []
     print(f"[ingestion] Loaded {len(seed)} seed prospects")
 
-    # ── No Sportradar key — use seed + dynastyprocess + local combine + CFBD ──
+    # ── No Sportradar key — use seed only ────────────────────────────────────
     if not SPORTRADAR_KEY:
-        print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set — enriching seed data with dynastyprocess + local combine + CFBD")
-        normalized = [normalize_prospect(p) for p in seed]
-        existing_names = {p["name"].lower() for p in normalized}
-
-        # ── Augment seed with dynastyprocess top prospects (always available) ──
-        try:
-            dp_prospects = _load_dynastyprocess_prospects(draft_year, existing_names)
-            if dp_prospects:
-                print(f"[ingestion] Dynastyprocess: adding {len(dp_prospects)} top prospects missing from seed")
-                normalized.extend(dp_prospects)
-                existing_names = {p["name"].lower() for p in normalized}
-        except Exception as exc:
-            print(f"[ingestion] Dynastyprocess load failed: {exc}")
-
-        # Load local combine CSV (always available, no API key needed)
-        try:
-            local_combine = fetch_local_combine_csv(draft_year)
-            if local_combine:
-                print(f"[ingestion] Local combine CSV: {len(local_combine)} players found")
-                matched = 0
-                for p in normalized:
-                    name_key = p["name"].lower().strip()
-                    cdata = local_combine.get(name_key)
-                    if cdata:
-                        ath = cdata.get("athleticism") or cdata
-                        p["athleticism"] = {**p.get("athleticism", {}), **ath}
-                        matched += 1
-                print(f"[ingestion] Merged combine data for {matched}/{len(normalized)} prospects")
-        except Exception as exc:
-            print(f"[ingestion] Local combine CSV load failed: {exc}")
-
-        # Load CFBD college stats if key is available
-        if CFBD_KEY:
-            try:
-                cfbd_stats = fetch_cfbd_college_stats(draft_year)
-                matched_cfbd = 0
-                for p in normalized:
-                    name_lower = p["name"].lower()
-                    seasons = cfbd_stats.get(name_lower)
-                    if seasons:
-                        p["seasons"] = seasons
-                        matched_cfbd += 1
-                print(f"[ingestion] CFBD stats loaded for {matched_cfbd} prospects")
-            except Exception as exc:
-                print(f"[ingestion] CFBD stats load failed: {exc}")
-
-        return normalized
+        print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set — returning seed data only ({len(seed)} prospects)")
+        return [normalize_prospect(p) for p in seed]
 
     # ── Fetch from all live sources ───────────────────────────────────────────
     print(f"[ingestion] Fetching Sportradar prospects for {draft_year}")
