@@ -109,6 +109,23 @@ def _already_known(season: int) -> Set[str]:
     return {r["league_id"] for r in rows}
 
 
+def _save_users(user_ids: list[str], source: str = "bfs", usernames: dict[str, str] | None = None) -> None:
+    """Upsert user IDs into trade_intel_users. Skips on conflict (first write wins)."""
+    if not user_ids:
+        return
+    usernames = usernames or {}
+    with get_conn() as conn:
+        for uid in user_ids:
+            conn.execute(
+                """
+                INSERT INTO trade_intel_users (user_id, username, source)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                (uid, usernames.get(uid), source)
+            )
+
+
 def _save_leagues(leagues: list[dict]) -> int:
     if not leagues:
         return 0
@@ -207,6 +224,116 @@ def bootstrap_from_usernames(usernames: list[str], season: int | None = None) ->
     return n
 
 
+def seed_user(user_id: str, username: str | None = None, season: int | None = None) -> int:
+    """
+    Seed dynasty leagues for a single Sleeper user_id into trade_intel_leagues,
+    and record the user in trade_intel_users.  Safe to call on every login —
+    ON CONFLICT DO NOTHING means repeat visits are a no-op.
+
+    Returns the number of new dynasty leagues inserted.
+    """
+    if season is None:
+        season = _current_season()
+
+    _save_users([user_id], source="login", usernames={user_id: username} if username else None)
+
+    known = _already_known(season)
+    league_ids = _user_leagues(user_id, season)
+    to_save: list[dict] = []
+
+    for lid in league_ids:
+        if lid in known:
+            continue
+        time.sleep(_REQUEST_DELAY)
+        meta = _league_meta(lid)
+        if not meta:
+            continue
+        if meta.get("settings", {}).get("type") != 2:
+            continue
+        lg_season = int(meta.get("season") or season)
+        to_save.append({
+            "league_id":    lid,
+            "season":       lg_season,
+            "num_teams":    meta.get("total_rosters", 0),
+            "scoring_type": _classify_scoring(meta),
+            "league_type":  2,
+            "is_superflex": _is_superflex(meta),
+        })
+
+    n = _save_leagues(to_save)
+    if n:
+        logger.info("[seed_user] user=%s inserted %d new dynasty league(s)", user_id, n)
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE trade_intel_users SET last_seeded_at = NOW() WHERE user_id = %s",
+            (user_id,)
+        )
+    return n
+
+
+def seed_from_stored_users(batch_size: int = 200, season: int | None = None) -> int:
+    """
+    Pull users from trade_intel_users that haven't been seeded recently,
+    fetch their Sleeper leagues, and insert any new dynasty leagues.
+
+    Prioritises users that have never been seeded (last_seeded_at IS NULL).
+    Returns total new leagues inserted.
+    """
+    if season is None:
+        season = _current_season()
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id, username FROM trade_intel_users
+            ORDER BY last_seeded_at ASC NULLS FIRST
+            LIMIT %s
+            """,
+            (batch_size,)
+        ).fetchall()
+
+    if not rows:
+        logger.info("[seed_from_stored_users] No stored users to seed from.")
+        return 0
+
+    known = _already_known(season)
+    to_save: list[dict] = []
+
+    for row in rows:
+        user_id = row["user_id"]
+        league_ids = _user_leagues(user_id, season)
+        for lid in league_ids:
+            if lid in known:
+                continue
+            time.sleep(_REQUEST_DELAY)
+            meta = _league_meta(lid)
+            if not meta:
+                continue
+            if meta.get("settings", {}).get("type") != 2:
+                continue
+            lg_season = int(meta.get("season") or season)
+            to_save.append({
+                "league_id":    lid,
+                "season":       lg_season,
+                "num_teams":    meta.get("total_rosters", 0),
+                "scoring_type": _classify_scoring(meta),
+                "league_type":  2,
+                "is_superflex": _is_superflex(meta),
+            })
+            known.add(lid)
+
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE trade_intel_users SET last_seeded_at = NOW() WHERE user_id = %s",
+                (user_id,)
+            )
+
+    n = _save_leagues(to_save)
+    logger.info("[seed_from_stored_users] %d users → %d new dynasty leagues", len(rows), n)
+    return n
+
+
 def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
     """
     Discover up to `target` dynasty Sleeper leagues and store them.
@@ -235,9 +362,11 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
         """Expand a single seed league and return (league_id, new_leagues, league_type_counts)"""
         time.sleep(_REQUEST_DELAY)
         owner_ids = _roster_owner_ids(league_id)
+        # Persist owners of confirmed dynasty leagues as future discovery seeds
+        _save_users(owner_ids, source="bfs")
         new_leagues = []
         league_type_counts = {"dynasty": 0, "redraft": 0, "other": 0, "no_meta": 0}
-        
+
         for owner_id in owner_ids:
             time.sleep(_REQUEST_DELAY)
             user_leagues = _user_leagues(owner_id, season)
@@ -328,6 +457,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: int | None = None) -> int:
             new_frontier_leagues = []
             if len(frontier) < 2000:
                 owner_ids = _roster_owner_ids(league_id)
+                _save_users(owner_ids, source="bfs")
                 for owner_id in owner_ids:
                     if owner_id in visited_users:
                         continue

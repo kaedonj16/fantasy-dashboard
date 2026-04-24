@@ -93,6 +93,7 @@ from dashboard_services.service import (
 )
 from data_building.build_daily_value_table import build_daily_data
 from data_building.player_value_history import get_top_movers, init_value_history_db, get_player_value_history
+from data_building.trade_intel.league_discovery import seed_user as _seed_user_leagues
 from utils.utils import (
     build_and_save_week_stats_for_league,
     build_status_for_week,
@@ -662,6 +663,16 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_user_id"] = viewer.get("viewer_user_id")
     session["viewer_roster_id"] = viewer.get("viewer_roster_id")
     session["viewer_team_name"] = viewer.get("viewer_team_name")
+
+
+def _background_seed_user(user_id: str, username: str | None) -> None:
+    """Fire-and-forget: seed dynasty leagues for a Sleeper user on first login."""
+    def _run():
+        try:
+            _seed_user_leagues(user_id, username=username)
+        except Exception:
+            pass  # never crash the request thread
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dict:
@@ -9293,6 +9304,8 @@ def index():
 
             if viewer:
                 save_viewer_session(viewer)
+                if platform == "sleeper" and viewer.get("viewer_user_id"):
+                    _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
             else:
                 # For ESPN, skip the hard error — viewer matching is optional
                 if platform != "espn":
@@ -9485,6 +9498,8 @@ def set_viewer():
         )
 
     save_viewer_session(viewer)
+    if platform == "sleeper" and viewer.get("viewer_user_id"):
+        _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
