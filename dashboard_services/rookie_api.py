@@ -98,6 +98,11 @@ def rankings():
                 d.get("projected_pick_low"),
                 d.get("projected_pick_high"),
             )
+            
+            # Add headshot URL as espnHeadshot for modal compatibility
+            if d.get("headshot_url"):
+                d["espnHeadshot"] = d["headshot_url"]
+            
             result.append(d)
 
         # Sort: tier ascending, then display_value descending within each tier
@@ -119,7 +124,14 @@ def player_detail(player_id: str):
         row  = next((r for r in rows if r["player_id"] == player_id), None)
         if not row:
             return jsonify({"error": "Player not found"}), 404
-        return jsonify(_row_to_dict(row))
+        
+        player_data = _row_to_dict(row)
+        
+        # Add headshot URL as espnHeadshot for modal compatibility
+        if player_data.get("headshot_url"):
+            player_data["espnHeadshot"] = player_data["headshot_url"]
+        
+        return jsonify(player_data)
     except Exception as exc:
         log.exception("[rookie_api] /player error")
         return jsonify({"error": str(exc)}), 500

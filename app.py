@@ -11240,7 +11240,7 @@ def api_player_value_history(player_id: str):
 def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
-        from utils.utils import load_players_index, load_model_value_table
+        from utils.utils import load_relevant_index, load_model_value_table
         from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
         import json
@@ -11271,7 +11271,7 @@ def api_player_details(player_id: str):
                 "fumbles": -2.0
             }
 
-        players_index = load_players_index() or {}
+        players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id, {})
 
         if not player_meta:

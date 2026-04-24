@@ -96,7 +96,13 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
 
 def _db_available() -> bool:
     db_url = os.getenv("DATABASE_URL", "").strip()
-    return bool(db_url) and not any(t in db_url for t in ("USER", "PASSWORD", "HOST"))
+    if not db_url:
+        print("[_db_available] DATABASE_URL environment variable is not set")
+        return False
+    if any(t in db_url for t in ("USER", "PASSWORD", "HOST")):
+        print("[_db_available] DATABASE_URL contains placeholder values (USER, PASSWORD, or HOST)")
+        return False
+    return True
 
 
 def upsert_prospects(prospects: List[Dict], conn) -> int:
@@ -968,13 +974,106 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
 
 
 def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
-    """Merge score + value dicts and upsert into rookie_rankings."""
+    """Merge score + value dicts and upsert into rookie_rankings.
+    
+    Priority: model_values > calculated rookie values > fallback values
+    """
+    
     value_by_pid = {v["player_id"]: v for v in values}
     saved = 0
+    
+    # Load model values to check for existing player values
+    model_values = {}
+    name_to_model_values = {}  # For rookie ID name matching
+    try:
+        from utils.utils import load_model_value_table
+        model_table = load_model_value_table() or []
+        for player in model_table:
+            if isinstance(player, dict) and player.get("id"):
+                pid = str(player["id"])
+                model_values[pid] = {
+                    "rookie_value": player.get("value", 0),
+                    "rookie_sf_value": player.get("sf_value", 0),
+                    "rookie_value_8": player.get("value_8", 0),
+                    "rookie_value_12": player.get("value_12", 0),
+                    "rookie_value_14": player.get("value_14", 0),
+                    "rookie_sf_value_8": player.get("sf_value_8", 0),
+                    "rookie_sf_value_12": player.get("sf_value_12", 0),
+                    "rookie_sf_value_14": player.get("sf_value_14", 0),
+                }
+                
+                # Also create name lookup for rookie ID matching
+                name = player.get("name", "").lower().strip()
+                if name:
+                    name_to_model_values[name] = model_values[pid]
+        
+    except Exception as e:
+        print(f"[upsert_rankings] Could not load model values: {e}")
+    
     with conn.cursor() as cur:
         for s in scores:
             pid = s["player_id"]
-            v   = value_by_pid.get(pid, {})
+            # Debug: Check if scores have tier information
+            if pid == "ROOKIE_2026_JEREMIYAH_LOVE" or True:  # Set to True to see all players
+                print(f"[DEBUG] Score for {pid}: tier={s.get('tier')}, tier_label={s.get('tier_label')}")
+
+            # Priority 1: Use model values if available (by player_id)
+            if pid in model_values:
+                v = model_values[pid]
+                # Add tier information from scores
+                if s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+            # Priority 1.5: Use model values by name matching (for rookie IDs like "ROOKIE_2026_JEREMIYAH_LOVE")
+            elif pid.startswith("ROOKIE_"):
+                # Extract name from rookie ID
+                name_parts = pid.split("_")
+                if len(name_parts) >= 4:
+                    name = "_".join(name_parts[2:]).replace("_", " ").title()
+                    name_lower = name.lower().strip()
+                    if name_lower in name_to_model_values:
+                        v = name_to_model_values[name_lower]
+                        # Add tier information from scores
+                        if s.get("tier") is not None:
+                            v["tier"] = s.get("tier")
+                        if s.get("tier_label") is not None:
+                            v["tier_label"] = s.get("tier_label")
+                    else:
+                        # Name matching failed, try calculated values
+                        if pid in value_by_pid:
+                            v = value_by_pid.get(pid, {})
+                        else:
+                            v = {}
+                else:
+                    # Name extraction failed, try calculated values
+                    if pid in value_by_pid:
+                        v = value_by_pid.get(pid, {})
+                    else:
+                        v = {}
+
+            # Priority 2: Use calculated rookie values
+            elif pid in value_by_pid:
+                v = value_by_pid.get(pid, {})
+                # Ensure calculated values have tier information from scores if not present
+                if "tier" not in v and s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if "tier_label" not in v and s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+            # Priority 3: Use empty values (already initialized as {})
+            else:
+                v = {}
+                # Ensure fallback values have tier information from scores
+                if s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+                print(f"[upsert_rankings] No values found for player {pid}, using defaults")
+            
+            # Debug: Show what tier values are being inserted
+            if pid == "ROOKIE_2026_JEREMIYAH_LOVE" or True:  # Set to True to see all players
+                print(f"[DEBUG] Inserting {pid}: tier={v.get('tier')}, tier_label={v.get('tier_label')}")
+            
             cur.execute(
                 """
                 INSERT INTO rookie_rankings
@@ -1890,9 +1989,34 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
     """
     Fetch persisted rankings from the database.  Returns an empty list if no
     data exists for the requested year — does not auto-run the pipeline.
+    
+    Priority: Model values table > rookie_rankings table > calculated values
     """
     # Ensure draft_year is an integer
     draft_year = int(draft_year)
+    
+    # First, check if player exists in model values table
+    model_values = {}
+    try:
+        from utils.utils import load_model_value_table
+        model_table = load_model_value_table() or []
+        for player in model_table:
+            player_id = str(player.get('id'))
+            if player_id:
+                model_values[player_id] = {
+                    "rookie_value": float(player.get('value', 0)),
+                    "rookie_sf_value": float(player.get('sf_value', player.get('value', 0))),
+                    "rookie_value_8": float(player.get('value_8', player.get('value', 0))),
+                    "rookie_value_12": float(player.get('value_12', player.get('value', 0))),
+                    "rookie_value_14": float(player.get('value_14', player.get('value', 0))),
+                    "rookie_sf_value_8": float(player.get('sf_value_8', player.get('sf_value', player.get('value', 0)))),
+                    "rookie_sf_value_12": float(player.get('sf_value_12', player.get('sf_value', player.get('value', 0)))),
+                    "rookie_sf_value_14": float(player.get('sf_value_14', player.get('sf_value', player.get('value', 0)))),
+                }
+        print(f"[get_rookie_rankings] Found {len(model_values)} players in model values table")
+    except Exception as e:
+        print(f"[get_rookie_rankings] Could not load model values: {e}")
+    
     if _db_available():
         try:
             from dashboard_services.db import get_conn
@@ -1905,6 +2029,7 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                             rp.name, rp.position, rp.school, rp.age,
                             rp.height_inches, rp.weight_lbs,
                             rp.early_declare, rp.transfer_history,
+                            rp.headshot_url,
                             rr.overall_rank, rr.position_rank,
                             rr.prospect_score, rr.rookie_value, rr.rookie_sf_value,
                             rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
@@ -1934,9 +2059,9 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
 
             print(f"[pipeline] No rankings in DB for draft_year={draft_year}")
             return []
-
         except Exception as exc:
-            print(f"[pipeline] DB read failed: {exc}")
+            print(f"[pipeline] Error loading rankings: {exc}")
+            return []
 
     return []
 

@@ -2348,4 +2348,26 @@ def score_all_prospects(
         pos_counters[pos] = pos_counters.get(pos, 0) + 1
         s["position_rank"] = pos_counters[pos]
 
+    # Calculate tiers based on prospect_score
+    for s in scores:
+        score = s["prospect_score"]
+        if score >= 85:
+            s["tier"] = 1
+            s["tier_label"] = "Elite Prospect"
+        elif score >= 72:
+            s["tier"] = 2
+            s["tier_label"] = "Top Prospect"
+        elif score >= 60:
+            s["tier"] = 3
+            s["tier_label"] = "Day-2 Upside"
+        elif score >= 44:
+            s["tier"] = 4
+            s["tier_label"] = "Developmental"
+        elif score >= 33:
+            s["tier"] = 5
+            s["tier_label"] = "Deep Flier"
+        else:
+            s["tier"] = 6
+            s["tier_label"] = "Low Priority"
+
     return scores
