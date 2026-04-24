@@ -1569,20 +1569,34 @@ def run_rookie_pipeline_staged(
         try:
             from .ingestion import prospects_from_mock_draft
             from .mock_draft_scraper import scrape_consensus_mock_draft
-            
+
             mock_picks = scrape_consensus_mock_draft(draft_year)
             sr_prospects = prospects_from_mock_draft(mock_picks, draft_year)
             print(f"[pipeline] Created {len(sr_prospects)} prospects from mock draft data")
         except Exception as exc:
             print(f"[pipeline] Failed to create prospects from mock data: {exc}")
             return {}
-        
+
         if not sr_prospects:
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
-        # Fall back: score from whatever is already in the DB
+
+        # Persist mock-created prospects so Stage 4 can link their picks (FK constraint).
+        # Without this upsert, all 194 scraped mock entries are skipped because the
+        # player_ids don't exist in rookie_prospects yet.
+        try:
+            from .ingestion import normalize_prospect
+            normalized = [normalize_prospect(p) for p in sr_prospects]
+            with get_conn() as conn:
+                n_saved = upsert_prospects(normalized, conn)
+                conn.commit()
+            print(f"[pipeline] Saved {n_saved} mock-created prospects to DB")
+        except Exception as exc:
+            print(f"[pipeline] Failed to save mock prospects to DB (non-fatal): {exc}")
+
+        # Fall back: score from the DB — now includes the newly inserted prospects
         return _score_from_db(
             draft_year,
             get_conn,
