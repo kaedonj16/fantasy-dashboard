@@ -1399,6 +1399,13 @@ def run_rookie_pipeline_inmemory(
     prospects    = _filter_active_nfl_players(prospects, draft_year)
     consensus    = build_mock_draft_consensus(draft_year)
 
+    # Fallback: estimate picks from production metrics when scraping unavailable
+    if not consensus and prospects:
+        from .mock_draft_consensus import build_metrics_based_consensus
+        consensus = build_metrics_based_consensus(prospects)
+        n_picks = sum(1 for c in consensus.values() if c.get("projected_pick"))
+        print(f"[pipeline] Using metrics-based pick estimates for {n_picks} prospects (scraping unavailable)")
+
     # If no prospects but we have mock draft data, create prospects from mocks
     if not prospects and consensus:
         print("[pipeline] No prospects found - creating from mock draft data")

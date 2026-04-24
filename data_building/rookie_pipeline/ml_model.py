@@ -181,6 +181,54 @@ def extract_features(
     _s("conf_quality",    _cq(latest.get("conference") or prospect.get("conference")))
     _s("num_seasons",     float(len(seasons)))
 
+    # ── Fallback: fill missing college stats from rookie_profile.metrics ─────
+    # When CFBD data is unavailable (no API key), use PFF/Sportradar metrics
+    # stored in rookie_profile.metrics.  These use different units/scales than
+    # CFBD but the imputer will fill remaining NaNs with training medians.
+    if not seasons:
+        rp      = prospect.get("rookie_profile") or {}
+        pm      = rp.get("metrics") or {}
+
+        def _pmv(key: str) -> float:
+            m = pm.get(key)
+            if m is None:
+                return float("nan")
+            return _sf(m.get("value") if isinstance(m, dict) else m)
+
+        pm_gp      = _pmv("games_played")
+        pm_routes  = _pmv("routes_run")
+        pm_yprr    = _pmv("yprr")   # yards per route run
+        pm_tprr    = _pmv("tprr")   # targets per route run
+        pm_yac     = _pmv("yac_per_att")   # yac per target ≈ per catch
+        pm_snap    = _pmv("snap_counts")
+        pm_sos     = _pmv("player_level_sos")  # 0-1 strength-of-schedule
+
+        if not math.isnan(pm_gp) and pm_gp > 0:
+            gp = pm_gp
+
+        # Reconstruct per-game production from route-level stats
+        if not (math.isnan(pm_yprr) or math.isnan(pm_routes)):
+            est_rec_yds = pm_yprr * pm_routes
+            if not math.isnan(pm_gp) and pm_gp > 0:
+                _s("rec_yds_pg", est_rec_yds / pm_gp)
+                _s("all_yds_pg", est_rec_yds / pm_gp)
+
+        if not (math.isnan(pm_tprr) or math.isnan(pm_routes)):
+            est_recs = pm_tprr * pm_routes
+            if not math.isnan(pm_gp) and pm_gp > 0:
+                _s("rec_pg", est_recs / pm_gp)
+
+        if not math.isnan(pm_yac):
+            _s("yac_per_rec", pm_yac)
+
+        # Strength-of-schedule → conf_quality proxy (SOS 1.0 = toughest)
+        if not math.isnan(pm_sos) and pm_sos > 0:
+            _s("conf_quality", min(1.0, pm_sos))
+
+        # Snap-based num_seasons proxy: 1 if any snaps, else 0
+        if not math.isnan(pm_snap) and pm_snap > 0:
+            _s("num_seasons", 1.0)
+
     # Combine
     for feat, keys in [
         ("forty_yard",      ["forty_yard", "forty"]),
@@ -292,8 +340,17 @@ class MLProspectScorer:
 
     @classmethod
     def load(cls, path: str = _MODEL_PATH) -> "MLProspectScorer":
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with open(path, "rb") as f:
+                obj = pickle.load(f)
+        # Patch sklearn version skew: 1.6→1.8 renamed _fit_dtype→_fill_dtype
+        for pos_model in obj.models.values():
+            imp = pos_model.imputer
+            if hasattr(imp, "_fit_dtype") and not hasattr(imp, "_fill_dtype"):
+                imp._fill_dtype = imp._fit_dtype
+        return obj
 
     @classmethod
     def is_trained(cls, path: str = _MODEL_PATH) -> bool:
