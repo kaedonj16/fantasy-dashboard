@@ -246,6 +246,13 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             rz_rate = total_rec_tds / total_rec_yds * 100
             if rz_rate >= 8.0:   prod = _clip(prod * 1.06)
             elif rz_rate >= 5.5: prod = _clip(prod * 1.03)
+        # G5 / lower-tier conference discount applied directly to production.
+        # competition_score (7% weight) is not strong enough to offset stats
+        # that are genuinely inflated by weaker defenses (MAC, CUSA, Sun Belt, etc.).
+        # Power 4 conferences (conf_q ≥ 0.85) are unaffected.
+        conf_q = _conf_quality(season.get("conference", ""))
+        if conf_q < 0.85:
+            prod = _clip(prod * (1.0 - (1.0 - conf_q) * 0.75))
         return prod
 
     elif pos == "RB":
@@ -1174,7 +1181,7 @@ POSITION_FANTASY_MULT: Dict[str, float] = {
     "WR": 1.00,
     "RB": 1.00,
     "QB": 0.90,   # QBs are less valued in 1QB dynasty
-    "TE": 0.85,   # TEs face a 2-3 year development delay; lower per-game ceiling vs WRs
+    "TE": 0.78,   # TEs face a 2-3 year development delay; ceiling ~75-80% of WR ceiling
 }
 POSITION_FANTASY_MULT_SF: Dict[str, float] = {
     "WR": 1.00,
@@ -1233,14 +1240,15 @@ POSITION_WEIGHTS = {
         "durability": 0.00,
     },
     "TE": {
-        # Draft capital (r=0.72) and age (TEs develop late; young elite TEs are rare) lead.
-        # Athleticism defines generational TEs; efficiency (YPR + catch rate) is predictive.
-        # College TE production and utilization are less reliable signals due to blocking roles.
-        "draft_capital": 0.26,
+        # Draft capital still matters but is less predictive than for WR/RB after
+        # applying the TE dc_multiplier (0.62).  Age is the single most predictive
+        # signal for TEs: young TEs who declare early (≤22) have far better hit rates.
+        # College production is reliable only for receiving-specialist TEs.
+        "draft_capital": 0.21,
         "production": 0.19,
         "utilization": 0.07,
         "efficiency": 0.12,
-        "age": 0.10,
+        "age": 0.15,
         "breakout": 0.06,
         "athleticism": 0.10,
         "competition": 0.08,
@@ -1660,6 +1668,18 @@ def calc_translation_adjustment(
         if projected_pick > 80 and (rec_yds_pg >= 80 or rec_tds_pg >= 0.90):
             adj += 1.5
 
+    elif position == "QB":
+        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
+        rush_yds_pg = _safe(latest.get("rush_yards"), 0.0) / gp
+        # Dual-threat QBs are systematically undervalued: poor college completion%
+        # penalises the production score, but rushing is a direct fantasy component
+        # that the model underweights.  Josh Allen (98 yd/g), Lamar Jackson (63 yd/g),
+        # and Jalen Hurts (76 yd/g) were all underrated by the model without this bonus.
+        if rush_yds_pg >= 40:
+            adj += 3.5
+        elif rush_yds_pg >= 25:
+            adj += 1.5
+
     elif position == "RB":
         gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
         rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
@@ -1681,8 +1701,10 @@ def calc_translation_adjustment(
 
         # Baseline dynasty development cost: even elite TEs rarely contribute
         # meaningfully until year 2-3 of their NFL career.  Applied universally
-        # regardless of profile to anchor TE scores below equivalent-capital WRs.
-        adj -= 4.0
+        # regardless of profile to anchor TE scores well below equivalent-capital WRs.
+        # Increased from -4 to -8: the backtest showed TEs still ranking too high
+        # relative to WRs/RBs at the same draft position.
+        adj -= 8.0
 
         # Profile-based TE shrinkage for weak receiving-usage profiles.
         if rec_yds_pg > 0 and rec_yds_pg < 35:
@@ -1782,7 +1804,7 @@ def score_prospect(
     # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
     # doesn't translate to immediate fantasy points).  0.72 means a Round 1 Day 1 TE
     # gets 1.15 × 0.72 = 0.83× vs 1.15× for a Round 1 WR.
-    dc_multiplier = {"TE": 0.72}.get(pos, 1.00)
+    dc_multiplier = {"TE": 0.62}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
