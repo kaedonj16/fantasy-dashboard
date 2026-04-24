@@ -1174,7 +1174,7 @@ POSITION_FANTASY_MULT: Dict[str, float] = {
     "WR": 1.05,
     "RB": 1.00,
     "QB": 0.90,   # QBs are less valued in 1QB dynasty
-    "TE": 0.92,
+    "TE": 0.85,   # TEs face a 2-3 year development delay; lower per-game ceiling vs WRs
 }
 POSITION_FANTASY_MULT_SF: Dict[str, float] = {
     "WR": 1.00,
@@ -1679,9 +1679,12 @@ def calc_translation_adjustment(
         target_share = _safe(latest.get("target_share"), 0.0)
         draft_age = _safe(prospect.get("age"), 0.0)
 
-        # TE shrinkage: de-emphasize risky profiles with weak receiving usage.
-        # Penalties doubled vs original values to preserve effective magnitude now
-        # that the translation adjustment is applied once (post-scaling) instead of twice.
+        # Baseline dynasty development cost: even elite TEs rarely contribute
+        # meaningfully until year 2-3 of their NFL career.  Applied universally
+        # regardless of profile to anchor TE scores below equivalent-capital WRs.
+        adj -= 4.0
+
+        # Profile-based TE shrinkage for weak receiving-usage profiles.
         if rec_yds_pg > 0 and rec_yds_pg < 35:
             adj -= 3.0
         if target_share > 0 and target_share < 0.14:
@@ -1692,7 +1695,7 @@ def calc_translation_adjustment(
             adj -= 2.0
 
     # Keep the adjustment bounded; this is a corrective signal, not the main model.
-    return max(-10.0, min(6.0, adj))
+    return max(-14.0, min(6.0, adj))
 
 
 def score_prospect(
@@ -1775,7 +1778,11 @@ def score_prospect(
     # QBs are NOT discounted here — pick #1 QB correctly scores 100/100.
     # The lower dynasty value of QB capital vs WR/RB capital is captured
     # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
-    dc_multiplier = {"TE": 0.85}.get(pos, 1.00)
+    # TE draft capital is significantly less predictive for dynasty: even a Round 1
+    # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
+    # doesn't translate to immediate fantasy points).  0.72 means a Round 1 Day 1 TE
+    # gets 1.15 × 0.72 = 0.83× vs 1.15× for a Round 1 WR.
+    dc_multiplier = {"TE": 0.72}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
