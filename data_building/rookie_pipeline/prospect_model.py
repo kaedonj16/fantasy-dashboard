@@ -609,22 +609,35 @@ def calc_efficiency_score(
             press_score = _scale(float(press_sr), 55.0, 85.0)
             eff = _clip(eff + (press_score - 50.0) * 0.06)
 
-        # Tprr proxy — lower priority fallback when PFF data absent
-        tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
-        if tprr is not None:
-            tprr_score = _scale(float(tprr), 0.18, 0.42)
-            tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
-            eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
+        # Route target rate from RP (high-confidence tprr replacement)
+        rtr = _eval_metric_value(eval_metrics, "route_target_rate", min_confidence=0.75)
+        if rtr is not None:
+            # route_target_rate is stored as %, convert to tprr scale (18% → 0.18)
+            tprr_equiv = float(rtr) / 100.0
+            rtr_score  = _scale(tprr_equiv, 0.18, 0.42)
+            eff = eff * 0.88 + rtr_score * 0.12
+        else:
+            # Tprr proxy — lower priority fallback when RP data absent
+            tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
+            if tprr is not None:
+                tprr_score = _scale(float(tprr), 0.18, 0.42)
+                tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
+                eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
     elif pos == "RB":
         ypc   = _safe(ls.get("yds_per_carry"), 4.25)
         ms    = _safe(ls.get("market_share_yards"))
         ypr   = _safe(ls.get("yds_per_reception"), 7.0)
         eff   = (
-            _scale(ypc,  3.5,  7.0)  * 0.65 +   # increased: per-carry quality is the key RB efficiency signal
-            _scale(ms,   0.10, 0.45) * 0.15 +   # reduced: market share penalises committee backs unfairly
-            _scale(ypr,  5.0, 12.0)  * 0.20
+            _scale(ypc,  3.5,  7.0)  * 0.60 +
+            _scale(ms,   0.10, 0.45) * 0.15 +
+            _scale(ypr,  5.0, 12.0)  * 0.25   # increased: receiving efficiency matters for dynasty RBs
         )
+        # PFF pass route grade — predicts pass-game role and long-term dynasty value
+        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.70)
+        if route_grade is not None:
+            route_score = _scale(float(route_grade), 55.0, 85.0)
+            eff = _clip(eff + (route_score - 50.0) * 0.08)
 
     elif pos == "QB":
         ypa   = _safe(ls.get("yds_per_attempt"), 7.0)
@@ -1013,7 +1026,8 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
         # Elite: 20+ carries + 4+ targets; average: 12 carries + 2 targets
         rush_util = _scale(carries, 8.0, 22.0)
         recv_util = _scale(rec_pg,  1.0,  5.0)
-        return _clip(rush_util * 0.70 + recv_util * 0.30)
+        # Dynasty: pass-catching usage is more stable and more valued than rush volume
+        return _clip(rush_util * 0.55 + recv_util * 0.45)
 
     elif pos == "QB":
         att_pg = _safe(ls.get("pass_attempts")) / gp
@@ -1797,8 +1811,22 @@ def score_prospect(
 
     # Get position-specific weights (optionally overridden by calibrated weights)
     weights_source = position_weights_override or POSITION_WEIGHTS
-    pos_weights = weights_source.get(pos, POSITION_WEIGHTS["WR"])  # Default to WR weights if position not found
-    
+    pos_weights = dict(weights_source.get(pos, POSITION_WEIGHTS["WR"]))
+
+    # Post-draft: actual pick is certain — increase draft capital weight, spread
+    # the reduction proportionally across all other components so sum stays 1.0.
+    is_actual_pick = (draft_capital or {}).get("is_actual_pick", False)
+    if is_actual_pick:
+        boost = 0.06
+        pos_weights["draft_capital"] = min(0.50, pos_weights["draft_capital"] + boost)
+        other_keys = [k for k in pos_weights if k != "draft_capital"]
+        other_sum  = sum(pos_weights[k] for k in other_keys)
+        target_sum = 1.0 - pos_weights["draft_capital"]
+        if other_sum > 0:
+            ratio = target_sum / other_sum
+            for k in other_keys:
+                pos_weights[k] *= ratio
+
     # Base prospect score with position-specific weights
     prospect_score = (
         production_score      * pos_weights["production"]    +
@@ -1821,17 +1849,6 @@ def score_prospect(
     if late_round_upside > 0:
         upside_bonus = late_round_upside * 0.05  # 5% of upside score as bonus
         prospect_score += upside_bonus
-
-    # Position-specific translation adjustment from historical miss archetypes
-    translation_adjustment = calc_translation_adjustment(
-        prospect=prospect,
-        position=pos,
-        draft_capital=draft_capital,
-        production_score=production_score,
-        efficiency_score=efficiency_score,
-        age_score=age_score,
-    )
-    prospect_score += translation_adjustment
 
     # Apply benchmark boost system for NFL success predictors
     from benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost

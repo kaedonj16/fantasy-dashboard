@@ -127,6 +127,7 @@ class ProspectSeasonStatsSource(RookieSource):
         "success_rate_vs_zone":  ("success_rate_vs_zone",  0.85),
         "contested_catch_rate_rp": ("contested_catch_rate_rp", 0.86),
         "tackle_break_rate": ("tackle_break_rate", 0.80),
+        "route_target_rate": ("route_target_rate", 0.85),
     }
 
     # QB-only metrics — skipped automatically for non-QB positions in fetch_player_season_metrics
@@ -188,6 +189,7 @@ class ProspectSeasonStatsSource(RookieSource):
         "success_rate_vs_zone",
         "contested_catch_rate_rp",
         "tackle_break_rate",
+        "route_target_rate",
     })
 
     def fetch_player_season_metrics(

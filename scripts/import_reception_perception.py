@@ -40,6 +40,12 @@ RP_FILES = {
             "1 Broken Tackle": "tackle_break_rate",
         },
     },
+    "Target Data - 2026 Draft Prospects.csv": {
+        "player_col": "Player",
+        "columns": {
+            "Route Target Rate": "route_target_rate",
+        },
+    },
 }
 
 

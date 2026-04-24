@@ -1862,8 +1862,22 @@ def run_rookie_pipeline(
     """
     Full pipeline: ingest → score → translate → persist to DB.
 
-    Uses the new staged approach with DB saves after each step.
+    Automatically derives calibrated position weights from historical draft
+    classes (2016 → draft_year-1) when at least 3 years of data exist.
+    Caller-supplied position_weights_override takes precedence.
     """
+    if position_weights_override is None:
+        year = draft_year or get_active_rookie_class()
+        calibration_years = list(range(2016, year))
+        if len(calibration_years) >= 3:
+            try:
+                from data_building.rookie_pipeline.historical_calibration import get_calibrated_weights
+                position_weights_override = get_calibrated_weights(draft_years=calibration_years)
+                logger.info("[pipeline] Using calibrated weights from %d historical classes", len(calibration_years))
+            except Exception as exc:
+                logger.warning("[pipeline] Calibration failed, using hardcoded weights: %s", exc)
+                position_weights_override = None
+
     return run_rookie_pipeline_staged(
         draft_year,
         position_weights_override=position_weights_override,
