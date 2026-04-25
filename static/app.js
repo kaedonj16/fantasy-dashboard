@@ -4236,17 +4236,6 @@ function openPlayerModal(playerId, playerName) {
         const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
         const tierColor  = tierColors[pdTier] || '#9ca3af';
 
-        const ht = pd.height_inches;
-        const heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
-        const weightStr = pd.weight_lbs ? pd.weight_lbs + ' lbs' : '—';
-        const fortyStr  = pd.forty_yard ? pd.forty_yard + 's' : '—';
-        const rasStr    = pd.ras_score  ? parseFloat(pd.ras_score).toFixed(1) + '/10' : '—';
-
-        const draftCapLabel = pd.draft_capital_label || (pd.projected_pick ? 'Pick #' + pd.projected_pick : null);
-        const draftStr = draftCapLabel
-          ? draftCapLabel + (pd.num_mocks_used ? '  ·  ' + pd.num_mocks_used + ' mocks' : '')
-          : 'Undrafted / Unknown';
-
         const pdComponents = [
           {label:'Production',  val: pd.production_score,              color:'#10b981'},
           {label:'Efficiency',  val: pd.efficiency_score,              color:'#3b82f6'},
@@ -4277,37 +4266,9 @@ function openPlayerModal(playerId, playerName) {
             <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
             <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
           </div>
-          <div class="rk-hero-row" style="margin-bottom:0;">
-            <div class="rk-hero-stat rk-hero-primary">
-              <div class="rk-hero-label">Prospect Score</div>
-              <div class="rk-hero-val" style="color:var(--accent);">${pdScore.toFixed(1)}</div>
-              <div class="rk-hero-sub">${pd.tier_label || ''}</div>
-            </div>
-            <div class="rk-hero-stat">
-              <div class="rk-hero-label">1QB Value</div>
-              <div class="rk-hero-val">${pd.rookie_value > 0 ? parseFloat(pd.rookie_value).toFixed(1) : '—'}</div>
-              <div class="rk-hero-sub">10-team</div>
-            </div>
-            <div class="rk-hero-stat">
-              <div class="rk-hero-label">SF Value</div>
-              <div class="rk-hero-val">${pd.rookie_sf_value > 0 ? parseFloat(pd.rookie_sf_value).toFixed(1) : '—'}</div>
-              <div class="rk-hero-sub">10-team</div>
-            </div>
-          </div>
-          <div class="rk-info-row" style="margin-top:12px;">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Draft</span>
-            <span style="font-size:13px;font-weight:600;color:var(--text);">${draftStr}</span>
-          </div>
-          <div class="rk-meas-grid">
-            <div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">${heightStr}</div></div>
-            <div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">${weightStr}</div></div>
-            <div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">${fortyStr}</div></div>
-            <div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">${rasStr}</div></div>
-          </div>
-          <div class="rk-section-divider"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
-            <span style="font-size:11px;color:var(--text-muted);">Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
+            <span style="font-size:11px;color:var(--text-muted);">Score: <strong style="color:var(--accent);">${pdScore.toFixed(1)}</strong> · Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
           </div>
           <div class="rk-comp-list">${pdCompsHtml}</div>
           ${pdReasonsHtml}

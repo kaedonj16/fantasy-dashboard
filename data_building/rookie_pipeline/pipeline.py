@@ -622,8 +622,10 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
     """
     Return True if the NFL Draft for draft_year has already occurred.
 
-    Checks the rookie_active_class table's draft_date first; falls back to
-    comparing today against the historically typical draft date (late April).
+    Priority:
+    1. rookie_active_class.draft_date (explicit DB record)
+    2. rookie_prospects table has any draft_confirmed=TRUE rows
+    3. Fallback: today > April 28 of draft_year (typical draft end)
     """
     today = date.today()
 
@@ -640,13 +642,25 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
                 if isinstance(draft_date, str):
                     from datetime import datetime as _dt
                     draft_date = _dt.strptime(draft_date[:10], "%Y-%m-%d").date()
-                return today > draft_date
+                return today >= draft_date
+        except Exception:
+            pass
+
+        # Check if any actual picks are already stored
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM rookie_prospects WHERE draft_class_year = %s AND draft_confirmed = TRUE LIMIT 1",
+                    (draft_year,),
+                )
+                if cur.fetchone():
+                    return True
         except Exception:
             pass
 
     # Fallback: NFL Draft is held in late April (typically April 24–27)
     typical_draft_end = date(draft_year, 4, 28)
-    return today > typical_draft_end
+    return today >= typical_draft_end
 
 
 def fetch_nflverse_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
