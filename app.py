@@ -13774,7 +13774,12 @@ def api_player_news(player_id: str):
         players_index = load_players_index() or {}
         meta = players_index.get(str(player_id)) or {}
         name = meta.get("name") or meta.get("full_name") or ""
-        headshot = meta.get("espnHeadshot") or ""
+        espn_id = str(meta.get("espnID") or "").strip()
+        # Build headshot URL from espnID (players_index has espnID, not espnHeadshot)
+        headshot = (
+            meta.get("espnHeadshot")
+            or (f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png" if espn_id else "")
+        )
 
         items = get_player_news(player_name=name, espn_headshot=headshot, limit=4)
         return jsonify({"player_id": player_id, "name": name, "news": items})

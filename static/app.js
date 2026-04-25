@@ -4254,13 +4254,6 @@ function openPlayerModal(playerId, playerName) {
           </div>`;
         }).join('');
 
-        const pdReasons = (pd.key_reasons || '').split('\n').filter(l => l.trim());
-        const pdReasonsHtml = pdReasons.length > 0
-          ? `<div class="rk-section-divider"></div>
-             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Scouting Notes</div>
-             <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">${pdReasons.map(l => `<div style="padding:2px 0;">${l}</div>`).join('')}</div>`
-          : '';
-
         pdColHTML = `
           <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
             <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
@@ -4271,7 +4264,6 @@ function openPlayerModal(playerId, playerName) {
             <span style="font-size:11px;color:var(--text-muted);">Score: <strong style="color:var(--accent);">${pdScore.toFixed(1)}</strong> · Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
           </div>
           <div class="rk-comp-list">${pdCompsHtml}</div>
-          ${pdReasonsHtml}
           <div id="pmProspectComparables" style="margin-top:4px;">
             <div class="rk-section-divider"></div>
             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>
