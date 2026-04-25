@@ -56,6 +56,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     # Extract values with defaults
                     value_1qb = row.get("value")
                     value_sf = row.get("sf_value")
+                    redraft_value_1qb = row.get("redraft_value_1qb")
+                    redraft_value_sf  = row.get("redraft_value_sf")
                     position = row.get("position") or row.get("pos")
                     pos_rank = row.get("pos_rank")
                     pos_rank_label = row.get("pos_rank_label")
@@ -65,8 +67,6 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     rank_change_7d = row.get("rank_change_7d")
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
 
-                    # Insert or update — one row per player, keyed by player_id only.
-                    # last_updated tracks when the value was last refreshed.
                     cur.execute(
                         """
                         INSERT INTO player_values (
@@ -74,6 +74,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             last_updated,
                             value_1qb,
                             value_sf,
+                            redraft_value_1qb,
+                            redraft_value_sf,
                             position,
                             pos_rank,
                             pos_rank_label,
@@ -82,12 +84,14 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             years_exp,
                             rank_change_7d,
                             pos_rank_change_7d
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
                             last_updated = EXCLUDED.last_updated,
                             value_1qb = EXCLUDED.value_1qb,
                             value_sf = EXCLUDED.value_sf,
+                            redraft_value_1qb = COALESCE(EXCLUDED.redraft_value_1qb, player_values.redraft_value_1qb),
+                            redraft_value_sf  = COALESCE(EXCLUDED.redraft_value_sf,  player_values.redraft_value_sf),
                             position = EXCLUDED.position,
                             pos_rank = EXCLUDED.pos_rank,
                             pos_rank_label = EXCLUDED.pos_rank_label,
@@ -102,6 +106,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             snapshot_date,
                             value_1qb,
                             value_sf,
+                            redraft_value_1qb,
+                            redraft_value_sf,
                             position,
                             pos_rank,
                             pos_rank_label,
