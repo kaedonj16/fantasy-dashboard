@@ -126,6 +126,22 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       No prospects match your filters
     </div>
 
+    <!-- Pagination -->
+    <div id="rkPagination" class="rk-pagination" style="display:none;">
+      <div class="rk-pagination-info">
+        <span id="rkPaginationText">Showing 1-20 of 100 prospects</span>
+      </div>
+      <div class="rk-pagination-controls">
+        <button id="rkPrevBtn" class="rk-pagination-btn" onclick="rkLoadPage('prev')" disabled>
+          <i class="fa-solid fa-chevron-left"></i> Previous
+        </button>
+        <div id="rkPageNumbers" class="rk-page-numbers"></div>
+        <button id="rkNextBtn" class="rk-pagination-btn" onclick="rkLoadPage('next')" disabled>
+          Next <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -527,6 +543,70 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     .rk-draft, #rkHeader span:nth-child(5) { display: none; }
     .rk-draft { font-size: 10px; }
   }
+
+  /* Pagination Styles */
+  .rk-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+  .rk-pagination-info {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .rk-pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .rk-pagination-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rk-pagination-btn:hover:not(:disabled) {
+    background: var(--bg-alt);
+    border-color: var(--accent-color);
+  }
+  .rk-pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .rk-page-numbers {
+    display: flex;
+    gap: 4px;
+  }
+  .rk-page-number {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    min-width: 28px;
+    text-align: center;
+  }
+  .rk-page-number:hover {
+    background: var(--bg-alt);
+    border-color: var(--accent-color);
+  }
+  .rk-page-number.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+  }
 </style>
 
 <script>
@@ -537,6 +617,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   var rkSearch    = '';
   var rkLoaded    = false;
   var rkDraftYear = null;
+  var rkCurrentPage = 1;
+  var rkPaginationData = null;
 
   // Size-specific value keys
   function rkGetValue(r) {
@@ -548,6 +630,21 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       key = rkSize === 10 ? 'rookie_value' : 'rookie_value_' + rkSize;
       return parseFloat(r[key] || r['rookie_value'] || 0);
     }
+  }
+
+  // Filter function - determines if a prospect should be shown based on current filters
+  function rkShouldShow(r) {
+    // Position filter
+    if (rkPosFilters.size > 0) {
+      if (!rkPosFilters.has((r.position||'').toUpperCase())) {
+        return false;
+      }
+    }
+    
+    // Search filter (handled separately in search logic)
+    // This function is for position and other filters only
+    
+    return true;
   }
 
   // Settings panel toggle
@@ -659,24 +756,22 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       });
     }
 
-    // Search
+    // Search - search across ALL prospects, not just current page
     if (rkSearch.length > 0) {
       var q = rkSearch;
-      players = players
+      var allFilteredPlayers = rkAllPlayers
+        .filter(rkShouldShow)  // Apply position and other filters first
         .map(function(r) { return {r:r, s: rkFuzzy(r.name, q)}; })
         .filter(function(x) { return x.s > 0; })
         .sort(function(a,b) { return b.s - a.s || rkGetValue(b.r) - rkGetValue(a.r); })
         .map(function(x) { return x.r; });
+      
+      // Reset to page 1 when searching and show all search results
+      rkCurrentPage = 1;
+      players = allFilteredPlayers.slice(0, 20); // Show first 20 of search results
     } else {
-      players.sort(function(a, b) {
-        if (sortBy === 'value')  return rkGetValue(b) - rkGetValue(a);
-        if (sortBy === 'score')  return (b.prospect_score||0) - (a.prospect_score||0);
-        if (sortBy === 'age')    return (a.age||99) - (b.age||99);
-        if (sortBy === 'pick')   return (a.projected_pick||999) - (b.projected_pick||999);
-        // Default rank: in SF mode use SF value so QBs are ranked correctly
-        if (rkLeague === 'sf')   return rkGetValue(b) - rkGetValue(a);
-        return (a.overall_rank||999) - (b.overall_rank||999);
-      });
+      // No search - show paginated results
+      players = players;
     }
 
     var list   = document.getElementById('rkList');
@@ -695,7 +790,6 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     empty.style.display  = 'none';
     header.style.display = 'grid';
     count.style.display  = 'block';
-    count.textContent    = players.length + ' prospect' + (players.length !== 1 ? 's' : '');
 
     list.innerHTML = '';
     players.forEach(function(r, idx) {
@@ -947,16 +1041,20 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
       document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Prospect Rankings';
 
-      return fetch('/api/prospects/rankings?year=' + rkDraftYear);
+      return fetch('/api/prospects/rankings?year=' + rkDraftYear + '&page=' + rkCurrentPage);
     })
     .then(function(r){ return r.json(); })
     .then(function(data) {
       document.getElementById('rkLoading').style.display = 'none';
 
+      // Store pagination data
+      rkPaginationData = data.pagination;
+      
       // Store size-specific value fields returned from API alongside base fields
       rkAllPlayers = (data.rankings || []);
       rkLoaded = true;
       rkRender();
+      rkUpdatePaginationControls();
     })
     .catch(function(err) {
       console.error('[rookies] Load error:', err);
@@ -973,6 +1071,117 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
       '<button onclick="rkLinkSleeper(\\'' + playerId + '\\')" style="font-size:12px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
     '</div>';
+  }
+
+  // Pagination functions
+  function rkLoadPage(page) {
+    if (typeof page === 'string') {
+      if (page === 'prev' && rkCurrentPage > 1) {
+        page = rkCurrentPage - 1;
+      } else if (page === 'next' && rkPaginationData && rkPaginationData.has_next) {
+        page = rkCurrentPage + 1;
+      } else {
+        return;
+      }
+    }
+    
+    rkCurrentPage = page;
+    document.getElementById('rkLoading').style.display = '';
+    document.getElementById('rkList').style.display = 'none';
+    document.getElementById('rkPagination').style.display = 'none';
+    
+    // If searching, paginate through search results instead of API call
+    if (rkSearch.length > 0 && window.rkSearchResults) {
+      var searchResults = window.rkSearchResults;
+      var totalSearchPlayers = searchResults.length;
+      var totalPages = Math.ceil(totalSearchPlayers / 20);
+      
+      document.getElementById('rkLoading').style.display = 'none';
+      document.getElementById('rkList').style.display = '';
+      
+      // Calculate pagination for search results
+      var start = (page - 1) * 20;
+      var end = Math.min(page * 20, totalSearchPlayers);
+      var paginatedResults = searchResults.slice(start, end);
+      
+      // Update pagination info for search results
+      rkPaginationData = {
+        current_page: page,
+        per_page: 20,
+        total_players: totalSearchPlayers,
+        total_pages: totalPages,
+        has_next: page < totalPages,
+        has_prev: page > 1
+      };
+      
+      rkAllPlayers = paginatedResults;
+      window.rkSearchPaginatedResults = paginatedResults; // Store for pagination
+      rkUpdatePaginationControls();
+      rkRender();
+    } else {
+      // Normal API call for non-search pagination
+      fetch('/api/prospects/rankings?year=' + rkDraftYear + '&page=' + rkCurrentPage)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          rkPaginationData = data.pagination;
+          rkAllPlayers = data.rankings || [];
+          document.getElementById('rkLoading').style.display = 'none';
+          document.getElementById('rkList').style.display = '';
+          rkUpdatePaginationControls();
+          rkRender();
+        })
+        .catch(function(err) {
+          console.error('[rookies] Page load error:', err);
+          document.getElementById('rkLoading').innerHTML = '<div style="color:#ef4444;">Failed to load page. Please refresh.</div>';
+        });
+    }
+  }
+
+  function rkUpdatePaginationControls() {
+    var prevBtn = document.getElementById('rkPrevBtn');
+    var nextBtn = document.getElementById('rkNextBtn');
+    var pageNumbers = document.getElementById('rkPageNumbers');
+    var paginationText = document.getElementById('rkPaginationText');
+    
+    // Hide pagination during search OR show pagination for search results if paginated
+    if (rkSearch.length > 0 && !window.rkSearchPaginatedResults) {
+      document.getElementById('rkPagination').style.display = 'none';
+      return;
+    }
+    
+    if (!rkPaginationData) return;
+    
+    // Update button states
+    prevBtn.disabled = !rkPaginationData.has_prev;
+    nextBtn.disabled = !rkPaginationData.has_next;
+    
+    // Update text
+    var start = (rkPaginationData.current_page - 1) * rkPaginationData.per_page + 1;
+    var end = Math.min(rkPaginationData.current_page * rkPaginationData.per_page, rkPaginationData.total_players);
+    paginationText.textContent = 'Showing ' + start + '-' + end + ' of ' + rkPaginationData.total_players + ' prospects';
+    
+    // Update page numbers
+    pageNumbers.innerHTML = '';
+    var maxPages = 5;
+    var startPage = Math.max(1, rkPaginationData.current_page - Math.floor(maxPages / 2));
+    var endPage = Math.min(rkPaginationData.total_pages, startPage + maxPages - 1);
+    
+    if (endPage - startPage < maxPages - 1) {
+      startPage = Math.max(1, endPage - maxPages + 1);
+    }
+    
+    for (var i = startPage; i <= endPage; i++) {
+      var pageBtn = document.createElement('button');
+      pageBtn.className = 'rk-page-number' + (i === rkPaginationData.current_page ? ' active' : '');
+      pageBtn.textContent = i;
+      pageBtn.onclick = function() { rkLoadPage(i); };
+      pageNumbers.appendChild(pageBtn);
+    }
+    
+    document.getElementById('rkPagination').style.display = 'flex';
   }
 
   function rkLinkSleeper(playerId) {

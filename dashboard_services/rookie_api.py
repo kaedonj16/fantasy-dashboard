@@ -75,12 +75,23 @@ def rankings():
         if pos:
             rows = [r for r in rows if (r.get("position") or "").upper() == pos]
 
-        # Limit to top 60
-        rows = rows[:60]
+        # Pagination
+        page = max(int(request.args.get("page") or 1), 1)
+        per_page = 20  # Fixed at 20 per page to match trade intel
+        offset = (page - 1) * per_page
+        
+        # Get total count for pagination
+        total_players = len(rows)
+        
+        # Apply pagination
+        paginated_rows = rows[offset:offset + per_page]
+        
+        # Calculate pagination info
+        total_pages = (total_players + per_page - 1) // per_page
 
         # Build response list with value field chosen by league settings
         result = []
-        for r in rows:
+        for r in paginated_rows:
             d = _row_to_dict(r)
 
             # Choose value based on settings
@@ -108,7 +119,18 @@ def rankings():
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
 
-        return jsonify({"draft_class_year": year, "count": len(result), "rankings": result})
+        return jsonify({
+            "draft_class_year": year, 
+            "rankings": result,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_players": total_players,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        })
 
     except Exception as exc:
         log.exception("[rookie_api] /rankings error")

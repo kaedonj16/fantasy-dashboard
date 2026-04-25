@@ -676,7 +676,7 @@
     "name": "Noah Cain",
     "team": "CIN",
     "position": "RB",
-    "age": 25.3,
+    "age": 25.4,
     "usage": {}
   },
   {
@@ -804,7 +804,7 @@
     "name": "Ladd McConkey",
     "team": "LAC",
     "position": "WR",
-    "age": 24.4,
+    "age": 24.5,
     "usage": {}
   },
   {
@@ -1300,7 +1300,7 @@
     "name": "Drake Maye",
     "team": "NE",
     "position": "QB",
-    "age": 23.6,
+    "age": 23.7,
     "usage": {}
   },
   {
@@ -1420,7 +1420,7 @@
     "name": "Cam Miller",
     "team": "MIA",
     "position": "QB",
-    "age": 24.8,
+    "age": 24.9,
     "usage": {}
   },
   {
@@ -1908,7 +1908,7 @@
     "name": "Shaun Beyer",
     "team": "GB",
     "position": "TE",
-    "age": 29.4,
+    "age": 29.5,
     "usage": {}
   },
   {
@@ -1924,7 +1924,7 @@
     "name": "Tulu Griffin",
     "team": "GB",
     "position": "WR",
-    "age": 25.2,
+    "age": 25.3,
     "usage": {}
   },
   {
@@ -2132,7 +2132,7 @@
     "name": "Alvin Kamara",
     "team": "NO",
     "position": "RB",
-    "age": 30.7,
+    "age": 30.8,
     "usage": {}
   },
   {
@@ -2436,7 +2436,7 @@
     "name": "Tanner Gentry",
     "team": "BUF",
     "position": "WR",
-    "age": 31.3,
+    "age": 31.4,
     "usage": {}
   },
   {
@@ -2468,7 +2468,7 @@
     "name": "Easop Winston Jr.",
     "team": "NYJ",
     "position": "WR",
-    "age": 29.3,
+    "age": 29.4,
     "usage": {}
   },
   {
@@ -2564,7 +2564,7 @@
     "name": "Chris Blair",
     "team": "ATL",
     "position": "WR",
-    "age": 28.5,
+    "age": 28.6,
     "usage": {}
   },
   {
@@ -2820,7 +2820,7 @@
     "name": "Trevon Bradford",
     "team": "LAC",
     "position": "WR",
-    "age": 28.3,
+    "age": 28.4,
     "usage": {}
   },
   {
@@ -3708,7 +3708,7 @@
     "name": "Amari Cooper",
     "team": "LV",
     "position": "WR",
-    "age": 31.8,
+    "age": 31.9,
     "usage": {}
   },
   {
@@ -4012,7 +4012,7 @@
     "name": "Marcus Simms",
     "team": "SEA",
     "position": "WR",
-    "age": 28.3,
+    "age": 28.4,
     "usage": {}
   },
   {
@@ -4636,7 +4636,7 @@
     "name": "Ty James",
     "team": "MIN",
     "position": "WR",
-    "age": 25.0,
+    "age": 25.1,
     "usage": {}
   },
   {
@@ -5252,7 +5252,7 @@
     "name": "Daewood Davis",
     "team": "CAR",
     "position": "WR",
-    "age": 27.2,
+    "age": 27.3,
     "usage": {}
   },
   {
@@ -5444,7 +5444,7 @@
     "name": "Mason Fairchild",
     "team": "NO",
     "position": "TE",
-    "age": 24.6,
+    "age": 24.7,
     "usage": {}
   },
   {
@@ -5596,7 +5596,7 @@
     "name": "Case Cookus",
     "team": "LAR",
     "position": "QB",
-    "age": 30.5,
+    "age": 30.6,
     "usage": {}
   },
   {
@@ -5692,7 +5692,7 @@
     "name": "Tylan Wallace",
     "team": "BAL",
     "position": "WR",
-    "age": 26.9,
+    "age": 27.0,
     "usage": {}
   },
   {
@@ -5780,7 +5780,7 @@
     "name": "Geor'Quarius Spivey",
     "team": "KC",
     "position": "TE",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {}
   },
   {
@@ -6532,7 +6532,7 @@
     "name": "Tank Bigsby",
     "team": "PHI",
     "position": "RB",
-    "age": 23.6,
+    "age": 23.7,
     "usage": {}
   },
   {
@@ -6676,7 +6676,7 @@
     "name": "Desmond Ridder",
     "team": "GB",
     "position": "QB",
-    "age": 26.6,
+    "age": 26.7,
     "usage": {}
   },
   {
@@ -6900,7 +6900,7 @@
     "name": "Joe Mixon",
     "team": "HOU",
     "position": "RB",
-    "age": 29.7,
+    "age": 29.8,
     "usage": {}
   },
   {
@@ -7204,7 +7204,7 @@
     "name": "Dresser Winn",
     "team": "LAR",
     "position": "QB",
-    "age": 27.4,
+    "age": 27.5,
     "usage": {}
   },
   {
@@ -7588,7 +7588,7 @@
     "name": "Trevor Lawrence",
     "team": "JAX",
     "position": "QB",
-    "age": 26.5,
+    "age": 26.6,
     "usage": {}
   },
   {
@@ -7684,7 +7684,7 @@
     "name": "Wayne Ruby",
     "team": "JAX",
     "position": "WR",
-    "age": 25.8,
+    "age": 25.9,
     "usage": {}
   },
   {
@@ -8196,7 +8196,7 @@
     "name": "Jaxson Dart",
     "team": "NYG",
     "position": "QB",
-    "age": 22.9,
+    "age": 23.0,
     "usage": {}
   },
   {
@@ -8716,7 +8716,7 @@
     "name": "Bryant Koback",
     "team": "SEA",
     "position": "RB",
-    "age": 28.0,
+    "age": 28.1,
     "usage": {}
   },
   {
@@ -8820,7 +8820,7 @@
     "name": "Malik Cunningham",
     "team": "DET",
     "position": "WR",
-    "age": 27.5,
+    "age": 27.6,
     "usage": {}
   },
   {
@@ -9316,7 +9316,7 @@
     "name": "Kye Robichaux",
     "team": "DET",
     "position": "RB",
-    "age": 23.5,
+    "age": 23.6,
     "usage": {}
   },
   {
@@ -9564,7 +9564,7 @@
     "name": "Tyreek Hill",
     "team": "MIA",
     "position": "WR",
-    "age": 32.1,
+    "age": 32.2,
     "usage": {}
   },
   {
@@ -9732,7 +9732,7 @@
     "name": "Zach Pascal",
     "team": "NYG",
     "position": "WR",
-    "age": 31.3,
+    "age": 31.4,
     "usage": {}
   },
   {
@@ -9788,7 +9788,7 @@
     "name": "James Morgan",
     "team": "ARI",
     "position": "QB",
-    "age": 29.1,
+    "age": 29.2,
     "usage": {}
   },
   {
@@ -9796,7 +9796,7 @@
     "name": "Chris Myarick",
     "team": "MIA",
     "position": "TE",
-    "age": 30.5,
+    "age": 30.6,
     "usage": {}
   },
   {
@@ -9828,7 +9828,7 @@
     "name": "Kazmeir Allen",
     "team": "WSH",
     "position": "RB",
-    "age": 26.1,
+    "age": 26.2,
     "usage": {}
   },
   {
@@ -9884,7 +9884,7 @@
     "name": "Luke Benson",
     "team": "LAC",
     "position": "TE",
-    "age": 25.0,
+    "age": 25.1,
     "usage": {}
   },
   {
@@ -10356,7 +10356,7 @@
     "name": "Braxton Berrios",
     "team": "HOU",
     "position": "WR",
-    "age": 30.5,
+    "age": 30.6,
     "usage": {}
   },
   {
@@ -10404,7 +10404,7 @@
     "name": "Ricky Person Jr.",
     "team": "SEA",
     "position": "RB",
-    "age": 26.4,
+    "age": 26.5,
     "usage": {}
   },
   {
@@ -10556,7 +10556,7 @@
     "name": "Jalen Wayne",
     "team": "GB",
     "position": "WR",
-    "age": 26.9,
+    "age": 27.0,
     "usage": {}
   },
   {
@@ -10676,7 +10676,7 @@
     "name": "Oscar Cardenas",
     "team": "ARI",
     "position": "TE",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {}
   },
   {
@@ -10788,7 +10788,7 @@
     "name": "Braxton Westfield",
     "team": "IND",
     "position": "WR",
-    "age": 28.0,
+    "age": 28.1,
     "usage": {}
   },
   {
@@ -10860,7 +10860,7 @@
     "name": "Bryce Young",
     "team": "CAR",
     "position": "QB",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {}
   },
   {
@@ -11444,7 +11444,7 @@
     "name": "Jalin Conyers",
     "team": "MIA",
     "position": "TE",
-    "age": 24.7,
+    "age": 24.8,
     "usage": {}
   },
   {
@@ -11508,7 +11508,7 @@
     "name": "Anthony Gould",
     "team": "IND",
     "position": "WR",
-    "age": 25.0,
+    "age": 25.1,
     "usage": {}
   },
   {
@@ -11644,7 +11644,7 @@
     "name": "Tahj Brooks",
     "team": "CIN",
     "position": "RB",
-    "age": 23.9,
+    "age": 24.0,
     "usage": {}
   },
   {
@@ -11884,7 +11884,7 @@
     "name": "Jack Bech",
     "team": "LV",
     "position": "WR",
-    "age": 23.3,
+    "age": 23.4,
     "usage": {}
   },
   {
@@ -13716,7 +13716,7 @@
     "name": "Damien Alford",
     "team": "NO",
     "position": "WR",
-    "age": 25.0,
+    "age": 25.1,
     "usage": {}
   }
 ]
