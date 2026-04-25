@@ -3384,6 +3384,15 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     }
 
     # --- Waiver Recommendations: gather candidates ---
+    # Rookies are only waiver-eligible after the fantasy rookie draft is complete
+    _drafts = ctx.get("drafts") or []
+    _rookie_draft_done = any(
+        isinstance(d, dict)
+        and str(d.get("type", "")).lower() == "linear"
+        and str(d.get("season", "")) == str(season)
+        and str(d.get("status", "")).lower() == "complete"
+        for d in _drafts
+    )
     waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -3394,7 +3403,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-        if row.get("is_rookie"):
+        if row.get("is_rookie") and not _rookie_draft_done:
             continue
         try:
             val = float(row.get("value") or 0.0)
