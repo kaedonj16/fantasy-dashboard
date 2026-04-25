@@ -35,10 +35,11 @@ from data_building.rookie_pipeline.pipeline import (
     build_consensus_from_db_entries,
     upsert_mock_consensus,
     load_prospects_from_db,
+    upsert_rankings,
     get_active_rookie_class,
 )
 from data_building.rookie_pipeline.ml_model import score_all_prospects_ml as score_all_prospects
-from data_building.rookie_pipeline.rookie_db_storage import save_rankings_to_db
+from data_building.rookie_pipeline.value_translation import translate_all
 
 
 def _fetch_picks(draft_year: int, from_json: str | None) -> list:
@@ -107,15 +108,17 @@ def main() -> None:
     print(f"[seed_picks] Loaded {len(prospects)} prospects from DB")
 
     scored = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
-    print(f"[seed_picks] Scored {len(scored)} prospects")
+    values = translate_all(scored, prospects, consensus_map)
+    print(f"[seed_picks] Scored {len(scored)} prospects, translated {len(values)} values")
 
     # 4. Save updated rankings
     print("\n[seed_picks] ── Stage 4: Save rankings ──")
     with get_conn() as conn:
-        save_rankings_to_db(scored, draft_year, conn)
+        n_saved = upsert_rankings(scored, values, conn)
         conn.commit()
+    print(f"[seed_picks] Saved {n_saved} ranking rows")
 
-    # 5. Bust the in-memory cache so the API reflects new scores
+    # 5. Bust the in-memory cache so the API reflects new scores immediately
     try:
         from dashboard_services.rookie_api import _cache as _rookie_cache
         _rookie_cache.pop(draft_year, None)
