@@ -3394,7 +3394,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-        if row.get("is_rookie") and not (row.get("team") and row.get("team") != "FA"):
+        if row.get("is_rookie"):
             continue
         try:
             val = float(row.get("value") or 0.0)
