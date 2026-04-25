@@ -790,7 +790,11 @@ window.initTradePage = function initTradePage(root = document) {
             openProspectModal(p.id, p.name || "Unknown");
           }
         } else {
-          openPlayerModal(p.id, p.name || "Unknown");
+          if (typeof openPlayerModal === 'function') {
+            openPlayerModal(p.id, p.name || "Unknown");
+          } else {
+            console.error('openPlayerModal function not found');
+          }
         }
       };
     }
@@ -1414,7 +1418,11 @@ window.initTradePage = function initTradePage(root = document) {
               openProspectModal(p.id, p.name || 'Unknown');
             }
           } else {
-            openPlayerModal(p.id, p.name || 'Unknown');
+            if (typeof openPlayerModal === 'function') {
+              openPlayerModal(p.id, p.name || 'Unknown');
+            } else {
+              console.error('openPlayerModal function not found');
+            }
           }
         };
       }
@@ -4128,10 +4136,15 @@ function openPlayerModal(playerId, playerName) {
       const yearsExp = data.stats?.years_exp;
       const pid = String(data.player_id || playerId);
 
+      // Check if player has no game logs (indicating a rookie without NFL stats)
+      const hasGameLogs = data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0;
+      const isRookieWithoutGameLogs = !hasGameLogs && data.prospect_data && data.prospect_data.prospect_score != null;
+
       if (isElite(pid)) {
         badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
-      if (yearsExp != null && yearsExp === 0) {
+      // Show rookie badge for both years_exp === 0 AND players with no game logs (rookies without NFL stats)
+      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs) {
         badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isProspect(pid)) {
@@ -4225,7 +4238,6 @@ function openPlayerModal(playerId, playerName) {
       `;
 
       // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
-      const hasGameLogs = data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0;
       const pd = data.prospect_data;
       const isRookieWithProspectData = !hasGameLogs && pd && pd.prospect_score != null;
       let pdColHTML = '';
