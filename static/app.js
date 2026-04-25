@@ -4224,9 +4224,10 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
-      // ── Prospect Profile (rookies with linked prospect data) ─────────────
+      // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
+      const hasGameLogs = data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0;
       const pd = data.prospect_data;
-      const isRookieWithProspectData = (yearsExp === 0 || yearsExp === null) && pd && pd.prospect_score != null;
+      const isRookieWithProspectData = !hasGameLogs && pd && pd.prospect_score != null;
       let pdColHTML = '';
       if (isRookieWithProspectData) {
         const pdScore = parseFloat(pd.prospect_score || 0);
@@ -4321,7 +4322,7 @@ function openPlayerModal(playerId, playerName) {
       }
 
       // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
-      const hasMetrics = yearsExp !== 0 && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      const hasMetrics = hasGameLogs && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       if (hasMetrics || isRookieWithProspectData || hasChart) {

@@ -11493,10 +11493,10 @@ def api_player_details(player_id: str):
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
 
-        # For rookies (years_exp == 0), try to attach prospect data via sleeper_id lookup
+        # Try to attach prospect data — use game_logs to detect rookies rather than years_exp
         prospect_data = None
-        years_exp = player_meta.get("years_exp")
-        if years_exp == 0:
+        has_game_logs = bool(game_logs_by_year)
+        if not has_game_logs:
             try:
                 import re as _re
                 from dashboard_services.rookie_api import _cache as _rookie_cache
