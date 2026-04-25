@@ -7691,15 +7691,13 @@ def page_players(platform: str, season: int, league_id: str):
         let players = prAllPlayers.slice();
 
         // Position filter (multi-select)
+        const isDrafted = p => p.is_rookie && p.team && p.team !== 'FA';
         if (prPosFilters.has('ROOKIE')) {
-          // Rookie filter: show only rookies
           players = players.filter(p => p.is_rookie);
         } else if (prPosFilters.size > 0) {
-          // Specific position filter: exclude rookies unless they match the position
-          players = players.filter(p => !p.is_rookie && prPosFilters.has(p.position));
+          players = players.filter(p => prPosFilters.has(p.position) && (!p.is_rookie || isDrafted(p)));
         } else {
-          // No filter / ALL: exclude rookies from the main ranked list
-          players = players.filter(p => !p.is_rookie);
+          players = players.filter(p => !p.is_rookie || isDrafted(p));
         }
 
         // Search filter — fuzzy match, sort by score when query present
