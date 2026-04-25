@@ -10314,7 +10314,10 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Append active-class rookie prospects so they appear in search / trade calc
+    # Merge active-class rookie prospects into the player list.
+    # If a prospect already exists in the model table (drafted + promoted via Sleeper),
+    # mark that entry as is_rookie and patch in rookie values rather than adding a duplicate.
+    # Only truly unmatched prospects get appended as standalone rookie entries.
     try:
         from data_building.rookie_pipeline.pipeline import (
             get_rookie_rankings_from_db,
@@ -10322,12 +10325,21 @@ def api_league_players():
         )
         from utils.utils import normalize_name as _nn
         draft_year = get_active_rookie_class()
+
+        # Build a normalized-name → index map for the model table
+        name_to_idx: dict = {}
+        for i, p in enumerate(model_value_table):
+            norm = _nn(p.get("name") or "")
+            if norm:
+                name_to_idx[norm] = i
+
         for r in get_rookie_rankings_from_db(draft_year):
             name = r.get("name") or ""
-            model_value_table.append({
+            norm = _nn(name)
+            rookie_entry = {
                 "id": r.get("player_id") or f"rookie_{name}",
                 "name": name,
-                "team": r.get("team") or "FA",
+                "team": r.get("actual_nfl_team") or r.get("team") or "FA",
                 "position": r.get("position") or "UNK",
                 "age": r.get("age"),
                 "value":       float(r.get("rookie_value")       or 0),
@@ -10340,9 +10352,27 @@ def api_league_players():
                 "sf_value_14": float(r.get("rookie_sf_value_14") or r.get("rookie_sf_value") or 0),
                 "pos_rank": None, "pos_rank_label": None,
                 "sf_pos_rank": None, "sf_pos_rank_label": None,
-                "search_name": _nn(name) if name else "",
+                "search_name": norm,
                 "is_rookie": True,
-            })
+            }
+
+            if norm and norm in name_to_idx:
+                # Player already in model table (drafted + linked to Sleeper).
+                # Mark as rookie and back-fill rookie values so they appear in
+                # the ROOKIE tab with correct values; don't add a second entry.
+                existing = model_value_table[name_to_idx[norm]]
+                existing["is_rookie"] = True
+                existing.setdefault("value",       rookie_entry["value"])
+                existing.setdefault("sf_value",    rookie_entry["sf_value"])
+                existing.setdefault("value_8",     rookie_entry["value_8"])
+                existing.setdefault("value_12",    rookie_entry["value_12"])
+                existing.setdefault("value_14",    rookie_entry["value_14"])
+                existing.setdefault("sf_value_8",  rookie_entry["sf_value_8"])
+                existing.setdefault("sf_value_12", rookie_entry["sf_value_12"])
+                existing.setdefault("sf_value_14", rookie_entry["sf_value_14"])
+            else:
+                model_value_table.append(rookie_entry)
+
     except Exception as _e:
         print(f"[api/league-players] rookies skipped: {_e}")
 
