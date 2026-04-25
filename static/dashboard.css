@@ -11996,18 +11996,43 @@ img, svg, canvas {
   margin-top: 2px;
 }
 
-.adp-value {
-  color: #4ade80;
-  font-weight: 700;
-}
+.adp-value   { color: #4ade80; font-weight: 700; }
+.adp-reach   { color: #f87171; font-weight: 700; }
+.adp-neutral { color: var(--text-muted); }
+.adp-wait    { color: #f59e0b; font-style: italic; }
 
-.adp-reach {
-  color: #f87171;
-  font-weight: 700;
-}
-
-.adp-neutral {
+.analytics-pick-bpa {
+  font-size: 10px;
   color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.bpa-name {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.draft-need-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #1e3a5f;
+  color: #93c5fd;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.draft-adp-banner {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border-color, #334155);
+}
+
+.draft-adp-banner.draft-adp-none {
+  color: #f87171;
 }
 
 @media (max-width: 600px) {

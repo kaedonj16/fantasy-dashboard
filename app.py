@@ -6250,44 +6250,58 @@ def build_teams_body(ctx: dict) -> str:
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
-            var html = '<div class="analytics-draft-grid">';
+            var adpBanner = data.adp_source === 'fantasycalc'
+              ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on need, availability &amp; ADP</div>'
+              : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after draft</div>';
+            var html = adpBanner + '<div class="analytics-draft-grid">';
             teams.forEach(function(t) {{
               var gcls = 'dg-' + t.grade.replace('+', 'plus');
-              var sign = t.total_value_diff >= 0 ? '+' : '';
               html += '<div class="analytics-draft-team">' +
                 '<div class="analytics-draft-header">' +
                   '<span class="analytics-draft-name">' + t.team_name + '</span>' +
                   '<span class="analytics-draft-grade ' + gcls + '">' + t.grade + '</span>' +
                 '</div>' +
-                '<div class="analytics-draft-meta">' + sign + t.total_value_diff + ' total value</div>' +
                 '<div class="analytics-draft-picks">';
               t.picks.forEach(function(p) {{
                 var pgcls = 'dg-' + p.grade.replace('+', 'plus');
-                var psign = p.value_diff >= 0 ? '+' : '';
-                // ADP pick slot — format as round.pick (e.g. pick 14 in a 10-team league = 2.04)
-                var adpSubline = '';
+
+                // ADP comparison line
+                var adpLine = '';
                 if (p.adp_rank != null) {{
-                  var adpDiff = p.adp_diff;
-                  var adpDiffHtml = adpDiff > 0
-                    ? ' <span class="adp-value">+' + adpDiff + ' value</span>'
-                    : adpDiff < 0
-                      ? ' <span class="adp-reach">' + adpDiff + ' reach</span>'
-                      : ' <span class="adp-neutral">on ADP</span>';
-                  var posRankStr = (p.pos_rank != null && p.pos_for_rank)
-                    ? ' · ' + p.pos_for_rank + p.pos_rank : '';
-                  adpSubline = '<div class="analytics-pick-adp-line">ADP ' + p.adp_rank + posRankStr + adpDiffHtml + '</div>';
+                  var diff = p.adp_diff;
+                  var diffHtml = diff > 1
+                    ? '<span class="adp-value">+' + diff + ' value</span>'
+                    : diff < -1
+                      ? '<span class="adp-reach">' + diff + ' reach</span>'
+                      : '<span class="adp-neutral">on ADP</span>';
+                  var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
+                  var waitTag = p.could_wait ? ' <span class="adp-wait">could\'ve waited</span>' : '';
+                  adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
+
+                // BPA line — top available players with better ADP
+                var bpaLine = '';
+                if (p.bpa && p.bpa.length) {{
+                  var bpaNames = p.bpa.map(function(b) {{
+                    return '<span class="bpa-name pos-' + b.position.toLowerCase() + '">' +
+                      b.name.split(' ').slice(-1)[0] + ' (' + b.position + b.adp_rank + ')</span>';
+                  }}).join(' ');
+                  bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
+                }}
+
+                var needBadge = p.need ? ' <span class="draft-need-badge">Need</span>' : '';
+
                 html += '<div class="analytics-pick-row">' +
                   '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
                   '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
                   '<div class="analytics-pick-info">' +
                     '<div class="analytics-pick-name">' + p.name +
                       ' <span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
+                      needBadge +
                     '</div>' +
-                    adpSubline +
+                    adpLine +
+                    bpaLine +
                   '</div>' +
-                  '<span class="analytics-pick-val ' + (p.value_diff >= 0 ? 'analytics-bar-pos' : 'analytics-bar-neg') + '">' +
-                    psign + p.value_diff + '</span>' +
                 '</div>';
               }});
               html += '</div></div>';
@@ -12515,18 +12529,114 @@ def api_schedule_strength():
         return jsonify({"error": "Internal error"}), 500
 
 
+def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
+    """
+    Fetch dynasty rookie ADP from FantasyCalc and return a map of
+    sleeper_id -> {adp_rank, pos_rank, position, name}.
+
+    Filters to current-season rookies only (matched against rookie_prospects).
+    Caches per league type per day.
+    """
+    import json as _json
+    from utils.paths import DATA_DIR
+    key = f"fc_rookie_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
+    cache_path = DATA_DIR / key
+    if cache_path.exists():
+        try:
+            with open(cache_path) as _f:
+                return _json.load(_f)
+        except Exception:
+            pass
+
+    num_qbs = 2 if is_sf else 1
+    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5"
+    try:
+        import requests as _req
+        resp = _req.get(url, timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp.raise_for_status()
+        fc_data = resp.json()
+    except Exception:
+        fc_data = []
+
+    # Build sleeper_id lookup from FantasyCalc data
+    fc_by_sleeper: dict = {}
+    for entry in (fc_data or []):
+        p = entry.get("player") or {}
+        sid = str(p.get("sleeperId") or "")
+        if sid and sid != "None":
+            fc_by_sleeper[sid] = {
+                "overall_rank": entry.get("overallRank"),
+                "pos_rank":     entry.get("positionalRank"),
+                "position":     str(p.get("position") or "").upper(),
+                "name":         p.get("name") or "",
+            }
+
+    # Filter to this season's rookies using our DB (authoritative rookie list)
+    result: dict = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as _conn:
+            rows = _conn.execute(
+                "SELECT sleeper_id, name, position FROM rookie_prospects "
+                "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (season,)
+            ).fetchall()
+        # Build a name → sleeper_id fallback for players FantasyCalc matched by name
+        name_to_sid = {str(r["name"]).lower(): str(r["sleeper_id"]) for r in rows}
+        our_sids = {str(r["sleeper_id"]) for r in rows}
+
+        # Assign rookie-only ordinal ranks from FantasyCalc overall order
+        rookie_entries = sorted(
+            [(sid, fc_by_sleeper[sid]) for sid in our_sids if sid in fc_by_sleeper],
+            key=lambda x: (x[1]["overall_rank"] or 9999)
+        )
+        for rookie_rank, (sid, info) in enumerate(rookie_entries, start=1):
+            result[sid] = {
+                "adp_rank": rookie_rank,       # rank among rookies only (1 = best)
+                "fc_overall": info["overall_rank"],
+                "pos_rank":   info["pos_rank"],
+                "position":   info["position"],
+            }
+
+        # Fallback: try to match unmatched rookies by name
+        unmatched_sids = our_sids - set(result.keys())
+        if unmatched_sids and fc_data:
+            unmatched_name_map = {str(r["name"]).lower(): str(r["sleeper_id"])
+                                  for r in rows if str(r["sleeper_id"]) in unmatched_sids}
+            for entry in (fc_data or []):
+                p = entry.get("player") or {}
+                fc_name = (p.get("name") or "").lower()
+                if fc_name in unmatched_name_map:
+                    sid = unmatched_name_map[fc_name]
+                    result[sid] = {
+                        "adp_rank": len(result) + 1,
+                        "fc_overall": entry.get("overallRank"),
+                        "pos_rank":   entry.get("positionalRank"),
+                        "position":   str(p.get("position") or "").upper(),
+                    }
+    except Exception:
+        pass
+
+    try:
+        with open(cache_path, "w") as _f:
+            _json.dump(result, _f)
+    except Exception:
+        pass
+    return result
+
+
 @app.route("/api/draft-grades")
 def api_draft_grades():
     """
-    Grade each team's most recent draft class by comparing each pick's
-    current model value to an ADP-based expected value.
+    Grade each team's rookie draft class using three signals:
+      1. ADP value   — actual pick slot vs FantasyCalc rookie ADP (external)
+      2. BPA / board — who was still available with better ADP at that pick
+      3. Team need   — did the pick fill a positional need on the roster?
 
-    ADP expected value curve: picks 1-3 = 95th percentile, 4-6 = 85th,
-    7-12 = 75th, 13-24 = 60th, 25+ = 40th of the current value table.
+    Grading is rookie-draft-specific: only compares picks against other rookies
+    in that draft, not against the full dynasty player pool.
 
-    Grade scale: A+ ≥+15%, A ≥+8%, B ≥0%, C ≥-10%, D ≥-20%, F <-20%.
-
-    Query params: platform, league_id, season
+    Query params: platform, league_id, season, league_type
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -12540,9 +12650,13 @@ def api_draft_grades():
         season = datetime.now().year
 
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    is_sf = (league_type == "sf")
 
     try:
-        # Fetch the draft picks
+        from dashboard_services.api import fetch_json
+        from collections import defaultdict as _defaultdict
+
+        # ── Draft picks ─────────────────────────────────────────────────────
         drafts = get_drafts(platform, league_id, season) or []
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
         if not latest_draft:
@@ -12552,162 +12666,196 @@ def api_draft_grades():
         if not draft_id:
             return jsonify({"error": "Draft has no ID"}), 404
 
-        # Fetch draft picks from Sleeper (platform-agnostic via fetch_json)
-        from dashboard_services.api import fetch_json
         picks_raw = fetch_json(f"/draft/{draft_id}/picks") or []
-        if not isinstance(picks_raw, list):
-            return jsonify({"error": "Could not load draft picks"}), 404
-
-        if not picks_raw:
+        if not isinstance(picks_raw, list) or not picks_raw:
             return jsonify({"error": "Draft has no picks yet"}), 404
 
-        # Load current model value table
-        value_table = load_model_value_table() or []
-        val_field = "sf_value" if league_type == "sf" else "value"
-        value_by_id: dict = {str(p.get("id")): float(p.get(val_field) or p.get("value") or 0) for p in value_table}
         players_index = load_players_index() or {}
 
-        # Load rookie ADP: overall_rank from our model's fantasy rookie rankings.
-        # Sleeper player_id → rookie consensus rank (1 = first pick).
-        # Also load positional rank for display.
-        rookie_adp: dict[str, int] = {}   # sleeper_id → overall_rank
-        rookie_pos_rank: dict[str, int] = {}  # sleeper_id → position_rank
-        rookie_pos_for_rank: dict[str, str] = {}  # sleeper_id → position
-        try:
-            from dashboard_services.db import get_conn
-            with get_conn() as _conn:
-                _rows = _conn.execute("""
-                    SELECT rr.player_id, rr.overall_rank, rr.position_rank,
-                           rr.position, rp.sleeper_id
-                    FROM rookie_rankings rr
-                    JOIN rookie_prospects rp USING (player_id)
-                    WHERE rr.draft_class_year = %s
-                      AND rp.sleeper_id IS NOT NULL
-                      AND rr.overall_rank IS NOT NULL
-                    ORDER BY rr.overall_rank
-                """, (season,)).fetchall()
-            for _r in _rows:
-                _sid = str(_r["sleeper_id"])
-                rookie_adp[_sid] = int(_r["overall_rank"])
-                if _r["position_rank"]:
-                    rookie_pos_rank[_sid] = int(_r["position_rank"])
-                if _r["position"]:
-                    rookie_pos_for_rank[_sid] = str(_r["position"]).upper()
-        except Exception:
-            pass  # ADP unavailable — picks still graded by value diff
+        # ── Rookie ADP from FantasyCalc ──────────────────────────────────────
+        # adp_info[sleeper_id] = {adp_rank, pos_rank, position, fc_overall}
+        adp_info = _fetch_fc_rookie_adp(is_sf, season)
+        adp_has_data = bool(adp_info)
 
-        # Build ADP expected value: sort all non-K/DEF players by current value
-        CORE_POS = {"QB", "RB", "WR", "TE"}
-        ranked_values = sorted(
-            [v for pid, v in value_by_id.items()
-             if str((players_index.get(pid) or {}).get("pos", "")).upper() in CORE_POS
-             and v > 0],
-            reverse=True
-        )
-
-        def adp_expected_value(pick_no: int) -> float:
-            """Map pick number to expected value from sorted values list."""
-            n = len(ranked_values)
-            if n == 0:
-                return 0.0
-            # Percentile bands by pick number
-            if pick_no <= 3:
-                pct = 0.95
-            elif pick_no <= 6:
-                pct = 0.85
-            elif pick_no <= 12:
-                pct = 0.75
-            elif pick_no <= 24:
-                pct = 0.60
-            elif pick_no <= 36:
-                pct = 0.45
-            else:
-                pct = 0.30
-            idx = min(int((1 - pct) * n), n - 1)
-            return ranked_values[idx]
-
-        def pick_grade(pct_diff: float) -> str:
-            if pct_diff >= 0.15:   return "A+"
-            if pct_diff >= 0.08:   return "A"
-            if pct_diff >= 0.00:   return "B"
-            if pct_diff >= -0.10:  return "C"
-            if pct_diff >= -0.20:  return "D"
-            return "F"
-
-        def team_letter_grade(avg_pct: float) -> str:
-            if avg_pct >= 0.12:    return "A+"
-            if avg_pct >= 0.06:    return "A"
-            if avg_pct >= -0.01:   return "B"
-            if avg_pct >= -0.08:   return "C"
-            if avg_pct >= -0.15:   return "D"
-            return "F"
-
+        # ── Rosters & users ─────────────────────────────────────────────────
         rosters = get_rosters(platform, league_id, season) or []
-        users = get_users(platform, league_id, season) or []
+        users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
-        # Group picks by roster_id
-        from collections import defaultdict as _defaultdict
+        # Pre-draft roster: each team's existing players by position
+        # (excluding picks made in this draft — we'll account for those)
+        roster_pos_counts: dict[str, dict[str, int]] = {}   # rid -> {pos: count}
+        CORE_POS = {"QB", "RB", "WR", "TE"}
+        # IDs that appear in any team's pre-draft roster (non-rookie veterans)
+        drafted_player_ids = {str(p.get("player_id") or "") for p in picks_raw}
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            players_on_roster = r.get("players") or []
+            counts: dict[str, int] = {pos: 0 for pos in CORE_POS}
+            for pid in players_on_roster:
+                pid = str(pid)
+                if pid in drafted_player_ids:
+                    continue  # skip rookies from this very draft
+                pos = str((players_index.get(pid) or {}).get("pos", "")).upper()
+                if pos in CORE_POS:
+                    counts[pos] = counts.get(pos, 0) + 1
+            roster_pos_counts[rid] = counts
+
+        # Need thresholds: below these counts the position is a clear need
+        NEED_THRESHOLD = {"QB": 2, "RB": 4, "WR": 5, "TE": 2}
+
+        def position_needed(rid: str, pos: str) -> bool:
+            if pos not in CORE_POS:
+                return False
+            current = roster_pos_counts.get(rid, {}).get(pos, 0)
+            return current < NEED_THRESHOLD.get(pos, 3)
+
+        # ── Board simulation ─────────────────────────────────────────────────
+        # Sort picks chronologically to simulate the board state at each selection
+        picks_sorted = sorted(
+            [p for p in picks_raw if isinstance(p, dict)],
+            key=lambda p: int(p.get("pick_no") or 0)
+        )
+        # All rookies with ADP data, sorted best → worst
+        board_all: list[str] = sorted(
+            adp_info.keys(),
+            key=lambda sid: adp_info[sid]["adp_rank"]
+        )
+        taken: set[str] = set()
+
+        def available_at_pick(exclude_sid: str) -> list[dict]:
+            """Return top-3 remaining board players (by ADP) excluding the one just picked."""
+            return [
+                {"player_id": sid,
+                 "name": (players_index.get(sid) or {}).get("name") or sid,
+                 "position": adp_info[sid]["position"],
+                 "adp_rank": adp_info[sid]["adp_rank"]}
+                for sid in board_all
+                if sid not in taken and sid != exclude_sid
+            ][:3]
+
+        def pick_grade(adp_diff: float | None, need: bool, bpa_gap: int | None) -> str:
+            """
+            adp_diff  : actual_pick - adp_rank  (+= value, -= reach)
+            need      : True if pick fills a positional need
+            bpa_gap   : ADP gap between this pick and the best available player
+                        (0 = BPA taken; positive = better players left on board)
+            """
+            if adp_diff is None:
+                return "N/A"
+            # Base score from ADP diff (primary signal)
+            if adp_diff >= 5:     score = 4   # clear value
+            elif adp_diff >= 2:   score = 3
+            elif adp_diff >= -1:  score = 2   # on ADP
+            elif adp_diff >= -4:  score = 1
+            else:                 score = 0   # big reach
+
+            # Need modifier
+            if need:
+                score += 1
+            else:
+                score = max(score - 0, score)  # no penalty for depth, just no bonus
+
+            # BPA penalty: if a clearly better player was available (bpa_gap >= 3)
+            if bpa_gap is not None and bpa_gap >= 5:
+                score = max(score - 2, 0)   # much better player sitting there
+            elif bpa_gap is not None and bpa_gap >= 3:
+                score = max(score - 1, 0)
+
+            return {5: "A+", 4: "A", 3: "B", 2: "C", 1: "D", 0: "F"}.get(min(score, 5), "F")
+
+        def team_grade(pick_scores: list[str]) -> str:
+            if not pick_scores:
+                return "N/A"
+            grade_val = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
+            avg = sum(grade_val.get(g, 2) for g in pick_scores) / len(pick_scores)
+            if avg >= 4.5: return "A+"
+            if avg >= 3.5: return "A"
+            if avg >= 2.5: return "B"
+            if avg >= 1.5: return "C"
+            if avg >= 0.5: return "D"
+            return "F"
+
+        # ── Process picks in draft order ─────────────────────────────────────
         picks_by_roster: dict = _defaultdict(list)
-        for p in picks_raw:
-            if not isinstance(p, dict):
-                continue
-            rid = str(p.get("roster_id") or p.get("picked_by") or "")
-            if not rid:
-                continue
+        for p in picks_sorted:
+            rid       = str(p.get("roster_id") or p.get("picked_by") or "")
             player_id = str(p.get("player_id") or "")
-            pick_no = int(p.get("pick_no") or p.get("draft_slot") or 0)
-            player_meta = players_index.get(player_id, {})
-            current_val = value_by_id.get(player_id, 0.0)
-            expected_val = adp_expected_value(pick_no)
-            pct_diff = ((current_val - expected_val) / expected_val) if expected_val > 0 else 0.0
-            # Rookie ADP: compare actual pick slot to model consensus rank
-            adp_rank = rookie_adp.get(player_id)
-            adp_diff = (pick_no - adp_rank) if adp_rank is not None else None  # + = value, - = reach
-            pos_rank = rookie_pos_rank.get(player_id)
-            pos_for_rank = rookie_pos_for_rank.get(player_id, str(player_meta.get("pos", "")).upper())
+            pick_no   = int(p.get("pick_no") or 0)
+            if not rid or not player_id or not pick_no:
+                continue
+
+            player_meta = players_index.get(player_id) or {}
+            pos         = str(player_meta.get("pos") or "").upper()
+            name        = player_meta.get("name") or f"Pick #{pick_no}"
+            need        = position_needed(rid, pos)
+
+            # ADP comparison
+            info     = adp_info.get(player_id)
+            adp_rank = info["adp_rank"] if info else None
+            adp_diff = (pick_no - adp_rank) if adp_rank is not None else None
+
+            # BPA: who with a better ADP was still available?
+            avail_better = [
+                a for a in available_at_pick(player_id)
+                if a["adp_rank"] < (adp_rank or pick_no)
+            ]
+            bpa_gap = (adp_rank - avail_better[0]["adp_rank"]) if avail_better else 0
+
+            # Could they have waited?
+            # Estimate: next same-team pick ≈ pick_no + num_teams (snake round)
+            num_teams = max(len(rosters), 1)
+            could_wait = (adp_diff is not None and adp_diff < -2 and
+                          adp_rank is not None and adp_rank > pick_no + num_teams)
+
+            grade = pick_grade(adp_diff, need, bpa_gap)
+
             picks_by_roster[rid].append({
-                "pick_no": pick_no,
-                "player_id": player_id,
-                "name": player_meta.get("name", f"Pick #{pick_no}"),
-                "position": str(player_meta.get("pos", "")).upper(),
-                "team": player_meta.get("team", ""),
-                "current_value": round(current_val, 1),
-                "expected_value": round(expected_val, 1),
-                "value_diff": round(current_val - expected_val, 1),
-                "pct_diff": round(pct_diff, 3),
-                "grade": pick_grade(pct_diff),
-                "adp_rank": adp_rank,
-                "adp_diff": adp_diff,
-                "pos_rank": pos_rank,
-                "pos_for_rank": pos_for_rank,
+                "pick_no":          pick_no,
+                "player_id":        player_id,
+                "name":             name,
+                "position":         pos,
+                "team":             player_meta.get("team") or "",
+                "adp_rank":         adp_rank,
+                "adp_diff":         adp_diff,
+                "pos_rank":         info["pos_rank"] if info else None,
+                "need":             need,
+                "bpa":              avail_better[:2],   # top 2 available better options
+                "could_wait":       could_wait,
+                "grade":            grade,
             })
 
+            # Mark this player as taken on the board
+            taken.add(player_id)
+            # Update this team's running positional count (so later picks reflect draft)
+            if pos in CORE_POS:
+                roster_pos_counts.setdefault(rid, {pos: 0 for pos in CORE_POS})
+                roster_pos_counts[rid][pos] = roster_pos_counts[rid].get(pos, 0) + 1
+
+        # ── Assemble results ─────────────────────────────────────────────────
         results = []
         for r in rosters:
             rid = str(r.get("roster_id", ""))
             team_picks = sorted(picks_by_roster.get(rid, []), key=lambda x: x["pick_no"])
             if not team_picks:
                 continue
-            pct_diffs = [p["pct_diff"] for p in team_picks]
-            avg_pct = sum(pct_diffs) / len(pct_diffs)
-            total_diff = sum(p["value_diff"] for p in team_picks)
+            tgrade = team_grade([p["grade"] for p in team_picks if p["grade"] != "N/A"])
             results.append({
-                "roster_id": rid,
-                "team_name": roster_map.get(rid, f"Roster {rid}"),
-                "grade": team_letter_grade(avg_pct),
-                "avg_pct_diff": round(avg_pct, 3),
-                "total_value_diff": round(total_diff, 1),
-                "picks": team_picks,
+                "roster_id":  rid,
+                "team_name":  roster_map.get(rid, f"Roster {rid}"),
+                "grade":      tgrade,
+                "picks":      team_picks,
             })
 
-        results.sort(key=lambda x: x["avg_pct_diff"], reverse=True)
+        grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
+        results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
 
         return jsonify({
-            "draft_id": str(draft_id),
-            "season": season,
+            "draft_id":   str(draft_id),
+            "season":     season,
             "league_type": league_type,
-            "teams": results,
+            "adp_source": "fantasycalc" if adp_has_data else "none",
+            "teams":      results,
         })
 
     except Exception:
