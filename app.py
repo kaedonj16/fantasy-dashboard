@@ -11498,6 +11498,7 @@ def api_player_details(player_id: str):
         years_exp = player_meta.get("years_exp")
         if years_exp == 0:
             try:
+                import re as _re
                 from dashboard_services.rookie_api import _cache as _rookie_cache
                 from data_building.rookie_pipeline.pipeline import get_active_rookie_class
                 from data_building.rookie_pipeline.value_translation import format_draft_capital
@@ -11514,6 +11515,29 @@ def api_player_details(player_id: str):
                             break
                     if found_row:
                         break
+
+                # Fallback: match by name from players_index when sleeper_id not yet linked
+                if not found_row:
+                    def _norm_name(n):
+                        n = n.lower()
+                        n = _re.sub(r"['\.\-]", "", n)
+                        n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                        return _re.sub(r"\s+", " ", n).strip()
+
+                    players_idx = get_players_index_global() or {}
+                    idx_entry = players_idx.get(str(player_id)) or {}
+                    idx_name = idx_entry.get("name", "")
+                    if idx_name:
+                        norm_target = _norm_name(idx_name)
+                        for check_year in [active_year, active_year - 1]:
+                            for r in _rookie_cache.get(check_year, []):
+                                if _norm_name(r.get("name", "")) == norm_target:
+                                    found_row = r
+                                    # Cache the link so future calls use sleeper_id
+                                    r["sleeper_id"] = str(player_id)
+                                    break
+                            if found_row:
+                                break
 
                 if found_row:
                     def _sf(v):

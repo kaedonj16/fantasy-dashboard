@@ -4321,7 +4321,7 @@ function openPlayerModal(playerId, playerName) {
       }
 
       // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
-      const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      const hasMetrics = yearsExp !== 0 && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       if (hasMetrics || isRookieWithProspectData || hasChart) {
