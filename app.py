@@ -7216,13 +7216,20 @@ def page_players(platform: str, season: int, league_id: str):
               <!-- Settings panel (hidden by default) -->
               <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
                 <div class="settings-section">
+                  <span class="settings-section-label">Scoring Type</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
+                    <button class="settings-toggle" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
+                  </div>
+                </div>
+                <div class="settings-section">
                   <span class="settings-section-label">League Format</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
                     <button class="settings-toggle" data-value="sf" onclick="prSetLeagueType('sf')">SF</button>
                   </div>
                 </div>
-                <div class="settings-section">
+                <div class="settings-section" id="prSizeSection">
                   <span class="settings-section-label">League Size</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle" data-value="8" onclick="prSetSize(8)">8</button>
@@ -7240,6 +7247,7 @@ def page_players(platform: str, season: int, league_id: str):
             <div id="prActiveSettings" class="active-settings-indicator">
               <span class="active-setting-tag">10-Team</span>
               <span class="active-setting-tag">1QB</span>
+              <span class="active-setting-tag">Dynasty</span>
             </div>
             <!-- Sort dropdown -->
             <div class="filter-sort">
@@ -7537,8 +7545,9 @@ def page_players(platform: str, season: int, league_id: str):
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
-      var prLeagueType = '1qb';
-      var prLeagueSize = 10;
+      var prLeagueType   = '1qb';
+      var prLeagueSize   = 10;
+      var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
       var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
@@ -7567,6 +7576,12 @@ def page_players(platform: str, season: int, league_id: str):
       }
 
       function prGetValue(p) {
+        if (prScoringType === 'redraft') {
+          const base = Number(prLeagueType === 'sf'
+            ? (p.redraft_value_sf ?? p.redraft_value_1qb ?? 0)
+            : (p.redraft_value_1qb ?? 0));
+          return Math.round(base * 10) / 10;
+        }
         let base;
         if (prLeagueType === 'sf') {
           const key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
@@ -7615,11 +7630,33 @@ def page_players(platform: str, season: int, league_id: str):
         const indicator = document.getElementById('prActiveSettings');
         if (!indicator) return;
 
-        const sizeTag = indicator.querySelector('.active-setting-tag:first-child');
-        const formatTag = indicator.querySelector('.active-setting-tag:last-child');
+        const tags = indicator.querySelectorAll('.active-setting-tag');
+        if (tags[0]) tags[0].textContent = prLeagueSize + '-Team';
+        if (tags[1]) tags[1].textContent = prLeagueType.toUpperCase();
+        if (tags[2]) tags[2].textContent = prScoringType === 'redraft' ? 'Redraft' : 'Dynasty';
+      }
 
-        if (sizeTag) sizeTag.textContent = prLeagueSize + '-Team';
-        if (formatTag) formatTag.textContent = prLeagueType.toUpperCase();
+      function prSetScoringType(type) {
+        prScoringType = type;
+        // Update panel toggles
+        document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
+          const section = btn.closest('.settings-section');
+          if (section && section.querySelector('.settings-section-label').textContent.includes('Scoring')) {
+            btn.classList.toggle('active', btn.getAttribute('data-value') === type);
+          }
+        });
+        // Hide league-size in redraft (size doesn't affect redraft values)
+        const sizeSection = document.getElementById('prSizeSection');
+        if (sizeSection) sizeSection.style.display = type === 'redraft' ? 'none' : '';
+        // Hide PICK and ROOKIE filters in redraft
+        document.querySelectorAll('.pos-pill[data-pos="PICK"], .pos-pill[data-pos="ROOKIE"]').forEach(btn => {
+          btn.style.display = type === 'redraft' ? 'none' : '';
+        });
+        if (type === 'redraft' && (prPosFilters.has('PICK') || prPosFilters.has('ROOKIE'))) {
+          prPosFilters.clear();
+        }
+        updateSettingsIndicator();
+        prRender();
       }
 
       function prSetLeagueType(type) {
@@ -7698,6 +7735,18 @@ def page_players(platform: str, season: int, league_id: str):
         const sortBy = document.getElementById('prSort').value;
 
         let players = prAllPlayers.slice();
+
+        // In redraft mode exclude picks and rookies (no redraft value), and
+        // only show players who actually have a redraft value.
+        if (prScoringType === 'redraft') {
+          players = players.filter(p => {
+            if (p.position === 'PICK' || p.is_rookie) return false;
+            const v = prLeagueType === 'sf'
+              ? (p.redraft_value_sf ?? p.redraft_value_1qb)
+              : p.redraft_value_1qb;
+            return v != null && Number(v) > 0;
+          });
+        }
 
         // Position filter (multi-select)
         const isDrafted = p => p.is_rookie && p.team && p.team !== 'FA';
