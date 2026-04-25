@@ -271,8 +271,8 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             _scale(rush_yds_pg, 20,  145) * 0.18 +
             _scale(all_yds_pg,  30,  180) * 0.17 +
             _scale(tds_pg,       0.4,  2.0) * 0.25 +
-            _scale(dom,          0.12, 0.75) * 0.15 +
-            _scale(ypc,          3.5,  9.0) * 0.25
+            _scale(dom,          0.12, 0.50) * 0.15 +  # ceiling lowered: 0.45+ dom is elite
+            _scale(ypc,          3.5,  7.0) * 0.25     # ceiling lowered: 7.0 YPC is generational
         )
         # Receiving tiers: require meaningful rec share so dedicated pass-catchers
         # (Coleman ~34%) are rewarded differently from incidental receivers (Johnson ~20%).
@@ -290,17 +290,18 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             mult += 0.03
         if dom >= 0.30:
             mult += 0.05
-        # Red zone proxy: TDs per 100 total yards
+        # Red zone proxy: TDs per 100 total yards.
+        # Realistic benchmarks for RBs: 1.0–2.5 range for elite scorers.
         total_yds = _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
         total_tds = _safe(season.get("rush_tds"))   + _safe(season.get("receiving_tds"))
         if total_yds >= 300:
             rz_rate = total_tds / total_yds * 100
-            if rz_rate >= 6.0:
+            if rz_rate >= 2.0:
                 mult += 0.03
-            elif rz_rate >= 4.0:
+            elif rz_rate >= 1.0:
                 mult += 0.015
 
-        mult = min(mult, 1.16)  # hard cap so one-season RB production doesn't trivially max
+        mult = min(mult, 1.20)  # slightly higher cap to allow elite all-around profiles
         return _clip(prod * mult)
 
     elif pos == "QB":
@@ -1916,17 +1917,17 @@ def score_prospect(
     if meaningful_components >= 3:
         # Absolute-scale calibration curve. The weighted-component sum accurately
         # ranks prospects but compresses the distribution: true generational talent
-        # (Chase, Nabers, Robinson) naturally scores ~86 after the weighted sum.
+        # (Chase, Nabers, Robinson) naturally scores ~85 after the weighted sum.
         # This quadratic boost proportionally amplifies high-scoring profiles so
-        # the grade scale matches the intended tiers: 94+ generational, 85+ top tier.
-        # Formula: score + (score / 100)² × 11
+        # the grade scale matches the intended tiers: 95+ generational, 87+ top tier.
+        # Formula: score + (score / 100)² × 14
         # Effect at key breakpoints:
-        #   86 raw → 94.4  (generational)
-        #   82 raw → 89.4  (upper top tier)
-        #   80 raw → 87.0  (top tier)
-        #   75 raw → 81.2  (solid starter)
-        #   65 raw → 69.6  (developmental)
-        prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+        #   86 raw → 96.4  (generational)
+        #   84 raw → 93.9  (upper top tier)
+        #   80 raw → 89.0  (top tier)
+        #   75 raw → 82.9  (solid starter)
+        #   65 raw → 70.9  (developmental)
+        prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 14.0)
         
         # Apply benchmark boosts only for complete data profiles
         # The benchmark boost is the only post-sum modifier: a small signal (max 3%)
