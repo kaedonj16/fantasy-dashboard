@@ -825,12 +825,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
-    } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+    } else if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -873,20 +873,21 @@ window.initTradePage = function initTradePage(root = document) {
     sub.className = "otc-dropdown-sub";
 
     const metaBits = buildMetaBits(p);
-    if (p.is_rookie) {
+    if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
-    } else if (isRookie(p.id)) {
+    } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
-    if (isElite(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
-    }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
     }
+    if (isElite(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
+    }
+
 
     sub.innerHTML = metaBits.join(" • ");
 
