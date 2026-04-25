@@ -83,7 +83,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
-          <select id="rkSort" onchange="rkRender()"
+          <select id="rkSort" onchange="rkCurrentPage=1;rkRender()"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                    background:var(--card-bg);color:var(--text);font-size:12px;
                    cursor:pointer;outline:none;min-height:34px;width:140px;">
@@ -610,17 +610,16 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 </style>
 
 <script>
-  var rkAllPlayers = [];
+  var rkAllPlayers = [];   // full unfiltered list — never replaced after load
   var rkLeague    = '1qb';
   var rkSize      = 10;
-  var rkPosFilters = new Set();    // empty = all
+  var rkPosFilters = new Set();
   var rkSearch    = '';
   var rkLoaded    = false;
   var rkDraftYear = null;
   var rkCurrentPage = 1;
-  var rkPaginationData = null;
+  var RK_PER_PAGE = 20;
 
-  // Size-specific value keys
   function rkGetValue(r) {
     var key;
     if (rkLeague === 'sf') {
@@ -630,21 +629,6 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       key = rkSize === 10 ? 'rookie_value' : 'rookie_value_' + rkSize;
       return parseFloat(r[key] || r['rookie_value'] || 0);
     }
-  }
-
-  // Filter function - determines if a prospect should be shown based on current filters
-  function rkShouldShow(r) {
-    // Position filter
-    if (rkPosFilters.size > 0) {
-      if (!rkPosFilters.has((r.position||'').toUpperCase())) {
-        return false;
-      }
-    }
-    
-    // Search filter (handled separately in search logic)
-    // This function is for position and other filters only
-    
-    return true;
   }
 
   // Settings panel toggle
@@ -672,32 +656,27 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkSetLeague(type) {
     rkLeague = type;
-
-    // Update settings panel toggles
     document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
       var section = btn.closest('.settings-section');
       if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
         btn.classList.toggle('active', btn.getAttribute('data-value') === type);
       }
     });
-
     updateRookieSettingsIndicator();
+    rkCurrentPage = 1;
     rkRender();
   }
 
   function rkSetSize(sz) {
     rkSize = sz;
-
-    // Update settings panel toggles
     document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
       var section = btn.closest('.settings-section');
       if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
-        var btnSize = parseInt(btn.getAttribute('data-value'));
-        btn.classList.toggle('active', btnSize === sz);
+        btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
       }
     });
-
     updateRookieSettingsIndicator();
+    rkCurrentPage = 1;
     rkRender();
   }
 
@@ -712,6 +691,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var p = b.getAttribute('data-pos');
       b.classList.toggle('active', p === 'ALL' ? rkPosFilters.size === 0 : rkPosFilters.has(p));
     });
+    rkCurrentPage = 1;
     rkRender();
   }
 
@@ -719,6 +699,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     document.getElementById('rookieSearch').value = '';
     rkSearch = '';
     document.getElementById('rookieSearchClear').style.display = 'none';
+    rkCurrentPage = 1;
     rkRender();
   }
 
@@ -747,52 +728,67 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     if (!rkLoaded) return;
     var sortBy = document.getElementById('rkSort').value;
 
+    // 1. Start with full list
     var players = rkAllPlayers.slice();
 
-    // Position filter
+    // 2. Position filter
     if (rkPosFilters.size > 0) {
       players = players.filter(function(r) {
         return rkPosFilters.has((r.position||'').toUpperCase());
       });
     }
 
-    // Search - search across ALL prospects, not just current page
+    // 3. Search filter (fuzzy match on name)
     if (rkSearch.length > 0) {
       var q = rkSearch;
-      var allFilteredPlayers = rkAllPlayers
-        .filter(rkShouldShow)  // Apply position and other filters first
+      players = players
         .map(function(r) { return {r:r, s: rkFuzzy(r.name, q)}; })
         .filter(function(x) { return x.s > 0; })
         .sort(function(a,b) { return b.s - a.s || rkGetValue(b.r) - rkGetValue(a.r); })
         .map(function(x) { return x.r; });
-      
-      // Reset to page 1 when searching and show all search results
-      rkCurrentPage = 1;
-      players = allFilteredPlayers.slice(0, 20); // Show first 20 of search results
     } else {
-      // No search - show paginated results
-      players = players;
+      // 4. Sort (only when not searching)
+      players.sort(function(a, b) {
+        switch (sortBy) {
+          case 'value': return rkGetValue(b) - rkGetValue(a);
+          case 'score': return parseFloat(b.prospect_score||0) - parseFloat(a.prospect_score||0);
+          case 'age':   return parseFloat(a.age||99) - parseFloat(b.age||99);
+          case 'pick':  return (a.projected_pick||999) - (b.projected_pick||999);
+          default:      return (a.overall_rank||999) - (b.overall_rank||999);
+        }
+      });
     }
+
+    var totalFiltered = players.length;
+    var totalPages = Math.max(1, Math.ceil(totalFiltered / RK_PER_PAGE));
+
+    // Clamp page
+    if (rkCurrentPage > totalPages) rkCurrentPage = 1;
+
+    // 5. Paginate
+    var offset = (rkCurrentPage - 1) * RK_PER_PAGE;
+    var pageItems = players.slice(offset, offset + RK_PER_PAGE);
 
     var list   = document.getElementById('rkList');
     var empty  = document.getElementById('rkEmpty');
     var count  = document.getElementById('rkCount');
     var header = document.getElementById('rkHeader');
 
-    if (players.length === 0) {
+    if (pageItems.length === 0) {
       list.innerHTML = '';
       empty.style.display = 'block';
       header.style.display = 'none';
       count.style.display  = 'none';
+      document.getElementById('rkPagination').style.display = 'none';
       return;
     }
 
     empty.style.display  = 'none';
     header.style.display = 'grid';
-    count.style.display  = 'block';
+    count.style.display  = 'none';
 
     list.innerHTML = '';
-    players.forEach(function(r, idx) {
+    pageItems.forEach(function(r, idx) {
       var row = document.createElement('div');
       row.className = 'rk-row rk-grid-row';
       row.setAttribute('data-pid', r.player_id||'');
@@ -809,7 +805,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var scoreColor = rkScoreColor(score);
 
       row.innerHTML =
-        '<span class="rk-rank">' + (r.overall_rank ? '#' + r.overall_rank : idx+1) + '</span>' +
+        '<span class="rk-rank">' + (r.overall_rank ? '#' + r.overall_rank : offset+idx+1) + '</span>' +
         '<div class="rk-name-cell">' +
           '<div class="rk-name">' + (r.name||'Unknown') + tierHtml + earlyTag + '</div>' +
           '<div class="rk-meta">' + (r.school||'') + (r.school && r.position ? ' • ' : '') + (posRk||'') + '</div>' +
@@ -825,6 +821,9 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       row.addEventListener('click', function() { rkOpenModal(r); });
       list.appendChild(row);
     });
+
+    // 6. Update pagination controls
+    rkUpdatePaginationControls(totalFiltered, totalPages);
   }
 
   // ── Modal ──────────────────────────────────────────────────────────────────
@@ -1018,6 +1017,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     inp.addEventListener('input', function() {
       rkSearch = inp.value.trim();
       clr.style.display = rkSearch.length > 0 ? 'block' : 'none';
+      rkCurrentPage = 1;
       rkRender();
     });
   })();
@@ -1039,22 +1039,15 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     .then(function(r){ return r.json(); })
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
-      document.getElementById('rookiesTitle').textContent   = rkDraftYear + ' Prospect Rankings';
-
-      return fetch('/api/prospects/rankings?year=' + rkDraftYear + '&page=' + rkCurrentPage);
+      document.getElementById('rookiesTitle').textContent = rkDraftYear + ' Prospect Rankings';
+      return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })
     .then(function(data) {
       document.getElementById('rkLoading').style.display = 'none';
-
-      // Store pagination data
-      rkPaginationData = data.pagination;
-      
-      // Store size-specific value fields returned from API alongside base fields
-      rkAllPlayers = (data.rankings || []);
+      rkAllPlayers = data.rankings || [];
       rkLoaded = true;
       rkRender();
-      rkUpdatePaginationControls();
     })
     .catch(function(err) {
       console.error('[rookies] Load error:', err);
@@ -1073,115 +1066,51 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     '</div>';
   }
 
-  // Pagination functions
   function rkLoadPage(page) {
-    if (typeof page === 'string') {
-      if (page === 'prev' && rkCurrentPage > 1) {
-        page = rkCurrentPage - 1;
-      } else if (page === 'next' && rkPaginationData && rkPaginationData.has_next) {
-        page = rkCurrentPage + 1;
-      } else {
-        return;
-      }
-    }
-    
+    if (page === 'prev') page = rkCurrentPage - 1;
+    else if (page === 'next') page = rkCurrentPage + 1;
+    if (page < 1) return;
     rkCurrentPage = page;
-    document.getElementById('rkLoading').style.display = '';
-    document.getElementById('rkList').style.display = 'none';
-    document.getElementById('rkPagination').style.display = 'none';
-    
-    // If searching, paginate through search results instead of API call
-    if (rkSearch.length > 0 && window.rkSearchResults) {
-      var searchResults = window.rkSearchResults;
-      var totalSearchPlayers = searchResults.length;
-      var totalPages = Math.ceil(totalSearchPlayers / 20);
-      
-      document.getElementById('rkLoading').style.display = 'none';
-      document.getElementById('rkList').style.display = '';
-      
-      // Calculate pagination for search results
-      var start = (page - 1) * 20;
-      var end = Math.min(page * 20, totalSearchPlayers);
-      var paginatedResults = searchResults.slice(start, end);
-      
-      // Update pagination info for search results
-      rkPaginationData = {
-        current_page: page,
-        per_page: 20,
-        total_players: totalSearchPlayers,
-        total_pages: totalPages,
-        has_next: page < totalPages,
-        has_prev: page > 1
-      };
-      
-      rkAllPlayers = paginatedResults;
-      window.rkSearchPaginatedResults = paginatedResults; // Store for pagination
-      rkUpdatePaginationControls();
-      rkRender();
-    } else {
-      // Normal API call for non-search pagination
-      fetch('/api/prospects/rankings?year=' + rkDraftYear + '&page=' + rkCurrentPage)
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.error) {
-            throw new Error(data.error);
-          }
-          rkPaginationData = data.pagination;
-          rkAllPlayers = data.rankings || [];
-          document.getElementById('rkLoading').style.display = 'none';
-          document.getElementById('rkList').style.display = '';
-          rkUpdatePaginationControls();
-          rkRender();
-        })
-        .catch(function(err) {
-          console.error('[rookies] Page load error:', err);
-          document.getElementById('rkLoading').innerHTML = '<div style="color:#ef4444;">Failed to load page. Please refresh.</div>';
-        });
-    }
+    rkRender();
+    window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
-  function rkUpdatePaginationControls() {
-    var prevBtn = document.getElementById('rkPrevBtn');
-    var nextBtn = document.getElementById('rkNextBtn');
-    var pageNumbers = document.getElementById('rkPageNumbers');
+  function rkUpdatePaginationControls(totalFiltered, totalPages) {
+    var prevBtn      = document.getElementById('rkPrevBtn');
+    var nextBtn      = document.getElementById('rkNextBtn');
+    var pageNumbers  = document.getElementById('rkPageNumbers');
     var paginationText = document.getElementById('rkPaginationText');
-    
-    // Hide pagination during search OR show pagination for search results if paginated
-    if (rkSearch.length > 0 && !window.rkSearchPaginatedResults) {
-      document.getElementById('rkPagination').style.display = 'none';
+    var pagination   = document.getElementById('rkPagination');
+
+    if (totalPages <= 1) {
+      pagination.style.display = 'none';
       return;
     }
-    
-    if (!rkPaginationData) return;
-    
-    // Update button states
-    prevBtn.disabled = !rkPaginationData.has_prev;
-    nextBtn.disabled = !rkPaginationData.has_next;
-    
-    // Update text
-    var start = (rkPaginationData.current_page - 1) * rkPaginationData.per_page + 1;
-    var end = Math.min(rkPaginationData.current_page * rkPaginationData.per_page, rkPaginationData.total_players);
-    paginationText.textContent = 'Showing ' + start + '-' + end + ' of ' + rkPaginationData.total_players + ' prospects';
-    
-    // Update page numbers
+
+    prevBtn.disabled = rkCurrentPage <= 1;
+    nextBtn.disabled = rkCurrentPage >= totalPages;
+
+    var start = (rkCurrentPage - 1) * RK_PER_PAGE + 1;
+    var end   = Math.min(rkCurrentPage * RK_PER_PAGE, totalFiltered);
+    paginationText.textContent = 'Showing ' + start + '–' + end + ' of ' + totalFiltered + ' prospects';
+
     pageNumbers.innerHTML = '';
-    var maxPages = 5;
-    var startPage = Math.max(1, rkPaginationData.current_page - Math.floor(maxPages / 2));
-    var endPage = Math.min(rkPaginationData.total_pages, startPage + maxPages - 1);
-    
-    if (endPage - startPage < maxPages - 1) {
-      startPage = Math.max(1, endPage - maxPages + 1);
-    }
-    
+    var maxPages  = 5;
+    var startPage = Math.max(1, rkCurrentPage - Math.floor(maxPages / 2));
+    var endPage   = Math.min(totalPages, startPage + maxPages - 1);
+    if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
+
     for (var i = startPage; i <= endPage; i++) {
-      var pageBtn = document.createElement('button');
-      pageBtn.className = 'rk-page-number' + (i === rkPaginationData.current_page ? ' active' : '');
-      pageBtn.textContent = i;
-      pageBtn.onclick = function() { rkLoadPage(i); };
-      pageNumbers.appendChild(pageBtn);
+      (function(pageNum) {
+        var btn = document.createElement('button');
+        btn.className = 'rk-page-number' + (pageNum === rkCurrentPage ? ' active' : '');
+        btn.textContent = pageNum;
+        btn.onclick = function() { rkLoadPage(pageNum); };
+        pageNumbers.appendChild(btn);
+      })(i);
     }
-    
-    document.getElementById('rkPagination').style.display = 'flex';
+
+    pagination.style.display = 'flex';
   }
 
   function rkLinkSleeper(playerId) {
