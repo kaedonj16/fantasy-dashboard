@@ -5383,13 +5383,12 @@ function openProspectModal(playerId, playerName) {
             '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
           '</div>' +
 
-          // ── Link Sleeper ID ───────────────────────────────────────────────
-          '<div class="rk-section-divider"></div>' +
-          '<div id="rkLinkSleeperSection">' +
-            _buildLinkSleeperHtml(r.player_id, r.sleeper_id) +
-          '</div>' +
-
         '</div>';
+
+      // Auto-link to Sleeper ID silently in background
+      if (r.player_id) {
+        fetch('/api/prospects/auto-link/' + encodeURIComponent(r.player_id)).catch(function(){});
+      }
 
       // Fetch comparables
       fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
@@ -5428,44 +5427,6 @@ function openProspectModal(playerId, playerName) {
       console.error('Error loading prospect data:', err);
       content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Could not load prospect data.</div>';
     });
-}
-
-function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
-  if (existingSleeperIdVal) {
-    return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
-  }
-  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-    '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +
-    '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
-    '<button onclick="rkLinkSleeper(\'' + playerId + '\')" style="font-size:12px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
-  '</div>';
-}
-
-function rkLinkSleeper(playerId) {
-  var inp = document.getElementById('rkSleeperIdInput');
-  if (!inp) return;
-  var sleeperIdVal = inp.value.trim();
-  if (!sleeperIdVal) { inp.focus(); return; }
-  var btn = inp.nextElementSibling;
-  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
-  fetch('/api/prospects/link-sleeper', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({player_id: playerId, sleeper_id: sleeperIdVal, promote: true})
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(d) {
-    var sec = document.getElementById('rkLinkSleeperSection');
-    if (d.ok) {
-      if (sec) sec.innerHTML = '<div style="font-size:12px;color:#10b981;font-weight:600;">✓ Linked to Sleeper ID ' + sleeperIdVal + (d.promoted ? ' and added to value chart' : '') + '</div>';
-    } else {
-      if (sec) sec.innerHTML = '<div style="font-size:12px;color:#ef4444;">Error: ' + (d.error || 'unknown') + '</div>';
-    }
-  })
-  .catch(function() {
-    var sec = document.getElementById('rkLinkSleeperSection');
-    if (sec) sec.innerHTML = '<div style="font-size:12px;color:#ef4444;">Failed to link Sleeper ID.</div>';
-  });
 }
 
 function closePlayerModal() {

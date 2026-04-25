@@ -541,6 +541,116 @@ def link_sleeper():
         return jsonify({"error": str(exc)}), 500
 
 
+@rookie_bp.route("/auto-link/<player_id>")
+def auto_link(player_id: str):
+    """Auto-match a prospect to their Sleeper ID via players_index.json name lookup, then promote."""
+    try:
+        from utils.utils import load_players_index
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from dashboard_services.db import get_conn
+
+        year = get_active_rookie_class()
+        row = None
+        for y in [year, year - 1]:
+            row = next((r for r in _get_rankings(y) if r.get("player_id") == player_id), None)
+            if row:
+                break
+
+        if not row:
+            return jsonify({"ok": False, "error": "Prospect not found"}), 404
+
+        if row.get("sleeper_id"):
+            return jsonify({"ok": True, "sleeper_id": row["sleeper_id"], "already_linked": True})
+
+        prospect_name = row.get("name", "")
+        if not prospect_name:
+            return jsonify({"ok": False, "error": "Prospect has no name"}), 400
+
+        players_index = load_players_index() or {}
+
+        def _norm(n: str) -> str:
+            n = n.lower()
+            n = re.sub(r"['\.\-]", "", n)
+            n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+            return re.sub(r"\s+", " ", n).strip()
+
+        norm_prospect = _norm(prospect_name)
+        sleeper_id = None
+        for sid, pdata in players_index.items():
+            if _norm(pdata.get("name", "")) == norm_prospect:
+                sleeper_id = sid
+                break
+
+        if not sleeper_id:
+            return jsonify({"ok": False, "error": f"No match for '{prospect_name}'"})
+
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE rookie_prospects SET sleeper_id = %s, updated_at = NOW() WHERE player_id = %s",
+                    (sleeper_id, player_id),
+                )
+                conn.commit()
+        except Exception as db_exc:
+            log.warning("[rookie_api] auto-link DB error: %s", db_exc)
+            return jsonify({"error": f"DB update failed: {db_exc}"}), 500
+
+        for y in [year, year - 1]:
+            for r in _get_rankings(y):
+                if r.get("player_id") == player_id:
+                    r["sleeper_id"] = sleeper_id
+                    break
+
+        promoted = False
+        try:
+            val_1qb = float(row.get("rookie_value") or 0)
+            val_sf = float(row.get("rookie_sf_value") or 0)
+            pos = row.get("position", "")
+            name = row.get("name", "")
+            pos_rank = row.get("position_rank")
+            pos_rank_label = f"{pos}{pos_rank}" if pos and pos_rank else ""
+
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO player_values
+                        (player_id, value_1qb, value_sf, calibrated_value_1qb, calibrated_value_sf,
+                         position, pos_rank, pos_rank_label, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        value_1qb = EXCLUDED.value_1qb,
+                        value_sf = EXCLUDED.value_sf,
+                        calibrated_value_1qb = EXCLUDED.calibrated_value_1qb,
+                        calibrated_value_sf = EXCLUDED.calibrated_value_sf,
+                        position = EXCLUDED.position,
+                        pos_rank = EXCLUDED.pos_rank,
+                        pos_rank_label = EXCLUDED.pos_rank_label,
+                        last_updated = EXCLUDED.last_updated
+                    """,
+                    (sleeper_id, val_1qb, val_sf, val_1qb, val_sf, pos, pos_rank, pos_rank_label),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO player_value_history
+                        (as_of_date, player_id, name, position, value, source)
+                    VALUES (CURRENT_DATE, %s, %s, %s, %s, 'model')
+                    ON CONFLICT (as_of_date, player_id, source) DO UPDATE SET
+                        value = EXCLUDED.value
+                    """,
+                    (sleeper_id, name, pos, val_1qb),
+                )
+                conn.commit()
+            promoted = True
+        except Exception as prom_exc:
+            log.warning("[rookie_api] auto-link promote error: %s", prom_exc)
+
+        return jsonify({"ok": True, "sleeper_id": sleeper_id, "already_linked": False, "promoted": promoted})
+
+    except Exception as exc:
+        log.exception("[rookie_api] /auto-link error")
+        return jsonify({"error": str(exc)}), 500
+
+
 @rookie_bp.route("/refresh", methods=["POST"])
 def refresh():
     """Re-run the pipeline and bust the in-memory cache."""

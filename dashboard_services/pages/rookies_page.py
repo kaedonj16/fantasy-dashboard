@@ -863,14 +863,15 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
           '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
         '</div>' +
 
-        // ── Link Sleeper ID ───────────────────────────────────────────────
-        '<div class="rk-section-divider"></div>' +
-        '<div id="rkLinkSleeperSection">' + _buildLinkSleeperHtml(r.player_id, r.sleeper_id) + '</div>' +
-
       '</div>';
 
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+
+    // Auto-link to Sleeper ID silently in background
+    if (r.player_id) {
+      fetch('/api/prospects/auto-link/' + encodeURIComponent(r.player_id)).catch(function(){});
+    }
 
     // Fetch historical comparables
     fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
