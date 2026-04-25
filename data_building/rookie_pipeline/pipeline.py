@@ -1028,9 +1028,6 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
         for s in scores:
             pid = s["player_id"]
             # Debug: Check if scores have tier information
-            if pid == "ROOKIE_2026_JEREMIYAH_LOVE" or True:  # Set to True to see all players
-                print(f"[DEBUG] Score for {pid}: tier={s.get('tier')}, tier_label={s.get('tier_label')}")
-
             # Priority 1: Use model values if available (by player_id)
             if pid in model_values:
                 v = model_values[pid]
@@ -1083,10 +1080,6 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                 if s.get("tier_label") is not None:
                     v["tier_label"] = s.get("tier_label")
                 print(f"[upsert_rankings] No values found for player {pid}, using defaults")
-            
-            # Debug: Show what tier values are being inserted
-            if pid == "ROOKIE_2026_JEREMIYAH_LOVE" or True:  # Set to True to see all players
-                print(f"[DEBUG] Inserting {pid}: tier={v.get('tier')}, tier_label={v.get('tier_label')}")
             
             cur.execute(
                 """
