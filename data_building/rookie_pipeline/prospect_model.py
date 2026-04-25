@@ -1515,12 +1515,12 @@ def draft_capital_multiplier(round_selected: int) -> float:
     """
     Draft capital multiplier aligned with the NFL's 3-day structure.
 
-    Day 1  — Round 1 (picks 1-32):    highest signal, team commits first resource
+    Day 1  — Round 1 (picks 1-32):    no bonus; dc_score already encodes pick value
     Day 2  — Rounds 2-3 (picks 33-96): solid investment, starter likelihood meaningful
     Day 3  — Rounds 4-7 (picks 97+):  developmental, far less predictive for dynasty
     """
-    if round_selected == 1:        # Day 1
-        return 1.15
+    if round_selected == 1:        # Day 1 — no multiplier; pick value captured in dc_score
+        return 1.00
     elif round_selected == 2:      # Day 2 early
         return 1.08
     elif round_selected == 3:      # Day 2 late
@@ -1826,11 +1826,6 @@ def score_prospect(
     # Apply round-specific multipliers to capture nonlinear value
     if projected_round and draft_capital:
         round_multiplier = draft_capital_multiplier(projected_round)
-        # WR round 1 bonus removed: backtest showed WR hit rate is not meaningfully
-        # higher for R1 vs R2 picks, and the multiplier caused systematic overgrading
-        # of top WRs while missing late-round breakouts.
-        if pos == "WR" and projected_round == 1:
-            round_multiplier = 1.0
         dc_score = _clip(dc_score * round_multiplier)
 
     # ── Position dc multiplier ──────────────────────────────────────────────
