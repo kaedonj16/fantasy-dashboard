@@ -335,10 +335,11 @@ def comparables(player_id: str):
                     FROM historical_prospect_grades
                     WHERE position = %s
                       AND prospect_score BETWEEN %s AND %s
+                      AND draft_class_year < %s
                     ORDER BY ABS(prospect_score - %s) ASC, draft_class_year DESC
                     LIMIT 6
                     """,
-                    (position, score - band, score + band, score),
+                    (position, score - band, score + band, year, score),
                 ).fetchall()
 
             result = []

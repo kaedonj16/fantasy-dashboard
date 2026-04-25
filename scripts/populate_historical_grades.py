@@ -28,7 +28,7 @@ from scripts.backtest_prospect_model import (
     _build_prospect_dicts,
     SKILL_POS,
 )
-from data_building.rookie_pipeline.prospect_model import score_all_prospects
+from data_building.rookie_pipeline.ml_model import score_all_prospects_ml
 from data_building.rookie_pipeline.value_translation import assign_tier
 
 
@@ -59,7 +59,7 @@ def _run_year(draft_year: int, dry_run: bool = False) -> int:
     )
 
     print(f"[populate] Scoring {len(prospects)} prospects…")
-    scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
+    scores = score_all_prospects_ml(prospects, consensus_map, skip_sagarin=True)
 
     # Build lookup: gsis_id / name-slug → draft_class row (for actual pick)
     dc_by_id = {
