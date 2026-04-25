@@ -1376,6 +1376,13 @@ def calc_loaded_roster_adjustment(
     if room_size < 2:
         return 1.0
 
+    # Only backups benefit from the crowded-room bonus — a player who dominates
+    # their team's market share is the alpha, not the one being suppressed.
+    # Threshold: >= 0.28 market share means they're the clear lead back/receiver;
+    # their stats are face-value, not opportunity-constrained.
+    if market_share >= 0.28:
+        return 1.0
+
     if room_size >= 4:
         base_bonus = 0.12
     elif room_size == 3:
@@ -1385,16 +1392,17 @@ def calc_loaded_roster_adjustment(
     else:
         base_bonus = 0.06
 
-    if market_share >= 0.30:
-        ms_factor = 1.00
-    elif market_share >= 0.24:
-        ms_factor = 0.85
-    elif market_share >= 0.18:
-        ms_factor = 0.60
-    elif market_share >= 0.12:
-        ms_factor = 0.35
+    # ms_factor: inverted so lower market share (more suppressed) = bigger bonus.
+    # A backup with ms=0.10 is heavily blocked; ms=0.25 is getting decent volume
+    # despite a loaded room — both deserve a bonus, but the more blocked player more so.
+    if market_share <= 0.12:
+        ms_factor = 1.00   # heavily suppressed backup
+    elif market_share <= 0.18:
+        ms_factor = 0.80   # clear backup role
+    elif market_share <= 0.22:
+        ms_factor = 0.60   # committee / split role
     else:
-        ms_factor = 0.10
+        ms_factor = 0.40   # decent volume but still not the alpha
 
     if production_score >= 85:
         prod_factor = 1.00
