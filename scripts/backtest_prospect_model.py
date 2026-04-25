@@ -36,7 +36,7 @@ from data_building.rookie_pipeline.historical_calibration import (
     _safe_float,
     _calc_ppr_points,
 )
-from data_building.rookie_pipeline.ml_model import score_all_prospects_ml as score_all_prospects
+from data_building.rookie_pipeline.prospect_model import score_all_prospects
 from data_building.rookie_pipeline.mock_draft_consensus import (
     build_mock_draft_consensus,
     pick_to_draft_capital_score,

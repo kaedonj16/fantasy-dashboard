@@ -44,7 +44,7 @@ _POS_PICK_ANCHORS: Dict[str, Tuple[int, int, int, int]] = {
     #        elite  good   avg   late
     "QB": (   1,    8,    22,    64),   # QB top-10 expected every year
     "WR": (   5,   12,    35,    96),   # WR top-5 is rare; #15 = 90 (user calibration)
-    "RB": (  8,   25,    55,   120),   # RB top-10 is extraordinary (Bijan-tier)
+    "RB": (  5,   18,    50,   120),   # RB top-10 is extraordinary (Bijan-tier)
     "TE": (  10,   25,    55,   120),   # TE top-10 is rare (Pitts/Hockenson-tier)
 }
 _DEFAULT_ANCHORS = _POS_PICK_ANCHORS["WR"]
