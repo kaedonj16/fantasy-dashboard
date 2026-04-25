@@ -6264,10 +6264,28 @@ def build_teams_body(ctx: dict) -> str:
               t.picks.forEach(function(p) {{
                 var pgcls = 'dg-' + p.grade.replace('+', 'plus');
                 var psign = p.value_diff >= 0 ? '+' : '';
+                // ADP pick slot — format as round.pick (e.g. pick 14 in a 10-team league = 2.04)
+                var adpSubline = '';
+                if (p.adp_rank != null) {{
+                  var adpDiff = p.adp_diff;
+                  var adpDiffHtml = adpDiff > 0
+                    ? ' <span class="adp-value">+' + adpDiff + ' value</span>'
+                    : adpDiff < 0
+                      ? ' <span class="adp-reach">' + adpDiff + ' reach</span>'
+                      : ' <span class="adp-neutral">on ADP</span>';
+                  var posRankStr = (p.pos_rank != null && p.pos_for_rank)
+                    ? ' · ' + p.pos_for_rank + p.pos_rank : '';
+                  adpSubline = '<div class="analytics-pick-adp-line">ADP ' + p.adp_rank + posRankStr + adpDiffHtml + '</div>';
+                }}
                 html += '<div class="analytics-pick-row">' +
+                  '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
                   '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
-                  '<span class="analytics-pick-name">' + p.name + '</span>' +
-                  '<span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
+                  '<div class="analytics-pick-info">' +
+                    '<div class="analytics-pick-name">' + p.name +
+                      ' <span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
+                    '</div>' +
+                    adpSubline +
+                  '</div>' +
                   '<span class="analytics-pick-val ' + (p.value_diff >= 0 ? 'analytics-bar-pos' : 'analytics-bar-neg') + '">' +
                     psign + p.value_diff + '</span>' +
                 '</div>';
@@ -12549,6 +12567,35 @@ def api_draft_grades():
         value_by_id: dict = {str(p.get("id")): float(p.get(val_field) or p.get("value") or 0) for p in value_table}
         players_index = load_players_index() or {}
 
+        # Load rookie ADP: overall_rank from our model's fantasy rookie rankings.
+        # Sleeper player_id → rookie consensus rank (1 = first pick).
+        # Also load positional rank for display.
+        rookie_adp: dict[str, int] = {}   # sleeper_id → overall_rank
+        rookie_pos_rank: dict[str, int] = {}  # sleeper_id → position_rank
+        rookie_pos_for_rank: dict[str, str] = {}  # sleeper_id → position
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as _conn:
+                _rows = _conn.execute("""
+                    SELECT rr.player_id, rr.overall_rank, rr.position_rank,
+                           rr.position, rp.sleeper_id
+                    FROM rookie_rankings rr
+                    JOIN rookie_prospects rp USING (player_id)
+                    WHERE rr.draft_class_year = %s
+                      AND rp.sleeper_id IS NOT NULL
+                      AND rr.overall_rank IS NOT NULL
+                    ORDER BY rr.overall_rank
+                """, (season,)).fetchall()
+            for _r in _rows:
+                _sid = str(_r["sleeper_id"])
+                rookie_adp[_sid] = int(_r["overall_rank"])
+                if _r["position_rank"]:
+                    rookie_pos_rank[_sid] = int(_r["position_rank"])
+                if _r["position"]:
+                    rookie_pos_for_rank[_sid] = str(_r["position"]).upper()
+        except Exception:
+            pass  # ADP unavailable — picks still graded by value diff
+
         # Build ADP expected value: sort all non-K/DEF players by current value
         CORE_POS = {"QB", "RB", "WR", "TE"}
         ranked_values = sorted(
@@ -12614,6 +12661,11 @@ def api_draft_grades():
             current_val = value_by_id.get(player_id, 0.0)
             expected_val = adp_expected_value(pick_no)
             pct_diff = ((current_val - expected_val) / expected_val) if expected_val > 0 else 0.0
+            # Rookie ADP: compare actual pick slot to model consensus rank
+            adp_rank = rookie_adp.get(player_id)
+            adp_diff = (pick_no - adp_rank) if adp_rank is not None else None  # + = value, - = reach
+            pos_rank = rookie_pos_rank.get(player_id)
+            pos_for_rank = rookie_pos_for_rank.get(player_id, str(player_meta.get("pos", "")).upper())
             picks_by_roster[rid].append({
                 "pick_no": pick_no,
                 "player_id": player_id,
@@ -12625,6 +12677,10 @@ def api_draft_grades():
                 "value_diff": round(current_val - expected_val, 1),
                 "pct_diff": round(pct_diff, 3),
                 "grade": pick_grade(pct_diff),
+                "adp_rank": adp_rank,
+                "adp_diff": adp_diff,
+                "pos_rank": pos_rank,
+                "pos_for_rank": pos_for_rank,
             })
 
         results = []

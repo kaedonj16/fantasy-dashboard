@@ -11879,7 +11879,7 @@ img, svg, canvas {
 /* Draft grades grid */
 .analytics-draft-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
   padding: 8px 16px 16px;
 }
@@ -11938,9 +11938,10 @@ img, svg, canvas {
 
 .analytics-pick-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   font-size: 12px;
+  padding: 2px 0;
 }
 
 .analytics-pick-grade {
@@ -11949,21 +11950,34 @@ img, svg, canvas {
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.analytics-pick-info {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .analytics-pick-name {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
+  font-size: 12px;
 }
 
 .analytics-pick-pos {
   font-size: 10px;
   font-weight: 600;
-  flex-shrink: 0;
-  width: 24px;
+}
+
+.analytics-pick-adp-line {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .analytics-pick-val {
@@ -11974,9 +11988,32 @@ img, svg, canvas {
   text-align: right;
 }
 
+.analytics-pick-num {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 26px;
+  margin-top: 2px;
+}
+
+.adp-value {
+  color: #4ade80;
+  font-weight: 700;
+}
+
+.adp-reach {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.adp-neutral {
+  color: var(--text-muted);
+}
+
 @media (max-width: 600px) {
   .analytics-bar-name { width: 100px; }
   .analytics-draft-grid { grid-template-columns: 1fr; }
+  .analytics-pick-adp-line { display: none; }
 }
 
 /* ── Beat the Market redesign ───────────────────────────────────────────── */
