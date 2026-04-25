@@ -7754,7 +7754,8 @@ def page_players(platform: str, season: int, league_id: str):
           row.style.cursor = 'pointer';
           row.onclick = function(e) {
             e.stopPropagation();
-            if (p.is_rookie) {
+            const _drafted = p.is_rookie && p.team && p.team !== 'FA';
+            if (p.is_rookie && !_drafted) {
               if (typeof rkOpenModal === 'function') {
                 rkOpenModal(p);
               } else {
@@ -7765,7 +7766,8 @@ def page_players(platform: str, season: int, league_id: str):
             }
           };
 
-          const displayRank = (p.position === 'PICK' || p.is_rookie) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const _drafted = p.is_rookie && p.team && p.team !== 'FA';
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);

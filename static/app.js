@@ -783,7 +783,8 @@ window.initTradePage = function initTradePage(root = document) {
       row.style.cursor = "pointer";
       row.onclick = (e) => {
         e.stopPropagation();
-        if (p.is_rookie && p.is_rookie != 'False') {
+        const _drafted = p.is_rookie && p.is_rookie != 'False' && p.team && p.team !== 'FA';
+        if (p.is_rookie && p.is_rookie != 'False' && !_drafted) {
           if (typeof rkOpenModal === 'function') {
             rkOpenModal(p);
           } else {
