@@ -612,11 +612,35 @@ def calc_efficiency_score(
             route_score = _scale(float(route_grade), 58.0, 90.0)
             eff = _clip(eff + (route_score - 50.0) * 0.10)
 
-        # Success rate vs. press — key NFL readiness indicator
+        # Success rate vs. press coverage
         press_sr = _eval_metric_value(eval_metrics, "success_rate_vs_press", min_confidence=0.70)
         if press_sr is not None:
             press_score = _scale(float(press_sr), 55.0, 85.0)
             eff = _clip(eff + (press_score - 50.0) * 0.06)
+
+        # Success rate vs. man coverage — strongest coverage-type predictor for NFL transition
+        man_sr = _eval_metric_value(eval_metrics, "success_rate_vs_man", min_confidence=0.70)
+        if man_sr is not None:
+            man_score = _scale(float(man_sr), 45.0, 75.0)
+            eff = _clip(eff + (man_score - 50.0) * 0.10)
+
+        # Success rate vs. zone coverage
+        zone_sr = _eval_metric_value(eval_metrics, "success_rate_vs_zone", min_confidence=0.70)
+        if zone_sr is not None:
+            zone_score = _scale(float(zone_sr), 52.0, 82.0)
+            eff = _clip(eff + (zone_score - 50.0) * 0.08)
+
+        # Contested catch rate — hands + body catching in traffic; physical ceiling signal
+        contested_rp = _eval_metric_value(eval_metrics, "contested_catch_rate_rp", min_confidence=0.65)
+        if contested_rp is not None:
+            contested_score = _scale(float(contested_rp), 38.0, 70.0)
+            eff = _clip(eff + (contested_score - 50.0) * 0.08)
+
+        # Tackle break rate — YAC/elusiveness after the catch
+        tbr = _eval_metric_value(eval_metrics, "tackle_break_rate", min_confidence=0.65)
+        if tbr is not None:
+            tbr_score = _scale(float(tbr), 8.0, 28.0)
+            eff = _clip(eff + (tbr_score - 50.0) * 0.06)
 
         # Route target rate from RP — centered adjustment: 30% = neutral, 42% = +6, 18% = -6
         rtr = _eval_metric_value(eval_metrics, "route_target_rate", min_confidence=0.75)
@@ -1802,6 +1826,11 @@ def score_prospect(
     # Apply round-specific multipliers to capture nonlinear value
     if projected_round and draft_capital:
         round_multiplier = draft_capital_multiplier(projected_round)
+        # WR round 1 bonus removed: backtest showed WR hit rate is not meaningfully
+        # higher for R1 vs R2 picks, and the multiplier caused systematic overgrading
+        # of top WRs while missing late-round breakouts.
+        if pos == "WR" and projected_round == 1:
+            round_multiplier = 1.0
         dc_score = _clip(dc_score * round_multiplier)
 
     # ── Position dc multiplier ──────────────────────────────────────────────
