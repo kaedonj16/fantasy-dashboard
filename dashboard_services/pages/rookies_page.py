@@ -963,5 +963,55 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       document.getElementById('rkLoading').innerHTML =
         '<div style="color:#ef4444;">Failed to load rookie data. Please refresh.</div>';
     });
+
+  function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
+    if (existingSleeperIdVal) {
+      return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
+    }
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +
+      '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
+      '<button onclick="rkLinkSleeper(\\'' + playerId + '\\')" style="font-size:12px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
+    '</div>';
+  }
+
+  function rkLinkSleeper(playerId) {
+    var inp = document.getElementById('rkSleeperIdInput');
+    if (!inp) return;
+    var sleeperIdVal = inp.value.trim();
+    if (!sleeperIdVal) { inp.focus(); return; }
+    var btn = inp.nextElementSibling;
+    if (!btn) return;
+    
+    btn.disabled = true;
+    btn.textContent = 'Linking...';
+    
+    fetch('/api/prospects/link-sleeper', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({player_id: playerId, sleeper_id: sleeperIdVal})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(resp){
+      if (resp.success) {
+        var sec = document.getElementById('rkLinkSleeperSection');
+        if (sec) sec.innerHTML = _buildLinkSleeperHtml(playerId, sleeperIdVal);
+        // Update the player in the global list for future renders
+        var p = rkAllPlayers.find(function(pl){ return pl.player_id === playerId; });
+        if (p) p.sleeper_id = sleeperIdVal;
+        rkRender(); // re-render to update the row
+      } else {
+        alert('Failed to link: ' + (resp.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.textContent = 'Link & Promote';
+      }
+    })
+    .catch(function(err){
+      console.error('Link error:', err);
+      alert('Error linking Sleeper ID');
+      btn.disabled = false;
+      btn.textContent = 'Link & Promote';
+    });
+  }
 </script>
 """

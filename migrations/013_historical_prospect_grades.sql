@@ -4,7 +4,7 @@
 --   python scripts/populate_historical_grades.py
 -- which executes the real prospect model via the backtest pipeline.
 
-CREATE TABLE IF NOT EXISTS historical_prospect_grades (
+create TABLE IF NOT EXISTS historical_prospect_grades (
     player_id           TEXT        PRIMARY KEY,  -- HIST_{YEAR}_{NAME_SLUG}
     sleeper_id          TEXT,
     name                TEXT        NOT NULL,
@@ -33,15 +33,49 @@ CREATE TABLE IF NOT EXISTS historical_prospect_grades (
     created_at          TIMESTAMP   DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_hpg_position_score ON historical_prospect_grades(position, prospect_score);
-CREATE INDEX IF NOT EXISTS idx_hpg_year           ON historical_prospect_grades(draft_class_year);
-CREATE INDEX IF NOT EXISTS idx_hpg_sleeper        ON historical_prospect_grades(sleeper_id) WHERE sleeper_id IS NOT NULL;
+create index IF NOT EXISTS idx_hpg_position_score ON historical_prospect_grades(position, prospect_score);
+create index IF NOT EXISTS idx_hpg_year           ON historical_prospect_grades(draft_class_year);
+create index IF NOT EXISTS idx_hpg_sleeper        ON historical_prospect_grades(sleeper_id) WHERE sleeper_id IS NOT NULL;
 
 -- ── Identity seed data (no scores — run populate_historical_grades.py for those) ──
 
+-- 2016 + 2017 Top Tier Historical Prospects
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
+  ('HIST_2016_JARED_GOFF',        'Jared Goff',          'QB', 2016, 'California',       1, 1, 'LAR'),
+  ('HIST_2016_CARSON_WENTZ',      'Carson Wentz',        'QB', 2016, 'North Dakota St',  2, 1, 'PHI'),
+  ('HIST_2016_EZEKIEL_ELLIOTT',   'Ezekiel Elliott',     'RB', 2016, 'Ohio State',       4, 1, 'DAL'),
+  ('HIST_2016_COREY_COLEMAN',     'Corey Coleman',       'WR', 2016, 'Baylor',          15, 1, 'CLE'),
+  ('HIST_2016_WILL_FULLER',       'Will Fuller',         'WR', 2016, 'Notre Dame',      21, 1, 'HOU'),
+  ('HIST_2016_JOSH_DOCTSON',      'Josh Doctson',        'WR', 2016, 'TCU',             22, 1, 'WAS'),
+  ('HIST_2016_LAQUON_TREADWELL',  'Laquon Treadwell',    'WR', 2016, 'Ole Miss',        23, 1, 'MIN'),
+  ('HIST_2016_HUNTER_HENRY',      'Hunter Henry',        'TE', 2016, 'Arkansas',        35, 2, 'SD'),
+  ('HIST_2016_DERRICK_HENRY',     'Derrick Henry',       'RB', 2016, 'Alabama',         45, 2, 'TEN'),
+  ('HIST_2016_MICHAEL_THOMAS',    'Michael Thomas',      'WR', 2016, 'Ohio State',      47, 2, 'NO'),
+  ('HIST_2016_TYLER_BOYD',        'Tyler Boyd',          'WR', 2016, 'Pittsburgh',      55, 2, 'CIN'),
+
+  -- 2017
+  ('HIST_2017_MITCHELL_TRUBISKY', 'Mitchell Trubisky',   'QB', 2017, 'North Carolina',   2, 1, 'CHI'),
+  ('HIST_2017_LEONARD_FOURNETTE', 'Leonard Fournette',   'RB', 2017, 'LSU',              4, 1, 'JAX'),
+  ('HIST_2017_COREY_DAVIS',       'Corey Davis',         'WR', 2017, 'Western Michigan', 5, 1, 'TEN'),
+  ('HIST_2017_MIKE_WILLIAMS',     'Mike Williams',       'WR', 2017, 'Clemson',          7, 1, 'LAC'),
+  ('HIST_2017_CHRISTIAN_MCCAFFREY','Christian McCaffrey','RB', 2017, 'Stanford',         8, 1, 'CAR'),
+  ('HIST_2017_JOHN_ROSS',         'John Ross',           'WR', 2017, 'Washington',       9, 1, 'CIN'),
+  ('HIST_2017_PATRICK_MAHOMES',   'Patrick Mahomes',     'QB', 2017, 'Texas Tech',      10, 1, 'KC'),
+  ('HIST_2017_DESHAUN_WATSON',    'Deshaun Watson',      'QB', 2017, 'Clemson',         12, 1, 'HOU'),
+  ('HIST_2017_OJ_HOWARD',         'O.J. Howard',         'TE', 2017, 'Alabama',         19, 1, 'TB'),
+  ('HIST_2017_EVAN_ENGRAM',       'Evan Engram',         'TE', 2017, 'Ole Miss',        23, 1, 'NYG'),
+  ('HIST_2017_DAVID_NJOKU',       'David Njoku',         'TE', 2017, 'Miami',           29, 1, 'CLE'),
+  ('HIST_2017_DALVIN_COOK',       'Dalvin Cook',         'RB', 2017, 'Florida State',   41, 2, 'MIN'),
+  ('HIST_2017_JOE_MIXON',         'Joe Mixon',           'RB', 2017, 'Oklahoma',        48, 2, 'CIN'),
+  ('HIST_2017_JUJU_SMITH_SCHUSTER','JuJu Smith-Schuster','WR', 2017, 'USC',             62, 2, 'PIT'),
+  ('HIST_2017_ALVIN_KAMARA',      'Alvin Kamara',        'RB', 2017, 'Tennessee',       67, 3, 'NO'),
+  ('HIST_2017_COOPER_KUPP',       'Cooper Kupp',         'WR', 2017, 'Eastern Washington',69,3,'LAR')
+ON CONFLICT (player_id) DO NOTHING;
+
 -- 2018 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2018_SAQUON_BARKLEY',   'Saquon Barkley',    'RB', 2018, 'Penn State',     2, 1, 'NYG'),
   ('HIST_2018_JOSH_ALLEN',       'Josh Allen',         'QB', 2018, 'Wyoming',        7, 1, 'BUF'),
   ('HIST_2018_BAKER_MAYFIELD',   'Baker Mayfield',     'QB', 2018, 'Oklahoma',       1, 1, 'CLE'),
@@ -57,8 +91,8 @@ VALUES
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2019 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2019_KYLER_MURRAY',      'Kyler Murray',      'QB', 2019, 'Oklahoma',       1, 1, 'ARI'),
   ('HIST_2019_DWAYNE_HASKINS',    'Dwayne Haskins',    'QB', 2019, 'Ohio State',    15, 1, 'WAS'),
   ('HIST_2019_DANIEL_JONES',      'Daniel Jones',      'QB', 2019, 'Duke',           6, 1, 'NYG'),
@@ -76,16 +110,16 @@ VALUES
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2020 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2020_JOE_BURROW',             'Joe Burrow',              'QB', 2020, 'LSU',           1, 1, 'CIN'),
   ('HIST_2020_TUA_TAGOVAILOA',         'Tua Tagovailoa',          'QB', 2020, 'Alabama',       5, 1, 'MIA'),
   ('HIST_2020_JUSTIN_HERBERT',         'Justin Herbert',          'QB', 2020, 'Oregon',        6, 1, 'LAC'),
   ('HIST_2020_JONATHAN_TAYLOR',        'Jonathan Taylor',         'RB', 2020, 'Wisconsin',    41, 2, 'IND'),
-  ('HIST_2020_DANDRE_SWIFT',           "D'Andre Swift",           'RB', 2020, 'Georgia',      35, 2, 'DET'),
+  ('HIST_2020_DANDRE_SWIFT',           'D''Andre Swift',          'RB', 2020, 'Georgia',      35, 2, 'DET'),
   ('HIST_2020_CLYDE_EDWARDS_HELAIRE',  'Clyde Edwards-Helaire',   'RB', 2020, 'LSU',          32, 1, 'KC'),
   ('HIST_2020_CAM_AKERS',              'Cam Akers',               'RB', 2020, 'Florida State',52, 2, 'LAR'),
-  ('HIST_2020_AJ_DILLON',             'A.J. Dillon',             'RB', 2020, 'Boston College',62, 2, 'GB'),
+  ('HIST_2020_AJ_DILLON',             'A.J. Dillon',              'RB', 2020, 'Boston College',62, 2, 'GB'),
   ('HIST_2020_CEEDEE_LAMB',            'CeeDee Lamb',             'WR', 2020, 'Oklahoma',     17, 1, 'DAL'),
   ('HIST_2020_JUSTIN_JEFFERSON',       'Justin Jefferson',        'WR', 2020, 'LSU',          22, 1, 'MIN'),
   ('HIST_2020_JERRY_JEUDY',            'Jerry Jeudy',             'WR', 2020, 'Alabama',      15, 1, 'DEN'),
@@ -95,8 +129,8 @@ VALUES
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2021 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2021_TREVOR_LAWRENCE',  'Trevor Lawrence',  'QB', 2021, 'Clemson',        1, 1, 'JAX'),
   ('HIST_2021_JUSTIN_FIELDS',    'Justin Fields',    'QB', 2021, 'Ohio State',    11, 1, 'CHI'),
   ('HIST_2021_ZACH_WILSON',      'Zach Wilson',      'QB', 2021, 'BYU',            2, 1, 'NYJ'),
@@ -105,17 +139,21 @@ VALUES
   ('HIST_2021_TRAVIS_ETIENNE',   'Travis Etienne',   'RB', 2021, 'Clemson',       25, 1, 'JAX'),
   ('HIST_2021_JAVONTE_WILLIAMS', 'Javonte Williams', 'RB', 2021, 'North Carolina',35, 2, 'DEN'),
   ('HIST_2021_MICHAEL_CARTER',   'Michael Carter',   'RB', 2021, 'North Carolina',107,4, 'NYJ'),
-  ('HIST_2021_JAMARR_CHASE',    "Ja'Marr Chase",    'WR', 2021, 'LSU',            5, 1, 'CIN'),
+  ('HIST_2021_JAMARR_CHASE',    'Ja''Marr Chase',    'WR', 2021, 'LSU',            5, 1, 'CIN'),
   ('HIST_2021_JAYLEN_WADDLE',    'Jaylen Waddle',    'WR', 2021, 'Alabama',        6, 1, 'MIA'),
-  ('HIST_2021_DEVONTA_SMITH',    "DeVonta Smith",    'WR', 2021, 'Alabama',       10, 1, 'PHI'),
+  ('HIST_2021_DEVONTA_SMITH',    'DeVonta Smith',    'WR', 2021, 'Alabama',       10, 1, 'PHI'),
   ('HIST_2021_RASHOD_BATEMAN',   'Rashod Bateman',   'WR', 2021, 'Minnesota',     27, 1, 'BAL'),
   ('HIST_2021_KYLE_PITTS',       'Kyle Pitts',       'TE', 2021, 'Florida',        4, 1, 'ATL'),
-  ('HIST_2021_PAT_FREIERMUTH',   'Pat Freiermuth',   'TE', 2021, 'Penn State',    55, 2, 'PIT')
+  ('HIST_2021_PAT_FREIERMUTH',   'Pat Freiermuth',   'TE', 2021, 'Penn State',    55, 2, 'PIT'),
+  ('HIST_2021_AMON_RA_ST_BROWN', 'Amon-Ra St. Brown','WR', 2021, 'USC',           112, 4, 'DET'),
+  ('HIST_2021_ELIJAH_MOORE',     'Elijah Moore',     'WR', 2021, 'Ole Miss',       34, 2, 'NYJ'),
+  ('HIST_2020_DARNELL_MOONEY',   'Darnell Mooney',   'WR', 2020, 'Tulane',        173, 5, 'CHI'),
+  ('HIST_2020_GABRIEL_DAVIS',    'Gabriel Davis',    'WR', 2020, 'UCF',           128, 4, 'BUF')
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2022 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2022_KENNY_PICKETT',      'Kenny Pickett',      'QB', 2022, 'Pittsburgh',     20, 1, 'PIT'),
   ('HIST_2022_DESMOND_RIDDER',     'Desmond Ridder',     'QB', 2022, 'Cincinnati',     74, 3, 'ATL'),
   ('HIST_2022_BREECE_HALL',        'Breece Hall',        'RB', 2022, 'Iowa State',     36, 2, 'NYJ'),
@@ -134,8 +172,8 @@ VALUES
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2023 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2023_BRYCE_YOUNG',           'Bryce Young',            'QB', 2023, 'Alabama',        1, 1, 'CAR'),
   ('HIST_2023_CJ_STROUD',             'C.J. Stroud',            'QB', 2023, 'Ohio State',      2, 1, 'HOU'),
   ('HIST_2023_ANTHONY_RICHARDSON',    'Anthony Richardson',     'QB', 2023, 'Florida',         4, 1, 'IND'),
@@ -151,12 +189,16 @@ VALUES
   ('HIST_2023_RASHEE_RICE',           'Rashee Rice',            'WR', 2023, 'SMU',            55, 2, 'KC'),
   ('HIST_2023_JAYLIN_HYATT',          'Jaylin Hyatt',           'WR', 2023, 'Tennessee',      71, 3, 'NYG'),
   ('HIST_2023_SAM_LAPORTA',           'Sam LaPorta',            'TE', 2023, 'Iowa',           34, 2, 'DET'),
-  ('HIST_2023_MICHAEL_MAYER',         'Michael Mayer',          'TE', 2023, 'Notre Dame',     35, 2, 'LV')
+  ('HIST_2023_MICHAEL_MAYER',         'Michael Mayer',          'TE', 2023, 'Notre Dame',     35, 2, 'LV'),
+  ('HIST_2023_DEVON_ACHANE',          'DeVon Achane',           'RB', 2023, 'Texas A&M',      84, 3, 'MIA'),
+  ('HIST_2023_JOSH_DOWNS',            'Josh Downs',             'WR', 2023, 'North Carolina', 79, 3, 'IND'),
+  ('HIST_2023_TYJAE_SPEARS',          'Tyjae Spears',           'RB', 2023, 'Tulane',         81, 3, 'TEN'),
+  ('HIST_2023_MARVIN_MIMS',           'Marvin Mims Jr',         'WR', 2023, 'Oklahoma',       63, 2, 'DEN')
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2024 Draft Class
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2024_CALEB_WILLIAMS',     'Caleb Williams',      'QB', 2024, 'USC',              1, 1, 'CHI'),
   ('HIST_2024_DRAKE_MAYE',         'Drake Maye',          'QB', 2024, 'North Carolina',   3, 1, 'NE'),
   ('HIST_2024_JAYDEN_DANIELS',     'Jayden Daniels',      'QB', 2024, 'LSU',              2, 1, 'WAS'),
@@ -180,8 +222,8 @@ VALUES
 ON CONFLICT (player_id) DO NOTHING;
 
 -- 2025 Draft Class (drafted April 2025)
-INSERT INTO historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
-VALUES
+insert into historical_prospect_grades (player_id, name, position, draft_class_year, school, actual_pick, actual_round, actual_nfl_team)
+values
   ('HIST_2025_CAM_WARD',           'Cam Ward',            'QB', 2025, 'Miami',           1, 1, 'TEN'),
   ('HIST_2025_SHEDEUR_SANDERS',    'Shedeur Sanders',     'QB', 2025, 'Colorado',        5, 1, 'CLE'),
   ('HIST_2025_DILLON_GABRIEL',     'Dillon Gabriel',      'QB', 2025, 'Oregon',         94, 3, 'LAR'),

@@ -80,6 +80,10 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
         raise last_err
     try:
         conn.autocommit = autocommit
+        # Set isolation level to READ COMMITTED to reduce deadlock likelihood
+        # Only set when not in autocommit mode to avoid transaction conflicts
+        if not autocommit:
+            conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         yield conn
         if not autocommit:
             try:

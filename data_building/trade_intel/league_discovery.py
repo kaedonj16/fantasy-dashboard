@@ -114,43 +114,96 @@ def _save_users(user_ids: List[str], source: str = "bfs", usernames: Optional[Di
     if not user_ids:
         return
     usernames = usernames or {}
-    with get_conn() as conn:
-        for uid in user_ids:
-            conn.execute(
-                """
-                INSERT INTO trade_intel_users (user_id, username, source)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (user_id) DO NOTHING
-                """,
-                (uid, usernames.get(uid), source)
-            )
+    
+    # Use executemany with psycopg 3.x to avoid deadlock
+    import time
+    import random
+    from psycopg import errors
+    
+    # Prepare data for executemany
+    values = [(uid, usernames.get(uid), source) for uid in user_ids]
+    
+    # Retry with exponential backoff for deadlock handling
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.executemany(
+                    """
+                    INSERT INTO trade_intel_users (user_id, username, source)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user_id) DO NOTHING
+                    """,
+                    values
+                )
+                break  # Success, exit retry loop
+        except errors.DeadlockDetected:
+            if attempt == max_retries - 1:
+                # Last attempt failed, re-raise
+                raise
+            # Add jittered exponential backoff
+            backoff = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(backoff)
+        except Exception as e:
+            # For other exceptions, don't retry
+            raise
 
 
 def _save_leagues(leagues: list[dict]) -> int:
     if not leagues:
         return 0
-    with get_conn() as conn:
-        for lg in leagues:
-            conn.execute(
-                """
-                INSERT INTO trade_intel_leagues
-                    (league_id, season, num_teams, scoring_type, league_type,
-                     is_superflex, crawl_enabled)
-                VALUES (%s, %s, %s, %s, %s, %s, TRUE)
-                ON CONFLICT (league_id) DO UPDATE SET
-                    crawl_enabled = TRUE,
-                    is_superflex  = EXCLUDED.is_superflex,
-                    league_type   = EXCLUDED.league_type
-                """,
-                (
-                    lg["league_id"],
-                    lg["season"],
-                    lg.get("num_teams"),
-                    lg.get("scoring_type"),
-                    lg.get("league_type"),
-                    lg.get("is_superflex", False),
+    
+    # Use executemany with psycopg 3.x to avoid potential deadlocks
+    import time
+    import random
+    from psycopg import errors
+    
+    # Prepare data for executemany
+    values = [
+        (
+            lg["league_id"],
+            lg["season"],
+            lg.get("num_teams"),
+            lg.get("scoring_type"),
+            lg.get("league_type"),
+            lg.get("is_superflex", False),
+            True
+        )
+        for lg in leagues
+    ]
+    
+    # Retry with exponential backoff for deadlock handling
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.executemany(
+                    """
+                    INSERT INTO trade_intel_leagues
+                        (league_id, season, num_teams, scoring_type, league_type,
+                         is_superflex, crawl_enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (league_id) DO UPDATE SET
+                        crawl_enabled = TRUE,
+                        is_superflex  = EXCLUDED.is_superflex,
+                        league_type   = EXCLUDED.league_type
+                    """,
+                    values
                 )
-            )
+                break  # Success, exit retry loop
+        except errors.DeadlockDetected:
+            if attempt == max_retries - 1:
+                # Last attempt failed, re-raise
+                raise
+            # Add jittered exponential backoff
+            backoff = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(backoff)
+        except Exception as e:
+            # For other exceptions, don't retry
+            raise
+    
     return len(leagues)
 
 
@@ -469,8 +522,8 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             
             return league_data, new_frontier_leagues, league_type_label
         
-        # Process batch in parallel
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        # Process batch in parallel with reduced concurrency to prevent deadlocks
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(process_single_frontier_league, lid): lid for lid in batch_leagues}
             for future in as_completed(futures):
                 league_data, new_frontier, league_type_label = future.result()

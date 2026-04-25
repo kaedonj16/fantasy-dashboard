@@ -455,7 +455,25 @@ class MLProspectScorer:
                 else:
                     # Model not trained yet — fall back to draft capital proxy
                     pick  = _sf((cons or {}).get("projected_pick"), 200.0)
-                    score = max(0.0, min(100.0, 100.0 - (pick / 260.0) * 100.0))
+                    base_score = max(0.0, 100.0 - (pick / 260.0) * 100.0)
+                    
+                    # Data completeness check: prevent artificial inflation from incomplete data
+                    seasons = p.get("seasons", [])
+                    meaningful_components = 0
+                    if seasons:
+                        latest = max(seasons, key=lambda s: _sf(s.get("season", 0)))
+                        # Check for meaningful production data
+                        if _sf(latest.get("receiving_yards", 0)) > 200: meaningful_components += 1
+                        if _sf(latest.get("rush_yards", 0)) > 300: meaningful_components += 1
+                        if _sf(latest.get("pass_yards", 0)) > 1000: meaningful_components += 1
+                        if _sf(latest.get("dominator_rating", 0)) > 0.15: meaningful_components += 1
+                    
+                    # Only allow high scores for complete data profiles
+                    if meaningful_components >= 2:
+                        score = min(100.0, base_score)
+                    else:
+                        # Incomplete data: cap at 85.0
+                        score = min(85.0, base_score * 0.9)
 
                 scored.append((p, cons, score))
                 overall_scores.append((pid, score))
