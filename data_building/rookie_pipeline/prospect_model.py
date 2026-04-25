@@ -541,15 +541,16 @@ def calc_production_score(
         elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
         if elusive is not None:
             # Scale-based and symmetric: 0 at elusive=90 (roughly average), up to
-            # +5 at 130 (elite), down to -4 at 55 (poor). Symmetry reduces ceiling lock.
+            # +3 at 130 (elite), down to -2.4 at 55 (poor). Cap reduced so elite stats
+            # that already produce a high base score can't push the total over 100.
             elusive_delta = _clip((float(elusive) - 90.0) / 40.0, -0.8, 1.0)
-            prod = _clip(prod + (elusive_delta * 5.0))
+            prod = _clip(prod + (elusive_delta * 3.0))
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
-            # Scale-based and symmetric: 0 at 20% (average), +4 at 40% elite, -3 at 8%.
+            # Scale-based and symmetric: 0 at 20% (average), +2 at 40% elite, -1.5 at 8%.
             breakaway_delta = _clip((breakaway - 20.0) / 20.0, -1.0, 1.0)
-            prod = _clip(prod + (breakaway_delta * 4.0))
+            prod = _clip(prod + (breakaway_delta * 2.0))
 
     elif eval_metrics and pos == "QB":
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
@@ -1342,7 +1343,7 @@ def calc_loaded_roster_adjustment(
         "Notre Dame": {
             "RB": {
                 2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
-                2025: 2,
+                # 2025 removed: Love was the clear alpha starter, not opportunity-constrained
             },
         },
     }
