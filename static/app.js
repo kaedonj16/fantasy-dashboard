@@ -4227,7 +4227,7 @@ function openPlayerModal(playerId, playerName) {
       // ── Prospect Profile (rookies with linked prospect data) ─────────────
       const pd = data.prospect_data;
       const isRookieWithProspectData = (yearsExp === 0 || yearsExp === null) && pd && pd.prospect_score != null;
-
+      let pdColHTML = '';
       if (isRookieWithProspectData) {
         const pdScore = parseFloat(pd.prospect_score || 0);
         const pdConf  = parseFloat(pd.confidence_score || 0);
@@ -4271,8 +4271,7 @@ function openPlayerModal(playerId, playerName) {
              <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">${pdReasons.map(l => `<div style="padding:2px 0;">${l}</div>`).join('')}</div>`
           : '';
 
-        bodyHTML += `
-          <hr class="pm-section-divider">
+        pdColHTML = `
           <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
             <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
             <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
@@ -4307,7 +4306,7 @@ function openPlayerModal(playerId, playerName) {
           <div class="rk-section-divider"></div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
-            <span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
+            <span style="font-size:11px;color:var(--text-muted);">Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
           </div>
           <div class="rk-comp-list">${pdCompsHtml}</div>
           ${pdReasonsHtml}
@@ -4321,14 +4320,17 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
-      // ── Advanced Metrics + Value History (side by side) ───────────────────
+      // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
       const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      if (hasMetrics || hasChart) {
-        bodyHTML += `<hr class="pm-section-divider"><div class="pm-metrics-chart-grid">`;
+      if (hasMetrics || isRookieWithProspectData || hasChart) {
+        const gridClass = isRookieWithProspectData ? 'pm-metrics-chart-grid pm-metrics-chart-grid--prospect' : 'pm-metrics-chart-grid';
+        bodyHTML += `<hr class="pm-section-divider"><div class="${gridClass}">`;
 
-        if (hasMetrics) {
+        if (isRookieWithProspectData) {
+          bodyHTML += `<div>${pdColHTML}</div>`;
+        } else if (hasMetrics) {
           bodyHTML += `
             <div id="advancedMetricsSection">
               <div class="pm-section-header">

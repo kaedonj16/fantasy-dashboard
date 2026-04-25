@@ -10390,8 +10390,12 @@ img, svg, canvas {
   gap: 20px;
   align-items: start;
 }
+.pm-metrics-chart-grid--prospect {
+  grid-template-columns: 3fr 2fr;
+}
 @media (max-width: 700px) {
   .pm-metrics-chart-grid { grid-template-columns: 1fr; }
+  .pm-metrics-chart-grid--prospect { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .pm-hero-row { grid-template-columns: 1fr 1fr; }
