@@ -276,7 +276,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NULL
-                  AND league_type = 2  -- Dynasty leagues only
+                  AND league_type IN (1, 2)  -- dynasty and redraft
                 ORDER BY discovered_at ASC
                 LIMIT %s
             """
@@ -289,7 +289,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NOT NULL
                   AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
-                  AND league_type = 2  -- Dynasty leagues only
+                  AND league_type IN (1, 2)  -- dynasty and redraft
                 ORDER BY last_crawled_at ASC NULLS FIRST
                 LIMIT %s
             """

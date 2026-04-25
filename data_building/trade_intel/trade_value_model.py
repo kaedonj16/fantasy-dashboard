@@ -101,8 +101,36 @@ def _pick_key(asset: dict) -> str:
 # Data loading
 # ---------------------------------------------------------------------------
 
-def _load_prior() -> dict[str, dict]:
-    """Load raw model values as the WLS regularization prior for players."""
+def _load_prior(league_type: int = 2) -> dict[str, dict]:
+    """
+    Load WLS regularization prior for players.
+    Dynasty (2): raw model values.
+    Redraft (1): FC redraft values stored in player_values.
+    """
+    if league_type == 1:
+        # Redraft prior: use FantasyCalc redraft values from player_values
+        try:
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT player_id,
+                           COALESCE(redraft_value_1qb, 0) AS v1,
+                           COALESCE(redraft_value_sf,  redraft_value_1qb, 0) AS vsf
+                    FROM player_values
+                    WHERE redraft_value_1qb IS NOT NULL AND redraft_value_1qb > 0
+                    """
+                ).fetchall()
+            return {
+                str(r["player_id"]): {
+                    "value_1qb": float(r["v1"]),
+                    "value_sf":  float(r["vsf"]),
+                }
+                for r in rows
+            }
+        except Exception as e:
+            logger.warning("[trade_value_model] Could not load redraft prior from DB: %s", e)
+            return {}
+
     from utils.utils import load_model_value_table
     value_table = load_model_value_table(apply_calibration=False) or []
     return {
@@ -115,7 +143,7 @@ def _load_prior() -> dict[str, dict]:
     }
 
 
-def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
+def _load_trades(season: int, is_sf: bool = False, league_type: int = 2) -> list[dict]:
     with get_conn() as conn:
         trade_rows = conn.execute(
             """
@@ -125,9 +153,10 @@ def _load_trades(season: int, is_sf: bool = False) -> list[dict]:
             WHERE t.season = %s
               AND t.status = 'complete'
               AND COALESCE(l.is_superflex, FALSE) = %s
+              AND l.league_type = %s
             ORDER BY t.created_at
             """,
-            (season, is_sf),
+            (season, is_sf, league_type),
         ).fetchall()
 
         if not trade_rows:
@@ -268,6 +297,24 @@ def _write_calibrated(rows: list[dict]) -> int:
     return len(rows)
 
 
+def _write_redraft_values(rows: list[dict]) -> int:
+    """Write WLS-calibrated values to redraft_value_1qb / redraft_value_sf columns."""
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        for r in rows:
+            conn.execute(
+                """
+                UPDATE player_values SET
+                    redraft_value_1qb = %(redraft_value_1qb)s,
+                    redraft_value_sf  = %(redraft_value_sf)s
+                WHERE player_id = %(player_id)s
+                """,
+                r,
+            )
+    return len(rows)
+
+
 def _write_pick_values(pick_values_1qb: dict[str, float], pick_values_sf: dict[str, float]) -> None:
     """
     Write WLS-derived pick values to a JSON file consumed by load_pick_value_table().
@@ -300,27 +347,27 @@ def _detect_season() -> int:
 def run_trade_value_model(
     season: int | None = None,
     lambda_reg: float  = LAMBDA_REG,
+    league_type: int   = 2,
 ) -> dict:
     """
-    Derive player AND pick values from trade patterns.
+    Derive player (and pick) values from trade patterns via WLS.
 
-    Players:  written to calibrated_value columns in player_values table.
-    Picks:    written to data/pick_values_wls_latest.json, consumed by
-              load_pick_value_table() as a higher-priority source.
+    league_type=2 (dynasty): writes calibrated_value_1qb / calibrated_value_sf
+                              + pick values to JSON.
+    league_type=1 (redraft):  writes redraft_value_1qb / redraft_value_sf only
+                              (picks not modelled for redraft).
 
-    lambda_reg: regularization strength.
-        Higher  → values stay closer to the model prior.
-        Lower   → values driven more by trade data.
-        Default (15) means ~50 trades yields ~65% market influence.
+    lambda_reg: regularization strength (default 15 ≈ 50 trades → 65% market).
     """
     if season is None:
         season = _detect_season()
 
-    logger.info("[trade_value_model] Season %d | λ=%.1f", season, lambda_reg)
+    mode = "redraft" if league_type == 1 else "dynasty"
+    logger.info("[trade_value_model] Season %d | mode=%s | λ=%.1f", season, mode, lambda_reg)
 
-    player_prior  = _load_prior()
-    trades_1qb    = _load_trades(season, is_sf=False)
-    trades_sf     = _load_trades(season, is_sf=True)
+    player_prior  = _load_prior(league_type)
+    trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type)
+    trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type)
 
     # External pick table is the regularization prior for pick buckets
     try:
@@ -428,26 +475,39 @@ def run_trade_value_model(
         cal_sf  = float(v_sf_norm[i])
         prior_v = player_prior[pid]["value_1qb"]
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0
-        out_rows.append({
-            "player_id":             pid,
-            "calibrated_value_1qb":  round(cal_1qb, 2),
-            "calibrated_value_sf":   round(cal_sf,  2),
-            "calibration_weight":    min(weight, 1.0),
-            "calibration_source":    "trade_wls",
-        })
+        if league_type == 1:
+            out_rows.append({
+                "player_id":        pid,
+                "redraft_value_1qb": round(cal_1qb, 2),
+                "redraft_value_sf":  round(cal_sf,  2),
+            })
+        else:
+            out_rows.append({
+                "player_id":             pid,
+                "calibrated_value_1qb":  round(cal_1qb, 2),
+                "calibrated_value_sf":   round(cal_sf,  2),
+                "calibration_weight":    min(weight, 1.0),
+                "calibration_source":    "trade_wls",
+            })
 
-    top10 = sorted(out_rows, key=lambda r: r["calibrated_value_1qb"], reverse=True)[:10]
-    logger.info("[trade_value_model] Top 10 calibrated player values (1QB):")
+    val_key = "redraft_value_1qb" if league_type == 1 else "calibrated_value_1qb"
+    top10 = sorted(out_rows, key=lambda r: r[val_key], reverse=True)[:10]
+    logger.info("[trade_value_model] Top 10 %s player values (1QB):", mode)
     for r in top10:
-        logger.info("  pid=%-10s  cal=%.2f  prior=%.2f",
-                    r["player_id"], r["calibrated_value_1qb"],
+        logger.info("  pid=%-10s  val=%.2f  prior=%.2f",
+                    r["player_id"], r[val_key],
                     player_prior[r["player_id"]]["value_1qb"])
 
-    # --- Pick output ---
+    if league_type == 1:
+        n = _write_redraft_values(out_rows)
+        logger.info("[trade_value_model] Done — %d redraft player values updated.", n)
+        return {"written": n, "trades_used": M, "players": n_pl, "season": season, "mode": mode}
+
+    # --- Pick output (dynasty only) ---
     pick_vals_1qb: dict[str, float] = {}
     pick_vals_sf:  dict[str, float] = {}
     for i, key in enumerate(pick_keys):
-        lookup = key[len("pick_"):]  # strip prefix → load_pick_value_table() format
+        lookup = key[len("pick_"):]
         pick_vals_1qb[lookup] = round(float(v_1qb_norm[n_pl + i]), 2)
         pick_vals_sf[lookup]  = round(float(v_sf_norm[n_pl + i]),  2)
 
@@ -466,6 +526,7 @@ def run_trade_value_model(
         "players":      n_pl,
         "pick_buckets": len(pick_keys),
         "season":       season,
+        "mode":         mode,
     }
 
 

@@ -488,29 +488,30 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             else:
                 league_type_label = f"other_{league_type}"
             
-            # Only dynasty leagues proceed to full processing
-            if league_type != 2:
+            # Only save dynasty (2) and redraft (1) leagues
+            if league_type not in (1, 2):
                 return None, [], league_type_label
-            
+
             lg_season = int(meta.get("season") or season)
             num_teams = meta.get("total_rosters", 0)
             scoring_type = _classify_scoring(meta)
             is_sf = _is_superflex(meta)
-            
+
             league_data = {
                 "league_id":   league_id,
                 "season":      lg_season,
                 "num_teams":   num_teams,
                 "scoring_type": scoring_type,
-                "league_type": 2,
+                "league_type": league_type,  # 1=redraft, 2=dynasty
                 "is_superflex": is_sf,
             }
             
-            # Expand frontier via roster owners (only if frontier is small)
+            # Expand frontier via roster owners (for both dynasty and redraft)
             new_frontier_leagues = []
             if len(frontier) < 2000:
                 owner_ids = _roster_owner_ids(league_id)
-                _save_users(owner_ids, source="bfs")
+                if league_type == 2:  # only persist dynasty owners as future seeds
+                    _save_users(owner_ids, source="bfs")
                 for owner_id in owner_ids:
                     if owner_id in visited_users:
                         continue
