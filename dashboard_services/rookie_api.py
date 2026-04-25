@@ -323,7 +323,7 @@ def comparables(player_id: str):
 
         position = (prospect.get("position") or "").upper()
         score = float(prospect.get("prospect_score") or 0)
-        band = 16.0  # ±16 points prospect_score
+        band = 3.0  # ±16 points prospect_score
 
         try:
             with get_conn() as conn:

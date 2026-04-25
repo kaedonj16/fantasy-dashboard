@@ -268,7 +268,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 20,  150) * 0.18 +
+            _scale(rush_yds_pg, 20,  145) * 0.18 +
             _scale(all_yds_pg,  30,  180) * 0.17 +
             _scale(tds_pg,       0.4,  2.0) * 0.25 +
             _scale(dom,          0.12, 0.75) * 0.15 +
@@ -893,7 +893,7 @@ _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Maximum athleticism score when metric coverage is sparse.
 # Prevents a single elite metric (e.g. one 4.28 40-time) from yielding a top score
 # when we have no idea about the rest of the athletic profile.
-_ATH_DATA_CAPS = {1: 74, 2: 82, 3: 92}   # n_metrics_present → cap
+_ATH_DATA_CAPS = {1: 74, 2: 82, 3: 96}   # n_metrics_present → cap
 
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
@@ -1902,27 +1902,52 @@ def score_prospect(
         breakout_score=breakout_score
     )
     
-    # Apply benchmark boosts to final score.
-    # The benchmark boost is the only post-sum modifier: a small signal (max 3%)
-    # for prospects who meet multiple elite criteria.  Interaction bonuses and
-    # the generational multiplier have been removed — the weighted component sum
-    # is already calibrated on an absolute historical scale, so layering extra
-    # boosts produces class-relative inflation rather than a stable absolute grade.
-    prospect_score = apply_benchmark_boost(prospect_score, benchmark_boosts)
-
-    # Absolute-scale calibration curve. The weighted-component sum accurately
-    # ranks prospects but compresses the distribution: true generational talent
-    # (Chase, Nabers, Robinson) naturally scores ~86 after the weighted sum.
-    # This quadratic boost proportionally amplifies high-scoring profiles so
-    # the grade scale matches the intended tiers: 94+ generational, 85+ top tier.
-    # Formula: score + (score / 100)² × 11
-    # Effect at key breakpoints:
-    #   86 raw → 94.4  (generational)
-    #   82 raw → 89.4  (upper top tier)
-    #   80 raw → 87.0  (top tier)
-    #   75 raw → 81.2  (solid starter)
-    #   65 raw → 69.6  (developmental)
-    prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+    # Data completeness check: prevent artificial inflation from incomplete data
+    # Require at least 3 meaningful component scores to apply quadratic boost
+    meaningful_components = 0
+    if production_score > 10.0:    meaningful_components += 1
+    if efficiency_score > 10.0:     meaningful_components += 1
+    if athleticism_score > 10.0:    meaningful_components += 1
+    if age_score > 10.0:           meaningful_components += 1
+    if breakout_score > 10.0:      meaningful_components += 1
+    if utilization_score > 10.0:  meaningful_components += 1
+    
+    # Only apply quadratic boost if we have sufficient data
+    if meaningful_components >= 3:
+        # Absolute-scale calibration curve. The weighted-component sum accurately
+        # ranks prospects but compresses the distribution: true generational talent
+        # (Chase, Nabers, Robinson) naturally scores ~86 after the weighted sum.
+        # This quadratic boost proportionally amplifies high-scoring profiles so
+        # the grade scale matches the intended tiers: 94+ generational, 85+ top tier.
+        # Formula: score + (score / 100)² × 11
+        # Effect at key breakpoints:
+        #   86 raw → 94.4  (generational)
+        #   82 raw → 89.4  (upper top tier)
+        #   80 raw → 87.0  (top tier)
+        #   75 raw → 81.2  (solid starter)
+        #   65 raw → 69.6  (developmental)
+        prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 11.0)
+        
+        # Apply benchmark boosts only for complete data profiles
+        # The benchmark boost is the only post-sum modifier: a small signal (max 3%)
+        # for prospects who meet multiple elite criteria.  Interaction bonuses and
+        # the generational multiplier have been removed — the weighted component sum
+        # is already calibrated on an absolute historical scale, so layering extra
+        # boosts produces class-relative inflation rather than a stable absolute grade.
+        prospect_score = apply_benchmark_boost(prospect_score, benchmark_boosts)
+    else:
+        # Incomplete data: apply linear scaling instead to prevent artificial inflation
+        # This caps scores more conservatively when key components are missing
+        prospect_score = min(85.0, prospect_score * 1.1)
+        
+        # For incomplete data, severely limit benchmark boosts to prevent artificial inflation
+        # Only apply a small boost if we have at least some meaningful data
+        if meaningful_components >= 1:
+            limited_boosts = benchmark_boosts.copy()
+            # Cap total boost at 1% for incomplete data
+            total_boost = limited_boosts.get("total_boost", 0.0)
+            limited_boosts["total_boost"] = min(total_boost, 0.01)
+            prospect_score = apply_benchmark_boost(prospect_score, limited_boosts)
 
     # Position-specific translation adjustment from historical miss archetypes.
     # Applied late (after global scaling) so the correction magnitude is preserved.

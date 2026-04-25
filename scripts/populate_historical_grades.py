@@ -28,7 +28,7 @@ from scripts.backtest_prospect_model import (
     _build_prospect_dicts,
     SKILL_POS,
 )
-from data_building.rookie_pipeline.ml_model import score_all_prospects_ml as score_all_prospects
+from data_building.rookie_pipeline.prospect_model import score_all_prospects
 from data_building.rookie_pipeline.value_translation import assign_tier
 
 
@@ -195,8 +195,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--years", nargs="+", type=int,
-        default=list(range(2018, 2026)),
-        help="Draft years to process (default: 2018-2025)",
+        default=list(range(2016, 2026)),
+        help="Draft years to process (default: 2016-2025)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
