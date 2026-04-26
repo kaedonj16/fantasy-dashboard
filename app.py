@@ -6167,14 +6167,14 @@ def build_teams_body(ctx: dict) -> str:
           // Meta: date range + league avg
           html += '<div class="btm-meta">' +
             '<span class="btm-date-range">' + fmtDate(data.baseline_date) + ' – ' + fmtDate(data.latest_date) + '</span>' +
-            '<span class="btm-league-avg">League avg <strong>' + avgFmt + '</strong></span>' +
+            '<span class="btm-league-avg">League Avg: <strong>' + avgFmt + '</strong></span>' +
           '</div>';
 
           // Column header
           html += '<div class="btm-col-header' + (slim ? ' btm-slim' : '') + '">' +
             '<span></span>' +
             '<span>Team</span>' +
-            '<span style="text-align:right;">' + days + 'd Change</span>' +
+            '<span style="text-align:right;">' + days + 'd</span>' +
             '<span style="text-align:right;">vs Avg</span>' +
           '</div>';
 
