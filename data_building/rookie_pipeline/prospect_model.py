@@ -1255,13 +1255,13 @@ POSITION_WEIGHTS = {
         # Draft capital is the single strongest RB predictor (1st-round RBs hit at 83%,
         # the highest hit rate of any position/tier — higher than 1st-round WRs at 64%).
         # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
-        "draft_capital": 0.29,
-        "production": 0.18,
+        "draft_capital": 0.26,
+        "production": 0.19,
         "utilization": 0.08,
         "efficiency": 0.10,
         "age": 0.09,
-        "breakout": 0.11,
-        "athleticism": 0.10,
+        "breakout": 0.12,
+        "athleticism": 0.11,
         "competition": 0.04,
         "environment": 0.00,
         "durability": 0.01,
