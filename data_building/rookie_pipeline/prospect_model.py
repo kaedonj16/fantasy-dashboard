@@ -571,9 +571,10 @@ def calc_production_score(
         if btt is not None:
             prod = _clip(prod + _clip((btt - 4.0) * 0.9, -3.0, 5.0))
 
-    # Scheme-inflation discount: WR stats from high-volume spread systems translate
-    # poorly to the NFL.  Apply a multiplier before returning.
-    if pos == "WR":
+    # Scheme-inflation discount: high-volume spread systems inflate skill-position
+    # production stats.  Applied to both WR and TE — air-raid volume pumps TE
+    # target counts and yardage totals as much as WR numbers.
+    if pos in ("WR", "TE"):
         scheme_discount = _scheme_inflation_discount(ls.get("team"))
         if scheme_discount < 1.0:
             prod = _clip(prod * scheme_discount)
@@ -730,6 +731,12 @@ def calc_efficiency_score(
             tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
             eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
+        # PFF route running grade — separates receiving specialists from blocking TEs
+        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.70)
+        if route_grade is not None:
+            route_score = _scale(float(route_grade), 55.0, 85.0)
+            eff = _clip(eff + (route_score - 50.0) * 0.08)
+
     else:
         return 52.0
 
@@ -778,9 +785,9 @@ def calc_efficiency_score(
             # Lower pressure-to-sack conversion is better QB pocket behavior.
             eff = _clip(eff + _clip((20.0 - p2s) * 0.35, -5.0, 5.0))
 
-    # Scheme-inflation discount: WR efficiency metrics in high-volume spread
-    # systems are scheme-inflated (e.g. yds/rec boosted by deep ADOT).
-    if pos == "WR":
+    # Scheme-inflation discount: high-volume spread systems inflate efficiency
+    # metrics (yds/rec, yds/target) for WRs and TEs alike.
+    if pos in ("WR", "TE"):
         scheme_discount = _scheme_inflation_discount(ls.get("team"))
         if scheme_discount < 1.0:
             eff = _clip(eff * scheme_discount)
@@ -1274,20 +1281,20 @@ POSITION_WEIGHTS = {
         "durability": 0.00,
     },
     "TE": {
-        # Draft capital still matters but is less predictive than for WR/RB after
-        # applying the TE dc_multiplier (0.85).  Age is the single most predictive
-        # signal for TEs: young TEs who declare early (≤22) have far better hit rates.
-        # College production is reliable only for receiving-specialist TEs.
-        "draft_capital": 0.22,  # Increased from 0.21
-        "production": 0.22,    # Increased from 0.19 - elite TEs should get WR-level production credit
+        # Draft capital raised: pick position is the strongest single signal for TEs
+        # once scheme inflation and profile penalties are properly applied.
+        # Age stays meaningful: early declarers (≤22) have far better dynasty hit rates.
+        # Production given extra credit now that scheme inflation is applied to TEs.
+        "draft_capital": 0.24,
+        "production": 0.20,
         "utilization": 0.07,
-        "efficiency": 0.10,  # Reduced from 0.12 to balance weights
-        "age": 0.13,          # Reduced from 0.14 to balance weights
-        "breakout": 0.10,    # Increased from 0.09 - elite TEs have high breakout potential
+        "efficiency": 0.11,
+        "age": 0.14,
+        "breakout": 0.08,
         "athleticism": 0.10,
-        "competition": 0.06,  # Reduced from 0.08 to balance weights
-        "environment": 0.00,  # Reduced from 0.01 to balance weights
-        "durability": 0.00,  # Reduced from 0.01 to balance weights
+        "competition": 0.05,
+        "environment": 0.00,
+        "durability": 0.01,
     },
 }
 
@@ -1741,14 +1748,18 @@ def calc_translation_adjustment(
         target_share = _safe(latest.get("target_share"), 0.0)
         draft_age = _safe(prospect.get("age"), 0.0)
 
-        # Baseline dynasty development cost: even elite TEs rarely contribute
-        # meaningfully until year 2-3 of their NFL career.  Applied universally
-        # regardless of profile to anchor TE scores well below equivalent-capital WRs.
-        # Increased from -4 to -8: the backtest showed TEs still ranking too high
-        # relative to WRs/RBs at the same draft position.
-        adj -= 8.0
+        # Baseline dynasty development delay: TEs typically take 2-3 NFL seasons.
+        adj -= 5.0
 
-        # Profile-based TE shrinkage for weak receiving-usage profiles.
+        # Elite receiving TE upside: high pick + dominant college receiving production.
+        # Targets generational profiles (Pitts, Bowers) who combine elite draft capital
+        # with genuine college volume that was not scheme-inflated.
+        if projected_pick <= 10 and rec_yds_pg >= 60:
+            adj += 5.0
+        elif projected_pick <= 20 and rec_yds_pg >= 65:
+            adj += 3.0
+
+        # Profile-based shrinkage for weak receiving-usage TEs (blocking archetypes).
         if rec_yds_pg > 0 and rec_yds_pg < 35:
             adj -= 3.0
         if target_share > 0 and target_share < 0.14:
@@ -1844,9 +1855,9 @@ def score_prospect(
     # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
     # TE draft capital is significantly less predictive for dynasty: even a Round 1
     # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
-    # doesn't translate to immediate fantasy points).  0.85 means a Round 1 Day 1 TE
-    # gets 1.00 × 0.85 = 0.85× vs 1.15× for a Round 1 WR (much less penalty than before).
-    dc_multiplier = {"TE": 0.85}.get(pos, 1.00)
+    # doesn't translate to immediate fantasy points).  0.82 means a Round 1 TE
+    # gets 0.82× vs 1.0× for a Round 1 WR — still penalized but not crushed.
+    dc_multiplier = {"TE": 0.82}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
