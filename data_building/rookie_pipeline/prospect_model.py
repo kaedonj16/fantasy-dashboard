@@ -1838,11 +1838,30 @@ def score_prospect(
             ypc=_safe(ls.get("yds_per_carry")),
         )
     production_score = _clip(production_score * loaded_roster_adjustment)
-    
+
     utilization_score   = calc_utilization_score(seasons, pos)
+    # Utilization is pure opportunity share (targets/carries/game) — fully suppressed
+    # when splitting reps with multiple NFL-caliber teammates. Apply the full multiplier.
+    utilization_score = _clip(utilization_score * loaded_roster_adjustment)
+
     efficiency_score    = calc_efficiency_score(seasons, pos, eval_metrics=eval_metrics)
+    # Efficiency blends per-touch quality (ypr, ypc — unaffected by depth) with
+    # market_share_yards (~35% of WR/TE base, ~15% of RB base — suppressed by depth).
+    # Apply ~40% of the bonus to credit the market-share fraction without distorting
+    # the per-touch quality signal.
+    if loaded_roster_adjustment > 1.0:
+        eff_adj = 1.0 + (loaded_roster_adjustment - 1.0) * 0.40
+        efficiency_score = _clip(efficiency_score * eff_adj)
+
     age_score           = calc_age_score(age, dy, pos)
     breakout_score      = calc_breakout_score(seasons, age, pos)
+    # Dominator rating (primary breakout signal) is directly suppressed in loaded rooms.
+    # Apply ~35% of the bonus so backed-up players who still show early-breakout patterns
+    # get appropriate credit.
+    if loaded_roster_adjustment > 1.0:
+        bk_adj = 1.0 + (loaded_roster_adjustment - 1.0) * 0.35
+        breakout_score = _clip(breakout_score * bk_adj)
+
     athleticism_score   = calc_athleticism_score(ath, pos)
     competition_score   = calc_competition_score(seasons)
     environment_score   = calc_environment_adjustment(seasons, pos)
