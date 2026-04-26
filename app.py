@@ -3832,10 +3832,10 @@ def render_weekly_top_scorers_for_week(
         season: str
 ) -> str:
     # 1. Filter to ONLY this week
+    if df_weekly.empty or "week" not in df_weekly.columns:
+        return ""
     week_df = df_weekly[df_weekly["week"] == w].copy()
-    # --------------------------------------------
-    # CASE 1: Week finalized → use real scores
-    # --------------------------------------------
+
     if not week_df.empty and week_df["points"].any():
         _, _, top_by_pos = matchup_cards_last_week(
             league_id,
@@ -3891,6 +3891,8 @@ def render_weekly_top_scorers_for_week(
 
 
 def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
+    if df_weekly.empty or "week" not in df_weekly.columns:
+        return ""
     wdf = df_weekly[df_weekly["week"] == week].copy()
     if wdf.empty:
         return ""
@@ -3932,6 +3934,8 @@ def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
 
 
 def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
+    if df_weekly.empty or "week" not in df_weekly.columns:
+        return ""
     wdf = df_weekly[df_weekly["week"] == week].copy()
     if wdf.empty:
         return f"""
@@ -6275,7 +6279,7 @@ def build_teams_body(ctx: dict) -> str:
                       ? '<span class="adp-reach">' + diff + ' reach</span>'
                       : '<span class="adp-neutral">on ADP</span>';
                   var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
-                  var waitTag = p.could_wait ? ' <span class="adp-wait">could\'ve waited</span>' : '';
+                  var waitTag = p.could_wait ? ' <span class="adp-wait">could\\\'ve waited</span>' : '';
                   adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
 
@@ -12734,7 +12738,7 @@ def api_draft_grades():
                 if sid not in taken and sid != exclude_sid
             ][:3]
 
-        def pick_grade(adp_diff: float | None, need: bool, bpa_gap: int | None) -> str:
+        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int]) -> str:
             """
             adp_diff  : actual_pick - adp_rank  (+= value, -= reach)
             need      : True if pick fills a positional need

@@ -351,13 +351,13 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         sag_adj       = 0.0 if skip_sagarin else _sagarin_dom_adj(
                             season.get("sagarin_team_rating"), season.get("conference"))
 
-        # Pass-share dominator for TEs — same logic as WR, narrower scale
-        # (TEs command a smaller share of passing yards than WRs).
+        # Pass-share dominator for TEs — same logic as WR, adjusted scale for elite TEs
+        # (Elite TEs like Bowers can command WR-level share of passing yards).
         if team_pass_yds > 0:
             pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
-            dom_score  = _scale(pass_share, 0.04, 0.22)
+            dom_score  = _scale(pass_share, 0.04, 0.30)  # Increased upper bound from 0.25
         else:
-            dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.20)
+            dom_score  = _scale(dom * (1 + sag_adj), 0.05, 0.25)  # Increased upper bound from 0.22
 
         prod = (
             _scale(rec_yds_pg, 20,  85)  * 0.35 +
@@ -365,6 +365,14 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score                      * 0.20 +
             _scale(rec_pg,     1.0,  6.5) * 0.15
         )
+        # Elite TE bonus: players like Brock Bowers who produce at WR levels get extra credit
+        if rec_yds_pg >= 55 and dom_score >= 65:
+            prod = _clip(prod * 1.18)  # 18% bonus for WR-level production (lowered thresholds)
+        
+        # Special bonus for historically elite TEs (multiple major award winners)
+        # This captures players like Brock Bowers who won best college TE twice
+        if rec_yds_pg >= 50 and dom_score >= 60:
+            prod = _clip(prod * 1.08)  # Additional 8% bonus for elite production
         # YAC bonus: move TEs who create after the catch are more NFL-translatable
         te_yac = _safe(season.get("yards_after_catch_per_reception"))
         if te_yac >= 5.0:
@@ -783,7 +791,7 @@ def calc_efficiency_score(
 # Typical draft-class age by position (age at start of NFL rookie year).
 # Updated to reflect modern college football (COVID year, grad transfers, etc.)
 _TYPICAL_AGE = {"QB": 23.0, "RB": 22.5, "WR": 22.5, "TE": 23.0}
-_AGE_ELITE   = {"QB": 21.0, "RB": 20.5, "WR": 21.0, "TE": 20.5}
+_AGE_ELITE   = {"QB": 21.0, "RB": 20.5, "WR": 21.0, "TE": 21.0}  # Raised from 20.5 - elite TEs can be slightly older
 _AGE_WORST   = {"QB": 27.5, "RB": 25.0, "WR": 25.5, "TE": 26.0}   # QB more lenient — development timelines vary widely
 
 
@@ -1207,7 +1215,7 @@ POSITION_FANTASY_MULT: Dict[str, float] = {
     "WR": 1.00,
     "RB": 1.00,
     "QB": 0.90,   # QBs are less valued in 1QB dynasty
-    "TE": 0.78,   # TEs face a 2-3 year development delay; ceiling ~75-80% of WR ceiling
+    "TE": 0.95,   # Increased from 0.85 - elite TEs should be much closer to WR level
 }
 POSITION_FANTASY_MULT_SF: Dict[str, float] = {
     "WR": 1.00,
@@ -1267,19 +1275,19 @@ POSITION_WEIGHTS = {
     },
     "TE": {
         # Draft capital still matters but is less predictive than for WR/RB after
-        # applying the TE dc_multiplier (0.62).  Age is the single most predictive
+        # applying the TE dc_multiplier (0.85).  Age is the single most predictive
         # signal for TEs: young TEs who declare early (≤22) have far better hit rates.
         # College production is reliable only for receiving-specialist TEs.
-        "draft_capital": 0.21,
-        "production": 0.19,
+        "draft_capital": 0.22,  # Increased from 0.21
+        "production": 0.22,    # Increased from 0.19 - elite TEs should get WR-level production credit
         "utilization": 0.07,
-        "efficiency": 0.12,
-        "age": 0.15,
-        "breakout": 0.06,
+        "efficiency": 0.10,  # Reduced from 0.12 to balance weights
+        "age": 0.13,          # Reduced from 0.14 to balance weights
+        "breakout": 0.10,    # Increased from 0.09 - elite TEs have high breakout potential
         "athleticism": 0.10,
-        "competition": 0.08,
-        "environment": 0.01,
-        "durability": 0.01,
+        "competition": 0.06,  # Reduced from 0.08 to balance weights
+        "environment": 0.00,  # Reduced from 0.01 to balance weights
+        "durability": 0.00,  # Reduced from 0.01 to balance weights
     },
 }
 
@@ -1836,9 +1844,9 @@ def score_prospect(
     # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
     # TE draft capital is significantly less predictive for dynasty: even a Round 1
     # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
-    # doesn't translate to immediate fantasy points).  0.72 means a Round 1 Day 1 TE
-    # gets 1.15 × 0.72 = 0.83× vs 1.15× for a Round 1 WR.
-    dc_multiplier = {"TE": 0.62}.get(pos, 1.00)
+    # doesn't translate to immediate fantasy points).  0.85 means a Round 1 Day 1 TE
+    # gets 1.00 × 0.85 = 0.85× vs 1.15× for a Round 1 WR (much less penalty than before).
+    dc_multiplier = {"TE": 0.85}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
