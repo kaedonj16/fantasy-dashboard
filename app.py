@@ -6087,7 +6087,7 @@ def build_teams_body(ctx: dict) -> str:
     <div class="card teams-analytics-card" id="teamsAnalyticsCard">
       <div class="card-tabs">
         <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">BTM</button>
+          <button class="tab-btn active" data-tab="btm">Value</button>
           <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
           <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
           <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
@@ -6129,76 +6129,120 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.btm = true;
         var panel = document.getElementById('btmPanel');
         if (!panel) return;
-        // Detect narrow sidebar context — skip bar + movers columns to fit 320px
         var slim = !!panel.closest('.teams-sidebar');
-        fetch('/api/beat-the-market?platform=' + _platform +
-              '&league_id=' + _leagueId + '&season=' + _season +
-              '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=30')
-          .then(r => r.json())
-          .then(data => {{
-            if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
-            var rows = data.rosters || [];
-            var avgDelta = data.league_avg_delta || 0;
-            var sign = avgDelta >= 0 ? '+' : '';
-            var avgFmt = sign + Math.round(avgDelta).toLocaleString();
 
-            var maxVsAvg = Math.max(...rows.map(r => Math.abs(r.vs_avg)), 1);
+        function fmtDate(isoStr) {{
+          if (!isoStr) return '';
+          var d = new Date(isoStr + 'T00:00:00');
+          return d.toLocaleDateString('en-US', {{month: 'short', day: 'numeric'}});
+        }}
 
-            var html = '<div class="btm-meta">' +
-              '<span class="btm-window">' + data.baseline_date + ' → ' + data.latest_date + '</span>' +
-              '<span class="btm-avg-pill">Avg: ' + avgFmt + '</span>' +
-              (slim ? '' : '<span class="btm-legend"><span class="btm-dot btm-dot-pos"></span>Beat avg&nbsp;&nbsp;<span class="btm-dot btm-dot-neg"></span>Below avg</span>') +
+        function renderBtm(data, days) {{
+          if (data.error) {{
+            panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>';
+            return;
+          }}
+          var rows = data.rosters || [];
+          var avgDelta = data.league_avg_delta || 0;
+          var avgSign = avgDelta >= 0 ? '+' : '';
+          var avgFmt = avgSign + Math.round(avgDelta).toLocaleString();
+          var html = '';
+
+          // Header: title + window pills (full mode only)
+          if (!slim) {{
+            html += '<div class="btm-header">' +
+              '<div class="btm-header-text">' +
+                '<span class="btm-title">Value Tracker</span>' +
+                '<span class="btm-subtitle">Which rosters gained the most dynasty value?</span>' +
+              '</div>' +
+              '<div class="btm-window-pills">' +
+                '<button class="btm-pill' + (days === 7  ? ' active' : '') + '" data-days="7">7d</button>' +
+                '<button class="btm-pill' + (days === 14 ? ' active' : '') + '" data-days="14">14d</button>' +
+                '<button class="btm-pill' + (days === 30 ? ' active' : '') + '" data-days="30">30d</button>' +
+                '<button class="btm-pill' + (days === 60 ? ' active' : '') + '" data-days="60">60d</button>' +
+              '</div>' +
             '</div>';
+          }}
 
-            html += '<div class="btm-col-header' + (slim ? ' btm-slim' : '') + '">' +
-              '<span class="btm-ch-rank">#</span>' +
-              '<span class="btm-ch-team">Team</span>' +
-              '<span class="btm-ch-delta">' + (slim ? 'Δ Val' : 'Portfolio Δ') + '</span>' +
-              '<span class="btm-ch-vsavg">vs Avg</span>' +
-              (slim ? '' : '<span class="btm-ch-bar"></span>') +
-              (slim ? '' : '<span class="btm-ch-movers">Key Movers</span>') +
+          // Meta: date range + league avg
+          html += '<div class="btm-meta">' +
+            '<span class="btm-date-range">' + fmtDate(data.baseline_date) + ' – ' + fmtDate(data.latest_date) + '</span>' +
+            '<span class="btm-league-avg">League avg <strong>' + avgFmt + '</strong></span>' +
+          '</div>';
+
+          // Column header
+          html += '<div class="btm-col-header' + (slim ? ' btm-slim' : '') + '">' +
+            '<span></span>' +
+            '<span>Team</span>' +
+            '<span style="text-align:right;">' + days + 'd Change</span>' +
+            '<span style="text-align:right;">vs Avg</span>' +
+          '</div>';
+
+          // Rows
+          html += '<div class="btm-rows">';
+          rows.forEach(function(r, idx) {{
+            var pos    = r.vs_avg >= 0;
+            var cls    = pos ? 'btm-pos' : 'btm-neg';
+            var pdSign = r.total_delta >= 0 ? '+' : '';
+            var vsSign = pos ? '+' : '';
+
+            var rankHtml;
+            if      (idx === 0) rankHtml = '<span class="btm-rank-badge rk-gold">1</span>';
+            else if (idx === 1) rankHtml = '<span class="btm-rank-badge rk-silver">2</span>';
+            else if (idx === 2) rankHtml = '<span class="btm-rank-badge rk-bronze">3</span>';
+            else                rankHtml = '<span class="btm-rank-num">' + (idx + 1) + '</span>';
+
+            var moversHtml = '';
+            if (!slim && r.top_movers && r.top_movers.length) {{
+              moversHtml = '<div class="btm-movers-row">';
+              r.top_movers.slice(0, 4).forEach(function(m) {{
+                var mc       = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
+                var arrow    = m.delta >= 0 ? '↑' : '↓';
+                var lastName = m.name.split(' ').slice(-1)[0];
+                var dFmt     = (m.delta >= 0 ? '+' : '') + Math.round(m.delta);
+                moversHtml  += '<span class="btm-mover ' + mc + '" title="' + m.name + ' · ' + m.position + '">' +
+                  arrow + ' <strong>' + lastName + '</strong>&nbsp;' + dFmt +
+                '</span>';
+              }});
+              moversHtml += '</div>';
+            }}
+
+            html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
+              '<div class="btm-rank-cell">' + rankHtml + '</div>' +
+              '<div class="btm-team-cell">' +
+                '<div class="btm-team-name">' + r.team_name + '</div>' +
+                moversHtml +
+              '</div>' +
+              '<div class="btm-change-cell">' +
+                '<div class="btm-change-num ' + cls + '">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</div>' +
+              '</div>' +
+              '<div class="btm-vsavg-cell">' +
+                '<span class="btm-vsavg-badge ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
+              '</div>' +
             '</div>';
+          }});
+          html += '</div>';
 
-            html += '<div class="btm-rows">';
-            rows.forEach(function(r, idx) {{
-              var pos  = r.vs_avg >= 0;
-              var cls  = pos ? 'btm-pos' : 'btm-neg';
-              var vsSign = pos ? '+' : '';
-              var pdSign = r.total_delta >= 0 ? '+' : '';
-              var pct  = Math.min(100, Math.round(Math.abs(r.vs_avg) / maxVsAvg * 100));
+          panel.innerHTML = html;
 
-              var moversHtml = '';
-              if (!slim) {{
-                (r.top_movers || []).slice(0, 2).forEach(function(m) {{
-                  var ms = m.delta >= 0 ? '+' : '';
-                  var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
-                  var shortName = m.name.split(' ').pop();
-                  moversHtml += '<span class="btm-mover ' + mc + '">' +
-                    '<span class="btm-mover-pos-badge">' + m.position + '</span>' +
-                    shortName + ' ' + ms + Math.round(m.delta) +
-                  '</span>';
-                }});
-              }}
-
-              html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
-                '<span class="btm-rank">' + (idx + 1) + '</span>' +
-                '<span class="btm-team">' + r.team_name + '</span>' +
-                '<span class="btm-delta">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</span>' +
-                '<span class="btm-vsavg ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
-                (slim ? '' :
-                  '<span class="btm-bar-wrap">' +
-                    '<div class="btm-bar-track">' +
-                      '<div class="btm-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
-                    '</div>' +
-                  '</span>' +
-                  '<span class="btm-movers">' + (moversHtml || '<span class="btm-no-movers">—</span>') + '</span>'
-                ) +
-              '</div>';
+          panel.querySelectorAll('.btm-pill').forEach(function(btn) {{
+            btn.addEventListener('click', function() {{
+              fetchBtm(parseInt(this.getAttribute('data-days')));
             }});
-            html += '</div>';
-            panel.innerHTML = html;
-          }})
-          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+          }});
+        }}
+
+        function fetchBtm(days) {{
+          panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
+          fetch('/api/beat-the-market?platform=' + _platform +
+                '&league_id=' + _leagueId + '&season=' + _season +
+                '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days)
+            .then(function(r) {{ return r.json(); }})
+            .then(function(data) {{ renderBtm(data, days); }})
+            .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+        }}
+
+        fetchBtm(30);
       }}
 
       function loadSos() {{
