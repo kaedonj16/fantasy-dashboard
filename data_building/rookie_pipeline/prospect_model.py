@@ -1768,15 +1768,15 @@ def calc_translation_adjustment(
         adj -= 5.0
 
         # Elite receiving TE upside: uses peak season so injury years don't suppress it.
-        # Tiers calibrated so generational prospects (Pitts #4, Bowers #13) reach high-80s.
+        # Tiers calibrated so generational prospects (Pitts #4 → ~91, Bowers #13 → ~88).
         if projected_pick <= 10 and best_rec_yds_pg >= 60:
-            adj += 7.0
+            adj += 9.0
         elif projected_pick <= 15 and best_rec_yds_pg >= 75:
-            adj += 6.0
+            adj += 8.0
         elif projected_pick <= 20 and best_rec_yds_pg >= 65:
-            adj += 4.0
+            adj += 5.0
         elif projected_pick <= 25 and best_rec_yds_pg >= 60:
-            adj += 2.0
+            adj += 3.0
 
         # Profile-based shrinkage for weak receiving-usage TEs (blocking archetypes).
         if rec_yds_pg > 0 and rec_yds_pg < 35:
@@ -1874,9 +1874,10 @@ def score_prospect(
     # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
     # TE draft capital is significantly less predictive for dynasty: even a Round 1
     # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
-    # doesn't translate to immediate fantasy points).  0.82 means a Round 1 TE
-    # gets 0.82× vs 1.0× for a Round 1 WR — still penalized but not crushed.
-    dc_multiplier = {"TE": 0.82}.get(pos, 1.00)
+    # doesn't translate to immediate fantasy points).  0.92 means a Round 1 TE
+    # gets 0.92× vs 1.0× for a Round 1 WR — narrow gap; elite TEs deserve near-WR
+    # draft capital credit once profile penalties handle the development discount.
+    dc_multiplier = {"TE": 0.92}.get(pos, 1.00)
 
     # ── Day-3 penalty ───────────────────────────────────────────────────────
     # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
