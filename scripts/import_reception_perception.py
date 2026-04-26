@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dashboard_services.db import get_conn
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent / "data" / "adv_metrics"
 
 # Each file maps to (csv_player_col, {csv_col: db_col})
 RP_FILES = {
