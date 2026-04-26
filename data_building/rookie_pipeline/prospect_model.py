@@ -1331,7 +1331,7 @@ def calc_loaded_roster_adjustment(
                 2020: 3,
                 2021: 2,
                 2022: 2,
-                2025: 3,
+                2025: 2,
             },
             "RB": {
                 2020: 2,
@@ -1367,22 +1367,19 @@ def calc_loaded_roster_adjustment(
             "WR": {
                 2023: 2,
                 2024: 2,
-                2025: 3,
+                2025: 2,
             },
         },
         "Oregon": {
             "WR": {
                 2024: 2,
                 2025: 3,
-            },
-            "RB": {
-                2025: 2,
-            },
+            }
         },
         "Notre Dame": {
             "RB": {
                 2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
-                # 2025 removed: Love was the clear alpha starter, not opportunity-constrained
+                2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
             },
         },
     }
@@ -2375,12 +2372,19 @@ def _build_reasons(
         rnd   = dc_dict.get("projected_round")
         n_mocks = dc_dict.get("num_mocks_used", 0)
         conf_pct = dc_dict.get("consensus_confidence", 0)
+        is_actual = dc_dict.get("is_actual_pick", False)
+        
         if pick and rnd:
-            conf_str = f", {conf_pct:.0f}% consensus" if n_mocks >= 3 else ""
-            bullets.append(
-                f"Projected pick #{pick} (Round {rnd}) across {n_mocks} mock drafts"
-                f"{conf_str}"
-            )
+            if is_actual:
+                # Draft is complete - show actual pick
+                bullets.append(f"Drafted: Pick #{pick} (Round {rnd})")
+            else:
+                # Draft not complete - show mock draft projection
+                conf_str = f", {conf_pct:.0f}% consensus" if n_mocks >= 3 else ""
+                bullets.append(
+                    f"Projected pick #{pick} (Round {rnd}) across {n_mocks} mock drafts"
+                    f"{conf_str}"
+                )
 
     # ── Durability ────────────────────────────────────────────────────────────
     if dur_sc <= 40:

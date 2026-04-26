@@ -1750,7 +1750,7 @@ def run_rookie_pipeline_staged(
     _missing = [p["name"] for p in sr_prospects if not p.get("age")]
     print(f"[pipeline] {len(_missing)} prospects still need age lookup")
 
-    if len(_missing) > 50:
+    if len(_missing) > 70:
         try:
             print("[pipeline] Retrieving PlayerProfiler ages")
             from .playerprofiler_scraper import fetch_playerprofiler_ages
@@ -1871,26 +1871,35 @@ def run_rookie_pipeline_staged(
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
 
-    all_mock_picks: List[Dict] = []
-
-    # 4a — CBS Sports: individual analyst mocks
-    individual_mocks = scrape_individual_mocks(draft_year)
-    print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
-    all_mock_picks.extend(individual_mocks)
-
-    # 4b — FantasyPros: consensus mock (counts as one analyst "source")
-    fantasypros_picks = scrape_consensus_mock_draft(draft_year)
-    print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
-    for pick in fantasypros_picks:
-        pick.setdefault("source", "FantasyPros")
-        pick.setdefault("analyst_name", "FantasyPros Consensus")
-    all_mock_picks.extend(fantasypros_picks)
-
-    # Save all entries to DB (CBS + FantasyPros in one pass)
+    # Check if draft is complete before scraping mocks
     with get_conn() as conn:
-        n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
+        draft_done = is_draft_complete(draft_year, conn)
 
-    print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+    all_mock_picks: List[Dict] = []
+    n_mock_entries = 0  # Initialize to avoid UnboundLocalError when draft is complete
+    n_consensus = 0     # Initialize to avoid UnboundLocalError when draft is complete
+
+    if not draft_done:
+        # 4a — CBS Sports: individual analyst mocks
+        individual_mocks = scrape_individual_mocks(draft_year)
+        print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
+        all_mock_picks.extend(individual_mocks)
+
+        # 4b — FantasyPros: consensus mock (counts as one analyst "source")
+        fantasypros_picks = scrape_consensus_mock_draft(draft_year)
+        print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
+        for pick in fantasypros_picks:
+            pick.setdefault("source", "FantasyPros")
+            pick.setdefault("analyst_name", "FantasyPros Consensus")
+        all_mock_picks.extend(fantasypros_picks)
+
+        # Save all entries to DB (CBS + FantasyPros in one pass)
+        with get_conn() as conn:
+            n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
+
+        print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+    else:
+        print(f"[pipeline] Draft complete for {draft_year} — skipping mock draft scraping")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4b: Actual Draft Results (post-draft only) ======")
@@ -1913,19 +1922,27 @@ def run_rookie_pipeline_staged(
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
 
-    # Aggregate all stored entries (CBS analysts + FantasyPros) into one consensus.
-    # Median pick, spread, and confidence are computed across all sources.
-    with get_conn() as conn:
-        consensus_map = build_consensus_from_db_entries(draft_year, conn)
+    # Build consensus only if draft is not complete
+    if not draft_done:
+        # Aggregate all stored entries (CBS analysts + FantasyPros) into one consensus.
+        # Median pick, spread, and confidence are computed across all sources.
+        with get_conn() as conn:
+            consensus_map = build_consensus_from_db_entries(draft_year, conn)
 
-    if consensus_map:
-        print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
+        if consensus_map:
+            print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
 
-    # Save consensus to DB
-    with get_conn() as conn:
-        n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
+        # Save consensus to DB
+        with get_conn() as conn:
+            n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
 
-    print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
+        print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
+    else:
+        print(f"[pipeline] Draft complete for {draft_year} — skipping mock consensus building (will use actual picks)")
+        # When draft is complete, we still need to build consensus from actual picks
+        with get_conn() as conn:
+            consensus_map = build_consensus_from_db_entries(draft_year, conn)
+        print(f"[pipeline] Built consensus from {len(consensus_map)} actual draft picks")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")

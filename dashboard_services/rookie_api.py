@@ -326,7 +326,7 @@ def comparables(player_id: str):
 
         position = (prospect.get("position") or "").upper()
         score = float(prospect.get("prospect_score") or 0)
-        band = 3.0  # ±16 points prospect_score
+        band = 5.0  # ±16 points prospect_score
 
         try:
             with get_conn() as conn:
@@ -340,7 +340,7 @@ def comparables(player_id: str):
                       AND prospect_score BETWEEN %s AND %s
                       AND draft_class_year < %s
                     ORDER BY ABS(prospect_score - %s) ASC, draft_class_year DESC
-                    LIMIT 6
+                    LIMIT 5
                     """,
                     (position, score - band, score + band, year, score),
                 ).fetchall()
@@ -652,6 +652,30 @@ def auto_link(player_id: str):
 
     except Exception as exc:
         log.exception("[rookie_api] /auto-link error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/draft-status", methods=["GET"])
+def draft_status():
+    """Check if the draft is complete for a given year."""
+    try:
+        year = request.args.get("year", type=int)
+        if year is None:
+            from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+            year = get_active_rookie_class()
+        
+        from data_building.rookie_pipeline.pipeline import is_draft_complete
+        from dashboard_services.db import get_conn
+        
+        with get_conn() as conn:
+            draft_complete = is_draft_complete(year, conn)
+        
+        return jsonify({
+            "draft_year": year,
+            "draft_complete": draft_complete
+        })
+    except Exception as exc:
+        log.exception("[rookie_api] /draft-status error")
         return jsonify({"error": str(exc)}), 500
 
 

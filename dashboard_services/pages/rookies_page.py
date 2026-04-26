@@ -617,6 +617,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   var rkSearch    = '';
   var rkLoaded    = false;
   var rkDraftYear = null;
+  var rkDraftComplete = false;
   var rkCurrentPage = 1;
   var RK_PER_PAGE = 20;
 
@@ -796,7 +797,19 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
       var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-      var draft = r.draft_capital_label || (r.projected_pick ? '#'+r.projected_pick : '?');
+      // For main table, use old format: "1st (#4)"
+    var draft = r.draft_capital_label || (r.projected_pick ? '#'+r.projected_pick : '?');
+    // Convert new format to old format for table display
+    if (draft.includes('Round') && draft.includes('Pick')) {
+      // Convert "Round 1 · Pick 4" back to "1st (#4)"
+      var parts = draft.split(' · ');
+      if (parts.length === 2) {
+        var round = parts[0].replace('Round ', '');
+        var pick = parts[1].replace('Pick ', '');
+        var ordinal = round === '1' ? '1st' : round === '2' ? '2nd' : round === '3' ? '3rd' : round + 'th';
+        draft = ordinal + ' (#' + pick + ')';
+      }
+    }
       var posRk = r.position || '';
       if (r.position_rank) posRk += r.position_rank;
 
@@ -852,7 +865,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     // Draft info — single consolidated line
     var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
     var draftStr = draftCapLabel
-      ? draftCapLabel + (r.num_mocks_used ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
+      ? draftCapLabel + (r.num_mocks_used && !rkDraftComplete ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
       : 'Undrafted / Unknown';
 
     // Component scores (Confidence lives in the section header, not here)
@@ -988,7 +1001,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
               (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
             '</div>' +
             '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-              '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(1) + '</span>' +
+              '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(2) + '</span>' +
               '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
             '</div>' +
           '</div>';
@@ -1040,6 +1053,13 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
       document.getElementById('rookiesTitle').textContent = rkDraftYear + ' Prospect Rankings';
+      
+      // Fetch draft status
+      return fetch('/api/prospects/draft-status?year=' + rkDraftYear);
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(status) {
+      rkDraftComplete = status.draft_complete || false;
       return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })

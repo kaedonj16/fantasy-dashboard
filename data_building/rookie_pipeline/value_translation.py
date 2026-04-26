@@ -189,17 +189,14 @@ def format_draft_capital(
     low: Optional[int] = None,
     high: Optional[int] = None,
 ) -> str:
-    """Return a human-readable draft capital label, e.g. '1st (Pick 5-8)'."""
+    """Return a human-readable draft capital label, e.g. 'Round 1 · Pick 5-8'."""
     if projected_round is None:
         return "Undrafted?"
-    round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th",
-                    5: "5th", 6: "6th", 7: "7th"}
-    rnd = round_labels.get(projected_round, f"{projected_round}th")
     if projected_pick:
         if low and high and low != high:
-            return f"{rnd} (#{low}–#{high})"
-        return f"{rnd} (#{projected_pick})"
-    return rnd
+            return f"Round {projected_round} · Pick {low}–{high}"
+        return f"Round {projected_round} · Pick {projected_pick}"
+    return f"Round {projected_round}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
