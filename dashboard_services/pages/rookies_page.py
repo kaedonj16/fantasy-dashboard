@@ -815,7 +815,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         '<span class="rk-draft">' + draft + '</span>' +
         '<span class="rk-score"><span class="rk-score-bar">' +
           '<span class="rk-score-dot" style="background:' + scoreColor + ';"></span>' +
-          score.toFixed(0) + '</span></span>' +
+          score.toFixed(2) + '</span></span>' +
         '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '—') + '</span>';
 
       row.addEventListener('click', function() { rkOpenModal(r); });
@@ -910,7 +910,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         '<div class="rk-hero-row">' +
           '<div class="rk-hero-stat rk-hero-primary">' +
             '<div class="rk-hero-label">Prospect Score</div>' +
-            '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(1) + '</div>' +
+            '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(2) + '</div>' +
             '<div class="rk-hero-sub">' + (r.tier_label||'') + '</div>' +
           '</div>' +
           '<div class="rk-hero-stat">' +

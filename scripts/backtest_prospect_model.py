@@ -1242,10 +1242,131 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Save to DB
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _tier_from_score(score: float) -> int:
+    if score >= 88: return 1
+    if score >= 80: return 2
+    if score >= 70: return 3
+    if score >= 60: return 4
+    if score >= 50: return 5
+    return 6
+
+
+_TIER_LABELS = {
+    1: "Elite Prospect",
+    2: "High-End Starter",
+    3: "Solid Starter",
+    4: "Rotational",
+    5: "Depth/Developmental",
+    6: "Long Shot",
+}
+
+
+def save_grades_to_db(all_rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    """
+    Upsert all backtest rows into historical_prospect_grades.
+    Returns (written, failed).
+    """
+    import re as _re
+    try:
+        from dashboard_services.db import get_conn
+    except ImportError:
+        print("[backtest] WARNING: dashboard_services.db not available — skipping DB save")
+        return 0, 0
+
+    def _slug(name: str) -> str:
+        return _re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+
+    written = failed = 0
+    for r in all_rows:
+        name  = r.get("name", "")
+        pos   = r.get("position", "")
+        year  = r.get("draft_year", 0)
+        if not name or not pos or not year:
+            continue
+
+        hist_id = f"HIST_{year}_{_slug(name)}"
+        score   = float(r.get("model_score") or 0)
+        tier    = _tier_from_score(score)
+
+        payload = {
+            "player_id":             hist_id,
+            "name":                  name,
+            "position":              pos,
+            "draft_class_year":      year,
+            "school":                r.get("college") or None,
+            "prospect_score":        round(score, 2),
+            "tier":                  tier,
+            "tier_label":            _TIER_LABELS.get(tier, ""),
+            "overall_rank":          r.get("model_rank"),
+            "position_rank":         r.get("pos_rank"),
+            "production_score":      round(float(r.get("prod_score") or 0), 2),
+            "efficiency_score":      round(float(r.get("efficiency_score") or 0), 2),
+            "age_score":             round(float(r.get("age_score") or 0), 2),
+            "breakout_profile_score":round(float(r.get("breakout_score") or 0), 2),
+            "athleticism_score":     round(float(r.get("ath_score") or 0), 2),
+            "competition_score":     round(float(r.get("competition_score") or 0), 2),
+            "draft_capital_score":   round(float(r.get("dc_score") or 0), 2),
+            "confidence_score":      round(float(r.get("confidence_score") or 0), 2),
+            "actual_pick":           r.get("draft_pick") or None,
+            "actual_round":          None,
+            "actual_nfl_team":       None,
+            "headshot_url":          None,
+        }
+
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO historical_prospect_grades (
+                        player_id, name, position, draft_class_year, school,
+                        prospect_score, tier, tier_label, overall_rank, position_rank,
+                        production_score, efficiency_score, age_score,
+                        breakout_profile_score, athleticism_score,
+                        competition_score, draft_capital_score, confidence_score,
+                        actual_pick, actual_round, actual_nfl_team, headshot_url
+                    ) VALUES (
+                        %(player_id)s, %(name)s, %(position)s, %(draft_class_year)s, %(school)s,
+                        %(prospect_score)s, %(tier)s, %(tier_label)s, %(overall_rank)s, %(position_rank)s,
+                        %(production_score)s, %(efficiency_score)s, %(age_score)s,
+                        %(breakout_profile_score)s, %(athleticism_score)s,
+                        %(competition_score)s, %(draft_capital_score)s, %(confidence_score)s,
+                        %(actual_pick)s, %(actual_round)s, %(actual_nfl_team)s, %(headshot_url)s
+                    )
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        prospect_score          = EXCLUDED.prospect_score,
+                        tier                    = EXCLUDED.tier,
+                        tier_label              = EXCLUDED.tier_label,
+                        overall_rank            = EXCLUDED.overall_rank,
+                        position_rank           = EXCLUDED.position_rank,
+                        production_score        = EXCLUDED.production_score,
+                        efficiency_score        = EXCLUDED.efficiency_score,
+                        age_score               = EXCLUDED.age_score,
+                        breakout_profile_score  = EXCLUDED.breakout_profile_score,
+                        athleticism_score       = EXCLUDED.athleticism_score,
+                        competition_score       = EXCLUDED.competition_score,
+                        draft_capital_score     = EXCLUDED.draft_capital_score,
+                        confidence_score        = EXCLUDED.confidence_score,
+                        actual_pick             = EXCLUDED.actual_pick
+                    """,
+                    payload,
+                )
+                conn.commit()
+            written += 1
+        except Exception as e:
+            print(f"  [db] Failed to save {name}: {e}")
+            failed += 1
+
+    return written, failed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = True) -> List[Dict[str, Any]]:
     """
     Run the full backtest. Returns all result rows (one per draftee).
     """
@@ -1277,6 +1398,11 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
         _print_summary(all_rows)
         _print_all_time_top10(all_rows, top_n=TOP_N_PER_CLASS)
 
+        if save_grades:
+            print(f"\n[backtest] Saving {len(all_rows)} grades to historical_prospect_grades…")
+            written, failed = save_grades_to_db(all_rows)
+            print(f"[backtest] Saved {written} rows" + (f" ({failed} failed)" if failed else "") + ".")
+
     return all_rows
 
 
@@ -1298,7 +1424,12 @@ if __name__ == "__main__":
         default="conservative",
         help="Benchmark boost profile to use during scoring (default: conservative)",
     )
+    parser.add_argument(
+        "--no-save-grades",
+        action="store_true",
+        help="Skip writing grades to historical_prospect_grades table",
+    )
     args = parser.parse_args()
     os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
     TOP_N_PER_CLASS = args.top_n
-    run_backtest(args.years)
+    run_backtest(args.years, save_grades=not args.no_save_grades)

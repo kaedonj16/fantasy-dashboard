@@ -675,7 +675,7 @@ def fetch_nflverse_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
     import io
     try:
         import urllib.request
-        url = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/drafts.csv"
+        url = "https://github.com/nflverse/nflverse-data/releases/download/draft_picks/draft_picks.csv"
         with urllib.request.urlopen(url, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
     except Exception as exc:

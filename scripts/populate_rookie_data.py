@@ -115,6 +115,20 @@ def main():
             if result.get('consensus'):
                 print(f"   • {len(result['consensus'])} mock draft consensus entries")
 
+            print(f"  Step 3/3: Snapshotting grades into historical_prospect_grades…")
+            try:
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location(
+                    "snapshot_rookie_grades",
+                    project_root / "scripts" / "snapshot_rookie_grades.py",
+                )
+                _snap_mod = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_snap_mod)
+                written = _snap_mod._run_snapshot(year)
+                print(f"   • Snapshot: {written} rows written to historical_prospect_grades")
+            except Exception as snap_exc:
+                print(f"   ⚠ Snapshot failed (non-fatal): {snap_exc}")
+
         except Exception as exc:
             print(f"❌ Error processing {year}: {exc}")
             import traceback
