@@ -12575,49 +12575,60 @@ def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
                 "name":         p.get("name") or "",
             }
 
-    # Filter to this season's rookies using our DB (authoritative rookie list)
+    # Filter to this season's rookies using our DB (authoritative rookie list).
+    # When sleeper_ids are not yet populated (e.g. right after the NFL Draft),
+    # fall back to name-based matching and use FantasyCalc's sleeperId as key,
+    # which also matches what Sleeper uses in draft pick player_id fields.
     result: dict = {}
     try:
         from dashboard_services.db import get_conn
         with get_conn() as _conn:
-            rows = _conn.execute(
+            all_rows = _conn.execute(
                 "SELECT sleeper_id, name, position FROM rookie_prospects "
-                "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                "WHERE draft_class_year = %s",
                 (season,)
             ).fetchall()
-        # Build a name → sleeper_id fallback for players FantasyCalc matched by name
-        name_to_sid = {str(r["name"]).lower(): str(r["sleeper_id"]) for r in rows}
-        our_sids = {str(r["sleeper_id"]) for r in rows}
 
-        # Assign rookie-only ordinal ranks from FantasyCalc overall order
-        rookie_entries = sorted(
+        # Primary path: match by sleeper_id
+        our_sids = {str(r["sleeper_id"]) for r in all_rows if r["sleeper_id"]}
+        sid_matched = sorted(
             [(sid, fc_by_sleeper[sid]) for sid in our_sids if sid in fc_by_sleeper],
             key=lambda x: (x[1]["overall_rank"] or 9999)
         )
-        for rookie_rank, (sid, info) in enumerate(rookie_entries, start=1):
+        for rookie_rank, (sid, info) in enumerate(sid_matched, start=1):
             result[sid] = {
-                "adp_rank": rookie_rank,       # rank among rookies only (1 = best)
+                "adp_rank": rookie_rank,
                 "fc_overall": info["overall_rank"],
                 "pos_rank":   info["pos_rank"],
                 "position":   info["position"],
             }
 
-        # Fallback: try to match unmatched rookies by name
-        unmatched_sids = our_sids - set(result.keys())
-        if unmatched_sids and fc_data:
-            unmatched_name_map = {str(r["name"]).lower(): str(r["sleeper_id"])
-                                  for r in rows if str(r["sleeper_id"]) in unmatched_sids}
-            for entry in (fc_data or []):
-                p = entry.get("player") or {}
-                fc_name = (p.get("name") or "").lower()
-                if fc_name in unmatched_name_map:
-                    sid = unmatched_name_map[fc_name]
-                    result[sid] = {
-                        "adp_rank": len(result) + 1,
-                        "fc_overall": entry.get("overallRank"),
-                        "pos_rank":   entry.get("positionalRank"),
-                        "position":   str(p.get("position") or "").upper(),
-                    }
+        # Name-based fallback: for prospects without a sleeper_id, or those that
+        # didn't match by id, try matching against FantasyCalc by player name.
+        # Use FantasyCalc's own sleeperId as the key so it aligns with Sleeper picks.
+        our_names = {str(r["name"]).lower() for r in all_rows}
+        name_matched = sorted(
+            [entry for entry in (fc_data or [])
+             if (entry.get("player") or {}).get("name", "").lower() in our_names],
+            key=lambda e: (e.get("overallRank") or 9999)
+        )
+        for entry in name_matched:
+            p = entry.get("player") or {}
+            sid = str(p.get("sleeperId") or "")
+            if not sid or sid in result:
+                continue
+            result[sid] = {
+                "adp_rank": len(result) + 1,
+                "fc_overall": entry.get("overallRank"),
+                "pos_rank":   entry.get("positionalRank"),
+                "position":   str(p.get("position") or "").upper(),
+            }
+
+        # Re-assign sequential ranks after merging both paths
+        all_entries = sorted(result.items(), key=lambda kv: kv[1].get("fc_overall") or 9999)
+        result = {sid: {**info, "adp_rank": rank}
+                  for rank, (sid, info) in enumerate(all_entries, start=1)}
+
     except Exception:
         pass
 

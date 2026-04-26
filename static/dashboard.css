@@ -11885,7 +11885,8 @@ img, svg, canvas {
 }
 
 .analytics-draft-team {
-  background: var(--bg-secondary, #1e293b);
+  background: var(--card-soft);
+  border: 1px solid var(--border, #dbe2ea);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -11922,13 +11923,21 @@ img, svg, canvas {
   margin-bottom: 6px;
 }
 
-/* Grade colour buckets */
-.dg-Aplus { background: #14532d; color: #4ade80; }
-.dg-A     { background: #166534; color: #86efac; }
-.dg-B     { background: #1e3a5f; color: #93c5fd; }
-.dg-C     { background: #713f12; color: #fcd34d; }
-.dg-D     { background: #7f1d1d; color: #fca5a5; }
-.dg-F     { background: #450a0a; color: #ef4444; }
+/* Grade colour buckets — light mode defaults */
+.dg-Aplus { background: #dcfce7; color: #15803d; }
+.dg-A     { background: #bbf7d0; color: #166534; }
+.dg-B     { background: #dbeafe; color: #1d4ed8; }
+.dg-C     { background: #fef9c3; color: #92400e; }
+.dg-D     { background: #fee2e2; color: #b91c1c; }
+.dg-F     { background: #fecaca; color: #991b1b; }
+
+/* Grade colour buckets — dark mode overrides */
+:root[data-theme="dark"] .dg-Aplus { background: #14532d; color: #4ade80; }
+:root[data-theme="dark"] .dg-A     { background: #166534; color: #86efac; }
+:root[data-theme="dark"] .dg-B     { background: #1e3a5f; color: #93c5fd; }
+:root[data-theme="dark"] .dg-C     { background: #713f12; color: #fcd34d; }
+:root[data-theme="dark"] .dg-D     { background: #7f1d1d; color: #fca5a5; }
+:root[data-theme="dark"] .dg-F     { background: #450a0a; color: #ef4444; }
 
 .analytics-draft-picks {
   display: flex;
@@ -11996,10 +12005,14 @@ img, svg, canvas {
   margin-top: 2px;
 }
 
-.adp-value   { color: #4ade80; font-weight: 700; }
-.adp-reach   { color: #f87171; font-weight: 700; }
+.adp-value   { color: #16a34a; font-weight: 700; }
+.adp-reach   { color: #dc2626; font-weight: 700; }
 .adp-neutral { color: var(--text-muted); }
-.adp-wait    { color: #f59e0b; font-style: italic; }
+.adp-wait    { color: #b45309; font-style: italic; }
+
+:root[data-theme="dark"] .adp-value { color: #4ade80; }
+:root[data-theme="dark"] .adp-reach { color: #f87171; }
+:root[data-theme="dark"] .adp-wait  { color: #f59e0b; }
 
 .analytics-pick-bpa {
   font-size: 10px;
@@ -12018,10 +12031,15 @@ img, svg, canvas {
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 3px;
-  background: #1e3a5f;
-  color: #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
   margin-left: 4px;
   vertical-align: middle;
+}
+
+:root[data-theme="dark"] .draft-need-badge {
+  background: #1e3a5f;
+  color: #93c5fd;
 }
 
 .draft-adp-banner {

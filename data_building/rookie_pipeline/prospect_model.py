@@ -1744,20 +1744,39 @@ def calc_translation_adjustment(
             adj += 1.5
 
     elif position == "TE":
-        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
+        seasons_te = prospect.get("seasons") or []
         target_share = _safe(latest.get("target_share"), 0.0)
         draft_age = _safe(prospect.get("age"), 0.0)
+
+        # Use latest season for penalty checks (reflects current role)
+        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
+        if rec_yds_pg == 0.0:
+            gp_l = max(_safe(latest.get("games_played"), 12.0), 1.0)
+            rec_yds_pg = _safe(latest.get("receiving_yards"), 0.0) / gp_l
+
+        # Use peak season for upside bonus — an injury-shortened year should not
+        # mask a player whose best season was historically dominant (e.g. Bowers 2022).
+        def _rec_ydpg(s: dict) -> float:
+            v = _safe(s.get("rec_yds_pg"), 0.0)
+            if v:
+                return v
+            gp = max(_safe(s.get("games_played"), 12.0), 1.0)
+            return _safe(s.get("receiving_yards"), 0.0) / gp
+        best_rec_yds_pg = max((_rec_ydpg(s) for s in seasons_te), default=rec_yds_pg)
 
         # Baseline dynasty development delay: TEs typically take 2-3 NFL seasons.
         adj -= 5.0
 
-        # Elite receiving TE upside: high pick + dominant college receiving production.
-        # Targets generational profiles (Pitts, Bowers) who combine elite draft capital
-        # with genuine college volume that was not scheme-inflated.
-        if projected_pick <= 10 and rec_yds_pg >= 60:
-            adj += 5.0
-        elif projected_pick <= 20 and rec_yds_pg >= 65:
-            adj += 3.0
+        # Elite receiving TE upside: uses peak season so injury years don't suppress it.
+        # Tiers calibrated so generational prospects (Pitts #4, Bowers #13) reach high-80s.
+        if projected_pick <= 10 and best_rec_yds_pg >= 60:
+            adj += 7.0
+        elif projected_pick <= 15 and best_rec_yds_pg >= 75:
+            adj += 6.0
+        elif projected_pick <= 20 and best_rec_yds_pg >= 65:
+            adj += 4.0
+        elif projected_pick <= 25 and best_rec_yds_pg >= 60:
+            adj += 2.0
 
         # Profile-based shrinkage for weak receiving-usage TEs (blocking archetypes).
         if rec_yds_pg > 0 and rec_yds_pg < 35:
@@ -1770,7 +1789,7 @@ def calc_translation_adjustment(
             adj -= 2.0
 
     # Keep the adjustment bounded; this is a corrective signal, not the main model.
-    return max(-14.0, min(6.0, adj))
+    return max(-14.0, min(8.0, adj))
 
 
 def score_prospect(
