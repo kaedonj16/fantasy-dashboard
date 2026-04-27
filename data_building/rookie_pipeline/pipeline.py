@@ -2070,11 +2070,13 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                             rmc.projected_round, rmc.projected_pick,
                             rmc.projected_pick_low, rmc.projected_pick_high,
                             rmc.num_mocks_used, rmc.consensus_confidence,
-                            rpa.forty_yard, rpa.ras_score
+                            rpa.forty_yard, rpa.ras_score,
+                            pv.rank_change_7d
                         FROM   rookie_rankings rr
                         JOIN   rookie_prospects rp  ON rp.player_id = rr.player_id
                         LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
                         LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
+                        LEFT   JOIN player_values pv ON pv.player_id = rp.sleeper_id
                         WHERE  rr.draft_class_year = %s
                           AND  (%s = FALSE OR rp.draft_confirmed = TRUE)
                         ORDER  BY rr.overall_rank

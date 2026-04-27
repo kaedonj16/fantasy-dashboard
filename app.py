@@ -7952,8 +7952,8 @@ def page_players(platform: str, season: int, league_id: str):
           let rankArrow = '';
           if (rankChange != null && rankChange !== 0 && displayRank) {
             const dir = rankChange > 0 ? 'up' : 'down';
-            const sym = rankChange > 0 ? '▲' : '▼';
-            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days">${sym}</span>`;
+            const icon = rankChange > 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
           row.innerHTML =
