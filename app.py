@@ -12792,7 +12792,6 @@ def api_draft_grades():
         else:
             adp_info = _build_model_adp_fallback(is_sf, season)
             adp_source = "model" if adp_info else "none"
-        adp_has_data = bool(adp_info)
 
         # ── Rosters & users ─────────────────────────────────────────────────
         rosters = get_rosters(platform, league_id, season) or []
@@ -12851,15 +12850,23 @@ def api_draft_grades():
                 if sid not in taken and sid != exclude_sid
             ][:3]
 
-        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int]) -> str:
+        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int) -> str:
             """
+            Improved grading system that rewards BPA and accounts for league context.
+            
             adp_diff  : actual_pick - adp_rank  (+= value, -= reach)
             need      : True if pick fills a positional need
             bpa_gap   : ADP gap between this pick and the best available player
                         (0 = BPA taken; positive = better players left on board)
+            is_bpa    : True if this was the best player available at the pick
+            pos       : Position of the player picked
+            is_sf     : True if Superflex league, False if 1QB
+            qb_count  : Current QB count on the roster
             """
             if adp_diff is None:
                 return "N/A"
+            
             # Base score from ADP diff (primary signal)
             if adp_diff >= 5:     score = 4   # clear value
             elif adp_diff >= 2:   score = 3
@@ -12867,17 +12874,25 @@ def api_draft_grades():
             elif adp_diff >= -4:  score = 1
             else:                 score = 0   # big reach
 
-            # Need modifier
-            if need:
-                score += 1
-            else:
-                score = max(score - 0, score)  # no penalty for depth, just no bonus
-
-            # BPA penalty: if a clearly better player was available (bpa_gap >= 3)
-            if bpa_gap is not None and bpa_gap >= 5:
+            # BPA Bonus: Taking the best available player should be rewarded
+            if is_bpa:
+                score += 2  # Strong bonus for BPA selection
+            elif bpa_gap is not None and bpa_gap >= 5:
                 score = max(score - 2, 0)   # much better player sitting there
             elif bpa_gap is not None and bpa_gap >= 3:
                 score = max(score - 1, 0)
+
+            # Need modifier with positional context
+            if need:
+                score += 1
+            else:
+                # Penalize picking positions you don't need, especially QB in 1QB
+                if pos == "QB" and not is_sf and qb_count >= 2:
+                    score = max(score - 2, 0)  # Heavy penalty for redundant QB in 1QB
+                elif pos == "QB" and not is_sf and qb_count >= 1:
+                    score = max(score - 1, 0)  # Penalty for backup QB in 1QB
+                else:
+                    score = max(score - 0, score)  # No penalty for other depth picks
 
             return {5: "A+", 4: "A", 3: "B", 2: "C", 1: "D", 0: "F"}.get(min(score, 5), "F")
 
@@ -12917,7 +12932,10 @@ def api_draft_grades():
                 a for a in available_at_pick(player_id)
                 if a["adp_rank"] < (adp_rank or pick_no)
             ]
-            bpa_gap = (adp_rank - avail_better[0]["adp_rank"]) if avail_better else 0
+            bpa_gap = (adp_rank - avail_better[0]["adp_rank"]) if avail_better and adp_rank is not None else 0
+            
+            # Check if this was the best player available (BPA)
+            is_bpa = len(avail_better) == 0
 
             # Could they have waited?
             # Estimate: next same-team pick ≈ pick_no + num_teams (snake round)
@@ -12925,7 +12943,10 @@ def api_draft_grades():
             could_wait = (adp_diff is not None and adp_diff < -2 and
                           adp_rank is not None and adp_rank > pick_no + num_teams)
 
-            grade = pick_grade(adp_diff, need, bpa_gap)
+            # Get current QB count for positional context
+            qb_count = roster_pos_counts.get(rid, {}).get("QB", 0)
+
+            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count)
 
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
