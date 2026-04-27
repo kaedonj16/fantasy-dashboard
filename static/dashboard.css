@@ -12325,7 +12325,8 @@ img, svg, canvas {
 .teams-sidebar {
   position: sticky;
   top: 90px;
-  height: fit-content;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
   align-self: flex-start;
 }
 

@@ -2009,12 +2009,15 @@ def run_rookie_pipeline(
     )
 
 
-def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
+def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False) -> List[Dict[str, Any]]:
     """
     Fetch persisted rankings from the database.  Returns an empty list if no
     data exists for the requested year — does not auto-run the pipeline.
-    
+
     Priority: Model values table > rookie_rankings table > calculated values
+
+    filter_undrafted: when True, exclude prospects where draft_confirmed IS NOT TRUE
+                      (used after the NFL draft ends to hide players who went undrafted).
     """
     # Ensure draft_year is an integer
     draft_year = int(draft_year)
@@ -2072,9 +2075,10 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                         LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
                         LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
                         WHERE  rr.draft_class_year = %s
+                          AND  (%s = FALSE OR rp.draft_confirmed = TRUE)
                         ORDER  BY rr.overall_rank
                         """,
-                        (draft_year,),
+                        (draft_year, filter_undrafted),
                     )
                     rows = cur.fetchall()
 

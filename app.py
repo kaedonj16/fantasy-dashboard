@@ -1347,9 +1347,15 @@ def _build_roster_map(users: list, rosters: list) -> dict:
 def _load_rookie_rankings_for_ctx() -> list[dict]:
     """Load current draft class rookies sorted by overall_rank for pick projection."""
     try:
-        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class, is_draft_complete
         draft_year = get_active_rookie_class()
-        rows = get_rookie_rankings_from_db(draft_year)
+        try:
+            from dashboard_services.db import get_conn as _get_conn
+            with _get_conn() as _dc:
+                _draft_done = is_draft_complete(draft_year, _dc)
+        except Exception:
+            _draft_done = is_draft_complete(draft_year)
+        rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=_draft_done)
         return [
             {
                 "player_id":    r.get("player_id", ""),
@@ -12696,7 +12702,7 @@ def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     return result
 
 
-def _build_model_adp_fallback(is_sf: bool, season: int) -> dict:
+def _build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = False) -> dict:
     """
     Build a value-based board from our own model when external ADP is unavailable.
     Ranks this season's rookies by calibrated (or raw) model value so picks can
@@ -12707,6 +12713,7 @@ def _build_model_adp_fallback(is_sf: bool, season: int) -> dict:
         from dashboard_services.db import get_conn
         value_col = "COALESCE(calibrated_value_sf, value_sf)" if is_sf \
                     else "COALESCE(calibrated_value_1qb, value_1qb)"
+        undrafted_clause = "AND rp.draft_confirmed = TRUE" if filter_undrafted else ""
         with get_conn() as _conn:
             rows = _conn.execute(
                 f"""
@@ -12716,6 +12723,7 @@ def _build_model_adp_fallback(is_sf: bool, season: int) -> dict:
                 LEFT JOIN player_values pv ON pv.player_id = rp.sleeper_id
                 WHERE rp.draft_class_year = %s
                   AND rp.sleeper_id IS NOT NULL
+                  {undrafted_clause}
                 ORDER BY {value_col} DESC NULLS LAST
                 """,
                 (season,)
@@ -12784,13 +12792,22 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
+        # ── NFL draft completion check ───────────────────────────────────────
+        from data_building.rookie_pipeline.pipeline import is_draft_complete
+        try:
+            from dashboard_services.db import get_conn as _get_conn
+            with _get_conn() as _dc:
+                _nfl_draft_done = is_draft_complete(season, _dc)
+        except Exception:
+            _nfl_draft_done = is_draft_complete(season)
+
         # ── Rookie ADP — FantasyCalc with model-value fallback ───────────────
         # adp_info[sleeper_id] = {adp_rank, pos_rank, position}
         adp_info = _fetch_fc_rookie_adp(is_sf, season)
         if adp_info:
             adp_source = "fantasycalc"
         else:
-            adp_info = _build_model_adp_fallback(is_sf, season)
+            adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
             adp_source = "model" if adp_info else "none"
 
         # ── Rosters & users ─────────────────────────────────────────────────

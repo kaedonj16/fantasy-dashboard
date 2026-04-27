@@ -23,14 +23,26 @@ rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 
 # In-memory cache so we don't re-run the pipeline on every page load.
 # Invalidated on refresh or on first hit per process.
-_cache: Dict[int, List[Dict[str, Any]]] = {}
+_cache: Dict[Any, List[Dict[str, Any]]] = {}
+
+
+def _nfl_draft_complete(draft_year: int) -> bool:
+    from data_building.rookie_pipeline.pipeline import is_draft_complete
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            return is_draft_complete(draft_year, conn)
+    except Exception:
+        return is_draft_complete(draft_year)
 
 
 def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
-    if draft_year not in _cache:
+    draft_done = _nfl_draft_complete(draft_year)
+    cache_key = (draft_year, draft_done)
+    if cache_key not in _cache:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-        _cache[draft_year] = get_rookie_rankings_from_db(draft_year)
-    return _cache[draft_year]
+        _cache[cache_key] = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+    return _cache[cache_key]
 
 
 def _safe_float(v, default=None):
