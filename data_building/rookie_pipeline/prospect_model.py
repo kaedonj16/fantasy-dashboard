@@ -1306,7 +1306,7 @@ for pos, weights in POSITION_WEIGHTS.items():
 # Enhanced evaluation functions
 # 
 
-from typing import Dict
+from typing import Dict, Tuple
 
 def calc_loaded_roster_adjustment(
     team: str,
@@ -1316,70 +1316,74 @@ def calc_loaded_roster_adjustment(
     market_share: float,
     ypc: float = 0.0,
 ) -> float:
-    loaded_rosters: Dict[str, Dict[str, Dict[int, int]]] = {
+    # Values are (room_size, talent_tier).
+    # talent_tier 1 = Day-2/3 starter above the prospect (minimal suppression signal)
+    # talent_tier 2 = clear first-round prospect, established alpha role
+    # talent_tier 3 = elite/top-15 pick prospect with dominant alpha role
+    loaded_rosters: Dict[str, Dict[str, Dict[int, Tuple[int, int]]]] = {
         "Ohio State": {
             "WR": {
-                2021: 2,
-                2022: 2,
-                2023: 2,
-                2024: 2,
-                2025: 3,
+                2021: (2, 3),  # Olave (#10) + Wilson (#20) — co-equal first-round alphas
+                2022: (2, 3),  # JSN (Biletnikoff, consensus WR1 prospect) + Egbuka (first-round)
+                2023: (2, 3),  # MHJ (consensus WR1, top-5 overall) + Egbuka (first-round)
+                2024: (3, 3),  # Smith (generational) + Egbuka (#19) + Tate (#4) — three first-rounders
+                2025: (3, 3),  # Smith (projected #1 WR overall) + Tate (#4 overall pick)
             },
         },
         "Alabama": {
             "WR": {
-                2020: 3,
-                2021: 2,
-                2022: 2,
-                2025: 2,
+                2020: (3, 3),  # Smith (Heisman/#10) + Waddle (#4) + Metchie (first-round)
+                2021: (2, 3),  # Jameson Williams (#12 overall, dominant alpha 1,572 yds) + Metchie (#38)
+                2022: (2, 1),  # Burton (6th round) + Holden (UDFA) — no first-round grade
+                2025: (2, 2),  # Ryan Williams (first-round grade, WR2-3 in class, clear alpha)
             },
             "RB": {
-                2020: 2,
-                2021: 2,
+                2020: (2, 3),  # Najee Harris (Doak Walker, #24 overall, dominant alpha)
+                2021: (2, 1),  # Brian Robinson (3rd round/#98, clear alpha but Day 2-3 grade)
             },
         },
         "Georgia": {
             "TE": {
-                2021: 2,
-                2022: 2,
+                2021: (2, 3),  # Brock Bowers (92.1 PFF freshman record, #13 overall eventual pick)
+                2022: (2, 3),  # Bowers (established #1 TE in class) + Washington (Day 2/#93)
             },
             "WR": {
-                2024: 2,
-                2025: 2,
+                2024: (2, 1),  # Lovett (Day 2-3) + Bell (undrafted) — no first-round grade
+                2025: (2, 1),  # Bell (undrafted) + Young (4th round) — below first-round threshold
             },
         },
         "USC": {
             "WR": {
-                2022: 2,
-                2024: 2,
-                2025: 2,
+                2022: (2, 2),  # Jordan Addison (Biletnikoff, #23 overall, unambiguous alpha)
+                2024: (2, 1),  # Branch (Day 2, no clear alpha) + Lemon (emerging, not yet first-round)
+                2025: (2, 2),  # Lemon (#20 overall, Biletnikoff, clear alpha) + Lane (Day 2)
             },
         },
         "LSU": {
             "WR": {
-                2019: 3,
-                2022: 2,
-                2024: 2,
-                2025: 2,
+                2019: (3, 3),  # Chase (#5) + Jefferson (#22) + Marshall (2nd round) — legendary room
+                2022: (2, 1),  # Boutte (grade cratered Day 3 due to injuries) + Nabers/Thomas emerging sophs
+                2023: (2, 3),  # Nabers (#6 overall) + Brian Thomas (#23 overall) — co-equal elite alphas
+                2024: (2, 1),  # Kyren Lacy (Day 2) + Anderson — post-elite-era room
+                2025: (2, 1),  # Aaron Anderson (Day 2) — no first-round grade alpha
             },
         },
         "Texas": {
             "WR": {
-                2023: 2,
-                2024: 2,
-                2025: 2,
+                2023: (2, 2),  # Worthy (#28) + Mitchell (#52) — two first/2nd-round picks, three-way split
+                2024: (2, 2),  # Golden (#23, clear alpha by season end) + Bond (Day 2)
+                2025: (2, 1),  # Wingo (unproven) + Moore (Day 3) — no first-round grade
             },
         },
         "Oregon": {
             "WR": {
-                2024: 2,
-                2025: 3,
+                2024: (2, 1),  # Johnson (Day 2-3) + Stewart (not yet first-round grade) — three-way split
+                2025: (2, 1),  # Stewart injured entire season; Moore (5-star freshman) unproven
             }
         },
         "Notre Dame": {
             "RB": {
-                2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
-                2024: 2,   # Price + Jeremiyah Love; blocked-by-generational-back scenario
+                2024: (2, 3),  # Love (#3 overall, dominant alpha) + Price (#32 despite never starting)
             },
         },
     }
@@ -1403,11 +1407,16 @@ def calc_loaded_roster_adjustment(
     production_score = max(0.0, min(production_score, 100.0))
     market_share = max(0.0, min(market_share, 1.0))
 
-    room_size = (
+    entry = (
         loaded_rosters.get(team, {})
         .get(position, {})
-        .get(season, 0)
+        .get(season)
     )
+
+    if not entry:
+        return 1.0
+
+    room_size, talent_tier = entry
 
     if room_size < 2:
         return 1.0
@@ -1454,6 +1463,11 @@ def calc_loaded_roster_adjustment(
         prod_factor = 0.65
     else:
         prod_factor = 0.10
+
+    # Scale base_bonus by how elite the blocking talent was.
+    # Tier 3 (generational alpha above) warrants a 55% larger bonus than the baseline.
+    tier_scale = {1: 1.00, 2: 1.25, 3: 1.55}.get(talent_tier, 1.00)
+    base_bonus = base_bonus * tier_scale
 
     realized_bonus = base_bonus * ((ms_factor * 0.6) + (prod_factor * 0.4))
     multiplier = 1.0 + realized_bonus
