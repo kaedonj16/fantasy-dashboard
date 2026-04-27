@@ -6291,29 +6291,37 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.draft = true;
         var panel = document.getElementById('draftPanel');
         if (!panel) return;
+        panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
         fetch('/api/draft-grades?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
-          .then(r => r.json())
-          .then(data => {{
+          .then(function(r) {{ return r.json(); }})
+          .then(function(data) {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
-            var adpBanner = data.adp_source === 'fantasycalc'
-              ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on need, availability &amp; ADP</div>'
-              : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after draft</div>';
-            var html = adpBanner + '<div class="analytics-draft-grid">';
-            teams.forEach(function(t) {{
+
+            var banner = data.adp_source === 'fantasypros'
+              ? '<div class="draft-adp-banner">Rookie rankings via FantasyPros · grades based on positional need, board value &amp; ADP</div>'
+              : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
+
+            var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+
+            var html = banner + '<div class="draft-accordion">';
+
+            teams.forEach(function(t, idx) {{
               var gcls = 'dg-' + t.grade.replace('+', 'plus');
-              html += '<div class="analytics-draft-team collapsed">' +
-                '<div class="analytics-draft-header" onclick="toggleAnalyticsDraftTeam(this)">' +
-                  '<span class="analytics-draft-name">' + t.team_name + '</span>' +
-                  '<span class="analytics-draft-grade ' + gcls + '">' + t.grade + '</span>' +
-                '</div>' +
-                '<div class="analytics-draft-picks">';
+              html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
+                '<button class="draft-acc-header" type="button">' +
+                  '<span class="draft-acc-name">' + t.team_name + '</span>' +
+                  '<div class="draft-acc-right">' +
+                    '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
+                    chevronSvg +
+                  '</div>' +
+                '</button>' +
+                '<div class="draft-acc-body"><div class="draft-acc-picks">';
               t.picks.forEach(function(p) {{
                 var pgcls = 'dg-' + p.grade.replace('+', 'plus');
 
-                // ADP comparison line
                 var adpLine = '';
                 if (p.adp_rank != null) {{
                   var diff = p.adp_diff;
@@ -6324,10 +6332,9 @@ def build_teams_body(ctx: dict) -> str:
                       : '<span class="adp-neutral">on ADP</span>';
                   var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
                   var waitTag = p.could_wait ? ' <span class="adp-wait">could\\\'ve waited</span>' : '';
-                  adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
+                  adpLine = '<div class="analytics-pick-adp-line">FP #' + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
 
-                // BPA line — top available players with better ADP
                 var bpaLine = '';
                 if (p.bpa && p.bpa.length) {{
                   var bpaNames = p.bpa.map(function(b) {{
@@ -6352,17 +6359,25 @@ def build_teams_body(ctx: dict) -> str:
                   '</div>' +
                 '</div>';
               }});
-              html += '</div></div>';
+
+              html += '</div></div></div>';
             }});
+
             html += '</div>';
             panel.innerHTML = html;
+
+            panel.querySelectorAll('.draft-acc-header').forEach(function(btn) {{
+              btn.addEventListener('click', function() {{
+                var item = this.closest('.draft-acc-item');
+                var wasOpen = item.classList.contains('open');
+                panel.querySelectorAll('.draft-acc-item').forEach(function(el) {{
+                  el.classList.remove('open');
+                }});
+                if (!wasOpen) item.classList.add('open');
+              }});
+            }});
           }})
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
-      }}
-
-      function toggleAnalyticsDraftTeam(header) {{
-        const teamElement = header.parentElement;
-        teamElement.classList.toggle('collapsed');
       }}
 
       function loadRosterIntel() {{
@@ -12582,17 +12597,17 @@ def api_schedule_strength():
         return jsonify({"error": "Internal error"}), 500
 
 
-def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
+def _fetch_fp_rookie_adp(season: int) -> dict:
     """
-    Fetch dynasty rookie ADP from FantasyCalc and return a map of
-    sleeper_id -> {adp_rank, pos_rank, position, name}.
-
-    Filters to current-season rookies only (matched against rookie_prospects).
-    Caches per league type per day.
+    Fetch dynasty rookie rankings from FantasyPros (updated daily).
+    Returns sleeper_id -> {adp_rank, pos_rank, position}.
+    FantasyPros overall dynasty rookie rankings don't split by SF vs 1QB,
+    so the same data is used for both league types.
     """
-    import json as _json
+    import json as _json, csv as _csv, io as _io, re as _re
     from utils.paths import DATA_DIR
-    key = f"fc_rookie_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
+
+    key = f"fp_rookie_adp_{date.today().isoformat()}.json"
     cache_path = DATA_DIR / key
     if cache_path.exists():
         try:
@@ -12601,91 +12616,80 @@ def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
         except Exception:
             pass
 
-    num_qbs = 2 if is_sf else 1
-    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5"
+    url = "https://www.fantasypros.com/nfl/rankings/dynasty-rookies-overall.php?export=csv"
     try:
         import requests as _req
-        resp = _req.get(url, timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp = _req.get(url, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/csv,text/html,*/*;q=0.8",
+        })
         resp.raise_for_status()
-        fc_data = resp.json()
+        raw = resp.text
     except Exception:
-        fc_data = []
+        return {}
 
-    # Build sleeper_id lookup from FantasyCalc data
-    fc_by_sleeper: dict = {}
-    for entry in (fc_data or []):
-        p = entry.get("player") or {}
-        sid = str(p.get("sleeperId") or "")
-        if sid and sid != "None":
-            fc_by_sleeper[sid] = {
-                "overall_rank": entry.get("overallRank"),
-                "pos_rank":     entry.get("positionalRank"),
-                "position":     str(p.get("position") or "").upper(),
-                "name":         p.get("name") or "",
-            }
+    # FantasyPros CSV: Rank, Tier, Player Name, Team, Pos, ...
+    fp_rows: list = []
+    try:
+        reader = _csv.DictReader(_io.StringIO(raw))
+        for row in reader:
+            rank_str = (row.get("Rank") or "").strip()
+            name     = (row.get("Player Name") or "").strip()
+            pos      = (row.get("Pos") or "").strip().upper()
+            if not rank_str or not name:
+                continue
+            try:
+                rank = int(rank_str)
+            except ValueError:
+                continue
+            fp_rows.append({"rank": rank, "name": name, "position": pos})
+    except Exception:
+        return {}
 
-    # Filter to this season's rookies using our DB (authoritative rookie list).
-    # When sleeper_ids are not yet populated (e.g. right after the NFL Draft),
-    # fall back to name-based matching and use FantasyCalc's sleeperId as key,
-    # which also matches what Sleeper uses in draft pick player_id fields.
+    if not fp_rows:
+        return {}
+
+    fp_rows.sort(key=lambda r: r["rank"])
+
+    def _norm(n: str) -> str:
+        return _re.sub(r"[^a-z]", "", (n or "").lower())
+
     result: dict = {}
     try:
         from dashboard_services.db import get_conn
         with get_conn() as _conn:
-            all_rows = _conn.execute(
+            db_rows = _conn.execute(
                 "SELECT sleeper_id, name, position FROM rookie_prospects "
                 "WHERE draft_class_year = %s",
                 (season,)
             ).fetchall()
 
-        # Primary path: match by sleeper_id
-        our_sids = {str(r["sleeper_id"]) for r in all_rows if r["sleeper_id"]}
-        sid_matched = sorted(
-            [(sid, fc_by_sleeper[sid]) for sid in our_sids if sid in fc_by_sleeper],
-            key=lambda x: (x[1]["overall_rank"] or 9999)
-        )
-        for rookie_rank, (sid, info) in enumerate(sid_matched, start=1):
-            result[sid] = {
-                "adp_rank": rookie_rank,
-                "fc_overall": info["overall_rank"],
-                "pos_rank":   info["pos_rank"],
-                "position":   info["position"],
-            }
+        db_by_norm = {_norm(r["name"]): r for r in db_rows}
+        pos_counters: dict = {}
 
-        # Name-based fallback: for prospects without a sleeper_id, or those that
-        # didn't match by id, try matching against FantasyCalc by player name.
-        # Use FantasyCalc's own sleeperId as the key so it aligns with Sleeper picks.
-        our_names = {str(r["name"]).lower() for r in all_rows}
-        name_matched = sorted(
-            [entry for entry in (fc_data or [])
-             if (entry.get("player") or {}).get("name", "").lower() in our_names],
-            key=lambda e: (e.get("overallRank") or 9999)
-        )
-        for entry in name_matched:
-            p = entry.get("player") or {}
-            sid = str(p.get("sleeperId") or "")
+        for fp in fp_rows:
+            db = db_by_norm.get(_norm(fp["name"]))
+            if not db:
+                continue
+            sid = str(db["sleeper_id"] or "")
             if not sid or sid in result:
                 continue
+            pos = fp["position"] or str(db["position"] or "")
+            pos_counters[pos] = pos_counters.get(pos, 0) + 1
             result[sid] = {
-                "adp_rank": len(result) + 1,
-                "fc_overall": entry.get("overallRank"),
-                "pos_rank":   entry.get("positionalRank"),
-                "position":   str(p.get("position") or "").upper(),
+                "adp_rank": fp["rank"],
+                "pos_rank":  pos_counters[pos],
+                "position":  pos,
             }
-
-        # Re-assign sequential ranks after merging both paths
-        all_entries = sorted(result.items(), key=lambda kv: kv[1].get("fc_overall") or 9999)
-        result = {sid: {**info, "adp_rank": rank}
-                  for rank, (sid, info) in enumerate(all_entries, start=1)}
-
     except Exception:
-        pass
+        return {}
 
     try:
         with open(cache_path, "w") as _f:
             _json.dump(result, _f)
     except Exception:
         pass
+
     return result
 
 
@@ -12736,9 +12740,9 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
-        # ── Rookie ADP from FantasyCalc ──────────────────────────────────────
-        # adp_info[sleeper_id] = {adp_rank, pos_rank, position, fc_overall}
-        adp_info = _fetch_fc_rookie_adp(is_sf, season)
+        # ── Rookie ADP from FantasyPros ──────────────────────────────────────
+        # adp_info[sleeper_id] = {adp_rank, pos_rank, position}
+        adp_info = _fetch_fp_rookie_adp(season)
         adp_has_data = bool(adp_info)
 
         # ── Rosters & users ─────────────────────────────────────────────────
@@ -12918,7 +12922,7 @@ def api_draft_grades():
             "draft_id":   str(draft_id),
             "season":     season,
             "league_type": league_type,
-            "adp_source": "fantasycalc" if adp_has_data else "none",
+            "adp_source": "fantasypros" if adp_has_data else "none",
             "teams":      results,
         })
 
