@@ -658,8 +658,9 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
         except Exception:
             pass
 
-    # Fallback: NFL Draft is held in late April (typically April 24–27)
-    typical_draft_end = date(draft_year, 4, 28)
+    # Fallback: NFL Draft starts late April and lasts ~2 days (rounds 1-7)
+    # April 26 is a safe cutoff — the draft is over by then in any recent year.
+    typical_draft_end = date(draft_year, 4, 26)
     return today >= typical_draft_end
 
 
