@@ -20287,5 +20287,695 @@
     "pos": "WR",
     "usage": {},
     "espnHeadshot": "https://a.espncdn.com/i/headshots/college-football/players/full/4605489.png"
+  },
+  "13285": {
+    "name": "Malachi Fields",
+    "team": "NYG",
+    "tankId": "4682648",
+    "bDay": "8/26/2003",
+    "espnID": "4682648",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4682648.png"
+  },
+  "13268": {
+    "name": "Elijah Sarratt",
+    "team": "BAL",
+    "tankId": "5088338",
+    "bDay": "5/28/2003",
+    "espnID": "5088338",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5088338.png"
+  },
+  "13404": {
+    "name": "Garrett Nussmeier",
+    "team": "KC",
+    "tankId": "4567747",
+    "bDay": "2/7/2002",
+    "espnID": "4567747",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567747.png"
+  },
+  "13297": {
+    "name": "Reggie Virgil",
+    "team": "ARI",
+    "tankId": "4869132",
+    "bDay": "5/14/2004",
+    "espnID": "4869132",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4869132.png"
+  },
+  "13346": {
+    "name": "Denzel Boston",
+    "team": "CLE",
+    "tankId": "4832800",
+    "bDay": "12/6/2003",
+    "espnID": "4832800",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4832800.png"
+  },
+  "13289": {
+    "name": "Drew Allar",
+    "team": "PIT",
+    "tankId": "4714771",
+    "bDay": "3/8/2004",
+    "espnID": "4714771",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4714771.png"
+  },
+  "13305": {
+    "name": "Mike Washington Jr.",
+    "team": "LV",
+    "tankId": "4686658",
+    "bDay": "7/3/2003",
+    "espnID": "4686658",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686658.png"
+  },
+  "13420": {
+    "name": "Bryce Lance",
+    "team": "NO",
+    "tankId": "4879276",
+    "bDay": "8/20/2002",
+    "espnID": "4879276",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4879276.png"
+  },
+  "13313": {
+    "name": "Emmanuel Henderson Jr.",
+    "team": "SEA",
+    "tankId": "4685381",
+    "bDay": "3/21/2003",
+    "espnID": "4685381",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685381.png"
+  },
+  "13582": {
+    "name": "Anthony Smith",
+    "team": "DAL",
+    "tankId": "4685110",
+    "bDay": "3/1/2002",
+    "espnID": "4685110",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685110.png"
+  },
+  "13320": {
+    "name": "Zachariah Branch",
+    "team": "ATL",
+    "tankId": "4870612",
+    "bDay": "3/29/2004",
+    "espnID": "4870612",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4870612.png"
+  },
+  "13411": {
+    "name": "Zavion Thomas",
+    "team": "CHI",
+    "tankId": "4869748",
+    "bDay": "2/14/2004",
+    "espnID": "4869748",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4869748.png"
+  },
+  "13533": {
+    "name": "Barion Brown",
+    "team": "NO",
+    "tankId": "4698597",
+    "bDay": "12/12/2003",
+    "espnID": "4698597",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4698597.png"
+  },
+  "13272": {
+    "name": "Carson Beck",
+    "team": "ARI",
+    "tankId": "4430841",
+    "bDay": "11/19/2002",
+    "espnID": "4430841",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4430841.png"
+  },
+  "13293": {
+    "name": "Ja'Kobi Lane",
+    "team": "BAL",
+    "tankId": "4870847",
+    "bDay": "8/5/2004",
+    "espnID": "4870847",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4870847.png"
+  },
+  "13306": {
+    "name": "Taylen Green",
+    "team": "CLE",
+    "tankId": "4431325",
+    "bDay": "10/18/2002",
+    "espnID": "4431325",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431325.png"
+  },
+  "13414": {
+    "name": "Kaelon Black",
+    "team": "SF",
+    "tankId": "4696044",
+    "bDay": "10/17/2001",
+    "espnID": "4696044",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4696044.png"
+  },
+  "13347": {
+    "name": "Demond Claiborne",
+    "team": "MIN",
+    "tankId": "4832846",
+    "bDay": "10/9/2003",
+    "espnID": "4832846",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4832846.png"
+  },
+  "13477": {
+    "name": "Colbie Young",
+    "team": "CIN",
+    "tankId": "5092508",
+    "bDay": "7/24/2002",
+    "espnID": "5092508",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5092508.png"
+  },
+  "13434": {
+    "name": "Will Kacmarek",
+    "team": "MIA",
+    "tankId": "4880236",
+    "bDay": "2/12/2003",
+    "espnID": "4880236",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4880236.png"
+  },
+  "13380": {
+    "name": "Brenen Thompson",
+    "team": "LAC",
+    "tankId": "4685553",
+    "bDay": "7/25/2003",
+    "espnID": "4685553",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685553.png"
+  },
+  "13329": {
+    "name": "Malik Benson",
+    "team": "LV",
+    "tankId": "5150247",
+    "bDay": "10/17/2002",
+    "espnID": "5150247",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5150247.png"
+  },
+  "13353": {
+    "name": "Chris Brazzell II",
+    "team": "CAR",
+    "tankId": "5091739",
+    "bDay": "9/22/2003",
+    "espnID": "5091739",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5091739.png"
+  },
+  "13322": {
+    "name": "Sam Roush",
+    "team": "CHI",
+    "tankId": "4685504",
+    "bDay": "9/6/2003",
+    "espnID": "4685504",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685504.png"
+  },
+  "13433": {
+    "name": "Riley Nowakowski",
+    "team": "PIT",
+    "tankId": "4693370",
+    "bDay": "6/30/2002",
+    "espnID": "4693370",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4693370.png"
+  },
+  "13302": {
+    "name": "Adam Randall",
+    "team": "BAL",
+    "tankId": "4685526",
+    "bDay": "7/14/2004",
+    "espnID": "4685526",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685526.png"
+  },
+  "13317": {
+    "name": "Ted Hurst",
+    "team": "TB",
+    "tankId": "5220680",
+    "bDay": "7/2/2004",
+    "espnID": "5220680",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5220680.png"
+  },
+  "13435": {
+    "name": "Joe Royer",
+    "team": "CLE",
+    "tankId": "4565859",
+    "bDay": "2/25/2002",
+    "espnID": "4565859",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4565859.png"
+  },
+  "13299": {
+    "name": "Nate Boerkircher",
+    "team": "JAX",
+    "tankId": "4686248",
+    "bDay": "9/4/2001",
+    "espnID": "4686248",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686248.png"
+  },
+  "13417": {
+    "name": "De'Zhaun Stribling",
+    "team": "SF",
+    "tankId": "4710714",
+    "bDay": "12/18/2002",
+    "espnID": "4710714",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4710714.png"
+  },
+  "13319": {
+    "name": "Oscar Delp",
+    "team": "NO",
+    "tankId": "4702559",
+    "bDay": "8/4/2003",
+    "espnID": "4702559",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4702559.png"
+  },
+  "13335": {
+    "name": "Cole Payton",
+    "team": "PHI",
+    "tankId": "4879250",
+    "bDay": "10/26/2002",
+    "espnID": "4879250",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4879250.png"
+  },
+  "13307": {
+    "name": "Marlin Klein",
+    "team": "HOU",
+    "tankId": "4695705",
+    "bDay": "9/17/2002",
+    "espnID": "4695705",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4695705.png"
+  },
+  "13282": {
+    "name": "Jack Endries",
+    "team": "CIN",
+    "tankId": "5085189",
+    "bDay": "3/26/2004",
+    "espnID": "5085189",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5085189.png"
+  },
+  "13491": {
+    "name": "Kaden Wetjen",
+    "team": "PIT",
+    "tankId": "5081338",
+    "bDay": "3/9/2002",
+    "espnID": "5081338",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5081338.png"
+  },
+  "13413": {
+    "name": "Cyrus Allen",
+    "team": "KC",
+    "tankId": "4912218",
+    "bDay": "2/11/2003",
+    "espnID": "4912218",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4912218.png"
+  },
+  "13333": {
+    "name": "Deion Burks",
+    "team": "IND",
+    "tankId": "4683151",
+    "bDay": "1/8/2003",
+    "espnID": "4683151",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4683151.png"
+  },
+  "13554": {
+    "name": "CJ Williams",
+    "team": "JAX",
+    "tankId": "5085024",
+    "bDay": "10/23/2003",
+    "espnID": "5085024",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5085024.png"
+  },
+  "13421": {
+    "name": "Eli Raridon",
+    "team": "NE",
+    "tankId": "4831959",
+    "bDay": "2/12/2004",
+    "espnID": "4831959",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4831959.png"
+  },
+  "13422": {
+    "name": "Jaren Kanak",
+    "team": "TEN",
+    "tankId": "4877034",
+    "bDay": "2/10/2004",
+    "espnID": "4877034",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4877034.png"
+  },
+  "13580": {
+    "name": "Carsen Ryan",
+    "team": "CLE",
+    "tankId": "4685540",
+    "bDay": "8/21/2003",
+    "espnID": "4685540",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685540.png"
+  },
+  "13345": {
+    "name": "Jonah Coleman",
+    "team": "DEN",
+    "tankId": "4702555",
+    "bDay": "8/20/2003",
+    "espnID": "4702555",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4702555.png"
+  },
+  "13429": {
+    "name": "Seydou Traore",
+    "team": "MIA",
+    "tankId": "4714379",
+    "bDay": "8/12/2002",
+    "espnID": "4714379",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4714379.png"
+  },
+  "13541": {
+    "name": "Lewis Bond",
+    "team": "HOU",
+    "tankId": "4683159",
+    "bDay": "5/29/2003",
+    "espnID": "4683159",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4683159.png"
+  },
+  "13273": {
+    "name": "Josh Cuevas",
+    "team": "BAL",
+    "tankId": "4876132",
+    "bDay": "9/15/2003",
+    "espnID": "4876132",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4876132.png"
+  },
+  "13278": {
+    "name": "Max Klare",
+    "team": "LAR",
+    "tankId": "4833029",
+    "bDay": "7/8/2003",
+    "espnID": "4833029",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4833029.png"
+  },
+  "13274": {
+    "name": "Germie Bernard",
+    "team": "PIT",
+    "tankId": "4685261",
+    "bDay": "12/2/2003",
+    "espnID": "4685261",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685261.png"
+  },
+  "13295": {
+    "name": "Behren Morton",
+    "team": "NE",
+    "tankId": "4431465",
+    "bDay": "1/17/2002",
+    "espnID": "4431465",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431465.png"
+  },
+  "13557": {
+    "name": "Athan Kaliakmanis",
+    "team": "WSH",
+    "tankId": "4432722",
+    "bDay": "8/20/2003",
+    "espnID": "4432722",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432722.png"
+  },
+  "13303": {
+    "name": "Cade Klubnik",
+    "team": "NYJ",
+    "tankId": "4685413",
+    "bDay": "10/10/2003",
+    "espnID": "4685413",
+    "pos": "QB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685413.png"
+  },
+  "13311": {
+    "name": "Chris Bell",
+    "team": "MIA",
+    "tankId": "4869961",
+    "bDay": "6/7/2004",
+    "espnID": "4869961",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4869961.png"
+  },
+  "13308": {
+    "name": "Bauer Sharp",
+    "team": "TB",
+    "tankId": "4890373",
+    "bDay": "5/3/2003",
+    "espnID": "4890373",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4890373.png"
+  },
+  "13337": {
+    "name": "Emmett Johnson",
+    "team": "KC",
+    "tankId": "4832955",
+    "bDay": "10/10/2003",
+    "espnID": "4832955",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4832955.png"
+  },
+  "13270": {
+    "name": "CJ Daniels",
+    "team": "LAR",
+    "tankId": "4605951",
+    "bDay": "1/4/2002",
+    "espnID": "4605951",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4605951.png"
+  },
+  "13577": {
+    "name": "Dallen Bentley",
+    "team": "DEN",
+    "tankId": "5159802",
+    "bDay": "12/31/2000",
+    "espnID": "5159802",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5159802.png"
+  },
+  "13424": {
+    "name": "Seth McGowan",
+    "team": "IND",
+    "tankId": "4686468",
+    "bDay": "10/23/2001",
+    "espnID": "4686468",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4686468.png"
+  },
+  "13288": {
+    "name": "Nicholas Singleton",
+    "team": "TEN",
+    "tankId": "4685555",
+    "bDay": "1/6/2004",
+    "espnID": "4685555",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685555.png"
+  },
+  "13349": {
+    "name": "Eli Stowers",
+    "team": "PHI",
+    "tankId": "4431574",
+    "bDay": "4/15/2003",
+    "espnID": "4431574",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4431574.png"
+  },
+  "13405": {
+    "name": "Kaytron Allen",
+    "team": "WSH",
+    "tankId": "4685246",
+    "bDay": "1/8/2003",
+    "espnID": "4685246",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/college-football/players/full/4685246.png"
+  },
+  "13402": {
+    "name": "Skyler Bell",
+    "team": "BUF",
+    "tankId": "4683153",
+    "bDay": "7/5/2002",
+    "espnID": "4683153",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4683153.png"
+  },
+  "13301": {
+    "name": "Antonio Williams",
+    "team": "WSH",
+    "tankId": "5081432",
+    "bDay": "7/14/2004",
+    "espnID": "5081432",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5081432.png"
+  },
+  "13408": {
+    "name": "Tanner Koziol",
+    "team": "JAX",
+    "tankId": "4917427",
+    "bDay": "1/28/2004",
+    "espnID": "4917427",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4917427.png"
+  },
+  "13296": {
+    "name": "Caleb Douglas",
+    "team": "MIA",
+    "tankId": "4869645",
+    "bDay": "9/9/2003",
+    "espnID": "4869645",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4869645.png"
+  },
+  "13423": {
+    "name": "Eli Heidenreich",
+    "team": "PIT",
+    "tankId": "5081508",
+    "bDay": "6/28/2003",
+    "espnID": "5081508",
+    "pos": "RB",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/5081508.png"
+  },
+  "13412": {
+    "name": "Kendrick Law",
+    "team": "DET",
+    "tankId": "4685441",
+    "bDay": "6/13/2003",
+    "espnID": "4685441",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685441.png"
+  },
+  "13338": {
+    "name": "Kevin Coleman Jr.",
+    "team": "MIA",
+    "tankId": "4685307",
+    "bDay": "9/10/2003",
+    "espnID": "4685307",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4685307.png"
+  },
+  "13324": {
+    "name": "Matthew Hibner",
+    "team": "BAL",
+    "tankId": "4432260",
+    "bDay": "3/9/2002",
+    "espnID": "4432260",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4432260.png"
+  },
+  "13400": {
+    "name": "Justin Joly",
+    "team": "DEN",
+    "tankId": "4912052",
+    "bDay": "7/9/2004",
+    "espnID": "4912052",
+    "pos": "TE",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4912052.png"
+  },
+  "13394": {
+    "name": "Josh Cameron",
+    "team": "JAX",
+    "tankId": "4879194",
+    "bDay": "3/18/2003",
+    "espnID": "4879194",
+    "pos": "WR",
+    "usage": {},
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4879194.png"
   }
 }
