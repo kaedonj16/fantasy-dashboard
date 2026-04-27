@@ -109,12 +109,31 @@ def record_calibrated_history_snapshot() -> int:
     """
     from datetime import date
     from dashboard_services.db import get_conn
-    from utils.utils import load_players_index
+    from utils.utils import load_players_index, load_model_value_table
 
     today = date.today().isoformat()
-    
-    # Load players index to get player names
-    players_index = load_players_index() or {}
+
+    # Build id -> name map: model table first (has picks + all players), then players_index fallback
+    name_map: dict = {}
+    try:
+        mv = load_model_value_table(apply_calibration=False) or []
+        for p in mv:
+            pid = str(p.get("id") or "")
+            nm = p.get("name") or ""
+            if pid and nm and nm != "Unknown":
+                name_map[pid] = nm
+    except Exception:
+        pass
+    # Fill gaps with players_index
+    try:
+        players_index = load_players_index() or {}
+        for pid, info in players_index.items():
+            if pid not in name_map:
+                nm = (info or {}).get("name") or ""
+                if nm:
+                    name_map[str(pid)] = nm
+    except Exception:
+        pass
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -136,9 +155,7 @@ def record_calibrated_history_snapshot() -> int:
     written = 0
     with get_conn() as conn:
         for r in rows:
-            # Get player name from players_index
-            player_info = players_index.get(r["player_id"]) or {}
-            player_name = player_info.get("name", "Unknown")
+            player_name = name_map.get(str(r["player_id"])) or f"Player {r['player_id']}"
             
             conn.execute(
                 """

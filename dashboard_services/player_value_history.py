@@ -615,34 +615,36 @@ def _get_top_movers_from_db(days: int, limit: int, source: str) -> dict:
 
             rows = cur.fetchall()
 
-    # Load players index to get names for records with NULL/empty names
-    from utils.utils import load_players_index
-    players_index = load_players_index() or {}
+    # Build name map: model table (covers picks + all players) then players_index fallback
+    name_map: dict = {}
+    try:
+        from utils.utils import load_model_value_table
+        for p in (load_model_value_table(apply_calibration=False) or []):
+            pid = str(p.get("id") or "")
+            nm = p.get("name") or ""
+            if pid and nm and nm != "Unknown":
+                name_map[pid] = nm
+    except Exception:
+        pass
+    try:
+        from utils.utils import load_players_index
+        for pid, info in (load_players_index() or {}).items():
+            if pid not in name_map:
+                nm = (info or {}).get("name") or ""
+                if nm:
+                    name_map[str(pid)] = nm
+    except Exception:
+        pass
 
     movers = []
     for row in rows:
         row_dict = dict(row)
-        
-        # Always try to get the best name from players_index, even if name exists
         player_id = str(row_dict["player_id"])
-        player_info = players_index.get(player_id) or {}
-        players_index_name = player_info.get("name")
-        
-        # Use players_index name if available, otherwise use existing name
-        if players_index_name:
-            row_dict["name"] = players_index_name
-        elif not row_dict.get("name") or row_dict.get("name") == "Unknown" or not row_dict.get("name"):
-            # Only construct fallback if no name at all
-            position = row_dict.get("position", "")
-            team = row_dict.get("team", "")
-            if position and team:
-                fallback_name = f"{position} ({team})"
-            elif position:
-                fallback_name = f"{position} Player"
-            else:
-                fallback_name = f"Player {player_id}"
-            row_dict["name"] = fallback_name
-        
+        resolved = name_map.get(player_id)
+        if resolved:
+            row_dict["name"] = resolved
+        elif not row_dict.get("name") or row_dict["name"] == "Unknown":
+            row_dict["name"] = f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]
