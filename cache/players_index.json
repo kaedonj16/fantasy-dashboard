@@ -44763,14 +44763,6 @@
     "espnID": "4950551",
     "pos": "S"
   },
-  "13401": {
-    "name": "Michael Trigg",
-    "team": "DAL",
-    "tankId": "4594749",
-    "bDay": null,
-    "espnID": "4594749",
-    "pos": "TE"
-  },
   "13484": {
     "name": "Trey Moore",
     "team": "MIA",
@@ -46610,5 +46602,13 @@
     "bDay": null,
     "espnID": "4709678",
     "pos": "WR"
+  },
+  "13401": {
+    "name": "Michael Trigg",
+    "team": "DAL",
+    "tankId": "4594749",
+    "bDay": null,
+    "espnID": "4594749",
+    "pos": "TE"
   }
 }

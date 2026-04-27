@@ -6340,7 +6340,7 @@ def build_teams_body(ctx: dict) -> str:
                       ? '<span class="adp-reach">' + diff + ' reach</span>'
                       : '<span class="adp-neutral">on ADP</span>';
                   var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
-                  var waitTag = p.could_wait ? ' <span class="adp-wait">could\\\'ve waited</span>' : '';
+                  var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
                   var adpLabel = (data.adp_source === 'model') ? 'Val #' : 'ADP ';
                   adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
@@ -10482,10 +10482,7 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Merge active-class rookie prospects into the player list.
-    # If a prospect already exists in the model table (drafted + promoted via Sleeper),
-    # mark that entry as is_rookie and patch in rookie values rather than adding a duplicate.
-    # Only truly unmatched prospects get appended as standalone rookie entries.
+
     try:
         from data_building.rookie_pipeline.pipeline import (
             get_rookie_rankings_from_db,
@@ -12868,7 +12865,7 @@ def api_draft_grades():
             ][:3]
 
         def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
-                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int) -> str:
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
@@ -12880,6 +12877,7 @@ def api_draft_grades():
             pos       : Position of the player picked
             is_sf     : True if Superflex league, False if 1QB
             qb_count  : Current QB count on the roster
+            name      : Player name for debugging
             """
             if adp_diff is None:
                 return "N/A"
@@ -12963,7 +12961,7 @@ def api_draft_grades():
             # Get current QB count for positional context
             qb_count = roster_pos_counts.get(rid, {}).get("QB", 0)
 
-            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count)
+            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name)
 
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,

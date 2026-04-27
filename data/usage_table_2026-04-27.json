@@ -13752,14 +13752,6 @@
     "usage": {}
   },
   {
-    "id": "13401",
-    "name": "Michael Trigg",
-    "team": "DAL",
-    "position": "TE",
-    "age": null,
-    "usage": {}
-  },
-  {
     "id": "13346",
     "name": "Denzel Boston",
     "team": "CLE",
@@ -14396,6 +14388,14 @@
     "name": "Devonte Ross",
     "team": "LAC",
     "position": "WR",
+    "age": null,
+    "usage": {}
+  },
+  {
+    "id": "13401",
+    "name": "Michael Trigg",
+    "team": "DAL",
+    "position": "TE",
     "age": null,
     "usage": {}
   }

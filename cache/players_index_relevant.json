@@ -20977,5 +20977,14 @@
     "pos": "WR",
     "usage": {},
     "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4879194.png"
+  },
+  "13401": {
+    "name": "Michael Trigg",
+    "team": "DAL",
+    "tankId": "4594749",
+    "bDay": "6/27/2002",
+    "espnID": "4594749",
+    "pos": "TE",
+    "espnHeadshot": "https://a.espncdn.com/i/headshots/college-football/players/full/4594749.png"
   }
 }
