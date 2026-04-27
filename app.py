@@ -10482,6 +10482,20 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
+    # Overlay rank_change_7d from DB (not stored in the JSON file)
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as _rc:
+            _rk_rows = _rc.execute(
+                "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
+            ).fetchall()
+        _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+        for _p in model_value_table:
+            _pid = str(_p.get("id") or "")
+            if _pid in _rk_map:
+                _p["rank_change_7d"] = _rk_map[_pid]
+    except Exception:
+        pass
 
     try:
         from data_building.rookie_pipeline.pipeline import (
@@ -10519,6 +10533,7 @@ def api_league_players():
                 "sf_pos_rank": None, "sf_pos_rank_label": None,
                 "search_name": norm,
                 "is_rookie": True,
+                "rank_change_7d": r.get("rank_change_7d"),
             }
 
             if norm and norm in name_to_idx:
