@@ -11885,7 +11885,7 @@ img, svg, canvas {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
-  padding: 8px 16px 16px;
+  padding: 8px 0px 0px;
 }
 
 .analytics-draft-team {
@@ -11893,14 +11893,40 @@ img, svg, canvas {
   border: 1px solid var(--border, #dbe2ea);
   border-radius: 8px;
   padding: 10px 12px;
+  margin-bottom: 8px;
 }
 
 .analytics-draft-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  cursor: pointer;
+  user-select: none;
   margin-bottom: 4px;
 }
+
+.analytics-draft-header::after {
+  content: '▼';
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  margin-left: 8px;
+}
+
+.analytics-draft-team.collapsed .analytics-draft-header::after {
+  transform: rotate(-90deg);
+}
+
+.analytics-draft-picks {
+  display: block;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.analytics-draft-team.collapsed .analytics-draft-picks {
+  display: none;
+}
+
 
 .analytics-draft-name {
   font-size: 13px;

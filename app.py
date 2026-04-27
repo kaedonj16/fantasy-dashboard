@@ -6304,8 +6304,8 @@ def build_teams_body(ctx: dict) -> str:
             var html = adpBanner + '<div class="analytics-draft-grid">';
             teams.forEach(function(t) {{
               var gcls = 'dg-' + t.grade.replace('+', 'plus');
-              html += '<div class="analytics-draft-team">' +
-                '<div class="analytics-draft-header">' +
+              html += '<div class="analytics-draft-team collapsed">' +
+                '<div class="analytics-draft-header" onclick="toggleAnalyticsDraftTeam(this)">' +
                   '<span class="analytics-draft-name">' + t.team_name + '</span>' +
                   '<span class="analytics-draft-grade ' + gcls + '">' + t.grade + '</span>' +
                 '</div>' +
@@ -6358,6 +6358,11 @@ def build_teams_body(ctx: dict) -> str:
             panel.innerHTML = html;
           }})
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+      }}
+
+      function toggleAnalyticsDraftTeam(header) {{
+        const teamElement = header.parentElement;
+        teamElement.classList.toggle('collapsed');
       }}
 
       function loadRosterIntel() {{

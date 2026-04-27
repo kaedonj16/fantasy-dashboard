@@ -7373,3 +7373,8 @@ function closePickModal() {
   if (overlay) overlay.remove();
   document.body.style.overflow = '';
 }
+
+function toggleAnalyticsDraftTeam(header) {
+  const teamElement = header.parentElement;
+  teamElement.classList.toggle('collapsed');
+}
