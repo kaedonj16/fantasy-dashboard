@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 LAMBDA_REG   = 15.0   # regularization strength
 MAX_VALUE    = 999.9
 MAX_LIFT     = 1.25   # player values capped at 125% of prior; picks float freely
-TOP_N_AT_MAX = 2      # players ranked 1-TOP_N land at MAX_VALUE ceiling
+TOP_N_AT_MAX = 1      # only the #1 player lands at MAX_VALUE; all others separate naturally
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 

@@ -19,12 +19,32 @@ def init_value_history_db() -> None:
                     position TEXT,
                     team TEXT,
                     value NUMERIC NOT NULL,
+                    value_sf NUMERIC,
+                    value_8 NUMERIC,
+                    value_12 NUMERIC,
+                    value_14 NUMERIC,
+                    sf_value_8 NUMERIC,
+                    sf_value_12 NUMERIC,
+                    sf_value_14 NUMERIC,
                     source TEXT NOT NULL DEFAULT 'model',
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     PRIMARY KEY (as_of_date, player_id, source)
                 )
                 """
             )
+            # Add size/type columns to existing tables that predate this schema
+            for col, typ in [
+                ("value_sf",    "NUMERIC"),
+                ("value_8",     "NUMERIC"),
+                ("value_12",    "NUMERIC"),
+                ("value_14",    "NUMERIC"),
+                ("sf_value_8",  "NUMERIC"),
+                ("sf_value_12", "NUMERIC"),
+                ("sf_value_14", "NUMERIC"),
+            ]:
+                cur.execute(
+                    f"ALTER TABLE player_value_history ADD COLUMN IF NOT EXISTS {col} {typ}"
+                )
             cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_player_value_history_player_date
@@ -501,29 +521,43 @@ def load_calibration_overrides() -> dict[str, dict]:
         return {}
 
 
+def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:
+    """Return the player_value_history column for a given league type/size."""
+    sf = league_type.lower() == "sf"
+    if sf:
+        return {8: "sf_value_8", 12: "sf_value_12", 14: "sf_value_14"}.get(league_size, "value_sf")
+    return {8: "value_8", 12: "value_12", 14: "value_14"}.get(league_size, "value")
+
+
 def get_top_movers(
         *,
         days: int = 7,
         limit: int = 15,
         source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
     If no baseline exists, fall back to 6, then 5, ... down to 1.
     """
-    # Try database first, fall back to parquet files
     try:
         init_value_history_db()
-        return _get_top_movers_from_db(days=days, limit=limit, source=source)
+        return _get_top_movers_from_db(
+            days=days, limit=limit, source=source,
+            league_type=league_type, league_size=league_size,
+        )
     except RuntimeError as e:
         if "DATABASE_URL is not set" in str(e):
-            # Fall back to parquet files
             return _get_top_movers_from_parquet(days=days, limit=limit)
         else:
             raise
 
 
-def _get_top_movers_from_db(days: int, limit: int, source: str) -> dict:
+def _get_top_movers_from_db(
+        days: int, limit: int, source: str,
+        league_type: str = "1qb", league_size: int = 10,
+) -> dict:
     """Get movers from database table."""
     latest_date = get_latest_snapshot_date(source=source)
     if not latest_date:
@@ -573,15 +607,19 @@ def _get_top_movers_from_db(days: int, limit: int, source: str) -> dict:
                     "fallers": [],
                 }
 
+            vcol = _value_col(league_type, league_size)
+            # Fall back to base 'value' column for rows that predate multi-size storage
+            vcol_expr = f"COALESCE({vcol}, value)"
+
             cur.execute(
-                """
+                f"""
                 WITH latest_rows AS (
                     SELECT DISTINCT ON (player_id)
                         player_id,
                         name,
                         position,
                         team,
-                        value,
+                        {vcol_expr} AS value,
                         as_of_date
                     FROM player_value_history
                     WHERE source = %s
@@ -591,7 +629,7 @@ def _get_top_movers_from_db(days: int, limit: int, source: str) -> dict:
                 baseline_rows AS (
                     SELECT DISTINCT ON (player_id)
                         player_id,
-                        value,
+                        {vcol_expr} AS value,
                         as_of_date
                     FROM player_value_history
                     WHERE source = %s
@@ -610,8 +648,8 @@ def _get_top_movers_from_db(days: int, limit: int, source: str) -> dict:
                 JOIN baseline_rows b
                   ON b.player_id = l.player_id
                 ORDER BY delta DESC, new_value DESC
-                """
-                , (source, latest_date, source, comparison_date))
+                """,
+                (source, latest_date, source, comparison_date))
 
             rows = cur.fetchall()
 
