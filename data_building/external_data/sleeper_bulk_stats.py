@@ -90,7 +90,7 @@ def fetch_season_stats(season: int, weeks: List[int]) -> Dict[int, List[Dict[str
     return out
 
 
-MAX_WORKERS = 12  # tune this if you hit rate limits
+MAX_WORKERS = 4  # keep low to cap memory from concurrent JSON parsing
 
 
 def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:

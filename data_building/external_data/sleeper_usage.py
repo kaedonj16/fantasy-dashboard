@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Dict, Iterable
 from dashboard_services.service import age_from_bday
 from data_building.external_data.nfl_target_share import fetch_league_target_share
 from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
-from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, fetch_season_redzone_stats
+from data_building.external_data.sleeper_bulk_stats import fetch_week_stats, fetch_season_redzone_stats
 from utils.utils import canon_team, load_players_index
 
 
@@ -54,26 +55,27 @@ def build_usage_map_for_season(
       }
     """
 
-    # Core Sleeper stats + redzone
-    season_stats = fetch_season_stats(season, weeks)
+    # Fetch enrichment data first (these are compact, season-level)
     rz_map = fetch_season_redzone_stats(season)
     ts_map = fetch_league_target_share(season)
 
-    # NEW: Fetch Pro Football Reference snap counts
     print(f"[build_usage] Fetching PFR snap counts for {season}...")
     snap_counts_map = fetch_season_snap_counts(season, weeks)
 
-    # NEW: players_index so we can map pid -> (team, name)
+    # Load once — reused for both the accumulation loop and snap merging below
     players_index = load_players_index() or {}
 
     accum: Dict[str, Dict[str, float]] = {}
+    weeks_list = list(weeks)
 
-    for week, players in season_stats.items():
-        if not isinstance(players, dict):
-            # Sleeper sometimes returns {"message": "..."} if no data
+    # Stream one week at a time so we never hold all 18 weeks in RAM simultaneously
+    for w in weeks_list:
+        week_players = fetch_week_stats(season, w)
+        if not isinstance(week_players, dict):
+            gc.collect()
             continue
 
-        for pid, row in players.items():
+        for pid, row in week_players.items():
             if not isinstance(row, dict):
                 continue
             stats = row
@@ -187,6 +189,10 @@ def build_usage_map_for_season(
                     acc["total_targets"] = float(ts_info.get("total_targets", 0.0) or 0.0)
                     acc["target_share"] = float(ts_info.get("target_share", 0.0) or 0.0)
 
+        # Free this week's raw data before loading the next one
+        del week_players
+        gc.collect()
+
     # ---- Collapse to per-game usage dict ----
     usage: Dict[str, Dict[str, float]] = {}
 
@@ -254,9 +260,8 @@ def build_usage_map_for_season(
 
     # ---- Merge PFR snap count data ----
     # Match players by name + team since PFR doesn't have Sleeper IDs
+    # players_index already loaded above — no need to reload
     print(f"[build_usage] Merging PFR snap counts for {len(snap_counts_map)} players...")
-
-    players_index = load_players_index() or {}
     snap_matches = 0
 
     for pid, player_usage in usage.items():
