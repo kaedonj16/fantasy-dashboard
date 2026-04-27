@@ -2,6 +2,8 @@
 Update player_values table with current rankings and save to player_value_history.
 """
 
+from __future__ import annotations
+
 import os
 from datetime import date, timedelta
 from typing import List, Dict, Any
@@ -128,7 +130,23 @@ def update_player_values_with_rankings() -> int:
 
     # Add rankings to each player
     df['overall_rank'] = df['value'].rank(ascending=False, method='min')
-    df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
+    # Load calibration overrides to get calibrated values for ranking
+    try:
+        from dashboard_services.player_value_history import load_calibration_overrides
+        calibration_overrides = load_calibration_overrides()
+        
+        # Create calibrated value column for ranking
+        df['calibrated_value'] = df['id'].apply(lambda x: calibration_overrides.get(str(x), {}).get('value', df.loc[df['id'] == x, 'value'].iloc[0]))
+        
+        # Calculate position rank based on calibrated values
+        df['pos_rank'] = df.groupby('position')['calibrated_value'].rank(ascending=False, method='min')
+        
+        print("[update_player_values] Position ranks calculated based on calibrated values")
+    except Exception as e:
+        print(f"[update_player_values] Failed to load calibrated values for ranking: {e}")
+        # Fallback to raw values if calibration fails
+        df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
+        print("[update_player_values] Position ranks calculated based on raw values (fallback)")
 
     # Apply smoothing to reduce steep drop-offs
     df_smoothed = apply_smoothing(df)

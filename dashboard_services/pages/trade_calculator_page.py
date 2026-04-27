@@ -267,7 +267,7 @@ def build_trade_calculator_body(
 
               <div class="otc-summary-stats">
                 <div class="otc-stat-box">
-                  <div class="otc-stat-label">Team 1 Total</div>
+                  <div class="otc-stat-label">Team 1 Receives</div>
                   <div class="otc-stat-value" id="sideATotal">0.0</div>
                 </div>
                 <div class="otc-stat-box otc-stat-box-highlight">
@@ -275,7 +275,7 @@ def build_trade_calculator_body(
                   <div class="otc-stat-value" id="tradeDiff">0.0</div>
                 </div>
                 <div class="otc-stat-box">
-                  <div class="otc-stat-label">Team 2 Total</div>
+                  <div class="otc-stat-label">Team 2 Receives</div>
                   <div class="otc-stat-value" id="sideBTotal">0.0</div>
                 </div>
               </div>

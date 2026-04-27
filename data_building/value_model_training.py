@@ -6,7 +6,7 @@ import json
 import pickle
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1436,6 +1436,8 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
+            "rank_change_7d": None,
+            "pos_rank_change_7d": None,
         }
         asset.update(size_values)
         asset.update(sf_size_values)
@@ -1510,6 +1512,8 @@ def rewrite_value_table_with_model() -> Path:
             "pos_rank_label": None,
             "sf_pos_rank": None,
             "sf_pos_rank_label": None,
+            "rank_change_7d": None,
+            "pos_rank_change_7d": None,
         }
         # Draft picks are not scarcity-sensitive to league size — same value in all sizes
         for n in LEAGUE_SIZES:
@@ -1552,6 +1556,62 @@ def rewrite_value_table_with_model() -> Path:
             cleaned_assets[i]["sf_pos_rank"] = rank
             cleaned_assets[i]["sf_pos_rank_label"] = f"{pos}{rank}"
             rank += 1
+
+    # Calculate 7-day rank changes before writing JSON
+    from data_building.update_player_values_with_rankings import _load_historical_ranks
+
+    # Calculate current overall ranks
+    player_assets = [a for a in cleaned_assets if a.get("position") != "PICK"]
+    player_assets.sort(key=lambda a: float(a.get("value") or 0.0), reverse=True)
+
+    # Build current rank maps
+    current_overall_ranks = {}
+    for overall_rank, asset in enumerate(player_assets, start=1):
+        pid = asset.get("id")
+        if pid:
+            current_overall_ranks[str(pid)] = overall_rank
+
+    # Calculate position ranks
+    current_pos_ranks = {}
+    pos_sorted_assets = {}
+    for asset in player_assets:
+        pos = asset.get("position")
+        if pos:
+            pos_sorted_assets.setdefault(pos, []).append(asset)
+
+    for pos, assets in pos_sorted_assets.items():
+        assets.sort(key=lambda a: float(a.get("value") or 0.0), reverse=True)
+        for pos_rank, asset in enumerate(assets, start=1):
+            pid = asset.get("id")
+            if pid:
+                current_pos_ranks.setdefault(pos, {})[str(pid)] = pos_rank
+
+    # Load historical ranks from 7 days ago
+    seven_days_ago = date.today() - timedelta(days=7)
+    hist_ranks = _load_historical_ranks(seven_days_ago)
+
+    # Add rank changes to all assets
+    for asset in cleaned_assets:
+        pid = str(asset.get("id") or "")
+        if asset.get("position") == "PICK":
+            # Draft picks don't have rank changes
+            asset["rank_change_7d"] = None
+            asset["pos_rank_change_7d"] = None
+        else:
+            cur_overall = current_overall_ranks.get(pid)
+            cur_pos = current_pos_ranks.get(asset.get("position"), {}).get(pid)
+
+            hist = hist_ranks.get(pid)
+            if hist and cur_overall is not None:
+                # Positive = moved up (lower rank number is better)
+                asset["rank_change_7d"] = hist["overall_rank"] - cur_overall
+            else:
+                asset["rank_change_7d"] = None
+
+            if hist and cur_pos is not None:
+                asset["pos_rank_change_7d"] = hist["pos_rank"] - cur_pos
+            else:
+                asset["pos_rank_change_7d"] = None
 
     out_path = DATA_DIR / f"model_values_{date_str}.json"
     with out_path.open("w", encoding="utf-8") as f:

@@ -66,6 +66,16 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     years_exp = row.get("years_exp")
                     rank_change_7d = row.get("rank_change_7d")
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
+                    
+                    # League-size specific values
+                    value_8 = row.get("value_8")
+                    value_12 = row.get("value_12")
+                    value_14 = row.get("value_14")
+                    sf_value_8 = row.get("sf_value_8")
+                    sf_value_12 = row.get("sf_value_12")
+                    sf_value_14 = row.get("sf_value_14")
+                    sf_pos_rank = row.get("sf_pos_rank")
+                    sf_pos_rank_label = row.get("sf_pos_rank_label")
 
                     cur.execute(
                         """
@@ -74,27 +84,43 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             last_updated,
                             value_1qb,
                             value_sf,
+                            value_8,
+                            value_12,
+                            value_14,
+                            sf_value_8,
+                            sf_value_12,
+                            sf_value_14,
                             redraft_value_1qb,
                             redraft_value_sf,
                             position,
                             pos_rank,
                             pos_rank_label,
+                            sf_pos_rank,
+                            sf_pos_rank_label,
                             age,
                             team,
                             years_exp,
                             rank_change_7d,
                             pos_rank_change_7d
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
                             last_updated = EXCLUDED.last_updated,
                             value_1qb = EXCLUDED.value_1qb,
                             value_sf = EXCLUDED.value_sf,
+                            value_8 = EXCLUDED.value_8,
+                            value_12 = EXCLUDED.value_12,
+                            value_14 = EXCLUDED.value_14,
+                            sf_value_8 = EXCLUDED.sf_value_8,
+                            sf_value_12 = EXCLUDED.sf_value_12,
+                            sf_value_14 = EXCLUDED.sf_value_14,
                             redraft_value_1qb = COALESCE(EXCLUDED.redraft_value_1qb, player_values.redraft_value_1qb),
                             redraft_value_sf  = COALESCE(EXCLUDED.redraft_value_sf,  player_values.redraft_value_sf),
                             position = EXCLUDED.position,
                             pos_rank = EXCLUDED.pos_rank,
                             pos_rank_label = EXCLUDED.pos_rank_label,
+                            sf_pos_rank = EXCLUDED.sf_pos_rank,
+                            sf_pos_rank_label = EXCLUDED.sf_pos_rank_label,
                             age = EXCLUDED.age,
                             team = EXCLUDED.team,
                             years_exp = EXCLUDED.years_exp,
@@ -106,11 +132,19 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             snapshot_date,
                             value_1qb,
                             value_sf,
+                            value_8,
+                            value_12,
+                            value_14,
+                            sf_value_8,
+                            sf_value_12,
+                            sf_value_14,
                             redraft_value_1qb,
                             redraft_value_sf,
                             position,
                             pos_rank,
                             pos_rank_label,
+                            sf_pos_rank,
+                            sf_pos_rank_label,
                             age,
                             team,
                             years_exp,

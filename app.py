@@ -469,6 +469,7 @@ BASE_HTML = """
 
     <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/icons.css">
+    <link rel="stylesheet" href="/static/font-awesome.css">
 
     <script>
       {plotly_js}
@@ -6824,7 +6825,7 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None, leagu
 
 
 @app.route("/contact", methods=["GET", "POST"])
-@app.route("/<platform>/<int:season>/<league_id>/contact")
+@app.route("/<platform>/<int:season>/<league_id>/contact", methods=["GET", "POST"])
 def contact_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
     # super simple "email us" style page; you can later hook this to a form handler
     body = """
@@ -6864,14 +6865,27 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None, l
     return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body, platform, season)
 
 
-def league_url(slug: str, league_id: Optional[str] = None) -> str:
+def league_url(slug: str, league_id: Optional[str] = None, platform: Optional[str] = None, season: Optional[int] = None) -> str:
     """
     Build a URL that keeps league context if we have one.
     slug examples: 'faq', 'privacy', 'support', 'contact'
     """
+    # Build base URL
+    base_url = ""
+    
+    # Add platform if provided
+    if platform:
+        base_url += f"/{platform}"
+    
+    # Add season if provided
+    if season:
+        base_url += f"/{season}"
+    
+    # Add league_id if provided
     if league_id:
-        return f"/league/{league_id}/{slug}"
-    return f"/{slug}"
+        base_url += f"/{league_id}"
+    
+    return f"{base_url}/{slug}"
 
 
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
@@ -7276,15 +7290,16 @@ def _build_career_graphs_ctx_live(
     }
 
 
+@app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
-def page_players(platform: str, season: int, league_id: str):
+def page_players(platform: str = None, season: int = None, league_id: str = None):
     """Player Rankings page — searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
       <div class="card-header">
         <h2>Player Rankings</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          All players ranked by dynasty value — search, filter, and sort to explore
+          All players ranked by dynasty value.
         </div>
       </div>
       <div class="card-body" style="padding-top:0;">
@@ -7385,12 +7400,13 @@ def page_players(platform: str, season: int, league_id: str):
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:44px 1fr 64px 50px 50px 64px;
+             grid-template-columns:34px 20px 1fr 64px 50px 50px 64px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
              text-transform:uppercase;" class="pr-grid-row">
           <span>#</span>
+          <span style="text-align:center;"></span>
           <span>Player</span>
           <span style="text-align:center;">Pos</span>
           <span style="text-align:center;">Age</span>
@@ -7413,7 +7429,7 @@ def page_players(platform: str, season: int, league_id: str):
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 44px 1fr 64px 50px 50px 64px;
+        grid-template-columns: 25px 25px 1fr 64px 50px 50px 64px;
         align-items: center;
         gap: 0;
       }
@@ -7439,6 +7455,12 @@ def page_players(platform: str, season: int, league_id: str):
       }
       .pr-rank-arrow.up   { color: #22c55e; }
       .pr-rank-arrow.down { color: #ef4444; }
+      .pr-arrows {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 10px;
+      }
       .pr-name {
         font-size: 13px;
         font-weight: 600;
@@ -7833,7 +7855,7 @@ def page_players(platform: str, season: int, league_id: str):
       // Build overall rank map keyed by player id (ranked by current value)
       function prBuildRankMap() {
         const ranked = prAllPlayers
-          .filter(p => p.position !== 'PICK' && !p.is_rookie)
+          .filter(p => p.position !== 'PICK')
           .slice()
           .sort((a, b) => prGetValue(b) - prGetValue(a));
         return new Map(ranked.map((p, i) => [String(p.id), i + 1]));
@@ -7949,15 +7971,28 @@ def page_players(platform: str, season: int, league_id: str):
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-          let rankArrow = '';
-          if (rankChange != null && rankChange !== 0 && displayRank) {
+                    let rankArrow = '';
+          if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
-            const icon = rankChange > 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+            const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
+            // Debug: Check if Font Awesome is loaded
+            if (window.debugFA === undefined) {
+              setTimeout(() => {
+                const testIcon = document.querySelector('.fa-arrow-up, .fa-arrow-down');
+                if (testIcon) {
+                  const styles = window.getComputedStyle(testIcon);
+                  console.log('Icon font-family:', styles.fontFamily);
+                  console.log('Icon display:', styles.display);
+                }
+                window.debugFA = true;
+              }, 1000);
+            }
           }
 
           row.innerHTML =
-            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + rankArrow + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-arrows">' + rankArrow + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
@@ -8025,10 +8060,10 @@ def page_players(platform: str, season: int, league_id: str):
             sf_pos_rank:      Number(p.sf_pos_rank || 9999),
             search_name:      p.search_name || '',
             is_rookie:        p.is_rookie === true,
+            rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
           }))
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
-          .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
-
+          
         document.getElementById('prLoading').style.display = 'none';
         prLoaded = true;
         prRender();
@@ -8039,7 +8074,10 @@ def page_players(platform: str, season: int, league_id: str):
       });
     </script>
     """
-    return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+    if platform:
+        return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+
+    return render_page("Player Rankings", active="players", body_html=body_html)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -10441,6 +10479,7 @@ def api_players():
                 "value": v.get("value", 0),
                 "sf_value": v.get("sf_value", 0),
                 "pos_rank_label": v.get("pos_rank_label", ""),
+                "rank_change_7d": v.get("rank_change_7d"),
                 "espnHeadshot": meta.get("espnHeadshot", ""),
             })
 
@@ -10478,11 +10517,23 @@ def api_players():
 
 @app.route("/api/league-players")
 def api_league_players():
-    model_value_table = list(load_model_value_table() or [])
+    # Force loading from database to get correct position ranks
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db
+        model_value_table = load_current_values_from_db()
+        if model_value_table:
+            print(f"[api/league-players] Loaded {len(model_value_table)} players from database")
+        else:
+            print("[api/league-players] No data from database, falling back to JSON")
+            model_value_table = list(load_model_value_table() or [])
+    except Exception as e:
+        print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
+        model_value_table = list(load_model_value_table() or [])
+    
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Overlay rank_change_7d from DB (not stored in the JSON file)
+    # Overlay rank_change_7d from DB if available (also stored in JSON, DB is fallback/override)
     try:
         from dashboard_services.db import get_conn as _gc
         with _gc() as _rc:
@@ -10495,6 +10546,7 @@ def api_league_players():
             if _pid in _rk_map:
                 _p["rank_change_7d"] = _rk_map[_pid]
     except Exception:
+        # DB not configured or query failed - rank_change_7d from JSON will be used
         pass
 
     try:
@@ -10555,6 +10607,12 @@ def api_league_players():
 
     except Exception as _e:
         print(f"[api/league-players] rookies skipped: {_e}")
+
+    # Sort players: first by value (descending), then by pos_rank (ascending for ties)
+    model_value_table.sort(key=lambda p: (
+        -(float(p.get("value") or 0)),  # Negative for descending sort by value
+        int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
+    ))
 
     return jsonify(_sanitize_for_json(model_value_table))
 
@@ -14009,7 +14067,7 @@ def api_trade_ideas_for_target():
                 return 1.0
             age_factor  = _math.exp(-0.25 * max(0.0, age - 22))
             rank_factor = _math.exp(-0.12 * max(0.0, pos_rank - 1))
-            return round(1.0 + age_factor * rank_factor * 0.25, 3)
+            return round(1.0 + age_factor * rank_factor * 0.15, 3)
 
         premium       = _dynasty_premium(target_info)
         effective_target = target_value * premium   # what you actually need to send

@@ -7,6 +7,7 @@
 // - Plotly: resize + relayout + redraw + viewport hooks (better with page zoom/layout shifts)
 // ============================================================
 
+
 // ------------------------------------------------------------
 // Prevent scroll restoration on navigation (mobile fix)
 // ------------------------------------------------------------
@@ -1436,9 +1437,9 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Add rookie/breakout/elite/prospect badges
       if (isRookie(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
-      } else if (p.is_rookie) {
         metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
+      } else if (p.is_rookie) {
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
       if (isElite(p.id)) {
         metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
@@ -1628,7 +1629,8 @@ window.initTradePage = function initTradePage(root = document) {
       const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
       let normalizedDiff = diff / maxSideTotal;
       normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
-      const leftPct = ((normalizedDiff + 1) / 2) * 100;
+      // Invert the calculation: when diff > 0 (Team 1 favored), move bar left; when diff < 0 (Team 2 favored), move bar right
+      const leftPct = ((1 - normalizedDiff) / 2) * 100;
 
       if (barIndicator) {
         barIndicator.style.left = leftPct + "%";
@@ -1844,16 +1846,13 @@ window.initTradePage = function initTradePage(root = document) {
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
         const col     = posColor[pos] || "var(--text-muted)";
-        const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
-          ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
-          : "";
         const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const panelId  = `pkgpanel-${(t.player_id || "x").replace(/\W/g,"_")}`;
         return `<div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
             <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span>${chgHtml}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
               <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -1862,7 +1861,7 @@ window.initTradePage = function initTradePage(root = document) {
               <button class="get-target-btn"
                 data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
                 style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
-                title="How to get this player">Get</button>
+                title="Trade suggestions for this player">Get</button>
             </div>
           </div>
           <div id="${panelId}" style="display:none;margin:4px 0 8px;padding:8px 10px;border-radius:6px;background:var(--surface-raised,var(--surface));border:1px solid var(--border);font-size:12px;"></div>
@@ -1996,8 +1995,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">
-        How to get ${data.target.name}
-        <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> · value ${tv}</span>
+        Trade suggestions for ${data.target.name}
       </div>`;
 
       if (hasPremium) {

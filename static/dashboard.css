@@ -4796,6 +4796,19 @@ thead th {
 .waiver-arrow-up   { font-size: 10px; font-weight: 700; color: #22c55e; }
 .waiver-arrow-down { font-size: 10px; font-weight: 700; color: #ef4444; }
 
+/* Rank change arrows */
+.pr-rank-arrow {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.8;
+}
+.pr-rank-arrow.up {
+  color: #22c55e;
+}
+.pr-rank-arrow.down {
+  color: #ef4444;
+}
+
 /* ============================================
    STANDINGS & RANKINGS
    ============================================ */
@@ -12465,7 +12478,7 @@ img, svg, canvas {
   font-size: 18px;
   font-weight: 800;
   color: var(--text-muted);
-  min-width: 32px;
+  min-width: 20px;
   text-align: right;
   padding-top: 2px;
 }
