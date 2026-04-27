@@ -3,6 +3,7 @@ import html
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import defaultdict
@@ -12604,7 +12605,7 @@ def _fetch_fp_rookie_adp(season: int) -> dict:
     FantasyPros overall dynasty rookie rankings don't split by SF vs 1QB,
     so the same data is used for both league types.
     """
-    import json as _json, csv as _csv, io as _io, re as _re
+    import json as _json, re as _re
     from utils.paths import DATA_DIR
 
     key = f"fp_rookie_adp_{date.today().isoformat()}.json"
@@ -12616,33 +12617,100 @@ def _fetch_fp_rookie_adp(season: int) -> dict:
         except Exception:
             pass
 
-    url = "https://www.fantasypros.com/nfl/rankings/dynasty-rookies-overall.php?export=csv"
+    from bs4 import BeautifulSoup
+    
+    url = "https://www.fantasypros.com/nfl/rankings/dynasty-rookies-overall.php"
     try:
         import requests as _req
         resp = _req.get(url, timeout=15, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/csv,text/html,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         })
         resp.raise_for_status()
-        raw = resp.text
+        html = resp.text
     except Exception:
         return {}
 
-    # FantasyPros CSV: Rank, Tier, Player Name, Team, Pos, ...
+    # Parse HTML to extract player rankings
     fp_rows: list = []
     try:
-        reader = _csv.DictReader(_io.StringIO(raw))
-        for row in reader:
-            rank_str = (row.get("Rank") or "").strip()
-            name     = (row.get("Player Name") or "").strip()
-            pos      = (row.get("Pos") or "").strip().upper()
-            if not rank_str or not name:
-                continue
-            try:
-                rank = int(rank_str)
-            except ValueError:
-                continue
-            fp_rows.append({"rank": rank, "name": name, "position": pos})
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Find the rankings table - usually has class 'ranking-table'
+        table = soup.find('table', {'class': 'ranking-table'}) or soup.find('table', {'id': 'rankings'})
+        
+        if not table:
+            # Try alternative selectors
+            table = soup.find('table', {'class': re.compile(r'rank|table')})
+        
+        if table:
+            # Find header row to locate AVG column
+            header_row = table.find('tr')
+            header_cells = header_row.find_all(['th', 'td'])
+            avg_col_index = None
+            
+            # Look for AVG column in headers
+            for i, cell in enumerate(header_cells):
+                header_text = cell.get_text(strip=True).upper()
+                if 'AVG' in header_text or 'AVERAGE' in header_text:
+                    avg_col_index = i
+                    break
+            
+            # If no AVG column found, fall back to rank column
+            if avg_col_index is None:
+                avg_col_index = 0
+            
+            rows = table.find_all('tr')[1:]  # Skip header row
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) >= 3:
+                    # Extract player name and position
+                    name_cell = cells[1].get_text(strip=True)
+                    pos_cell = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+                    
+                    # Extract AVG value for ADP
+                    avg_cell = cells[avg_col_index].get_text(strip=True) if avg_col_index < len(cells) else ""
+                    
+                    # Parse AVG value (could be decimal like "12.5")
+                    adp_value = None
+                    if avg_cell:
+                        # Remove any non-numeric characters except decimal point
+                        avg_clean = re.sub(r'[^\d.]', '', avg_cell)
+                        try:
+                            adp_value = float(avg_clean) if avg_clean else None
+                        except ValueError:
+                            adp_value = None
+                    
+                    # Clean up player name (remove extra info like team)
+                    name = re.sub(r'\s*\(.*?\)', '', name_cell).strip()
+                    pos = pos_cell.upper()
+                    
+                    if name and adp_value is not None:
+                        fp_rows.append({"rank": adp_value, "name": name, "position": pos})
+        
+        # If table parsing failed, try to find player info in divs or other elements
+        if not fp_rows:
+            # Look for player elements with rank/AVG info
+            player_elements = soup.find_all(['div', 'tr'], class_=re.compile(r'player|row|rank'))
+            for element in player_elements:
+                text = element.get_text(strip=True)
+                # Look for patterns like "1. Player Name QB" or with AVG values
+                match = re.match(r'(\d+(?:\.\d+)?)\.\s*([^-]+?)\s+([A-Z]{2,3})', text)
+                if match:
+                    rank_str = match.group(1)
+                    name = match.group(2).strip()
+                    pos = match.group(3).upper()
+                    try:
+                        rank = float(rank_str)
+                        if name and rank:
+                            fp_rows.append({"rank": rank, "name": name, "position": pos})
+                    except ValueError:
+                        continue
+                        
     except Exception:
         return {}
 
