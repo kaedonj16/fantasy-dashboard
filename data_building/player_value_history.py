@@ -450,17 +450,36 @@ def get_top_movers(
 
             rows = cur.fetchall()
 
-    # Load players index to get names for records with NULL/empty names
-    from utils.utils import load_players_index
-    players_index = load_players_index() or {}
+    # Build name map: model table first (covers picks + all players), then players_index
+    name_map: dict = {}
+    try:
+        from utils.utils import load_model_value_table
+        for p in (load_model_value_table(apply_calibration=False) or []):
+            pid = str(p.get("id") or "")
+            nm = p.get("name") or ""
+            if pid and nm and nm != "Unknown":
+                name_map[pid] = nm
+    except Exception:
+        pass
+    try:
+        from utils.utils import load_players_index
+        for pid, info in (load_players_index() or {}).items():
+            if pid not in name_map:
+                nm = (info or {}).get("name") or ""
+                if nm:
+                    name_map[str(pid)] = nm
+    except Exception:
+        pass
 
     movers = []
     for row in rows:
         row_dict = dict(row)
-        # If name is None or empty, get it from players_index
-        if not row_dict.get("name") or row_dict.get("name") == "Unknown":
-            player_info = players_index.get(str(row_dict["player_id"])) or {}
-            row_dict["name"] = player_info.get("name", "Unknown")
+        player_id = str(row_dict["player_id"])
+        resolved = name_map.get(player_id)
+        if resolved:
+            row_dict["name"] = resolved
+        elif not row_dict.get("name") or row_dict["name"] == "Unknown":
+            row_dict["name"] = f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]
