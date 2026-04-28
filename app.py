@@ -5224,7 +5224,7 @@ def build_activity_body(ctx: dict) -> str:
             <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
           </div>
           <div id="nflNewsList" class="card-body" style="padding:0;max-height:340px;overflow-y:auto;">
-            <div style="padding:12px 14px;font-size:13px;color:var(--text-muted);">Loading…</div>
+            <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
           </div>
         </div>
       </aside>
@@ -8348,7 +8348,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         </div>
 
         <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
-          <div class="spinner" style="margin:0 auto 12px;"></div>
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
           Loading trade data...
         </div>
         <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
@@ -8759,7 +8759,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         <div id="tdbList"   class="tdb-list"></div>
         
         <div id="tdbLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);display:none;">
-          <div class="spinner" style="margin:0 auto 12px;"></div>
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
           Loading trade data...
         </div>
         

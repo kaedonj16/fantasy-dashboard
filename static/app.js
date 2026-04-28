@@ -1684,7 +1684,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
     const listEl = root.querySelector("#similarTradesList");
-    if (listEl) listEl.innerHTML = '<div class="stl-loading">Loading recent trades...</div>';
+    if (listEl) listEl.innerHTML = '<div class="stl-loading" style="display:flex;align-items:center;gap:8px;padding:12px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading recent trades...</div>';
     section.style.display = "";
 
     try {
@@ -1759,7 +1759,7 @@ window.initTradePage = function initTradePage(root = document) {
     const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
     const leagueType = getLeagueType();
 
-    intelBody.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:4px 0;">Loading market data...</div>';
+    intelBody.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:#9ca3af;font-size:12px;padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading market data...</div>';
     intelPanel.style.display = "";
 
     const results = await Promise.all(
@@ -1832,7 +1832,7 @@ window.initTradePage = function initTradePage(root = document) {
     const platform = pathParts[0] || "sleeper";
     const leagueType = getLeagueType();
 
-    body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Loading targets…</div>';
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading targets…</div>';
 
     try {
       const res = await fetch(
@@ -1924,7 +1924,7 @@ window.initTradePage = function initTradePage(root = document) {
         panel.dataset.open = "1";
         panel.classList.add("pkg-inline-panel");
         panel.style.display = "block";
-        panel.innerHTML = `<span style="color:var(--text-muted);">Loading…</span>`;
+        panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading…</div>`;
         window._generatePackageForTarget(
           btn.dataset.pid, btn.dataset.name, panel,
           leagueId, viewerRosterId, platform, leagueType, season
