@@ -24,7 +24,24 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
+
+# Configure session with larger connection pool to match trade crawler
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 SESSION = requests.Session()
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+)
+adapter = HTTPAdapter(
+    pool_connections=20,  # Increase from default 10
+    pool_maxsize=20,      # Increase from default 10  
+    max_retries=retry_strategy
+)
+SESSION.mount("http://", adapter)
+SESSION.mount("https://", adapter)
 SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
 
 _REQUEST_DELAY = 0.1   # seconds between Sleeper calls — stay well under rate limits
@@ -71,13 +88,13 @@ def _seed_league_ids(season: int) -> Set[str]:
             WHERE season IN (%s, %s)
               AND league_type IN (1, 2)
             ORDER BY last_crawled_at ASC NULLS FIRST
-            LIMIT 200
+            LIMIT 2000
             """,
             (season, season - 1)
         ).fetchall()
     seeds = {r["league_id"] for r in rows}
-    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from (season %d or %d)",
-                len(seeds), season, season - 1)
+    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from",
+                len(seeds))
     return seeds
 
 
@@ -400,29 +417,24 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
         season = _current_season()
 
     known = _already_known(season)
-    # Seed BFS from leagues already in the DB. These won't be re-saved,
-    # but their roster owners are expanded to discover new connected leagues.
     seeds: Set[str] = _seed_league_ids(season)
-    # Tracks which leagues need owner-expansion (seeds + newly found dynasty leagues)
     to_expand: Set[str] = set(seeds)
-    # Frontier holds league IDs we haven't processed yet (new, not in DB)
     frontier: Set[str] = set()
     visited_users: Set[str] = set()
     to_save: List[Dict] = []
     total_new = 0
+    dynasty_count = 0
+    redraft_count = 0
 
-    logger.info("[discovery] Starting. Known=%d, Seeds=%d, Target=%d", len(known), len(seeds), target)
-    logger.info("[discovery] Checkpoint: Beginning seed expansion phase")
+    print(f"[discovery] Starting. Known={len(known)}, Seeds={len(seeds)}, Target={target}")
 
     # First pass: expand all seed leagues to populate the frontier (parallelized)
-    def expand_seed_league(league_id: str) -> Tuple[str, List[str], Dict]:
-        """Expand a single seed league and return (league_id, new_leagues, league_type_counts)"""
+    def expand_seed_league(league_id: str) -> Tuple[str, List[str]]:
+        """Expand a single seed league and return (league_id, new_leagues)"""
         time.sleep(_REQUEST_DELAY)
         owner_ids = _roster_owner_ids(league_id)
-        # Persist owners of confirmed dynasty leagues as future discovery seeds
         _save_users(owner_ids, source="bfs")
         new_leagues = []
-        league_type_counts = {"dynasty": 0, "redraft": 0, "other": 0, "no_meta": 0}
 
         for owner_id in owner_ids:
             time.sleep(_REQUEST_DELAY)
@@ -430,71 +442,33 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             for lid in user_leagues:
                 if lid not in known:
                     new_leagues.append(lid)
-                    # Quick type check for logging
-                    meta = _league_meta(lid)
-                    if meta:
-                        league_type = meta.get("settings", {}).get("type")
-                        if league_type == 2:
-                            league_type_counts["dynasty"] += 1
-                        elif league_type == 1:
-                            league_type_counts["redraft"] += 1
-                        else:
-                            league_type_counts["other"] += 1
-                    else:
-                        league_type_counts["no_meta"] += 1
         
-        return league_id, new_leagues, league_type_counts
+        return league_id, new_leagues
 
-    logger.info("[discovery] Checkpoint: Processing %d seed leagues with 10 workers", len(to_expand))
-    seed_results = []
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(expand_seed_league, lid): lid for lid in to_expand}
         for future in as_completed(futures):
-            league_id, new_leagues, league_type_counts = future.result()
-            seed_results.append((league_id, len(new_leagues)))
+            league_id, new_leagues = future.result()
             for new_lid in new_leagues:
                 frontier.add(new_lid)
-            
-            # Format league type breakdown
-            total_found = len(new_leagues)
-            if total_found > 0:
-                breakdown = f"{total_found} total: {league_type_counts['dynasty']} dynasty, {league_type_counts['redraft']} redraft, {league_type_counts['other']} other, {league_type_counts['no_meta']} no_meta"
-            else:
-                breakdown = "0 new leagues"
-            
-            logger.info("[discovery] Checkpoint: Seed %s: found %s", league_id, breakdown)
 
-    total_new_from_seeds = sum(count for _, count in seed_results)
-    logger.info("[discovery] Checkpoint: Seed expansion complete. %d leagues in frontier, %d new from seeds", len(frontier), total_new_from_seeds)
-    logger.info("[discovery] Checkpoint: Beginning main discovery loop")
+    print(f"[discovery] Seed expansion complete. {len(frontier)} leagues in frontier")
 
-    def process_frontier_batch(batch_leagues: List[str]) -> Tuple[List[Dict], List[str], int]:
-        """Process a batch of frontier leagues and return (to_save, new_frontier_leagues, processed_count)"""
+    def process_frontier_batch(batch_leagues: List[str]) -> Tuple[List[Dict], List[str]]:
+        """Process a batch of frontier leagues and return (to_save, new_frontier_leagues)"""
         batch_to_save = []
         batch_new_frontier = []
-        dynasty_count = 0
-        redraft_count = 0
-        other_count = 0
         
-        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str], str]:
-            """Process a single frontier league and return (league_data, new_frontier_leagues, league_type_label)"""
+        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str]]:
+            """Process a single frontier league and return (league_data, new_frontier_leagues)"""
             time.sleep(_REQUEST_DELAY)
             meta = _league_meta(league_id)
             if not meta:
-                return None, [], "no_meta"
+                return None, []
             
-            # Check league type
             league_type = meta.get("settings", {}).get("type")
-            if league_type == 2:
-                league_type_label = "dynasty"
-            elif league_type == 1:
-                league_type_label = "redraft"
-            else:
-                league_type_label = f"other_{league_type}"
-            
-            # Only save dynasty (2) and redraft (1) leagues
             if league_type not in (1, 2):
-                return None, [], league_type_label
+                return None, []
 
             lg_season = int(meta.get("season") or season)
             num_teams = meta.get("total_rosters", 0)
@@ -506,15 +480,14 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                 "season":      lg_season,
                 "num_teams":   num_teams,
                 "scoring_type": scoring_type,
-                "league_type": league_type,  # 1=redraft, 2=dynasty
+                "league_type": league_type,
                 "is_superflex": is_sf,
             }
             
-            # Expand frontier via roster owners (for both dynasty and redraft)
             new_frontier_leagues = []
             if len(frontier) < 2000:
                 owner_ids = _roster_owner_ids(league_id)
-                if league_type == 2:  # only persist dynasty owners as future seeds
+                if league_type == 2:
                     _save_users(owner_ids, source="bfs")
                 for owner_id in owner_ids:
                     if owner_id in visited_users:
@@ -525,36 +498,23 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                     new_leagues = [lid for lid in user_leagues if lid not in known]
                     new_frontier_leagues.extend(new_leagues)
             
-            return league_data, new_frontier_leagues, league_type_label
+            return league_data, new_frontier_leagues
         
-        # Process batch in parallel with reduced concurrency to prevent deadlocks
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(process_single_frontier_league, lid): lid for lid in batch_leagues}
             for future in as_completed(futures):
-                league_data, new_frontier, league_type_label = future.result()
-                
-                # Count league types
-                if league_type_label == "dynasty":
-                    dynasty_count += 1
-                elif league_type_label == "redraft":
-                    redraft_count += 1
-                elif league_type_label == "no_meta":
-                    other_count += 1
-                else:
-                    other_count += 1
-                
+                league_data, new_frontier = future.result()
                 if league_data:
                     batch_to_save.append(league_data)
                     known.add(league_data["league_id"])
                 batch_new_frontier.extend(new_frontier)
         
-        return batch_to_save, batch_new_frontier, len(batch_leagues), dynasty_count, redraft_count, other_count
+        return batch_to_save, batch_new_frontier
 
     processed_count = 0
-    batch_size = 50  # Process frontier in batches
+    batch_size = 50
     
     while frontier and total_new < target:
-        # Get next batch from frontier
         batch_leagues = []
         for _ in range(min(batch_size, len(frontier))):
             if not frontier:
@@ -566,43 +526,30 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
         if not batch_leagues:
             continue
             
-        logger.info("[discovery] Checkpoint: Processing batch of %d frontier leagues (Frontier size: %d, New so far: %d/%d)", 
-                   len(batch_leagues), len(frontier), total_new, target)
+        batch_to_save, batch_new_frontier = process_frontier_batch(batch_leagues)
+        processed_count += len(batch_leagues)
         
-        batch_to_save, batch_new_frontier, batch_processed, dynasty_count, redraft_count, other_count = process_frontier_batch(batch_leagues)
-        processed_count += batch_processed
+        # Count league types in this batch
+        batch_dynasty = sum(1 for lg in batch_to_save if lg["league_type"] == 2)
+        batch_redraft = sum(1 for lg in batch_to_save if lg["league_type"] == 1)
+        dynasty_count += batch_dynasty
+        redraft_count += batch_redraft
         
-        logger.info("[discovery] Checkpoint: Batch complete - %d total leagues: %d dynasty, %d redraft, %d other/no_meta | %d new frontier leagues", 
-                   len(batch_leagues), dynasty_count, redraft_count, other_count, len(batch_new_frontier))
-        
-        # Add new leagues to save and frontier
         to_save.extend(batch_to_save)
         for new_lid in batch_new_frontier:
             if new_lid not in known:
                 frontier.add(new_lid)
-        
-        # Log details for each discovered league
-        for league_data in batch_to_save:
-            logger.info("[discovery] Checkpoint: League %s: Dynasty found - %d teams, %s, %s", 
-                       league_data["league_id"], league_data["num_teams"], 
-                       league_data["scoring_type"], 
-                       "Superflex" if league_data["is_superflex"] else "1QB")
 
         # Flush every 100
         if len(to_save) >= 100:
-            logger.info("[discovery] Checkpoint: Flushing batch of %d leagues to database", len(to_save))
             n = _save_leagues(to_save)
             total_new += n
-            logger.info("[discovery] Checkpoint: Batch saved. New total: %d/%d target", total_new, target)
             to_save = []
 
     if to_save:
-        logger.info("[discovery] Checkpoint: Final flush of %d leagues to database", len(to_save))
         total_new += _save_leagues(to_save)
-        logger.info("[discovery] Checkpoint: Final batch saved. Total new leagues: %d", total_new)
 
-    logger.info("[discovery] Checkpoint: Discovery complete. Processed %d frontier leagues, visited %d users", processed_count, len(visited_users))
-    logger.info("[discovery] Done. %d new leagues discovered this run.", total_new)
+    print(f"[discovery] Done. {total_new} new leagues: {dynasty_count} dynasty, {redraft_count} redraft")
     return total_new
 
 

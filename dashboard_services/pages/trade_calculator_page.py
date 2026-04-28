@@ -351,7 +351,7 @@ def build_trade_calculator_body(
               align-items:center;
               padding:7px 12px;
               border-bottom:1px solid var(--border-color);
-              background:var(--bg-secondary, rgba(0,0,0,.03));
+              background:var(--bg-alt, rgba(0,0,0,.03));
             }}
             .stl-date {{ font-size:11px;color:var(--text-muted);font-weight:500; }}
             .stl-badges {{ display:flex;gap:4px;flex-wrap:wrap; }}

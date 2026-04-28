@@ -6311,7 +6311,7 @@ def build_teams_body(ctx: dict) -> str:
             var banner = data.adp_source === 'fantasycalc'
               ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on positional need, board value &amp; ADP</div>'
               : data.adp_source === 'model'
-                ? '<div class="draft-adp-banner draft-adp-model">Graded using internal model values — external ADP unavailable</div>'
+                ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
                 : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
 
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
@@ -6338,11 +6338,11 @@ def build_teams_body(ctx: dict) -> str:
                   var diffHtml = diff > 1
                     ? '<span class="adp-value">+' + diff + ' value</span>'
                     : diff < -1
-                      ? '<span class="adp-reach">' + diff + ' reach</span>'
+                      ? '<span class="adp-reach">' + diff + '</span>'
                       : '<span class="adp-neutral">on ADP</span>';
                   var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
-                  var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                  var adpLabel = (data.adp_source === 'model') ? 'Val #' : 'ADP ';
+                   var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
+                  var adpLabel = (data.adp_source === 'model') ? '#' : 'ADP ';
                   adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
 
@@ -7449,7 +7449,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         gap: 3px;
       }
       .pr-rank-arrow {
-        font-size: 10px;
+        font-size: 16px;
         font-weight: 700;
         line-height: 1;
       }
@@ -8367,7 +8367,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
       .ti-tabs {{
         display: flex;
-        background: var(--bg-secondary, #f1f5f9);
+        background: var(--bg-alt, #f1f5f9);
         border-radius: 10px;
         padding: 3px;
         gap: 2px;
@@ -8441,7 +8441,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         grid-template-columns: 1fr 1fr;
         gap: 6px 24px;
         font-size: 12px; color: var(--text-muted);
-        background: var(--bg-secondary, #f8fafc);
+        background: var(--bg-alt, #f8fafc);
         border: 1px solid var(--border-color);
         border-radius: 10px; padding: 12px 16px;
         margin-bottom: 20px; line-height: 1.4;
@@ -8493,7 +8493,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         gap: 4px;
       }}
       .ti-pagination-btn:hover:not(:disabled) {{
-        background: var(--bg-secondary);
+        background: var(--bg-alt);
         border-color: var(--primary-color);
       }}
       .ti-pagination-btn:disabled {{
@@ -8517,7 +8517,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         text-align: center;
       }}
       .ti-page-number:hover {{
-        background: var(--bg-secondary);
+        background: var(--bg-alt);
       }}
       .ti-page-number.active {{
         background: var(--accent-color);
@@ -8828,7 +8828,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-card-head {{
         display: flex; justify-content: space-between; align-items: center;
         padding: 8px 14px; border-bottom: 1px solid var(--border-color);
-        background: var(--bg-secondary, rgba(0,0,0,.03));
+        background: var(--bg-alt, rgba(0,0,0,.03));
       }}
       .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
       .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}

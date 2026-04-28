@@ -1566,7 +1566,7 @@ html[data-theme="dark"] img[src*="logout.png"] {
 }
 
 .dropdown-item:hover {
-  background: var(--accent-soft);
+  background: var(--bg-alt);
 }
 
 .dropdown-item:last-child {
@@ -2423,7 +2423,7 @@ thead th {
 }
 
 .otc-dropdown-item:hover {
-  background: #f4f8fd;
+  background: var(--bg-alt);
 }
 
 .otc-dropdown-item[data-position="PICK"] {
@@ -4796,18 +4796,6 @@ thead th {
 .waiver-arrow-up   { font-size: 10px; font-weight: 700; color: #22c55e; }
 .waiver-arrow-down { font-size: 10px; font-weight: 700; color: #ef4444; }
 
-/* Rank change arrows */
-.pr-rank-arrow {
-  font-size: 10px;
-  margin-left: 4px;
-  opacity: 0.8;
-}
-.pr-rank-arrow.up {
-  color: #22c55e;
-}
-.pr-rank-arrow.down {
-  color: #ef4444;
-}
 
 /* ============================================
    STANDINGS & RANKINGS
@@ -11867,7 +11855,7 @@ img, svg, canvas {
 .analytics-bar-track {
   flex: 1;
   height: 10px;
-  background: var(--bg-secondary, #1e293b);
+  background: var(--bg-alt, #1e293b);
   border-radius: 5px;
   overflow: hidden;
 }

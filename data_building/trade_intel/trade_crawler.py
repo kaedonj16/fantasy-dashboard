@@ -272,7 +272,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
         if crawl_mode == "new":
             # Only uncrawled dynasty leagues
             query = """
-                SELECT league_id, season, last_crawled_week
+                SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NULL
@@ -284,7 +284,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
         elif crawl_mode == "existing":
             # Only previously crawled dynasty leagues, but not recently
             query = """
-                SELECT league_id, season, last_crawled_week
+                SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NOT NULL
@@ -298,7 +298,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
             # Mix of new and existing, prioritize new
             query = """
                 WITH new_leagues AS (
-                    SELECT league_id, season, last_crawled_week, 1 as priority
+                    SELECT league_id, season, last_crawled_week, league_type, 1 as priority
                     FROM trade_intel_leagues
                     WHERE crawl_enabled = TRUE
                       AND last_crawled_week IS NULL
@@ -307,7 +307,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                     LIMIT %s
                 ),
                 existing_leagues AS (
-                    SELECT league_id, season, last_crawled_week, 2 as priority
+                    SELECT league_id, season, last_crawled_week, league_type, 2 as priority
                     FROM trade_intel_leagues
                     WHERE crawl_enabled = TRUE
                       AND last_crawled_week IS NOT NULL
@@ -321,7 +321,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                     UNION ALL
                     SELECT * FROM existing_leagues
                 )
-                SELECT league_id, season, last_crawled_week
+                SELECT league_id, season, last_crawled_week, league_type
                 FROM combined
                 ORDER BY priority ASC, league_id
                 LIMIT %s
@@ -351,22 +351,23 @@ def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
         )
 
 
-def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = None) -> Tuple[str, int]:
+def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = None) -> Tuple[str, int, str]:
     """Crawl a single league. Runs inside a thread pool worker."""
     league_id = row["league_id"]
     season = row["season"]
+    league_type = row.get("league_type", 2)
     if override_start_week is not None:
         start_week = override_start_week
     else:
         start_week = (row["last_crawled_week"] or 0) + 1
     if start_week > end_week:
-        return league_id, 0
+        return league_id, 0, league_type
     try:
         n = crawl_league(league_id, season, start_week=start_week, end_week=end_week)
-        return league_id, n
+        return league_id, n, league_type
     except Exception as exc:
         logger.warning("[crawler] League %s failed: %s", league_id, exc)
-        return league_id, 0
+        return league_id, 0, league_type
 
 
 def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new", recrawl_days: int = 7) -> dict:
@@ -381,8 +382,10 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     """
     current_week = _current_nfl_week()
     leagues = _leagues_to_crawl(batch_size, crawl_mode, recrawl_days)
-    total_trades = 0
-    total_leagues = 0
+    dynasty_trades = 0
+    redraft_trades = 0
+    dynasty_leagues = 0
+    redraft_leagues = 0
     mark_batch: list[tuple[int, str]] = []
 
     # For existing-mode re-crawls, always start from week 1 so we pick up the
@@ -390,48 +393,41 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     # current_week (common in the offseason when last_crawled_week == 18).
     start_week_override = 1 if crawl_mode == "existing" else None
 
-    logger.info("[crawler] Starting crawl. Leagues=%d, Week=%d, Workers=%d", len(leagues), current_week, workers)
-    logger.info("[crawler] Checkpoint: Beginning parallel crawl of %d leagues", len(leagues))
     print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers, week={current_week}")
 
     completed_count = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        logger.info("[crawler] Checkpoint: Submitting %d leagues to thread pool", len(leagues))
         futures = {
             executor.submit(_crawl_one, row, current_week, start_week_override): row["league_id"]
             for row in leagues
         }
-        logger.info("[crawler] Checkpoint: All leagues submitted, waiting for completion")
         
         for future in as_completed(futures):
             completed_count += 1
-            league_id, n = future.result()
+            league_id, n, league_type = future.result()
             mark_batch.append((current_week, league_id))
             
             if n > 0:
-                total_trades += n
-                total_leagues += 1
-                logger.info("[crawler] Checkpoint: League %s (%d/%d): +%d trades (Total: %d trades, %d leagues)", 
-                           league_id, completed_count, len(leagues), n, total_trades, total_leagues)
-            else:
-                logger.info("[crawler] Checkpoint: League %s (%d/%d): No new trades", league_id, completed_count, len(leagues))
+                if league_type == 2:  # dynasty
+                    dynasty_trades += n
+                    dynasty_leagues += 1
+                else:  # redraft
+                    redraft_trades += n
+                    redraft_leagues += 1
 
             # Flush mark batch every 50 to avoid holding too many updates
             if len(mark_batch) >= 50:
-                logger.info("[crawler] Checkpoint: Flushing mark batch of %d completed leagues", len(mark_batch))
                 _mark_crawled_batch(mark_batch)
                 mark_batch = []
-                logger.info("[crawler] Checkpoint: Mark batch flushed")
 
     if mark_batch:
-        logger.info("[crawler] Checkpoint: Final flush of %d remaining completed leagues", len(mark_batch))
         _mark_crawled_batch(mark_batch)
-        logger.info("[crawler] Checkpoint: Final mark batch flushed")
 
-    logger.info("[crawler] Checkpoint: Crawl complete. Processed %d leagues total", completed_count)
-    logger.info("[crawler] Done. %d new trades across %d leagues.", total_trades, total_leagues)
-    print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")
-    return {"leagues_crawled": total_leagues, "new_trades": total_trades}
+    # Print summary by league type
+    print(f"[crawler] Dynasty: {dynasty_trades} trades from {dynasty_leagues} leagues")
+    print(f"[crawler] Redraft: {redraft_trades} trades from {redraft_leagues} leagues")
+    print(f"[crawler] Done. {dynasty_trades + redraft_trades} new trades across {dynasty_leagues + redraft_leagues} leagues.")
+    return {"dynasty_trades": dynasty_trades, "redraft_trades": redraft_trades, "dynasty_leagues": dynasty_leagues, "redraft_leagues": redraft_leagues}
 
 
 if __name__ == "__main__":

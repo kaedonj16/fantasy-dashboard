@@ -4627,6 +4627,9 @@ function openPlayerModal(playerId, playerName) {
           const extendedX = [...xData, '', '', '', '']; // Add more empty categories
           const extendedY = [...yValues, null, null, null, null]; // Add more null values
           
+          // Create hover text for actual data points only
+          const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
+          
           const trace = {
             x: extendedX,
             y: extendedY,
@@ -4636,7 +4639,8 @@ function openPlayerModal(playerId, playerName) {
             line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
             fill: 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
-            hovertemplate: '%{y:.1f}<extra></extra>'
+            hovertemplate: '%{text}<extra></extra>',
+            text: hoverText
           };
 
           // Adjust chart height based on screen size
