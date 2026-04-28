@@ -8054,6 +8054,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             sf_value_8:       Number(p.sf_value_8  || p.sf_value || p.value || 0),
             sf_value_12:      Number(p.sf_value_12 || p.sf_value || p.value || 0),
             sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
+            redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
+            redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
             pos_rank_label:   p.pos_rank_label    || '',
             sf_pos_rank_label:p.sf_pos_rank_label || '',
             pos_rank:         Number(p.pos_rank    || 9999),
