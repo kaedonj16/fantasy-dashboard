@@ -905,8 +905,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     dark_mode_toggle_html = (
         "<button type='button' class='settings-menu-item' id='settingsDarkModeBtn'>"
         "  <img src='/static/moon.png' class='settings-menu-icon theme-icon light-icon' alt='Toggle dark mode'>"
-        "  <img src='/static/moon.png' class='settings-menu-icon theme-icon dark-icon' style='display:none;' alt='Toggle dark mode'>"
-        "  <span class='settings-menu-label'>Dark Mode</span>"
+        "  <img src='/static/images/sun-solid.png' class='settings-menu-icon theme-icon dark-icon' style='display:none;' alt='Toggle light mode'>"
+        "  <span class='settings-menu-label theme-text'>Dark Mode</span>"
         "</button>"
     )
 
@@ -7344,7 +7344,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   <span class="settings-section-label">Scoring Type</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
-                    <button class="settings-toggle" data-value="redraft" disabled title="Coming soon">Redraft</button>
+                    <button class="settings-toggle" data-value="redraft" disabled title="Coming soon">Redraft </button>
                   </div>
                 </div>
                 <div class="settings-section">

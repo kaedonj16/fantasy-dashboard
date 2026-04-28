@@ -158,12 +158,17 @@ function bindOnce(el, key, type, handler, options) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const lightIcons = document.querySelectorAll('.theme-icon.light-icon');
     const darkIcons = document.querySelectorAll('.theme-icon.dark-icon');
+    const themeTexts = document.querySelectorAll('.theme-text');
 
     lightIcons.forEach(icon => {
       icon.style.display = isDark ? 'none' : 'inline';
     });
     darkIcons.forEach(icon => {
       icon.style.display = isDark ? 'inline' : 'none';
+    });
+    
+    themeTexts.forEach(text => {
+      text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
     });
   }
 
@@ -173,6 +178,17 @@ function bindOnce(el, key, type, handler, options) {
     if (toggleBtn && !toggleBtn.__darkModeInitialized) {
       toggleBtn.addEventListener('click', toggleDarkMode);
       toggleBtn.__darkModeInitialized = true;
+      updateThemeIcons();
+    }
+    
+    // Also bind settings dropdown button
+    const settingsBtn = document.getElementById('settingsDarkModeBtn');
+    if (settingsBtn && !settingsBtn.__darkModeInitialized) {
+      settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDarkMode();
+      });
+      settingsBtn.__darkModeInitialized = true;
       updateThemeIcons();
     }
   }
@@ -3670,17 +3686,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Dark mode toggle
-  const settingsDarkModeBtn = document.getElementById("settingsDarkModeBtn");
-  if (settingsDarkModeBtn) {
-    settingsDarkModeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (window.toggleDarkMode) {
-        window.toggleDarkMode();
-      }
-    });
-  }
-
+  
   // Prevent dropdown from closing when clicking inside (except on links)
   if (dropdown) {
     dropdown.addEventListener("click", (e) => {

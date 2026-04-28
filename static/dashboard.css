@@ -854,7 +854,8 @@ img[src*="gear.png"],
 img[src*="moon.png"], 
 img[src*="refresh.png"],
 img[src*="bell.png"],
-img[src*="logout.png"] {
+img[src*="logout.png"],
+img[src*="sun-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
@@ -863,7 +864,8 @@ html[data-theme="dark"] img[src*="gear.png"],
 html[data-theme="dark"] img[src*="moon.png"], 
 html[data-theme="dark"] img[src*="refresh.png"],
 html[data-theme="dark"] img[src*="bell.png"],
-html[data-theme="dark"] img[src*="logout.png"] {
+html[data-theme="dark"] img[src*="logout.png"],
+html[data-theme="dark"] img[src*="sun-solid.png"] {
   filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
@@ -9451,6 +9453,14 @@ img, svg, canvas {
 .trade-login-row button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.settings-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--card-soft) !important;
+  color: var(--text-subtle) !important;
+  border-color: var(--border) !important;
 }
 
 .trade-login-error {
