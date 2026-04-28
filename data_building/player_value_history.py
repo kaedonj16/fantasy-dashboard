@@ -261,11 +261,22 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
     return row["latest_date"] if row and row["latest_date"] else None
 
 
+def _history_col(league_type: str = "1qb", league_size: int = 10) -> str:
+    """Column in player_value_history for a given league type/size."""
+    sf = league_type.lower() == "sf"
+    if league_size == 8:  return "sf_value_8"  if sf else "value_8"
+    if league_size == 12: return "sf_value_12" if sf else "value_12"
+    if league_size == 14: return "sf_value_14" if sf else "value_14"
+    return "value_sf" if sf else "value"
+
+
 def get_player_value_history(
         player_id: str,
         *,
         days: int = 30,
         source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
 ) -> list[dict]:
     init_value_history_db()
 
@@ -280,17 +291,18 @@ def get_player_value_history(
         latest_date_obj = date.fromisoformat(str(latest_date))
 
     cutoff = (latest_date_obj - timedelta(days=max(days, 1) - 1)).isoformat()
+    col = _history_col(league_type, league_size)
 
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 as_of_date,
                 player_id,
                 name,
                 position,
                 team,
-                value,
+                COALESCE({col}, value) AS value,
                 source
             FROM player_value_history
             WHERE source = %s
@@ -308,7 +320,7 @@ def get_player_value_history(
         delta = None if prev_val is None else round(val - prev_val, 1)
         out.append(
             {
-                "as_of_date": str(r["as_of_date"]),  # ISO string "YYYY-MM-DD"
+                "as_of_date": str(r["as_of_date"]),
                 "player_id": r["player_id"],
                 "name": r["name"],
                 "position": r["position"],

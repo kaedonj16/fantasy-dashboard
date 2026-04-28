@@ -4050,11 +4050,16 @@ function openPlayerModal(playerId, playerName) {
   const platform = pathParts[0] || 'sleeper';
   const season = pathParts[1] || new Date().getFullYear();
   const leagueId = pathParts[2] || null;
-  
+
+  // Use page-level league settings when available (set for logged-in users)
+  const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+  const modalLs = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const leagueParams = `league_type=${encodeURIComponent(modalLt)}&league_size=${encodeURIComponent(modalLs)}`;
+
   // Build API URL with league context if available
-  const apiUrl = leagueId 
-    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}`
-    : `/api/player-details/${playerId}`;
+  const apiUrl = leagueId
+    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}&${leagueParams}`
+    : `/api/player-details/${playerId}?${leagueParams}`;
   
   // Create modal overlay
   const overlay = document.createElement('div');

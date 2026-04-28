@@ -11494,7 +11494,18 @@ def api_player_value_history(player_id: str):
     except (TypeError, ValueError):
         days = 30
 
-    history = get_player_value_history(player_id, days=max(days, 1))
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in (8, 10, 12, 14):
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    history = get_player_value_history(
+        player_id, days=max(days, 1),
+        league_type=league_type, league_size=league_size,
+    )
     return jsonify(
         {
             "player_id": str(player_id),
@@ -11520,6 +11531,13 @@ def api_player_details(player_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = int(request.args.get("season", datetime.now().year))
+        _modal_lt = str(request.args.get("league_type", "1qb")).strip().lower()
+        try:
+            _modal_ls = int(request.args.get("league_size", 10))
+            if _modal_ls not in (8, 10, 12, 14):
+                _modal_ls = 10
+        except (TypeError, ValueError):
+            _modal_ls = 10
 
         # Sync league globals if league_id provided
         if league_id:
@@ -11552,7 +11570,10 @@ def api_player_details(player_id: str):
         player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
 
         # Get FULL value history from database (not just 90 days)
-        value_history = get_player_value_history(player_id, days=365)
+        value_history = get_player_value_history(
+            player_id, days=365,
+            league_type=_modal_lt, league_size=_modal_ls,
+        )
 
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}

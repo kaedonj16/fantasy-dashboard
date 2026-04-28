@@ -171,6 +171,8 @@ def get_player_value_history(
         *,
         days: int = 30,
         source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
 ) -> list[dict]:
     init_value_history_db()
 
@@ -179,17 +181,18 @@ def get_player_value_history(
         return []
 
     cutoff = (date.fromisoformat(latest_date) - timedelta(days=max(days, 1) - 1)).isoformat()
+    col = _value_col(league_type, league_size)
 
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 as_of_date,
                 player_id,
                 name,
                 position,
                 team,
-                value,
+                COALESCE({col}, value) AS value,
                 source
             FROM player_value_history
             WHERE source = %s

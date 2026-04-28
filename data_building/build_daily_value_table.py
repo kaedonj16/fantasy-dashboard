@@ -136,24 +136,45 @@ def record_calibrated_history_snapshot() -> int:
         pass
 
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                player_id,
-                position,
-                team,
-                COALESCE(calibrated_value_1qb, value_1qb)   AS value,
-                COALESCE(calibrated_value_sf,  value_sf)    AS value_sf,
-                COALESCE(value_8,  value_1qb)               AS value_8,
-                COALESCE(value_12, value_1qb)               AS value_12,
-                COALESCE(value_14, value_1qb)               AS value_14,
-                COALESCE(sf_value_8,  value_sf)             AS sf_value_8,
-                COALESCE(sf_value_12, value_sf)             AS sf_value_12,
-                COALESCE(sf_value_14, value_sf)             AS sf_value_14
-            FROM player_values
-            WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
-            """
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    team,
+                    COALESCE(calibrated_value_1qb, value_1qb)               AS value,
+                    COALESCE(calibrated_value_sf,  value_sf)                AS value_sf,
+                    COALESCE(calibrated_value_8,   value_8,  value_1qb)     AS value_8,
+                    COALESCE(calibrated_value_12,  value_12, value_1qb)     AS value_12,
+                    COALESCE(calibrated_value_14,  value_14, value_1qb)     AS value_14,
+                    COALESCE(calibrated_sf_value_8,  sf_value_8,  value_sf) AS sf_value_8,
+                    COALESCE(calibrated_sf_value_12, sf_value_12, value_sf) AS sf_value_12,
+                    COALESCE(calibrated_sf_value_14, sf_value_14, value_sf) AS sf_value_14
+                FROM player_values
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+                """
+            ).fetchall()
+        except Exception:
+            # Fallback if calibrated_value_8 columns haven't been migrated yet
+            rows = conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    team,
+                    COALESCE(calibrated_value_1qb, value_1qb)   AS value,
+                    COALESCE(calibrated_value_sf,  value_sf)    AS value_sf,
+                    COALESCE(value_8,  value_1qb)               AS value_8,
+                    COALESCE(value_12, value_1qb)               AS value_12,
+                    COALESCE(value_14, value_1qb)               AS value_14,
+                    COALESCE(sf_value_8,  value_sf)             AS sf_value_8,
+                    COALESCE(sf_value_12, value_sf)             AS sf_value_12,
+                    COALESCE(sf_value_14, value_sf)             AS sf_value_14
+                FROM player_values
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+                """
+            ).fetchall()
 
     if not rows:
         print("[record_calibrated_history_snapshot] No rows in player_values — skipping")

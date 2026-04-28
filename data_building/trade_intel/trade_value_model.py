@@ -120,7 +120,7 @@ def _teams_filter(league_size: int) -> str:
     if league_size == 12:
         return "AND l.num_teams BETWEEN 10 AND 13"
     if league_size == 14:
-        return "AND l.num_teams >= 13"
+        return "AND l.num_teams >= 14"
     return ""
 
 
@@ -174,13 +174,17 @@ def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
             with get_conn() as conn:
                 rows = conn.execute(
                     f"""
-                    SELECT player_id, {c1} AS v1, {csf} AS vsf
+                    SELECT player_id, position, {c1} AS v1, {csf} AS vsf
                     FROM player_values
                     WHERE redraft_value_1qb IS NOT NULL AND redraft_value_1qb > 0
                     """
                 ).fetchall()
             return {
-                str(r["player_id"]): {"value_1qb": float(r["v1"]), "value_sf": float(r["vsf"])}
+                str(r["player_id"]): {
+                    "value_1qb": float(r["v1"]),
+                    "value_sf":  float(r["vsf"]),
+                    "position":  str(r["position"] or "").upper(),
+                }
                 for r in rows
             }
         except Exception as e:
@@ -196,6 +200,7 @@ def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
         str(p["id"]): {
             "value_1qb": float(p.get(val_col) or p.get("value") or 0),
             "value_sf":  float(p.get(sf_col)  or p.get("sf_value") or p.get("value") or 0),
+            "position":  str(p.get("position") or "").upper(),
         }
         for p in value_table
         if p.get("id") and (p.get(val_col) or p.get("value") or 0) > 0
@@ -550,6 +555,12 @@ def run_trade_value_model(
 
     v_1qb_norm = _normalize(v_1qb_pos)
     v_sf_norm  = _normalize(v_sf_pos)
+
+    # Non-QB players should never be worth MORE in SF than in 1QB.
+    # The SF premium belongs entirely to QBs (extra starting slot value).
+    for i, pid in enumerate(player_ids):
+        if player_prior[pid].get("position", "") != "QB":
+            v_sf_norm[i] = min(v_sf_norm[i], v_1qb_norm[i])
 
     # --- Player output ---
     out_rows = []
