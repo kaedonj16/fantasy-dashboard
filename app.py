@@ -3653,7 +3653,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col">
-        <section class="os-card os-card-soft">
+        <section class="os-card os-card-soft os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Offseason Team Snapshot</h2>
@@ -3707,7 +3707,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         {matchup_html}
 
-        <section class="os-card">
+        <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Waiver Wire Targets</h2>

@@ -356,20 +356,19 @@ ul {
   flex-direction: column;
 }
 
-.os-left-col > :last-child,
-.os-main-col > :last-child {
-  flex: 1;
+.os-col-fill {
+  flex-grow: 1;
   margin-bottom: 0;
 }
 
 .os-right-col > .os-sidebar-shell {
-  flex: 1;
+  flex-grow: 1;
   display: flex;
   flex-direction: column;
 }
 
 .os-sidebar-shell > .card {
-  flex: 1;
+  flex-grow: 1;
   margin-bottom: 0;
 }
 
