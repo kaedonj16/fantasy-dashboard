@@ -7344,7 +7344,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   <span class="settings-section-label">Scoring Type</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
-                    <button class="settings-toggle" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
+                    <button class="settings-toggle" data-value="redraft" disabled title="Coming soon">Redraft</button>
                   </div>
                 </div>
                 <div class="settings-section">
