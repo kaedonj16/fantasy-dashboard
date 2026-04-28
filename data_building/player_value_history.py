@@ -410,11 +410,11 @@ def get_top_movers(
             else:
                 value_field = f"sf_value_{league_size}" if league_type == "sf" else f"value_{league_size}"
 
-            # Fallback chain: size-specific -> 10-team -> value
+            # Fallback chain: size-specific -> 10-team (value_sf=calibrated, sf_value=raw) -> value
             if league_type == "sf" and league_size != 10:
-                value_expr = f"COALESCE(sf_value_{league_size}, sf_value, value)"
+                value_expr = f"COALESCE(sf_value_{league_size}, value_sf, sf_value, value)"
             elif league_type == "sf":
-                value_expr = "COALESCE(sf_value, value)"
+                value_expr = "COALESCE(value_sf, sf_value, value)"
             elif league_size != 10:
                 value_expr = f"COALESCE(value_{league_size}, value)"
             else:
