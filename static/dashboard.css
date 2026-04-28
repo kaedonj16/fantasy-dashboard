@@ -366,7 +366,7 @@ ul {
   display: flex;
   gap: 16px;
   margin: 10px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .overview-main {
@@ -1487,7 +1487,7 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   overflow: auto;
   max-width: 320px;
   width: 320px !important;
-  max-height: calc(100vh - 120px);
+  max-height: unset;
   min-height: 400px;
 }
 
@@ -6330,6 +6330,12 @@ thead th {
 
 .overview-sidebar-left {
   flex: 0 0 280px;
+}
+
+.overview-sidebar > .card:last-child,
+.overview-sidebar-left > .card:last-child {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .p {
