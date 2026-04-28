@@ -46,7 +46,7 @@ from dashboard_services.picks import load_pick_value_table
 
 logger = logging.getLogger(__name__)
 
-LAMBDA_REG   = 15.0   # regularization strength
+LAMBDA_REG   = 8.0    # regularization strength (lower = more market influence per trade)
 MAX_VALUE    = 999.9
 MAX_LIFT     = 1.25   # player values capped at 125% of prior; picks float freely
 TOP_N_AT_MAX = 1      # only the #1 player lands at MAX_VALUE; all others separate naturally
@@ -98,55 +98,115 @@ def _pick_key(asset: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Schema helpers
+# ---------------------------------------------------------------------------
+
+def _col_names(league_type: int, league_size: int) -> tuple[str, str]:
+    """Return (col_1qb, col_sf) column names in player_values for this combination."""
+    if league_type == 2:  # dynasty
+        if league_size == 10:
+            return "calibrated_value_1qb", "calibrated_value_sf"
+        return f"calibrated_value_{league_size}", f"calibrated_sf_value_{league_size}"
+    else:  # redraft
+        if league_size == 10:
+            return "redraft_value_1qb", "redraft_value_sf"
+        return f"redraft_value_{league_size}", f"redraft_sf_value_{league_size}"
+
+
+def _teams_filter(league_size: int) -> str:
+    """SQL fragment to filter trade_intel_leagues by num_teams. Empty = no filter (10-team)."""
+    if league_size == 8:
+        return "AND l.num_teams BETWEEN 6 AND 9"
+    if league_size == 12:
+        return "AND l.num_teams BETWEEN 10 AND 13"
+    if league_size == 14:
+        return "AND l.num_teams >= 13"
+    return ""
+
+
+def _ensure_player_values_columns() -> None:
+    """Idempotently add size-specific calibrated/redraft columns to player_values."""
+    new_cols = [
+        "calibrated_value_8", "calibrated_value_12", "calibrated_value_14",
+        "calibrated_sf_value_8", "calibrated_sf_value_12", "calibrated_sf_value_14",
+        "redraft_value_8", "redraft_value_12", "redraft_value_14",
+        "redraft_sf_value_8", "redraft_sf_value_12", "redraft_sf_value_14",
+    ]
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for col in new_cols:
+                    cur.execute(
+                        f"""
+                        DO $$ BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'player_values' AND column_name = '{col}'
+                            ) THEN
+                                ALTER TABLE player_values ADD COLUMN {col} NUMERIC;
+                            END IF;
+                        END $$;
+                        """
+                    )
+    except Exception as e:
+        logger.warning("[trade_value_model] Column migration failed (non-fatal): %s", e)
+
+
+# ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
-def _load_prior(league_type: int = 2) -> dict[str, dict]:
+def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
     """
     Load WLS regularization prior for players.
-    Dynasty (2): raw model values.
-    Redraft (1): FC redraft values stored in player_values.
+    Dynasty (2): raw model values (size-specific when available).
+    Redraft (1): FC redraft values stored in player_values (size-specific fallback chain).
     """
     if league_type == 1:
-        # Redraft prior: use FantasyCalc redraft values from player_values
+        # Redraft prior: use FC redraft values; fall back through size chain
+        if league_size == 10:
+            c1  = "COALESCE(redraft_value_1qb, 0)"
+            csf = "COALESCE(redraft_value_sf, redraft_value_1qb, 0)"
+        else:
+            c1  = f"COALESCE(redraft_value_{league_size}, redraft_value_1qb, 0)"
+            csf = f"COALESCE(redraft_sf_value_{league_size}, redraft_value_sf, redraft_value_1qb, 0)"
         try:
             with get_conn() as conn:
                 rows = conn.execute(
-                    """
-                    SELECT player_id,
-                           COALESCE(redraft_value_1qb, 0) AS v1,
-                           COALESCE(redraft_value_sf,  redraft_value_1qb, 0) AS vsf
+                    f"""
+                    SELECT player_id, {c1} AS v1, {csf} AS vsf
                     FROM player_values
                     WHERE redraft_value_1qb IS NOT NULL AND redraft_value_1qb > 0
                     """
                 ).fetchall()
             return {
-                str(r["player_id"]): {
-                    "value_1qb": float(r["v1"]),
-                    "value_sf":  float(r["vsf"]),
-                }
+                str(r["player_id"]): {"value_1qb": float(r["v1"]), "value_sf": float(r["vsf"])}
                 for r in rows
             }
         except Exception as e:
             logger.warning("[trade_value_model] Could not load redraft prior from DB: %s", e)
             return {}
 
+    # Dynasty: use size-specific model values with fallback to base values
     from utils.utils import load_model_value_table
     value_table = load_model_value_table(apply_calibration=False) or []
+    val_col = "value" if league_size == 10 else f"value_{league_size}"
+    sf_col  = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
     return {
         str(p["id"]): {
-            "value_1qb": float(p.get("value") or 0),
-            "value_sf":  float(p.get("sf_value") or p.get("value") or 0),
+            "value_1qb": float(p.get(val_col) or p.get("value") or 0),
+            "value_sf":  float(p.get(sf_col)  or p.get("sf_value") or p.get("value") or 0),
         }
         for p in value_table
-        if p.get("id") and (p.get("value") or 0) > 0
+        if p.get("id") and (p.get(val_col) or p.get("value") or 0) > 0
     }
 
 
-def _load_trades(season: int, is_sf: bool = False, league_type: int = 2) -> list[dict]:
+def _load_trades(season: int, is_sf: bool = False, league_type: int = 2, league_size: int = 10) -> list[dict]:
+    teams_clause = _teams_filter(league_size)
     with get_conn() as conn:
         trade_rows = conn.execute(
-            """
+            f"""
             SELECT t.id, t.created_at
             FROM trade_intel_trades t
             JOIN trade_intel_leagues l ON l.league_id = t.league_id
@@ -154,6 +214,7 @@ def _load_trades(season: int, is_sf: bool = False, league_type: int = 2) -> list
               AND t.status = 'complete'
               AND COALESCE(l.is_superflex, FALSE) = %s
               AND l.league_type = %s
+              {teams_clause}
             ORDER BY t.created_at
             """,
             (season, is_sf, league_type),
@@ -278,39 +339,55 @@ def _solve(
 # DB / file writes
 # ---------------------------------------------------------------------------
 
-def _write_calibrated(rows: list[dict]) -> int:
+def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
+    """Write WLS dynasty results to size-specific calibrated columns."""
     if not rows:
         return 0
+    col_1qb, col_sf = _col_names(2, league_size)
     with get_conn() as conn:
         for r in rows:
+            params: dict = {
+                "player_id": r["player_id"],
+                "v1":  r["calibrated_value_1qb"],
+                "vsf": r["calibrated_value_sf"],
+            }
+            extra = ""
+            if league_size == 10:
+                extra = ", calibration_weight = %(calibration_weight)s, calibration_source = %(calibration_source)s"
+                params["calibration_weight"] = r["calibration_weight"]
+                params["calibration_source"] = r["calibration_source"]
             conn.execute(
-                """
+                f"""
                 UPDATE player_values SET
-                    calibrated_value_1qb = %(calibrated_value_1qb)s,
-                    calibrated_value_sf  = %(calibrated_value_sf)s,
-                    calibration_weight   = %(calibration_weight)s,
-                    calibration_source   = %(calibration_source)s
+                    {col_1qb} = %(v1)s,
+                    {col_sf}  = %(vsf)s
+                    {extra}
                 WHERE player_id = %(player_id)s
                 """,
-                r,
+                params,
             )
     return len(rows)
 
 
-def _write_redraft_values(rows: list[dict]) -> int:
-    """Write WLS-calibrated values to redraft_value_1qb / redraft_value_sf columns."""
+def _write_redraft_values(rows: list[dict], league_size: int = 10) -> int:
+    """Write WLS redraft results to size-specific redraft columns."""
     if not rows:
         return 0
+    col_1qb, col_sf = _col_names(1, league_size)
     with get_conn() as conn:
         for r in rows:
             conn.execute(
-                """
+                f"""
                 UPDATE player_values SET
-                    redraft_value_1qb = %(redraft_value_1qb)s,
-                    redraft_value_sf  = %(redraft_value_sf)s
+                    {col_1qb} = %(v1)s,
+                    {col_sf}  = %(vsf)s
                 WHERE player_id = %(player_id)s
                 """,
-                r,
+                {
+                    "player_id": r["player_id"],
+                    "v1":  r["redraft_value_1qb"],
+                    "vsf": r["redraft_value_sf"],
+                },
             )
     return len(rows)
 
@@ -348,26 +425,32 @@ def run_trade_value_model(
     season: int | None = None,
     lambda_reg: float  = LAMBDA_REG,
     league_type: int   = 2,
+    league_size: int   = 10,
 ) -> dict:
     """
     Derive player (and pick) values from trade patterns via WLS.
 
-    league_type=2 (dynasty): writes calibrated_value_1qb / calibrated_value_sf
-                              + pick values to JSON.
-    league_type=1 (redraft):  writes redraft_value_1qb / redraft_value_sf only
-                              (picks not modelled for redraft).
+    league_type=2 (dynasty): writes calibrated_value_{size} / calibrated_sf_value_{size}
+                              + pick values to JSON (size=10 only).
+    league_type=1 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
+    league_size: 8, 10 (default), 12, or 14 — filters trades by league num_teams.
 
-    lambda_reg: regularization strength (default 15 ≈ 50 trades → 65% market).
+    lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
     """
+    _ensure_player_values_columns()
+
     if season is None:
         season = _detect_season()
 
     mode = "redraft" if league_type == 1 else "dynasty"
-    logger.info("[trade_value_model] Season %d | mode=%s | λ=%.1f", season, mode, lambda_reg)
+    logger.info(
+        "[trade_value_model] Season %d | mode=%s | size=%d | λ=%.1f",
+        season, mode, league_size, lambda_reg,
+    )
 
-    player_prior  = _load_prior(league_type)
-    trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type)
-    trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type)
+    player_prior  = _load_prior(league_type, league_size)
+    trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type, league_size=league_size)
+    trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type, league_size=league_size)
 
     # External pick table is the regularization prior for pick buckets
     try:
@@ -499,39 +582,48 @@ def run_trade_value_model(
                     player_prior[r["player_id"]]["value_1qb"])
 
     if league_type == 1:
-        n = _write_redraft_values(out_rows)
-        logger.info("[trade_value_model] Done — %d redraft player values updated.", n)
-        return {"written": n, "trades_used": M, "players": n_pl, "season": season, "mode": mode}
+        n = _write_redraft_values(out_rows, league_size)
+        logger.info("[trade_value_model] Done — %d redraft player values updated (%d-team).", n, league_size)
+        return {"written": n, "trades_used": M, "players": n_pl, "season": season,
+                "mode": mode, "league_size": league_size}
 
-    # --- Pick output (dynasty only) ---
-    pick_vals_1qb: dict[str, float] = {}
-    pick_vals_sf:  dict[str, float] = {}
-    for i, key in enumerate(pick_keys):
-        lookup = key[len("pick_"):]
-        pick_vals_1qb[lookup] = round(float(v_1qb_norm[n_pl + i]), 2)
-        pick_vals_sf[lookup]  = round(float(v_sf_norm[n_pl + i]),  2)
+    # --- Pick output (dynasty 10-team only — picks are size-invariant) ---
+    n = _write_calibrated(out_rows, league_size)
 
-    logger.info("[trade_value_model] Sample WLS pick values (1QB):")
-    for k in sorted(pick_vals_1qb)[:8]:
-        logger.info("  %-25s  %.2f  (prior: %.2f)", k,
-                    pick_vals_1qb[k], ext_pick_values.get(k, 0))
+    if league_size == 10:
+        pick_vals_1qb: dict[str, float] = {}
+        pick_vals_sf:  dict[str, float] = {}
+        for i, key in enumerate(pick_keys):
+            lookup = key[len("pick_"):]
+            pick_vals_1qb[lookup] = round(float(v_1qb_norm[n_pl + i]), 2)
+            pick_vals_sf[lookup]  = round(float(v_sf_norm[n_pl + i]),  2)
 
-    n = _write_calibrated(out_rows)
-    _write_pick_values(pick_vals_1qb, pick_vals_sf)
+        logger.info("[trade_value_model] Sample WLS pick values (1QB):")
+        for k in sorted(pick_vals_1qb)[:8]:
+            logger.info("  %-25s  %.2f  (prior: %.2f)", k,
+                        pick_vals_1qb[k], ext_pick_values.get(k, 0))
 
-    logger.info("[trade_value_model] Done — %d players + %d pick buckets updated.", n, len(pick_keys))
-    return {
-        "written":      n,
-        "trades_used":  M,
-        "players":      n_pl,
-        "pick_buckets": len(pick_keys),
-        "season":       season,
-        "mode":         mode,
-    }
+        _write_pick_values(pick_vals_1qb, pick_vals_sf)
+        logger.info("[trade_value_model] Done — %d players + %d pick buckets updated.", n, len(pick_keys))
+        return {
+            "written":      n,
+            "trades_used":  M,
+            "players":      n_pl,
+            "pick_buckets": len(pick_keys),
+            "season":       season,
+            "mode":         mode,
+            "league_size":  league_size,
+        }
+
+    logger.info("[trade_value_model] Done — %d dynasty player values updated (%d-team).", n, league_size)
+    return {"written": n, "trades_used": M, "players": n_pl, "season": season,
+            "mode": mode, "league_size": league_size}
 
 
 if __name__ == "__main__":
     import sys
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    lam = float(sys.argv[1]) if len(sys.argv) > 1 else LAMBDA_REG
-    print(run_trade_value_model(lambda_reg=lam))
+    lam  = float(sys.argv[1]) if len(sys.argv) > 1 else LAMBDA_REG
+    lt   = int(sys.argv[2])   if len(sys.argv) > 2 else 2
+    sz   = int(sys.argv[3])   if len(sys.argv) > 3 else 10
+    print(run_trade_value_model(lambda_reg=lam, league_type=lt, league_size=sz))

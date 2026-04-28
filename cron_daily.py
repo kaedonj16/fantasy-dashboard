@@ -380,16 +380,17 @@ def main():
             if _wls_fresh():
                 print("[cron] WLS calibration already ran today, skipping")
             else:
-                # Dynasty WLS → calibrated_value_1qb / calibrated_value_sf
-                wls_result = run_trade_value_model(season=season, league_type=2)
-                print(f"[cron] Trade value model (WLS dynasty): {wls_result}")
-
-                # Redraft WLS → redraft_value_1qb / redraft_value_sf
-                try:
-                    rd_result = run_trade_value_model(season=season, league_type=1)
-                    print(f"[cron] Trade value model (WLS redraft): {rd_result}")
-                except Exception as rd_err:
-                    print(f"[cron] WLS redraft failed (non-fatal): {rd_err}")
+                # Run WLS for all 8 combinations: 2 league types × 4 sizes.
+                # Dynasty 10-team runs first (writes pick values + calibration_source).
+                for _lt, _lt_name in ((2, "dynasty"), (1, "redraft")):
+                    for _sz in (10, 8, 12, 14):
+                        try:
+                            _res = run_trade_value_model(
+                                season=season, league_type=_lt, league_size=_sz
+                            )
+                            print(f"[cron] WLS {_lt_name} {_sz}-team: {_res}")
+                        except Exception as _wls_sz_err:
+                            print(f"[cron] WLS {_lt_name} {_sz}-team failed (non-fatal): {_wls_sz_err}")
 
             # Always write calibrated values to history (covers re-runs and first run)
             cal_n = record_calibrated_history_snapshot()

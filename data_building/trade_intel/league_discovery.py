@@ -62,13 +62,14 @@ def _seed_league_ids(season: int) -> Set[str]:
     from whatever leagues are already stored (populated by manual inserts or
     previous discovery runs).  On a completely fresh DB the frontier will be
     empty; the user must insert at least one league_id manually to bootstrap.
+    Includes both dynasty (2) and redraft (1) leagues as BFS seeds.
     """
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT league_id FROM trade_intel_leagues
             WHERE season IN (%s, %s)
-              AND league_type = 2
+              AND league_type IN (1, 2)
             ORDER BY last_crawled_at ASC NULLS FIRST
             LIMIT 200
             """,
@@ -257,7 +258,7 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
             if not meta:
                 continue
             league_type = meta.get("settings", {}).get("type")
-            if league_type != 2:
+            if league_type not in (1, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -265,15 +266,16 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
                 "season":       lg_season,
                 "num_teams":    meta.get("total_rosters", 0),
                 "scoring_type": _classify_scoring(meta),
-                "league_type":  2,
+                "league_type":  league_type,
                 "is_superflex": _is_superflex(meta),
             })
             known.add(lid)
-            logger.info("[bootstrap] Seeded dynasty league %s (%d teams) from user '%s'",
-                        lid, meta.get("total_rosters", 0), username)
+            mode = "dynasty" if league_type == 2 else "redraft"
+            logger.info("[bootstrap] Seeded %s league %s (%d teams) from user '%s'",
+                        mode, lid, meta.get("total_rosters", 0), username)
 
     n = _save_leagues(to_save)
-    logger.info("[bootstrap] Inserted %d new dynasty league(s) as BFS seeds.", n)
+    logger.info("[bootstrap] Inserted %d new league(s) as BFS seeds.", n)
     return n
 
 
@@ -301,7 +303,8 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
         meta = _league_meta(lid)
         if not meta:
             continue
-        if meta.get("settings", {}).get("type") != 2:
+        league_type = meta.get("settings", {}).get("type")
+        if league_type not in (1, 2):
             continue
         lg_season = int(meta.get("season") or season)
         to_save.append({
@@ -309,7 +312,7 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
             "season":       lg_season,
             "num_teams":    meta.get("total_rosters", 0),
             "scoring_type": _classify_scoring(meta),
-            "league_type":  2,
+            "league_type":  league_type,
             "is_superflex": _is_superflex(meta),
         })
 
@@ -363,7 +366,8 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
             meta = _league_meta(lid)
             if not meta:
                 continue
-            if meta.get("settings", {}).get("type") != 2:
+            league_type = meta.get("settings", {}).get("type")
+            if league_type not in (1, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -371,7 +375,7 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
                 "season":       lg_season,
                 "num_teams":    meta.get("total_rosters", 0),
                 "scoring_type": _classify_scoring(meta),
-                "league_type":  2,
+                "league_type":  league_type,
                 "is_superflex": _is_superflex(meta),
             })
             known.add(lid)

@@ -493,9 +493,9 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Return {player_id: {value, sf_value}} for every player that has been
-    market-calibrated.  Used to overlay trade-data-adjusted values on top
-    of the raw model values without touching the model pipeline.
+    Return {player_id: {value, sf_value, value_8, value_12, value_14, sf_value_8, ...}}
+    for every player that has been market-calibrated.  Size-specific keys are included
+    when the corresponding calibrated_value_{size} columns are populated.
     Falls back to empty dict if the DB is unavailable or the columns don't exist.
     """
     try:
@@ -503,22 +503,48 @@ def load_calibration_overrides() -> dict[str, dict]:
             rows = conn.execute(
                 """
                 SELECT player_id,
-                       calibrated_value_1qb  AS value,
-                       COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
+                       calibrated_value_1qb AS value,
+                       COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value,
+                       calibrated_value_8,   calibrated_sf_value_8,
+                       calibrated_value_12,  calibrated_sf_value_12,
+                       calibrated_value_14,  calibrated_sf_value_14
                 FROM player_values
                 WHERE calibrated_value_1qb IS NOT NULL
                   AND calibrated_value_1qb > 0
                 """
             ).fetchall()
-        return {
-            r["player_id"]: {
+        result: dict[str, dict] = {}
+        for r in rows:
+            d: dict = {
                 "value":    float(r["value"]),
                 "sf_value": float(r["sf_value"]),
             }
-            for r in rows
-        }
+            for sz in (8, 12, 14):
+                v  = r[f"calibrated_value_{sz}"]
+                sf = r[f"calibrated_sf_value_{sz}"]
+                if v  is not None: d[f"value_{sz}"]    = float(v)
+                if sf is not None: d[f"sf_value_{sz}"] = float(sf)
+            result[str(r["player_id"])] = d
+        return result
     except Exception:
-        return {}
+        # Fallback: new size columns may not exist yet — return only the 10-team values
+        try:
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT player_id,
+                           calibrated_value_1qb AS value,
+                           COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
+                    FROM player_values
+                    WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0
+                    """
+                ).fetchall()
+            return {
+                str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
+                for r in rows
+            }
+        except Exception:
+            return {}
 
 
 def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:
