@@ -13890,7 +13890,7 @@ def api_trade_targets():
         values_by_id[pid] = {
             "value":          float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
             "position":       str(row.get("position") or "").upper(),
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": (row.get("sf_pos_rank_label") or row.get("pos_rank_label") or "") if league_type == "sf" else (row.get("pos_rank_label") or ""),
             "rank_change_7d": row.get("rank_change_7d"),
             "name":           row.get("name") or players_index.get(pid, {}).get("name", f"Player {pid}"),
             "team":           row.get("team") or "",

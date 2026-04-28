@@ -1862,7 +1862,8 @@ window.initTradePage = function initTradePage(root = document) {
       const res = await fetch(
         `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
+        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
+        { cache: "no-store" }
       );
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
