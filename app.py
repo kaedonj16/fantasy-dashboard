@@ -9242,7 +9242,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     return available, career_owners, championships, season_records, user_id_to_name
 
 
-def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: dict | None = None) -> str:
+def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None) -> str:
     """Render the All-Time Awards page body HTML."""
     name_map = user_id_to_name or {}
 
