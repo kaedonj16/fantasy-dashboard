@@ -9127,14 +9127,17 @@ def page_teams(platform: str, season: int, league_id: str):
 def _collect_all_season_data(platform: str, league_id: str, season: int):
     """
     Load ctx for every available historical season and return aggregated data:
-      career_owners  – dict  owner -> {Wins, Losses, Ties, PF, PA, seasons, weekly_pts}
-      championships  – dict  owner -> [season, ...]
+      career_owners  – dict  user_id -> {Wins, Losses, Ties, PF, PA, seasons, weekly_pts}
+      championships  – dict  user_id -> [season, ...]
       season_records – list  of per-season summary dicts
+      user_id_to_name – dict user_id -> latest display name (for rendering)
+    Keyed by user_id (stable) rather than team name (changes across seasons).
     """
     available = get_available_history_seasons(platform, league_id, season)
     career_owners: dict = {}
     championships: dict = {}
     season_records: list = []
+    user_id_to_name: dict = {}  # user_id → latest known display name
 
     for hist_s in available:
         rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
@@ -9147,25 +9150,60 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         if df.empty or "owner" not in df.columns:
             continue
 
+        # Build user_id → display_name for this season (later seasons overwrite earlier)
+        season_users = ctx.get("users") or []
+        for u in season_users:
+            uid = str(u.get("user_id") or "").strip()
+            if not uid:
+                continue
+            name = (
+                (u.get("metadata") or {}).get("team_name")
+                or u.get("display_name")
+                or u.get("username")
+                or uid
+            )
+            user_id_to_name[uid] = name
+
+        # roster_id → user_id for this season
+        season_rosters = ctx.get("rosters") or []
+        roster_map = ctx.get("roster_map") or {}
+        roster_to_uid: dict[str, str] = {
+            str(r["roster_id"]): str(r.get("owner_id") or "")
+            for r in season_rosters
+        }
+        # team_name → user_id reverse lookup (for championship mapping)
+        name_to_uid: dict[str, str] = {
+            roster_map.get(str(r["roster_id"]), ""): str(r.get("owner_id") or "")
+            for r in season_rosters
+        }
+
+        # df_weekly has roster_id column — use it to get user_id per row
+        has_roster_id = "roster_id" in df.columns
+        if has_roster_id:
+            df = df.copy()
+            df["user_id"] = df["roster_id"].astype(str).map(roster_to_uid).fillna("")
+
         mock_league = ctx.get("league") or {}
         ts = build_regular_season_team_stats(df, mock_league)
 
         for _, row in ts.iterrows():
             owner = str(row.get("owner", "Unknown"))
-            if owner not in career_owners:
-                career_owners[owner] = {
+            # Map team_name → user_id; fall back to team_name if no mapping
+            uid = name_to_uid.get(owner) or owner
+            if uid not in career_owners:
+                career_owners[uid] = {
                     "Wins": 0, "Losses": 0, "Ties": 0,
                     "PF": 0.0, "PA": 0.0, "seasons": 0,
                     "weekly_pts": [],
                 }
-            career_owners[owner]["Wins"]   += int(row.get("Wins", 0))
-            career_owners[owner]["Losses"] += int(row.get("Losses", 0))
-            career_owners[owner]["Ties"]   += int(row.get("Ties", 0))
-            career_owners[owner]["PF"]     += float(row.get("PF", 0))
-            career_owners[owner]["PA"]     += float(row.get("PA", 0))
-            career_owners[owner]["seasons"] += 1
+            career_owners[uid]["Wins"]   += int(row.get("Wins", 0))
+            career_owners[uid]["Losses"] += int(row.get("Losses", 0))
+            career_owners[uid]["Ties"]   += int(row.get("Ties", 0))
+            career_owners[uid]["PF"]     += float(row.get("PF", 0))
+            career_owners[uid]["PA"]     += float(row.get("PA", 0))
+            career_owners[uid]["seasons"] += 1
 
-        # collect weekly scores per owner for box/radar
+        # Collect weekly scores per user_id
         if {"owner", "points", "finalized"}.issubset(df.columns):
             sub = df[df["finalized"] == True][["owner", "points"]].copy()
         elif {"owner", "points"}.issubset(df.columns):
@@ -9173,20 +9211,25 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         else:
             sub = pd.DataFrame()
         for owner, grp in sub.groupby("owner"):
-            career_owners.setdefault(str(owner), {
+            uid = name_to_uid.get(str(owner)) or str(owner)
+            career_owners.setdefault(uid, {
                 "Wins": 0, "Losses": 0, "Ties": 0,
                 "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
             })["weekly_pts"].extend(grp["points"].tolist())
 
-        champ, runner_up = get_champion_and_runner_up(ctx)
-        if champ != "—":
-            championships.setdefault(champ, []).append(hist_s)
+        champ_name, runner_up_name = get_champion_and_runner_up(ctx)
+        champ_uid = name_to_uid.get(champ_name) or champ_name
+        runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
+        if champ_name != "—":
+            championships.setdefault(champ_uid, []).append(hist_s)
 
         summary = _build_history_summary(ctx)
         season_records.append({
             "season": hist_s,
-            "champion": champ,
-            "runner_up": runner_up,
+            "champion": champ_name,
+            "champion_uid": champ_uid,
+            "runner_up": runner_up_name,
+            "runner_up_uid": runner_up_uid,
             "champion_record": summary.get("champion_record", "—"),
             "top_pf_team": summary.get("top_scorer_team", "—"),
             "top_pf": float(summary.get("top_scorer_value") or 0),
@@ -9196,19 +9239,26 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "closest_margin": float(summary.get("closest_margin") or 0),
         })
 
-    return available, career_owners, championships, season_records
+    return available, career_owners, championships, season_records, user_id_to_name
 
 
-def _build_awards_html(career_owners: dict, championships: dict, season_records: list) -> str:
+def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: dict | None = None) -> str:
     """Render the All-Time Awards page body HTML."""
+    name_map = user_id_to_name or {}
+
+    def _display_name(uid: str) -> str:
+        """Return current display name for a user_id (or the raw value if no mapping)."""
+        return name_map.get(uid) or uid
+
     # Build career standings DataFrame
     rows = []
-    for owner, d in career_owners.items():
+    for uid, d in career_owners.items():
         games = d["Wins"] + d["Losses"] + d["Ties"]
         pts = d["weekly_pts"]
         rows.append({
-            "owner": owner,
-            "Championships": len(championships.get(owner, [])),
+            "owner": uid,
+            "display_name": _display_name(uid),
+            "Championships": len(championships.get(uid, [])),
             "Wins": d["Wins"],
             "Losses": d["Losses"],
             "PF": d["PF"],
@@ -9231,7 +9281,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         table_rows_html += f"""
         <tr>
           <td>{i + 1}</td>
-          <td>{html.escape(str(row['owner']))} {rings}</td>
+          <td>{html.escape(str(row['display_name']))} {rings}</td>
           <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
           <td>{int(row['Wins'])}-{int(row['Losses'])}</td>
           <td>{row['Win%']:.1%}</td>
@@ -9263,12 +9313,15 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     for rec in sorted(season_records, key=lambda x: x["season"], reverse=True):
         def _cell(v: str) -> str:
             return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
+        # Resolve current display names via user_id if available
+        champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec["champion"]
+        runner_display = _display_name(rec.get("runner_up_uid") or rec["runner_up"]) if rec.get("runner_up_uid") else rec["runner_up"]
         champ_rows_html += f"""
         <tr>
           <td>{rec['season']}</td>
-          <td style="font-weight:600;">{_cell(rec['champion'])}</td>
+          <td style="font-weight:600;">{_cell(champ_display)}</td>
           <td>{html.escape(rec['champion_record'])}</td>
-          <td>{_cell(rec['runner_up'])}</td>
+          <td>{_cell(runner_display)}</td>
         </tr>"""
 
     champ_table = f"""
@@ -9315,7 +9368,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
     # Most championships summary card
     if career_df.empty is False and int(career_df.iloc[0]["Championships"]) > 0:
-        most_champ_owner = str(career_df.iloc[0]["owner"])
+        most_champ_owner = str(career_df.iloc[0]["display_name"])
         most_champ_n = int(career_df.iloc[0]["Championships"])
         highlights_html += _hist_card(
             "Most Championships",
@@ -9345,7 +9398,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
-    available, career_owners, championships, season_records = \
+    available, career_owners, championships, season_records, user_id_to_name = \
         _collect_all_season_data(platform, league_id, season)
 
     if not available or not career_owners:
@@ -9362,7 +9415,7 @@ def page_awards(platform: str, season: int, league_id: str):
         </div>"""
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
-    body_html = _build_awards_html(career_owners, championships, season_records)
+    body_html = _build_awards_html(career_owners, championships, season_records, user_id_to_name)
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
