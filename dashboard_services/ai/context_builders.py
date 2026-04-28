@@ -432,18 +432,18 @@ def calculate_roster_grade(
 
     if position_ranks:
         total = (
-            age_score * 0.22
-            + depth_score * 0.20
-            + capital_score * 0.12
-            + elite_score * 0.18
-            + rank_score * 0.28
+            age_score * 0.18
+            + depth_score * 0.13
+            + capital_score * 0.07
+            + elite_score * 0.12
+            + rank_score * 0.50
         )
     else:
         total = (
-            age_score * 0.30
-            + depth_score * 0.25
-            + capital_score * 0.25
-            + elite_score * 0.20
+            age_score * 0.36
+            + depth_score * 0.26
+            + capital_score * 0.14
+            + elite_score * 0.24
         )
     total = round(total, 1)
 
