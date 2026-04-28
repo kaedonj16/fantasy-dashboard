@@ -1379,6 +1379,10 @@ window.initTradePage = function initTradePage(root = document) {
     return Math.round(base * mult * 10) / 10;
   }
 
+  function isTargetsTabActive() {
+    return !!root.querySelector("#targetsTabContent.is-active");
+  }
+
   async function onLeagueTypeChange() {
     // Refresh all value displays
     await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
@@ -1387,6 +1391,7 @@ window.initTradePage = function initTradePage(root = document) {
     recomputeTrade();
     renderAllPlayersList();
     loadTopMovers();
+    if (isTargetsTabActive()) loadTradeTargets();
   }
 
   function syncViewerSideLabels() {
@@ -1623,6 +1628,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      league_size: getLeagueSize(),
       scoring_format: getScoringFormat(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -1850,11 +1856,13 @@ window.initTradePage = function initTradePage(root = document) {
 
     body.innerHTML = '<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading targets…</div>';
 
+    const leagueSize = getLeagueSize();
+
     try {
       const res = await fetch(
         `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-        `&league_type=${encodeURIComponent(leagueType)}`
+        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
       );
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
@@ -2374,13 +2382,13 @@ window.initTradePage = function initTradePage(root = document) {
     const sel = root.querySelector("#leagueSizeSelect");
     if (sel) {
       bindOnce(sel, "tradeLeagueSizeChange", "change", async () => {
-        // Same refresh as league type change — all values need recalculating
         await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
         renderChips("A");
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
         loadTopMovers();
+        if (isTargetsTabActive()) loadTradeTargets();
       });
     }
   }
@@ -2393,6 +2401,7 @@ window.initTradePage = function initTradePage(root = document) {
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
+        if (isTargetsTabActive()) loadTradeTargets();
       });
     }
   }

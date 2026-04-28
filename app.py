@@ -10216,6 +10216,7 @@ def api_trade_eval():
     season = int(payload.get("season") or datetime.now().year)
     platform = str(payload.get("platform") or "sleeper").strip().lower()
     league_type = str(payload.get("league_type") or "1qb").strip().lower()
+    league_size = int(payload.get("league_size") or 10)
     scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
@@ -10296,11 +10297,13 @@ def api_trade_eval():
                 })
                 continue
 
-            # Use sf_value for Superflex leagues, otherwise use regular value
+            # Use size/type-specific value, falling back to 10-team then base value
             if league_type == "sf":
-                val = float(player.get("sf_value", player.get("value", 0.0)) or 0.0)
+                size_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
+                val = float(player.get(size_key) or player.get("sf_value") or player.get("value") or 0.0)
             else:
-                val = float(player.get("value", 0.0) or 0.0)
+                size_key = "value" if league_size == 10 else f"value_{league_size}"
+                val = float(player.get(size_key) or player.get("value") or 0.0)
 
             name = player.get("name")
             pos = player.get("position")
@@ -13855,6 +13858,7 @@ def api_trade_targets():
     season          = int(request.args.get("season")          or datetime.now().year)
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
     league_type     = str(request.args.get("league_type")     or "1qb").strip().lower()
+    league_size     = int(request.args.get("league_size")     or 10)
 
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "league_id and viewer_roster_id required"}), 400
@@ -13870,7 +13874,12 @@ def api_trade_targets():
     players_index     = ctx.get("players_index") or {}
     picks_by_roster   = ctx.get("picks_by_roster") or {}
 
-    val_key = "sf_value" if league_type == "sf" else "value"
+    if league_type == "sf":
+        val_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
+        val_fallback = "sf_value"
+    else:
+        val_key = "value" if league_size == 10 else f"value_{league_size}"
+        val_fallback = "value"
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -13879,7 +13888,7 @@ def api_trade_targets():
         if not pid:
             continue
         values_by_id[pid] = {
-            "value":          float(row.get(val_key) or row.get("value") or 0),
+            "value":          float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
             "position":       str(row.get("position") or "").upper(),
             "pos_rank_label": row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
