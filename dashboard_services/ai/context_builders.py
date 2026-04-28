@@ -454,9 +454,11 @@ def calculate_roster_grade(
             break
 
     direction = detect_team_direction(players, future_picks)
-    # Rank dominance is a strong contender signal even when raw values don't cross thresholds
+    # Rank dominance overrides direction in both directions
     if rank_score >= 80 and direction not in ("rebuild", "retool"):
         direction = "contender"
+    if rank_score < 20 and direction == "balanced":
+        direction = "rebuild"
     young = avg_age <= 27.0
     win_window = _compute_win_window(direction, young, total, rank_score)
 
