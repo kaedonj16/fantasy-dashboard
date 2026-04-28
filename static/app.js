@@ -7,6 +7,7 @@
 // - Plotly: resize + relayout + redraw + viewport hooks (better with page zoom/layout shifts)
 // ============================================================
 
+
 // ------------------------------------------------------------
 // Prevent scroll restoration on navigation (mobile fix)
 // ------------------------------------------------------------
@@ -157,12 +158,17 @@ function bindOnce(el, key, type, handler, options) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const lightIcons = document.querySelectorAll('.theme-icon.light-icon');
     const darkIcons = document.querySelectorAll('.theme-icon.dark-icon');
+    const themeTexts = document.querySelectorAll('.theme-text');
 
     lightIcons.forEach(icon => {
       icon.style.display = isDark ? 'none' : 'inline';
     });
     darkIcons.forEach(icon => {
       icon.style.display = isDark ? 'inline' : 'none';
+    });
+    
+    themeTexts.forEach(text => {
+      text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
     });
   }
 
@@ -172,6 +178,17 @@ function bindOnce(el, key, type, handler, options) {
     if (toggleBtn && !toggleBtn.__darkModeInitialized) {
       toggleBtn.addEventListener('click', toggleDarkMode);
       toggleBtn.__darkModeInitialized = true;
+      updateThemeIcons();
+    }
+    
+    // Also bind settings dropdown button
+    const settingsBtn = document.getElementById('settingsDarkModeBtn');
+    if (settingsBtn && !settingsBtn.__darkModeInitialized) {
+      settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDarkMode();
+      });
+      settingsBtn.__darkModeInitialized = true;
       updateThemeIcons();
     }
   }
@@ -783,14 +800,19 @@ window.initTradePage = function initTradePage(root = document) {
       row.style.cursor = "pointer";
       row.onclick = (e) => {
         e.stopPropagation();
-        if (p.is_rookie && p.is_rookie != 'False') {
+        const _drafted = p.is_rookie && p.is_rookie != 'False' && p.team && p.team !== 'FA';
+        if (p.is_rookie && p.is_rookie != 'False' && !_drafted) {
           if (typeof rkOpenModal === 'function') {
             rkOpenModal(p);
           } else {
             openProspectModal(p.id, p.name || "Unknown");
           }
         } else {
-          openPlayerModal(p.id, p.name || "Unknown");
+          if (typeof openPlayerModal === 'function') {
+            openPlayerModal(p.id, p.name || "Unknown");
+          } else {
+            console.error('openPlayerModal function not found');
+          }
         }
       };
     }
@@ -821,12 +843,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
-    } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+    } else if (p.is_rookie) {
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -869,20 +891,21 @@ window.initTradePage = function initTradePage(root = document) {
     sub.className = "otc-dropdown-sub";
 
     const metaBits = buildMetaBits(p);
-    if (p.is_rookie) {
+    if (isRookie(p.id)) {
       metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
-    } else if (isRookie(p.id)) {
+    } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
-    if (isElite(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
-    }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
     }
+    if (isElite(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
+    }
+
 
     sub.innerHTML = metaBits.join(" • ");
 
@@ -1212,6 +1235,14 @@ window.initTradePage = function initTradePage(root = document) {
       age: p.age ?? null,
       value: Number(p.value || 0),
       sf_value: Number(p.sf_value || p.value || 0),
+      value_8: Number(p.value_8 || p.value || 0),
+      value_12: Number(p.value_12 || p.value || 0),
+      value_14: Number(p.value_14 || p.value || 0),
+      sf_value_8: Number(p.sf_value_8 || p.sf_value || p.value || 0),
+      sf_value_12: Number(p.sf_value_12 || p.sf_value || p.value || 0),
+      sf_value_14: Number(p.sf_value_14 || p.sf_value || p.value || 0),
+      redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
+      redraft_value_sf: p.redraft_value_sf != null ? Number(p.redraft_value_sf) : null,
       pos_rank_label: p.pos_rank_label || "",
       sf_pos_rank_label: p.sf_pos_rank_label || "",
       is_rookie: p.is_rookie === true,
@@ -1348,6 +1379,10 @@ window.initTradePage = function initTradePage(root = document) {
     return Math.round(base * mult * 10) / 10;
   }
 
+  function isTargetsTabActive() {
+    return !!root.querySelector("#targetsTabContent.is-active");
+  }
+
   async function onLeagueTypeChange() {
     // Refresh all value displays
     await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
@@ -1356,6 +1391,7 @@ window.initTradePage = function initTradePage(root = document) {
     recomputeTrade();
     renderAllPlayersList();
     loadTopMovers();
+    if (isTargetsTabActive()) loadTradeTargets();
   }
 
   function syncViewerSideLabels() {
@@ -1414,7 +1450,11 @@ window.initTradePage = function initTradePage(root = document) {
               openProspectModal(p.id, p.name || 'Unknown');
             }
           } else {
-            openPlayerModal(p.id, p.name || 'Unknown');
+            if (typeof openPlayerModal === 'function') {
+              openPlayerModal(p.id, p.name || 'Unknown');
+            } else {
+              console.error('openPlayerModal function not found');
+            }
           }
         };
       }
@@ -1426,9 +1466,9 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Add rookie/breakout/elite/prospect badges
       if (isRookie(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
-      } else if (p.is_rookie) {
         metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
+      } else if (p.is_rookie) {
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
       if (isElite(p.id)) {
         metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
@@ -1588,6 +1628,7 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      league_size: getLeagueSize(),
       scoring_format: getScoringFormat(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -1618,7 +1659,8 @@ window.initTradePage = function initTradePage(root = document) {
       const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
       let normalizedDiff = diff / maxSideTotal;
       normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
-      const leftPct = ((normalizedDiff + 1) / 2) * 100;
+      // Invert the calculation: when diff > 0 (Team 1 favored), move bar left; when diff < 0 (Team 2 favored), move bar right
+      const leftPct = ((1 - normalizedDiff) / 2) * 100;
 
       if (barIndicator) {
         barIndicator.style.left = leftPct + "%";
@@ -1664,7 +1706,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
     const listEl = root.querySelector("#similarTradesList");
-    if (listEl) listEl.innerHTML = '<div class="stl-loading">Loading recent trades...</div>';
+    if (listEl) listEl.innerHTML = '<div class="stl-loading" style="display:flex;align-items:center;gap:8px;padding:12px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading recent trades...</div>';
     section.style.display = "";
 
     try {
@@ -1739,7 +1781,7 @@ window.initTradePage = function initTradePage(root = document) {
     const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
     const leagueType = getLeagueType();
 
-    intelBody.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:4px 0;">Loading market data...</div>';
+    intelBody.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:#9ca3af;font-size:12px;padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading market data...</div>';
     intelPanel.style.display = "";
 
     const results = await Promise.all(
@@ -1812,13 +1854,16 @@ window.initTradePage = function initTradePage(root = document) {
     const platform = pathParts[0] || "sleeper";
     const leagueType = getLeagueType();
 
-    body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Loading targets…</div>';
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading targets…</div>';
+
+    const leagueSize = getLeagueSize();
 
     try {
       const res = await fetch(
         `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-        `&league_type=${encodeURIComponent(leagueType)}`
+        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
+        { cache: "no-store" }
       );
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
@@ -1834,16 +1879,13 @@ window.initTradePage = function initTradePage(root = document) {
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
         const col     = posColor[pos] || "var(--text-muted)";
-        const chgHtml = (t.rank_change_7d && t.rank_change_7d !== 0)
-          ? `<span style="font-size:10px;color:${t.rank_change_7d > 0 ? "#22c55e" : "#ef4444"};margin-left:4px;">${t.rank_change_7d > 0 ? "▲" : "▼"}${Math.abs(t.rank_change_7d)}</span>`
-          : "";
         const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const panelId  = `pkgpanel-${(t.player_id || "x").replace(/\W/g,"_")}`;
         return `<div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
             <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span>${chgHtml}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
               <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -1852,7 +1894,7 @@ window.initTradePage = function initTradePage(root = document) {
               <button class="get-target-btn"
                 data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
                 style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
-                title="How to get this player">Get</button>
+                title="Trade suggestions for this player">Get</button>
             </div>
           </div>
           <div id="${panelId}" style="display:none;margin:4px 0 8px;padding:8px 10px;border-radius:6px;background:var(--surface-raised,var(--surface));border:1px solid var(--border);font-size:12px;"></div>
@@ -1907,7 +1949,7 @@ window.initTradePage = function initTradePage(root = document) {
         panel.dataset.open = "1";
         panel.classList.add("pkg-inline-panel");
         panel.style.display = "block";
-        panel.innerHTML = `<span style="color:var(--text-muted);">Loading…</span>`;
+        panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading…</div>`;
         window._generatePackageForTarget(
           btn.dataset.pid, btn.dataset.name, panel,
           leagueId, viewerRosterId, platform, leagueType, season
@@ -1986,8 +2028,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">
-        How to get ${data.target.name}
-        <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> · value ${tv}</span>
+        Trade suggestions for ${data.target.name}
       </div>`;
 
       if (hasPremium) {
@@ -2342,13 +2383,13 @@ window.initTradePage = function initTradePage(root = document) {
     const sel = root.querySelector("#leagueSizeSelect");
     if (sel) {
       bindOnce(sel, "tradeLeagueSizeChange", "change", async () => {
-        // Same refresh as league type change — all values need recalculating
         await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
         renderChips("A");
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
         loadTopMovers();
+        if (isTargetsTabActive()) loadTradeTargets();
       });
     }
   }
@@ -2361,6 +2402,7 @@ window.initTradePage = function initTradePage(root = document) {
         renderChips("B");
         recomputeTrade();
         renderAllPlayersList();
+        if (isTargetsTabActive()) loadTradeTargets();
       });
     }
   }
@@ -3654,17 +3696,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Dark mode toggle
-  const settingsDarkModeBtn = document.getElementById("settingsDarkModeBtn");
-  if (settingsDarkModeBtn) {
-    settingsDarkModeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (window.toggleDarkMode) {
-        window.toggleDarkMode();
-      }
-    });
-  }
-
+  
   // Prevent dropdown from closing when clicking inside (except on links)
   if (dropdown) {
     dropdown.addEventListener("click", (e) => {
@@ -4042,11 +4074,16 @@ function openPlayerModal(playerId, playerName) {
   const platform = pathParts[0] || 'sleeper';
   const season = pathParts[1] || new Date().getFullYear();
   const leagueId = pathParts[2] || null;
-  
+
+  // Use page-level league settings when available (set for logged-in users)
+  const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+  const modalLs = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const leagueParams = `league_type=${encodeURIComponent(modalLt)}&league_size=${encodeURIComponent(modalLs)}`;
+
   // Build API URL with league context if available
-  const apiUrl = leagueId 
-    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}`
-    : `/api/player-details/${playerId}`;
+  const apiUrl = leagueId
+    ? `/api/player-details/${playerId}?league_id=${leagueId}&platform=${platform}&season=${season}&${leagueParams}`
+    : `/api/player-details/${playerId}?${leagueParams}`;
   
   // Create modal overlay
   const overlay = document.createElement('div');
@@ -4128,10 +4165,15 @@ function openPlayerModal(playerId, playerName) {
       const yearsExp = data.stats?.years_exp;
       const pid = String(data.player_id || playerId);
 
+      // Check if player has no game logs (indicating a rookie without NFL stats)
+      const hasGameLogs = data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0;
+      const isRookieWithoutGameLogs = !hasGameLogs && data.prospect_data && data.prospect_data.prospect_score != null;
+
       if (isElite(pid)) {
         badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
-      if (yearsExp != null && yearsExp === 0) {
+      // Show rookie badge for both years_exp === 0 AND players with no game logs (rookies without NFL stats)
+      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs) {
         badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isProspect(pid)) {
@@ -4224,14 +4266,66 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
-      // ── Advanced Metrics + Value History (side by side) ───────────────────
-      const hasMetrics = pos && pos !== 'K' && pos !== 'DEF';
+      // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
+      const pd = data.prospect_data;
+      const isRookieWithProspectData = !hasGameLogs && pd && pd.prospect_score != null;
+      let pdColHTML = '';
+      if (isRookieWithProspectData) {
+        const pdScore = parseFloat(pd.prospect_score || 0);
+        const pdConf  = parseFloat(pd.confidence_score || 0);
+        const pdTier  = pd.tier || '?';
+        const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+        const tierColor  = tierColors[pdTier] || '#9ca3af';
+
+        const pdComponents = [
+          {label:'Production',  val: pd.production_score,              color:'#10b981'},
+          {label:'Efficiency',  val: pd.efficiency_score,              color:'#3b82f6'},
+          {label:'Age',         val: pd.age_score,                     color:'#8b5cf6'},
+          {label:'Breakout',    val: pd.breakout_profile_score,        color:'#f59e0b'},
+          {label:'Athleticism', val: pd.athleticism_score,             color:'#ef4444'},
+          {label:'Competition', val: pd.competition_score,             color:'#06b6d4'},
+          {label:'Draft Cap.',  val: pd.projected_draft_capital_score, color:'#f97316'},
+        ];
+        const pdCompsHtml = pdComponents.map(c => {
+          const v = parseFloat(c.val || 0);
+          return `<div class="rk-comp-row">
+            <div class="rk-comp-label">${c.label}</div>
+            <div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:${Math.round(v)}%;background:${c.color};"></div></div>
+            <div class="rk-comp-val" style="color:${c.color};">${v.toFixed(0)}</div>
+          </div>`;
+        }).join('');
+
+        pdColHTML = `
+          <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
+            <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
+            <span style="font-size:11px;color:var(--text-muted);">Score: <strong style="color:var(--accent);">${pdScore.toFixed(1)}</strong> · Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
+          </div>
+          <div class="rk-comp-list">${pdCompsHtml}</div>
+          <div id="pmProspectComparables" style="margin-top:4px;">
+            <div class="rk-section-divider"></div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>
+            <div id="pmComparablesBody" style="font-size:13px;color:var(--text-muted);">
+              <div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>
+            </div>
+          </div>
+        `;
+      }
+
+      // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
+      const hasMetrics = hasGameLogs && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      if (hasMetrics || hasChart) {
-        bodyHTML += `<hr class="pm-section-divider"><div class="pm-metrics-chart-grid">`;
+      if (hasMetrics || isRookieWithProspectData || hasChart) {
+        const gridClass = isRookieWithProspectData ? 'pm-metrics-chart-grid pm-metrics-chart-grid--prospect' : 'pm-metrics-chart-grid';
+        bodyHTML += `<hr class="pm-section-divider"><div class="${gridClass}">`;
 
-        if (hasMetrics) {
+        if (isRookieWithProspectData) {
+          bodyHTML += `<div>${pdColHTML}</div>`;
+        } else if (hasMetrics) {
           bodyHTML += `
             <div id="advancedMetricsSection">
               <div class="pm-section-header">
@@ -4426,6 +4520,41 @@ function openPlayerModal(playerId, playerName) {
 
       document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
 
+      // Lazy-load prospect comparables for rookies
+      if (isRookieWithProspectData && pd.player_id) {
+        fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
+          .then(r => r.json())
+          .then(cd => {
+            const cb = document.getElementById('pmComparablesBody');
+            if (!cb) return;
+            const comps = cd.comparables || [];
+            if (!comps.length) {
+              cb.innerHTML = '<span style="color:var(--text-muted);">No close historical comps found.</span>';
+              return;
+            }
+            const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+            cb.innerHTML = comps.map(c => {
+              const tc = tierColors[c.tier] || '#9ca3af';
+              const pickStr = c.actual_pick ? ` · Pick ${c.actual_pick}` : '';
+              return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
+                <div>
+                  <span style="font-weight:600;color:var(--text);font-size:13px;">${c.name}</span>
+                  <span style="color:var(--text-muted);font-size:12px;margin-left:6px;">${c.draft_class_year}${pickStr}</span>
+                  ${c.school ? `<span style="color:var(--text-muted);font-size:12px;"> · ${c.school}</span>` : ''}
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                  <span style="font-size:12px;color:var(--text-muted);">${parseFloat(c.prospect_score).toFixed(1)}</span>
+                  <span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${c.tier}</span>
+                </div>
+              </div>`;
+            }).join('');
+          })
+          .catch(() => {
+            const cb = document.getElementById('pmComparablesBody');
+            if (cb) cb.innerHTML = '';
+          });
+      }
+
       // Lazy-load news after modal is in the DOM
       if (data.position && data.position !== 'PICK') {
         fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
@@ -4527,6 +4656,9 @@ function openPlayerModal(playerId, playerName) {
           const extendedX = [...xData, '', '', '', '']; // Add more empty categories
           const extendedY = [...yValues, null, null, null, null]; // Add more null values
           
+          // Create hover text for actual data points only
+          const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
+          
           const trace = {
             x: extendedX,
             y: extendedY,
@@ -4536,7 +4668,8 @@ function openPlayerModal(playerId, playerName) {
             line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
             fill: 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
-            hovertemplate: '%{y:.1f}<extra></extra>'
+            hovertemplate: '%{text}<extra></extra>',
+            text: hoverText
           };
 
           // Adjust chart height based on screen size
@@ -5243,7 +5376,53 @@ function openProspectModal(playerId, playerName) {
           '<div class="rk-comp-list">' + compsHtml + '</div>' +
 
           reasonsHtml +
+
+          // ── Historical Comparables ────────────────────────────────────────
+          '<div class="rk-section-divider"></div>' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>' +
+          '<div id="rkComparablesBody" style="font-size:13px;color:var(--text-muted);">' +
+            '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
+          '</div>' +
+
         '</div>';
+
+      // Auto-link to Sleeper ID silently in background
+      if (r.player_id) {
+        fetch('/api/prospects/auto-link/' + encodeURIComponent(r.player_id)).catch(function(){});
+      }
+
+      // Fetch comparables
+      fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
+        .then(function(res){ return res.json(); })
+        .then(function(cd) {
+          var cb = document.getElementById('rkComparablesBody');
+          if (!cb) return;
+          var comps = cd.comparables || [];
+          if (!comps.length) {
+            cb.innerHTML = '<span>No close historical comps found.</span>';
+            return;
+          }
+          var tc_ = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+          cb.innerHTML = comps.map(function(c) {
+            var tc = tc_[c.tier] || '#9ca3af';
+            var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
+              '<div>' +
+                '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
+                '<span style="color:var(--text-muted);font-size:12px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
+                (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+                '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(1) + '</span>' +
+                '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+        })
+        .catch(function() {
+          var cb = document.getElementById('rkComparablesBody');
+          if (cb) cb.innerHTML = '<span>Could not load comparables.</span>';
+        });
     })
     .catch(function(err) {
       console.error('Error loading prospect data:', err);
@@ -7224,4 +7403,9 @@ function closePickModal() {
   var overlay = document.getElementById('pickModalOverlay');
   if (overlay) overlay.remove();
   document.body.style.overflow = '';
+}
+
+function toggleAnalyticsDraftTeam(header) {
+  const teamElement = header.parentElement;
+  teamElement.classList.toggle('collapsed');
 }

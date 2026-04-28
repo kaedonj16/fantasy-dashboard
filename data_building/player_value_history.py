@@ -261,11 +261,22 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
     return row["latest_date"] if row and row["latest_date"] else None
 
 
+def _history_col(league_type: str = "1qb", league_size: int = 10) -> str:
+    """Column in player_value_history for a given league type/size."""
+    sf = league_type.lower() == "sf"
+    if league_size == 8:  return "sf_value_8"  if sf else "value_8"
+    if league_size == 12: return "sf_value_12" if sf else "value_12"
+    if league_size == 14: return "sf_value_14" if sf else "value_14"
+    return "value_sf" if sf else "value"
+
+
 def get_player_value_history(
         player_id: str,
         *,
         days: int = 30,
         source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
 ) -> list[dict]:
     init_value_history_db()
 
@@ -280,17 +291,18 @@ def get_player_value_history(
         latest_date_obj = date.fromisoformat(str(latest_date))
 
     cutoff = (latest_date_obj - timedelta(days=max(days, 1) - 1)).isoformat()
+    col = _history_col(league_type, league_size)
 
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 as_of_date,
                 player_id,
                 name,
                 position,
                 team,
-                value,
+                COALESCE({col}, value) AS value,
                 source
             FROM player_value_history
             WHERE source = %s
@@ -308,7 +320,7 @@ def get_player_value_history(
         delta = None if prev_val is None else round(val - prev_val, 1)
         out.append(
             {
-                "as_of_date": str(r["as_of_date"]),  # ISO string "YYYY-MM-DD"
+                "as_of_date": str(r["as_of_date"]),
                 "player_id": r["player_id"],
                 "name": r["name"],
                 "position": r["position"],
@@ -398,11 +410,11 @@ def get_top_movers(
             else:
                 value_field = f"sf_value_{league_size}" if league_type == "sf" else f"value_{league_size}"
 
-            # Fallback chain: size-specific -> 10-team -> value
+            # Fallback chain: size-specific -> 10-team (value_sf=calibrated, sf_value=raw) -> value
             if league_type == "sf" and league_size != 10:
-                value_expr = f"COALESCE(sf_value_{league_size}, sf_value, value)"
+                value_expr = f"COALESCE(sf_value_{league_size}, value_sf, sf_value, value)"
             elif league_type == "sf":
-                value_expr = "COALESCE(sf_value, value)"
+                value_expr = "COALESCE(value_sf, sf_value, value)"
             elif league_size != 10:
                 value_expr = f"COALESCE(value_{league_size}, value)"
             else:
@@ -450,17 +462,36 @@ def get_top_movers(
 
             rows = cur.fetchall()
 
-    # Load players index to get names for records with NULL/empty names
-    from utils.utils import load_players_index
-    players_index = load_players_index() or {}
+    # Build name map: model table first (covers picks + all players), then players_index
+    name_map: dict = {}
+    try:
+        from utils.utils import load_model_value_table
+        for p in (load_model_value_table(apply_calibration=False) or []):
+            pid = str(p.get("id") or "")
+            nm = p.get("name") or ""
+            if pid and nm and nm != "Unknown":
+                name_map[pid] = nm
+    except Exception:
+        pass
+    try:
+        from utils.utils import load_players_index
+        for pid, info in (load_players_index() or {}).items():
+            if pid not in name_map:
+                nm = (info or {}).get("name") or ""
+                if nm:
+                    name_map[str(pid)] = nm
+    except Exception:
+        pass
 
     movers = []
     for row in rows:
         row_dict = dict(row)
-        # If name is None or empty, get it from players_index
-        if not row_dict.get("name") or row_dict.get("name") == "Unknown":
-            player_info = players_index.get(str(row_dict["player_id"])) or {}
-            row_dict["name"] = player_info.get("name", "Unknown")
+        player_id = str(row_dict["player_id"])
+        resolved = name_map.get(player_id)
+        if resolved:
+            row_dict["name"] = resolved
+        elif not row_dict.get("name") or row_dict["name"] == "Unknown":
+            row_dict["name"] = f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]

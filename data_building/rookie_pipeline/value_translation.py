@@ -166,11 +166,11 @@ def assign_tier(prospect_score: float) -> Tuple[int, str]:
         5 — Deep Flier          (33–43)  day-3 / UDFA with one standout trait
         6 — Low Priority        (< 33)   minimal dynasty value
     """
-    if prospect_score >= 82:
+    if prospect_score >= 85:
         return 1, "Elite Prospect"
-    if prospect_score >= 68:
+    if prospect_score >= 72:
         return 2, "Top Prospect"
-    if prospect_score >= 55:
+    if prospect_score >= 60:
         return 3, "Day-2 Upside"
     if prospect_score >= 44:
         return 4, "Developmental"
@@ -189,17 +189,14 @@ def format_draft_capital(
     low: Optional[int] = None,
     high: Optional[int] = None,
 ) -> str:
-    """Return a human-readable draft capital label, e.g. '1st (Pick 5-8)'."""
+    """Return a human-readable draft capital label, e.g. 'Round 1 · Pick 5-8'."""
     if projected_round is None:
         return "Undrafted?"
-    round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th",
-                    5: "5th", 6: "6th", 7: "7th"}
-    rnd = round_labels.get(projected_round, f"{projected_round}th")
     if projected_pick:
         if low and high and low != high:
-            return f"{rnd} (#{low}–#{high})"
-        return f"{rnd} (#{projected_pick})"
-    return rnd
+            return f"Round {projected_round} · Pick {low}–{high}"
+        return f"Round {projected_round} · Pick {projected_pick}"
+    return f"Round {projected_round}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -294,9 +291,44 @@ def translate_all(
     prospects:     List[Dict[str, Any]],
     consensus_map: Optional[Dict[str, Dict]] = None,
 ) -> List[Dict[str, Any]]:
-    """Translate a full list of scored prospects to dynasty values."""
+    """Translate a full list of scored prospects to dynasty values.
+    
+    Uses existing database values when available, otherwise calculates new values.
+    """
     if consensus_map is None:
         consensus_map = {}
+
+    # Load existing values from database to avoid re-calculating
+    existing_values = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            query = """
+                SELECT player_id, value_1qb, value_sf, value_8, value_12, value_14,
+                       sf_value_8, sf_value_12, sf_value_14, sf_pos_rank, sf_pos_rank_label
+                FROM player_values 
+                WHERE player_id = ANY(%s) AND value_1qb > 0
+            """
+            player_ids = [s["player_id"] for s in scores]
+            rows = conn.execute(query, (player_ids,)).fetchall()
+            
+            for row in rows:
+                pid = str(row[0])
+                existing_values[pid] = {
+                    "rookie_value": float(row[1]),      # value_1qb as base value
+                    "rookie_sf_value": float(row[2]) if row[2] else None,  # value_sf
+                    "rookie_value_8": float(row[3]) if row[3] else None,  # value_8
+                    "rookie_value_12": float(row[4]) if row[4] else None,  # value_12
+                    "rookie_value_14": float(row[5]) if row[5] else None,  # value_14
+                    "rookie_value_16": None,  # Not in database schema
+                    "rookie_sf_value_8": float(row[6]) if row[6] else None,  # sf_value_8
+                    "rookie_sf_value_12": float(row[7]) if row[7] else None,  # sf_value_12
+                    "rookie_sf_value_14": float(row[8]) if row[8] else None,  # sf_value_14
+                    "rookie_sf_value_16": None,  # Not in database schema
+                }
+        print(f"[translate_all] Found {len(existing_values)} existing values in database")
+    except Exception as e:
+        print(f"[translate_all] Could not load existing values: {e}")
 
     prospect_by_id = {p["player_id"]: p for p in prospects}
     results = []
@@ -304,7 +336,27 @@ def translate_all(
         pid = s["player_id"]
         p   = prospect_by_id.get(pid, {"player_id": pid, "position": "WR"})
         dc  = consensus_map.get(pid)
-        results.append(translate_score_to_value(s, p, dc))
+        
+        # Use existing database values if available
+        if pid in existing_values:
+            existing = existing_values[pid]
+            result = {
+                "player_id": pid,
+                "draft_class_year": p.get("draft_class_year"),
+                "overall_rank": s.get("overall_rank"),
+                "position_rank": s.get("position_rank"),
+                "prospect_score": s.get("prospect_score", 0),
+                "confidence_score": 100,  # High confidence for existing values
+                "tier": 1,  # Assume existing values are valuable
+                "tier_label": "Existing Value",
+                "projected_draft_capital": dc.get("projected_draft_capital") if dc else "Unknown",
+            }
+            # Add all existing value fields
+            result.update(existing)
+            results.append(result)
+        else:
+            # Calculate new values for prospects without existing data
+            results.append(translate_score_to_value(s, p, dc))
 
     results.sort(key=lambda x: x.get("overall_rank") or 999)
     return results

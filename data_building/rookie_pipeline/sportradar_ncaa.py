@@ -82,7 +82,7 @@ def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
 
     for attempt in range(retries):
         try:
-            resp = requests.get(url, headers=headers, params=params, timeout=25)
+            resp = requests.get(url, headers=headers, timeout=25)
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 429:

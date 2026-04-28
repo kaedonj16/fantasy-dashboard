@@ -94,8 +94,11 @@ def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
     strong_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 550)
     firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
 
-    if elite_assets >= 3 and avg_age and avg_age <= 27.5:
-        return "contender"
+    if avg_age and avg_age <= 28.5:
+        if elite_assets >= 3:
+            return "contender"
+        if elite_assets >= 2 and strong_assets >= 5:
+            return "contender"
     if firsts >= 2 and avg_age and avg_age >= 26.8 and elite_assets < 2:
         return "retool"
     if firsts >= 3 and strong_assets <= 3:
@@ -314,9 +317,9 @@ def build_trade_ai_context(
 # ──────────────────────────────────────────────────────────────────────────────
 
 _GRADE_THRESHOLDS = [
-    (92, "A+"), (85, "A"), (78, "A-"),
-    (72, "B+"), (65, "B"), (58, "B-"),
-    (50, "C+"), (42, "C"), (35, "C-"),
+    (90, "A+"), (82, "A"), (74, "A-"),
+    (67, "B+"), (60, "B"), (52, "B-"),
+    (44, "C+"), (36, "C"), (28, "C-"),
     (0, "D"),
 ]
 
@@ -328,15 +331,21 @@ def _compute_win_window(direction: str, young: bool, score: float, rank_score: f
         return "Full Rebuild"
     if direction == "retool":
         return "Retooling"
-    # "balanced" — must be above-average on the board to deserve an optimistic label
+    # "balanced" — rank dominance overrides the conservative label
+    if rank_score >= 80:
+        return "Win-Now Window" if young else "Aging Contender"
     above_avg = rank_score >= 55
-    if young and above_avg and score >= 65:
-        return "Rising Contender"
-    if above_avg and score >= 65:
+    if young and above_avg and score >= 68:
+        return "Contender Window"
+    if above_avg and score >= 68:
         return "2-3 Year Window"
-    if young and score >= 50:
+    if young and above_avg and score >= 58:
+        return "Rising Contender"
+    if above_avg and score >= 58:
+        return "2-3 Year Window"
+    if young and score >= 48:
         return "Building"
-    if score < 50:
+    if score < 48:
         return "Holding Pattern"
     return "2-3 Year Window"
 
@@ -423,18 +432,18 @@ def calculate_roster_grade(
 
     if position_ranks:
         total = (
-            age_score * 0.25
-            + depth_score * 0.20
-            + capital_score * 0.20
-            + elite_score * 0.15
-            + rank_score * 0.20
+            age_score * 0.18
+            + depth_score * 0.13
+            + capital_score * 0.07
+            + elite_score * 0.12
+            + rank_score * 0.50
         )
     else:
         total = (
-            age_score * 0.30
-            + depth_score * 0.25
-            + capital_score * 0.25
-            + elite_score * 0.20
+            age_score * 0.36
+            + depth_score * 0.26
+            + capital_score * 0.14
+            + elite_score * 0.24
         )
     total = round(total, 1)
 
@@ -445,7 +454,12 @@ def calculate_roster_grade(
             break
 
     direction = detect_team_direction(players, future_picks)
-    young = avg_age <= 26.5
+    # Rank dominance overrides direction in both directions
+    if rank_score >= 80 and direction not in ("rebuild", "retool"):
+        direction = "contender"
+    if rank_score < 20 and direction == "balanced":
+        direction = "rebuild"
+    young = avg_age <= 27.0
     win_window = _compute_win_window(direction, young, total, rank_score)
 
     return {

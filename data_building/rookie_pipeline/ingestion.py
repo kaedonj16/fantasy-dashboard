@@ -50,7 +50,14 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 import requests
-from utils.utils import normalize_name
+def normalize_name(name: str) -> str:
+    _SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+    if not name:
+        return ""
+    import re as _re
+    s = _re.sub(r"\.", "", name.lower())
+    s = _re.sub(r"\s+", " ", s).strip()
+    return " ".join(p for p in s.split(" ") if p not in _SUFFIXES)
 from .sagarin import get_team_rating as _sagarin_get_team_rating
 
 # Suppress urllib3 SSL warning for LibreSSL compatibility

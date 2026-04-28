@@ -23,14 +23,26 @@ rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 
 # In-memory cache so we don't re-run the pipeline on every page load.
 # Invalidated on refresh or on first hit per process.
-_cache: Dict[int, List[Dict[str, Any]]] = {}
+_cache: Dict[Any, List[Dict[str, Any]]] = {}
+
+
+def _nfl_draft_complete(draft_year: int) -> bool:
+    from data_building.rookie_pipeline.pipeline import is_draft_complete
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            return is_draft_complete(draft_year, conn)
+    except Exception:
+        return is_draft_complete(draft_year)
 
 
 def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
-    if draft_year not in _cache:
+    draft_done = _nfl_draft_complete(draft_year)
+    cache_key = (draft_year, draft_done)
+    if cache_key not in _cache:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-        _cache[draft_year] = get_rookie_rankings_from_db(draft_year)
-    return _cache[draft_year]
+        _cache[cache_key] = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+    return _cache[cache_key]
 
 
 def _safe_float(v, default=None):
@@ -71,12 +83,11 @@ def rankings():
 
         rows = _get_rankings(year)
 
-        # Position filter
+        # Optional server-side position filter (client can also filter)
         if pos:
             rows = [r for r in rows if (r.get("position") or "").upper() == pos]
 
-        # Limit to top 60
-        rows = rows[:60]
+        total_players = len(rows)
 
         # Build response list with value field chosen by league settings
         result = []
@@ -98,12 +109,21 @@ def rankings():
                 d.get("projected_pick_low"),
                 d.get("projected_pick_high"),
             )
+            
+            # Add headshot URL as espnHeadshot for modal compatibility
+            if d.get("headshot_url"):
+                d["espnHeadshot"] = d["headshot_url"]
+            
             result.append(d)
 
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
 
-        return jsonify({"draft_class_year": year, "count": len(result), "rankings": result})
+        return jsonify({
+            "draft_class_year": year,
+            "total_players": total_players,
+            "rankings": result,
+        })
 
     except Exception as exc:
         log.exception("[rookie_api] /rankings error")
@@ -119,7 +139,14 @@ def player_detail(player_id: str):
         row  = next((r for r in rows if r["player_id"] == player_id), None)
         if not row:
             return jsonify({"error": "Player not found"}), 404
-        return jsonify(_row_to_dict(row))
+        
+        player_data = _row_to_dict(row)
+        
+        # Add headshot URL as espnHeadshot for modal compatibility
+        if player_data.get("headshot_url"):
+            player_data["espnHeadshot"] = player_data["headshot_url"]
+        
+        return jsonify(player_data)
     except Exception as exc:
         log.exception("[rookie_api] /player error")
         return jsonify({"error": str(exc)}), 500
@@ -292,6 +319,375 @@ def add_prospects():
 
     except Exception as exc:
         log.exception("[rookie_api] POST /prospects error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/comparables/<player_id>")
+def comparables(player_id: str):
+    """Return historical prospects at the same position with a similar prospect score."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from dashboard_services.db import get_conn
+
+        year = request.args.get("year", type=int) or get_active_rookie_class()
+        rows = _get_rankings(year)
+        prospect = next((r for r in rows if r["player_id"] == player_id), None)
+
+        if not prospect:
+            return jsonify({"comparables": []})
+
+        position = (prospect.get("position") or "").upper()
+        score = float(prospect.get("prospect_score") or 0)
+        band = 5.0  # ±16 points prospect_score
+
+        try:
+            with get_conn() as conn:
+                db_rows = conn.execute(
+                    """
+                    SELECT player_id, name, position, draft_class_year, school,
+                           prospect_score, tier, tier_label, overall_rank, position_rank,
+                           actual_pick, actual_round, actual_nfl_team, headshot_url
+                    FROM historical_prospect_grades
+                    WHERE position = %s
+                      AND prospect_score BETWEEN %s AND %s
+                      AND draft_class_year < %s
+                    ORDER BY ABS(prospect_score - %s) ASC, draft_class_year DESC
+                    LIMIT 5
+                    """,
+                    (position, score - band, score + band, year, score),
+                ).fetchall()
+
+            result = []
+            for r in db_rows:
+                result.append({
+                    "player_id":        r["player_id"],
+                    "name":             r["name"],
+                    "position":         r["position"],
+                    "draft_class_year": r["draft_class_year"],
+                    "school":           r["school"],
+                    "prospect_score":   float(r["prospect_score"] or 0),
+                    "tier":             r["tier"],
+                    "tier_label":       r["tier_label"],
+                    "overall_rank":     r["overall_rank"],
+                    "position_rank":    r["position_rank"],
+                    "actual_pick":      r["actual_pick"],
+                    "actual_round":     r["actual_round"],
+                    "actual_nfl_team":  r["actual_nfl_team"],
+                    "headshot_url":     r["headshot_url"],
+                })
+        except Exception as db_exc:
+            log.warning("[rookie_api] comparables DB error: %s", db_exc)
+            result = []
+
+        return jsonify({"comparables": result})
+
+    except Exception as exc:
+        log.exception("[rookie_api] /comparables error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/by-sleeper/<sleeper_id>")
+def by_sleeper(sleeper_id: str):
+    """Return prospect data for a player identified by their Sleeper player ID."""
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from data_building.rookie_pipeline.value_translation import format_draft_capital
+        from dashboard_services.db import get_conn
+
+        # Check active class rankings first (in-memory)
+        year = get_active_rookie_class()
+        for y in [year, year - 1]:
+            rows = _get_rankings(y)
+            row = next((r for r in rows if str(r.get("sleeper_id") or "") == str(sleeper_id)), None)
+            if row:
+                d = _row_to_dict(row)
+                d["draft_capital_label"] = format_draft_capital(
+                    d.get("projected_round"), d.get("projected_pick"),
+                    d.get("projected_pick_low"), d.get("projected_pick_high"),
+                )
+                if d.get("headshot_url"):
+                    d["espnHeadshot"] = d["headshot_url"]
+                return jsonify(d)
+
+        # Fallback: query DB directly
+        try:
+            with get_conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT rp.*, rr.prospect_score, rr.tier, rr.tier_label,
+                           rr.overall_rank, rr.position_rank,
+                           rr.production_score, rr.efficiency_score, rr.age_score,
+                           rr.breakout_profile_score, rr.athleticism_score,
+                           rr.competition_score, rr.projected_draft_capital_score,
+                           rr.confidence_score, rr.key_reasons,
+                           rr.rookie_value, rr.rookie_sf_value,
+                           rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
+                           rr.rookie_sf_value_8, rr.rookie_sf_value_12, rr.rookie_sf_value_14,
+                           rmc.projected_round, rmc.projected_pick,
+                           rmc.projected_pick_low, rmc.projected_pick_high,
+                           rmc.num_mocks_used,
+                           rpa.forty_yard, rpa.ras_score
+                    FROM rookie_prospects rp
+                    JOIN rookie_rankings rr ON rp.player_id = rr.player_id
+                    LEFT JOIN rookie_mock_draft_consensus rmc ON rp.player_id = rmc.player_id
+                    LEFT JOIN rookie_prospect_athleticism rpa ON rp.player_id = rpa.player_id
+                    WHERE rp.sleeper_id = %s
+                    ORDER BY rr.draft_class_year DESC
+                    LIMIT 1
+                    """,
+                    (str(sleeper_id),),
+                ).fetchone()
+
+                if row:
+                    d = dict(row)
+                    d["draft_capital_label"] = format_draft_capital(
+                        d.get("projected_round"), d.get("projected_pick"),
+                        d.get("projected_pick_low"), d.get("projected_pick_high"),
+                    )
+                    if d.get("headshot_url"):
+                        d["espnHeadshot"] = d["headshot_url"]
+                    return jsonify(_row_to_dict(d))
+        except Exception as db_exc:
+            log.warning("[rookie_api] by-sleeper DB error: %s", db_exc)
+
+        return jsonify({"error": "Prospect not found for sleeper_id"}), 404
+
+    except Exception as exc:
+        log.exception("[rookie_api] /by-sleeper error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/link-sleeper", methods=["POST"])
+def link_sleeper():
+    """Link a prospect's rookie player_id to their Sleeper player ID and optionally promote to player_values."""
+    try:
+        body = request.json or {}
+        player_id = body.get("player_id", "").strip()
+        sleeper_id = body.get("sleeper_id", "").strip()
+
+        if not player_id or not sleeper_id:
+            return jsonify({"error": "player_id and sleeper_id are required"}), 400
+
+        from dashboard_services.db import get_conn
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from data_building.rookie_pipeline.value_translation import format_draft_capital
+
+        # Update DB
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE rookie_prospects SET sleeper_id = %s, updated_at = NOW() WHERE player_id = %s",
+                    (sleeper_id, player_id),
+                )
+                conn.commit()
+        except Exception as db_exc:
+            log.warning("[rookie_api] link-sleeper DB error: %s", db_exc)
+            return jsonify({"error": f"DB update failed: {db_exc}"}), 500
+
+        # Update in-memory cache
+        year = get_active_rookie_class()
+        for y in [year, year - 1]:
+            rows = _get_rankings(y)
+            for r in rows:
+                if r.get("player_id") == player_id:
+                    r["sleeper_id"] = sleeper_id
+                    break
+
+        # Optionally promote: insert into player_values so the player appears in the main system
+        promote = body.get("promote", True)
+        promoted = False
+        if promote:
+            try:
+                rows = _get_rankings(year)
+                row = next((r for r in rows if r["player_id"] == player_id), None)
+                if not row:
+                    for y in [year - 1]:
+                        row = next((r for r in _get_rankings(y) if r["player_id"] == player_id), None)
+                        if row:
+                            break
+
+                if row:
+                    val_1qb = float(row.get("rookie_value") or 0)
+                    val_sf = float(row.get("rookie_sf_value") or 0)
+                    pos = row.get("position", "")
+                    name = row.get("name", "")
+                    pos_rank = row.get("position_rank")
+                    pos_rank_label = f"{pos}{pos_rank}" if pos and pos_rank else ""
+
+                    with get_conn() as conn:
+                        conn.execute(
+                            """
+                            INSERT INTO player_values
+                                (player_id, value_1qb, value_sf, calibrated_value_1qb, calibrated_value_sf,
+                                 position, pos_rank, pos_rank_label, last_updated)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
+                            ON CONFLICT (player_id) DO UPDATE SET
+                                value_1qb = EXCLUDED.value_1qb,
+                                value_sf = EXCLUDED.value_sf,
+                                calibrated_value_1qb = EXCLUDED.calibrated_value_1qb,
+                                calibrated_value_sf = EXCLUDED.calibrated_value_sf,
+                                position = EXCLUDED.position,
+                                pos_rank = EXCLUDED.pos_rank,
+                                pos_rank_label = EXCLUDED.pos_rank_label,
+                                last_updated = EXCLUDED.last_updated
+                            """,
+                            (sleeper_id, val_1qb, val_sf, val_1qb, val_sf,
+                             pos, pos_rank, pos_rank_label),
+                        )
+                        # Seed a value history row so the chart has at least one point
+                        conn.execute(
+                            """
+                            INSERT INTO player_value_history
+                                (as_of_date, player_id, name, position, value, source)
+                            VALUES (CURRENT_DATE, %s, %s, %s, %s, 'model')
+                            ON CONFLICT (as_of_date, player_id, source) DO UPDATE SET
+                                value = EXCLUDED.value
+                            """,
+                            (sleeper_id, name, pos, val_1qb),
+                        )
+                        conn.commit()
+                    promoted = True
+            except Exception as prom_exc:
+                log.warning("[rookie_api] link-sleeper promote error: %s", prom_exc)
+
+        return jsonify({"ok": True, "player_id": player_id, "sleeper_id": sleeper_id, "promoted": promoted})
+
+    except Exception as exc:
+        log.exception("[rookie_api] /link-sleeper error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/auto-link/<player_id>")
+def auto_link(player_id: str):
+    """Auto-match a prospect to their Sleeper ID via players_index.json name lookup, then promote."""
+    try:
+        from utils.utils import load_players_index
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from dashboard_services.db import get_conn
+
+        year = get_active_rookie_class()
+        row = None
+        for y in [year, year - 1]:
+            row = next((r for r in _get_rankings(y) if r.get("player_id") == player_id), None)
+            if row:
+                break
+
+        if not row:
+            return jsonify({"ok": False, "error": "Prospect not found"}), 404
+
+        if row.get("sleeper_id"):
+            return jsonify({"ok": True, "sleeper_id": row["sleeper_id"], "already_linked": True})
+
+        prospect_name = row.get("name", "")
+        if not prospect_name:
+            return jsonify({"ok": False, "error": "Prospect has no name"}), 400
+
+        players_index = load_players_index() or {}
+
+        def _norm(n: str) -> str:
+            n = n.lower()
+            n = re.sub(r"['\.\-]", "", n)
+            n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+            return re.sub(r"\s+", " ", n).strip()
+
+        norm_prospect = _norm(prospect_name)
+        sleeper_id = None
+        for sid, pdata in players_index.items():
+            if _norm(pdata.get("name", "")) == norm_prospect:
+                sleeper_id = sid
+                break
+
+        if not sleeper_id:
+            return jsonify({"ok": False, "error": f"No match for '{prospect_name}'"})
+
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE rookie_prospects SET sleeper_id = %s, updated_at = NOW() WHERE player_id = %s",
+                    (sleeper_id, player_id),
+                )
+                conn.commit()
+        except Exception as db_exc:
+            log.warning("[rookie_api] auto-link DB error: %s", db_exc)
+            return jsonify({"error": f"DB update failed: {db_exc}"}), 500
+
+        for y in [year, year - 1]:
+            for r in _get_rankings(y):
+                if r.get("player_id") == player_id:
+                    r["sleeper_id"] = sleeper_id
+                    break
+
+        promoted = False
+        try:
+            val_1qb = float(row.get("rookie_value") or 0)
+            val_sf = float(row.get("rookie_sf_value") or 0)
+            pos = row.get("position", "")
+            name = row.get("name", "")
+            pos_rank = row.get("position_rank")
+            pos_rank_label = f"{pos}{pos_rank}" if pos and pos_rank else ""
+
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO player_values
+                        (player_id, value_1qb, value_sf, calibrated_value_1qb, calibrated_value_sf,
+                         position, pos_rank, pos_rank_label, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        value_1qb = EXCLUDED.value_1qb,
+                        value_sf = EXCLUDED.value_sf,
+                        calibrated_value_1qb = EXCLUDED.calibrated_value_1qb,
+                        calibrated_value_sf = EXCLUDED.calibrated_value_sf,
+                        position = EXCLUDED.position,
+                        pos_rank = EXCLUDED.pos_rank,
+                        pos_rank_label = EXCLUDED.pos_rank_label,
+                        last_updated = EXCLUDED.last_updated
+                    """,
+                    (sleeper_id, val_1qb, val_sf, val_1qb, val_sf, pos, pos_rank, pos_rank_label),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO player_value_history
+                        (as_of_date, player_id, name, position, value, source)
+                    VALUES (CURRENT_DATE, %s, %s, %s, %s, 'model')
+                    ON CONFLICT (as_of_date, player_id, source) DO UPDATE SET
+                        value = EXCLUDED.value
+                    """,
+                    (sleeper_id, name, pos, val_1qb),
+                )
+                conn.commit()
+            promoted = True
+        except Exception as prom_exc:
+            log.warning("[rookie_api] auto-link promote error: %s", prom_exc)
+
+        return jsonify({"ok": True, "sleeper_id": sleeper_id, "already_linked": False, "promoted": promoted})
+
+    except Exception as exc:
+        log.exception("[rookie_api] /auto-link error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@rookie_bp.route("/draft-status", methods=["GET"])
+def draft_status():
+    """Check if the draft is complete for a given year."""
+    try:
+        year = request.args.get("year", type=int)
+        if year is None:
+            from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+            year = get_active_rookie_class()
+        
+        from data_building.rookie_pipeline.pipeline import is_draft_complete
+        from dashboard_services.db import get_conn
+        
+        with get_conn() as conn:
+            draft_complete = is_draft_complete(year, conn)
+        
+        return jsonify({
+            "draft_year": year,
+            "draft_complete": draft_complete
+        })
+    except Exception as exc:
+        log.exception("[rookie_api] /draft-status error")
         return jsonify({"error": str(exc)}), 500
 
 

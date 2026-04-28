@@ -32,3 +32,7 @@ Thumbs.db
 .env
 .env.local
 *.log
+
+# Generated outputs
+results.txt
+data/fc_rookie_adp_*.json

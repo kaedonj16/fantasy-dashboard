@@ -56,7 +56,22 @@ LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
 # This allows model training and other scripts to import this module without requiring the key
 
 # Reuse a single Session and a single headers dict for all Tank01 calls
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 SESSION = requests.Session()
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+)
+adapter = HTTPAdapter(
+    pool_connections=20,  # Increase from default 10
+    pool_maxsize=20,      # Increase from default 10  
+    max_retries=retry_strategy
+)
+SESSION.mount("http://", adapter)
+SESSION.mount("https://", adapter)
 
 
 def _make_hashable(x: Any):

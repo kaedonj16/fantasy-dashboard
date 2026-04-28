@@ -96,7 +96,13 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
 
 def _db_available() -> bool:
     db_url = os.getenv("DATABASE_URL", "").strip()
-    return bool(db_url) and not any(t in db_url for t in ("USER", "PASSWORD", "HOST"))
+    if not db_url:
+        print("[_db_available] DATABASE_URL environment variable is not set")
+        return False
+    if any(t in db_url for t in ("USER", "PASSWORD", "HOST")):
+        print("[_db_available] DATABASE_URL contains placeholder values (USER, PASSWORD, or HOST)")
+        return False
+    return True
 
 
 def upsert_prospects(prospects: List[Dict], conn) -> int:
@@ -616,8 +622,10 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
     """
     Return True if the NFL Draft for draft_year has already occurred.
 
-    Checks the rookie_active_class table's draft_date first; falls back to
-    comparing today against the historically typical draft date (late April).
+    Priority:
+    1. rookie_active_class.draft_date (explicit DB record)
+    2. rookie_prospects table has any draft_confirmed=TRUE rows
+    3. Fallback: today > April 28 of draft_year (typical draft end)
     """
     today = date.today()
 
@@ -634,13 +642,26 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
                 if isinstance(draft_date, str):
                     from datetime import datetime as _dt
                     draft_date = _dt.strptime(draft_date[:10], "%Y-%m-%d").date()
-                return today > draft_date
+                return today >= draft_date
         except Exception:
             pass
 
-    # Fallback: NFL Draft is held in late April (typically April 24–27)
-    typical_draft_end = date(draft_year, 4, 28)
-    return today > typical_draft_end
+        # Check if any actual picks are already stored
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM rookie_prospects WHERE draft_class_year = %s AND draft_confirmed = TRUE LIMIT 1",
+                    (draft_year,),
+                )
+                if cur.fetchone():
+                    return True
+        except Exception:
+            pass
+
+    # Fallback: NFL Draft starts late April and lasts ~2 days (rounds 1-7)
+    # April 26 is a safe cutoff — the draft is over by then in any recent year.
+    typical_draft_end = date(draft_year, 4, 26)
+    return today >= typical_draft_end
 
 
 def fetch_nflverse_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
@@ -655,7 +676,7 @@ def fetch_nflverse_draft_picks(draft_year: int) -> List[Dict[str, Any]]:
     import io
     try:
         import urllib.request
-        url = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/drafts.csv"
+        url = "https://github.com/nflverse/nflverse-data/releases/download/draft_picks/draft_picks.csv"
         with urllib.request.urlopen(url, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
     except Exception as exc:
@@ -968,13 +989,99 @@ def upsert_mock_consensus(consensus_map: Dict[str, Dict], draft_year: int, conn)
 
 
 def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
-    """Merge score + value dicts and upsert into rookie_rankings."""
+    """Merge score + value dicts and upsert into rookie_rankings.
+    
+    Priority: model_values > calculated rookie values > fallback values
+    """
+    
     value_by_pid = {v["player_id"]: v for v in values}
     saved = 0
+    
+    # Load model values to check for existing player values
+    model_values = {}
+    name_to_model_values = {}  # For rookie ID name matching
+    try:
+        from utils.utils import load_model_value_table
+        model_table = load_model_value_table() or []
+        for player in model_table:
+            if isinstance(player, dict) and player.get("id"):
+                pid = str(player["id"])
+                model_values[pid] = {
+                    "rookie_value": player.get("value", 0),
+                    "rookie_sf_value": player.get("sf_value", 0),
+                    "rookie_value_8": player.get("value_8", 0),
+                    "rookie_value_12": player.get("value_12", 0),
+                    "rookie_value_14": player.get("value_14", 0),
+                    "rookie_sf_value_8": player.get("sf_value_8", 0),
+                    "rookie_sf_value_12": player.get("sf_value_12", 0),
+                    "rookie_sf_value_14": player.get("sf_value_14", 0),
+                }
+                
+                # Also create name lookup for rookie ID matching
+                name = player.get("name", "").lower().strip()
+                if name:
+                    name_to_model_values[name] = model_values[pid]
+        
+    except Exception as e:
+        print(f"[upsert_rankings] Could not load model values: {e}")
+    
     with conn.cursor() as cur:
         for s in scores:
             pid = s["player_id"]
-            v   = value_by_pid.get(pid, {})
+            # Debug: Check if scores have tier information
+            # Priority 1: Use model values if available (by player_id)
+            if pid in model_values:
+                v = model_values[pid]
+                # Add tier information from scores
+                if s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+            # Priority 1.5: Use model values by name matching (for rookie IDs like "ROOKIE_2026_JEREMIYAH_LOVE")
+            elif pid.startswith("ROOKIE_"):
+                # Extract name from rookie ID
+                name_parts = pid.split("_")
+                if len(name_parts) >= 4:
+                    name = "_".join(name_parts[2:]).replace("_", " ").title()
+                    name_lower = name.lower().strip()
+                    if name_lower in name_to_model_values:
+                        v = name_to_model_values[name_lower]
+                        # Add tier information from scores
+                        if s.get("tier") is not None:
+                            v["tier"] = s.get("tier")
+                        if s.get("tier_label") is not None:
+                            v["tier_label"] = s.get("tier_label")
+                    else:
+                        # Name matching failed, try calculated values
+                        if pid in value_by_pid:
+                            v = value_by_pid.get(pid, {})
+                        else:
+                            v = {}
+                else:
+                    # Name extraction failed, try calculated values
+                    if pid in value_by_pid:
+                        v = value_by_pid.get(pid, {})
+                    else:
+                        v = {}
+
+            # Priority 2: Use calculated rookie values
+            elif pid in value_by_pid:
+                v = value_by_pid.get(pid, {})
+                # Ensure calculated values have tier information from scores if not present
+                if "tier" not in v and s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if "tier_label" not in v and s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+            # Priority 3: Use empty values (already initialized as {})
+            else:
+                v = {}
+                # Ensure fallback values have tier information from scores
+                if s.get("tier") is not None:
+                    v["tier"] = s.get("tier")
+                if s.get("tier_label") is not None:
+                    v["tier_label"] = s.get("tier_label")
+                print(f"[upsert_rankings] No values found for player {pid}, using defaults")
+            
             cur.execute(
                 """
                 INSERT INTO rookie_rankings
@@ -1569,20 +1676,34 @@ def run_rookie_pipeline_staged(
         try:
             from .ingestion import prospects_from_mock_draft
             from .mock_draft_scraper import scrape_consensus_mock_draft
-            
+
             mock_picks = scrape_consensus_mock_draft(draft_year)
             sr_prospects = prospects_from_mock_draft(mock_picks, draft_year)
             print(f"[pipeline] Created {len(sr_prospects)} prospects from mock draft data")
         except Exception as exc:
             print(f"[pipeline] Failed to create prospects from mock data: {exc}")
             return {}
-        
+
         if not sr_prospects:
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
         if _has_sr_key:
             print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
-        # Fall back: score from whatever is already in the DB
+
+        # Persist mock-created prospects so Stage 4 can link their picks (FK constraint).
+        # Without this upsert, all 194 scraped mock entries are skipped because the
+        # player_ids don't exist in rookie_prospects yet.
+        try:
+            from .ingestion import normalize_prospect
+            normalized = [normalize_prospect(p) for p in sr_prospects]
+            with get_conn() as conn:
+                n_saved = upsert_prospects(normalized, conn)
+                conn.commit()
+            print(f"[pipeline] Saved {n_saved} mock-created prospects to DB")
+        except Exception as exc:
+            print(f"[pipeline] Failed to save mock prospects to DB (non-fatal): {exc}")
+
+        # Fall back: score from the DB — now includes the newly inserted prospects
         return _score_from_db(
             draft_year,
             get_conn,
@@ -1630,7 +1751,7 @@ def run_rookie_pipeline_staged(
     _missing = [p["name"] for p in sr_prospects if not p.get("age")]
     print(f"[pipeline] {len(_missing)} prospects still need age lookup")
 
-    if len(_missing) > 50:
+    if len(_missing) > 70:
         try:
             print("[pipeline] Retrieving PlayerProfiler ages")
             from .playerprofiler_scraper import fetch_playerprofiler_ages
@@ -1751,26 +1872,35 @@ def run_rookie_pipeline_staged(
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4: Scrape Mock Drafts ======")
 
-    all_mock_picks: List[Dict] = []
-
-    # 4a — CBS Sports: individual analyst mocks
-    individual_mocks = scrape_individual_mocks(draft_year)
-    print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
-    all_mock_picks.extend(individual_mocks)
-
-    # 4b — FantasyPros: consensus mock (counts as one analyst "source")
-    fantasypros_picks = scrape_consensus_mock_draft(draft_year)
-    print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
-    for pick in fantasypros_picks:
-        pick.setdefault("source", "FantasyPros")
-        pick.setdefault("analyst_name", "FantasyPros Consensus")
-    all_mock_picks.extend(fantasypros_picks)
-
-    # Save all entries to DB (CBS + FantasyPros in one pass)
+    # Check if draft is complete before scraping mocks
     with get_conn() as conn:
-        n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
+        draft_done = is_draft_complete(draft_year, conn)
 
-    print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+    all_mock_picks: List[Dict] = []
+    n_mock_entries = 0  # Initialize to avoid UnboundLocalError when draft is complete
+    n_consensus = 0     # Initialize to avoid UnboundLocalError when draft is complete
+
+    if not draft_done:
+        # 4a — CBS Sports: individual analyst mocks
+        individual_mocks = scrape_individual_mocks(draft_year)
+        print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
+        all_mock_picks.extend(individual_mocks)
+
+        # 4b — FantasyPros: consensus mock (counts as one analyst "source")
+        fantasypros_picks = scrape_consensus_mock_draft(draft_year)
+        print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
+        for pick in fantasypros_picks:
+            pick.setdefault("source", "FantasyPros")
+            pick.setdefault("analyst_name", "FantasyPros Consensus")
+        all_mock_picks.extend(fantasypros_picks)
+
+        # Save all entries to DB (CBS + FantasyPros in one pass)
+        with get_conn() as conn:
+            n_mock_entries = upsert_mock_entries_from_scraped(all_mock_picks, draft_year, conn)
+
+        print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
+    else:
+        print(f"[pipeline] Draft complete for {draft_year} — skipping mock draft scraping")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4b: Actual Draft Results (post-draft only) ======")
@@ -1793,19 +1923,27 @@ def run_rookie_pipeline_staged(
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
 
-    # Aggregate all stored entries (CBS analysts + FantasyPros) into one consensus.
-    # Median pick, spread, and confidence are computed across all sources.
-    with get_conn() as conn:
-        consensus_map = build_consensus_from_db_entries(draft_year, conn)
+    # Build consensus only if draft is not complete
+    if not draft_done:
+        # Aggregate all stored entries (CBS analysts + FantasyPros) into one consensus.
+        # Median pick, spread, and confidence are computed across all sources.
+        with get_conn() as conn:
+            consensus_map = build_consensus_from_db_entries(draft_year, conn)
 
-    if consensus_map:
-        print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
+        if consensus_map:
+            print(f"[pipeline] Built consensus from {len(consensus_map)} players across all sources")
 
-    # Save consensus to DB
-    with get_conn() as conn:
-        n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
+        # Save consensus to DB
+        with get_conn() as conn:
+            n_consensus = upsert_mock_consensus(consensus_map, draft_year, conn)
 
-    print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
+        print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
+    else:
+        print(f"[pipeline] Draft complete for {draft_year} — skipping mock consensus building (will use actual picks)")
+        # When draft is complete, we still need to build consensus from actual picks
+        with get_conn() as conn:
+            consensus_map = build_consensus_from_db_entries(draft_year, conn)
+        print(f"[pipeline] Built consensus from {len(consensus_map)} actual draft picks")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
@@ -1862,7 +2000,9 @@ def run_rookie_pipeline(
     """
     Full pipeline: ingest → score → translate → persist to DB.
 
-    Uses the new staged approach with DB saves after each step.
+    Caller-supplied position_weights_override is used as-is.
+    To apply calibrated weights, pass them explicitly via
+    historical_calibration.get_calibrated_weights().
     """
     return run_rookie_pipeline_staged(
         draft_year,
@@ -1870,13 +2010,41 @@ def run_rookie_pipeline(
     )
 
 
-def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
+def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False) -> List[Dict[str, Any]]:
     """
     Fetch persisted rankings from the database.  Returns an empty list if no
     data exists for the requested year — does not auto-run the pipeline.
+
+    Priority: Model values table > rookie_rankings table > calculated values
+
+    filter_undrafted: when True, exclude prospects where draft_confirmed IS NOT TRUE
+                      (used after the NFL draft ends to hide players who went undrafted).
     """
     # Ensure draft_year is an integer
     draft_year = int(draft_year)
+    
+    # First, check if player exists in model values table
+    model_values = {}
+    try:
+        from utils.utils import load_model_value_table
+        model_table = load_model_value_table() or []
+        for player in model_table:
+            player_id = str(player.get('id'))
+            if player_id:
+                model_values[player_id] = {
+                    "rookie_value": float(player.get('value', 0)),
+                    "rookie_sf_value": float(player.get('sf_value', player.get('value', 0))),
+                    "rookie_value_8": float(player.get('value_8', player.get('value', 0))),
+                    "rookie_value_12": float(player.get('value_12', player.get('value', 0))),
+                    "rookie_value_14": float(player.get('value_14', player.get('value', 0))),
+                    "rookie_sf_value_8": float(player.get('sf_value_8', player.get('sf_value', player.get('value', 0)))),
+                    "rookie_sf_value_12": float(player.get('sf_value_12', player.get('sf_value', player.get('value', 0)))),
+                    "rookie_sf_value_14": float(player.get('sf_value_14', player.get('sf_value', player.get('value', 0)))),
+                }
+        print(f"[get_rookie_rankings] Found {len(model_values)} players in model values table")
+    except Exception as e:
+        print(f"[get_rookie_rankings] Could not load model values: {e}")
+    
     if _db_available():
         try:
             from dashboard_services.db import get_conn
@@ -1889,6 +2057,7 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                             rp.name, rp.position, rp.school, rp.age,
                             rp.height_inches, rp.weight_lbs,
                             rp.early_declare, rp.transfer_history,
+                            rp.headshot_url,
                             rr.overall_rank, rr.position_rank,
                             rr.prospect_score, rr.rookie_value, rr.rookie_sf_value,
                             rr.rookie_value_8, rr.rookie_value_12, rr.rookie_value_14,
@@ -1901,15 +2070,18 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
                             rmc.projected_round, rmc.projected_pick,
                             rmc.projected_pick_low, rmc.projected_pick_high,
                             rmc.num_mocks_used, rmc.consensus_confidence,
-                            rpa.forty_yard, rpa.ras_score
+                            rpa.forty_yard, rpa.ras_score,
+                            pv.rank_change_7d
                         FROM   rookie_rankings rr
                         JOIN   rookie_prospects rp  ON rp.player_id = rr.player_id
                         LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
                         LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
+                        LEFT   JOIN player_values pv ON pv.player_id = rp.sleeper_id
                         WHERE  rr.draft_class_year = %s
+                          AND  (%s = FALSE OR rp.draft_confirmed = TRUE)
                         ORDER  BY rr.overall_rank
                         """,
-                        (draft_year,),
+                        (draft_year, filter_undrafted),
                     )
                     rows = cur.fetchall()
 
@@ -1918,9 +2090,9 @@ def get_rookie_rankings_from_db(draft_year: int) -> List[Dict[str, Any]]:
 
             print(f"[pipeline] No rankings in DB for draft_year={draft_year}")
             return []
-
         except Exception as exc:
-            print(f"[pipeline] DB read failed: {exc}")
+            print(f"[pipeline] Error loading rankings: {exc}")
+            return []
 
     return []
 

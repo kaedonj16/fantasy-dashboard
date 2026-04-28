@@ -2,6 +2,8 @@
 Update player_values table with current rankings and save to player_value_history.
 """
 
+from __future__ import annotations
+
 import os
 from datetime import date, timedelta
 from typing import List, Dict, Any
@@ -9,6 +11,32 @@ import pandas as pd
 
 from utils.utils import load_model_value_table
 from data_building.save_player_values import save_daily_values_to_db
+
+
+def _load_fc_redraft_values() -> dict[str, tuple[float | None, float | None]]:
+    """
+    Build a sleeper_id → (redraft_value_1qb, redraft_value_sf) map from the
+    latest FantasyCalc CSV.  FC only exposes one redraft value per API call
+    (1QB by default), so redraft_value_sf is populated from a separate scrape
+    when available; otherwise we reuse the 1QB value as a placeholder.
+    """
+    try:
+        from data_building.external_data.external_values_scraper import load_fantasycalc_api_values
+        rows = load_fantasycalc_api_values() or []
+        result: dict[str, tuple[float | None, float | None]] = {}
+        for row in rows:
+            sid = str(row.get("sleeper_id") or "").strip()
+            if not sid:
+                continue
+            try:
+                v1 = float(row["redraft_value"]) if row.get("redraft_value") not in (None, "", "None") else None
+            except (TypeError, ValueError):
+                v1 = None
+            result[sid] = (v1, v1)  # sf placeholder = 1qb until SF scrape added
+        return result
+    except Exception as e:
+        print(f"[update_player_values] Could not load FC redraft values: {e}")
+        return {}
 
 
 def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
@@ -102,13 +130,32 @@ def update_player_values_with_rankings() -> int:
 
     # Add rankings to each player
     df['overall_rank'] = df['value'].rank(ascending=False, method='min')
-    df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
+    # Load calibration overrides to get calibrated values for ranking
+    try:
+        from dashboard_services.player_value_history import load_calibration_overrides
+        calibration_overrides = load_calibration_overrides()
+        
+        # Create calibrated value column for ranking
+        df['calibrated_value'] = df['id'].apply(lambda x: calibration_overrides.get(str(x), {}).get('value', df.loc[df['id'] == x, 'value'].iloc[0]))
+        
+        # Calculate position rank based on calibrated values
+        df['pos_rank'] = df.groupby('position')['calibrated_value'].rank(ascending=False, method='min')
+        
+        print("[update_player_values] Position ranks calculated based on calibrated values")
+    except Exception as e:
+        print(f"[update_player_values] Failed to load calibrated values for ranking: {e}")
+        # Fallback to raw values if calibration fails
+        df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
+        print("[update_player_values] Position ranks calculated based on raw values (fallback)")
 
     # Apply smoothing to reduce steep drop-offs
     df_smoothed = apply_smoothing(df)
 
     # Load historical ranks from 7 days ago for movement indicators
     hist_ranks = _load_historical_ranks(date.today() - timedelta(days=7))
+
+    # Load FC redraft values (sleeper_id → (1qb, sf))
+    fc_redraft = _load_fc_redraft_values()
 
     # Convert back to list of dicts
     updated_players = []
@@ -121,6 +168,7 @@ def update_player_values_with_rankings() -> int:
         rank_change_7d = (hist['overall_rank'] - cur_overall) if hist else None
         pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
 
+        rd_1qb, rd_sf = fc_redraft.get(pid, (None, None))
         updated_players.append({
             'id': pid,
             'name': row['name'],
@@ -129,6 +177,8 @@ def update_player_values_with_rankings() -> int:
             'age': row['age'],
             'value': round(row['value'], 2),
             'sf_value': round(row['sf_value'], 2),
+            'redraft_value_1qb': rd_1qb,
+            'redraft_value_sf':  rd_sf,
             'overall_rank': cur_overall,
             'pos_rank': cur_pos,
             'pos_rank_label': f"{row['position']}{cur_pos}",

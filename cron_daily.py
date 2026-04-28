@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import gc
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -309,8 +310,10 @@ def main():
             print("[cron] Vendor + usage data already fresh today, skipping build_daily_data")
         else:
             build_daily_data(season, week)
+        gc.collect()
 
         build_daily_advanced_metrics()
+        gc.collect()
 
         from data_building.build_daily_value_table import build_daily_model_values
         from utils.utils import load_model_value_table
@@ -320,6 +323,7 @@ def main():
             print("[cron] Model values already built today, skipping")
         else:
             build_daily_model_values()
+        gc.collect()
 
         value_table = load_model_value_table()
         if not value_table:
@@ -335,9 +339,14 @@ def main():
             if value_count < expected_count * 0.8:
                 send_database_save_notification(value_count, expected_count)
 
+        del value_table
+        gc.collect()
+
         # build_daily_market_pulse()
         build_daily_breakout_candidates(season, week, state)
+        gc.collect()
         build_weekly_rookie_data(state)
+        gc.collect()
 
         try:
             from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
@@ -371,8 +380,17 @@ def main():
             if _wls_fresh():
                 print("[cron] WLS calibration already ran today, skipping")
             else:
-                wls_result = run_trade_value_model(season=season)
-                print(f"[cron] Trade value model (WLS): {wls_result}")
+                # Run WLS for all 8 combinations: 2 league types × 4 sizes.
+                # Dynasty 10-team runs first (writes pick values + calibration_source).
+                for _lt, _lt_name in ((2, "dynasty"), (1, "redraft")):
+                    for _sz in (10, 8, 12, 14):
+                        try:
+                            _res = run_trade_value_model(
+                                season=season, league_type=_lt, league_size=_sz
+                            )
+                            print(f"[cron] WLS {_lt_name} {_sz}-team: {_res}")
+                        except Exception as _wls_sz_err:
+                            print(f"[cron] WLS {_lt_name} {_sz}-team failed (non-fatal): {_wls_sz_err}")
 
             # Always write calibrated values to history (covers re-runs and first run)
             cal_n = record_calibrated_history_snapshot()

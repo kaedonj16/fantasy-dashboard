@@ -109,25 +109,72 @@ def record_calibrated_history_snapshot() -> int:
     """
     from datetime import date
     from dashboard_services.db import get_conn
-    from utils.utils import load_players_index
+    from utils.utils import load_players_index, load_model_value_table
 
     today = date.today().isoformat()
-    
-    # Load players index to get player names
-    players_index = load_players_index() or {}
+
+    # Build id -> name map: model table first (has picks + all players), then players_index fallback
+    name_map: dict = {}
+    try:
+        mv = load_model_value_table(apply_calibration=False) or []
+        for p in mv:
+            pid = str(p.get("id") or "")
+            nm = p.get("name") or ""
+            if pid and nm and nm != "Unknown":
+                name_map[pid] = nm
+    except Exception:
+        pass
+    # Fill gaps with players_index
+    try:
+        players_index = load_players_index() or {}
+        for pid, info in players_index.items():
+            if pid not in name_map:
+                nm = (info or {}).get("name") or ""
+                if nm:
+                    name_map[str(pid)] = nm
+    except Exception:
+        pass
 
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                player_id,
-                position,
-                team,
-                COALESCE(calibrated_value_1qb, value_1qb) AS value
-            FROM player_values
-            WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
-            """
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    team,
+                    COALESCE(calibrated_value_1qb, value_1qb)               AS value,
+                    COALESCE(calibrated_value_sf,  value_sf)                AS value_sf,
+                    COALESCE(calibrated_value_8,   value_8,  value_1qb)     AS value_8,
+                    COALESCE(calibrated_value_12,  value_12, value_1qb)     AS value_12,
+                    COALESCE(calibrated_value_14,  value_14, value_1qb)     AS value_14,
+                    COALESCE(calibrated_sf_value_8,  sf_value_8,  value_sf) AS sf_value_8,
+                    COALESCE(calibrated_sf_value_12, sf_value_12, value_sf) AS sf_value_12,
+                    COALESCE(calibrated_sf_value_14, sf_value_14, value_sf) AS sf_value_14
+                FROM player_values
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+                """
+            ).fetchall()
+        except Exception:
+            # Fallback if calibrated_value_8 columns haven't been migrated yet
+            rows = conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    team,
+                    COALESCE(calibrated_value_1qb, value_1qb)   AS value,
+                    COALESCE(calibrated_value_sf,  value_sf)    AS value_sf,
+                    COALESCE(value_8,  value_1qb)               AS value_8,
+                    COALESCE(value_12, value_1qb)               AS value_12,
+                    COALESCE(value_14, value_1qb)               AS value_14,
+                    COALESCE(sf_value_8,  value_sf)             AS sf_value_8,
+                    COALESCE(sf_value_12, value_sf)             AS sf_value_12,
+                    COALESCE(sf_value_14, value_sf)             AS sf_value_14
+                FROM player_values
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
+                """
+            ).fetchall()
 
     if not rows:
         print("[record_calibrated_history_snapshot] No rows in player_values — skipping")
@@ -136,23 +183,39 @@ def record_calibrated_history_snapshot() -> int:
     written = 0
     with get_conn() as conn:
         for r in rows:
-            # Get player name from players_index
-            player_info = players_index.get(r["player_id"]) or {}
-            player_name = player_info.get("name", "Unknown")
-            
+            player_name = name_map.get(str(r["player_id"])) or f"Player {r['player_id']}"
             conn.execute(
                 """
                 INSERT INTO player_value_history
-                    (as_of_date, player_id, name, position, team, value, source)
-                VALUES (%s, %s, %s, %s, %s, %s, 'model')
+                    (as_of_date, player_id, name, position, team,
+                     value, value_sf, value_8, value_12, value_14,
+                     sf_value_8, sf_value_12, sf_value_14, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
                 ON CONFLICT (as_of_date, player_id, source)
                 DO UPDATE SET
-                    name     = EXCLUDED.name,
-                    value    = EXCLUDED.value,
-                    position = EXCLUDED.position,
-                    team     = EXCLUDED.team
+                    name        = EXCLUDED.name,
+                    value       = EXCLUDED.value,
+                    value_sf    = EXCLUDED.value_sf,
+                    value_8     = EXCLUDED.value_8,
+                    value_12    = EXCLUDED.value_12,
+                    value_14    = EXCLUDED.value_14,
+                    sf_value_8  = EXCLUDED.sf_value_8,
+                    sf_value_12 = EXCLUDED.sf_value_12,
+                    sf_value_14 = EXCLUDED.sf_value_14,
+                    position    = EXCLUDED.position,
+                    team        = EXCLUDED.team
                 """,
-                (today, r["player_id"], player_name, r["position"], r["team"], float(r["value"])),
+                (
+                    today, r["player_id"], player_name, r["position"], r["team"],
+                    float(r["value"] or 0),
+                    float(r["value_sf"] or 0),
+                    float(r["value_8"] or 0),
+                    float(r["value_12"] or 0),
+                    float(r["value_14"] or 0),
+                    float(r["sf_value_8"] or 0),
+                    float(r["sf_value_12"] or 0),
+                    float(r["sf_value_14"] or 0),
+                ),
             )
             written += 1
 

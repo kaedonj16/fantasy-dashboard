@@ -267,7 +267,7 @@ def build_trade_calculator_body(
 
               <div class="otc-summary-stats">
                 <div class="otc-stat-box">
-                  <div class="otc-stat-label">Team 1 Total</div>
+                  <div class="otc-stat-label">Team 1 Receives</div>
                   <div class="otc-stat-value" id="sideATotal">0.0</div>
                 </div>
                 <div class="otc-stat-box otc-stat-box-highlight">
@@ -275,7 +275,7 @@ def build_trade_calculator_body(
                   <div class="otc-stat-value" id="tradeDiff">0.0</div>
                 </div>
                 <div class="otc-stat-box">
-                  <div class="otc-stat-label">Team 2 Total</div>
+                  <div class="otc-stat-label">Team 2 Receives</div>
                   <div class="otc-stat-value" id="sideBTotal">0.0</div>
                 </div>
               </div>
@@ -351,7 +351,7 @@ def build_trade_calculator_body(
               align-items:center;
               padding:7px 12px;
               border-bottom:1px solid var(--border-color);
-              background:var(--bg-secondary, rgba(0,0,0,.03));
+              background:var(--bg-alt, rgba(0,0,0,.03));
             }}
             .stl-date {{ font-size:11px;color:var(--text-muted);font-weight:500; }}
             .stl-badges {{ display:flex;gap:4px;flex-wrap:wrap; }}

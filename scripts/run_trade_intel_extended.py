@@ -21,6 +21,8 @@ Arguments
     --hours N             Total hours to run (default 4).
     --no-discovery        Skip discovery, go straight to crawl.
     --analytics           Run analytics + WLS after all crawl batches complete.
+    --seed-usernames U …  Sleeper username(s) to bootstrap a fresh DB. Their
+                          dynasty leagues are inserted before discovery runs.
 """
 from __future__ import annotations
 
@@ -57,16 +59,26 @@ def main():
                         help="Crawl mode: 'new' (uncrawled leagues), 'existing' (re-crawl), 'both' (mixed). Default: new.")
     parser.add_argument("--recrawl-days",    type=int, default=7,
                         help="For 'existing' mode: only re-crawl leagues not crawled in X days. Default: 7.")
+    parser.add_argument("--seed-usernames",  nargs="+", default=[],
+                        metavar="USERNAME",
+                        help="One or more Sleeper usernames whose dynasty leagues are inserted "
+                             "as BFS seeds before discovery runs. Required on a fresh DB.")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
     load_dotenv()
 
-    from data_building.trade_intel.league_discovery import run_discovery
+    from data_building.trade_intel.league_discovery import bootstrap_from_usernames, run_discovery
     from data_building.trade_intel.trade_crawler import run_crawl
 
     deadline = _now() + timedelta(hours=args.hours)
     logger.info("Starting extended trade-intel run. Deadline: %s", deadline.strftime("%H:%M:%S"))
+
+    # ── Optional bootstrap from usernames ──────────────────────────────────
+    if args.seed_usernames:
+        logger.info("Bootstrapping from %d username(s): %s", len(args.seed_usernames), args.seed_usernames)
+        seeded = bootstrap_from_usernames(args.seed_usernames)
+        logger.info("Bootstrap complete: %d dynasty league(s) inserted as seeds.", seeded)
 
     # ── Discovery ──────────────────────────────────────────────────────────
     if not args.no_discovery and args.discover_target > 0:

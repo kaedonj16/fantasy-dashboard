@@ -25,8 +25,6 @@ import sys
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from utils.utils import read_json
-
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -474,6 +472,9 @@ def _run_draft_class_backtest(
             "col_ypa":            _sf("yds_per_attempt"),
             "col_td_int":         _sf("td_int_ratio"),
             "col_age_at_draft":   p.get("age"),
+            # Full dicts attached for ML training feature extraction
+            "_prospect":          p,
+            "_consensus":         consensus_map.get(pid, {}),
         }
         rows.append(row)
 
@@ -1098,10 +1099,274 @@ def _print_summary(all_rows: List[Dict]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# All-time top-10 tables
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
+    """
+    Print top-N across all tested classes, balanced and per position.
+
+    The "overall" table shows the top-N/4 from each position by model score
+    (i.e. top-3 per position for top_n=10, rounded up).  Raw cross-position
+    score comparison is misleading without CFBD data because draft capital
+    alone drives 30% of the score and WRs are systematically drafted earlier
+    than RBs/TEs — making busts like Jalen Reagor look better than any RB
+    in the class purely on pick number.
+
+    Uses PPR-per-season average for fair cross-year comparison.
+    """
+    with_nfl = [r for r in all_rows if r.get("ppr_cum", 0) > 0]
+    no_nfl   = [r for r in all_rows if r.get("ppr_cum", 0) == 0]
+
+    for r in with_nfl:
+        r["ppr_avg"] = round(r["ppr_cum"] / max(r.get("seasons_avail", 1), 1), 0)
+
+    header = (
+        f"  {'#':>2}  {'Year':>4}  {'Player':<24} {'Pos':>3}  {'Pick':>4}  "
+        f"{'Score':>5}  {'PPR-Y1':>6}  {'PPR-Y2':>6}  {'PPR/seas':>8}  {'Peak':>6}  Match"
+    )
+    divider = f"  {'─' * 95}"
+
+    def _match(model_rank: int, actual_rank: int) -> str:
+        delta = actual_rank - model_rank
+        if abs(delta) <= 2:
+            return f"≈ (Δ{delta:+d})"
+        elif delta > 0:
+            return f"↓ overrated  (actual #{actual_rank})"
+        else:
+            return f"↑ underrated (actual #{actual_rank})"
+
+    # ── Balanced overall top-N: pick ceiling(top_n / 4) from each position ──
+    per_pos = max(1, math.ceil(top_n / 4))
+    positions_ordered = ["WR", "RB", "QB", "TE"]
+
+    balanced: List[Dict] = []
+    for pos in positions_ordered:
+        pos_rows = sorted(
+            [r for r in with_nfl if r["position"] == pos],
+            key=lambda x: x["model_score"],
+            reverse=True,
+        )
+        balanced.extend(pos_rows[:per_pos])
+
+    # Sort the combined balanced list by model score for display
+    balanced_sorted = sorted(balanced, key=lambda x: x["model_score"], reverse=True)
+
+    by_actual_overall  = sorted(with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
+    actual_rank_overall = {r["name"]: i + 1 for i, r in enumerate(by_actual_overall)}
+
+    cfbd_pct = sum(1 for r in with_nfl if r.get("has_cfbd")) / max(len(with_nfl), 1) * 100
+
+    print(f"\n{'═' * 100}")
+    print(
+        f"  ALL-TIME TOP {per_pos} PER POSITION BY MODEL SCORE  "
+        f"(balanced; {len(balanced_sorted)} players shown)"
+    )
+    if cfbd_pct < 30:
+        print(
+            f"  ⚠  Only {cfbd_pct:.0f}% of players have CFBD college stats — scores are draft capital + "
+            f"athleticism only."
+        )
+        print(
+            f"     Without production data the model cannot separate busts from stars at the same pick."
+        )
+        print(
+            f"     Add CFBD_API_KEY to enable the full model (production, breakout, efficiency components)."
+        )
+    print(f"{'═' * 100}")
+    print(header)
+    print(divider)
+
+    for i, r in enumerate(balanced_sorted, 1):
+        ar = actual_rank_overall.get(r["name"], 999)
+        y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+        print(
+            f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
+            f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
+            f"{r['ppr_y1']:>6.0f}  {y2}  "
+            f"{r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}  "
+            f"{_match(i, ar)}"
+        )
+
+    # Players with high model score but no NFL data yet
+    no_nfl_top = sorted(no_nfl, key=lambda x: x["model_score"], reverse=True)[:3]
+    if no_nfl_top:
+        print(f"\n  (Players with high model score but no NFL data yet:)")
+        for r in no_nfl_top:
+            print(f"       {r['draft_year']}  {r['name']:<24} {r['position']:>3}  "
+                  f"#{r['draft_pick']:>3}  score={r['model_score']:.1f}")
+
+    # ── Per-position top-N ───────────────────────────────────────────────────
+    for pos in positions_ordered:
+        pos_with_nfl = [r for r in with_nfl if r["position"] == pos]
+        if not pos_with_nfl:
+            continue
+
+        by_model_pos  = sorted(pos_with_nfl, key=lambda x: x["model_score"], reverse=True)
+        by_actual_pos = sorted(pos_with_nfl, key=lambda x: x["ppr_avg"], reverse=True)
+        actual_rank_pos = {r["name"]: i + 1 for i, r in enumerate(by_actual_pos)}
+
+        print(f"\n{'═' * 100}")
+        print(f"  ALL-TIME TOP {top_n} {pos}s BY MODEL SCORE")
+        print(f"{'═' * 100}")
+        print(header)
+        print(divider)
+
+        for i, r in enumerate(by_model_pos[:top_n], 1):
+            ar = actual_rank_pos.get(r["name"], 999)
+            y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+            print(
+                f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
+                f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
+                f"{r['ppr_y1']:>6.0f}  {y2}  "
+                f"{r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}  "
+                f"{_match(i, ar)}"
+            )
+
+        # Show actual top-N for this position so you can compare who the model missed
+        print(f"\n  Actual top {top_n} {pos}s by PPR/season:")
+        print(f"  {'#':>2}  {'Year':>4}  {'Player':<24} {'Pick':>4}  {'Model#':>6}  {'PPR/seas':>8}  {'Peak':>6}")
+        print(f"  {'─' * 65}")
+        for i, r in enumerate(by_actual_pos[:top_n], 1):
+            model_pos_rank = next(
+                (j + 1 for j, x in enumerate(by_model_pos) if x["name"] == r["name"]), 999
+            )
+            delta = model_pos_rank - i
+            arrow = "≈" if abs(delta) <= 2 else ("↓" if delta > 0 else "↑")
+            print(
+                f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} #{r['draft_pick']:>3}  "
+                f"Model#{model_pos_rank:>3} {arrow}  {r['ppr_avg']:>8.0f}  {r['ppr_peak']:>6.0f}"
+            )
+
+    print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Save to DB
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _tier_from_score(score: float) -> int:
+    if score >= 88: return 1
+    if score >= 80: return 2
+    if score >= 70: return 3
+    if score >= 60: return 4
+    if score >= 50: return 5
+    return 6
+
+
+_TIER_LABELS = {
+    1: "Elite Prospect",
+    2: "High-End Starter",
+    3: "Solid Starter",
+    4: "Rotational",
+    5: "Depth/Developmental",
+    6: "Long Shot",
+}
+
+
+def save_grades_to_db(all_rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    """
+    Upsert all backtest rows into historical_prospect_grades.
+    Returns (written, failed).
+    """
+    import re as _re
+    try:
+        from dashboard_services.db import get_conn
+    except ImportError:
+        print("[backtest] WARNING: dashboard_services.db not available — skipping DB save")
+        return 0, 0
+
+    def _slug(name: str) -> str:
+        return _re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+
+    written = failed = 0
+    for r in all_rows:
+        name  = r.get("name", "")
+        pos   = r.get("position", "")
+        year  = r.get("draft_year", 0)
+        if not name or not pos or not year:
+            continue
+
+        hist_id = f"HIST_{year}_{_slug(name)}"
+        score   = float(r.get("model_score") or 0)
+        tier    = _tier_from_score(score)
+
+        payload = {
+            "player_id":             hist_id,
+            "name":                  name,
+            "position":              pos,
+            "draft_class_year":      year,
+            "school":                r.get("college") or None,
+            "prospect_score":        round(score, 2),
+            "tier":                  tier,
+            "tier_label":            _TIER_LABELS.get(tier, ""),
+            "overall_rank":          r.get("model_rank"),
+            "position_rank":         r.get("pos_rank"),
+            "production_score":      round(float(r.get("prod_score") or 0), 2),
+            "efficiency_score":      round(float(r.get("efficiency_score") or 0), 2),
+            "age_score":             round(float(r.get("age_score") or 0), 2),
+            "breakout_profile_score":round(float(r.get("breakout_score") or 0), 2),
+            "athleticism_score":     round(float(r.get("ath_score") or 0), 2),
+            "competition_score":     round(float(r.get("competition_score") or 0), 2),
+            "draft_capital_score":   round(float(r.get("dc_score") or 0), 2),
+            "confidence_score":      round(float(r.get("confidence_score") or 0), 2),
+            "actual_pick":           r.get("draft_pick") or None,
+            "actual_round":          None,
+            "actual_nfl_team":       None,
+            "headshot_url":          None,
+        }
+
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO historical_prospect_grades (
+                        player_id, name, position, draft_class_year, school,
+                        prospect_score, tier, tier_label, overall_rank, position_rank,
+                        production_score, efficiency_score, age_score,
+                        breakout_profile_score, athleticism_score,
+                        competition_score, draft_capital_score, confidence_score,
+                        actual_pick, actual_round, actual_nfl_team, headshot_url
+                    ) VALUES (
+                        %(player_id)s, %(name)s, %(position)s, %(draft_class_year)s, %(school)s,
+                        %(prospect_score)s, %(tier)s, %(tier_label)s, %(overall_rank)s, %(position_rank)s,
+                        %(production_score)s, %(efficiency_score)s, %(age_score)s,
+                        %(breakout_profile_score)s, %(athleticism_score)s,
+                        %(competition_score)s, %(draft_capital_score)s, %(confidence_score)s,
+                        %(actual_pick)s, %(actual_round)s, %(actual_nfl_team)s, %(headshot_url)s
+                    )
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        prospect_score          = EXCLUDED.prospect_score,
+                        tier                    = EXCLUDED.tier,
+                        tier_label              = EXCLUDED.tier_label,
+                        overall_rank            = EXCLUDED.overall_rank,
+                        position_rank           = EXCLUDED.position_rank,
+                        production_score        = EXCLUDED.production_score,
+                        efficiency_score        = EXCLUDED.efficiency_score,
+                        age_score               = EXCLUDED.age_score,
+                        breakout_profile_score  = EXCLUDED.breakout_profile_score,
+                        athleticism_score       = EXCLUDED.athleticism_score,
+                        competition_score       = EXCLUDED.competition_score,
+                        draft_capital_score     = EXCLUDED.draft_capital_score,
+                        confidence_score        = EXCLUDED.confidence_score,
+                        actual_pick             = EXCLUDED.actual_pick
+                    """,
+                    payload,
+                )
+                conn.commit()
+            written += 1
+        except Exception as e:
+            print(f"  [db] Failed to save {name}: {e}")
+            failed += 1
+
+    return written, failed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = True) -> List[Dict[str, Any]]:
     """
     Run the full backtest. Returns all result rows (one per draftee).
     """
@@ -1131,6 +1396,12 @@ def run_backtest(draft_years: Optional[List[int]] = None) -> List[Dict[str, Any]
         _print_positional_summary(all_rows)
         _print_benchmark_hit_rates(all_rows)
         _print_summary(all_rows)
+        _print_all_time_top10(all_rows, top_n=TOP_N_PER_CLASS)
+
+        if save_grades:
+            print(f"\n[backtest] Saving {len(all_rows)} grades to historical_prospect_grades…")
+            written, failed = save_grades_to_db(all_rows)
+            print(f"[backtest] Saved {written} rows" + (f" ({failed} failed)" if failed else "") + ".")
 
     return all_rows
 
@@ -1153,7 +1424,12 @@ if __name__ == "__main__":
         default="conservative",
         help="Benchmark boost profile to use during scoring (default: conservative)",
     )
+    parser.add_argument(
+        "--no-save-grades",
+        action="store_true",
+        help="Skip writing grades to historical_prospect_grades table",
+    )
     args = parser.parse_args()
     os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
     TOP_N_PER_CLASS = args.top_n
-    run_backtest(args.years)
+    run_backtest(args.years, save_grades=not args.no_save_grades)

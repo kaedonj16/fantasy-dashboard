@@ -328,6 +328,12 @@ def load_model_value_table(apply_calibration: bool = True):
                         _cal = overrides[_pid]
                         _p["value"]    = _cal["value"]
                         _p["sf_value"] = _cal["sf_value"]
+                        # Overlay size-specific calibrated values when available
+                        for _sz in (8, 12, 14):
+                            if f"value_{_sz}" in _cal:
+                                _p[f"value_{_sz}"]    = _cal[f"value_{_sz}"]
+                            if f"sf_value_{_sz}" in _cal:
+                                _p[f"sf_value_{_sz}"] = _cal[f"sf_value_{_sz}"]
 
                 # Recompute pos_rank / pos_rank_label after calibration changes values.
                 # The JSON ranks are based on raw model values; calibration can reorder

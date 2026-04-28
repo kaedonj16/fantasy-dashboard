@@ -53,6 +53,8 @@ CONFIGS = {
             'pass_block_rate': 'pass_block_rate',
             'grades_offense': 'grades_offense',
             'grades_pass_block': 'grades_pass_block',
+            'grades_pass_route': 'grades_pass_route',
+            'yprr': 'yprr',
             'explosive_runs_10_plus': 'explosive_runs_10_plus',
             'breakaway_percentage': 'breakaway_percentage',
             'elusive_rating': 'elusive_rating',
@@ -76,10 +78,10 @@ CONFIGS = {
 # ---------------------------------------------------------------------------
 
 def format_player_id(player_name: str) -> str:
-    """Format player name to ROOKIE_2025_NAME_SLUG format."""
+    """Format player name to ROOKIE_2026_NAME_SLUG format."""
     name_slug = re.sub(r'[^A-Z0-9]', '_', player_name.upper())
     name_slug = re.sub(r'_+', '_', name_slug).strip('_')
-    return f"ROOKIE_2025_{name_slug}"
+    return f"ROOKIE_2026_{name_slug}"
 
 
 def _convert(value: str, db_col: str):
@@ -93,7 +95,7 @@ def _convert(value: str, db_col: str):
 # Core import logic
 # ---------------------------------------------------------------------------
 
-def import_stats(stat_type: str, season: int = 2026, source: str = 'pff_college') -> bool:
+def import_stats(stat_type: str, season: int = 2025) -> bool:
     config = CONFIGS[stat_type]
     csv_file = config['csv']
     column_mapping = config['columns']
@@ -139,18 +141,18 @@ def import_stats(stat_type: str, season: int = 2026, source: str = 'pff_college'
                             continue
 
                         set_clauses = [f"{col} = %s" for col in update_data]
-                        values = list(update_data.values()) + [player_id, season, source]
+                        values = list(update_data.values()) + [player_id, season]
 
                         cursor.execute(
                             f"UPDATE rookie_prospect_source_data "
                             f"SET {', '.join(set_clauses)} "
-                            f"WHERE player_id = %s AND season = %s AND source = %s",
+                            f"WHERE player_id = %s AND season = %s AND source = 'cfbd'",
                             values,
                         )
 
                         if cursor.rowcount == 0:
                             insert_cols = ['player_id', 'season', 'source'] + list(update_data)
-                            insert_vals = [player_id, season, source] + list(update_data.values())
+                            insert_vals = [player_id, season, 'cfbd'] + list(update_data.values())
                             placeholders = ', '.join(['%s'] * len(insert_cols))
                             cursor.execute(
                                 f"INSERT INTO rookie_prospect_source_data "
@@ -190,15 +192,14 @@ def main():
         choices=['passing', 'receiving', 'rushing', 'all'],
         help='Stat type to import',
     )
-    parser.add_argument('--season', type=int, default=2026)
-    parser.add_argument('--source', default='pff_college')
+    parser.add_argument('--season', type=int, default=2025)
     args = parser.parse_args()
 
     types = list(CONFIGS.keys()) if args.type == 'all' else [args.type]
     success = True
     for t in types:
         print(f"\nImporting {t} stats...")
-        if not import_stats(t, season=args.season, source=args.source):
+        if not import_stats(t, season=args.season):
             success = False
 
     sys.exit(0 if success else 1)

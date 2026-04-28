@@ -9,7 +9,7 @@ smooth progression rather than a step-function jump.
 Usage
 -----
     # Smooth everything (default alpha=0.55, gentler than the daily 0.70)
-    python -m data_building.smooth_value_history
+    python3 -m data_building.smooth_value_history
 
     # Stronger smoothing (lower alpha = more weight on history)
     python -m data_building.smooth_value_history --alpha 0.35
