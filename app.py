@@ -9203,19 +9203,24 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             for r in season_rosters
         }
 
-        # df_weekly has roster_id column — use it to get user_id per row
+        # df_weekly has roster_id column — use it as the stable team key.
+        # Team names can collide in larger leagues, which can hide/merge users.
         has_roster_id = "roster_id" in df.columns
+        df_for_stats = df
         if has_roster_id:
-            df = df.copy()
-            df["user_id"] = df["roster_id"].astype(str).map(roster_to_uid).fillna("")
+            df_for_stats = df.copy()
+            df_for_stats["owner"] = df_for_stats["roster_id"].astype(str)
 
         mock_league = ctx.get("league") or {}
-        ts = build_regular_season_team_stats(df, mock_league)
+        ts = build_regular_season_team_stats(df_for_stats, mock_league)
 
         for _, row in ts.iterrows():
-            owner = str(row.get("owner", "Unknown"))
-            # Map team_name → user_id; fall back to team_name if no mapping
-            uid = name_to_uid.get(owner) or owner
+            owner_key = str(row.get("owner", "Unknown"))
+            if has_roster_id:
+                uid = roster_to_uid.get(owner_key) or owner_key
+            else:
+                # Fallback path when roster_id is unavailable.
+                uid = name_to_uid.get(owner_key) or owner_key
             if uid not in career_owners:
                 career_owners[uid] = {
                     "Wins": 0, "Losses": 0, "Ties": 0,
@@ -9230,14 +9235,19 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             career_owners[uid]["seasons"] += 1
 
         # Collect weekly scores per user_id
+        sub_cols = ["owner", "points"] + (["roster_id"] if "roster_id" in df.columns else [])
         if {"owner", "points", "finalized"}.issubset(df.columns):
-            sub = df[df["finalized"] == True][["owner", "points"]].copy()
+            sub = df[df["finalized"] == True][sub_cols].copy()
         elif {"owner", "points"}.issubset(df.columns):
-            sub = df[["owner", "points"]].copy()
+            sub = df[sub_cols].copy()
         else:
             sub = pd.DataFrame()
-        for owner, grp in sub.groupby("owner"):
-            uid = name_to_uid.get(str(owner)) or str(owner)
+        group_col = "roster_id" if has_roster_id and "roster_id" in sub.columns else "owner"
+        for owner_key, grp in sub.groupby(group_col):
+            if group_col == "roster_id":
+                uid = roster_to_uid.get(str(owner_key)) or str(owner_key)
+            else:
+                uid = name_to_uid.get(str(owner_key)) or str(owner_key)
             career_owners.setdefault(uid, {
                 "Wins": 0, "Losses": 0, "Ties": 0,
                 "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
