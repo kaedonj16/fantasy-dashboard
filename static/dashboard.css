@@ -12952,18 +12952,41 @@ img, svg, canvas {
    AWARDS PAGE ENHANCEMENTS
    ============================================ */
 
-/* Fun Awards + Championship History two-column row */
+/* Hall of Legends + Championship History two-column row */
 .awards-two-col {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 .awards-two-col > .card {
   flex: 1 1 0;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Championship history: scrollable body that fills remaining card height */
+.champ-history-card {
+  min-height: 0;
+}
+.champ-history-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.champ-history-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 @media (max-width: 900px) {
-  .awards-two-col { flex-direction: column; }
+  .awards-two-col {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .champ-history-body { overflow: visible; }
+  .champ-history-scroll { overflow-y: visible; }
 }
 
 /* Win% progress bar in standings table */
@@ -13006,10 +13029,10 @@ img, svg, canvas {
   margin-bottom: 2px;
 }
 
-/* Fun Awards grid */
+/* Hall of Legends grid — always 2×2 */
 .fun-awards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
 
@@ -13078,7 +13101,6 @@ img, svg, canvas {
 
 @media (max-width: 700px) {
   .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
-  .fun-awards-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 480px) {
   .awards-records-grid { grid-template-columns: 1fr !important; }

@@ -9382,10 +9382,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         </tr>"""
 
     champ_table = f"""
-    <div class="card">
+    <div class="card champ-history-card">
       <div class="card-header"><h2>Championship History</h2></div>
-      <div class="card-body" style="padding-top:0;">
-        <div class="history-table-wrap">
+      <div class="card-body champ-history-body" style="padding-top:0;">
+        <div class="history-table-wrap champ-history-scroll">
           <table class="history-table">
             <thead><tr><th>Season</th><th>Champion</th><th>Record</th><th>Runner-Up</th></tr></thead>
             <tbody>{champ_rows_html}</tbody>
@@ -9445,7 +9445,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Most Seasons",
             html.escape(str(most_seasons_row["display_name"])),
             f"{int(most_seasons_row['Seasons'])} seasons played",
-            '<img src="/static/images/calendar-days-solid.png" style="width:18px;height:18px;opacity:0.75;" alt="">',
+            '<i class="fa-solid fa-calendar-days"></i>',
         )
 
     # Most points, no ring
@@ -9456,7 +9456,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Most Points, No Ring",
             html.escape(str(unlucky_row["display_name"])),
             f"{unlucky_row['PF']:,.1f} career points",
-            '<img src="/static/images/heart-crack-solid.png" style="width:18px;height:18px;opacity:0.75;" alt="">',
+            '<i class="fa-solid fa-heart-crack"></i>',
         )
 
     highlights_section = ""
@@ -9486,7 +9486,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
         fun_awards_html += _fun_award(
             "The Bridesmaid",
-            '<img src="/static/images/ring-solid.png" style="width:28px;height:28px;opacity:0.8;" alt="">',
+            '<i class="fa-solid fa-ring" style="font-size:1.4rem;"></i>',
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
             "#a78bfa",
@@ -9509,7 +9509,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
         fun_awards_html += _fun_award(
             "The Punching Bag",
-            '<img src="/static/images/dumbbell-solid.png" style="width:28px;height:28px;opacity:0.7;" alt="">',
+            '<i class="fa-solid fa-dumbbell" style="font-size:1.4rem;"></i>',
             html.escape(str(punching_bag_row["display_name"])),
             f"{punching_bag_row['PA']:,.1f} points allowed",
             "#94a3b8",
@@ -9531,7 +9531,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     if fun_awards_html:
         fun_awards_section = f"""
     <div class="card">
-      <div class="card-header"><h2>Fun Awards</h2></div>
+      <div class="card-header"><h2>Hall of Legends</h2></div>
       <div class="card-body">
         <div class="fun-awards-grid">{fun_awards_html}</div>
       </div>
