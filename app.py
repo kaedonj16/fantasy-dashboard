@@ -3735,28 +3735,33 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
     """
     Multi-for-one adjustment:
 
-    - Only uses *player* values (ignores picks entirely).
-    - Gives a bonus to the side getting FEWER players, scaled by:
-        * gap in player value
-        * how much of that side is tied up in its best player ("stud")
-        * how many extra pieces the other side is sending
-    - Adjustment is added on top of raw_total (which can still include picks).
+    - Counts total assets (players + picks) on each side.
+    - Gives a bonus to the side with FEWER total assets, scaled by:
+        * gap in player value between the stud and the opponent's best player
+        * how much of that side is concentrated in its best player ("stud")
+        * how many extra pieces the other side is sending (including picks)
+    - Adjustment is added on top of raw_total.
     """
 
     vals_a = side_a.get("player_values", []) or []
     vals_b = side_b.get("player_values", []) or []
-    n_a, n_b = len(vals_a), len(vals_b)
+    picks_a = len(side_a.get("pick_ids", []) or [])
+    picks_b = len(side_b.get("pick_ids", []) or [])
 
-    # No players, or same number of players → no adjustment.
-    if n_a == 0 or n_b == 0 or n_a == n_b:
+    # Total assets (players + picks) on each side
+    assets_a = len(vals_a) + picks_a
+    assets_b = len(vals_b) + picks_b
+
+    # No assets on either side, or same total asset count → no adjustment.
+    if assets_a == 0 or assets_b == 0 or assets_a == assets_b:
         side_a["effective_total"] = side_a["raw_total"]
         side_b["effective_total"] = side_b["raw_total"]
         side_a["adjustment"] = 0.0
         side_b["adjustment"] = 0.0
         return
 
-    # Decide which side is consolidating (fewer players)
-    if n_a < n_b:
+    # Decide which side is consolidating (fewer total assets)
+    if assets_a < assets_b:
         fewer = side_a
         more = side_b
         fewer_is_a = True
@@ -3768,11 +3773,11 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
     fewer_vals = fewer.get("player_values", []) or []
     more_vals = more.get("player_values", []) or []
 
-    # Player-only totals (picks are ignored here on purpose)
+    # Player-only totals (picks excluded from gap calc)
     fewer_players_total = float(fewer.get("raw_players_total", 0.0) or 0.0)
     more_players_total = float(more.get("raw_players_total", 0.0) or 0.0)
 
-    # Safety guard
+    # Safety guard — need at least one player on the consolidating side
     if not fewer_vals or fewer_players_total <= 0:
         side_a["effective_total"] = side_a["raw_total"]
         side_b["effective_total"] = side_b["raw_total"]
@@ -3780,42 +3785,35 @@ def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
         side_b["adjustment"] = 0.0
         return
 
-    extra_pieces = max(len(more_vals) - len(fewer_vals), 0)
-    if extra_pieces <= 0:
-        # Shouldn't happen given earlier check, but be safe
-        side_a["effective_total"] = side_a["raw_total"]
-        side_b["effective_total"] = side_b["raw_total"]
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = 0.0
-        return
+    # Extra pieces = total asset count difference (players + picks)
+    extra_pieces = abs(assets_a - assets_b)
 
     # How big is the stud relative to the consolidating side?
     stud_val = max(fewer_vals)
     stud_share = stud_val / max(fewer_players_total, 1.0)  # 0–1
     stud_share = max(0.0, min(stud_share, 1.0))
 
-    # Gap in *player* value between sides
+    # Gap in player value between the two sides
     player_gap = abs(more_players_total - fewer_players_total)
 
     # --- Adjustment recipe ---
     # 1. Base from player_gap, scaled heavier when stud dominates the side.
-    #    (about 30–70% of the player gap)
-    base_from_gap = player_gap * (0.30 + 0.40 * stud_share)
+    base_from_gap = player_gap * (0.35 + 0.45 * stud_share)
 
-    # 2. Extra multiplier for more pieces; 1 extra piece ~0.4, 2 ~0.6, 3+ ~0.8
-    piece_factor = 0.4 + 0.2 * min(extra_pieces, 3)
+    # 2. Extra multiplier per extra piece: 1 extra ~0.55, 2 ~0.75, 3+ ~0.90
+    piece_factor = 0.55 + 0.20 * min(extra_pieces - 1, 2)
 
     raw_adj = base_from_gap * piece_factor
 
-    # 3. Caps: at most 75% of the stud value, or 50% of the consolidating
+    # 3. Caps: at most 80% of the stud value, or 55% of the consolidating
     #    side's total player value — whichever is smaller.
-    cap_stud = 0.75 * stud_val
-    cap_side = 0.50 * fewer_players_total
+    cap_stud = 0.80 * stud_val
+    cap_side = 0.55 * fewer_players_total
     adj_cap = max(0.0, min(cap_stud, cap_side))
 
     adj = min(raw_adj, adj_cap)
 
-    # Apply to fewer-players side only; picks stay baked into raw_total
+    # Apply to the consolidating (fewer-asset) side only
     if fewer_is_a:
         side_a["adjustment"] = adj
         side_b["adjustment"] = 0.0
@@ -10996,6 +10994,39 @@ def api_league_players():
 
     except Exception as _e:
         print(f"[api/league-players] rookies skipped: {_e}")
+
+    # QB depth decay for 1QB value: calibration inflates bench QB values that
+    # have minimal real dynasty worth beyond the starter tier.
+    _QB_DECAY = [
+        (12,  1.00),
+        (18,  0.82),
+        (24,  0.65),
+        (36,  0.45),
+        (48,  0.32),
+        (9999, 0.22),
+    ]
+    for _p in model_value_table:
+        if str(_p.get("position") or "").upper() == "QB":
+            _qb_rank = int(_p.get("pos_rank") or 999)
+            for _thresh, _factor in _QB_DECAY:
+                if _qb_rank <= _thresh:
+                    if _factor < 1.0:
+                        _p["value"] = round(float(_p.get("value") or 0) * _factor, 1)
+                    break
+
+    # Recompute pos_rank / pos_rank_label from current (calibrated) values so
+    # the sidebar always shows ranks that match the value-sorted order.
+    from collections import defaultdict as _dd_prl
+    _pos_groups: dict = _dd_prl(list)
+    for _i, _p in enumerate(model_value_table):
+        _pos = str(_p.get("position") or "").upper()
+        if _pos and _pos != "PICK":
+            _pos_groups[_pos].append(_i)
+    for _pos, _idxs in _pos_groups.items():
+        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
+        for _rank, _i in enumerate(_idxs, 1):
+            model_value_table[_i]["pos_rank"] = _rank
+            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
 
     # Sort players: first by value (descending), then by pos_rank (ascending for ties)
     model_value_table.sort(key=lambda p: (
