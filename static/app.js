@@ -7440,7 +7440,15 @@ function setupFunAwardsGrid() {
 
   if (itemCount === 0) return;
   
-  const columns = Math.ceil(itemCount / 2);
+  // Check if mobile (screen width <= 768px)
+  const isMobile = window.innerWidth <= 768;
   
-  funAwardsGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+  if (isMobile) {
+    // Single column on mobile
+    funAwardsGrid.style.gridTemplateColumns = '1fr';
+  } else {
+    // Calculate optimal columns: ceil(items / 2) for exactly 2 rows on desktop
+    const columns = Math.ceil(itemCount / 2);
+    funAwardsGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+  }
 }
