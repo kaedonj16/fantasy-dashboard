@@ -154,7 +154,7 @@ CACHE_TTL = 60 * 60 * 6  # 6 hours
 VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
 
 # How long to cache rendered page HTML (Teams, Activity, Graphs) per league
-PAGE_HTML_TTL = 60  # seconds; bump if you want
+PAGE_HTML_TTL = 60 * 10  # 10 minutes
 
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
@@ -745,6 +745,23 @@ def store_page_html(platform: str, season: int, league_id: str, page: str, html:
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
     pages = entry.setdefault("page_html", {})
     pages[page] = (time.time(), html)
+
+def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
+    entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+    if not entry:
+        return None
+    rec = entry.get("awards_agg")
+    if not rec:
+        return None
+    ts, payload = rec
+    if time.time() - ts > PAGE_HTML_TTL:
+        return None
+    return payload
+
+
+def store_awards_agg(platform: str, season: int, league_id: str, payload) -> None:
+    entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+    entry["awards_agg"] = (time.time(), payload)
 
 
 # -------- global NFL data caches (shared across leagues) --------
@@ -9138,6 +9155,10 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
       user_id_to_name – dict user_id -> latest display name (for rendering)
     Keyed by user_id (stable) rather than team name (changes across seasons).
     """
+    cached = get_awards_agg_from_cache(platform, season, league_id)
+    if cached is not None:
+        return cached
+
     available = get_available_history_seasons(platform, league_id, season)
     career_owners: dict = {}
     championships: dict = {}
@@ -9182,19 +9203,24 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             for r in season_rosters
         }
 
-        # df_weekly has roster_id column — use it to get user_id per row
+        # df_weekly has roster_id column — use it as the stable team key.
+        # Team names can collide in larger leagues, which can hide/merge users.
         has_roster_id = "roster_id" in df.columns
+        df_for_stats = df
         if has_roster_id:
-            df = df.copy()
-            df["user_id"] = df["roster_id"].astype(str).map(roster_to_uid).fillna("")
+            df_for_stats = df.copy()
+            df_for_stats["owner"] = df_for_stats["roster_id"].astype(str)
 
         mock_league = ctx.get("league") or {}
-        ts = build_regular_season_team_stats(df, mock_league)
+        ts = build_regular_season_team_stats(df_for_stats, mock_league)
 
         for _, row in ts.iterrows():
-            owner = str(row.get("owner", "Unknown"))
-            # Map team_name → user_id; fall back to team_name if no mapping
-            uid = name_to_uid.get(owner) or owner
+            owner_key = str(row.get("owner", "Unknown"))
+            if has_roster_id:
+                uid = roster_to_uid.get(owner_key) or owner_key
+            else:
+                # Fallback path when roster_id is unavailable.
+                uid = name_to_uid.get(owner_key) or owner_key
             if uid not in career_owners:
                 career_owners[uid] = {
                     "Wins": 0, "Losses": 0, "Ties": 0,
@@ -9209,14 +9235,19 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             career_owners[uid]["seasons"] += 1
 
         # Collect weekly scores per user_id
+        sub_cols = ["owner", "points"] + (["roster_id"] if "roster_id" in df.columns else [])
         if {"owner", "points", "finalized"}.issubset(df.columns):
-            sub = df[df["finalized"] == True][["owner", "points"]].copy()
+            sub = df[df["finalized"] == True][sub_cols].copy()
         elif {"owner", "points"}.issubset(df.columns):
-            sub = df[["owner", "points"]].copy()
+            sub = df[sub_cols].copy()
         else:
             sub = pd.DataFrame()
-        for owner, grp in sub.groupby("owner"):
-            uid = name_to_uid.get(str(owner)) or str(owner)
+        group_col = "roster_id" if has_roster_id and "roster_id" in sub.columns else "owner"
+        for owner_key, grp in sub.groupby(group_col):
+            if group_col == "roster_id":
+                uid = roster_to_uid.get(str(owner_key)) or str(owner_key)
+            else:
+                uid = name_to_uid.get(str(owner_key)) or str(owner_key)
             career_owners.setdefault(uid, {
                 "Wins": 0, "Losses": 0, "Ties": 0,
                 "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
@@ -9314,7 +9345,9 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "closest_margin": float(summary.get("closest_margin") or 0),
         })
 
-    return available, career_owners, championships, season_records, user_id_to_name
+    payload = (available, career_owners, championships, season_records, user_id_to_name)
+    store_awards_agg(platform, season, league_id, payload)
+    return payload
 
 
 def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None, platform: str = "", season: int = 0, league_id: str = "", league_name: str = "") -> str:
@@ -9719,6 +9752,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
+    cached = get_page_html_from_cache(platform, season, league_id, "awards")
+    if cached:
+        return render_page("League Awards", league_id, "awards", cached, platform, season)
+
     available, career_owners, championships, season_records, user_id_to_name = \
         _collect_all_season_data(platform, league_id, season)
 
@@ -9734,6 +9771,7 @@ def page_awards(platform: str, season: int, league_id: str):
             </div>
           </div>
         </div>"""
+        store_page_html(platform, season, league_id, "awards", body_html)
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
     try:
@@ -9745,6 +9783,7 @@ def page_awards(platform: str, season: int, league_id: str):
         career_owners, championships, season_records, user_id_to_name,
         platform=platform, season=season, league_id=league_id, league_name=_league_name,
     )
+    store_page_html(platform, season, league_id, "awards", body_html)
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
@@ -9766,6 +9805,12 @@ def page_history(platform: str, season: int, league_id: str):
         except Exception as exc:
             body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
         return render_page("League History", league_id, "history", body_html, platform, season)
+
+    selected_history_season_param = request.args.get("history_season")
+    page_cache_key = f"history:{selected_history_season_param}" if selected_history_season_param else "history"
+    cached = get_page_html_from_cache(platform, season, league_id, page_cache_key)
+    if cached:
+        return render_page("League History", league_id, "history", cached, platform, season)
 
     available_seasons = get_available_history_seasons(platform, league_id, season)
 
@@ -9821,6 +9866,7 @@ def page_history(platform: str, season: int, league_id: str):
         selected_history_season=selected_history_season,
         resolved_history_league_id=resolved_history_league_id,
     )
+    store_page_html(platform, season, league_id, page_cache_key, body_html)
 
     return render_page(
         "League History",
