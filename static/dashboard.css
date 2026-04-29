@@ -344,7 +344,7 @@ ul {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr) 340px;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   overflow-x: hidden;
 }
 
@@ -352,6 +352,25 @@ ul {
   min-width: 0;
   width: 100%;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.os-col-fill {
+  flex-grow: 1;
+  margin-bottom: 0;
+}
+
+.os-right-col > .os-sidebar-shell {
+  margin-bottom: 18px;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.os-sidebar-shell > .card {
+  flex-grow: 1;
+  margin-bottom: 0;
 }
 
 .otc-layout {
@@ -366,7 +385,7 @@ ul {
   display: flex;
   gap: 16px;
   margin: 10px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .overview-main {
@@ -1487,7 +1506,7 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   overflow: auto;
   max-width: 320px;
   width: 320px !important;
-  max-height: calc(100vh - 120px);
+  max-height: unset;
   min-height: 400px;
 }
 
@@ -4740,7 +4759,7 @@ thead th {
 
 .os-waiver-row {
   align-items: center;
-  padding: 14px 16px;
+  padding: 8px 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--row);
@@ -4775,7 +4794,7 @@ thead th {
 
 .os-waiver-right {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
   gap: 5px;
   flex-shrink: 0;
@@ -6332,6 +6351,12 @@ thead th {
   flex: 0 0 280px;
 }
 
+.overview-sidebar > .card:last-child,
+.overview-sidebar-left > .card:last-child {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .p {
   display: flex;
   align-items: center;
@@ -6915,8 +6940,10 @@ thead th {
 .team-panels {
   flex: 1;
   position: relative;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  max-height: 1134pxgit add .;
 }
 
 .team-row {
