@@ -3081,6 +3081,9 @@ window.initPageRoot = function initPageRoot(root = document) {
   if (recapPageExists(root)) {
     initRecapPage(root);
   }
+  
+  // Setup fun awards grid if present
+  setupFunAwardsGrid();
 };
 
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
@@ -4004,6 +4007,8 @@ document.addEventListener('DOMContentLoaded', function() {
           .then(data => {
             if (data.html) {
               awardsContent.innerHTML = data.html;
+              // Setup dynamic grid columns for fun awards
+              setupFunAwardsGrid();
             } else {
               awardsContent.innerHTML = '<div class="history-empty">Failed to load season awards.</div>';
             }
@@ -7424,4 +7429,18 @@ function closePickModal() {
 function toggleAnalyticsDraftTeam(header) {
   const teamElement = header.parentElement;
   teamElement.classList.toggle('collapsed');
+}
+
+function setupFunAwardsGrid() {
+  const funAwardsGrid = document.querySelector('.fun-awards-grid');
+  if (!funAwardsGrid) return;
+  
+  const items = funAwardsGrid.querySelectorAll('.fun-award-item');
+  const itemCount = items.length;
+
+  if (itemCount === 0) return;
+  
+  const columns = Math.ceil(itemCount / 2);
+  
+  funAwardsGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
 }

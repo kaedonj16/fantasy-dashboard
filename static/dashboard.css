@@ -13054,10 +13054,10 @@ img, svg, canvas {
   margin-bottom: 2px;
 }
 
-/* League Superlatives grid — 2 columns, any number of rows */
+/* League Superlatives grid — auto columns, exactly 2 rows */
 .fun-awards-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   align-content: start;
 }
