@@ -9445,7 +9445,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Most Seasons",
             html.escape(str(most_seasons_row["display_name"])),
             f"{int(most_seasons_row['Seasons'])} seasons played",
-            '<i class="fa-solid fa-calendar" style="color:#60a5fa;"></i>',
+            '<img src="/static/images/calendar-days-solid.png" style="width:18px;height:18px;opacity:0.75;" alt="">',
         )
 
     # Most points, no ring
@@ -9456,7 +9456,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Most Points, No Ring",
             html.escape(str(unlucky_row["display_name"])),
             f"{unlucky_row['PF']:,.1f} career points",
-            '<i class="fa-solid fa-heart-crack" style="color:#f87171;"></i>',
+            '<img src="/static/images/heart-crack-solid.png" style="width:18px;height:18px;opacity:0.75;" alt="">',
         )
 
     highlights_section = ""
@@ -9486,7 +9486,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
         fun_awards_html += _fun_award(
             "The Bridesmaid",
-            '<i class="fa-solid fa-ring" style="color:#a78bfa;"></i>',
+            '<img src="/static/images/ring-solid.png" style="width:28px;height:28px;opacity:0.8;" alt="">',
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
             "#a78bfa",
@@ -9509,7 +9509,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
         fun_awards_html += _fun_award(
             "The Punching Bag",
-            '<i class="fa-solid fa-dumbbell" style="color:#94a3b8;"></i>',
+            '<img src="/static/images/dumbbell-solid.png" style="width:28px;height:28px;opacity:0.7;" alt="">',
             html.escape(str(punching_bag_row["display_name"])),
             f"{punching_bag_row['PA']:,.1f} points allowed",
             "#94a3b8",
@@ -9541,9 +9541,11 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     <div class="overview-layout">
       <div class="overview-main">
         {highlights_section}
+        <div class="awards-two-col">
+          {fun_awards_section}
+          {champ_table}
+        </div>
         {standings_table}
-        {fun_awards_section}
-        {champ_table}
       </div>
     </div>"""
 

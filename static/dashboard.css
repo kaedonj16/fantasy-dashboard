@@ -12952,6 +12952,20 @@ img, svg, canvas {
    AWARDS PAGE ENHANCEMENTS
    ============================================ */
 
+/* Fun Awards + Championship History two-column row */
+.awards-two-col {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.awards-two-col > .card {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .awards-two-col { flex-direction: column; }
+}
+
 /* Win% progress bar in standings table */
 .winpct-bar {
   height: 4px;
