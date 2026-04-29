@@ -622,7 +622,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   var rkDraftYear = null;
   var rkDraftComplete = false;
   var rkCurrentPage = 1;
-  var RK_PER_PAGE = 20;
+  var RK_PER_PAGE = 50;
 
   function rkGetValue(r) {
     var key;

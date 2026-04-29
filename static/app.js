@@ -683,8 +683,8 @@ window.initTradePage = function initTradePage(root = document) {
       state.sideBPlayers = bIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
 
       // Load picks
-      state.sideAPicks = apIds.map(id => ({ id, display: id }));
-      state.sideBPicks = bpIds.map(id => ({ id, display: id }));
+      state.sideAPicks = apIds.map(id => ({ id, display: formatPickId(id) }));
+      state.sideBPicks = bpIds.map(id => ({ id, display: formatPickId(id) }));
 
       renderChips("A");
       renderChips("B");
@@ -1271,7 +1271,7 @@ window.initTradePage = function initTradePage(root = document) {
           .filter(p => p && typeof p === "object" && p.id != null)
           .map(normalizePlayerRow)
           .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
-        ...picks,
+        ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
       ].sort((a, b) => {
         const vb = Number(b.value || 0);
         const va = Number(a.value || 0);
@@ -1567,6 +1567,20 @@ window.initTradePage = function initTradePage(root = document) {
     recomputeTrade();
   }
 
+  function formatPickId(id) {
+    const parts = String(id).split("_");
+    if (parts.length < 3) return String(id).replaceAll("_", " ");
+    const year = parts[0];
+    const round = parseInt(parts[1], 10);
+    const third = parts.slice(2).join("_");
+    const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
+    const bucketLabel = { early: "Early", mid: "Mid", late: "Late" }[third];
+    if (bucketLabel) return `${year} ${round}${suffix} (${bucketLabel})`;
+    const slot = parseInt(third, 10);
+    if (!isNaN(slot)) return `${year} ${round}.${String(slot).padStart(2, "0")}`;
+    return String(id).replaceAll("_", " ");
+  }
+
   function openPickPrompt(side) {
     const raw = window.prompt(
       "Enter a pick in this format:\n2026_1_04\nor\n2026_1_early"
@@ -1577,11 +1591,12 @@ window.initTradePage = function initTradePage(root = document) {
     if (!cleaned) return;
 
     const picks = getSidePicks(side);
-    if (picks.find(p => p.id === cleaned)) return;
+    const isBucket = /_(early|mid|late)$/i.test(cleaned);
+    if (!isBucket && picks.find(p => p.id === cleaned)) return;
 
     picks.push({
       id: cleaned,
-      display: cleaned.replaceAll("_", " "),
+      display: formatPickId(cleaned),
     });
 
     saveState();
@@ -2332,7 +2347,8 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selected.find(x => String(x.id) === String(p.id))) {
             if (p.position === "PICK") {
               const picks = getSidePicks(side);
-              if (!picks.find(x => String(x.id) === String(p.id))) {
+              const isBucket = /_(early|mid|late)$/i.test(String(p.id));
+              if (isBucket || !picks.find(x => String(x.id) === String(p.id))) {
                 picks.push({ id: p.id, display: p.name });
               }
             } else {
