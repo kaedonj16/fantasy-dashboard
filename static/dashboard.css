@@ -12947,3 +12947,189 @@ img, svg, canvas {
   .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
   .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
 }
+
+/* ============================================
+   AWARDS PAGE ENHANCEMENTS
+   ============================================ */
+
+/* Cross-page nav link pill (awards ↔ history) */
+.awards-page-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #d6dfeb);
+  background: var(--card, #fff);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text, #1f2937);
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.06);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.awards-page-nav-link:hover {
+  background: var(--card-soft, #f8fafc);
+  box-shadow: 0 4px 14px rgba(15,23,42,0.10);
+  transform: translateY(-1px);
+}
+
+/* League Superlatives + Championship History two-column row */
+.awards-two-col {
+  grid-template-columns: 2fr 1fr;
+  display: grid;
+  gap: 16px;
+  align-items: stretch;
+}
+.awards-two-col > .card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Championship history: scrollable body that fills remaining card height */
+.champ-history-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.champ-history-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.champ-history-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .awards-two-col {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .champ-history-body { overflow: visible; }
+  .champ-history-scroll { overflow-y: visible; }
+}
+
+/* Win% progress bar in standings table */
+.winpct-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border, #e8eef6);
+  margin-top: 4px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.winpct-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* Plain rank badge for non-top-3 positions */
+.rank-plain {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+}
+
+/* Awards records grid — auto-fit for variable card count */
+.awards-records-grid {
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+/* Icon prefix inside a history-card */
+.history-card-icon {
+  font-size: 1.1rem;
+  padding-left: 10px;
+  margin-bottom: 2px;
+}
+
+/* League Superlatives grid — 2 columns, any number of rows */
+.fun-awards-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  align-content: start;
+}
+
+.fun-award-item {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 10px 16px 10px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fun-award-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.09);
+}
+
+.fun-award-item::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--award-accent, #3b82f6);
+}
+
+.fun-award-title {
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted, #6b7280);
+}
+
+.fun-award-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin: 2px 0;
+}
+
+.fun-award-winner {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.fun-award-sub {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+  font-weight: 600;
+}
+
+/* Championship history — most recent row highlight */
+.history-table tbody tr.champ-recent td {
+  background: linear-gradient(90deg, rgba(245,158,11,0.07) 0%, var(--card) 100%);
+  font-weight: 600;
+}
+.dark .history-table tbody tr.champ-recent td {
+  background: linear-gradient(90deg, rgba(245,158,11,0.1) 0%, var(--card) 100%);
+}
+
+@media (max-width: 700px) {
+  .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 480px) {
+  .awards-records-grid { grid-template-columns: 1fr !important; }
+  .fun-awards-grid { grid-template-columns: 1fr; }
+}

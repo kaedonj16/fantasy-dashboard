@@ -9124,6 +9124,14 @@ def page_teams(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
 
 
+def _ens(career_owners: dict, uid: str) -> None:
+    """Ensure uid exists in career_owners with all default fields."""
+    career_owners.setdefault(uid, {
+        "Wins": 0, "Losses": 0, "Ties": 0,
+        "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
+    })
+
+
 def _collect_all_season_data(platform: str, league_id: str, season: int):
     """
     Load ctx for every available historical season and return aggregated data:
@@ -9217,6 +9225,76 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
                 "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
             })["weekly_pts"].extend(grp["points"].tolist())
 
+        # ── Barely Breathing: wins by <5 pts ───────────────────────────────
+        if {"owner", "points", "points_against"}.issubset(df.columns):
+            margins = (df["points"] - df["points_against"]).astype(float)
+            close_win_mask = (margins > 0) & (margins < 5)
+            for owner, grp in df[close_win_mask].groupby("owner"):
+                uid = name_to_uid.get(str(owner)) or str(owner)
+                _ens(career_owners, uid)
+                career_owners[uid]["close_wins"] = career_owners[uid].get("close_wins", 0) + len(grp)
+
+        # ── Playoff Riser: avg pts regular season vs playoffs ──────────────
+        _league_settings = mock_league.get("settings") or {}
+        _po_start = int(_league_settings.get("playoff_week_start") or 15)
+        if {"owner", "week", "points"}.issubset(df.columns):
+            _reg = df[df["week"] < _po_start]
+            _po = df[df["week"] >= _po_start]
+            for owner, reg_grp in _reg.groupby("owner"):
+                uid = name_to_uid.get(str(owner)) or str(owner)
+                po_grp = _po[_po["owner"] == owner]
+                if reg_grp.empty or po_grp.empty:
+                    continue
+                reg_avg = float(reg_grp["points"].mean())
+                po_avg = float(po_grp["points"].mean())
+                _ens(career_owners, uid)
+                career_owners[uid]["playoff_delta_sum"] = career_owners[uid].get("playoff_delta_sum", 0.0) + (po_avg - reg_avg)
+                career_owners[uid]["playoff_delta_n"] = career_owners[uid].get("playoff_delta_n", 0) + 1
+
+        # ── Transactions: Main Character + Waiver Wire Demon ───────────────
+        try:
+            from dashboard_services.service import get_transactions_by_week as _gtxw
+            _tx_data = _gtxw(rid, list(range(1, 19)), platform=platform, season=hist_s)
+            for _week_txs in _tx_data.values():
+                for _t in (_week_txs or []):
+                    _ttype = _t.get("type")
+                    if _ttype in ("waiver", "waiver_add", "free_agent"):
+                        _adds = _t.get("adds") or {}
+                        for _pid, _rid_t in _adds.items():
+                            _uid = roster_to_uid.get(str(_rid_t), "")
+                            if _uid:
+                                _ens(career_owners, _uid)
+                                career_owners[_uid]["waiver_adds"] = career_owners[_uid].get("waiver_adds", 0) + 1
+                                career_owners[_uid]["activity"] = career_owners[_uid].get("activity", 0) + 1
+                    elif _ttype == "trade":
+                        _trade_rids = set(str(r) for r in (_t.get("roster_ids") or []))
+                        _trade_rids |= {str(v) for v in (_t.get("adds") or {}).values()}
+                        for _rid_t in _trade_rids:
+                            _uid = roster_to_uid.get(_rid_t, "")
+                            if _uid:
+                                _ens(career_owners, _uid)
+                                career_owners[_uid]["trade_count"] = career_owners[_uid].get("trade_count", 0) + 1
+                                career_owners[_uid]["activity"] = career_owners[_uid].get("activity", 0) + 2
+        except Exception as _e:
+            pass  # transaction data unavailable; skip these awards
+
+        # ── Bench Warmer MVP: points left on bench ─────────────────────────
+        try:
+            from dashboard_services.platform_api import get_matchups as _gmu
+            for _w in range(1, _po_start):  # regular season only
+                for _mu in (_gmu(platform, rid, _w, hist_s) or []):
+                    _roster_id = str(_mu.get("roster_id", ""))
+                    _uid = roster_to_uid.get(_roster_id, "")
+                    if not _uid:
+                        continue
+                    _starters = {str(s) for s in (_mu.get("starters") or []) if s and str(s) != "0"}
+                    _all_pts = _mu.get("players_points") or {}
+                    _bench = sum(float(p) for pid, p in _all_pts.items() if str(pid) not in _starters and str(pid) != "0")
+                    _ens(career_owners, _uid)
+                    career_owners[_uid]["bench_pts"] = career_owners[_uid].get("bench_pts", 0.0) + _bench
+        except Exception as _e:
+            pass  # matchup data unavailable; skip bench award
+
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
         runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
@@ -9242,12 +9320,11 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     return available, career_owners, championships, season_records, user_id_to_name
 
 
-def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None) -> str:
+def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None, platform: str = "", season: int = 0, league_id: str = "", league_name: str = "") -> str:
     """Render the All-Time Awards page body HTML."""
     name_map = user_id_to_name or {}
 
     def _display_name(uid: str) -> str:
-        """Return current display name for a user_id (or the raw value if no mapping)."""
         return name_map.get(uid) or uid
 
     # Build career standings DataFrame
@@ -9255,6 +9332,11 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     for uid, d in career_owners.items():
         games = d["Wins"] + d["Losses"] + d["Ties"]
         pts = d["weekly_pts"]
+        n = len(pts)
+        mean = sum(pts) / n if n > 0 else 0.0
+        variance = sum((x - mean) ** 2 for x in pts) / (n - 1) if n > 1 else 0.0
+        std = variance ** 0.5
+        delta_n = d.get("playoff_delta_n", 0)
         rows.append({
             "owner": uid,
             "display_name": _display_name(uid),
@@ -9267,6 +9349,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "AVG": d["PF"] / games if games > 0 else 0.0,
             "MAX": max(pts) if pts else 0.0,
             "Seasons": d["seasons"],
+            "STD": std,
+            "CloseWins": d.get("close_wins", 0),
+            "BenchPts": d.get("bench_pts", 0.0),
+            "WaiverAdds": d.get("waiver_adds", 0),
+            "Activity": d.get("activity", 0),
+            "PlayoffDelta": d.get("playoff_delta_sum", 0.0) / delta_n if delta_n > 0 else None,
         })
 
     career_df = pd.DataFrame(rows).sort_values(
@@ -9274,17 +9362,66 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         ascending=[False, False, False, False],
     ).reset_index(drop=True)
 
+    # ── Render helpers ──────────────────────────────────────────────────────
+    _MEDALS = {
+        1: '<span class="rank rank-first">1</span>',
+        2: '<span class="rank rank-second">2</span>',
+        3: '<span class="rank rank-third">3</span>',
+    }
+
+    def _rank_badge(i: int) -> str:
+        return _MEDALS.get(i, f'<span class="rank-plain">{i}</span>')
+
+    def _record_style(wins: int, losses: int) -> str:
+        if wins > losses:
+            return "color:#16a34a;font-weight:700;"
+        if losses > wins:
+            return "color:#ef4444;font-weight:700;"
+        return "font-weight:700;"
+
+    def _winpct_bar(pct: float) -> str:
+        w = max(2, int(pct * 100))
+        color = "#16a34a" if pct >= 0.5 else "#ef4444"
+        return f'<div class="winpct-bar"><div class="winpct-fill" style="width:{w}%;background:{color};"></div></div>'
+
+    def _hist_card(label: str, value: str, sub: str = "", icon: str = "") -> str:
+        icon_html = f'<div class="history-card-icon">{icon}</div>' if icon else ""
+        sub_html = f"<div class='history-card-sub'>{sub}</div>" if sub else ""
+        return f"""
+        <div class="history-card">
+          {icon_html}
+          <div class="history-card-label">{label}</div>
+          <div class="history-card-value">{value}</div>
+          {sub_html}
+        </div>"""
+
+    def _fun_award(title: str, icon: str, winner: str, sub: str, accent: str) -> str:
+        return f"""
+        <div class="fun-award-item" style="--award-accent:{accent};">
+          <div class="fun-award-title">{title}</div>
+          <div class="fun-award-icon">{icon}</div>
+          <div class="fun-award-winner">{winner}</div>
+          <div class="fun-award-sub">{sub}</div>
+        </div>"""
+
     # ── Career standings table ──────────────────────────────────────────────
     table_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
-        rings = ('<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])) if row["Championships"] > 0 else ""
+        rank = i + 1
+        rings = (
+            '<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])
+        ) if row["Championships"] > 0 else ""
+        rec_style = _record_style(int(row["Wins"]), int(row["Losses"]))
         table_rows_html += f"""
         <tr>
-          <td>{i + 1}</td>
+          <td>{_rank_badge(rank)}</td>
           <td>{html.escape(str(row['display_name']))} {rings}</td>
           <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
-          <td>{int(row['Wins'])}-{int(row['Losses'])}</td>
-          <td>{row['Win%']:.1%}</td>
+          <td style="{rec_style}">{int(row['Wins'])}-{int(row['Losses'])}</td>
+          <td>
+            <span>{row['Win%']:.1%}</span>
+            {_winpct_bar(row['Win%'])}
+          </td>
           <td>{row['PF']:,.1f}</td>
           <td>{row['PA']:,.1f}</td>
           <td>{row['AVG']:.1f}</td>
@@ -9309,26 +9446,30 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     </div>"""
 
     # ── Championship timeline ───────────────────────────────────────────────
+    def _cell(v: str) -> str:
+        return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
+
+    sorted_records = sorted(season_records, key=lambda x: x["season"], reverse=True)
+    most_recent_season = sorted_records[0]["season"] if sorted_records else None
+
     champ_rows_html = ""
-    for rec in sorted(season_records, key=lambda x: x["season"], reverse=True):
-        def _cell(v: str) -> str:
-            return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
-        # Resolve current display names via user_id if available
+    for rec in sorted_records:
         champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec["champion"]
         runner_display = _display_name(rec.get("runner_up_uid") or rec["runner_up"]) if rec.get("runner_up_uid") else rec["runner_up"]
+        row_cls = ' class="champ-recent"' if rec["season"] == most_recent_season else ""
         champ_rows_html += f"""
-        <tr>
-          <td>{rec['season']}</td>
-          <td style="font-weight:600;">{_cell(champ_display)}</td>
+        <tr{row_cls}>
+          <td><strong>{rec['season']}</strong></td>
+          <td style="font-weight:700;"><i class="fa-solid fa-trophy" style="color:#f59e0b;margin-right:5px;" aria-hidden="true"></i>{_cell(champ_display)}</td>
           <td>{html.escape(rec['champion_record'])}</td>
           <td>{_cell(runner_display)}</td>
         </tr>"""
 
     champ_table = f"""
-    <div class="card">
+    <div class="card champ-history-card">
       <div class="card-header"><h2>Championship History</h2></div>
-      <div class="card-body" style="padding-top:0;">
-        <div class="history-table-wrap">
+      <div class="card-body champ-history-body" style="padding-top:0;">
+        <div class="history-table-wrap champ-history-scroll">
           <table class="history-table">
             <thead><tr><th>Season</th><th>Champion</th><th>Record</th><th>Runner-Up</th></tr></thead>
             <tbody>{champ_rows_html}</tbody>
@@ -9337,20 +9478,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
       </div>
     </div>"""
 
-    # ── Season highlights (best PF, best week across all seasons) ──────────
+    # ── League Records cards ────────────────────────────────────────────────
     if season_records:
         best_pf_rec = max(season_records, key=lambda x: x["top_pf"])
         best_wk_rec = max(season_records, key=lambda x: x["highest_week_value"])
     else:
         best_pf_rec = best_wk_rec = None
-
-    def _hist_card(label: str, value: str, sub: str = "") -> str:
-        return f"""
-        <div class="history-card">
-          <div class="history-card-label">{label}</div>
-          <div class="history-card-value">{value}</div>
-          {"<div class='history-card-sub'>" + sub + "</div>" if sub else ""}
-        </div>"""
 
     highlights_html = ""
     if best_pf_rec:
@@ -9358,22 +9491,56 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Highest Season PF",
             html.escape(best_pf_rec["top_pf_team"]),
             f"{best_pf_rec['top_pf']:.1f} pts in {best_pf_rec['season']}",
+            '<i class="fa-solid fa-fire" style="color:#f97316;"></i>',
         )
     if best_wk_rec:
         highlights_html += _hist_card(
             "Highest Single Week",
             html.escape(best_wk_rec["highest_week_team"]),
             f"{best_wk_rec['highest_week_value']:.1f} pts in {best_wk_rec['season']}",
+            '<i class="fa-solid fa-bolt" style="color:#facc15;"></i>',
         )
 
-    # Most championships summary card
-    if career_df.empty is False and int(career_df.iloc[0]["Championships"]) > 0:
+    if not career_df.empty and int(career_df.iloc[0]["Championships"]) > 0:
         most_champ_owner = str(career_df.iloc[0]["display_name"])
         most_champ_n = int(career_df.iloc[0]["Championships"])
         highlights_html += _hist_card(
             "Most Championships",
             html.escape(most_champ_owner),
             f"{most_champ_n} title{'s' if most_champ_n > 1 else ''}",
+            '<i class="fa-solid fa-trophy" style="color:#f59e0b;"></i>',
+        )
+
+    # Best all-time win% (min 2 seasons)
+    eligible = career_df[career_df["Seasons"] >= 2]
+    if not eligible.empty:
+        best_winpct_row = eligible.loc[eligible["Win%"].idxmax()]
+        highlights_html += _hist_card(
+            "Best Win%",
+            html.escape(str(best_winpct_row["display_name"])),
+            f"{best_winpct_row['Win%']:.1%} over {int(best_winpct_row['Seasons'])} seasons",
+            '<i class="fa-solid fa-chart-line" style="color:#22c55e;"></i>',
+        )
+
+    # Most seasons played
+    if not career_df.empty:
+        most_seasons_row = career_df.loc[career_df["Seasons"].idxmax()]
+        highlights_html += _hist_card(
+            "Most Seasons",
+            html.escape(str(most_seasons_row["display_name"])),
+            f"{int(most_seasons_row['Seasons'])} seasons played",
+            '<i class="fa-solid fa-calendar-days"></i>',
+        )
+
+    # Most points, no ring
+    no_titles = career_df[career_df["Championships"] == 0]
+    if not no_titles.empty:
+        unlucky_row = no_titles.loc[no_titles["PF"].idxmax()]
+        highlights_html += _hist_card(
+            "Most Points, No Ring",
+            html.escape(str(unlucky_row["display_name"])),
+            f"{unlucky_row['PF']:,.1f} career points",
+            '<i class="fa-solid fa-heart-crack"></i>',
         )
 
     highlights_section = ""
@@ -9382,16 +9549,173 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     <div class="card">
       <div class="card-header"><h2>League Records</h2></div>
       <div class="card-body">
-        <div class="history-cards-grid">{highlights_html}</div>
+        <div class="history-cards-grid awards-records-grid">{highlights_html}</div>
       </div>
+    </div>"""
+
+    # ── Fun Awards ──────────────────────────────────────────────────────────
+    fun_awards_html = ""
+
+    # The Bridesmaid — most runner-up appearances without a title
+    runner_up_counts: dict = {}
+    for rec in season_records:
+        ru_uid = rec.get("runner_up_uid")
+        ru_display = _display_name(ru_uid) if ru_uid else rec.get("runner_up", "")
+        if ru_display and ru_display != "—":
+            runner_up_counts[ru_display] = runner_up_counts.get(ru_display, 0) + 1
+    no_title_names = set(career_df[career_df["Championships"] == 0]["display_name"].astype(str).tolist())
+    bridesmaid_candidates = {k: v for k, v in runner_up_counts.items() if k in no_title_names and v >= 1}
+    if bridesmaid_candidates:
+        bridesmaid_name = max(bridesmaid_candidates, key=bridesmaid_candidates.get)
+        bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
+        fun_awards_html += _fun_award(
+            "The Bridesmaid",
+            '<i class="fa-solid fa-ring"></i>',
+            html.escape(bridesmaid_name),
+            f"{bridesmaid_count}× runner-up, 0 titles",
+            "#f59e0b",
+        )
+
+    # Most Dominant — best career win% (2+ seasons)
+    if not eligible.empty:
+        dominant_row = eligible.loc[eligible["Win%"].idxmax()]
+        fun_awards_html += _fun_award(
+            "Most Dominant",
+            '<i class="fa-solid fa-crown"></i>',
+            html.escape(str(dominant_row["display_name"])),
+            f"{dominant_row['Win%']:.1%} all-time win rate",
+            "#f59e0b",
+        )
+
+    # The Punching Bag — most PA with a losing record
+    losing = career_df[career_df["Losses"] > career_df["Wins"]]
+    if not losing.empty:
+        punching_bag_row = losing.loc[losing["PA"].idxmax()]
+        fun_awards_html += _fun_award(
+            "The Punching Bag",
+            '<i class="fa-solid fa-dumbbell"></i>',
+            html.escape(str(punching_bag_row["display_name"])),
+            f"{punching_bag_row['PA']:,.1f} points allowed",
+            "#94a3b8",
+        )
+
+    # Boom or Bust — highest weekly score std dev
+    boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
+    if not boom_eligible.empty:
+        boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
+        fun_awards_html += _fun_award(
+            "Boom or Bust",
+            '<i class="fa-solid fa-dice"></i>',
+            html.escape(str(boom_row["display_name"])),
+            f"σ {boom_row['STD']:.1f} pts/week variance",
+            "#f97316",
+        )
+
+    # Barely Breathing — most wins by <5 points
+    if "CloseWins" in career_df.columns and career_df["CloseWins"].sum() > 0:
+        close_row = career_df.loc[career_df["CloseWins"].idxmax()]
+        if int(close_row["CloseWins"]) > 0:
+            fun_awards_html += _fun_award(
+                "Barely Breathing",
+                '<i class="fa-solid fa-heart-crack"></i>',
+                html.escape(str(close_row["display_name"])),
+                f"{int(close_row['CloseWins'])} wins by fewer than 5 pts",
+                "#ef4444",
+            )
+
+    # Consistency King — lowest weekly score std dev (2+ seasons)
+    if not eligible.empty:
+        consistent_row = eligible.loc[eligible["STD"].idxmin()]
+        fun_awards_html += _fun_award(
+            "Consistency King",
+            '<i class="fa-solid fa-snowflake"></i>',
+            html.escape(str(consistent_row["display_name"])),
+            f"σ {consistent_row['STD']:.1f} pts/week",
+            "#60a5fa",
+        )
+
+    # Main Character — most total league activity (trades + pickups)
+    if "Activity" in career_df.columns and career_df["Activity"].sum() > 0:
+        main_row = career_df.loc[career_df["Activity"].idxmax()]
+        if int(main_row["Activity"]) > 0:
+            trades = int(main_row.get("Activity", 0) // 3)  # rough trade count from weighted activity
+            pickups = int(main_row.get("WaiverAdds", 0))
+            fun_awards_html += _fun_award(
+                "Main Character",
+                '<i class="fa-solid fa-star"></i>',
+                html.escape(str(main_row["display_name"])),
+                f"{pickups} pickups · {int(main_row['Activity'])} activity pts",
+                "#a855f7",
+            )
+
+    # Bench Warmer MVP — most career points left on bench
+    if "BenchPts" in career_df.columns and career_df["BenchPts"].sum() > 0:
+        bench_row = career_df.loc[career_df["BenchPts"].idxmax()]
+        if float(bench_row["BenchPts"]) > 0:
+            fun_awards_html += _fun_award(
+                "Bench Warmer MVP",
+                '<i class="fa-solid fa-clipboard-list"></i>',
+                html.escape(str(bench_row["display_name"])),
+                f"{bench_row['BenchPts']:,.1f} pts left on bench",
+                "#64748b",
+            )
+
+    # Waiver Wire Demon — most FA/waiver pickups
+    if "WaiverAdds" in career_df.columns and career_df["WaiverAdds"].sum() > 0:
+        waiver_row = career_df.loc[career_df["WaiverAdds"].idxmax()]
+        if int(waiver_row["WaiverAdds"]) > 0:
+            fun_awards_html += _fun_award(
+                "Waiver Wire Demon",
+                '<i class="fa-solid fa-magnifying-glass"></i>',
+                html.escape(str(waiver_row["display_name"])),
+                f"{int(waiver_row['WaiverAdds'])} career pickups",
+                "#22c55e",
+            )
+
+    # Playoff Riser — biggest avg pts jump from regular season to playoffs
+    po_eligible = career_df[career_df["PlayoffDelta"].notna()].copy() if "PlayoffDelta" in career_df.columns else pd.DataFrame()
+    if not po_eligible.empty:
+        riser_row = po_eligible.loc[po_eligible["PlayoffDelta"].idxmax()]
+        delta = float(riser_row["PlayoffDelta"])
+        if delta > 0:
+            fun_awards_html += _fun_award(
+                "Playoff Riser",
+                '<i class="fa-solid fa-arrow-trend-up"></i>',
+                html.escape(str(riser_row["display_name"])),
+                f"+{delta:.1f} pts/wk in playoffs",
+                "#16a34a",
+            )
+
+    fun_awards_section = ""
+    if fun_awards_html:
+        fun_awards_section = f"""
+    <div class="card">
+      <div class="card-header"><h2>League Superlatives</h2></div>
+      <div class="card-body">
+        <div class="fun-awards-grid">{fun_awards_html}</div>
+      </div>
+    </div>"""
+
+    history_url = f"/{platform}/{season}/{league_id}/history" if platform and league_id else "#"
+
+    nav_row = f"""
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px;">
+      <a href="{history_url}" class="awards-page-nav-link">
+        <i class="fa-solid fa-clipboard-list"></i>
+        Season History
+      </a>
     </div>"""
 
     return f"""
     <div class="overview-layout">
       <div class="overview-main">
+        {nav_row}
         {highlights_section}
+        <div class="awards-two-col">
+          {fun_awards_section}
+          {champ_table}
+        </div>
         {standings_table}
-        {champ_table}
       </div>
     </div>"""
 
@@ -9415,7 +9739,15 @@ def page_awards(platform: str, season: int, league_id: str):
         </div>"""
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
-    body_html = _build_awards_html(career_owners, championships, season_records, user_id_to_name)
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _league_name = (ctx.get("league") or {}).get("name") or ""
+    except Exception:
+        _league_name = ""
+    body_html = _build_awards_html(
+        career_owners, championships, season_records, user_id_to_name,
+        platform=platform, season=season, league_id=league_id, league_name=_league_name,
+    )
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
