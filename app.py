@@ -9182,9 +9182,11 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             uid = str(u.get("user_id") or "").strip()
             if not uid:
                 continue
+            metadata = u.get("metadata") or {}
             name = (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
+                u.get("display_name")  # Prioritize actual username
+                or metadata.get("team_name")  # Fall back to team name
+                or metadata.get("username")  # Check username in metadata too
                 or u.get("username")
                 or uid
             )
@@ -9356,6 +9358,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
     def _display_name(uid: str) -> str:
         return name_map.get(uid) or uid
+
 
     # Build career standings DataFrame
     rows = []
