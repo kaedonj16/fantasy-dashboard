@@ -363,9 +363,9 @@ def main():
             if _trade_intel_fresh():
                 print("[cron] Trade intel already crawled today, skipping discovery + crawl")
             else:
-                discovered = run_discovery(target=500)
+                discovered = run_discovery(target=200)
                 print(f"[cron] Trade intel: discovered {discovered} new leagues")
-                crawl_result = run_crawl(batch_size=200)
+                crawl_result = run_crawl(batch_size=100)
                 print(f"[cron] Trade intel: {crawl_result}")
                 analytics_result = run_analytics(season=season)
                 print(f"[cron] Trade intel analytics: {analytics_result}")
@@ -380,10 +380,10 @@ def main():
             if _wls_fresh():
                 print("[cron] WLS calibration already ran today, skipping")
             else:
-                # Run WLS for all 8 combinations: 2 league types × 4 sizes.
-                # Dynasty 10-team runs first (writes pick values + calibration_source).
+                # Run WLS for core combinations only (2 league types × 2 common sizes)
+                # to reduce peak memory usage in the daily cron job.
                 for _lt, _lt_name in ((2, "dynasty"), (1, "redraft")):
-                    for _sz in (10, 8, 12, 14):
+                    for _sz in (10, 12):
                         try:
                             _res = run_trade_value_model(
                                 season=season, league_type=_lt, league_size=_sz
