@@ -13008,8 +13008,7 @@ img, svg, canvas {
 }
 @media (max-width: 900px) {
   .awards-two-col {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
   }
   .champ-history-body { overflow: visible; }
   .champ-history-scroll { overflow-y: visible; }
