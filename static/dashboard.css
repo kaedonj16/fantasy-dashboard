@@ -362,6 +362,7 @@ ul {
 }
 
 .os-right-col > .os-sidebar-shell {
+  margin-bottom: 18px;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
@@ -4758,7 +4759,7 @@ thead th {
 
 .os-waiver-row {
   align-items: center;
-  padding: 14px 16px;
+  padding: 8px 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--row);
@@ -4793,7 +4794,7 @@ thead th {
 
 .os-waiver-right {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
   gap: 5px;
   flex-shrink: 0;
@@ -6939,8 +6940,10 @@ thead th {
 .team-panels {
   flex: 1;
   position: relative;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  max-height: 1134pxgit add .;
 }
 
 .team-row {
