@@ -13029,11 +13029,12 @@ img, svg, canvas {
   margin-bottom: 2px;
 }
 
-/* Hall of Legends grid — always 2×2 */
+/* League Superlatives grid — 2 columns, any number of rows */
 .fun-awards-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+  gap: 12px;
+  align-content: start;
 }
 
 .fun-award-item {

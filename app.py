@@ -9124,6 +9124,14 @@ def page_teams(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
 
 
+def _ens(career_owners: dict, uid: str) -> None:
+    """Ensure uid exists in career_owners with all default fields."""
+    career_owners.setdefault(uid, {
+        "Wins": 0, "Losses": 0, "Ties": 0,
+        "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
+    })
+
+
 def _collect_all_season_data(platform: str, league_id: str, season: int):
     """
     Load ctx for every available historical season and return aggregated data:
@@ -9217,6 +9225,76 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
                 "PF": 0.0, "PA": 0.0, "seasons": 0, "weekly_pts": [],
             })["weekly_pts"].extend(grp["points"].tolist())
 
+        # ── Barely Breathing: wins by <5 pts ───────────────────────────────
+        if {"owner", "points", "points_against"}.issubset(df.columns):
+            margins = (df["points"] - df["points_against"]).astype(float)
+            close_win_mask = (margins > 0) & (margins < 5)
+            for owner, grp in df[close_win_mask].groupby("owner"):
+                uid = name_to_uid.get(str(owner)) or str(owner)
+                _ens(career_owners, uid)
+                career_owners[uid]["close_wins"] = career_owners[uid].get("close_wins", 0) + len(grp)
+
+        # ── Playoff Riser: avg pts regular season vs playoffs ──────────────
+        _league_settings = mock_league.get("settings") or {}
+        _po_start = int(_league_settings.get("playoff_week_start") or 15)
+        if {"owner", "week", "points"}.issubset(df.columns):
+            _reg = df[df["week"] < _po_start]
+            _po = df[df["week"] >= _po_start]
+            for owner, reg_grp in _reg.groupby("owner"):
+                uid = name_to_uid.get(str(owner)) or str(owner)
+                po_grp = _po[_po["owner"] == owner]
+                if reg_grp.empty or po_grp.empty:
+                    continue
+                reg_avg = float(reg_grp["points"].mean())
+                po_avg = float(po_grp["points"].mean())
+                _ens(career_owners, uid)
+                career_owners[uid]["playoff_delta_sum"] = career_owners[uid].get("playoff_delta_sum", 0.0) + (po_avg - reg_avg)
+                career_owners[uid]["playoff_delta_n"] = career_owners[uid].get("playoff_delta_n", 0) + 1
+
+        # ── Transactions: Main Character + Waiver Wire Demon ───────────────
+        try:
+            from dashboard_services.service import get_transactions_by_week as _gtxw
+            _tx_data = _gtxw(rid, list(range(1, 19)), platform=platform, season=hist_s)
+            for _week_txs in _tx_data.values():
+                for _t in (_week_txs or []):
+                    _ttype = _t.get("type")
+                    if _ttype in ("waiver", "waiver_add", "free_agent"):
+                        _adds = _t.get("adds") or {}
+                        for _pid, _rid_t in _adds.items():
+                            _uid = roster_to_uid.get(str(_rid_t), "")
+                            if _uid:
+                                _ens(career_owners, _uid)
+                                career_owners[_uid]["waiver_adds"] = career_owners[_uid].get("waiver_adds", 0) + 1
+                                career_owners[_uid]["activity"] = career_owners[_uid].get("activity", 0) + 1
+                    elif _ttype == "trade":
+                        _trade_rids = set(str(r) for r in (_t.get("roster_ids") or []))
+                        _trade_rids |= {str(v) for v in (_t.get("adds") or {}).values()}
+                        for _rid_t in _trade_rids:
+                            _uid = roster_to_uid.get(_rid_t, "")
+                            if _uid:
+                                _ens(career_owners, _uid)
+                                career_owners[_uid]["trade_count"] = career_owners[_uid].get("trade_count", 0) + 1
+                                career_owners[_uid]["activity"] = career_owners[_uid].get("activity", 0) + 2
+        except Exception as _e:
+            pass  # transaction data unavailable; skip these awards
+
+        # ── Bench Warmer MVP: points left on bench ─────────────────────────
+        try:
+            from dashboard_services.platform_api import get_matchups as _gmu
+            for _w in range(1, _po_start):  # regular season only
+                for _mu in (_gmu(platform, rid, _w, hist_s) or []):
+                    _roster_id = str(_mu.get("roster_id", ""))
+                    _uid = roster_to_uid.get(_roster_id, "")
+                    if not _uid:
+                        continue
+                    _starters = {str(s) for s in (_mu.get("starters") or []) if s and str(s) != "0"}
+                    _all_pts = _mu.get("players_points") or {}
+                    _bench = sum(float(p) for pid, p in _all_pts.items() if str(pid) not in _starters and str(pid) != "0")
+                    _ens(career_owners, _uid)
+                    career_owners[_uid]["bench_pts"] = career_owners[_uid].get("bench_pts", 0.0) + _bench
+        except Exception as _e:
+            pass  # matchup data unavailable; skip bench award
+
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
         runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
@@ -9258,6 +9336,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         mean = sum(pts) / n if n > 0 else 0.0
         variance = sum((x - mean) ** 2 for x in pts) / (n - 1) if n > 1 else 0.0
         std = variance ** 0.5
+        delta_n = d.get("playoff_delta_n", 0)
         rows.append({
             "owner": uid,
             "display_name": _display_name(uid),
@@ -9271,6 +9350,11 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "MAX": max(pts) if pts else 0.0,
             "Seasons": d["seasons"],
             "STD": std,
+            "CloseWins": d.get("close_wins", 0),
+            "BenchPts": d.get("bench_pts", 0.0),
+            "WaiverAdds": d.get("waiver_adds", 0),
+            "Activity": d.get("activity", 0),
+            "PlayoffDelta": d.get("playoff_delta_sum", 0.0) / delta_n if delta_n > 0 else None,
         })
 
     career_df = pd.DataFrame(rows).sort_values(
@@ -9473,6 +9557,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     fun_awards_html = ""
 
     # The Bridesmaid — most runner-up appearances without a title
+    # The Bridesmaid — most runner-up appearances without a title
     runner_up_counts: dict = {}
     for rec in season_records:
         ru_uid = rec.get("runner_up_uid")
@@ -9486,7 +9571,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
         fun_awards_html += _fun_award(
             "The Bridesmaid",
-            '<i class="fa-solid fa-ring" style="font-size:1.4rem;"></i>',
+            '<i class="fa-solid fa-ring"></i>',
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
             "#f59e0b",
@@ -9497,7 +9582,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         dominant_row = eligible.loc[eligible["Win%"].idxmax()]
         fun_awards_html += _fun_award(
             "Most Dominant",
-            '<i class="fa-solid fa-crown" style="color:#f59e0b;"></i>',
+            '<i class="fa-solid fa-crown"></i>',
             html.escape(str(dominant_row["display_name"])),
             f"{dominant_row['Win%']:.1%} all-time win rate",
             "#f59e0b",
@@ -9509,29 +9594,104 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
         fun_awards_html += _fun_award(
             "The Punching Bag",
-            '<i class="fa-solid fa-dumbbell" style="font-size:1.4rem;"></i>',
+            '<i class="fa-solid fa-dumbbell"></i>',
             html.escape(str(punching_bag_row["display_name"])),
             f"{punching_bag_row['PA']:,.1f} points allowed",
             "#94a3b8",
         )
 
-    # Boom or Bust — highest weekly score std dev (4+ games)
+    # Boom or Bust — highest weekly score std dev
     boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
     if not boom_eligible.empty:
         boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
         fun_awards_html += _fun_award(
             "Boom or Bust",
-            '<i class="fa-solid fa-dice" style="color:#f97316;"></i>',
+            '<i class="fa-solid fa-dice"></i>',
             html.escape(str(boom_row["display_name"])),
             f"σ {boom_row['STD']:.1f} pts/week variance",
             "#f97316",
         )
 
+    # Barely Breathing — most wins by <5 points
+    if "CloseWins" in career_df.columns and career_df["CloseWins"].sum() > 0:
+        close_row = career_df.loc[career_df["CloseWins"].idxmax()]
+        if int(close_row["CloseWins"]) > 0:
+            fun_awards_html += _fun_award(
+                "Barely Breathing",
+                '<i class="fa-solid fa-heart-crack"></i>',
+                html.escape(str(close_row["display_name"])),
+                f"{int(close_row['CloseWins'])} wins by fewer than 5 pts",
+                "#ef4444",
+            )
+
+    # Consistency King — lowest weekly score std dev (2+ seasons)
+    if not eligible.empty:
+        consistent_row = eligible.loc[eligible["STD"].idxmin()]
+        fun_awards_html += _fun_award(
+            "Consistency King",
+            '<i class="fa-solid fa-snowflake"></i>',
+            html.escape(str(consistent_row["display_name"])),
+            f"σ {consistent_row['STD']:.1f} pts/week",
+            "#60a5fa",
+        )
+
+    # Main Character — most total league activity (trades + pickups)
+    if "Activity" in career_df.columns and career_df["Activity"].sum() > 0:
+        main_row = career_df.loc[career_df["Activity"].idxmax()]
+        if int(main_row["Activity"]) > 0:
+            trades = int(main_row.get("Activity", 0) // 3)  # rough trade count from weighted activity
+            pickups = int(main_row.get("WaiverAdds", 0))
+            fun_awards_html += _fun_award(
+                "Main Character",
+                '<i class="fa-solid fa-star"></i>',
+                html.escape(str(main_row["display_name"])),
+                f"{pickups} pickups · {int(main_row['Activity'])} activity pts",
+                "#a855f7",
+            )
+
+    # Bench Warmer MVP — most career points left on bench
+    if "BenchPts" in career_df.columns and career_df["BenchPts"].sum() > 0:
+        bench_row = career_df.loc[career_df["BenchPts"].idxmax()]
+        if float(bench_row["BenchPts"]) > 0:
+            fun_awards_html += _fun_award(
+                "Bench Warmer MVP",
+                '<i class="fa-solid fa-clipboard-list"></i>',
+                html.escape(str(bench_row["display_name"])),
+                f"{bench_row['BenchPts']:,.1f} pts left on bench",
+                "#64748b",
+            )
+
+    # Waiver Wire Demon — most FA/waiver pickups
+    if "WaiverAdds" in career_df.columns and career_df["WaiverAdds"].sum() > 0:
+        waiver_row = career_df.loc[career_df["WaiverAdds"].idxmax()]
+        if int(waiver_row["WaiverAdds"]) > 0:
+            fun_awards_html += _fun_award(
+                "Waiver Wire Demon",
+                '<i class="fa-solid fa-magnifying-glass"></i>',
+                html.escape(str(waiver_row["display_name"])),
+                f"{int(waiver_row['WaiverAdds'])} career pickups",
+                "#22c55e",
+            )
+
+    # Playoff Riser — biggest avg pts jump from regular season to playoffs
+    po_eligible = career_df[career_df["PlayoffDelta"].notna()].copy() if "PlayoffDelta" in career_df.columns else pd.DataFrame()
+    if not po_eligible.empty:
+        riser_row = po_eligible.loc[po_eligible["PlayoffDelta"].idxmax()]
+        delta = float(riser_row["PlayoffDelta"])
+        if delta > 0:
+            fun_awards_html += _fun_award(
+                "Playoff Riser",
+                '<i class="fa-solid fa-arrow-trend-up"></i>',
+                html.escape(str(riser_row["display_name"])),
+                f"+{delta:.1f} pts/wk in playoffs",
+                "#16a34a",
+            )
+
     fun_awards_section = ""
     if fun_awards_html:
         fun_awards_section = f"""
     <div class="card">
-      <div class="card-header"><h2>Hall of Legends</h2></div>
+      <div class="card-header"><h2>League Superlatives</h2></div>
       <div class="card-body">
         <div class="fun-awards-grid">{fun_awards_html}</div>
       </div>
