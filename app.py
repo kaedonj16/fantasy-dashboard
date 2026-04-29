@@ -154,7 +154,7 @@ CACHE_TTL = 60 * 60 * 6  # 6 hours
 VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
 
 # How long to cache rendered page HTML (Teams, Activity, Graphs) per league
-PAGE_HTML_TTL = 60  # seconds; bump if you want
+PAGE_HTML_TTL = 60 * 10  # 10 minutes
 
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
@@ -745,6 +745,23 @@ def store_page_html(platform: str, season: int, league_id: str, page: str, html:
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
     pages = entry.setdefault("page_html", {})
     pages[page] = (time.time(), html)
+
+def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
+    entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+    if not entry:
+        return None
+    rec = entry.get("awards_agg")
+    if not rec:
+        return None
+    ts, payload = rec
+    if time.time() - ts > PAGE_HTML_TTL:
+        return None
+    return payload
+
+
+def store_awards_agg(platform: str, season: int, league_id: str, payload) -> None:
+    entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+    entry["awards_agg"] = (time.time(), payload)
 
 
 # -------- global NFL data caches (shared across leagues) --------
@@ -9138,6 +9155,10 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
       user_id_to_name – dict user_id -> latest display name (for rendering)
     Keyed by user_id (stable) rather than team name (changes across seasons).
     """
+    cached = get_awards_agg_from_cache(platform, season, league_id)
+    if cached is not None:
+        return cached
+
     available = get_available_history_seasons(platform, league_id, season)
     career_owners: dict = {}
     championships: dict = {}
@@ -9314,7 +9335,9 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "closest_margin": float(summary.get("closest_margin") or 0),
         })
 
-    return available, career_owners, championships, season_records, user_id_to_name
+    payload = (available, career_owners, championships, season_records, user_id_to_name)
+    store_awards_agg(platform, season, league_id, payload)
+    return payload
 
 
 def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None, platform: str = "", season: int = 0, league_id: str = "", league_name: str = "") -> str:
@@ -9719,6 +9742,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
+    cached = get_page_html_from_cache(platform, season, league_id, "awards")
+    if cached:
+        return render_page("League Awards", league_id, "awards", cached, platform, season)
+
     available, career_owners, championships, season_records, user_id_to_name = \
         _collect_all_season_data(platform, league_id, season)
 
@@ -9734,6 +9761,7 @@ def page_awards(platform: str, season: int, league_id: str):
             </div>
           </div>
         </div>"""
+        store_page_html(platform, season, league_id, "awards", body_html)
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
     try:
@@ -9745,6 +9773,7 @@ def page_awards(platform: str, season: int, league_id: str):
         career_owners, championships, season_records, user_id_to_name,
         platform=platform, season=season, league_id=league_id, league_name=_league_name,
     )
+    store_page_html(platform, season, league_id, "awards", body_html)
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
@@ -9766,6 +9795,12 @@ def page_history(platform: str, season: int, league_id: str):
         except Exception as exc:
             body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
         return render_page("League History", league_id, "history", body_html, platform, season)
+
+    selected_history_season_param = request.args.get("history_season")
+    page_cache_key = f"history:{selected_history_season_param}" if selected_history_season_param else "history"
+    cached = get_page_html_from_cache(platform, season, league_id, page_cache_key)
+    if cached:
+        return render_page("League History", league_id, "history", cached, platform, season)
 
     available_seasons = get_available_history_seasons(platform, league_id, season)
 
@@ -9821,6 +9856,7 @@ def page_history(platform: str, season: int, league_id: str):
         selected_history_season=selected_history_season,
         resolved_history_league_id=resolved_history_league_id,
     )
+    store_page_html(platform, season, league_id, page_cache_key, body_html)
 
     return render_page(
         "League History",
