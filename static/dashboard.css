@@ -12952,13 +12952,37 @@ img, svg, canvas {
    AWARDS PAGE ENHANCEMENTS
    ============================================ */
 
-/* Hall of Legends + Championship History two-column row */
+/* Cross-page nav link pill (awards ↔ history) */
+.awards-page-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #d6dfeb);
+  background: var(--card, #fff);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text, #1f2937);
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.06);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.awards-page-nav-link:hover {
+  background: var(--card-soft, #f8fafc);
+  box-shadow: 0 4px 14px rgba(15,23,42,0.10);
+  transform: translateY(-1px);
+}
+
+/* League Superlatives + Championship History two-column row */
 .awards-two-col {
   display: flex;
   gap: 16px;
   align-items: stretch;
 }
-.awards-two-col > .card {
+.awards-two-col > .card,
+.awards-two-col > .history-section-card {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
@@ -12967,6 +12991,8 @@ img, svg, canvas {
 /* Championship history: scrollable body that fills remaining card height */
 .champ-history-card {
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .champ-history-body {
   flex: 1;

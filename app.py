@@ -9320,7 +9320,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     return available, career_owners, championships, season_records, user_id_to_name
 
 
-def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None) -> str:
+def _build_awards_html(career_owners: dict, championships: dict, season_records: list, user_id_to_name: Optional[dict] = None, platform: str = "", season: int = 0, league_id: str = "", league_name: str = "") -> str:
     """Render the All-Time Awards page body HTML."""
     name_map = user_id_to_name or {}
 
@@ -9430,18 +9430,16 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         </tr>"""
 
     standings_table = f"""
-    <div class="card">
-      <div class="card-header"><h2>All-Time Standings</h2></div>
-      <div class="card-body" style="padding-top:0;">
-        <div class="history-table-wrap">
-          <table class="history-table">
-            <thead><tr>
-              <th>#</th><th>Team</th><th>Titles</th><th>Record</th>
-              <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
-            </tr></thead>
-            <tbody>{table_rows_html}</tbody>
-          </table>
-        </div>
+    <div class="history-section-card">
+      <div class="history-section-title">All-Time Standings</div>
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead><tr>
+            <th>#</th><th>Team</th><th>Titles</th><th>Record</th>
+            <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
+          </tr></thead>
+          <tbody>{table_rows_html}</tbody>
+        </table>
       </div>
     </div>"""
 
@@ -9466,9 +9464,9 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         </tr>"""
 
     champ_table = f"""
-    <div class="card champ-history-card">
-      <div class="card-header"><h2>Championship History</h2></div>
-      <div class="card-body champ-history-body" style="padding-top:0;">
+    <div class="history-section-card champ-history-card">
+      <div class="history-section-title">Championship History</div>
+      <div class="champ-history-body">
         <div class="history-table-wrap champ-history-scroll">
           <table class="history-table">
             <thead><tr><th>Season</th><th>Champion</th><th>Record</th><th>Runner-Up</th></tr></thead>
@@ -9546,11 +9544,9 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     highlights_section = ""
     if highlights_html:
         highlights_section = f"""
-    <div class="card">
-      <div class="card-header"><h2>League Records</h2></div>
-      <div class="card-body">
-        <div class="history-cards-grid awards-records-grid">{highlights_html}</div>
-      </div>
+    <div class="history-section-card">
+      <div class="history-section-title">League Records</div>
+      <div class="history-cards-grid awards-records-grid">{highlights_html}</div>
     </div>"""
 
     # ── Fun Awards ──────────────────────────────────────────────────────────
@@ -9690,23 +9686,36 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     fun_awards_section = ""
     if fun_awards_html:
         fun_awards_section = f"""
-    <div class="card">
-      <div class="card-header"><h2>League Superlatives</h2></div>
-      <div class="card-body">
-        <div class="fun-awards-grid">{fun_awards_html}</div>
+    <div class="history-section-card">
+      <div class="history-section-title">League Superlatives</div>
+      <div class="fun-awards-grid">{fun_awards_html}</div>
+    </div>"""
+
+    history_url = f"/{platform}/{season}/{league_id}/history" if platform and league_id else "#"
+    display_league = html.escape(league_name) if league_name else "All-Time Awards"
+
+    header = f"""
+    <div class="history-header">
+      <div>
+        <div class="history-kicker">All-Time Awards</div>
+        <h1 class="history-title"><span class="history-title-accent">{display_league}</span></h1>
+        <p class="history-subtitle">Career records, championship history &amp; league superlatives across all seasons.</p>
       </div>
+      <a href="{history_url}" class="awards-page-nav-link">
+        <i class="fa-solid fa-clipboard-list"></i>
+        Season History
+      </a>
     </div>"""
 
     return f"""
-    <div class="overview-layout">
-      <div class="overview-main">
-        {highlights_section}
-        <div class="awards-two-col">
-          {fun_awards_section}
-          {champ_table}
-        </div>
-        {standings_table}
+    <div class="history-page">
+      {header}
+      {highlights_section}
+      <div class="awards-two-col">
+        {fun_awards_section}
+        {champ_table}
       </div>
+      {standings_table}
     </div>"""
 
 
@@ -9729,7 +9738,15 @@ def page_awards(platform: str, season: int, league_id: str):
         </div>"""
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
-    body_html = _build_awards_html(career_owners, championships, season_records, user_id_to_name)
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _league_name = (ctx.get("league") or {}).get("name") or ""
+    except Exception:
+        _league_name = ""
+    body_html = _build_awards_html(
+        career_owners, championships, season_records, user_id_to_name,
+        platform=platform, season=season, league_id=league_id, league_name=_league_name,
+    )
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
