@@ -1271,7 +1271,7 @@ window.initTradePage = function initTradePage(root = document) {
           .filter(p => p && typeof p === "object" && p.id != null)
           .map(normalizePlayerRow)
           .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
-        ...picks,
+        ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
       ].sort((a, b) => {
         const vb = Number(b.value || 0);
         const va = Number(a.value || 0);
@@ -1591,7 +1591,8 @@ window.initTradePage = function initTradePage(root = document) {
     if (!cleaned) return;
 
     const picks = getSidePicks(side);
-    if (picks.find(p => p.id === cleaned)) return;
+    const isBucket = /_(early|mid|late)$/i.test(cleaned);
+    if (!isBucket && picks.find(p => p.id === cleaned)) return;
 
     picks.push({
       id: cleaned,
@@ -2346,7 +2347,8 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selected.find(x => String(x.id) === String(p.id))) {
             if (p.position === "PICK") {
               const picks = getSidePicks(side);
-              if (!picks.find(x => String(x.id) === String(p.id))) {
+              const isBucket = /_(early|mid|late)$/i.test(String(p.id));
+              if (isBucket || !picks.find(x => String(x.id) === String(p.id))) {
                 picks.push({ id: p.id, display: p.name });
               }
             } else {
