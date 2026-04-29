@@ -885,32 +885,32 @@ def build_history_body(
       </div>
 
       <div class="history-top-grid">
-        <div class="history-section-card history-awards-panel">
-          <div class="history-section-title">Season Awards</div>
-          <div id="historyAwardsContent">
+        <div class="card history-awards-panel">
+          <div class="card-header"><h2>Season Awards</h2></div>
+          <div class="card-body" id="historyAwardsContent">
             {loading_spinner}
           </div>
         </div>
 
-        <div class="history-section-card history-standings-panel">
-          <div class="history-section-title">Regular Season Standings</div>
-          <div id="historyStandingsContent">
+        <div class="card history-standings-panel">
+          <div class="card-header"><h2>Regular Season Standings</h2></div>
+          <div class="card-body" style="padding-top:0;" id="historyStandingsContent">
             {loading_spinner}
           </div>
         </div>
       </div>
 
       <div class="history-top-grid">
-        <div class="history-section-card history-chart-panel">
-          <div class="history-section-title">Season Trend</div>
-          <div id="historyChartContent">
+        <div class="card history-chart-panel">
+          <div class="card-header"><h2>Season Trend</h2></div>
+          <div class="card-body" id="historyChartContent">
             {loading_spinner}
           </div>
         </div>
 
-        <div class="history-section-card history-recap-panel">
-          <div class="history-recap-header">
-            <div class="history-section-title">Season Recap</div>
+        <div class="card history-recap-panel">
+          <div class="card-header">
+            <h2>Season Recap</h2>
             <div class="history-recap-controls">
               <select id="recapTeamDropdown" class="recap-team-dropdown">
                 <option value="">Select your team...</option>
@@ -920,7 +920,7 @@ def build_history_body(
               </button>
             </div>
           </div>
-          <div class="history-recap-content">
+          <div class="card-body history-recap-content">
             <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
               <div class="otc-ai-empty-title">Analyzing Season...</div>
               <div class="otc-ai-empty-sub">

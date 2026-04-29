@@ -12982,8 +12982,7 @@ img, svg, canvas {
   gap: 16px;
   align-items: stretch;
 }
-.awards-two-col > .card,
-.awards-two-col > .history-section-card {
+.awards-two-col > .card {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
