@@ -10995,27 +10995,9 @@ def api_league_players():
     except Exception as _e:
         print(f"[api/league-players] rookies skipped: {_e}")
 
-    # QB depth decay for 1QB value: calibration inflates bench QB values that
-    # have minimal real dynasty worth beyond the starter tier.
-    _QB_DECAY = [
-        (12,  1.00),
-        (18,  0.82),
-        (24,  0.65),
-        (36,  0.45),
-        (48,  0.32),
-        (9999, 0.22),
-    ]
-    for _p in model_value_table:
-        if str(_p.get("position") or "").upper() == "QB":
-            _qb_rank = int(_p.get("pos_rank") or 999)
-            for _thresh, _factor in _QB_DECAY:
-                if _qb_rank <= _thresh:
-                    if _factor < 1.0:
-                        _p["value"] = round(float(_p.get("value") or 0) * _factor, 1)
-                    break
-
-    # Recompute pos_rank / pos_rank_label from current (calibrated) values so
-    # the sidebar always shows ranks that match the value-sorted order.
+    # --- Depth-decay pass ---
+    # Recompute pos_rank from current calibrated values first so decay tiers
+    # use correct ranks rather than stale DB values.
     from collections import defaultdict as _dd_prl
     _pos_groups: dict = _dd_prl(list)
     for _i, _p in enumerate(model_value_table):
@@ -11023,6 +11005,50 @@ def api_league_players():
         if _pos and _pos != "PICK":
             _pos_groups[_pos].append(_i)
     for _pos, _idxs in _pos_groups.items():
+        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
+        for _rank, _i in enumerate(_idxs, 1):
+            model_value_table[_i]["pos_rank"] = _rank
+            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+
+    # Decay tables: (rank_threshold, multiplier). Beyond the last threshold the
+    # final multiplier applies.  QB only decays 1QB value (sf_value untouched).
+    # RB/WR/TE decay all value fields — depth penalty applies in any format.
+    _DEPTH_DECAY = {
+        "QB": [(12, 1.00), (18, 0.82), (24, 0.65), (36, 0.45), (48, 0.32), (9999, 0.22)],
+        "RB": [(30, 1.00), (42, 0.88), (54, 0.72), (72, 0.55), (9999, 0.40)],
+        "WR": [(36, 1.00), (48, 0.88), (60, 0.73), (80, 0.57), (9999, 0.42)],
+        "TE": [(12, 1.00), (18, 0.85), (24, 0.68), (36, 0.50), (9999, 0.36)],
+    }
+    _QB_VAL_KEYS   = ["value"]
+    _SKILL_VAL_KEYS = [
+        "value", "sf_value",
+        "value_8", "value_12", "value_14",
+        "sf_value_8", "sf_value_12", "sf_value_14",
+    ]
+    for _p in model_value_table:
+        _pos   = str(_p.get("position") or "").upper()
+        _tiers = _DEPTH_DECAY.get(_pos)
+        if not _tiers:
+            continue
+        _rank = int(_p.get("pos_rank") or 999)
+        _keys = _QB_VAL_KEYS if _pos == "QB" else _SKILL_VAL_KEYS
+        for _thresh, _factor in _tiers:
+            if _rank <= _thresh:
+                if _factor < 1.0:
+                    for _vk in _keys:
+                        if _p.get(_vk) is not None:
+                            _p[_vk] = round(float(_p[_vk]) * _factor, 1)
+                break
+
+    # Recompute pos_rank / pos_rank_label a second time so ranks reflect
+    # post-decay values (ordering within a tier is preserved, but this keeps
+    # labels accurate if cross-tier compression shifts any players).
+    _pos_groups2: dict = _dd_prl(list)
+    for _i, _p in enumerate(model_value_table):
+        _pos = str(_p.get("position") or "").upper()
+        if _pos and _pos != "PICK":
+            _pos_groups2[_pos].append(_i)
+    for _pos, _idxs in _pos_groups2.items():
         _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
         for _rank, _i in enumerate(_idxs, 1):
             model_value_table[_i]["pos_rank"] = _rank
