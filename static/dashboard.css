@@ -12947,3 +12947,126 @@ img, svg, canvas {
   .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
   .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
 }
+
+/* ============================================
+   AWARDS PAGE ENHANCEMENTS
+   ============================================ */
+
+/* Win% progress bar in standings table */
+.winpct-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border, #e8eef6);
+  margin-top: 4px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.winpct-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* Plain rank badge for non-top-3 positions */
+.rank-plain {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+}
+
+/* Awards records grid — auto-fit for variable card count */
+.awards-records-grid {
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+/* Icon prefix inside a history-card */
+.history-card-icon {
+  font-size: 1.1rem;
+  padding-left: 10px;
+  margin-bottom: 2px;
+}
+
+/* Fun Awards grid */
+.fun-awards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.fun-award-item {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 16px 16px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fun-award-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.09);
+}
+
+.fun-award-item::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--award-accent, #3b82f6);
+}
+
+.fun-award-title {
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted, #6b7280);
+}
+
+.fun-award-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin: 2px 0;
+}
+
+.fun-award-winner {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.fun-award-sub {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+  font-weight: 600;
+}
+
+/* Championship history — most recent row highlight */
+.history-table tbody tr.champ-recent td {
+  background: linear-gradient(90deg, rgba(245,158,11,0.07) 0%, var(--card) 100%);
+  font-weight: 600;
+}
+.dark .history-table tbody tr.champ-recent td {
+  background: linear-gradient(90deg, rgba(245,158,11,0.1) 0%, var(--card) 100%);
+}
+
+@media (max-width: 700px) {
+  .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .fun-awards-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .awards-records-grid { grid-template-columns: 1fr !important; }
+  .fun-awards-grid { grid-template-columns: 1fr; }
+}

@@ -9247,7 +9247,6 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     name_map = user_id_to_name or {}
 
     def _display_name(uid: str) -> str:
-        """Return current display name for a user_id (or the raw value if no mapping)."""
         return name_map.get(uid) or uid
 
     # Build career standings DataFrame
@@ -9255,6 +9254,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     for uid, d in career_owners.items():
         games = d["Wins"] + d["Losses"] + d["Ties"]
         pts = d["weekly_pts"]
+        n = len(pts)
+        mean = sum(pts) / n if n > 0 else 0.0
+        variance = sum((x - mean) ** 2 for x in pts) / (n - 1) if n > 1 else 0.0
+        std = variance ** 0.5
         rows.append({
             "owner": uid,
             "display_name": _display_name(uid),
@@ -9267,6 +9270,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "AVG": d["PF"] / games if games > 0 else 0.0,
             "MAX": max(pts) if pts else 0.0,
             "Seasons": d["seasons"],
+            "STD": std,
         })
 
     career_df = pd.DataFrame(rows).sort_values(
@@ -9274,17 +9278,66 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         ascending=[False, False, False, False],
     ).reset_index(drop=True)
 
+    # ── Render helpers ──────────────────────────────────────────────────────
+    _MEDALS = {
+        1: '<span class="rank rank-first">1</span>',
+        2: '<span class="rank rank-second">2</span>',
+        3: '<span class="rank rank-third">3</span>',
+    }
+
+    def _rank_badge(i: int) -> str:
+        return _MEDALS.get(i, f'<span class="rank-plain">{i}</span>')
+
+    def _record_style(wins: int, losses: int) -> str:
+        if wins > losses:
+            return "color:#16a34a;font-weight:700;"
+        if losses > wins:
+            return "color:#ef4444;font-weight:700;"
+        return "font-weight:700;"
+
+    def _winpct_bar(pct: float) -> str:
+        w = max(2, int(pct * 100))
+        color = "#16a34a" if pct >= 0.5 else "#ef4444"
+        return f'<div class="winpct-bar"><div class="winpct-fill" style="width:{w}%;background:{color};"></div></div>'
+
+    def _hist_card(label: str, value: str, sub: str = "", icon: str = "") -> str:
+        icon_html = f'<div class="history-card-icon">{icon}</div>' if icon else ""
+        sub_html = f"<div class='history-card-sub'>{sub}</div>" if sub else ""
+        return f"""
+        <div class="history-card">
+          {icon_html}
+          <div class="history-card-label">{label}</div>
+          <div class="history-card-value">{value}</div>
+          {sub_html}
+        </div>"""
+
+    def _fun_award(title: str, icon: str, winner: str, sub: str, accent: str) -> str:
+        return f"""
+        <div class="fun-award-item" style="--award-accent:{accent};">
+          <div class="fun-award-title">{title}</div>
+          <div class="fun-award-icon">{icon}</div>
+          <div class="fun-award-winner">{winner}</div>
+          <div class="fun-award-sub">{sub}</div>
+        </div>"""
+
     # ── Career standings table ──────────────────────────────────────────────
     table_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
-        rings = ('<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])) if row["Championships"] > 0 else ""
+        rank = i + 1
+        rings = (
+            '<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(row["Championships"])
+        ) if row["Championships"] > 0 else ""
+        rec_style = _record_style(int(row["Wins"]), int(row["Losses"]))
         table_rows_html += f"""
         <tr>
-          <td>{i + 1}</td>
+          <td>{_rank_badge(rank)}</td>
           <td>{html.escape(str(row['display_name']))} {rings}</td>
           <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
-          <td>{int(row['Wins'])}-{int(row['Losses'])}</td>
-          <td>{row['Win%']:.1%}</td>
+          <td style="{rec_style}">{int(row['Wins'])}-{int(row['Losses'])}</td>
+          <td>
+            <span>{row['Win%']:.1%}</span>
+            {_winpct_bar(row['Win%'])}
+          </td>
           <td>{row['PF']:,.1f}</td>
           <td>{row['PA']:,.1f}</td>
           <td>{row['AVG']:.1f}</td>
@@ -9309,17 +9362,21 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     </div>"""
 
     # ── Championship timeline ───────────────────────────────────────────────
+    def _cell(v: str) -> str:
+        return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
+
+    sorted_records = sorted(season_records, key=lambda x: x["season"], reverse=True)
+    most_recent_season = sorted_records[0]["season"] if sorted_records else None
+
     champ_rows_html = ""
-    for rec in sorted(season_records, key=lambda x: x["season"], reverse=True):
-        def _cell(v: str) -> str:
-            return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
-        # Resolve current display names via user_id if available
+    for rec in sorted_records:
         champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec["champion"]
         runner_display = _display_name(rec.get("runner_up_uid") or rec["runner_up"]) if rec.get("runner_up_uid") else rec["runner_up"]
+        row_cls = ' class="champ-recent"' if rec["season"] == most_recent_season else ""
         champ_rows_html += f"""
-        <tr>
-          <td>{rec['season']}</td>
-          <td style="font-weight:600;">{_cell(champ_display)}</td>
+        <tr{row_cls}>
+          <td><strong>{rec['season']}</strong></td>
+          <td style="font-weight:700;"><i class="fa-solid fa-trophy" style="color:#f59e0b;margin-right:5px;" aria-hidden="true"></i>{_cell(champ_display)}</td>
           <td>{html.escape(rec['champion_record'])}</td>
           <td>{_cell(runner_display)}</td>
         </tr>"""
@@ -9337,20 +9394,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
       </div>
     </div>"""
 
-    # ── Season highlights (best PF, best week across all seasons) ──────────
+    # ── League Records cards ────────────────────────────────────────────────
     if season_records:
         best_pf_rec = max(season_records, key=lambda x: x["top_pf"])
         best_wk_rec = max(season_records, key=lambda x: x["highest_week_value"])
     else:
         best_pf_rec = best_wk_rec = None
-
-    def _hist_card(label: str, value: str, sub: str = "") -> str:
-        return f"""
-        <div class="history-card">
-          <div class="history-card-label">{label}</div>
-          <div class="history-card-value">{value}</div>
-          {"<div class='history-card-sub'>" + sub + "</div>" if sub else ""}
-        </div>"""
 
     highlights_html = ""
     if best_pf_rec:
@@ -9358,22 +9407,56 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "Highest Season PF",
             html.escape(best_pf_rec["top_pf_team"]),
             f"{best_pf_rec['top_pf']:.1f} pts in {best_pf_rec['season']}",
+            '<i class="fa-solid fa-fire" style="color:#f97316;"></i>',
         )
     if best_wk_rec:
         highlights_html += _hist_card(
             "Highest Single Week",
             html.escape(best_wk_rec["highest_week_team"]),
             f"{best_wk_rec['highest_week_value']:.1f} pts in {best_wk_rec['season']}",
+            '<i class="fa-solid fa-bolt" style="color:#facc15;"></i>',
         )
 
-    # Most championships summary card
-    if career_df.empty is False and int(career_df.iloc[0]["Championships"]) > 0:
+    if not career_df.empty and int(career_df.iloc[0]["Championships"]) > 0:
         most_champ_owner = str(career_df.iloc[0]["display_name"])
         most_champ_n = int(career_df.iloc[0]["Championships"])
         highlights_html += _hist_card(
             "Most Championships",
             html.escape(most_champ_owner),
             f"{most_champ_n} title{'s' if most_champ_n > 1 else ''}",
+            '<i class="fa-solid fa-trophy" style="color:#f59e0b;"></i>',
+        )
+
+    # Best all-time win% (min 2 seasons)
+    eligible = career_df[career_df["Seasons"] >= 2]
+    if not eligible.empty:
+        best_winpct_row = eligible.loc[eligible["Win%"].idxmax()]
+        highlights_html += _hist_card(
+            "Best Win%",
+            html.escape(str(best_winpct_row["display_name"])),
+            f"{best_winpct_row['Win%']:.1%} over {int(best_winpct_row['Seasons'])} seasons",
+            '<i class="fa-solid fa-chart-line" style="color:#22c55e;"></i>',
+        )
+
+    # Most seasons played
+    if not career_df.empty:
+        most_seasons_row = career_df.loc[career_df["Seasons"].idxmax()]
+        highlights_html += _hist_card(
+            "Most Seasons",
+            html.escape(str(most_seasons_row["display_name"])),
+            f"{int(most_seasons_row['Seasons'])} seasons played",
+            '<i class="fa-solid fa-calendar" style="color:#60a5fa;"></i>',
+        )
+
+    # Most points, no ring
+    no_titles = career_df[career_df["Championships"] == 0]
+    if not no_titles.empty:
+        unlucky_row = no_titles.loc[no_titles["PF"].idxmax()]
+        highlights_html += _hist_card(
+            "Most Points, No Ring",
+            html.escape(str(unlucky_row["display_name"])),
+            f"{unlucky_row['PF']:,.1f} career points",
+            '<i class="fa-solid fa-heart-crack" style="color:#f87171;"></i>',
         )
 
     highlights_section = ""
@@ -9382,7 +9465,75 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     <div class="card">
       <div class="card-header"><h2>League Records</h2></div>
       <div class="card-body">
-        <div class="history-cards-grid">{highlights_html}</div>
+        <div class="history-cards-grid awards-records-grid">{highlights_html}</div>
+      </div>
+    </div>"""
+
+    # ── Fun Awards ──────────────────────────────────────────────────────────
+    fun_awards_html = ""
+
+    # The Bridesmaid — most runner-up appearances without a title
+    runner_up_counts: dict = {}
+    for rec in season_records:
+        ru_uid = rec.get("runner_up_uid")
+        ru_display = _display_name(ru_uid) if ru_uid else rec.get("runner_up", "")
+        if ru_display and ru_display != "—":
+            runner_up_counts[ru_display] = runner_up_counts.get(ru_display, 0) + 1
+    no_title_names = set(career_df[career_df["Championships"] == 0]["display_name"].astype(str).tolist())
+    bridesmaid_candidates = {k: v for k, v in runner_up_counts.items() if k in no_title_names and v >= 1}
+    if bridesmaid_candidates:
+        bridesmaid_name = max(bridesmaid_candidates, key=bridesmaid_candidates.get)
+        bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
+        fun_awards_html += _fun_award(
+            "The Bridesmaid",
+            '<i class="fa-solid fa-ring" style="color:#a78bfa;"></i>',
+            html.escape(bridesmaid_name),
+            f"{bridesmaid_count}× runner-up, 0 titles",
+            "#a78bfa",
+        )
+
+    # Most Dominant — best career win% (2+ seasons)
+    if not eligible.empty:
+        dominant_row = eligible.loc[eligible["Win%"].idxmax()]
+        fun_awards_html += _fun_award(
+            "Most Dominant",
+            '<i class="fa-solid fa-crown" style="color:#f59e0b;"></i>',
+            html.escape(str(dominant_row["display_name"])),
+            f"{dominant_row['Win%']:.1%} all-time win rate",
+            "#f59e0b",
+        )
+
+    # The Punching Bag — most PA with a losing record
+    losing = career_df[career_df["Losses"] > career_df["Wins"]]
+    if not losing.empty:
+        punching_bag_row = losing.loc[losing["PA"].idxmax()]
+        fun_awards_html += _fun_award(
+            "The Punching Bag",
+            '<i class="fa-solid fa-dumbbell" style="color:#94a3b8;"></i>',
+            html.escape(str(punching_bag_row["display_name"])),
+            f"{punching_bag_row['PA']:,.1f} points allowed",
+            "#94a3b8",
+        )
+
+    # Boom or Bust — highest weekly score std dev (4+ games)
+    boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
+    if not boom_eligible.empty:
+        boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
+        fun_awards_html += _fun_award(
+            "Boom or Bust",
+            '<i class="fa-solid fa-dice" style="color:#f97316;"></i>',
+            html.escape(str(boom_row["display_name"])),
+            f"σ {boom_row['STD']:.1f} pts/week variance",
+            "#f97316",
+        )
+
+    fun_awards_section = ""
+    if fun_awards_html:
+        fun_awards_section = f"""
+    <div class="card">
+      <div class="card-header"><h2>Fun Awards</h2></div>
+      <div class="card-body">
+        <div class="fun-awards-grid">{fun_awards_html}</div>
       </div>
     </div>"""
 
@@ -9391,6 +9542,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
       <div class="overview-main">
         {highlights_section}
         {standings_table}
+        {fun_awards_section}
         {champ_table}
       </div>
     </div>"""
