@@ -683,8 +683,8 @@ window.initTradePage = function initTradePage(root = document) {
       state.sideBPlayers = bIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
 
       // Load picks
-      state.sideAPicks = apIds.map(id => ({ id, display: id }));
-      state.sideBPicks = bpIds.map(id => ({ id, display: id }));
+      state.sideAPicks = apIds.map(id => ({ id, display: formatPickId(id) }));
+      state.sideBPicks = bpIds.map(id => ({ id, display: formatPickId(id) }));
 
       renderChips("A");
       renderChips("B");
@@ -1567,6 +1567,20 @@ window.initTradePage = function initTradePage(root = document) {
     recomputeTrade();
   }
 
+  function formatPickId(id) {
+    const parts = String(id).split("_");
+    if (parts.length < 3) return String(id).replaceAll("_", " ");
+    const year = parts[0];
+    const round = parseInt(parts[1], 10);
+    const third = parts.slice(2).join("_");
+    const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
+    const bucketLabel = { early: "Early", mid: "Mid", late: "Late" }[third];
+    if (bucketLabel) return `${year} ${round}${suffix} (${bucketLabel})`;
+    const slot = parseInt(third, 10);
+    if (!isNaN(slot)) return `${year} ${round}.${String(slot).padStart(2, "0")}`;
+    return String(id).replaceAll("_", " ");
+  }
+
   function openPickPrompt(side) {
     const raw = window.prompt(
       "Enter a pick in this format:\n2026_1_04\nor\n2026_1_early"
@@ -1581,7 +1595,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     picks.push({
       id: cleaned,
-      display: cleaned.replaceAll("_", " "),
+      display: formatPickId(cleaned),
     });
 
     saveState();

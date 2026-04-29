@@ -4815,8 +4815,7 @@ def build_activity_body(ctx: dict) -> str:
                 pick_data_attr = pick_data.replace('"', '&quot;')
 
                 return (
-                    "<div class='player-activity pick-clickable' style='cursor:pointer'"
-                    f" data-pick='{pick_data_attr}' onclick='showPickModal(this)'>"
+                    "<div class='player-activity'>"
                     "<div style='gap: 10px;display: flex;align-items: center;'>"
                     f"<span class='io {io_class}'>"
                     f"{'+' if io_class == 'add' else '−'}</span>"
