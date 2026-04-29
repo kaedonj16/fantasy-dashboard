@@ -9489,7 +9489,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             '<i class="fa-solid fa-ring" style="font-size:1.4rem;"></i>',
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
-            "#a78bfa",
+            "#f59e0b",
         )
 
     # Most Dominant — best career win% (2+ seasons)
