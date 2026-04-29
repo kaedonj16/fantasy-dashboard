@@ -12977,7 +12977,8 @@ img, svg, canvas {
 
 /* League Superlatives + Championship History two-column row */
 .awards-two-col {
-  display: flex;
+  grid-template-columns: 2fr 1fr;
+  display: grid;
   gap: 16px;
   align-items: stretch;
 }
@@ -13058,7 +13059,7 @@ img, svg, canvas {
 /* League Superlatives grid — 2 columns, any number of rows */
 .fun-awards-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   align-content: start;
 }
@@ -13067,7 +13068,7 @@ img, svg, canvas {
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--card);
-  padding: 16px 16px 16px 20px;
+  padding: 10px 16px 10px 20px;
   display: flex;
   flex-direction: column;
   gap: 5px;
