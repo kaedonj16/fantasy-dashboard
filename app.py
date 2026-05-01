@@ -6322,11 +6322,13 @@ def build_teams_body(ctx: dict) -> str:
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
 
-            var banner = data.adp_source === 'fantasycalc'
-              ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on positional need, board value &amp; ADP</div>'
-              : data.adp_source === 'model'
-                ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
-                : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
+            var banner = data.adp_source === 'league'
+              ? '<div class="draft-adp-banner draft-adp-league">ADP from real ' + (data.draft_type === 'startup' ? 'startup' : 'rookie') + ' drafts across similar leagues</div>'
+              : data.adp_source === 'fantasycalc'
+                ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on positional need, board value &amp; ADP</div>'
+                : data.adp_source === 'model'
+                  ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
+                  : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
 
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
@@ -13288,6 +13290,89 @@ def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     return result
 
 
+def _fetch_league_adp_from_db(
+    is_sf: bool,
+    season: int,
+    draft_type: str,
+    num_teams: int,
+    min_samples: int = 20,
+) -> dict:
+    """
+    Pull ADP from real league draft data stored by the draft ADP crawler.
+
+    Tries an exact num_teams match first, then widens to ±2 if not enough
+    samples exist.  Returns player_id -> {adp_rank, avg_pick, std_pick,
+    sample_size, position} or empty dict when data is sparse.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        from utils.paths import DATA_DIR
+        import json as _json
+
+        # Day-level cache so we don't hit the DB on every page load
+        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{num_teams}t_{season}_{date.today().isoformat()}.json"
+        cache_path = DATA_DIR / cache_key
+        if cache_path.exists():
+            try:
+                return _json.load(open(cache_path))
+            except Exception:
+                pass
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT da.player_id, da.avg_pick, da.std_pick, da.avg_round, da.sample_size
+                FROM draft_adp da
+                WHERE da.draft_type  = %s
+                  AND da.season      = %s
+                  AND da.is_superflex = %s
+                  AND da.num_teams BETWEEN %s AND %s
+                  AND da.sample_size >= %s
+                ORDER BY da.avg_pick ASC
+                """,
+                (draft_type, season, is_sf, num_teams - 2, num_teams + 2, min_samples),
+            ).fetchall()
+
+        if not rows:
+            return {}
+
+        # Load position info from player_values for enrichment
+        player_ids = [r["player_id"] for r in rows]
+        pos_map: dict[str, str] = {}
+        try:
+            with get_conn() as conn:
+                pv_rows = conn.execute(
+                    "SELECT player_id, position FROM player_values WHERE player_id = ANY(%s)",
+                    (player_ids,),
+                ).fetchall()
+                pos_map = {r["player_id"]: (r["position"] or "").upper() for r in pv_rows}
+        except Exception:
+            pass
+
+        result: dict = {}
+        pos_counters: dict[str, int] = {}
+        for rank, row in enumerate(rows, start=1):
+            pid = str(row["player_id"])
+            pos = pos_map.get(pid, "")
+            pos_counters[pos] = pos_counters.get(pos, 0) + 1
+            result[pid] = {
+                "adp_rank":   rank,
+                "avg_pick":   float(row["avg_pick"] or rank),
+                "std_pick":   float(row["std_pick"] or 0),
+                "pos_rank":   pos_counters[pos],
+                "position":   pos,
+                "sample_size": int(row["sample_size"] or 0),
+            }
+
+        try:
+            _json.dump(result, open(cache_path, "w"))
+        except Exception:
+            pass
+        return result
+    except Exception:
+        return {}
+
+
 def _build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = False) -> dict:
     """
     Build a value-based board from our own model when external ADP is unavailable.
@@ -13378,6 +13463,19 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
+        # ── Draft type: startup (≥10 rounds) or rookie (1-5 rounds) ─────────
+        _draft_rounds = int((latest_draft.get("settings") or {}).get("rounds") or 0)
+        if _draft_rounds >= 10:
+            _draft_type = "startup"
+        elif 1 <= _draft_rounds <= 5:
+            _draft_type = "rookie"
+        else:
+            _draft_type = "rookie"  # safe default
+
+        # ── Rosters & users (needed for num_teams before ADP lookup) ─────────
+        rosters = get_rosters(platform, league_id, season) or []
+        _num_teams = len(rosters) or 12
+
         # ── NFL draft completion check ───────────────────────────────────────
         from data_building.rookie_pipeline.pipeline import is_draft_complete
         try:
@@ -13387,17 +13485,18 @@ def api_draft_grades():
         except Exception:
             _nfl_draft_done = is_draft_complete(season)
 
-        # ── Rookie ADP — FantasyCalc with model-value fallback ───────────────
-        # adp_info[sleeper_id] = {adp_rank, pos_rank, position}
-        adp_info = _fetch_fc_rookie_adp(is_sf, season)
+        # ── ADP: league data → FantasyCalc → model fallback ─────────────────
+        # adp_info[sleeper_id] = {adp_rank, pos_rank, position, ...}
+        adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
         if adp_info:
-            adp_source = "fantasycalc"
+            adp_source = "league"
         else:
-            adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
-            adp_source = "model" if adp_info else "none"
-
-        # ── Rosters & users ─────────────────────────────────────────────────
-        rosters = get_rosters(platform, league_id, season) or []
+            adp_info = _fetch_fc_rookie_adp(is_sf, season)
+            if adp_info:
+                adp_source = "fantasycalc"
+            else:
+                adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
+                adp_source = "model" if adp_info else "none"
         users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
@@ -13593,11 +13692,12 @@ def api_draft_grades():
         results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
 
         return jsonify({
-            "draft_id":   str(draft_id),
-            "season":     season,
+            "draft_id":    str(draft_id),
+            "season":      season,
             "league_type": league_type,
-            "adp_source": adp_source,
-            "teams":      results,
+            "draft_type":  _draft_type,
+            "adp_source":  adp_source,
+            "teams":       results,
         })
 
     except Exception:
