@@ -1068,18 +1068,6 @@ def build_trade_suggestions_context(
 
     viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
 
-    # ── Real trade patterns from comparable leagues ──────────────────────────
-    roster_positions = ctx.get("roster_positions") or []
-    _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-    _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
-
-    raw_patterns = _fetch_real_trade_patterns(
-        viewer_player_ids=list(viewer_player_ids),
-        is_sf=_is_sf,
-        num_teams=n_teams,
-    )
-    real_trade_suggestions = _enrich_trade_patterns(raw_patterns, model_value_lookup)
-
     return {
         "viewer_team": viewer_team_ctx.get("team_name") or f"Roster {viewer_roster_id}",
         "viewer_direction": viewer_team_ctx.get("direction") or "balanced",
@@ -1092,7 +1080,6 @@ def build_trade_suggestions_context(
         "top_partners": partners[:5],
         "projected_picks": _projected_picks,
         "pick_trade_partners": pick_trade_partners,
-        "real_trade_suggestions": real_trade_suggestions,
     }
 
 

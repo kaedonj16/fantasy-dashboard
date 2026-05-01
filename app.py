@@ -14622,6 +14622,174 @@ def api_trade_targets():
     })
 
 
+def _real_trade_packages_for_target(
+    target_player_id: str,
+    is_sf: bool,
+    num_teams: int,
+    viewer_players: list[dict],
+    viewer_picks: list[dict],
+    values_by_id: dict,
+    max_packages: int = 3,
+) -> dict:
+    """
+    Find real trades where target_player_id was acquired in comparable leagues,
+    then match the sent-asset patterns against the viewer's roster.
+
+    Returns {"packages": [...], "total_real_trades": N}
+    Each package has the same shape as value-based packages plus "trades_like_this".
+    """
+    from collections import defaultdict
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as conn:
+            rows = conn.execute(
+                """
+                WITH acquisitions AS (
+                    SELECT DISTINCT t.id AS trade_id, a_in.side AS recv_side
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    JOIN trade_intel_assets a_in
+                         ON a_in.trade_id = t.id
+                        AND a_in.asset_type = 'player'
+                        AND a_in.player_id = %s
+                    WHERE l.league_type = 2
+                      AND COALESCE(l.is_superflex, FALSE) = %s
+                      AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
+                      AND t.created_at > NOW() - INTERVAL '365 days'
+                    LIMIT 300
+                )
+                SELECT
+                    acq.trade_id,
+                    a.asset_type,
+                    a.player_id  AS sent_player_id,
+                    a.pick_round,
+                    a.pick_season,
+                    a.pick_order
+                FROM acquisitions acq
+                JOIN trade_intel_assets a
+                     ON a.trade_id = acq.trade_id
+                    AND a.side != acq.recv_side
+                ORDER BY acq.trade_id
+                """,
+                (target_player_id, is_sf, num_teams - 2, num_teams + 2),
+            ).fetchall()
+    except Exception:
+        return {"packages": [], "total_real_trades": 0}
+
+    # Group assets by trade_id → list of asset dicts
+    trade_pkgs: dict = defaultdict(list)
+    for row in rows:
+        trade_pkgs[row["trade_id"]].append({
+            "asset_type":     row["asset_type"],
+            "sent_player_id": row["sent_player_id"],
+            "pick_round":     row["pick_round"],
+            "pick_season":    row["pick_season"],
+            "pick_order":     row["pick_order"],
+        })
+
+    total_real_trades = len(trade_pkgs)
+    if not total_real_trades:
+        return {"packages": [], "total_real_trades": 0}
+
+    # Build position/value signature for each trade package, then count frequencies
+    def _sig(assets: list[dict]) -> tuple | None:
+        parts = []
+        for a in sorted(assets, key=lambda x: x["asset_type"]):
+            if a["asset_type"] == "player" and a["sent_player_id"]:
+                info = values_by_id.get(str(a["sent_player_id"]))
+                if not info:
+                    continue
+                pos = info["position"]
+                val = info["value"]
+                # Bucket value so similar-value swaps collapse to the same signature
+                bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
+                parts.append(f"P:{pos}:{bucket}")
+            elif a["asset_type"] == "pick" and a["pick_round"]:
+                parts.append(f"K:{a['pick_round']}")
+        return tuple(sorted(parts)) if parts else None
+
+    sig_counts: dict = defaultdict(list)
+    for trade_id, assets in trade_pkgs.items():
+        s = _sig(assets)
+        if s:
+            sig_counts[s].append(trade_id)
+
+    # Viewer helpers: players by position, picks by round
+    vp_by_pos: dict = defaultdict(list)
+    for vp in viewer_players:
+        vp_by_pos[vp["position"]].append(vp)
+
+    vk_by_round: dict = defaultdict(list)
+    for pk in viewer_picks:
+        name = pk.get("name", "")
+        for rnd, marker in ((1, "1st"), (2, "2nd"), (3, "3rd")):
+            if marker in name:
+                vk_by_round[rnd].append(pk)
+                break
+
+    VALUE_RANGES = {
+        "elite": (700, 1400),
+        "high":  (400, 800),
+        "mid":   (220, 600),
+        "low":   (100, 400),
+    }
+
+    result_packages = []
+    used_pids: set = set()
+
+    for sig, trade_ids in sorted(sig_counts.items(), key=lambda x: -len(x[1])):
+        trades_like_this = len(trade_ids)
+        matched: list[dict] = []
+        temp_used: set = set()
+        ok = True
+
+        for part in sig:
+            kind, *rest = part.split(":")
+            if kind == "P":
+                pos, bucket = rest
+                lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                candidates = [
+                    vp for vp in vp_by_pos.get(pos, [])
+                    if vp["player_id"] not in used_pids
+                    and vp["player_id"] not in temp_used
+                    and lo <= vp["value"] <= hi
+                ]
+                if not candidates:
+                    ok = False
+                    break
+                mid_val = (lo + hi) / 2
+                best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                matched.append(best)
+                temp_used.add(best["player_id"])
+            elif kind == "K":
+                rnd = int(rest[0])
+                available = [pk for pk in vk_by_round.get(rnd, [])]
+                if not available:
+                    ok = False
+                    break
+                matched.append(available[0])
+
+        if not ok or not matched:
+            continue
+
+        send_value = round(sum(a.get("value", 0) for a in matched), 1)
+
+        result_packages.append({
+            "type":             "real-trade",
+            "trades_like_this": trades_like_this,
+            "send":             matched,
+            "send_value":       send_value,
+        })
+        for a in matched:
+            if not a.get("is_pick"):
+                used_pids.add(a["player_id"])
+
+        if len(result_packages) >= max_packages:
+            break
+
+    return {"packages": result_packages, "total_real_trades": total_real_trades}
+
+
 @app.route("/api/trade-ideas-for-target", methods=["POST"])
 @limiter.limit("20 per minute")
 def api_trade_ideas_for_target():
@@ -14875,28 +15043,49 @@ def api_trade_ideas_for_target():
             "pos_rank_label":   target_info["pos_rank_label"],
             "sf_pos_rank_label": target_info["pos_rank_label"],
         }
-        for pkg in packages:
-            for asset in pkg["send"]:
-                if not asset.get("is_pick"):
-                    info = values_by_id.get(asset.get("player_id") or "")
-                    if info:
-                        asset.update({
-                            "id":               asset["player_id"],
-                            "position":         info["position"],
-                            "team":             info["team"],
-                            "sf_value":         round(info["sf_value"], 1),
-                            "pos_rank_label":   info["pos_rank_label"],
-                            "sf_pos_rank_label": info["pos_rank_label"],
-                        })
+
+        def _enrich_pkg_assets(pkg_list: list) -> None:
+            for pkg in pkg_list:
+                for asset in pkg["send"]:
+                    if not asset.get("is_pick"):
+                        info = values_by_id.get(asset.get("player_id") or "")
+                        if info:
+                            asset.update({
+                                "id":               asset["player_id"],
+                                "position":         info["position"],
+                                "team":             info["team"],
+                                "sf_value":         round(info.get("sf_value", info["value"]), 1),
+                                "pos_rank_label":   info["pos_rank_label"],
+                                "sf_pos_rank_label": info["pos_rank_label"],
+                            })
+
+        _enrich_pkg_assets(packages)
+
+        # Real trade packages: what people with similar rosters actually sent
+        roster_positions = ctx.get("roster_positions") or []
+        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
+        _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+
+        real_result = _real_trade_packages_for_target(
+            target_player_id=target_player_id,
+            is_sf=_is_sf,
+            num_teams=len(rosters) or 12,
+            viewer_players=viewer_players,
+            viewer_picks=viewer_picks,
+            values_by_id=values_by_id,
+        )
+        _enrich_pkg_assets(real_result["packages"])
 
         return jsonify({
-            "success":          True,
-            "target":           target_calc,
-            "owner":            target_owner_name,
-            "packages":         packages[:4],
-            "target_value":     round(target_value, 1),
-            "effective_target": round(effective_target, 1),
-            "premium":          round(premium, 2),
+            "success":            True,
+            "target":             target_calc,
+            "owner":              target_owner_name,
+            "packages":           packages[:4],
+            "real_packages":      real_result["packages"],
+            "total_real_trades":  real_result["total_real_trades"],
+            "target_value":       round(target_value, 1),
+            "effective_target":   round(effective_target, 1),
+            "premium":            round(premium, 2),
         })
 
     except Exception as e:

@@ -2052,42 +2052,74 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
       }
 
+      function renderPkg(pkg) {
+        const names   = pkg.send.map(p => p.name).join(" + ");
+        const sv      = pkg.send_value.toFixed(1);
+        const diff    = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
+        const diffStr = (diff >= 0 ? "+" : "") + diff;
+        const { text: label, color: lc } = fairLabel(pkg.send_value);
+        const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
+        return `<div style="padding:5px 0;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
+            <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
+            <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;">${label}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+            <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
+            <button class="load-in-calc-btn" data-payload="${btnData}"
+              style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
+              Load in Calc →
+            </button>
+          </div>
+        </div>`;
+      }
+
       if (!data.packages.length) {
         html += `<span style="color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</span>`;
       } else {
-        data.packages.forEach((pkg, i) => {
-          const names  = pkg.send.map(p => p.name).join(" + ");
-          const sv     = pkg.send_value.toFixed(1);
-          const diff   = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
-          const diffStr = (diff >= 0 ? "+" : "") + diff;
-          const { text: label, color: lc } = fairLabel(pkg.send_value);
-          // Store serialized data on the button to avoid closure issues
+        data.packages.forEach(pkg => { html += renderPkg(pkg); });
+      }
+
+      // Real-trade packages: what people in similar leagues actually sent
+      const realPkgs = data.real_packages || [];
+      if (realPkgs.length) {
+        const totalTrades = data.total_real_trades || 0;
+        html += `<div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.03em;">
+            BASED ON ${totalTrades} REAL TRADE${totalTrades !== 1 ? "S" : ""} IN SIMILAR LEAGUES
+          </div>`;
+        realPkgs.forEach(pkg => {
+          const names   = pkg.send.map(p => p.name).join(" + ");
+          const sv      = pkg.send_value.toFixed(1);
+          const count   = pkg.trades_like_this;
           const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
           html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
               <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
-              <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;">${label}</span>
+              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${count}× seen</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-              <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
+              <span style="font-size:10px;color:var(--text-muted);">market pattern · send ${sv}</span>
               <button class="load-in-calc-btn" data-payload="${btnData}"
-                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
+                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;">
                 Load in Calc →
               </button>
             </div>
           </div>`;
         });
-
-        // Delegate load-in-calc clicks
-        panel.addEventListener("click", function handler(e) {
-          const btn = e.target.closest(".load-in-calc-btn");
-          if (!btn) return;
-          try {
-            const { pkg, target } = JSON.parse(decodeURIComponent(btn.dataset.payload));
-            _loadPackageIntoCalc(target, pkg.send);
-          } catch {}
-        }, { once: false });
+        html += `</div>`;
       }
+
+      // Delegate load-in-calc clicks (covers both value-based and real-trade packages)
+      panel.addEventListener("click", function handler(e) {
+        const btn = e.target.closest(".load-in-calc-btn");
+        if (!btn) return;
+        try {
+          const { pkg, target } = JSON.parse(decodeURIComponent(btn.dataset.payload));
+          _loadPackageIntoCalc(target, pkg.send);
+        } catch {}
+      }, { once: false });
+
       panel.innerHTML = html;
     } catch {
       panel.innerHTML = `<span style="color:var(--text-muted);">Could not generate trade ideas.</span>`;

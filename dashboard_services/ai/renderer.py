@@ -555,9 +555,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
     try:
         result = generate_trade_suggestions_result(suggestions_ctx)
-        ai_html = _render_trade_suggestions_from_data(result.get("suggestions") or [])
-        real_trades_html = _render_real_trade_suggestions(suggestions_ctx.get("real_trade_suggestions") or [])
-        html_out = ai_html + real_trades_html
+        html_out = _render_trade_suggestions_from_data(result.get("suggestions") or [])
     except Exception as e:
         print(f"[trade-suggestions-ai] fallback: {e}")
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
@@ -627,7 +625,6 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
     partners = ctx.get("top_partners") or []
     pick_partners = ctx.get("pick_trade_partners") or []
     projected_picks = ctx.get("projected_picks") or []
-    real_trades = ctx.get("real_trade_suggestions") or []
 
     needs_str = html.escape(", ".join(needs) if needs else "None identified")
     surplus_str = html.escape(", ".join(surplus) if surplus else "None identified")
@@ -675,8 +672,6 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
     if not partner_rows:
         partner_rows = "<p>No strong trade partners identified based on positional fit.</p>"
 
-    real_trades_html = _render_real_trade_suggestions(real_trades)
-
     return f"""
     <div class="trade-suggestions-wrap">
       <div class="suggestion-meta">
@@ -684,7 +679,6 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         <span>Surplus: <strong>{surplus_str}</strong></span>
       </div>
       {partner_rows}
-      {real_trades_html}
     </div>
     """
 
