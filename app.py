@@ -11181,7 +11181,7 @@ def api_value_movers():
         league_size = 10
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
-                             league_size=league_size, min_baseline_value=50) or {}
+                             league_size=league_size, min_baseline_value=10) or {}
 
     if isinstance(payload, list):
         movers = payload

@@ -342,7 +342,7 @@ def get_top_movers(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
-        min_baseline_value: float = 0,
+        min_baseline_value: int = 0,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -354,9 +354,10 @@ def get_top_movers(
         source: Source of values ('model', etc.)
         league_type: "1qb" or "sf" (superflex) to determine which value field to use
         league_size: League size (8, 10, 12, 14) to determine which value field to use
-        min_baseline_value: Exclude players whose baseline value was below this threshold.
-            Set to e.g. 50 to suppress brand-new players (e.g. just-drafted rookies
-            whose prior value was near zero) from dominating the risers list.
+        min_baseline_value: Percentage (0-100). old_value must be >= this % of new_value.
+            E.g. 10 filters out players who went from ~0 to a real value (just-drafted
+            rookies), while keeping established players with genuine movement.
+            Scale-independent — works regardless of how history rows were written.
     """
     init_value_history_db()
 
@@ -460,10 +461,9 @@ def get_top_movers(
                 FROM latest_rows l
                 JOIN baseline_rows b
                   ON b.player_id = l.player_id
-                WHERE b.value >= %s
                 ORDER BY delta DESC, new_value DESC
                 """
-                , (source, latest_date, source, comparison_date, min_baseline_value))
+                , (source, latest_date, source, comparison_date))
 
             rows = cur.fetchall()
 
@@ -497,8 +497,20 @@ def get_top_movers(
             row_dict["name"] = resolved
         elif not row_dict.get("name") or row_dict["name"] == "Unknown":
             row_dict["name"] = f"Player {player_id}"
+
+        # Filter out brand-new players (e.g. just-drafted rookies who went from
+        # ~0 to a real value).  Require old_value >= new_value * min_baseline_ratio
+        # so that scale differences (0-1 vs 0-1000) don't cause false positives.
+        if min_baseline_value > 0:
+            old_v = float(row_dict.get("old_value") or 0)
+            new_v = float(row_dict.get("new_value") or 0)
+            # Use ratio: old must be at least min_baseline_value % of new
+            ratio = min_baseline_value / 100.0
+            if new_v > 0 and old_v < new_v * ratio:
+                continue
+
         movers.append(row_dict)
-    
+
     risers = movers[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 
