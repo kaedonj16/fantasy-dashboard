@@ -11181,7 +11181,7 @@ def api_value_movers():
         league_size = 10
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
-                             league_size=league_size) or {}
+                             league_size=league_size, min_baseline_value=50) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -14737,6 +14737,9 @@ def _real_trade_packages_for_target(
     result_packages = []
     used_pids: set = set()
 
+    # Track which sigs we fall back on so we don't double-count
+    fallback_packages = []
+
     for sig, trade_ids in sorted(sig_counts.items(), key=lambda x: -len(x[1])):
         trades_like_this = len(trade_ids)
         matched: list[dict] = []
@@ -14770,6 +14773,41 @@ def _real_trade_packages_for_target(
                 matched.append(available[0])
 
         if not ok or not matched:
+            # Build a fallback package describing the pattern (no viewer-specific players)
+            fallback_assets = []
+            for part in sig:
+                kind, *rest = part.split(":")
+                if kind == "P":
+                    pos, bucket = rest
+                    lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                    mid_val = (lo + hi) / 2
+                    # Find any player in values_by_id matching this pos + value range
+                    candidates = [
+                        {"player_id": pid, "name": info["name"], "position": pos,
+                         "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
+                         "is_reference": True}
+                        for pid, info in values_by_id.items()
+                        if info["position"] == pos and lo <= info["value"] <= hi
+                    ]
+                    if candidates:
+                        best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                        fallback_assets.append(best)
+                elif kind == "K":
+                    rnd = int(rest[0])
+                    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                    fallback_assets.append({
+                        "name": f"{suffix} Round Pick", "is_pick": True,
+                        "value": 200 if rnd == 1 else 100,
+                        "is_reference": True,
+                    })
+            if fallback_assets:
+                fallback_packages.append({
+                    "type":             "real-trade",
+                    "trades_like_this": trades_like_this,
+                    "send":             fallback_assets,
+                    "send_value":       round(sum(a.get("value", 0) for a in fallback_assets), 1),
+                    "is_reference":     True,
+                })
             continue
 
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
@@ -14786,6 +14824,10 @@ def _real_trade_packages_for_target(
 
         if len(result_packages) >= max_packages:
             break
+
+    # If no viewer-matched packages found, fall back to reference packages
+    if not result_packages and fallback_packages:
+        result_packages = sorted(fallback_packages, key=lambda x: -x["trades_like_this"])[:max_packages]
 
     return {"packages": result_packages, "total_real_trades": total_real_trades}
 

@@ -2092,18 +2092,22 @@ window.initTradePage = function initTradePage(root = document) {
           const names   = pkg.send.map(p => p.name).join(" + ");
           const sv      = pkg.send_value.toFixed(1);
           const count   = pkg.trades_like_this;
+          const isRef   = !!pkg.is_reference;
           const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
+          const patternLabel = isRef
+            ? `market pattern · send ~${sv} (example assets)`
+            : `market pattern · send ${sv}`;
           html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
-              <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
+              <span style="font-weight:600;color:${isRef ? "var(--text-muted)" : "var(--text)"};flex:1;">${names}</span>
               <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${count}× seen</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-              <span style="font-size:10px;color:var(--text-muted);">market pattern · send ${sv}</span>
-              <button class="load-in-calc-btn" data-payload="${btnData}"
+              <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
+              ${!isRef ? `<button class="load-in-calc-btn" data-payload="${btnData}"
                 style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;">
                 Load in Calc →
-              </button>
+              </button>` : ""}
             </div>
           </div>`;
         });

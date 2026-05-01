@@ -342,6 +342,7 @@ def get_top_movers(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
+        min_baseline_value: float = 0,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -353,6 +354,9 @@ def get_top_movers(
         source: Source of values ('model', etc.)
         league_type: "1qb" or "sf" (superflex) to determine which value field to use
         league_size: League size (8, 10, 12, 14) to determine which value field to use
+        min_baseline_value: Exclude players whose baseline value was below this threshold.
+            Set to e.g. 50 to suppress brand-new players (e.g. just-drafted rookies
+            whose prior value was near zero) from dominating the risers list.
     """
     init_value_history_db()
 
@@ -456,9 +460,10 @@ def get_top_movers(
                 FROM latest_rows l
                 JOIN baseline_rows b
                   ON b.player_id = l.player_id
+                WHERE b.value >= %s
                 ORDER BY delta DESC, new_value DESC
                 """
-                , (source, latest_date, source, comparison_date))
+                , (source, latest_date, source, comparison_date, min_baseline_value))
 
             rows = cur.fetchall()
 
