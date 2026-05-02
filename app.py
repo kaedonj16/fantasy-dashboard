@@ -13693,8 +13693,9 @@ def api_draft_grades():
                     break
             return available_players
 
-        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
-                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
+        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int],
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str,
+                    num_teams: int = 10) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
@@ -13711,20 +13712,25 @@ def api_draft_grades():
             if adp_diff is None:
                 return "N/A"
 
-            # Base score from ADP diff
-            if adp_diff >= 5:    score = 4   # clear value
-            elif adp_diff >= 2:  score = 3   # good value
-            elif adp_diff >= -1: score = 2   # on ADP
-            elif adp_diff >= -4: score = 1   # minor reach
-            else:                score = 0   # notable reach
+            # F should only trigger for a reach of more than ~1 full round.
+            # In a 10-team draft 1 round = 10 picks, so -11 is the F threshold.
+            # This prevents picks like -8 or -6 from grading F in small leagues.
+            big_reach = -(num_teams * 1.1)
 
-            # BPA bonus / penalty
+            if adp_diff >= 5:           score = 4   # clear value
+            elif adp_diff >= 2:         score = 3   # good value
+            elif adp_diff >= -1:        score = 2   # on ADP
+            elif adp_diff >= big_reach: score = 1   # reach within 1 round → D
+            else:                       score = 0   # > 1 round early → F
+
+            # BPA bonus / penalty.
+            # Only penalise when the pick was close to ADP (adp_diff >= -2):
+            # for bigger reaches the adp_diff already captures the cost, so
+            # applying BPA on top would double-count and turn a D into an F.
             if is_bpa:
                 score += 2
-            elif bpa_gap is not None and bpa_gap >= 5:
-                score = max(score - 1, 0)   # better player available (was -2)
-            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
-            # captures whether the pick was a reach
+            elif bpa_gap is not None and bpa_gap >= 5 and adp_diff >= -2:
+                score = max(score - 1, 0)
 
             # Need modifier with positional context
             if need:
@@ -13737,14 +13743,10 @@ def api_draft_grades():
                     score = max(score - 1, 0)
 
             # ── Post-modifier floors ─────────────────────────────────────────
-            # Minor reaches (within 3 of ADP) should never fall below D, even
-            # if a better player was on the board.
             if adp_diff >= -3:
-                score = max(score, 1)
-            # Need pick within 4 of ADP is always at least a C — filling a
-            # positional hole 3-4 slots early is an acceptable trade-off.
+                score = max(score, 1)   # tiny reach → at least D
             if need and adp_diff >= -4:
-                score = max(score, 2)
+                score = max(score, 2)   # need pick within 4 → at least C
 
             return {5: "A+", 4: "A", 3: "B", 2: "C", 1: "D", 0: "F"}.get(min(score, 5), "F")
 
@@ -13798,7 +13800,7 @@ def api_draft_grades():
             # Get current QB count for positional context
             qb_count = roster_pos_counts.get(rid, {}).get("QB", 0)
 
-            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name)
+            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name, _num_teams)
 
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
