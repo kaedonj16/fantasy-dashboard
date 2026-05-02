@@ -13628,9 +13628,31 @@ def api_draft_grades():
             [p for p in picks_raw if isinstance(p, dict)],
             key=lambda p: int(p.get("pick_no") or 0)
         )
-        # All rookies with ADP data, sorted best → worst (by avg_pick)
+
+        # For rookie drafts, restrict the board to players who are actually
+        # eligible — i.e., were actually picked in this draft or are confirmed
+        # rookies for this season.  This prevents veterans (e.g. Isaiah Likely)
+        # from appearing in adp_info (sourced from startup drafts) from polluting
+        # the rookie draft board.
+        eligible_sids: set[str] = set(drafted_player_ids)
+        try:
+            from dashboard_services.db import get_conn as _gcb
+            with _gcb() as _cc:
+                _rp = _cc.execute(
+                    "SELECT sleeper_id FROM rookie_prospects "
+                    "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                    (season,),
+                ).fetchall()
+            for _r in _rp:
+                eligible_sids.add(str(_r["sleeper_id"]))
+        except Exception:
+            pass  # fall back to full board if DB unavailable
+
+        # All eligible players with ADP data, sorted best → worst
         board_all: list[str] = sorted(
-            [sid for sid in adp_info.keys() if adp_info[sid].get("avg_pick") is not None],
+            [sid for sid in adp_info.keys()
+             if adp_info[sid].get("avg_pick") is not None
+             and (not eligible_sids or sid in eligible_sids)],
             key=lambda sid: adp_info[sid]["avg_pick"]
         )
         taken: set[str] = set()
@@ -13685,33 +13707,41 @@ def api_draft_grades():
             """
             if adp_diff is None:
                 return "N/A"
-            
-            # Base score from ADP diff (primary signal)
-            if adp_diff >= 5:     score = 4   # clear value
-            elif adp_diff >= 2:   score = 3
-            elif adp_diff >= -1:  score = 2   # on ADP
-            elif adp_diff >= -4:  score = 1
-            else:                 score = 0   # big reach
 
-            # BPA Bonus: Taking the best available player should be rewarded
+            # Base score from ADP diff
+            if adp_diff >= 5:    score = 4   # clear value
+            elif adp_diff >= 2:  score = 3   # good value
+            elif adp_diff >= -1: score = 2   # on ADP
+            elif adp_diff >= -4: score = 1   # minor reach
+            else:                score = 0   # notable reach
+
+            # BPA bonus / penalty
             if is_bpa:
-                score += 2  # Strong bonus for BPA selection
+                score += 2
             elif bpa_gap is not None and bpa_gap >= 5:
-                score = max(score - 2, 0)   # much better player sitting there
-            elif bpa_gap is not None and bpa_gap >= 3:
-                score = max(score - 1, 0)
+                score = max(score - 1, 0)   # better player available (was -2)
+            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
+            # captures whether the pick was a reach
 
             # Need modifier with positional context
             if need:
                 score += 1
             else:
-                # Penalize picking positions you don't need, especially QB in 1QB
+                # Penalise redundant QB in 1QB
                 if pos == "QB" and not is_sf and qb_count >= 2:
-                    score = max(score - 2, 0)  # Heavy penalty for redundant QB in 1QB
+                    score = max(score - 2, 0)
                 elif pos == "QB" and not is_sf and qb_count >= 1:
-                    score = max(score - 1, 0)  # Penalty for backup QB in 1QB
-                else:
-                    score = max(score - 0, score)  # No penalty for other depth picks
+                    score = max(score - 1, 0)
+
+            # ── Post-modifier floors ─────────────────────────────────────────
+            # Minor reaches (within 3 of ADP) should never fall below D, even
+            # if a better player was on the board.
+            if adp_diff >= -3:
+                score = max(score, 1)
+            # Need pick within 4 of ADP is always at least a C — filling a
+            # positional hole 3-4 slots early is an acceptable trade-off.
+            if need and adp_diff >= -4:
+                score = max(score, 2)
 
             return {5: "A+", 4: "A", 3: "B", 2: "C", 1: "D", 0: "F"}.get(min(score, 5), "F")
 
