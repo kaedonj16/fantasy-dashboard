@@ -6363,10 +6363,11 @@ def build_teams_body(ctx: dict) -> str:
                   var posRank = b.pos_rank != null ? b.pos_rank : '';
                   // Show first-initial + last name so "Isaiah Likely" renders as "I. Likely"
                   var parts = (b.name || '').split(' ');
-                  var suffixes = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
-                  var nameParts = parts.filter(function(p, i) {{ return i === 0 || !suffixes.test(p); }});
-                  var displayName = nameParts.length > 1
-                    ? nameParts[0][0] + '. ' + nameParts[nameParts.length - 1]
+                  var suffixRe = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
+                  var suffix = parts.length > 1 && suffixRe.test(parts[parts.length - 1]) ? ' ' + parts[parts.length - 1] : '';
+                  var coreParts = suffix ? parts.slice(0, -1) : parts;
+                  var displayName = coreParts.length > 1
+                    ? coreParts[0][0] + '. ' + coreParts[coreParts.length - 1] + suffix
                     : b.name;
                   return '<span class="bpa-name pos-' + (b.position || '').toLowerCase() + '">' +
                     displayName + ' (' + (b.position || '') + posRank + ')</span>';
