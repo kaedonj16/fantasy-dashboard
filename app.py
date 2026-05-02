@@ -6348,7 +6348,7 @@ def build_teams_body(ctx: dict) -> str:
               if (p.avg_pick != null) {{
                 var diff = p.adp_diff;
                 var diffHtml = diff > 1
-                  ? '<span class="adp-value">+' + diff.toFixed(1) + ' value</span>'
+                  ? '<span class="adp-value">+' + diff.toFixed(1) + ' picks ahead</span>'
                   : diff < -1
                     ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
                     : '<span class="adp-neutral">on ADP</span>';
@@ -13693,9 +13693,8 @@ def api_draft_grades():
                     break
             return available_players
 
-        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int],
-                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str,
-                    num_teams: int = 10) -> str:
+        def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
@@ -13729,8 +13728,10 @@ def api_draft_grades():
             # applying BPA on top would double-count and turn a D into an F.
             if is_bpa:
                 score += 2
-            elif bpa_gap is not None and bpa_gap >= 5 and adp_diff >= -2:
-                score = max(score - 1, 0)
+            elif bpa_gap is not None and bpa_gap >= 5:
+                score = max(score - 1, 0)   # better player available (was -2)
+            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
+            # captures whether the pick was a reach
 
             # Need modifier with positional context
             if need:
