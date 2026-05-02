@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-02",
+        "tag": "new",
+        "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick — ADP value, positional need, and best player available. View by team (accordion) or by round with prev/next pagination. ADP sourced from real drafts in similar leagues when available.",
+        "link": "/teams"
+    },
+    {
         "date": "2026-04-29",
         "tag": "new",
         "text": "League Superlatives: 10 all-time awards on the Awards page — Barely Breathing (most wins by <5 pts), Consistency King, Main Character, Bench Warmer MVP, Waiver Wire Demon, Playoff Riser, plus The Bridesmaid, Most Dominant, The Punching Bag, and Boom or Bust.",
