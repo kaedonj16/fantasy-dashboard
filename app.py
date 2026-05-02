@@ -6070,7 +6070,7 @@ def build_teams_body(ctx: dict) -> str:
         _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
 
         # Numeric sort keys for client-side sorting
-        _grade_num = {"A+":10,"A":9,"B+":8,"B":7,"C+":6,"C":5,"D+":4,"D":3,"F":2}.get(_grade, 1)
+        _grade_num = {"A+":12,"A":11,"A-":10,"B+":9,"B":8,"B-":7,"C+":6,"C":5,"C-":4,"D+":3,"D":2,"D-":1,"F":0}.get(_grade, 0)
         _archetype_num = {"Win-Now Window":1,"Contender Window":2,"Aging Contender":3,
                           "2-3 Year Window":4,"Rising Contender":5,"Building":6,
                           "Retooling":7,"Holding Pattern":8,"Full Rebuild":9}.get(_win_window, 5)
