@@ -6349,24 +6349,25 @@ def build_teams_body(ctx: dict) -> str:
                 var pgcls = 'dg-' + p.grade.replace('+', 'plus');
 
                 var adpLine = '';
-                if (p.adp_rank != null) {{
+                if (p.avg_pick != null) {{
                   var diff = p.adp_diff;
                   var diffHtml = diff > 1
-                    ? '<span class="adp-value">+' + diff + ' value</span>'
+                    ? '<span class="adp-value">+' + diff.toFixed(1) + ' value</span>'
                     : diff < -1
-                      ? '<span class="adp-reach">' + diff + '</span>'
+                      ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
                       : '<span class="adp-neutral">on ADP</span>';
-                  var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
+                  var posTag = p.pos_rank != null && p.pos_rank != undefined ? ' · ' + p.position + p.pos_rank : '';
                    var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                  var adpLabel = (data.adp_source === 'model') ? '#' : 'ADP ';
-                  adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
+                  var adpLabel = 'ADP ';
+                  adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.avg_pick.toFixed(2) + posTag + ' ' + diffHtml + waitTag + '</div>';
                 }}
 
                 var bpaLine = '';
                 if (p.bpa && p.bpa.length) {{
                   var bpaNames = p.bpa.map(function(b) {{
-                    return '<span class="bpa-name pos-' + b.position.toLowerCase() + '">' +
-                      b.name.split(' ').slice(-1)[0] + ' (' + b.position + b.adp_rank + ')</span>';
+                    var posRank = b.pos_rank != null && b.pos_rank != undefined ? b.pos_rank : '';
+                    return '<span class="bpa-name pos-' + (b.position || '').toLowerCase() + '">' +
+                      b.name.split(' ').slice(-1)[0] + ' (' + (b.position || '') + posRank + ')</span>';
                   }}).join(' ');
                   bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
                 }}
@@ -13534,30 +13535,51 @@ def api_draft_grades():
             [p for p in picks_raw if isinstance(p, dict)],
             key=lambda p: int(p.get("pick_no") or 0)
         )
-        # All rookies with ADP data, sorted best → worst
+        # All rookies with ADP data, sorted best → worst (by avg_pick)
         board_all: list[str] = sorted(
-            adp_info.keys(),
-            key=lambda sid: adp_info[sid]["adp_rank"]
+            [sid for sid in adp_info.keys() if adp_info[sid].get("avg_pick") is not None],
+            key=lambda sid: adp_info[sid]["avg_pick"]
         )
         taken: set[str] = set()
 
+        # ── Calculate positional rankings based on avg_pick ───────────────────────
+        pos_rankings: dict[str, dict[str, int]] = {}
+        for pos in CORE_POS:
+            # Get all players with this position and valid avg_pick
+            pos_players = [
+                (sid, info["avg_pick"]) 
+                for sid, info in adp_info.items() 
+                if info.get("position") == pos and info.get("avg_pick") is not None
+            ]
+            # Sort by avg_pick and assign rankings
+            pos_players.sort(key=lambda x: x[1])
+            pos_rankings[pos] = {sid: rank + 1 for rank, (sid, _) in enumerate(pos_players)}
+
         def available_at_pick(exclude_sid: str) -> list[dict]:
-            """Return top-3 remaining board players (by ADP) excluding the one just picked."""
-            return [
-                {"player_id": sid,
-                 "name": (players_index.get(sid) or {}).get("name") or sid,
-                 "position": adp_info[sid]["position"],
-                 "adp_rank": adp_info[sid]["adp_rank"]}
-                for sid in board_all
-                if sid not in taken and sid != exclude_sid
-            ][:3]
+            """Return top-3 remaining board players (by avg_pick) excluding the one just picked."""
+            available_players = []
+            for sid in board_all:
+                if sid in taken or sid == exclude_sid:
+                    continue
+                info = adp_info[sid]
+                pos = info.get("position")
+                available_players.append({
+                    "player_id": sid,
+                    "name": (players_index.get(sid) or {}).get("name") or sid,
+                    "position": pos,
+                    "avg_pick": info.get("avg_pick"),
+                    "pos_rank": pos_rankings.get(pos, {}).get(sid) if pos else None
+                })
+                if len(available_players) >= 3:
+                    break
+            return available_players
 
         def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
                     is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
-            adp_diff  : actual_pick - adp_rank  (+= value, -= reach)
+            adp_diff  : actual_pick - avg_pick  (+= value, -= reach)
             need      : True if pick fills a positional need
             bpa_gap   : ADP gap between this pick and the best available player
                         (0 = BPA taken; positive = better players left on board)
@@ -13627,15 +13649,15 @@ def api_draft_grades():
 
             # ADP comparison
             info     = adp_info.get(player_id)
-            adp_rank = info["adp_rank"] if info else None
-            adp_diff = (pick_no - adp_rank) if adp_rank is not None else None
+            avg_pick = info.get("avg_pick") if info else None
+            adp_diff = (pick_no - avg_pick) if avg_pick is not None else None
 
             # BPA: who with a better ADP was still available?
             avail_better = [
                 a for a in available_at_pick(player_id)
-                if a["adp_rank"] < (adp_rank or pick_no)
+                if a.get("avg_pick", pick_no) < (avg_pick or pick_no)
             ]
-            bpa_gap = (adp_rank - avail_better[0]["adp_rank"]) if avail_better and adp_rank is not None else 0
+            bpa_gap = (avg_pick - avail_better[0].get("avg_pick", pick_no)) if avail_better and avg_pick is not None else 0
             
             # Check if this was the best player available (BPA)
             is_bpa = len(avail_better) == 0
@@ -13644,7 +13666,7 @@ def api_draft_grades():
             # Estimate: next same-team pick ≈ pick_no + num_teams (snake round)
             num_teams = max(len(rosters), 1)
             could_wait = (adp_diff is not None and adp_diff < -2 and
-                          adp_rank is not None and adp_rank > pick_no + num_teams)
+                          avg_pick is not None and avg_pick > pick_no + num_teams)
 
             # Get current QB count for positional context
             qb_count = roster_pos_counts.get(rid, {}).get("QB", 0)
@@ -13657,9 +13679,10 @@ def api_draft_grades():
                 "name":             name,
                 "position":         pos,
                 "team":             player_meta.get("team") or "",
-                "adp_rank":         adp_rank,
+                "adp_rank":         None,  # Deprecated - now using avg_pick
+                "avg_pick":         avg_pick,
                 "adp_diff":         adp_diff,
-                "pos_rank":         info["pos_rank"] if info else None,
+                "pos_rank":         None,  # Will be calculated based on avg_pick
                 "need":             need,
                 "bpa":              avail_better[:2],   # top 2 available better options
                 "could_wait":       could_wait,
@@ -13680,6 +13703,12 @@ def api_draft_grades():
             team_picks = sorted(picks_by_roster.get(rid, []), key=lambda x: x["pick_no"])
             if not team_picks:
                 continue
+            
+            # Update pos_rank for each pick based on avg_pick
+            for pick in team_picks:
+                if pick["position"] in pos_rankings and pick["player_id"] in pos_rankings[pick["position"]]:
+                    pick["pos_rank"] = pos_rankings[pick["position"]][pick["player_id"]]
+            
             tgrade = team_grade([p["grade"] for p in team_picks if p["grade"] != "N/A"])
             results.append({
                 "roster_id":  rid,
