@@ -1507,12 +1507,22 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     picks_by_roster = {}
     if platform == "sleeper":
+        # Compute draft-ended locally to avoid circular cache dependency
+        _draft_ts_ms = None
+        if isinstance(latest_draft, dict):
+            _draft_ts_ms = _safe_int(latest_draft.get("start_time"))
+        if _draft_ts_ms is None:
+            _draft_ts_ms = _safe_int(league.get("draft_day"))
+        _ctx_draft_ended = (
+            datetime.now(EASTERN) > datetime.fromtimestamp(_draft_ts_ms / 1000, tz=EASTERN)
+            if _draft_ts_ms else False
+        )
         picks_by_roster = build_picks_by_roster(
             num_future_seasons=3,
             league=league,
             rosters=rosters,
             traded=traded,
-            draft_ended=has_draft_ended(league_id, platform, season),
+            draft_ended=_ctx_draft_ended,
         )
 
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
@@ -2507,12 +2517,21 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
         if platform == "sleeper":
             try:
+                _ref_draft_ts = None
+                if isinstance(latest_draft, dict):
+                    _ref_draft_ts = _safe_int(latest_draft.get("start_time"))
+                if _ref_draft_ts is None:
+                    _ref_draft_ts = _safe_int(league.get("draft_day"))
+                _ref_draft_ended = (
+                    datetime.now(EASTERN) > datetime.fromtimestamp(_ref_draft_ts / 1000, tz=EASTERN)
+                    if _ref_draft_ts else False
+                )
                 ctx["picks_by_roster"] = build_picks_by_roster(
                     num_future_seasons=3,
                     league=league,
                     rosters=rosters,
                     traded=traded,
-                    draft_ended=has_draft_ended(league_id, platform, season),
+                    draft_ended=_ref_draft_ended,
                 )
             except Exception as e:
                 print(f"[refresh] picks refresh skipped: {e}")
