@@ -7324,7 +7324,17 @@ img, svg, canvas {
   .page-layout .page-sidebar {
     order: -1;
   }
-  .page-sidebar-toggle {
+}
+
+/* Shared mobile sidebar toggle styles — active at both breakpoints */
+@media (max-width: 1200px) {
+  .otc-layout .otc-side {
+    order: -1;
+  }
+}
+@media (max-width: 1200px) {
+  .page-sidebar-toggle,
+  .otc-side-toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -7338,22 +7348,27 @@ img, svg, canvas {
     color: var(--text);
     margin-bottom: 4px;
     user-select: none;
+    width: 100%;
   }
-  .page-sidebar-toggle .sidebar-toggle-icon {
+  .page-sidebar-toggle .sidebar-toggle-icon,
+  .otc-side-toggle .sidebar-toggle-icon {
     transition: transform 0.2s;
     font-size: 11px;
     color: var(--text-muted);
   }
-  .page-sidebar-toggle.open .sidebar-toggle-icon {
+  .page-sidebar-toggle.open .sidebar-toggle-icon,
+  .otc-side-toggle.open .sidebar-toggle-icon {
     transform: rotate(180deg);
   }
-  .page-sidebar-body {
+  .page-sidebar-body,
+  .otc-side-body {
     overflow: hidden;
     transition: max-height 0.3s ease;
     max-height: 0;
   }
-  .page-sidebar-body.open {
-    max-height: 2000px;
+  .page-sidebar-body.open,
+  .otc-side-body.open {
+    max-height: 4000px;
   }
 }
 

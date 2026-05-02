@@ -7489,32 +7489,45 @@ function setupFunAwardsGrid() {
   }
 }
 
-// Mobile sidebar: wrap .page-sidebar content in a collapsible toggle drawer
-// Only activates at <= 1180px where the sidebar stacks below main content.
+// Mobile sidebar: wrap sidebar content in a collapsible toggle drawer.
+// Handles both .page-sidebar (league pages, ≤1180px) and .otc-side (trade calc, ≤1200px).
+// Both default to CLOSED on mobile.
 (function initMobileSidebar() {
+  var configs = [
+    { selector: '.page-sidebar', breakpoint: 1180, toggleClass: 'page-sidebar-toggle', bodyClass: 'page-sidebar-body', label: 'League Analytics' },
+    { selector: '.otc-side',     breakpoint: 1200, toggleClass: 'otc-side-toggle',     bodyClass: 'otc-side-body',     label: 'Player Insights' },
+  ];
+
+  function setupSidebar(sidebar, cfg) {
+    if (sidebar.dataset.mobileToggleInit) return;
+    sidebar.dataset.mobileToggleInit = '1';
+
+    var label = sidebar.dataset.sidebarLabel || cfg.label;
+    var toggle = document.createElement('button');
+    toggle.className = cfg.toggleClass;
+    toggle.innerHTML = '<span>' + label + '</span><span class="sidebar-toggle-icon">▼</span>';
+
+    var body = document.createElement('div');
+    body.className = cfg.bodyClass;
+    while (sidebar.firstChild) {
+      body.appendChild(sidebar.firstChild);
+    }
+
+    sidebar.appendChild(toggle);
+    sidebar.appendChild(body);
+    // Default: closed
+
+    toggle.addEventListener('click', function() {
+      var open = body.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+    });
+  }
+
   function setup() {
-    if (window.innerWidth > 1180) return;
-    document.querySelectorAll('.page-sidebar').forEach(function(sidebar) {
-      if (sidebar.dataset.mobileToggleInit) return;
-      sidebar.dataset.mobileToggleInit = '1';
-
-      const label = sidebar.dataset.sidebarLabel || 'League Analytics';
-      const toggle = document.createElement('button');
-      toggle.className = 'page-sidebar-toggle';
-      toggle.innerHTML = '<span>' + label + '</span><span class="sidebar-toggle-icon">▼</span>';
-
-      const body = document.createElement('div');
-      body.className = 'page-sidebar-body';
-      while (sidebar.firstChild) {
-        body.appendChild(sidebar.firstChild);
-      }
-
-      sidebar.appendChild(toggle);
-      sidebar.appendChild(body);
-
-      toggle.addEventListener('click', function() {
-        const open = body.classList.toggle('open');
-        toggle.classList.toggle('open', open);
+    configs.forEach(function(cfg) {
+      if (window.innerWidth > cfg.breakpoint) return;
+      document.querySelectorAll(cfg.selector).forEach(function(el) {
+        setupSidebar(el, cfg);
       });
     });
   }
@@ -7524,8 +7537,5 @@ function setupFunAwardsGrid() {
   } else {
     setup();
   }
-  window.addEventListener('resize', function() {
-    if (window.innerWidth > 1180) return;
-    document.querySelectorAll('.page-sidebar:not([data-mobile-toggle-init])').forEach(function() { setup(); });
-  });
+  window.addEventListener('resize', setup);
 })();
