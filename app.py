@@ -11121,21 +11121,53 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Overlay rank_change_7d from DB if available (also stored in JSON, DB is fallback/override)
+    # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
+    # and newly-added rookies don't distort movement arrows on the rankings page.
+    # Current rank = position in value-sorted player list; historical rank from DB snapshot.
+    _PLAYER_POSITIONS = {"QB", "RB", "WR", "TE"}
     try:
-        from dashboard_services.db import get_conn as _gc
-        with _gc() as _rc:
-            _rk_rows = _rc.execute(
-                "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
-            ).fetchall()
-        _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+        from data_building.update_player_values_with_rankings import _load_historical_ranks as _lhr
+        from datetime import timedelta as _td
+
+        # Cache historical ranks by date so we don't hit DB on every request
+        _today = date.today()
+        _hist_cache_key = f"_hist_ranks_{_today}"
+        _hist_ranks = getattr(app, _hist_cache_key, None)
+        if _hist_ranks is None:
+            _hist_ranks = _lhr(_today - _td(days=7))
+            setattr(app, _hist_cache_key, _hist_ranks)
+
+        # Current player-only rank: sort QB/RB/WR/TE by value descending
+        _player_rows = sorted(
+            [p for p in model_value_table
+             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
+            key=lambda p: float(p.get("value") or 0),
+            reverse=True,
+        )
+        _cur_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_player_rows)}
+
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
-            if _pid in _rk_map:
-                _p["rank_change_7d"] = _rk_map[_pid]
+            _cur = _cur_rank_map.get(_pid)
+            _hist = _hist_ranks.get(_pid)
+            if _cur is not None and _hist:
+                _p["rank_change_7d"] = _hist["overall_rank"] - _cur
+            # leave rank_change_7d as-is (None or from JSON) for non-player-pos entries
     except Exception:
-        # DB not configured or query failed - rank_change_7d from JSON will be used
-        pass
+        # Fall back to DB-stored values if recomputation fails
+        try:
+            from dashboard_services.db import get_conn as _gc
+            with _gc() as _rc:
+                _rk_rows = _rc.execute(
+                    "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
+                ).fetchall()
+            _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+            for _p in model_value_table:
+                _pid = str(_p.get("id") or "")
+                if _pid in _rk_map:
+                    _p["rank_change_7d"] = _rk_map[_pid]
+        except Exception:
+            pass
 
     try:
         from data_building.rookie_pipeline.pipeline import (

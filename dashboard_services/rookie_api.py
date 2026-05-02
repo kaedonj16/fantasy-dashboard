@@ -116,27 +116,32 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP from draft_adp table (keyed by sleeper_id)
+        # Overlay dynasty rookie ADP from draft_adp table (keyed by sleeper_id).
+        # Weighted-average pick across all num_teams values so we don't need a
+        # specific league size. Shows the consensus avg pick in real rookie drafts.
         try:
             from dashboard_services.db import get_conn as _gc
             is_sf = league_type == "sf"
             with _gc() as _conn:
                 _adp_rows = _conn.execute(
                     """
-                    SELECT player_id, avg_pick, sample_size
+                    SELECT player_id,
+                           SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick,
+                           SUM(sample_size) AS total_samples
                     FROM draft_adp
                     WHERE season = %s AND draft_type = 'rookie'
-                      AND is_superflex = %s AND sample_size >= 5
+                      AND is_superflex = %s
+                    GROUP BY player_id
+                    HAVING SUM(sample_size) >= 3
                     ORDER BY avg_pick ASC
                     """,
                     (year, is_sf),
                 ).fetchall()
-            _adp_map = {str(r["player_id"]): {"avg_pick": float(r["avg_pick"]), "sample_size": int(r["sample_size"])} for r in _adp_rows}
-            for rank, d in enumerate(result, start=1):
+            _adp_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _adp_rows}
+            for d in result:
                 sid = str(d.get("sleeper_id") or "")
                 if sid and sid in _adp_map:
-                    d["adp_rank"] = _adp_map[sid]["avg_pick"]
-                    d["adp_sample"] = _adp_map[sid]["sample_size"]
+                    d["adp_rank"] = _adp_map[sid]
         except Exception:
             pass
 
