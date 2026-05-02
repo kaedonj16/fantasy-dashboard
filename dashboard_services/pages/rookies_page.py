@@ -106,7 +106,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       <span>Prospect</span>
       <span style="text-align:center;">Pos</span>
       <span style="text-align:center;">Age</span>
-      <span style="text-align:right;">ADP</span>
+      <span style="text-align:center;">ADP</span>
       <span style="text-align:right;">Score</span>
       <span style="text-align:right;">Value</span>
     </div>
@@ -320,7 +320,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   /* Table grid */
   .rk-grid-row {
     display: grid;
-    grid-template-columns: 40px 1fr 52px 48px 72px 58px 60px;
+    grid-template-columns: 40px 1fr 48px 48px 48px 58px 60px;
     align-items: center;
     gap: 0;
   }
@@ -353,7 +353,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   .rk-meta { font-size: 11px; color: var(--text-muted); }
   .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
   .rk-age  { text-align: center; font-size: 12px; color: var(--text-muted); }
-  .rk-draft { text-align: right; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .rk-draft { text-align: center; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
   .rk-score { text-align: right; font-size: 12px; font-weight: 600; }
   .rk-value { text-align: right; font-size: 13px; font-weight: 700; color: var(--accent); }
 

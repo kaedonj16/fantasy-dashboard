@@ -6719,7 +6719,10 @@ def build_teams_body(ctx: dict) -> str:
         var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
         cards.sort(function(a, b) {{
           if (key === 'grade') {{
-            return Number(b.dataset.sortGrade) - Number(a.dataset.sortGrade);
+            var gradeA = Number(a.dataset.sortGrade) || 0;
+            var gradeB = Number(b.dataset.sortGrade) || 0;
+            // Higher grade numbers should come first (A+ = 10, A = 9, etc.)
+            return gradeB - gradeA;
           }} else if (key === 'archetype') {{
             return Number(a.dataset.sortArchetype) - Number(b.dataset.sortArchetype);
           }} else {{

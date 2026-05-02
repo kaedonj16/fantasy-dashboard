@@ -6387,7 +6387,6 @@ thead th {
 .page-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   position: sticky;
   top: 12px;
   height: fit-content;
@@ -7349,6 +7348,7 @@ img, svg, canvas {
     margin-bottom: 4px;
     user-select: none;
     width: 100%;
+    background: var(--bg);
   }
   .page-sidebar-toggle .sidebar-toggle-icon,
   .otc-side-toggle .sidebar-toggle-icon {
