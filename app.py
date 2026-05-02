@@ -14692,7 +14692,7 @@ def _real_trade_packages_for_target(
         return {"packages": [], "total_real_trades": 0}
 
     # Build position/value signature for each trade package, then count frequencies
-    def _sig(assets: list[dict]) -> tuple | None:
+    def _sig(assets: list[dict]) -> Optional[tuple]:
         parts = []
         for a in sorted(assets, key=lambda x: x["asset_type"]):
             if a["asset_type"] == "player" and a["sent_player_id"]:
