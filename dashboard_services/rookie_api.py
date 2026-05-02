@@ -116,9 +116,9 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP from draft_adp table (keyed by sleeper_id).
-        # Weighted-average pick across all num_teams values so we don't need a
-        # specific league size. Shows the consensus avg pick in real rookie drafts.
+        # Overlay dynasty rookie ADP. Try real league draft data first; fall back
+        # to FantasyCalc dynasty rankings when the season's drafts haven't started.
+        _adp_set = False
         try:
             from dashboard_services.db import get_conn as _gc
             is_sf = league_type == "sf"
@@ -137,13 +137,56 @@ def rankings():
                     """,
                     (year, is_sf),
                 ).fetchall()
-            _adp_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _adp_rows}
-            for d in result:
-                sid = str(d.get("sleeper_id") or "")
-                if sid and sid in _adp_map:
-                    d["adp_rank"] = _adp_map[sid]
+            if _adp_rows:
+                _adp_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _adp_rows}
+                for d in result:
+                    sid = str(d.get("sleeper_id") or "")
+                    if sid and sid in _adp_map:
+                        d["adp_rank"] = _adp_map[sid]
+                        d["adp_source"] = "db"
+                _adp_set = True
         except Exception:
             pass
+
+        if not _adp_set:
+            # Fall back to FantasyCalc dynasty values to rank rookies by dynasty ADP order
+            try:
+                import requests as _req, json as _json
+                from datetime import date as _date
+                from utils.paths import DATA_DIR
+                is_sf = league_type == "sf"
+                _fc_cache = DATA_DIR / f"fc_dynasty_rookie_adp_{'sf' if is_sf else '1qb'}_{_date.today().isoformat()}.json"
+                if _fc_cache.exists():
+                    _fc_data = _json.loads(_fc_cache.read_text())
+                else:
+                    _num_qbs = 2 if is_sf else 1
+                    _resp = _req.get(
+                        f"https://fantasycalc.com/api/values/current?numQbs={_num_qbs}&type=1&ppr=0.5",
+                        timeout=8, headers={"User-Agent": "fantasy-dashboard/1.0"},
+                    )
+                    _fc_data = _resp.json() if _resp.ok else []
+                    try:
+                        _fc_cache.write_text(_json.dumps(_fc_data))
+                    except Exception:
+                        pass
+
+                # Build sleeper_id -> overall rank for rookies only
+                _fc_by_sid = {}
+                for _entry in (_fc_data or []):
+                    _p = _entry.get("player") or {}
+                    _sid = str(_p.get("sleeperId") or "")
+                    if _sid and _p.get("rosterPosition") != "P":
+                        _fc_by_sid[_sid] = _entry.get("overallRank") or 9999
+
+                # Rank only the prospects in this result by their FC overall rank
+                _prospect_sids = [(d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in result]
+                _prospect_sids.sort(key=lambda x: x[1])
+                for _rank, (_d, _fc_rank) in enumerate(_prospect_sids, start=1):
+                    if _fc_rank < 9999:
+                        _d["adp_rank"] = float(_rank)
+                        _d["adp_source"] = "fc"
+            except Exception:
+                pass
 
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))

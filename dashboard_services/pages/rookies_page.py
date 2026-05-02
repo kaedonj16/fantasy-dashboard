@@ -800,12 +800,12 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
       var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-      // Show dynasty rookie ADP if available, otherwise fall back to projected pick
+      // Show dynasty rookie ADP (avg pick from real drafts or FC rankings)
       var adpDisplay = '—';
       if (r.adp_rank != null) {
-        adpDisplay = r.adp_rank.toFixed(1);
-      } else if (r.projected_pick) {
-        adpDisplay = '#' + r.projected_pick;
+        adpDisplay = Math.round(r.adp_rank) === r.adp_rank
+          ? String(Math.round(r.adp_rank))
+          : r.adp_rank.toFixed(1);
       }
       var posRk = r.position || '';
       if (r.position_rank) posRk += r.position_rank;
