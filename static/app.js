@@ -7488,3 +7488,44 @@ function setupFunAwardsGrid() {
     funAwardsGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
   }
 }
+
+// Mobile sidebar: wrap .page-sidebar content in a collapsible toggle drawer
+// Only activates at <= 1180px where the sidebar stacks below main content.
+(function initMobileSidebar() {
+  function setup() {
+    if (window.innerWidth > 1180) return;
+    document.querySelectorAll('.page-sidebar').forEach(function(sidebar) {
+      if (sidebar.dataset.mobileToggleInit) return;
+      sidebar.dataset.mobileToggleInit = '1';
+
+      const label = sidebar.dataset.sidebarLabel || 'League Analytics';
+      const toggle = document.createElement('button');
+      toggle.className = 'page-sidebar-toggle';
+      toggle.innerHTML = '<span>' + label + '</span><span class="sidebar-toggle-icon">▼</span>';
+
+      const body = document.createElement('div');
+      body.className = 'page-sidebar-body';
+      while (sidebar.firstChild) {
+        body.appendChild(sidebar.firstChild);
+      }
+
+      sidebar.appendChild(toggle);
+      sidebar.appendChild(body);
+
+      toggle.addEventListener('click', function() {
+        const open = body.classList.toggle('open');
+        toggle.classList.toggle('open', open);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+  window.addEventListener('resize', function() {
+    if (window.innerWidth > 1180) return;
+    document.querySelectorAll('.page-sidebar:not([data-mobile-toggle-init])').forEach(function() { setup(); });
+  });
+})();

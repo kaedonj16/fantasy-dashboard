@@ -3409,13 +3409,25 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     }
 
     # --- Waiver Recommendations: gather candidates ---
+    # Build a set of sleeper_ids for this year's rookie class from DB.
+    _rookie_sids: set[str] = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _arc
+        _ry = _arc()
+        from dashboard_services.db import get_conn as _gc_w
+        with _gc_w() as _wc:
+            _rr = _wc.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry,),
+            ).fetchall()
+        _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
+    except Exception:
+        pass
+
     # Rookies are only waiver-eligible after the fantasy rookie draft is complete.
-    # Detect completion by checking if any is_rookie player is already rostered.
-    _rookie_draft_done = any(
-        row.get("is_rookie") and str(row.get("id") or "") in rostered_ids
-        for row in model_value_table
-        if isinstance(row, dict)
-    )
+    # Detect by checking if any rookie from this year's class is already rostered.
+    _rookie_draft_done = bool(_rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
+
     waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -3426,7 +3438,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-        if row.get("is_rookie") and not _rookie_draft_done:
+        if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
             val = float(row.get("value") or 0.0)
@@ -6057,8 +6069,15 @@ def build_teams_body(ctx: dict) -> str:
         _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
         _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
 
+        # Numeric sort keys for client-side sorting
+        _grade_num = {"A+":10,"A":9,"B+":8,"B":7,"C+":6,"C":5,"D+":4,"D":3,"F":2}.get(_grade, 1)
+        _archetype_num = {"Win-Now Window":1,"Contender Window":2,"Aging Contender":3,
+                          "2-3 Year Window":4,"Rising Contender":5,"Building":6,
+                          "Retooling":7,"Holding Pattern":8,"Full Rebuild":9}.get(_win_window, 5)
+        _pos_idx = team_pos_index[rid]
+
         card_html = (
-            "<div class='card team-strength-card'>"
+            f"<div class='card team-strength-card' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
             f"    <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
@@ -6635,7 +6654,13 @@ def build_teams_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        <div class="teams-grid">
+        <div class="teams-sort-bar">
+          <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+          <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+          <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
+          <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+        </div>
+        <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>
       </main>
@@ -6663,6 +6688,34 @@ def build_teams_body(ctx: dict) -> str:
           chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
         }}
       }});
+
+      // Teams sort bar
+      var _sortKey = 'posindex';
+      function sortTeams(key) {{
+        _sortKey = key;
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
+        cards.sort(function(a, b) {{
+          if (key === 'grade') {{
+            return Number(b.dataset.sortGrade) - Number(a.dataset.sortGrade);
+          }} else if (key === 'archetype') {{
+            return Number(a.dataset.sortArchetype) - Number(b.dataset.sortArchetype);
+          }} else {{
+            // posindex: higher is better
+            return Number(b.dataset.sortPosindex) - Number(a.dataset.sortPosindex);
+          }}
+        }});
+        cards.forEach(function(c) {{ grid.appendChild(c); }});
+        document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
+          btn.classList.toggle('active', btn.dataset.sort === key);
+        }});
+      }}
+      document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
+      }});
+      // Default sort on load
+      sortTeams('posindex');
     }})();
     </script>
     """

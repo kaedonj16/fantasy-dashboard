@@ -106,7 +106,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       <span>Prospect</span>
       <span style="text-align:center;">Pos</span>
       <span style="text-align:center;">Age</span>
-      <span style="text-align:right;">Draft</span>
+      <span style="text-align:right;">ADP</span>
       <span style="text-align:right;">Score</span>
       <span style="text-align:right;">Value</span>
     </div>
@@ -800,19 +800,13 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
       var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-      // For main table, use old format: "1st (#4)"
-    var draft = r.draft_capital_label || (r.projected_pick ? '#'+r.projected_pick : '?');
-    // Convert new format to old format for table display
-    if (draft.includes('Round') && draft.includes('Pick')) {
-      // Convert "Round 1 · Pick 4" back to "1st (#4)"
-      var parts = draft.split(' · ');
-      if (parts.length === 2) {
-        var round = parts[0].replace('Round ', '');
-        var pick = parts[1].replace('Pick ', '');
-        var ordinal = round === '1' ? '1st' : round === '2' ? '2nd' : round === '3' ? '3rd' : round + 'th';
-        draft = ordinal + ' (#' + pick + ')';
+      // Show dynasty rookie ADP if available, otherwise fall back to projected pick
+      var adpDisplay = '—';
+      if (r.adp_rank != null) {
+        adpDisplay = r.adp_rank.toFixed(1);
+      } else if (r.projected_pick) {
+        adpDisplay = '#' + r.projected_pick;
       }
-    }
       var posRk = r.position || '';
       if (r.position_rank) posRk += r.position_rank;
 
@@ -836,7 +830,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         '</div>' +
         '<span class="rk-pos">' + (r.position||'') + '</span>' +
         '<span class="rk-age">' + age + '</span>' +
-        '<span class="rk-draft">' + draft + '</span>' +
+        '<span class="rk-draft">' + adpDisplay + '</span>' +
         '<span class="rk-score"><span class="rk-score-bar">' +
           '<span class="rk-score-dot" style="background:' + scoreColor + ';"></span>' +
           score.toFixed(2) + '</span></span>' +
