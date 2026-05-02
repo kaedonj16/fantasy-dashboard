@@ -6325,14 +6325,6 @@ def build_teams_body(ctx: dict) -> str:
             var numTeams    = data.num_teams || 10;
             var totalRounds = data.total_rounds || 1;
 
-            var banner = data.adp_source === 'league'
-              ? '<div class="draft-adp-banner draft-adp-league">ADP from real ' + (data.draft_type === 'startup' ? 'startup' : 'rookie') + ' drafts across similar leagues</div>'
-              : data.adp_source === 'fantasycalc'
-                ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on positional need, board value &amp; ADP</div>'
-                : data.adp_source === 'model'
-                  ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
-                  : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
-
             // Build team name lookup: roster_id -> team_name
             var teamNames = {{}};
             teams.forEach(function(t) {{ teamNames[t.roster_id] = t.team_name; }});
@@ -6470,7 +6462,7 @@ def build_teams_body(ctx: dict) -> str:
               '<div id="draftTeamView">' + buildByTeamHtml() + '</div>' +
               '<div id="draftRoundView" style="display:none;"></div>';
 
-            panel.innerHTML = banner + tabsHtml;
+            panel.innerHTML = tabsHtml;
 
             // Accordion toggle for By Team view
             panel.querySelectorAll('.draft-acc-header').forEach(function(btn) {{

@@ -12175,6 +12175,7 @@ img, svg, canvas {
 /* ── Draft view tabs (By Team / By Round) ─────────────────────────────────── */
 .draft-view-tabs {
   display: flex;
+  justify-content: center;
   gap: 4px;
   padding: 10px 12px 6px;
   border-bottom: 1px solid var(--border);
