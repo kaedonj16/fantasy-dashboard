@@ -6985,6 +6985,26 @@ thead th {
   flex-direction: column;
 }
 
+.teams-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.teams-sort-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.teams-sort-btn:hover { background: var(--surface2); color: var(--text); }
+.teams-sort-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 .teams-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
@@ -7298,6 +7318,57 @@ img, svg, canvas {
   .page-sidebar {
     position: static;
     flex: 1 1 auto;
+  }
+
+  /* Mobile sidebar: float above main content as a collapsible drawer */
+  .page-layout .page-sidebar {
+    order: -1;
+  }
+}
+
+/* Shared mobile sidebar toggle styles — active at both breakpoints */
+@media (max-width: 1200px) {
+  .otc-layout .otc-side {
+    order: -1;
+  }
+}
+@media (max-width: 1200px) {
+  .page-sidebar-toggle,
+  .otc-side-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+    user-select: none;
+    width: 100%;
+  }
+  .page-sidebar-toggle .sidebar-toggle-icon,
+  .otc-side-toggle .sidebar-toggle-icon {
+    transition: transform 0.2s;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .page-sidebar-toggle.open .sidebar-toggle-icon,
+  .otc-side-toggle.open .sidebar-toggle-icon {
+    transform: rotate(180deg);
+  }
+  .page-sidebar-body,
+  .otc-side-body {
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    max-height: 0;
+  }
+  .page-sidebar-body.open,
+  .otc-side-body.open {
+    max-height: 4000px;
   }
 }
 
@@ -7860,17 +7931,20 @@ img, svg, canvas {
 
   .tab-strip {
     display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    overflow-y: visible;
-    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    flex-wrap: nowrap;
     padding-bottom: 4px;
-    padding-left: 8px;
+    padding-left: 0;
   }
 
-  .tab-btn {
+  .tab-strip .tab-btn {
+    flex: 1 1 0;
+    min-width: 0;
     white-space: nowrap;
-    flex: 0 0 auto;
+    text-align: center;
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 0.75rem;
   }
 }
 

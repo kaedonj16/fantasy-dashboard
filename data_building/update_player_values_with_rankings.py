@@ -78,6 +78,7 @@ def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
                     SELECT player_id, position, value
                     FROM player_value_history
                     WHERE as_of_date = %s AND source = 'model'
+                      AND position IN ('QB', 'RB', 'WR', 'TE')
                     """,
                     (snap_date,),
                 )
@@ -130,6 +131,12 @@ def update_player_values_with_rankings() -> int:
 
     # Add rankings to each player
     df['overall_rank'] = df['value'].rank(ascending=False, method='min')
+
+    # Player-only rank (QB/RB/WR/TE) used for rank_change_7d to match display pool.
+    # Picks and other asset types are excluded so movement arrows reflect actual
+    # player-vs-player movement, not pool composition changes.
+    _player_mask = df['position'].isin({'QB', 'RB', 'WR', 'TE'})
+    df['player_rank'] = df['value'].where(_player_mask).rank(ascending=False, method='min')
     # Load calibration overrides to get calibrated values for ranking
     try:
         from dashboard_services.player_value_history import load_calibration_overrides
@@ -163,9 +170,11 @@ def update_player_values_with_rankings() -> int:
         pid = str(row['id'])
         cur_overall = int(row['overall_rank'])
         cur_pos = int(row['pos_rank'])
+        _pr = row.get('player_rank')
+        cur_player_rank = int(_pr) if (_pr is not None and not pd.isna(_pr)) else None
 
         hist = hist_ranks.get(pid)
-        rank_change_7d = (hist['overall_rank'] - cur_overall) if hist else None
+        rank_change_7d = (hist['overall_rank'] - cur_player_rank) if (hist and cur_player_rank is not None) else None
         pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
 
         rd_1qb, rd_sf = fc_redraft.get(pid, (None, None))

@@ -313,10 +313,28 @@ def get_player_value_history(
             (source, str(player_id), cutoff),
         ).fetchall()
 
+    # Scale historical values to the calibrated scale so the graph matches the
+    # current modal value. Use the latest history row's raw value as the
+    # denominator so the final graph point scales to exactly the calibrated value.
+    _cal_scale = 1.0
+    try:
+        _cal_col = "calibrated_value_1qb" if league_type == "1qb" else "calibrated_value_sf"
+        with get_conn() as _sc:
+            _cal_row = _sc.execute(
+                f"SELECT {_cal_col} AS cal FROM player_values WHERE player_id = %s",
+                (str(player_id),),
+            ).fetchone()
+        # Use the last history row's raw value as denominator so final point = calibrated
+        _last_raw = float(rows[-1]["value"]) if rows else 0.0
+        if _cal_row and _cal_row["cal"] and _last_raw > 0:
+            _cal_scale = float(_cal_row["cal"]) / _last_raw
+    except Exception:
+        pass
+
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
-        val = float(r["value"])
+        val = float(r["value"]) * _cal_scale
         delta = None if prev_val is None else round(val - prev_val, 1)
         out.append(
             {

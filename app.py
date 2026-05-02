@@ -1507,11 +1507,22 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     picks_by_roster = {}
     if platform == "sleeper":
+        # Compute draft-ended locally to avoid circular cache dependency
+        _draft_ts_ms = None
+        if isinstance(latest_draft, dict):
+            _draft_ts_ms = _safe_int(latest_draft.get("start_time"))
+        if _draft_ts_ms is None:
+            _draft_ts_ms = _safe_int(league.get("draft_day"))
+        _ctx_draft_ended = (
+            datetime.now(EASTERN) > datetime.fromtimestamp(_draft_ts_ms / 1000, tz=EASTERN)
+            if _draft_ts_ms else False
+        )
         picks_by_roster = build_picks_by_roster(
             num_future_seasons=3,
             league=league,
             rosters=rosters,
             traded=traded,
+            draft_ended=_ctx_draft_ended,
         )
 
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
@@ -2506,11 +2517,21 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
         if platform == "sleeper":
             try:
+                _ref_draft_ts = None
+                if isinstance(latest_draft, dict):
+                    _ref_draft_ts = _safe_int(latest_draft.get("start_time"))
+                if _ref_draft_ts is None:
+                    _ref_draft_ts = _safe_int(league.get("draft_day"))
+                _ref_draft_ended = (
+                    datetime.now(EASTERN) > datetime.fromtimestamp(_ref_draft_ts / 1000, tz=EASTERN)
+                    if _ref_draft_ts else False
+                )
                 ctx["picks_by_roster"] = build_picks_by_roster(
                     num_future_seasons=3,
                     league=league,
                     rosters=rosters,
                     traded=traded,
+                    draft_ended=_ref_draft_ended,
                 )
             except Exception as e:
                 print(f"[refresh] picks refresh skipped: {e}")
@@ -3409,13 +3430,25 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     }
 
     # --- Waiver Recommendations: gather candidates ---
+    # Build a set of sleeper_ids for this year's rookie class from DB.
+    _rookie_sids: set[str] = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _arc
+        _ry = _arc()
+        from dashboard_services.db import get_conn as _gc_w
+        with _gc_w() as _wc:
+            _rr = _wc.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry,),
+            ).fetchall()
+        _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
+    except Exception:
+        pass
+
     # Rookies are only waiver-eligible after the fantasy rookie draft is complete.
-    # Detect completion by checking if any is_rookie player is already rostered.
-    _rookie_draft_done = any(
-        row.get("is_rookie") and str(row.get("id") or "") in rostered_ids
-        for row in model_value_table
-        if isinstance(row, dict)
-    )
+    # Detect by checking if any rookie from this year's class is already rostered.
+    _rookie_draft_done = bool(_rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
+
     waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -3426,7 +3459,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
-        if row.get("is_rookie") and not _rookie_draft_done:
+        if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
             val = float(row.get("value") or 0.0)
@@ -6057,8 +6090,15 @@ def build_teams_body(ctx: dict) -> str:
         _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
         _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
 
+        # Numeric sort keys for client-side sorting
+        _grade_num = {"A+":12,"A":11,"A-":10,"B+":9,"B":8,"B-":7,"C+":6,"C":5,"C-":4,"D+":3,"D":2,"D-":1,"F":0}.get(_grade, 0)
+        _archetype_num = {"Win-Now Window":1,"Contender Window":2,"Aging Contender":3,
+                          "2-3 Year Window":4,"Rising Contender":5,"Building":6,
+                          "Retooling":7,"Holding Pattern":8,"Full Rebuild":9}.get(_win_window, 5)
+        _pos_idx = team_pos_index[rid]
+
         card_html = (
-            "<div class='card team-strength-card'>"
+            f"<div class='card team-strength-card' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
             f"    <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
@@ -6635,7 +6675,13 @@ def build_teams_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        <div class="teams-grid">
+        <div class="teams-sort-bar">
+          <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+          <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+          <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
+          <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+        </div>
+        <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>
       </main>
@@ -6663,6 +6709,34 @@ def build_teams_body(ctx: dict) -> str:
           chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
         }}
       }});
+
+      // Teams sort bar
+      var _sortKey = 'posindex';
+      function sortTeams(key) {{
+        _sortKey = key;
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
+        cards.sort(function(a, b) {{
+          if (key === 'grade') {{
+            return Number(b.dataset.sortGrade) - Number(a.dataset.sortGrade);
+          }} else if (key === 'archetype') {{
+            return Number(a.dataset.sortArchetype) - Number(b.dataset.sortArchetype);
+          }} else {{
+            // posindex: higher is better
+            return Number(b.dataset.sortPosindex) - Number(a.dataset.sortPosindex);
+          }}
+        }});
+        cards.forEach(function(c) {{ grid.appendChild(c); }});
+        document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
+          btn.classList.toggle('active', btn.dataset.sort === key);
+        }});
+      }}
+      document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
+      }});
+      // Default sort on load
+      sortTeams('posindex');
     }})();
     </script>
     """
@@ -11068,21 +11142,53 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Overlay rank_change_7d from DB if available (also stored in JSON, DB is fallback/override)
+    # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
+    # and newly-added rookies don't distort movement arrows on the rankings page.
+    # Current rank = position in value-sorted player list; historical rank from DB snapshot.
+    _PLAYER_POSITIONS = {"QB", "RB", "WR", "TE"}
     try:
-        from dashboard_services.db import get_conn as _gc
-        with _gc() as _rc:
-            _rk_rows = _rc.execute(
-                "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
-            ).fetchall()
-        _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+        from data_building.update_player_values_with_rankings import _load_historical_ranks as _lhr
+        from datetime import timedelta as _td
+
+        # Cache historical ranks by date so we don't hit DB on every request
+        _today = date.today()
+        _hist_cache_key = f"_hist_ranks_{_today}"
+        _hist_ranks = getattr(app, _hist_cache_key, None)
+        if _hist_ranks is None:
+            _hist_ranks = _lhr(_today - _td(days=7))
+            setattr(app, _hist_cache_key, _hist_ranks)
+
+        # Current player-only rank: sort QB/RB/WR/TE by value descending
+        _player_rows = sorted(
+            [p for p in model_value_table
+             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
+            key=lambda p: float(p.get("value") or 0),
+            reverse=True,
+        )
+        _cur_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_player_rows)}
+
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
-            if _pid in _rk_map:
-                _p["rank_change_7d"] = _rk_map[_pid]
+            _cur = _cur_rank_map.get(_pid)
+            _hist = _hist_ranks.get(_pid)
+            if _cur is not None and _hist:
+                _p["rank_change_7d"] = _hist["overall_rank"] - _cur
+            # leave rank_change_7d as-is (None or from JSON) for non-player-pos entries
     except Exception:
-        # DB not configured or query failed - rank_change_7d from JSON will be used
-        pass
+        # Fall back to DB-stored values if recomputation fails
+        try:
+            from dashboard_services.db import get_conn as _gc
+            with _gc() as _rc:
+                _rk_rows = _rc.execute(
+                    "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
+                ).fetchall()
+            _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+            for _p in model_value_table:
+                _pid = str(_p.get("id") or "")
+                if _pid in _rk_map:
+                    _p["rank_change_7d"] = _rk_map[_pid]
+        except Exception:
+            pass
 
     try:
         from data_building.rookie_pipeline.pipeline import (
@@ -12631,10 +12737,12 @@ def api_team_details(roster_id: str):
         traded_picks = get_traded_picks(platform, league_id, season)
         num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
         current_season = int(league.get("season") or season)
+        _modal_draft_ended = has_draft_ended(league_id, platform, season)
+        _modal_pick_start = 1 if _modal_draft_ended else 0
 
         # Build picks
         all_picks = []
-        for offset in range(3):  # Next 3 years
+        for offset in range(_modal_pick_start, _modal_pick_start + 3):  # Next 3 years
             year = current_season + offset
             for rnd in range(1, num_rounds + 1):
 

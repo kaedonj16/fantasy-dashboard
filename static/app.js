@@ -7488,3 +7488,54 @@ function setupFunAwardsGrid() {
     funAwardsGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
   }
 }
+
+// Mobile sidebar: wrap sidebar content in a collapsible toggle drawer.
+// Handles both .page-sidebar (league pages, ≤1180px) and .otc-side (trade calc, ≤1200px).
+// Both default to CLOSED on mobile.
+(function initMobileSidebar() {
+  var configs = [
+    { selector: '.page-sidebar', breakpoint: 1180, toggleClass: 'page-sidebar-toggle', bodyClass: 'page-sidebar-body', label: 'League Analytics' },
+    { selector: '.otc-side',     breakpoint: 1200, toggleClass: 'otc-side-toggle',     bodyClass: 'otc-side-body',     label: 'Player Insights' },
+  ];
+
+  function setupSidebar(sidebar, cfg) {
+    if (sidebar.dataset.mobileToggleInit) return;
+    sidebar.dataset.mobileToggleInit = '1';
+
+    var label = sidebar.dataset.sidebarLabel || cfg.label;
+    var toggle = document.createElement('button');
+    toggle.className = cfg.toggleClass;
+    toggle.innerHTML = '<span>' + label + '</span><span class="sidebar-toggle-icon">▼</span>';
+
+    var body = document.createElement('div');
+    body.className = cfg.bodyClass;
+    while (sidebar.firstChild) {
+      body.appendChild(sidebar.firstChild);
+    }
+
+    sidebar.appendChild(toggle);
+    sidebar.appendChild(body);
+    // Default: closed
+
+    toggle.addEventListener('click', function() {
+      var open = body.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+    });
+  }
+
+  function setup() {
+    configs.forEach(function(cfg) {
+      if (window.innerWidth > cfg.breakpoint) return;
+      document.querySelectorAll(cfg.selector).forEach(function(el) {
+        setupSidebar(el, cfg);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+  window.addEventListener('resize', setup);
+})();

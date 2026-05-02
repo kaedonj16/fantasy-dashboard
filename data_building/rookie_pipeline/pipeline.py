@@ -2054,6 +2054,7 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                         """
                         SELECT
                             rr.player_id, rr.draft_class_year,
+                            rp.sleeper_id,
                             rp.name, rp.position, rp.school, rp.age,
                             rp.height_inches, rp.weight_lbs,
                             rp.early_declare, rp.transfer_history,
