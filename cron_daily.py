@@ -370,6 +370,15 @@ def main():
                 analytics_result = run_analytics(season=season)
                 print(f"[cron] Trade intel analytics: {analytics_result}")
 
+            # Draft ADP crawl — runs every day regardless of trade-intel freshness
+            # so new rookie drafts get picked up promptly during draft season.
+            try:
+                from data_building.trade_intel.draft_adp_crawler import run_draft_adp_crawl
+                adp_result = run_draft_adp_crawl(batch_size=500, workers=10)
+                print(f"[cron] Draft ADP: {adp_result}")
+            except Exception as adp_err:
+                print(f"[cron] Draft ADP crawl failed (non-fatal): {adp_err}")
+
         except Exception as ti_err:
             print(f"[cron] Trade intel discovery/crawl failed (non-fatal): {ti_err}")
 

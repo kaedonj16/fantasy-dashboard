@@ -584,6 +584,149 @@ def calculate_roster_depth_warning(
     return result
 
 
+def _fetch_real_trade_patterns(
+    viewer_player_ids: list[str],
+    is_sf: bool,
+    num_teams: int,
+    lookback_days: int = 180,
+) -> dict[str, list[dict]]:
+    """
+    Query trade_intel to find what viewer's players have recently been traded for
+    in comparable leagues (dynasty, same superflex format, similar size ±2).
+
+    Returns {player_id: [{asset_type, player_id, pick_season, pick_round,
+                          pick_order, frequency, last_seen}, ...]}
+    sorted by frequency desc per player.  Only included when enough trades exist.
+    """
+    if not viewer_player_ids:
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                WITH relevant AS (
+                    SELECT DISTINCT t.id AS trade_id,
+                           a_out.player_id AS sent_player,
+                           a_out.side      AS sent_side
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    JOIN trade_intel_assets a_out
+                         ON a_out.trade_id = t.id
+                        AND a_out.asset_type = 'player'
+                        AND a_out.player_id = ANY(%s)
+                    WHERE l.league_type = 2
+                      AND COALESCE(l.is_superflex, FALSE) = %s
+                      AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
+                      AND t.created_at > NOW() - INTERVAL '%s days'
+                )
+                SELECT
+                    r.sent_player,
+                    a_in.asset_type,
+                    a_in.player_id   AS recv_player_id,
+                    a_in.pick_season,
+                    a_in.pick_round,
+                    a_in.pick_order,
+                    COUNT(*)         AS frequency,
+                    MAX(t.created_at) AS last_seen
+                FROM relevant r
+                JOIN trade_intel_trades t ON t.id = r.trade_id
+                JOIN trade_intel_assets a_in
+                     ON a_in.trade_id = r.trade_id
+                    AND a_in.side != r.sent_side
+                GROUP BY r.sent_player, a_in.asset_type, a_in.player_id,
+                         a_in.pick_season, a_in.pick_round, a_in.pick_order
+                HAVING COUNT(*) >= 2
+                ORDER BY r.sent_player, COUNT(*) DESC
+                LIMIT 400
+                """,
+                (viewer_player_ids, is_sf, num_teams - 2, num_teams + 2, lookback_days),
+            ).fetchall()
+
+        patterns: dict[str, list[dict]] = {}
+        for row in rows:
+            pid = str(row["sent_player"])
+            patterns.setdefault(pid, []).append({
+                "asset_type":  row["asset_type"],
+                "player_id":   row["recv_player_id"],
+                "pick_season": row["pick_season"],
+                "pick_round":  row["pick_round"],
+                "pick_order":  row["pick_order"],
+                "frequency":   int(row["frequency"]),
+                "last_seen":   row["last_seen"].isoformat() if row["last_seen"] else None,
+            })
+        return patterns
+    except Exception:
+        return {}
+
+
+def _enrich_trade_patterns(
+    patterns: dict[str, list[dict]],
+    model_value_lookup: dict,
+) -> list[dict]:
+    """
+    Convert raw DB patterns into suggestion-ready dicts with player names.
+
+    Groups picks of the same round into a single label.  Returns list sorted
+    by combined frequency of the sending player's patterns.
+    """
+    out = []
+    for sent_pid, assets in patterns.items():
+        if not assets:
+            continue
+        mv = model_value_lookup.get(sent_pid) or {}
+        sent_name = str(mv.get("name") or sent_pid)
+        sent_value = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+
+        total_freq = sum(a["frequency"] for a in assets[:10])
+
+        # Build the "received" summary: top individual assets
+        received_summary = []
+        seen: set[str] = set()
+        for a in assets[:8]:
+            if a["asset_type"] == "player" and a["player_id"]:
+                r_pid = str(a["player_id"])
+                if r_pid in seen:
+                    continue
+                seen.add(r_pid)
+                rmv = model_value_lookup.get(r_pid) or {}
+                received_summary.append({
+                    "type":      "player",
+                    "id":        r_pid,
+                    "name":      str(rmv.get("name") or r_pid),
+                    "position":  str(rmv.get("position") or "").upper(),
+                    "value":     _safe_float(rmv.get("value") or rmv.get("model_value") or 0),
+                    "frequency": a["frequency"],
+                })
+            elif a["asset_type"] == "pick":
+                rnd = a["pick_round"]
+                order = a["pick_order"] or ""
+                label = f"{a['pick_season'] or 'Future'} {order.capitalize()} {rnd}{'st' if rnd == 1 else 'nd' if rnd == 2 else 'rd' if rnd == 3 else 'th'}" if rnd else "Future Pick"
+                key = label
+                if key in seen:
+                    continue
+                seen.add(key)
+                received_summary.append({
+                    "type":      "pick",
+                    "label":     label,
+                    "frequency": a["frequency"],
+                })
+
+        if not received_summary:
+            continue
+
+        out.append({
+            "sent_player_id":    sent_pid,
+            "sent_player_name":  sent_name,
+            "sent_player_value": round(sent_value, 1),
+            "received_assets":   received_summary[:4],
+            "total_trades":      total_freq,
+        })
+
+    out.sort(key=lambda x: x["total_trades"], reverse=True)
+    return out[:8]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Trade Suggestions Context
 # ──────────────────────────────────────────────────────────────────────────────

@@ -6322,75 +6322,152 @@ def build_teams_body(ctx: dict) -> str:
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
 
-            var banner = data.adp_source === 'fantasycalc'
-              ? '<div class="draft-adp-banner">Rookie ADP via FantasyCalc · grades based on positional need, board value &amp; ADP</div>'
-              : data.adp_source === 'model'
-                ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
-                : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
+            var numTeams    = data.num_teams || 10;
+            var totalRounds = data.total_rounds || 1;
+
+            // Build team name lookup: roster_id -> team_name
+            var teamNames = {{}};
+            teams.forEach(function(t) {{ teamNames[t.roster_id] = t.team_name; }});
+
+            // Flatten all picks across all teams (for By Round view)
+            var allPicks = [];
+            teams.forEach(function(t) {{
+              t.picks.forEach(function(p) {{
+                allPicks.push(Object.assign({{}}, p, {{ _team_name: t.team_name }}));
+              }});
+            }});
+            allPicks.sort(function(a,b) {{ return a.pick_no - b.pick_no; }});
 
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
-            var html = banner + '<div class="draft-accordion">';
+            // ── Shared pick row renderer ─────────────────────────────────────
+            function renderPickRow(p, showTeamName) {{
+              var pgcls = 'dg-' + p.grade.replace('+', 'plus');
 
-            teams.forEach(function(t, idx) {{
-              var gcls = 'dg-' + t.grade.replace('+', 'plus');
-              html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
-                '<button class="draft-acc-header" type="button">' +
-                  '<span class="draft-acc-name">' + t.team_name + '</span>' +
-                  '<div class="draft-acc-right">' +
-                    '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
-                    chevronSvg +
+              var adpLine = '';
+              if (p.avg_pick != null) {{
+                var diff = p.adp_diff;
+                var diffHtml = diff > 1
+                  ? '<span class="adp-value">+' + diff.toFixed(1) + ' picks ahead</span>'
+                  : diff < -1
+                    ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
+                    : '<span class="adp-neutral">on ADP</span>';
+                var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
+                var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
+                adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.avg_pick.toFixed(2) + posTag + ' ' + diffHtml + waitTag + '</div>';
+              }}
+
+              var bpaLine = '';
+              if (p.bpa && p.bpa.length) {{
+                var bpaNames = p.bpa.map(function(b) {{
+                  var posRank = b.pos_rank != null ? b.pos_rank : '';
+                  // Show first-initial + last name so "Isaiah Likely" renders as "I. Likely"
+                  var parts = (b.name || '').split(' ');
+                  var suffixRe = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
+                  var suffix = parts.length > 1 && suffixRe.test(parts[parts.length - 1]) ? ' ' + parts[parts.length - 1] : '';
+                  var coreParts = suffix ? parts.slice(0, -1) : parts;
+                  var displayName = coreParts.length > 1
+                    ? coreParts[0][0] + '. ' + coreParts[coreParts.length - 1] + suffix
+                    : b.name;
+                  return '<span class="bpa-name pos-' + (b.position || '').toLowerCase() + '">' +
+                    displayName + ' (' + (b.position || '') + posRank + ')</span>';
+                }}).join(' ');
+                bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
+              }}
+
+              var needBadge = p.need ? ' <span class="draft-need-badge">Need</span>' : '';
+              var teamTag = showTeamName
+                ? '<span class="draft-pick-team-tag">' + (p._team_name || '') + '</span>'
+                : '';
+
+              return '<div class="analytics-pick-row">' +
+                '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
+                '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
+                '<div class="analytics-pick-info">' +
+                  '<div class="analytics-pick-name">' + p.name +
+                    ' <span class="analytics-pick-pos pos-' + (p.position || '').toLowerCase() + '">' + (p.position || '') + '</span>' +
+                    needBadge + teamTag +
                   '</div>' +
-                '</button>' +
-                '<div class="draft-acc-body"><div class="draft-acc-picks">';
-              t.picks.forEach(function(p) {{
-                var pgcls = 'dg-' + p.grade.replace('+', 'plus');
+                  adpLine +
+                  bpaLine +
+                '</div>' +
+              '</div>';
+            }}
 
-                var adpLine = '';
-                if (p.adp_rank != null) {{
-                  var diff = p.adp_diff;
-                  var diffHtml = diff > 1
-                    ? '<span class="adp-value">+' + diff + ' value</span>'
-                    : diff < -1
-                      ? '<span class="adp-reach">' + diff + '</span>'
-                      : '<span class="adp-neutral">on ADP</span>';
-                  var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
-                   var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                  var adpLabel = (data.adp_source === 'model') ? '#' : 'ADP ';
-                  adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.adp_rank + posTag + ' ' + diffHtml + waitTag + '</div>';
-                }}
-
-                var bpaLine = '';
-                if (p.bpa && p.bpa.length) {{
-                  var bpaNames = p.bpa.map(function(b) {{
-                    return '<span class="bpa-name pos-' + b.position.toLowerCase() + '">' +
-                      b.name.split(' ').slice(-1)[0] + ' (' + b.position + b.adp_rank + ')</span>';
-                  }}).join(' ');
-                  bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
-                }}
-
-                var needBadge = p.need ? ' <span class="draft-need-badge">Need</span>' : '';
-
-                html += '<div class="analytics-pick-row">' +
-                  '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
-                  '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
-                  '<div class="analytics-pick-info">' +
-                    '<div class="analytics-pick-name">' + p.name +
-                      ' <span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
-                      needBadge +
+            // ── Build "By Team" accordion HTML ───────────────────────────────
+            function buildByTeamHtml() {{
+              var html = '<div class="draft-accordion">';
+              teams.forEach(function(t, idx) {{
+                var gcls = 'dg-' + t.grade.replace('+', 'plus');
+                html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
+                  '<button class="draft-acc-header" type="button">' +
+                    '<span class="draft-acc-name">' + t.team_name + '</span>' +
+                    '<div class="draft-acc-right">' +
+                      '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
+                      chevronSvg +
                     '</div>' +
-                    adpLine +
-                    bpaLine +
-                  '</div>' +
-                '</div>';
+                  '</button>' +
+                  '<div class="draft-acc-body"><div class="draft-acc-picks">';
+                t.picks.forEach(function(p) {{ html += renderPickRow(p, false); }});
+                html += '</div></div></div>';
               }});
+              html += '</div>';
+              return html;
+            }}
 
-              html += '</div></div></div>';
-            }});
+            // ── By Round state & renderer ────────────────────────────────────
+            var currentRound = 1;
+            var roundContainerId = 'draftRoundView_' + Date.now();
 
-            html += '</div>';
-            panel.innerHTML = html;
+            function buildByRoundHtml(round) {{
+              var roundPicks = allPicks.filter(function(p) {{ return p.round === round; }});
+              var ordinals = ['','1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th',
+                              '11th','12th','13th','14th','15th'];
+              var label = (ordinals[round] || (round + 'th')) + ' Round';
 
+              var prevDis = round <= 1 ? ' disabled' : '';
+              var nextDis = round >= totalRounds ? ' disabled' : '';
+
+              var html = '<div class="draft-round-nav">' +
+                '<button class="draft-round-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<span class="draft-round-label">' + label + '</span>' +
+                '<button class="draft-round-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+              '</div>' +
+              '<div class="draft-acc-picks">';
+
+              if (!roundPicks.length) {{
+                html += '<p class="analytics-empty" style="padding:12px;">No picks recorded for this round yet.</p>';
+              }} else {{
+                roundPicks.forEach(function(p) {{ html += renderPickRow(p, true); }});
+              }}
+              html += '</div>';
+              return html;
+            }}
+
+            function renderRoundView(container, round) {{
+              container.innerHTML = buildByRoundHtml(round);
+              var prev = container.querySelector('#draftRoundPrev');
+              var next = container.querySelector('#draftRoundNext');
+              if (prev) prev.addEventListener('click', function() {{
+                if (currentRound > 1) {{ currentRound--; renderRoundView(container, currentRound); }}
+              }});
+              if (next) next.addEventListener('click', function() {{
+                if (currentRound < totalRounds) {{ currentRound++; renderRoundView(container, currentRound); }}
+              }});
+            }}
+
+            // ── Wire up tabs and render ──────────────────────────────────────
+            var tabsHtml =
+              '<div class="draft-view-tabs">' +
+                '<button class="draft-view-tab active" data-view="team">By Team</button>' +
+                '<button class="draft-view-tab" data-view="round">By Round</button>' +
+              '</div>' +
+              '<div id="draftTeamView">' + buildByTeamHtml() + '</div>' +
+              '<div id="draftRoundView" style="display:none;"></div>';
+
+            panel.innerHTML = tabsHtml;
+
+            // Accordion toggle for By Team view
             panel.querySelectorAll('.draft-acc-header').forEach(function(btn) {{
               btn.addEventListener('click', function() {{
                 var item = this.closest('.draft-acc-item');
@@ -6399,6 +6476,28 @@ def build_teams_body(ctx: dict) -> str:
                   el.classList.remove('open');
                 }});
                 if (!wasOpen) item.classList.add('open');
+              }});
+            }});
+
+            // Tab switching
+            var roundViewEl = panel.querySelector('#draftRoundView');
+            var teamViewEl  = panel.querySelector('#draftTeamView');
+            var roundRendered = false;
+            panel.querySelectorAll('.draft-view-tab').forEach(function(tab) {{
+              tab.addEventListener('click', function() {{
+                panel.querySelectorAll('.draft-view-tab').forEach(function(t) {{ t.classList.remove('active'); }});
+                this.classList.add('active');
+                if (this.dataset.view === 'round') {{
+                  teamViewEl.style.display = 'none';
+                  roundViewEl.style.display = '';
+                  if (!roundRendered) {{
+                    roundRendered = true;
+                    renderRoundView(roundViewEl, currentRound);
+                  }}
+                }} else {{
+                  roundViewEl.style.display = 'none';
+                  teamViewEl.style.display = '';
+                }}
               }});
             }});
           }})
@@ -11179,7 +11278,7 @@ def api_value_movers():
         league_size = 10
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
-                             league_size=league_size) or {}
+                             league_size=league_size, min_baseline_value=10) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -13288,6 +13387,89 @@ def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     return result
 
 
+def _fetch_league_adp_from_db(
+    is_sf: bool,
+    season: int,
+    draft_type: str,
+    num_teams: int,
+    min_samples: int = 20,
+) -> dict:
+    """
+    Pull ADP from real league draft data stored by the draft ADP crawler.
+
+    Tries an exact num_teams match first, then widens to ±2 if not enough
+    samples exist.  Returns player_id -> {adp_rank, avg_pick, std_pick,
+    sample_size, position} or empty dict when data is sparse.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        from utils.paths import DATA_DIR
+        import json as _json
+
+        # Day-level cache so we don't hit the DB on every page load
+        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{num_teams}t_{season}_{date.today().isoformat()}.json"
+        cache_path = DATA_DIR / cache_key
+        if cache_path.exists():
+            try:
+                return _json.load(open(cache_path))
+            except Exception:
+                pass
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT da.player_id, da.avg_pick, da.std_pick, da.avg_round, da.sample_size
+                FROM draft_adp da
+                WHERE da.draft_type  = %s
+                  AND da.season      = %s
+                  AND da.is_superflex = %s
+                  AND da.num_teams BETWEEN %s AND %s
+                  AND da.sample_size >= %s
+                ORDER BY da.avg_pick ASC
+                """,
+                (draft_type, season, is_sf, num_teams - 2, num_teams + 2, min_samples),
+            ).fetchall()
+
+        if not rows:
+            return {}
+
+        # Load position info from player_values for enrichment
+        player_ids = [r["player_id"] for r in rows]
+        pos_map: dict[str, str] = {}
+        try:
+            with get_conn() as conn:
+                pv_rows = conn.execute(
+                    "SELECT player_id, position FROM player_values WHERE player_id = ANY(%s)",
+                    (player_ids,),
+                ).fetchall()
+                pos_map = {r["player_id"]: (r["position"] or "").upper() for r in pv_rows}
+        except Exception:
+            pass
+
+        result: dict = {}
+        pos_counters: dict[str, int] = {}
+        for rank, row in enumerate(rows, start=1):
+            pid = str(row["player_id"])
+            pos = pos_map.get(pid, "")
+            pos_counters[pos] = pos_counters.get(pos, 0) + 1
+            result[pid] = {
+                "adp_rank":   rank,
+                "avg_pick":   float(row["avg_pick"] or rank),
+                "std_pick":   float(row["std_pick"] or 0),
+                "pos_rank":   pos_counters[pos],
+                "position":   pos,
+                "sample_size": int(row["sample_size"] or 0),
+            }
+
+        try:
+            _json.dump(result, open(cache_path, "w"))
+        except Exception:
+            pass
+        return result
+    except Exception:
+        return {}
+
+
 def _build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = False) -> dict:
     """
     Build a value-based board from our own model when external ADP is unavailable.
@@ -13378,6 +13560,19 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
+        # ── Draft type: startup (≥10 rounds) or rookie (1-5 rounds) ─────────
+        _draft_rounds = int((latest_draft.get("settings") or {}).get("rounds") or 0)
+        if _draft_rounds >= 10:
+            _draft_type = "startup"
+        elif 1 <= _draft_rounds <= 5:
+            _draft_type = "rookie"
+        else:
+            _draft_type = "rookie"  # safe default
+
+        # ── Rosters & users (needed for num_teams before ADP lookup) ─────────
+        rosters = get_rosters(platform, league_id, season) or []
+        _num_teams = len(rosters) or 12
+
         # ── NFL draft completion check ───────────────────────────────────────
         from data_building.rookie_pipeline.pipeline import is_draft_complete
         try:
@@ -13387,17 +13582,18 @@ def api_draft_grades():
         except Exception:
             _nfl_draft_done = is_draft_complete(season)
 
-        # ── Rookie ADP — FantasyCalc with model-value fallback ───────────────
-        # adp_info[sleeper_id] = {adp_rank, pos_rank, position}
-        adp_info = _fetch_fc_rookie_adp(is_sf, season)
+        # ── ADP: league data → FantasyCalc → model fallback ─────────────────
+        # adp_info[sleeper_id] = {adp_rank, pos_rank, position, ...}
+        adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
         if adp_info:
-            adp_source = "fantasycalc"
+            adp_source = "league"
         else:
-            adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
-            adp_source = "model" if adp_info else "none"
-
-        # ── Rosters & users ─────────────────────────────────────────────────
-        rosters = get_rosters(platform, league_id, season) or []
+            adp_info = _fetch_fc_rookie_adp(is_sf, season)
+            if adp_info:
+                adp_source = "fantasycalc"
+            else:
+                adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
+                adp_source = "model" if adp_info else "none"
         users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
@@ -13435,30 +13631,74 @@ def api_draft_grades():
             [p for p in picks_raw if isinstance(p, dict)],
             key=lambda p: int(p.get("pick_no") or 0)
         )
-        # All rookies with ADP data, sorted best → worst
+
+        # For rookie drafts, restrict the board to players who are actually
+        # eligible — i.e., were actually picked in this draft or are confirmed
+        # rookies for this season.  This prevents veterans (e.g. Isaiah Likely)
+        # from appearing in adp_info (sourced from startup drafts) from polluting
+        # the rookie draft board.
+        eligible_sids: set[str] = set(drafted_player_ids)
+        try:
+            from dashboard_services.db import get_conn as _gcb
+            with _gcb() as _cc:
+                _rp = _cc.execute(
+                    "SELECT sleeper_id FROM rookie_prospects "
+                    "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                    (season,),
+                ).fetchall()
+            for _r in _rp:
+                eligible_sids.add(str(_r["sleeper_id"]))
+        except Exception:
+            pass  # fall back to full board if DB unavailable
+
+        # All eligible players with ADP data, sorted best → worst
         board_all: list[str] = sorted(
-            adp_info.keys(),
-            key=lambda sid: adp_info[sid]["adp_rank"]
+            [sid for sid in adp_info.keys()
+             if adp_info[sid].get("avg_pick") is not None
+             and (not eligible_sids or sid in eligible_sids)],
+            key=lambda sid: adp_info[sid]["avg_pick"]
         )
         taken: set[str] = set()
 
+        # ── Calculate positional rankings based on avg_pick ───────────────────────
+        pos_rankings: dict[str, dict[str, int]] = {}
+        for pos in CORE_POS:
+            # Get all players with this position and valid avg_pick
+            pos_players = [
+                (sid, info["avg_pick"]) 
+                for sid, info in adp_info.items() 
+                if info.get("position") == pos and info.get("avg_pick") is not None
+            ]
+            # Sort by avg_pick and assign rankings
+            pos_players.sort(key=lambda x: x[1])
+            pos_rankings[pos] = {sid: rank + 1 for rank, (sid, _) in enumerate(pos_players)}
+
         def available_at_pick(exclude_sid: str) -> list[dict]:
-            """Return top-3 remaining board players (by ADP) excluding the one just picked."""
-            return [
-                {"player_id": sid,
-                 "name": (players_index.get(sid) or {}).get("name") or sid,
-                 "position": adp_info[sid]["position"],
-                 "adp_rank": adp_info[sid]["adp_rank"]}
-                for sid in board_all
-                if sid not in taken and sid != exclude_sid
-            ][:3]
+            """Return top-3 remaining board players (by avg_pick) excluding the one just picked."""
+            available_players = []
+            for sid in board_all:
+                if sid in taken or sid == exclude_sid:
+                    continue
+                info = adp_info[sid]
+                # Position from adp_info first, fall back to players_index
+                pos = info.get("position") or str((players_index.get(sid) or {}).get("pos", "")).upper()
+                available_players.append({
+                    "player_id": sid,
+                    "name": (players_index.get(sid) or {}).get("name") or sid,
+                    "position": pos,
+                    "avg_pick": info.get("avg_pick"),
+                    "pos_rank": pos_rankings.get(pos, {}).get(sid) if pos else None
+                })
+                if len(available_players) >= 3:
+                    break
+            return available_players
 
         def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
-                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str, num_teams: int) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
-            adp_diff  : actual_pick - adp_rank  (+= value, -= reach)
+            adp_diff  : actual_pick - avg_pick  (+= value, -= reach)
             need      : True if pick fills a positional need
             bpa_gap   : ADP gap between this pick and the best available player
                         (0 = BPA taken; positive = better players left on board)
@@ -13470,33 +13710,44 @@ def api_draft_grades():
             """
             if adp_diff is None:
                 return "N/A"
-            
-            # Base score from ADP diff (primary signal)
-            if adp_diff >= 5:     score = 4   # clear value
-            elif adp_diff >= 2:   score = 3
-            elif adp_diff >= -1:  score = 2   # on ADP
-            elif adp_diff >= -4:  score = 1
-            else:                 score = 0   # big reach
 
-            # BPA Bonus: Taking the best available player should be rewarded
+            # F should only trigger for a reach of more than ~1 full round.
+            # In a 10-team draft 1 round = 10 picks, so -11 is the F threshold.
+            # This prevents picks like -8 or -6 from grading F in small leagues.
+            big_reach = -(num_teams * 1.1)
+
+            if adp_diff >= 5:           score = 4   # clear value
+            elif adp_diff >= 2:         score = 3   # good value
+            elif adp_diff >= -1:        score = 2   # on ADP
+            elif adp_diff >= big_reach: score = 1   # reach within 1 round → D
+            else:                       score = 0   # > 1 round early → F
+
+            # BPA bonus / penalty.
+            # Only penalise when the pick was close to ADP (adp_diff >= -2):
+            # for bigger reaches the adp_diff already captures the cost, so
+            # applying BPA on top would double-count and turn a D into an F.
             if is_bpa:
-                score += 2  # Strong bonus for BPA selection
+                score += 2
             elif bpa_gap is not None and bpa_gap >= 5:
-                score = max(score - 2, 0)   # much better player sitting there
-            elif bpa_gap is not None and bpa_gap >= 3:
-                score = max(score - 1, 0)
+                score = max(score - 1, 0)   # better player available (was -2)
+            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
+            # captures whether the pick was a reach
 
             # Need modifier with positional context
             if need:
                 score += 1
             else:
-                # Penalize picking positions you don't need, especially QB in 1QB
+                # Penalise redundant QB in 1QB
                 if pos == "QB" and not is_sf and qb_count >= 2:
-                    score = max(score - 2, 0)  # Heavy penalty for redundant QB in 1QB
+                    score = max(score - 2, 0)
                 elif pos == "QB" and not is_sf and qb_count >= 1:
-                    score = max(score - 1, 0)  # Penalty for backup QB in 1QB
-                else:
-                    score = max(score - 0, score)  # No penalty for other depth picks
+                    score = max(score - 1, 0)
+
+            # ── Post-modifier floors ─────────────────────────────────────────
+            if adp_diff >= -3:
+                score = max(score, 1)   # tiny reach → at least D
+            if need and adp_diff >= -4:
+                score = max(score, 2)   # need pick within 4 → at least C
 
             return {5: "A+", 4: "A", 3: "B", 2: "C", 1: "D", 0: "F"}.get(min(score, 5), "F")
 
@@ -13528,15 +13779,15 @@ def api_draft_grades():
 
             # ADP comparison
             info     = adp_info.get(player_id)
-            adp_rank = info["adp_rank"] if info else None
-            adp_diff = (pick_no - adp_rank) if adp_rank is not None else None
+            avg_pick = info.get("avg_pick") if info else None
+            adp_diff = (pick_no - avg_pick) if avg_pick is not None else None
 
             # BPA: who with a better ADP was still available?
             avail_better = [
                 a for a in available_at_pick(player_id)
-                if a["adp_rank"] < (adp_rank or pick_no)
+                if a.get("avg_pick", pick_no) < (avg_pick or pick_no)
             ]
-            bpa_gap = (adp_rank - avail_better[0]["adp_rank"]) if avail_better and adp_rank is not None else 0
+            bpa_gap = (avg_pick - avail_better[0].get("avg_pick", pick_no)) if avail_better and avg_pick is not None else 0
             
             # Check if this was the best player available (BPA)
             is_bpa = len(avail_better) == 0
@@ -13545,22 +13796,23 @@ def api_draft_grades():
             # Estimate: next same-team pick ≈ pick_no + num_teams (snake round)
             num_teams = max(len(rosters), 1)
             could_wait = (adp_diff is not None and adp_diff < -2 and
-                          adp_rank is not None and adp_rank > pick_no + num_teams)
+                          avg_pick is not None and avg_pick > pick_no + num_teams)
 
             # Get current QB count for positional context
             qb_count = roster_pos_counts.get(rid, {}).get("QB", 0)
 
-            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name)
+            grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name, _num_teams)
 
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
+                "round":            (pick_no - 1) // max(num_teams, 1) + 1,
                 "player_id":        player_id,
                 "name":             name,
                 "position":         pos,
                 "team":             player_meta.get("team") or "",
-                "adp_rank":         adp_rank,
+                "avg_pick":         avg_pick,
                 "adp_diff":         adp_diff,
-                "pos_rank":         info["pos_rank"] if info else None,
+                "pos_rank":         None,  # Will be calculated based on avg_pick
                 "need":             need,
                 "bpa":              avail_better[:2],   # top 2 available better options
                 "could_wait":       could_wait,
@@ -13581,6 +13833,12 @@ def api_draft_grades():
             team_picks = sorted(picks_by_roster.get(rid, []), key=lambda x: x["pick_no"])
             if not team_picks:
                 continue
+            
+            # Update pos_rank for each pick based on avg_pick
+            for pick in team_picks:
+                if pick["position"] in pos_rankings and pick["player_id"] in pos_rankings[pick["position"]]:
+                    pick["pos_rank"] = pos_rankings[pick["position"]][pick["player_id"]]
+            
             tgrade = team_grade([p["grade"] for p in team_picks if p["grade"] != "N/A"])
             results.append({
                 "roster_id":  rid,
@@ -13592,12 +13850,18 @@ def api_draft_grades():
         grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
         results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
 
+        all_picks_flat = [p for t in results for p in t["picks"]]
+        total_rounds = max((p["round"] for p in all_picks_flat), default=_draft_rounds or 1)
+
         return jsonify({
-            "draft_id":   str(draft_id),
-            "season":     season,
-            "league_type": league_type,
-            "adp_source": adp_source,
-            "teams":      results,
+            "draft_id":     str(draft_id),
+            "season":       season,
+            "league_type":  league_type,
+            "draft_type":   _draft_type,
+            "adp_source":   adp_source,
+            "num_teams":    _num_teams,
+            "total_rounds": total_rounds,
+            "teams":        results,
         })
 
     except Exception:
@@ -14522,6 +14786,216 @@ def api_trade_targets():
     })
 
 
+def _real_trade_packages_for_target(
+    target_player_id: str,
+    is_sf: bool,
+    num_teams: int,
+    viewer_players: list[dict],
+    viewer_picks: list[dict],
+    values_by_id: dict,
+    max_packages: int = 3,
+) -> dict:
+    """
+    Find real trades where target_player_id was acquired in comparable leagues,
+    then match the sent-asset patterns against the viewer's roster.
+
+    Returns {"packages": [...], "total_real_trades": N}
+    Each package has the same shape as value-based packages plus "trades_like_this".
+    """
+    from collections import defaultdict
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as conn:
+            rows = conn.execute(
+                """
+                WITH acquisitions AS (
+                    SELECT DISTINCT t.id AS trade_id, a_in.side AS recv_side
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    JOIN trade_intel_assets a_in
+                         ON a_in.trade_id = t.id
+                        AND a_in.asset_type = 'player'
+                        AND a_in.player_id = %s
+                    WHERE l.league_type = 2
+                      AND COALESCE(l.is_superflex, FALSE) = %s
+                      AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
+                      AND t.created_at > NOW() - INTERVAL '365 days'
+                    LIMIT 300
+                )
+                SELECT
+                    acq.trade_id,
+                    a.asset_type,
+                    a.player_id  AS sent_player_id,
+                    a.pick_round,
+                    a.pick_season,
+                    a.pick_order
+                FROM acquisitions acq
+                JOIN trade_intel_assets a
+                     ON a.trade_id = acq.trade_id
+                    AND a.side != acq.recv_side
+                ORDER BY acq.trade_id
+                """,
+                (target_player_id, is_sf, num_teams - 2, num_teams + 2),
+            ).fetchall()
+    except Exception:
+        return {"packages": [], "total_real_trades": 0}
+
+    # Group assets by trade_id → list of asset dicts
+    trade_pkgs: dict = defaultdict(list)
+    for row in rows:
+        trade_pkgs[row["trade_id"]].append({
+            "asset_type":     row["asset_type"],
+            "sent_player_id": row["sent_player_id"],
+            "pick_round":     row["pick_round"],
+            "pick_season":    row["pick_season"],
+            "pick_order":     row["pick_order"],
+        })
+
+    total_real_trades = len(trade_pkgs)
+    if not total_real_trades:
+        return {"packages": [], "total_real_trades": 0}
+
+    # Build position/value signature for each trade package, then count frequencies
+    def _sig(assets: list[dict]) -> Optional[tuple]:
+        parts = []
+        for a in sorted(assets, key=lambda x: x["asset_type"]):
+            if a["asset_type"] == "player" and a["sent_player_id"]:
+                info = values_by_id.get(str(a["sent_player_id"]))
+                if not info:
+                    continue
+                pos = info["position"]
+                val = info["value"]
+                # Bucket value so similar-value swaps collapse to the same signature
+                bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
+                parts.append(f"P:{pos}:{bucket}")
+            elif a["asset_type"] == "pick" and a["pick_round"]:
+                parts.append(f"K:{a['pick_round']}")
+        return tuple(sorted(parts)) if parts else None
+
+    sig_counts: dict = defaultdict(list)
+    for trade_id, assets in trade_pkgs.items():
+        s = _sig(assets)
+        if s:
+            sig_counts[s].append(trade_id)
+
+    # Viewer helpers: players by position, picks by round
+    vp_by_pos: dict = defaultdict(list)
+    for vp in viewer_players:
+        vp_by_pos[vp["position"]].append(vp)
+
+    vk_by_round: dict = defaultdict(list)
+    for pk in viewer_picks:
+        name = pk.get("name", "")
+        for rnd, marker in ((1, "1st"), (2, "2nd"), (3, "3rd")):
+            if marker in name:
+                vk_by_round[rnd].append(pk)
+                break
+
+    VALUE_RANGES = {
+        "elite": (700, 1400),
+        "high":  (400, 800),
+        "mid":   (220, 600),
+        "low":   (100, 400),
+    }
+
+    result_packages = []
+    used_pids: set = set()
+
+    # Track which sigs we fall back on so we don't double-count
+    fallback_packages = []
+
+    for sig, trade_ids in sorted(sig_counts.items(), key=lambda x: -len(x[1])):
+        trades_like_this = len(trade_ids)
+        matched: list[dict] = []
+        temp_used: set = set()
+        ok = True
+
+        for part in sig:
+            kind, *rest = part.split(":")
+            if kind == "P":
+                pos, bucket = rest
+                lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                candidates = [
+                    vp for vp in vp_by_pos.get(pos, [])
+                    if vp["player_id"] not in used_pids
+                    and vp["player_id"] not in temp_used
+                    and lo <= vp["value"] <= hi
+                ]
+                if not candidates:
+                    ok = False
+                    break
+                mid_val = (lo + hi) / 2
+                best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                matched.append(best)
+                temp_used.add(best["player_id"])
+            elif kind == "K":
+                rnd = int(rest[0])
+                available = [pk for pk in vk_by_round.get(rnd, [])]
+                if not available:
+                    ok = False
+                    break
+                matched.append(available[0])
+
+        if not ok or not matched:
+            # Build a fallback package describing the pattern (no viewer-specific players)
+            fallback_assets = []
+            for part in sig:
+                kind, *rest = part.split(":")
+                if kind == "P":
+                    pos, bucket = rest
+                    lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                    mid_val = (lo + hi) / 2
+                    # Find any player in values_by_id matching this pos + value range
+                    candidates = [
+                        {"player_id": pid, "name": info["name"], "position": pos,
+                         "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
+                         "is_reference": True}
+                        for pid, info in values_by_id.items()
+                        if info["position"] == pos and lo <= info["value"] <= hi
+                    ]
+                    if candidates:
+                        best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                        fallback_assets.append(best)
+                elif kind == "K":
+                    rnd = int(rest[0])
+                    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                    fallback_assets.append({
+                        "name": f"{suffix} Round Pick", "is_pick": True,
+                        "value": 200 if rnd == 1 else 100,
+                        "is_reference": True,
+                    })
+            if fallback_assets:
+                fallback_packages.append({
+                    "type":             "real-trade",
+                    "trades_like_this": trades_like_this,
+                    "send":             fallback_assets,
+                    "send_value":       round(sum(a.get("value", 0) for a in fallback_assets), 1),
+                    "is_reference":     True,
+                })
+            continue
+
+        send_value = round(sum(a.get("value", 0) for a in matched), 1)
+
+        result_packages.append({
+            "type":             "real-trade",
+            "trades_like_this": trades_like_this,
+            "send":             matched,
+            "send_value":       send_value,
+        })
+        for a in matched:
+            if not a.get("is_pick"):
+                used_pids.add(a["player_id"])
+
+        if len(result_packages) >= max_packages:
+            break
+
+    # If no viewer-matched packages found, fall back to reference packages
+    if not result_packages and fallback_packages:
+        result_packages = sorted(fallback_packages, key=lambda x: -x["trades_like_this"])[:max_packages]
+
+    return {"packages": result_packages, "total_real_trades": total_real_trades}
+
+
 @app.route("/api/trade-ideas-for-target", methods=["POST"])
 @limiter.limit("20 per minute")
 def api_trade_ideas_for_target():
@@ -14775,28 +15249,49 @@ def api_trade_ideas_for_target():
             "pos_rank_label":   target_info["pos_rank_label"],
             "sf_pos_rank_label": target_info["pos_rank_label"],
         }
-        for pkg in packages:
-            for asset in pkg["send"]:
-                if not asset.get("is_pick"):
-                    info = values_by_id.get(asset.get("player_id") or "")
-                    if info:
-                        asset.update({
-                            "id":               asset["player_id"],
-                            "position":         info["position"],
-                            "team":             info["team"],
-                            "sf_value":         round(info["sf_value"], 1),
-                            "pos_rank_label":   info["pos_rank_label"],
-                            "sf_pos_rank_label": info["pos_rank_label"],
-                        })
+
+        def _enrich_pkg_assets(pkg_list: list) -> None:
+            for pkg in pkg_list:
+                for asset in pkg["send"]:
+                    if not asset.get("is_pick"):
+                        info = values_by_id.get(asset.get("player_id") or "")
+                        if info:
+                            asset.update({
+                                "id":               asset["player_id"],
+                                "position":         info["position"],
+                                "team":             info["team"],
+                                "sf_value":         round(info.get("sf_value", info["value"]), 1),
+                                "pos_rank_label":   info["pos_rank_label"],
+                                "sf_pos_rank_label": info["pos_rank_label"],
+                            })
+
+        _enrich_pkg_assets(packages)
+
+        # Real trade packages: what people with similar rosters actually sent
+        roster_positions = ctx.get("roster_positions") or []
+        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
+        _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+
+        real_result = _real_trade_packages_for_target(
+            target_player_id=target_player_id,
+            is_sf=_is_sf,
+            num_teams=len(rosters) or 12,
+            viewer_players=viewer_players,
+            viewer_picks=viewer_picks,
+            values_by_id=values_by_id,
+        )
+        _enrich_pkg_assets(real_result["packages"])
 
         return jsonify({
-            "success":          True,
-            "target":           target_calc,
-            "owner":            target_owner_name,
-            "packages":         packages[:4],
-            "target_value":     round(target_value, 1),
-            "effective_target": round(effective_target, 1),
-            "premium":          round(premium, 2),
+            "success":            True,
+            "target":             target_calc,
+            "owner":              target_owner_name,
+            "packages":           packages[:4],
+            "real_packages":      real_result["packages"],
+            "total_real_trades":  real_result["total_real_trades"],
+            "target_value":       round(target_value, 1),
+            "effective_target":   round(effective_target, 1),
+            "premium":            round(premium, 2),
         })
 
     except Exception as e:

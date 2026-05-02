@@ -342,6 +342,7 @@ def get_top_movers(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
+        min_baseline_value: int = 0,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -353,6 +354,10 @@ def get_top_movers(
         source: Source of values ('model', etc.)
         league_type: "1qb" or "sf" (superflex) to determine which value field to use
         league_size: League size (8, 10, 12, 14) to determine which value field to use
+        min_baseline_value: Percentage (0-100). old_value must be >= this % of new_value.
+            E.g. 10 filters out players who went from ~0 to a real value (just-drafted
+            rookies), while keeping established players with genuine movement.
+            Scale-independent — works regardless of how history rows were written.
     """
     init_value_history_db()
 
@@ -374,6 +379,10 @@ def get_top_movers(
             comparison_date = None
             used_days = None
 
+            best_candidate_date = None
+            best_candidate_days = None
+            best_player_count = 0
+
             for candidate_days in range(max_days, 0, -1):
                 target_date = latest_date - timedelta(days=candidate_days)
 
@@ -390,9 +399,34 @@ def get_top_movers(
                 candidate_date = row["comparison_date"] if row else None
 
                 if candidate_date and candidate_date < latest_date:
-                    comparison_date = candidate_date
-                    used_days = candidate_days
-                    break
+                    # Check data coverage for this candidate date
+                    cur.execute(
+                        """
+                        SELECT COUNT(DISTINCT player_id) as player_count
+                        FROM player_value_history
+                        WHERE source = %s AND as_of_date = %s
+                        """,
+                        (source, candidate_date),
+                    )
+                    coverage_row = cur.fetchone()
+                    player_count = coverage_row["player_count"] if coverage_row else 0
+                    
+                    # Track the best candidate (highest player count)
+                    if player_count > best_player_count:
+                        best_candidate_date = candidate_date
+                        best_candidate_days = candidate_days
+                        best_player_count = player_count
+                    
+                    # Use this date if it has decent coverage (at least 100 players)
+                    if player_count >= 100:
+                        comparison_date = candidate_date
+                        used_days = candidate_days
+                        break
+            
+            # If no date had 100+ players, use the best available date
+            if comparison_date is None and best_candidate_date is not None:
+                comparison_date = best_candidate_date
+                used_days = best_candidate_days
 
             if comparison_date is None:
                 return {
@@ -450,12 +484,14 @@ def get_top_movers(
                     l.name,
                     l.position,
                     l.team,
-                    ROUND(b.value::numeric, 1) AS old_value,
-                    ROUND(l.value::numeric, 1) AS new_value,
-                    ROUND((l.value - b.value)::numeric, 1) AS delta
+                    ROUND(b.value, 1) AS old_value,
+                    ROUND(l.value, 1) AS new_value,
+                    ROUND(l.value - b.value, 1) AS delta
                 FROM latest_rows l
                 JOIN baseline_rows b
                   ON b.player_id = l.player_id
+                WHERE l.value IS NOT NULL 
+                  AND b.value IS NOT NULL
                 ORDER BY delta DESC, new_value DESC
                 """
                 , (source, latest_date, source, comparison_date))
@@ -492,8 +528,20 @@ def get_top_movers(
             row_dict["name"] = resolved
         elif not row_dict.get("name") or row_dict["name"] == "Unknown":
             row_dict["name"] = f"Player {player_id}"
+
+        # Filter out brand-new players (e.g. just-drafted rookies who went from
+        # ~0 to a real value).  Require old_value >= new_value * min_baseline_ratio
+        # so that scale differences (0-1 vs 0-1000) don't cause false positives.
+        if min_baseline_value > 0:
+            old_v = float(row_dict.get("old_value") or 0)
+            new_v = float(row_dict.get("new_value") or 0)
+            # Use ratio: old must be at least min_baseline_value % of new
+            ratio = min_baseline_value / 100.0
+            if new_v > 0 and old_v < new_v * ratio:
+                continue
+
         movers.append(row_dict)
-    
+
     risers = movers[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 
