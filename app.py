@@ -1512,6 +1512,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             league=league,
             rosters=rosters,
             traded=traded,
+            draft_ended=has_draft_ended(league_id, platform, season),
         )
 
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
@@ -2511,6 +2512,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     league=league,
                     rosters=rosters,
                     traded=traded,
+                    draft_ended=has_draft_ended(league_id, platform, season),
                 )
             except Exception as e:
                 print(f"[refresh] picks refresh skipped: {e}")
@@ -12716,10 +12718,12 @@ def api_team_details(roster_id: str):
         traded_picks = get_traded_picks(platform, league_id, season)
         num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
         current_season = int(league.get("season") or season)
+        _modal_draft_ended = has_draft_ended(league_id, platform, season)
+        _modal_pick_start = 1 if _modal_draft_ended else 0
 
         # Build picks
         all_picks = []
-        for offset in range(3):  # Next 3 years
+        for offset in range(_modal_pick_start, _modal_pick_start + 3):  # Next 3 years
             year = current_season + offset
             for rnd in range(1, num_rounds + 1):
 

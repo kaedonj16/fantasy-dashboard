@@ -1501,14 +1501,16 @@ def build_picks_by_roster(
         league: dict = None,
         rosters: List[dict] = None,
         traded: List[dict] = None,
+        draft_ended: bool = False,
 ) -> Dict[str, List[dict]]:
     current_season = int(league["season"])
     num_rounds = int(league["settings"].get("draft_rounds", 4))
+    start_offset = 1 if draft_ended else 0
 
     all_picks: List[dict] = []
     roster_ids = [int(r["roster_id"]) for r in rosters]
 
-    for offset in range(num_future_seasons):
+    for offset in range(start_offset, start_offset + num_future_seasons):
         season = current_season + offset
         for rid in roster_ids:
             for rnd in range(1, num_rounds + 1):
