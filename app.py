@@ -13694,7 +13694,7 @@ def api_draft_grades():
             return available_players
 
         def pick_grade(adp_diff: Optional[float], need: bool, bpa_gap: Optional[int], 
-                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str) -> str:
+                    is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str, num_teams: int) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
             
