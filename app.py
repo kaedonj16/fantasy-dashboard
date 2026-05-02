@@ -6322,6 +6322,9 @@ def build_teams_body(ctx: dict) -> str:
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
 
+            var numTeams    = data.num_teams || 10;
+            var totalRounds = data.total_rounds || 1;
+
             var banner = data.adp_source === 'league'
               ? '<div class="draft-adp-banner draft-adp-league">ADP from real ' + (data.draft_type === 'startup' ? 'startup' : 'rookie') + ' drafts across similar leagues</div>'
               : data.adp_source === 'fantasycalc'
@@ -6330,70 +6333,146 @@ def build_teams_body(ctx: dict) -> str:
                   ? '<div class="draft-adp-banner draft-adp-model">ADP Unavailable</div>'
                   : '<div class="draft-adp-banner draft-adp-none">ADP data unavailable — check back after the draft</div>';
 
+            // Build team name lookup: roster_id -> team_name
+            var teamNames = {{}};
+            teams.forEach(function(t) {{ teamNames[t.roster_id] = t.team_name; }});
+
+            // Flatten all picks across all teams (for By Round view)
+            var allPicks = [];
+            teams.forEach(function(t) {{
+              t.picks.forEach(function(p) {{
+                allPicks.push(Object.assign({{}}, p, {{ _team_name: t.team_name }}));
+              }});
+            }});
+            allPicks.sort(function(a,b) {{ return a.pick_no - b.pick_no; }});
+
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
-            var html = banner + '<div class="draft-accordion">';
+            // ── Shared pick row renderer ─────────────────────────────────────
+            function renderPickRow(p, showTeamName) {{
+              var pgcls = 'dg-' + p.grade.replace('+', 'plus');
 
-            teams.forEach(function(t, idx) {{
-              var gcls = 'dg-' + t.grade.replace('+', 'plus');
-              html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
-                '<button class="draft-acc-header" type="button">' +
-                  '<span class="draft-acc-name">' + t.team_name + '</span>' +
-                  '<div class="draft-acc-right">' +
-                    '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
-                    chevronSvg +
+              var adpLine = '';
+              if (p.avg_pick != null) {{
+                var diff = p.adp_diff;
+                var diffHtml = diff > 1
+                  ? '<span class="adp-value">+' + diff.toFixed(1) + ' value</span>'
+                  : diff < -1
+                    ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
+                    : '<span class="adp-neutral">on ADP</span>';
+                var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
+                var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
+                adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.avg_pick.toFixed(2) + posTag + ' ' + diffHtml + waitTag + '</div>';
+              }}
+
+              var bpaLine = '';
+              if (p.bpa && p.bpa.length) {{
+                var bpaNames = p.bpa.map(function(b) {{
+                  var posRank = b.pos_rank != null ? b.pos_rank : '';
+                  // Show first-initial + last name so "Isaiah Likely" renders as "I. Likely"
+                  var parts = (b.name || '').split(' ');
+                  var displayName = parts.length > 1
+                    ? parts[0][0] + '. ' + parts[parts.length - 1]
+                    : b.name;
+                  return '<span class="bpa-name pos-' + (b.position || '').toLowerCase() + '">' +
+                    displayName + ' (' + (b.position || '') + posRank + ')</span>';
+                }}).join(' ');
+                bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
+              }}
+
+              var needBadge = p.need ? ' <span class="draft-need-badge">Need</span>' : '';
+              var teamTag = showTeamName
+                ? '<span class="draft-pick-team-tag">' + (p._team_name || '') + '</span>'
+                : '';
+
+              return '<div class="analytics-pick-row">' +
+                '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
+                '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
+                '<div class="analytics-pick-info">' +
+                  '<div class="analytics-pick-name">' + p.name +
+                    ' <span class="analytics-pick-pos pos-' + (p.position || '').toLowerCase() + '">' + (p.position || '') + '</span>' +
+                    needBadge + teamTag +
                   '</div>' +
-                '</button>' +
-                '<div class="draft-acc-body"><div class="draft-acc-picks">';
-              t.picks.forEach(function(p) {{
-                var pgcls = 'dg-' + p.grade.replace('+', 'plus');
+                  adpLine +
+                  bpaLine +
+                '</div>' +
+              '</div>';
+            }}
 
-                var adpLine = '';
-                if (p.avg_pick != null) {{
-                  var diff = p.adp_diff;
-                  var diffHtml = diff > 1
-                    ? '<span class="adp-value">+' + diff.toFixed(1) + ' value</span>'
-                    : diff < -1
-                      ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
-                      : '<span class="adp-neutral">on ADP</span>';
-                  var posTag = p.pos_rank != null && p.pos_rank != undefined ? ' · ' + p.position + p.pos_rank : '';
-                   var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                  var adpLabel = 'ADP ';
-                  adpLine = '<div class="analytics-pick-adp-line">' + adpLabel + p.avg_pick.toFixed(2) + posTag + ' ' + diffHtml + waitTag + '</div>';
-                }}
-
-                var bpaLine = '';
-                if (p.bpa && p.bpa.length) {{
-                  var bpaNames = p.bpa.map(function(b) {{
-                    var posRank = b.pos_rank != null && b.pos_rank != undefined ? b.pos_rank : '';
-                    return '<span class="bpa-name pos-' + (b.position || '').toLowerCase() + '">' +
-                      b.name.split(' ').slice(-1)[0] + ' (' + (b.position || '') + posRank + ')</span>';
-                  }}).join(' ');
-                  bpaLine = '<div class="analytics-pick-bpa">Available: ' + bpaNames + '</div>';
-                }}
-
-                var needBadge = p.need ? ' <span class="draft-need-badge">Need</span>' : '';
-
-                html += '<div class="analytics-pick-row">' +
-                  '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
-                  '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
-                  '<div class="analytics-pick-info">' +
-                    '<div class="analytics-pick-name">' + p.name +
-                      ' <span class="analytics-pick-pos pos-' + p.position.toLowerCase() + '">' + p.position + '</span>' +
-                      needBadge +
+            // ── Build "By Team" accordion HTML ───────────────────────────────
+            function buildByTeamHtml() {{
+              var html = '<div class="draft-accordion">';
+              teams.forEach(function(t, idx) {{
+                var gcls = 'dg-' + t.grade.replace('+', 'plus');
+                html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
+                  '<button class="draft-acc-header" type="button">' +
+                    '<span class="draft-acc-name">' + t.team_name + '</span>' +
+                    '<div class="draft-acc-right">' +
+                      '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
+                      chevronSvg +
                     '</div>' +
-                    adpLine +
-                    bpaLine +
-                  '</div>' +
-                '</div>';
+                  '</button>' +
+                  '<div class="draft-acc-body"><div class="draft-acc-picks">';
+                t.picks.forEach(function(p) {{ html += renderPickRow(p, false); }});
+                html += '</div></div></div>';
               }});
+              html += '</div>';
+              return html;
+            }}
 
-              html += '</div></div></div>';
-            }});
+            // ── By Round state & renderer ────────────────────────────────────
+            var currentRound = 1;
+            var roundContainerId = 'draftRoundView_' + Date.now();
 
-            html += '</div>';
-            panel.innerHTML = html;
+            function buildByRoundHtml(round) {{
+              var roundPicks = allPicks.filter(function(p) {{ return p.round === round; }});
+              var ordinals = ['','1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th',
+                              '11th','12th','13th','14th','15th'];
+              var label = (ordinals[round] || (round + 'th')) + ' Round';
 
+              var prevDis = round <= 1 ? ' disabled' : '';
+              var nextDis = round >= totalRounds ? ' disabled' : '';
+
+              var html = '<div class="draft-round-nav">' +
+                '<button class="draft-round-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<span class="draft-round-label">' + label + '</span>' +
+                '<button class="draft-round-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+              '</div>' +
+              '<div class="draft-acc-picks">';
+
+              if (!roundPicks.length) {{
+                html += '<p class="analytics-empty" style="padding:12px;">No picks recorded for this round yet.</p>';
+              }} else {{
+                roundPicks.forEach(function(p) {{ html += renderPickRow(p, true); }});
+              }}
+              html += '</div>';
+              return html;
+            }}
+
+            function renderRoundView(container, round) {{
+              container.innerHTML = buildByRoundHtml(round);
+              var prev = container.querySelector('#draftRoundPrev');
+              var next = container.querySelector('#draftRoundNext');
+              if (prev) prev.addEventListener('click', function() {{
+                if (currentRound > 1) {{ currentRound--; renderRoundView(container, currentRound); }}
+              }});
+              if (next) next.addEventListener('click', function() {{
+                if (currentRound < totalRounds) {{ currentRound++; renderRoundView(container, currentRound); }}
+              }});
+            }}
+
+            // ── Wire up tabs and render ──────────────────────────────────────
+            var tabsHtml =
+              '<div class="draft-view-tabs">' +
+                '<button class="draft-view-tab active" data-view="team">By Team</button>' +
+                '<button class="draft-view-tab" data-view="round">By Round</button>' +
+              '</div>' +
+              '<div id="draftTeamView">' + buildByTeamHtml() + '</div>' +
+              '<div id="draftRoundView" style="display:none;"></div>';
+
+            panel.innerHTML = banner + tabsHtml;
+
+            // Accordion toggle for By Team view
             panel.querySelectorAll('.draft-acc-header').forEach(function(btn) {{
               btn.addEventListener('click', function() {{
                 var item = this.closest('.draft-acc-item');
@@ -6402,6 +6481,28 @@ def build_teams_body(ctx: dict) -> str:
                   el.classList.remove('open');
                 }});
                 if (!wasOpen) item.classList.add('open');
+              }});
+            }});
+
+            // Tab switching
+            var roundViewEl = panel.querySelector('#draftRoundView');
+            var teamViewEl  = panel.querySelector('#draftTeamView');
+            var roundRendered = false;
+            panel.querySelectorAll('.draft-view-tab').forEach(function(tab) {{
+              tab.addEventListener('click', function() {{
+                panel.querySelectorAll('.draft-view-tab').forEach(function(t) {{ t.classList.remove('active'); }});
+                this.classList.add('active');
+                if (this.dataset.view === 'round') {{
+                  teamViewEl.style.display = 'none';
+                  roundViewEl.style.display = '';
+                  if (!roundRendered) {{
+                    roundRendered = true;
+                    renderRoundView(roundViewEl, currentRound);
+                  }}
+                }} else {{
+                  roundViewEl.style.display = 'none';
+                  teamViewEl.style.display = '';
+                }}
               }});
             }});
           }})
@@ -13562,7 +13663,8 @@ def api_draft_grades():
                 if sid in taken or sid == exclude_sid:
                     continue
                 info = adp_info[sid]
-                pos = info.get("position")
+                # Position from adp_info first, fall back to players_index
+                pos = info.get("position") or str((players_index.get(sid) or {}).get("pos", "")).upper()
                 available_players.append({
                     "player_id": sid,
                     "name": (players_index.get(sid) or {}).get("name") or sid,
@@ -13675,11 +13777,11 @@ def api_draft_grades():
 
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
+                "round":            (pick_no - 1) // max(num_teams, 1) + 1,
                 "player_id":        player_id,
                 "name":             name,
                 "position":         pos,
                 "team":             player_meta.get("team") or "",
-                "adp_rank":         None,  # Deprecated - now using avg_pick
                 "avg_pick":         avg_pick,
                 "adp_diff":         adp_diff,
                 "pos_rank":         None,  # Will be calculated based on avg_pick
@@ -13720,13 +13822,18 @@ def api_draft_grades():
         grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
         results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
 
+        all_picks_flat = [p for t in results for p in t["picks"]]
+        total_rounds = max((p["round"] for p in all_picks_flat), default=_draft_rounds or 1)
+
         return jsonify({
-            "draft_id":    str(draft_id),
-            "season":      season,
-            "league_type": league_type,
-            "draft_type":  _draft_type,
-            "adp_source":  adp_source,
-            "teams":       results,
+            "draft_id":     str(draft_id),
+            "season":       season,
+            "league_type":  league_type,
+            "draft_type":   _draft_type,
+            "adp_source":   adp_source,
+            "num_teams":    _num_teams,
+            "total_rounds": total_rounds,
+            "teams":        results,
         })
 
     except Exception:

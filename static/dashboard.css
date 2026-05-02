@@ -12172,6 +12172,68 @@ img, svg, canvas {
   .draft-accordion { padding: 8px 8px 16px; }
 }
 
+/* ── Draft view tabs (By Team / By Round) ─────────────────────────────────── */
+.draft-view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.draft-view-tab {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.draft-view-tab.active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+.draft-view-tab:hover:not(.active) { background: var(--hover, rgba(0,0,0,0.05)); }
+
+/* ── By Round pagination nav ──────────────────────────────────────────────── */
+.draft-round-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.draft-round-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.draft-round-btn:disabled { opacity: 0.35; cursor: default; }
+.draft-round-btn:not(:disabled):hover { background: var(--hover, rgba(0,0,0,0.05)); }
+.draft-round-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── Team tag on round picks ─────────────────────────────────────────────── */
+.draft-pick-team-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+/* ── Draft league ADP banner highlight ──────────────────────────────────────*/
+.draft-adp-banner.draft-adp-league { color: #22c55e; }
+
 /* ── Value Tracker (BTM) ──────────────────────────────────────────────────── */
 
 /* Header: title + window pills */
