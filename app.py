@@ -463,9 +463,9 @@ BASE_HTML = """
     <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#38bdf8">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="BR Fantasy">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/icons.css">
@@ -6388,9 +6388,9 @@ def build_teams_body(ctx: dict) -> str:
               if (p.avg_pick != null) {{
                 var diff = p.adp_diff;
                 var diffHtml = diff > 1
-                  ? '<span class="adp-value">+' + diff.toFixed(1) + ' picks ahead</span>'
+                  ? '<span class="adp-value">+Steal (' + diff.toFixed(1) + ' vs ADP)</span>'
                   : diff < -1
-                    ? '<span class="adp-reach">' + diff.toFixed(1) + '</span>'
+                    ? '<span class="adp-reach">Reach (' + diff.toFixed(1) + ' vs ADP)</span>'
                     : '<span class="adp-neutral">on ADP</span>';
                 var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
                 var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
@@ -13827,9 +13827,9 @@ def api_draft_grades():
             # This prevents picks like -8 or -6 from grading F in small leagues.
             big_reach = -(num_teams * 1.1)
 
-            if adp_diff >= 5:           score = 4   # clear value
+            if adp_diff >= 4:           score = 4   # clear value
             elif adp_diff >= 2:         score = 3   # good value
-            elif adp_diff >= -1:        score = 2   # on ADP
+            elif adp_diff >= -3:        score = 2   # on ADP
             elif adp_diff >= big_reach: score = 1   # reach within 1 round → D
             else:                       score = 0   # > 1 round early → F
 
