@@ -26,9 +26,18 @@ logger = logging.getLogger(__name__)
 
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
-_BASE_AVG     = 120.0  # projected pts/game baseline for preseason
-_BASE_STD     = 20.0   # projected std dev for preseason
+_BASE_STD     = 20.0   # preseason std dev — no per-team variance data yet
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
+
+# Conservative defaults for players with no prior-season stats (rookies, etc.)
+# These are realistic first-year averages in a typical PPR league.
+_ROOKIE_PPG: dict[str, float] = {
+    "QB": 14.0,  # few rookies start; those who do land around here
+    "RB": 7.5,   # split backfields / limited role
+    "WR": 6.5,   # steep learning curve
+    "TE": 4.5,   # slowest position to develop
+}
+_ROOKIE_PPG_DEFAULT = 6.0  # catch-all for K, DEF, unknown
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +113,15 @@ def simulate_playoff_odds(
 
 def _estimate_from_rosters(ctx: dict) -> list[dict]:
     """
-    Build synthetic team scoring profiles from current roster player values.
+    Build synthetic team scoring profiles from prior-season actual PPG.
 
-    Uses the top-N starters (by value) where N = total starting slots in the
-    lineup. Converts roster strength to projected avg pts/game by scaling
-    linearly around the league average.
+    For each player on a roster, looks up their PPG from last season's usage
+    table.  Players with no prior-season stats (rookies, newly added players)
+    fall back to a conservative position-based default.
+
+    The team's projected avg pts/game = sum of the top-N starters' PPG where
+    N = total starting slots in the league's lineup.  Std dev is set to a
+    realistic fixed value since we have no per-team variance data yet.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
@@ -117,70 +130,87 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     if not rosters:
         return []
 
-    # Detect superflex
-    is_sf = any(
-        str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-        for s in roster_positions
-    )
-
     # Total starting slots (exclude bench/IR/TAXI)
     total_starters = sum(
         1 for p in roster_positions
         if str(p).upper() not in _BENCH_SLOTS
-    ) or 9   # sane default
+    ) or 9
 
-    # Load player values from DB
+    # Detect scoring format from league settings
+    rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+    if rec_pts >= 1.0:
+        ppg_key = "ppr_ppg"
+    elif rec_pts >= 0.5:
+        ppg_key = "half_ppr_ppg"
+    else:
+        ppg_key = "std_scoring_ppg"
+
+    # Load last season's per-player PPG and position from usage table
+    ppg_map: dict[str, dict] = {}   # player_id → {ppg, pos}
+    try:
+        from utils.utils import load_usage_table
+        usage = load_usage_table() or []
+        for p in usage:
+            pid = str(p.get("id") or p.get("player_id") or "")
+            if not pid:
+                continue
+            ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
+            pos = str(p.get("position") or "").upper()
+            ppg_map[pid] = {"ppg": ppg, "pos": pos}
+    except Exception as exc:
+        logger.warning("[playoff_odds] Could not load usage table: %s", exc)
+
+    # Load player positions from DB as fallback for rookies not in usage table
+    pos_map: dict[str, str] = {}
     try:
         from dashboard_services.db import get_conn
-        val_col = "COALESCE(value_sf, value_1qb, 0)" if is_sf else "COALESCE(value_1qb, 0)"
         with get_conn() as conn:
             rows = conn.execute(
-                f"SELECT player_id, {val_col} AS val FROM player_values WHERE {val_col} > 0"
+                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
             ).fetchall()
-        player_vals: dict[str, float] = {
-            str(r["player_id"]): float(r["val"]) for r in rows
-        }
-    except Exception as exc:
-        logger.warning("[playoff_odds] Could not load player values: %s", exc)
+        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
+    except Exception:
+        pass
+
+    if not ppg_map and not pos_map:
         return []
 
-    if not player_vals:
-        return []
-
-    # Compute each team's starting-lineup value sum
-    strengths: list[dict] = []
+    # Build projected avg for each roster
+    teams: list[dict] = []
     for roster in rosters:
-        rid      = roster.get("roster_id")
-        pids     = roster.get("players") or []
-        vals     = sorted(
-            (player_vals[str(p)] for p in pids if str(p) in player_vals),
-            reverse=True,
-        )
-        strength = sum(vals[:total_starters])
-        name     = (
+        rid  = roster.get("roster_id")
+        pids = roster.get("players") or []
+
+        player_ppgs: list[float] = []
+        for pid in pids:
+            info = ppg_map.get(str(pid))
+            if info and info["ppg"] > 0:
+                player_ppgs.append(info["ppg"])
+            else:
+                # Rookie or player with no prior-season data
+                pos = (
+                    (info or {}).get("pos")
+                    or pos_map.get(str(pid))
+                    or ""
+                )
+                player_ppgs.append(_ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT))
+
+        player_ppgs.sort(reverse=True)
+        projected_avg = sum(player_ppgs[:total_starters])
+
+        name = (
             roster_map.get(str(rid))
             or roster_map.get(int(rid) if rid is not None else -1)
             or f"Team {rid}"
         )
-        strengths.append({"roster_id": int(rid), "name": name, "strength": strength})
-
-    if not strengths:
-        return []
-
-    avg_str = sum(s["strength"] for s in strengths) / len(strengths)
-
-    teams: list[dict] = []
-    for s in strengths:
-        scale = (s["strength"] / avg_str) if avg_str > 0 else 1.0
-        scale = max(0.70, min(1.30, scale))  # cap swing at ±30%
         teams.append({
-            "roster_id": s["roster_id"],
-            "name":      s["name"],
+            "roster_id": int(rid),
+            "name":      name,
             "wins":      0,
             "losses":    0,
             "ties":      0,
             "pf":        0.0,
-            "avg":       round(_BASE_AVG * scale, 1),
+            "avg":       round(projected_avg, 1),
             "std":       _BASE_STD,
         })
     return teams
