@@ -1075,9 +1075,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Database",   "page_trade_database", "trade-database", False),
         ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
-    # Show Weekly Hub if draft has ended (during offseason) OR if in-season
+    # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
-    if draft_ended or not offseason_mode:
+    if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
@@ -1091,8 +1091,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False),
         ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
-    if not offseason_mode:
-        nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
+    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -3214,6 +3213,100 @@ def render_team_stats(team_stats, df_weekly) -> str:
         </table>
     """
     return table_html
+
+
+def _build_offseason_standings_body(ctx: dict) -> str:
+    """Offseason standings: teams ranked by total dynasty roster value."""
+    roster_map       = ctx["roster_map"]
+    rosters          = ctx["rosters"]
+    model_value_table = ctx.get("model_value_table") or []
+    picks_by_roster  = ctx.get("picks_by_roster") or {}
+    platform         = ctx["platform"]
+    season           = ctx["season"]
+    league_id_str    = str(ctx.get("league_id") or "")
+
+    values_by_id: dict[str, float] = {}
+    for row in model_value_table:
+        if isinstance(row, dict) and row.get("id") is not None:
+            try:
+                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+            except Exception:
+                pass
+
+    pick_by_key: dict[str, float] = load_pick_value_table() or {}
+
+    rows: list[dict] = []
+    for r in rosters:
+        rid      = str(r.get("roster_id"))
+        name     = roster_map.get(rid, f"Roster {rid}")
+        pids     = [str(p) for p in (r.get("players") or [])]
+        player_v = sum(values_by_id.get(p, 0.0) for p in pids)
+        picks    = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
+        pick_v   = _team_pick_value(picks, pick_by_key, platform=platform,
+                                    league_id=league_id_str, season=_safe_int(season, 0))
+        rows.append({
+            "rid": rid, "name": name,
+            "player_v": player_v, "pick_v": pick_v,
+            "total": player_v + pick_v,
+            "n_players": len(pids), "n_picks": len(picks),
+        })
+
+    rows.sort(key=lambda x: x["total"], reverse=True)
+
+    table_rows_html = ""
+    for i, row in enumerate(rows, 1):
+        medal = ("🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}")
+        table_rows_html += (
+            f"<tr>"
+            f"<td class='os-std-rank'>{medal}</td>"
+            f"<td class='os-std-team'>{row['name']}</td>"
+            f"<td class='os-std-num'>{row['total']:.0f}</td>"
+            f"<td class='os-std-num'>{row['player_v']:.0f}</td>"
+            f"<td class='os-std-num'>{row['pick_v']:.0f}</td>"
+            f"<td class='os-std-num'>{row['n_players']}</td>"
+            f"</tr>"
+        )
+
+    power_playoffs_html = render_power_and_playoffs(
+        pd.DataFrame(),
+        roster_map,
+        ctx.get("resolved_league_id", league_id_str),
+        platform,
+        season,
+    )
+
+    return f"""
+    <div class="standings-main two-col-standings">
+      <div class="standings-col">
+        <div class="card">
+          <div class="card-header">
+            <h2>Offseason Power Rankings</h2>
+            <p class="card-subhead">Ranked by total dynasty value (players + picks). Season hasn't started yet.</p>
+          </div>
+          <div class="card-body">
+            <div class="table-scroll">
+              <table class="os-std-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Team</th>
+                    <th>Total Value</th>
+                    <th>Players</th>
+                    <th>Picks</th>
+                    <th>Roster Size</th>
+                  </tr>
+                </thead>
+                <tbody>{table_rows_html}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="standings-col">
+        {power_playoffs_html}
+      </div>
+    </div>
+    """
 
 
 def build_standings_body(ctx: dict) -> str:
@@ -7185,15 +7278,7 @@ def page_standings(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
     if ctx.get("offseason_mode"):
-        body = """
-        <div class="card central">
-          <div class="card-header"><h2>Standings Unavailable</h2></div>
-          <div class="card-body">
-            <p>Standings will appear once the season begins.</p>
-            <p>During the offseason, use Teams, Activity, and Trade Calc for roster planning.</p>
-          </div>
-        </div>
-        """
+        body = _build_offseason_standings_body(ctx)
     else:
         body = build_standings_body(ctx)
 
@@ -7203,9 +7288,18 @@ def page_standings(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    draft_ended = has_draft_ended(league_id, platform, season)
 
-    if not draft_ended:
+    if ctx.get("offseason_mode"):
+        body = """
+        <div class="card central">
+          <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
+          <div class="card-body">
+            <p>The Weekly Hub becomes active once the season begins and games are being played.</p>
+            <p>Use the Dashboard, Teams, and Trade tools for offseason planning.</p>
+          </div>
+        </div>
+        """
+    elif not has_draft_ended(league_id, platform, season):
         body = """
         <div class="card central">
           <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>

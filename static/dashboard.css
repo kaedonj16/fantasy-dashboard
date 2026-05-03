@@ -2111,14 +2111,6 @@ thead th {
   flex-wrap: wrap;
 }
 
-.inj-row .chip {
-  background: var(--card-soft);
-  border: 1px solid var(--border);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
 
 .otc-add-pick-btn {
   background: rgba(59, 130, 246, 0.1);
@@ -4707,6 +4699,52 @@ thead th {
   color: var(--text);
 }
 
+/* Offseason standings table */
+.os-std-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.os-std-table thead th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.os-std-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.os-std-table tbody tr:last-child { border-bottom: none; }
+.os-std-table tbody tr:hover { background: var(--card-soft); }
+.os-std-rank {
+  padding: 10px 10px 10px 14px;
+  width: 36px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.os-std-team {
+  padding: 10px 8px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.os-std-num {
+  padding: 10px 14px 10px 8px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.card-subhead {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
 .os-snapshot-top, .os-waiver-row {
   display: flex;
   justify-content: space-between;
@@ -5987,57 +6025,118 @@ thead th {
   display: none;
 }
 
-.inj-acc {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  margin-bottom: 8px;
-}
-
-.inj-acc summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.inj-body {
-  margin-top: 6px;
-}
-
-.inj-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid #f1f5f9;
-  color: var(--accent);
-}
-
-.inj-row .pname {
-  font-weight: 700;
-}
-
-.inj-row .right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.inj-row .sub {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.inj-row:first-child {
-  border-top: 0;
-}
-
+/* ── Injury accordion ──────────────────────────────────────────────────── */
 .injury-overview {
   display: flex;
   flex-direction: column;
-  min-height: 653px;
+}
+
+.inj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inj-acc {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.inj-acc summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.inj-acc summary::-webkit-details-marker { display: none; }
+.inj-acc[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.inj-team {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.inj-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.inj-badge-ir   { background:#fee2e2; color:#991b1b; }
+.inj-badge-out  { background:#fecaca; color:#b91c1c; }
+.inj-badge-dbt  { background:#ffedd5; color:#c2410c; }
+.inj-badge-q    { background:#fef9c3; color:#854d0e; }
+.inj-badge-note { background:#f1f5f9; color:#64748b; }
+
+.inj-body {
+  padding: 4px 14px 10px;
+}
+
+.inj-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.inj-row:first-child { border-top: none; }
+
+.inj-left { flex: 1; min-width: 0; }
+
+.inj-pname {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.inj-pname:hover { text-decoration: underline; }
+
+.inj-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.inj-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.inj-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.inj-chip-ir           { background:#fee2e2; color:#991b1b; }
+.inj-chip-out          { background:#fecaca; color:#b91c1c; }
+.inj-chip-doubtful     { background:#ffedd5; color:#c2410c; }
+.inj-chip-questionable { background:#fef9c3; color:#854d0e; }
+.inj-chip-note         { background:#f1f5f9; color:#64748b; }
+
+.inj-upd {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .io {

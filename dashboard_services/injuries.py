@@ -173,6 +173,17 @@ def build_injury_report(
     return df
 
 
+_INJ_SEV_CLASS = {
+    "IR":           "inj-chip-ir",
+    "OUT":          "inj-chip-out",
+    "DOUBTFUL":     "inj-chip-doubtful",
+    "QUESTIONABLE": "inj-chip-questionable",
+    "PUP":          "inj-chip-ir",
+    "NFI":          "inj-chip-ir",
+    "SUSP":         "inj-chip-out",
+}
+
+
 def render_injury_accordion(df_inj: pd.DataFrame) -> str:
     if df_inj.empty:
         return ""
@@ -180,42 +191,62 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
     parts: List[str] = [
         "<div class='card injury-overview' data-section='activity'>"
         "<h2>Team Injury Overview</h2>"
-        "<div class='scroll-box'>"
+        "<div class='inj-list'>"
     ]
 
-    # groupby is already efficient; just avoid extra work in the inner loop
     for team, g in df_inj.groupby("Team"):
         injury_count = len(g)
         rows: List[str] = []
         for _, r in g.iterrows():
-            status_val = r.get("Injury") or r.get("Status") or ""
-            status = str(status_val).strip()
-            lw = "Bench"
-            player = r["Player"]
-            nfl = r["NFL"]
-            pos = r["Pos"]
-            body = r.get("Body", "")
+            status_raw = str(r.get("Injury") or r.get("Status") or "").strip()
+            sev_class  = _INJ_SEV_CLASS.get(status_raw.upper(), "inj-chip-note")
+            label      = status_raw or "Note"
+
+            player   = r["Player"]
+            nfl      = r["NFL"]
+            pos      = r["Pos"]
+            body     = r.get("Body") or ""
             news_url = r["NewsUrl"]
 
-            # NOTE: keep HTML and inline styles exactly as before
+            last_upd = r.get("Last Updated")
+            upd_str  = ""
+            if last_upd is not None and not isinstance(last_upd, float):
+                try:
+                    upd_str = last_upd.strftime("%-m/%-d")
+                except Exception:
+                    pass
+
+            meta = " · ".join(p for p in [nfl, pos, body] if p)
+
             rows.append(
-                "<div class='inj-row'>"
-                f"  <div class='left'>"
-                f"    <div class='pname'><a href='{news_url}' target='_blank' rel='noopener noreferrer'style='color:#122d4b'>{player}</a></div>"
-                f"    <div class='sub'>{nfl} • {pos} • {body}</div>"
+                f"<div class='inj-row'>"
+                f"  <div class='inj-left'>"
+                f"    <a class='inj-pname' href='{news_url}' target='_blank' rel='noopener noreferrer'>{player}</a>"
+                f"    <div class='inj-meta'>{meta}</div>"
                 f"  </div>"
-                f"  <div class='right'>"
-                f"    <span class='chip'>{status or 'Note'}</span>"
-                f"    <span class='chip'>{lw}</span>"
-                f"  </div>"
-                "</div>"
+                f"  <div class='inj-right'>"
+                f"    <span class='inj-chip {sev_class}'>{label}</span>"
+                + (f"<span class='inj-upd'>{upd_str}</span>" if upd_str else "")
+                + f"  </div>"
+                f"</div>"
             )
 
+        worst = g["Injury"].str.upper().map(
+            lambda s: {"IR": 0, "OUT": 1, "DOUBTFUL": 2, "QUESTIONABLE": 3}.get(s, 9)
+        ).min()
+        badge_class = (
+            "inj-badge-ir"  if worst == 0 else
+            "inj-badge-out" if worst == 1 else
+            "inj-badge-dbt" if worst == 2 else
+            "inj-badge-q"   if worst == 3 else
+            "inj-badge-note"
+        )
+
         parts.append(
-            f"<details class='inj-acc card'>"
-            f"  <summary style='display:flex; justify-content:space-between; align-items:center;'>"
-            f"    <span style='font-weight:600; color: #122d4b'>{team}</span>"
-            f"    <span class='chip injury-count'>{injury_count}</span>"
+            f"<details class='inj-acc'>"
+            f"  <summary>"
+            f"    <span class='inj-team'>{team}</span>"
+            f"    <span class='inj-badge {badge_class}'>{injury_count}</span>"
             f"  </summary>"
             f"  <div class='inj-body'>{''.join(rows)}</div>"
             f"</details>"
