@@ -37,7 +37,7 @@ SLEEPER_BASE = "https://api.sleeper.app/v1"
 # Re-use a session with retry/backoff identical to trade_crawler
 _SESSION = requests.Session()
 _retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-_adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=_retry)
+_adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=_retry)
 _SESSION.mount("http://", _adapter)
 _SESSION.mount("https://", _adapter)
 _SESSION.headers.update({"User-Agent": "fantasy-draft-adp/1.0"})

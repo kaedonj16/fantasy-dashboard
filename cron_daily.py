@@ -236,6 +236,8 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
+    # Split into three subprocesses so each step's memory is fully       #
+    # released before the next one starts.                                #
     # ------------------------------------------------------------------ #
     if _trade_intel_fresh():
         print("[cron] Trade intel already crawled today, skipping discovery + crawl")
@@ -243,18 +245,26 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
-from data_building.trade_intel.trade_crawler import run_crawl
-from data_building.trade_intel.analytics import run_analytics
 backfilled = backfill_superflex(batch_size=500)
 if backfilled:
     print(f"[cron] Backfilled is_superflex for {{backfilled}} leagues")
 discovered = run_discovery(target=200)
 print(f"[cron] Trade intel: discovered {{discovered}} new leagues")
+""", "trade_intel_discovery")
+
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.trade_intel.trade_crawler import run_crawl
 crawl_result = run_crawl(batch_size=100)
 print(f"[cron] Trade intel: {{crawl_result}}")
+""", "trade_intel_crawl")
+
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.trade_intel.analytics import run_analytics
 analytics_result = run_analytics(season={season!r})
 print(f"[cron] Trade intel analytics: {{analytics_result}}")
-""", "trade_intel_discovery_crawl")
+""", "trade_intel_analytics")
 
     # ------------------------------------------------------------------ #
     # Step 8: Draft ADP crawl                                            #
@@ -262,7 +272,7 @@ print(f"[cron] Trade intel analytics: {{analytics_result}}")
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.draft_adp_crawler import run_draft_adp_crawl
-result = run_draft_adp_crawl(batch_size=300, workers=4)
+result = run_draft_adp_crawl(batch_size=150, workers=2)
 print(f"[cron] Draft ADP: {result}")
 """, "draft_adp_crawl")
 
