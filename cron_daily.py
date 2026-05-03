@@ -219,7 +219,8 @@ else:
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
     # ------------------------------------------------------------------ #
-    if today_weekday == 6 and season_type not in ("reg", "post"):
+    ROOKIE_PIPELINE_PAUSED = True
+    if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and season_type not in ("reg", "post"):
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
@@ -232,7 +233,8 @@ result = run_rookie_pipeline(year)
 print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
 """, "build_weekly_rookie_data")
     else:
-        print(f"[cron] Rookie weekly run skipped — weekday={today_weekday}, season_type={season_type!r}")
+        reason = "paused" if ROOKIE_PIPELINE_PAUSED else f"weekday={today_weekday}, season_type={season_type!r}"
+        print(f"[cron] Rookie weekly run skipped — {reason}")
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
@@ -277,22 +279,27 @@ print(f"[cron] Draft ADP: {result}")
 """, "draft_adp_crawl")
 
     # ------------------------------------------------------------------ #
-    # Step 9: WLS calibration (one subprocess covers all combos)         #
+    # Step 9: WLS calibration — one subprocess per combo so numpy        #
+    # matrices and trade data are fully released between runs.            #
     # ------------------------------------------------------------------ #
     if _wls_fresh():
         print("[cron] WLS calibration already ran today, skipping")
     else:
-        _run_step(f"""
+        for _lt, _lt_name, _sz in [
+            (2, "dynasty", 10),
+            (2, "dynasty", 12),
+            (1, "redraft", 10),
+            (1, "redraft", 12),
+        ]:
+            _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.trade_value_model import run_trade_value_model
-for lt, lt_name in ((2, "dynasty"), (1, "redraft")):
-    for sz in (10, 12):
-        try:
-            res = run_trade_value_model(season={season!r}, league_type=lt, league_size=sz)
-            print(f"[cron] WLS {{lt_name}} {{sz}}-team: {{res}}")
-        except Exception as e:
-            print(f"[cron] WLS {{lt_name}} {{sz}}-team failed: {{e}}")
-""", "wls_calibration")
+try:
+    res = run_trade_value_model(season={season!r}, league_type={_lt}, league_size={_sz})
+    print(f"[cron] WLS {_lt_name} {_sz}-team: {{res}}")
+except Exception as e:
+    print(f"[cron] WLS {_lt_name} {_sz}-team failed: {{e}}")
+""", f"wls_{_lt_name}_{_sz}team")
 
     # ------------------------------------------------------------------ #
     # Step 10: Calibrated history snapshot                               #

@@ -210,48 +210,52 @@ def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
 def _load_trades(season: int, is_sf: bool = False, league_type: int = 2, league_size: int = 10) -> list[dict]:
     teams_clause = _teams_filter(league_size)
     with get_conn() as conn:
-        trade_rows = conn.execute(
+        rows = conn.execute(
             f"""
-            SELECT t.id, t.created_at
+            SELECT t.id, t.created_at,
+                   a.side, a.asset_type, a.player_id,
+                   a.pick_season, a.pick_round, a.pick_order, a.pick_slot
             FROM trade_intel_trades t
             JOIN trade_intel_leagues l ON l.league_id = t.league_id
+            LEFT JOIN trade_intel_assets a ON a.trade_id = t.id
             WHERE t.season = %s
               AND t.status = 'complete'
               AND COALESCE(l.is_superflex, FALSE) = %s
               AND l.league_type = %s
               {teams_clause}
-            ORDER BY t.created_at
+            ORDER BY t.id
             """,
             (season, is_sf, league_type),
         ).fetchall()
 
-        if not trade_rows:
-            return []
-
-        trade_ids = [r["id"] for r in trade_rows]
-        asset_rows = conn.execute(
-            """
-            SELECT trade_id, side, asset_type, player_id,
-                   pick_season, pick_round, pick_order, pick_slot
-            FROM trade_intel_assets
-            WHERE trade_id = ANY(%s)
-            """,
-            (trade_ids,),
-        ).fetchall()
+    if not rows:
+        return []
 
     assets_by_trade: dict[int, list] = defaultdict(list)
-    for a in asset_rows:
-        assets_by_trade[a["trade_id"]].append(dict(a))
+    created_by_trade: dict = {}
+    for r in rows:
+        tid = r["id"]
+        if tid not in created_by_trade:
+            created_by_trade[tid] = r["created_at"]
+        if r["side"] is not None:
+            assets_by_trade[tid].append({
+                "side":        r["side"],
+                "asset_type":  r["asset_type"],
+                "player_id":   r["player_id"],
+                "pick_season": r["pick_season"],
+                "pick_round":  r["pick_round"],
+                "pick_order":  r["pick_order"],
+                "pick_slot":   r["pick_slot"],
+            })
 
     now = datetime.now(tz=timezone.utc)
     trades = []
-    for r in trade_rows:
-        created = r["created_at"]
+    for tid, created in created_by_trade.items():
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
         days_ago = (now - created).total_seconds() / 86400 if created else 999
         trades.append({
-            "assets":       assets_by_trade.get(r["id"], []),
+            "assets":       assets_by_trade.get(tid, []),
             "decay_weight": _decay_weight(days_ago),
         })
     return trades
