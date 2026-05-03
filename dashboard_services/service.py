@@ -1265,7 +1265,7 @@ def playoff_bracket(
 
     projected_label = (
         "<div style='padding:0 2px 6px'>"
-        "<span class='bracket-projected-label'>Projected · based on dynasty value</span>"
+        "<span class='bracket-projected-label'>Projected · based on playoff odds</span>"
         "</div>"
         if projected else ""
     )

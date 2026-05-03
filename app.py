@@ -3311,15 +3311,37 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         })
     synthetic_ts = pd.DataFrame(df_rows)
 
-    # ── seed map (dynasty rank order) and projected bracket ─────────────────
+    # ── seed map from playoff odds simulation and projected bracket ──────────
     settings      = ctx.get("league_settings") or {}
     playoff_teams = int(settings.get("playoff_teams") or 6)
-    n_byes        = 2 if playoff_teams >= 4 else 0
 
-    # roster_id ordered by dynasty value (team_rows already sorted desc)
-    name_to_rid = {v: k for k, v in roster_map.items()}
-    seeded_rids  = [name_to_rid.get(r["name"]) for r in team_rows if name_to_rid.get(r["name"])]
-    seeded_rids  = [str(rid) for rid in seeded_rids[:playoff_teams]]
+    # Run the Monte Carlo sim to get odds-based seedings (same data as the
+    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
+    try:
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+    except Exception:
+        odds_list = []
+
+    if odds_list:
+        odds_list_sorted = sorted(
+            odds_list,
+            key=lambda o: (
+                -o.get("first_seed_pct", 0),
+                -o.get("bye_pct", 0),
+                -o.get("playoff_pct", 0),
+                -o.get("avg_final_wins", 0),
+            ),
+        )
+        seeded_rids = [str(o["roster_id"]) for o in odds_list_sorted[:playoff_teams]]
+    else:
+        # Fallback: use dynasty value order
+        name_to_rid = {v: k for k, v in roster_map.items()}
+        seeded_rids = [
+            str(name_to_rid[r["name"]])
+            for r in team_rows
+            if r["name"] in name_to_rid
+        ][:playoff_teams]
 
     seed_map_override: dict = {rid: i + 1 for i, rid in enumerate(seeded_rids)}
 
