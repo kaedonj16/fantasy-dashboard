@@ -4917,6 +4917,87 @@ thead th {
   color: #78350f;
 }
 
+/* ---- Playoff Odds tab ---- */
+.playoff-odds-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.loading-spinner-sm {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.po-wrap { padding: 4px 0 8px; }
+.po-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  padding: 0 4px;
+}
+.po-error {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 16px 4px;
+}
+.po-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.po-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  padding: 0 6px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.po-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  vertical-align: middle;
+}
+.po-table tr:last-child td { border-bottom: none; }
+.po-team { font-weight: 500; max-width: 140px; }
+.po-rec  { color: var(--text-muted); white-space: nowrap; }
+.po-odds { min-width: 120px; }
+.po-bye  { text-align: center; color: var(--text-muted); white-space: nowrap; }
+.po-proj { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
+.po-bar-wrap {
+  background: var(--border);
+  border-radius: 3px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.po-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+.po-bar-green  { background: #22c55e; }
+.po-bar-yellow { background: #eab308; }
+.po-bar-red    { background: #ef4444; }
+.po-label { font-size: 12px; font-weight: 600; }
+.po-pct-sym { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+.po-made   { color: #22c55e; font-weight: 600; font-size: 12px; }
+.po-missed { color: var(--text-muted); font-size: 12px; }
+
+[data-theme="dark"] .po-bar-green  { background: #16a34a; }
+[data-theme="dark"] .po-bar-yellow { background: #ca8a04; }
+[data-theme="dark"] .po-bar-red    { background: #dc2626; }
+
+/* ---- Power rankings grid ---- */
 .rank-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

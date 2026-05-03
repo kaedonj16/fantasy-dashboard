@@ -2990,6 +2990,10 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
               <div class="tab-strip">
                 <button class="tab-btn active" data-tab="power">Power Rankings</button>
                 <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+                <button class="tab-btn" data-tab="playoff-odds"
+                        data-league-id="{league_id}"
+                        data-platform="{platform}"
+                        data-season="{season}">Playoff Odds</button>
               </div>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="power">
@@ -2998,6 +3002,12 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
                 </div>
                 <div class="tab-panel" data-tab="playoff">
                   {bracket_html}
+                </div>
+                <div class="tab-panel" data-tab="playoff-odds" id="playoffOddsPanel">
+                  <div class="playoff-odds-loading">
+                    <div class="loading-spinner-sm"></div>
+                    <span>Running simulation…</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -13407,6 +13417,55 @@ def api_schedule_strength():
 
     except Exception:
         logger.exception("[schedule-strength] Unexpected error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/playoff-odds")
+def api_playoff_odds():
+    """
+    Run Monte Carlo playoff odds simulation for a league.
+
+    In-season: simulates remaining regular-season games (10 000 runs) using
+    each team's historical scoring distribution and returns probabilities.
+    Offseason / complete: returns 100 / 0 based on final standings.
+
+    Query params: platform, league_id, season
+    """
+    platform  = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season_s  = (request.args.get("season") or "").strip()
+
+    if not league_id or not season_s:
+        return jsonify({"error": "missing params"}), 400
+    try:
+        season = int(season_s)
+    except ValueError:
+        return jsonify({"error": "invalid season"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        if not ctx:
+            return jsonify({"error": "league not found"}), 404
+
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        odds = simulate_playoff_odds(ctx, platform=platform)
+
+        settings           = ctx.get("league_settings") or {}
+        playoff_week_start = int(settings.get("playoff_week_start") or 15)
+        playoff_teams      = int(settings.get("playoff_teams") or 6)
+        current_week       = int(ctx.get("current_week") or 0)
+        is_complete        = bool(odds and odds[0].get("is_complete"))
+
+        return jsonify({
+            "odds":                odds,
+            "season":              season,
+            "current_week":        current_week,
+            "playoff_week_start":  playoff_week_start,
+            "playoff_teams":       playoff_teams,
+            "is_complete":         is_complete,
+        })
+    except Exception as exc:
+        logger.exception("[playoff-odds] %s", exc)
         return jsonify({"error": "Internal error"}), 500
 
 

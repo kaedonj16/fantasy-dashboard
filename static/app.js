@@ -276,6 +276,114 @@ function initCardTabs(root = document) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Playoff Odds — lazy-loaded on first tab click
+// ---------------------------------------------------------------------------
+
+function initPlayoffOdds(root = document) {
+  root.querySelectorAll('.tab-btn[data-tab="playoff-odds"]').forEach(btn => {
+    bindOnce(btn, "playoffOddsLoad", "click", () => {
+      const panel = root.getElementById
+        ? root.getElementById("playoffOddsPanel")
+        : document.getElementById("playoffOddsPanel");
+      if (!panel || panel.dataset.loaded) return;
+      panel.dataset.loaded = "1";
+
+      const leagueId = btn.dataset.leagueId;
+      const platform = btn.dataset.platform;
+      const season   = btn.dataset.season;
+
+      fetch(
+        `/api/playoff-odds?platform=${encodeURIComponent(platform)}` +
+        `&league_id=${encodeURIComponent(leagueId)}` +
+        `&season=${encodeURIComponent(season)}`
+      )
+        .then(r => r.json())
+        .then(data => {
+          if (data.error || !data.odds) {
+            panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
+            return;
+          }
+          panel.innerHTML = _renderPlayoffOdds(data);
+        })
+        .catch(() => {
+          panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
+          delete panel.dataset.loaded;
+        });
+    });
+  });
+}
+
+function _renderPlayoffOdds(data) {
+  const { odds, is_complete, current_week, playoff_week_start, playoff_teams } = data;
+  if (!odds || !odds.length) return '<p class="po-error">No data available.</p>';
+
+  const sorted = [...odds].sort((a, b) =>
+    b.playoff_pct - a.playoff_pct || b.avg_final_wins - a.avg_final_wins
+  );
+
+  const weeksLeft = is_complete
+    ? 0
+    : Math.max(0, playoff_week_start - current_week - 1);
+  const subtitle = is_complete
+    ? 'Final standings'
+    : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${(data.odds[0].n_sims || 10000).toLocaleString()} simulations`;
+
+  const showBye = playoff_teams >= 4;
+
+  const rows = sorted.map(t => {
+    const pct    = t.playoff_pct;
+    const barCls = pct >= 70 ? 'po-bar-green' : pct >= 35 ? 'po-bar-yellow' : 'po-bar-red';
+    const rec    = `${t.wins}-${t.losses}${t.ties ? '-' + t.ties : ''}`;
+
+    let oddsCell;
+    if (is_complete) {
+      oddsCell = pct === 100
+        ? '<span class="po-made">Made Playoffs</span>'
+        : '<span class="po-missed">Missed</span>';
+    } else {
+      oddsCell =
+        `<div class="po-bar-wrap"><div class="po-bar ${barCls}" style="width:${Math.max(pct, 2)}%"></div></div>` +
+        `<span class="po-label">${pct.toFixed(0)}<span class="po-pct-sym">%</span></span>`;
+    }
+
+    const byeCell = showBye
+      ? `<td class="po-bye">${
+          is_complete
+            ? (t.bye_pct === 100 ? '✓' : '')
+            : (t.bye_pct > 0 ? t.bye_pct.toFixed(0) + '%' : '—')
+        }</td>`
+      : '';
+
+    const projCell = is_complete
+      ? ''
+      : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
+
+    return `<tr>
+      <td class="po-team">${t.team_name}</td>
+      <td class="po-rec">${rec}</td>
+      <td class="po-odds">${oddsCell}</td>
+      ${byeCell}${projCell}
+    </tr>`;
+  }).join('');
+
+  const byeHdr  = showBye ? '<th class="po-bye">Bye</th>' : '';
+  const projHdr = is_complete ? '' : '<th class="po-proj">Proj W-L</th>';
+
+  return `<div class="po-wrap">
+    <p class="po-subtitle">${subtitle}</p>
+    <table class="po-table">
+      <thead><tr>
+        <th class="po-team">Team</th>
+        <th class="po-rec">Record</th>
+        <th class="po-odds">Playoff %</th>
+        ${byeHdr}${projHdr}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
 function initTeamTabs(root = document) {
   const tabs = Array.from(root.querySelectorAll(".team-tab"));
   const panels = Array.from(root.querySelectorAll(".team-panel"));
@@ -3102,6 +3210,7 @@ function initRecapPage(root = document) {
 window.initPageRoot = function initPageRoot(root = document) {
   initManagerPills(root);
   initCardTabs(root);
+  initPlayoffOdds(root);
   initTeamTabs(root);
   initStandingsSort(root);
 
