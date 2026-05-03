@@ -24,8 +24,6 @@ from flask import (
     session,
     send_file,
 )
-from plotly.offline import get_plotlyjs
-
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
@@ -170,6 +168,18 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+
+@app.after_request
+def _add_cache_headers(response):
+    path = request.path
+    if path.startswith("/static/"):
+        # Versioned assets (e.g. ?v=123) can be cached aggressively; others get 1-day
+        if request.args.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 if not _secret_key:
     logging.warning(
@@ -179,8 +189,6 @@ if not _secret_key:
     _secret_key = 'dev-secret-key-change-in-production'
 app.secret_key = _secret_key
 del _secret_key
-
-plotly_js = get_plotlyjs()
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _redis_url = os.environ.get("REDIS_URL", "")
@@ -477,9 +485,7 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
 
-    <script>
-      {plotly_js}
-    </script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});
@@ -1249,7 +1255,6 @@ def render_page(
         title=title,
         nav=nav_html,
         body=wrapped_body,
-        plotly_js=plotly_js,
         privacy_url=league_url("privacy", league_id),
         faq_url=league_url("faq", league_id),
         support_url=league_url("support", league_id),
@@ -1410,25 +1415,49 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     resolved_league_id = league_id
 
-    # Core league data
-    league = get_league(platform, resolved_league_id, season)
-    users = get_users(platform, resolved_league_id, season)
-    rosters = get_rosters(platform, resolved_league_id, season)
+    # ── Fetch core league data and NFL state in parallel ─────────────────────
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
 
-    traded = None
-    if platform == "sleeper":
-        traded = get_traded_picks(platform, resolved_league_id, season)
+    def _get_league():   return get_league(platform, resolved_league_id, season)
+    def _get_users():    return get_users(platform, resolved_league_id, season)
+    def _get_rosters():  return get_rosters(platform, resolved_league_id, season)
+    def _get_traded():   return get_traded_picks(platform, resolved_league_id, season) if platform == "sleeper" else None
+    def _get_drafts():
+        try:
+            return get_drafts(platform, resolved_league_id, season) or []
+        except Exception as e:
+            print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+            return []
+    def _get_state():    return get_nfl_state() or {}
+
+    _tasks = {
+        "league":  _get_league,
+        "users":   _get_users,
+        "rosters": _get_rosters,
+        "traded":  _get_traded,
+        "drafts":  _get_drafts,
+        "state":   _get_state,
+    }
+    _results: dict = {}
+    with _TPE(max_workers=len(_tasks)) as _pool:
+        _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
+        for _fut in _ac(_fmap):
+            _results[_fmap[_fut]] = _fut.result()
+
+    league  = _results["league"]
+    users   = _results["users"]
+    rosters = _results["rosters"]
+    traded  = _results["traded"]
+    drafts  = _results["drafts"]
+    current = _results["state"]
 
     try:
-        drafts = get_drafts(platform, resolved_league_id, season) or []
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
     except Exception as e:
-        print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+        print(f"[build_league_context] failed to resolve latest draft: {e}")
         drafts = []
         latest_draft = None
 
-    # Global NFL state
-    current = get_nfl_state() or {}
     season_type = (current.get("season_type") or "").lower()
     current_season = int(current.get("season") or datetime.now().year)
     current_week = int(current.get("week") or 0)
