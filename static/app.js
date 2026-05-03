@@ -322,12 +322,15 @@ function _renderPlayoffOdds(data) {
     b.playoff_pct - a.playoff_pct || b.avg_final_wins - a.avg_final_wins
   );
 
+  const isProjected = !is_complete && odds[0] && odds[0].is_projected;
   const weeksLeft = is_complete
     ? 0
     : Math.max(0, playoff_week_start - current_week - 1);
   const subtitle = is_complete
     ? 'Final standings'
-    : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${(data.odds[0].n_sims || 10000).toLocaleString()} simulations`;
+    : isProjected
+      ? `Preseason projection · based on roster values · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`
+      : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`;
 
   const showBye = playoff_teams >= 4;
 
