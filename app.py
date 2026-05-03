@@ -6154,22 +6154,23 @@ def build_teams_body(ctx: dict) -> str:
           <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
           <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
           <button class="tab-btn" data-tab="draft" id="draftTabBtn" style="display:none">Draft</button>
-          <div class="tab-panels">
-            <div class="tab-panel active" data-tab="btm" id="btmPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
-            <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
-            <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
-            <div class="tab-panel" data-tab="sos" id="sosPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
-            <div class="tab-panel" data-tab="draft" id="draftPanel">
-              <div class="analytics-loading">Loading…</div>
-            </div>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel active" data-tab="btm" id="btmPanel">
+            <div class="analytics-loading">Loading…</div>
+          </div>
+          <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
+            <div class="analytics-loading">Loading…</div>
+          </div>
+          <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
+            <div class="analytics-loading">Loading…</div>
+          </div>
+          <div class="tab-panel" data-tab="sos" id="sosPanel">
+            <div class="analytics-loading">Loading…</div>
+          </div>
+          <div class="tab-panel" data-tab="draft" id="draftPanel">
+            <div class="analytics-loading">Loading…</div>
+          </div>
         </div>
       </div>
     </div>
