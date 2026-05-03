@@ -1437,7 +1437,6 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 
 .card .tab-panels {
   margin-top: 4px;
-  flex-basis: 100%;
   width: 100%;
 }
 
@@ -7323,10 +7322,6 @@ img, svg, canvas {
     order: -1;
   }
 
-  .teams-sidebar {
-    max-height: none;
-    overflow-y: visible;
-  }
 }
 
 /* Shared mobile sidebar toggle styles — active at both breakpoints */
@@ -12548,6 +12543,7 @@ img, svg, canvas {
   top: 90px;
   max-height: calc(100vh - 110px);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   align-self: flex-start;
 }
 
