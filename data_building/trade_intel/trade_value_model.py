@@ -46,10 +46,11 @@ from dashboard_services.picks import load_pick_value_table
 
 logger = logging.getLogger(__name__)
 
-LAMBDA_REG   = 8.0    # regularization strength (lower = more market influence per trade)
-MAX_VALUE    = 999.9
-MAX_LIFT     = 1.25   # player values capped at 125% of prior; picks float freely
-TOP_N_AT_MAX = 1      # only the #1 player lands at MAX_VALUE; all others separate naturally
+LAMBDA_REG         = 8.0   # regularization strength (lower = more market influence per trade)
+MAX_VALUE          = 999.9
+MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
+TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
+TRADES_LOOKBACK_DAYS = 365 # only load trades from the last N days to cap memory usage
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -222,10 +223,12 @@ def _load_trades(season: int, is_sf: bool = False, league_type: int = 2, league_
               AND t.status = 'complete'
               AND COALESCE(l.is_superflex, FALSE) = %s
               AND l.league_type = %s
+              AND (t.created_at IS NULL
+                   OR t.created_at >= NOW() - make_interval(days => %s))
               {teams_clause}
             ORDER BY t.id
             """,
-            (season, is_sf, league_type),
+            (season, is_sf, league_type, TRADES_LOOKBACK_DAYS),
         ).fetchall()
 
     if not rows:
@@ -482,9 +485,13 @@ def run_trade_value_model(
         logger.warning("[trade_value_model] No prior data — nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
-    # Collect all pick bucket keys seen in trades
+    # Collect all pick bucket keys seen in trades (iterate separately — avoids list copy)
     pick_keys_seen: set[str] = set()
-    for trade in trades_1qb + trades_sf:
+    for trade in trades_1qb:
+        for a in trade["assets"]:
+            if a["asset_type"] == "pick":
+                pick_keys_seen.add(_pick_key(a))
+    for trade in trades_sf:
         for a in trade["assets"]:
             if a["asset_type"] == "pick":
                 pick_keys_seen.add(_pick_key(a))
@@ -528,12 +535,16 @@ def run_trade_value_model(
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
     AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N)
+    del trades_1qb
     AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N)
+    del trades_sf
     M = M_1qb
 
     logger.info("[trade_value_model] %d trade constraints — solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
+    del AtWA_1qb, AtWb_1qb
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
+    del AtWA_sf, AtWb_sf
 
     # Players: floor at prior, cap at MAX_LIFT × prior
     v_1qb_pos = np.clip(v_1qb, 0.0, None)

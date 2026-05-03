@@ -5,9 +5,22 @@ This module provides functions to persist player values to PostgreSQL,
 enabling historical trend analysis and value change tracking over time.
 """
 
+import math
 import os
 from datetime import date
 from typing import List, Dict, Any
+
+
+def _safe_int(v):
+    """Convert a value to int, returning None for NaN/None/invalid."""
+    if v is None:
+        return None
+    try:
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: date = None) -> int:
@@ -102,7 +115,7 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             years_exp,
                             rank_change_7d,
                             pos_rank_change_7d
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
                             last_updated = EXCLUDED.last_updated,
@@ -141,15 +154,15 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             redraft_value_1qb,
                             redraft_value_sf,
                             position,
-                            pos_rank,
+                            _safe_int(pos_rank),
                             pos_rank_label,
-                            sf_pos_rank,
+                            _safe_int(sf_pos_rank),
                             sf_pos_rank_label,
-                            age,
+                            _safe_int(age),
                             team,
-                            years_exp,
-                            rank_change_7d,
-                            pos_rank_change_7d,
+                            _safe_int(years_exp),
+                            _safe_int(rank_change_7d),
+                            _safe_int(pos_rank_change_7d),
                         ),
                     )
                     saved_count += 1
