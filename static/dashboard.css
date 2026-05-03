@@ -2951,6 +2951,17 @@ thead th {
   margin-top: 12px;
 }
 
+.fullscreen-loading-subtext {
+  font-size: 13px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+[data-theme="dark"] .fullscreen-loading-overlay {
+  background: rgba(15, 23, 42, 0.95);
+}
+
 .otc-page-badge {
   flex-shrink: 0;
   padding: 8px 12px;
