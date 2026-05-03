@@ -3260,7 +3260,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Save viewer to localStorage on form submit so returning users can skip re-entry
   const leagueSelectFormEl = document.getElementById("leagueSelectForm");
   if (leagueSelectFormEl) {
-    leagueSelectFormEl.addEventListener("submit", () => {
+    leagueSelectFormEl.addEventListener("submit", (e) => {
       const lId = leagueSelect?.value;
       const uname = usernameInput?.value.trim();
       const platform = formPlatform?.value || "sleeper";
@@ -3273,6 +3273,15 @@ document.addEventListener("DOMContentLoaded", () => {
           season: seasonVal || new Date().getFullYear(),
           ts: Date.now()
         }));
+      }
+
+      // Show full-page loading overlay while the server builds the dashboard
+      const overlay = document.getElementById("dashboardLoadingOverlay");
+      const submitBtn = leagueSelectFormEl.querySelector('button[type="submit"]');
+      if (overlay) overlay.style.display = "flex";
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Building Dashboard…";
       }
     });
   }

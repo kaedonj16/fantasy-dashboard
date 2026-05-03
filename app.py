@@ -445,6 +445,12 @@ FORM_BODY = """
     </aside>
   </div>
 </div>
+
+<div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
+  <div class="loading-spinner"></div>
+  <div class="fullscreen-loading-text">Building your dashboard…</div>
+  <div class="fullscreen-loading-subtext">This usually takes 10–20 seconds</div>
+</div>
 """
 
 BASE_HTML = """
