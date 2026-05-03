@@ -13845,7 +13845,10 @@ def api_draft_grades():
             # for bigger reaches the adp_diff already captures the cost, so
             # applying BPA on top would double-count and turn a D into an F.
             if is_bpa:
-                score += 2
+                # A reach is still a reach even if this was the best player left.
+                # Cap the BPA bonus at +1 when the pick was already a meaningful
+                # reach (adp_diff < -3) so BPA alone can't rescue a D to a B.
+                score += 1 if adp_diff < -3 else 2
             elif bpa_gap is not None and bpa_gap >= 5:
                 score = max(score - 1, 0)   # better player available (was -2)
             # Moderate BPA gap (3-4) no longer penalises — adp_diff already
