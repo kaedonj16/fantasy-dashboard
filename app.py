@@ -2804,11 +2804,21 @@ def build_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
+def render_power_and_playoffs(
+    team_stats,
+    roster_map: Dict[str, str],
+    league_id: str,
+    platform,
+    season,
+    bracket_override=None,
+    seed_map_override=None,
+) -> str:
     """
     Single card that shows:
       - Power Rankings (by PowerScore if present)
       - Playoff Picture (using bracket)
+    bracket_override: pre-built bracket list; skips API fetch when provided.
+    seed_map_override: {roster_id: seed_int}; skips seed_top6 calculation.
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -2996,20 +3006,21 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
     rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
 
     # ---- Playoff bracket ----
-    wb = get_bracket(platform, league_id, "winners", season)
+    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
         if pd.notna(owner)
     }
 
-    seed_map = seed_top6_from_team_stats(team_stats, roster_map)
+    seed_map = seed_map_override if seed_map_override is not None else seed_top6_from_team_stats(team_stats, roster_map)
 
     bracket_html = playoff_bracket(
         wb,
         roster_name_map=roster_map,
         roster_avatar_map=roster_avatar_map,
         seed_map=seed_map,
+        projected=(bracket_override is not None),
     )
 
     podium_card = f"""
@@ -3300,8 +3311,68 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         })
     synthetic_ts = pd.DataFrame(df_rows)
 
+    # ── seed map (dynasty rank order) and projected bracket ─────────────────
+    settings      = ctx.get("league_settings") or {}
+    playoff_teams = int(settings.get("playoff_teams") or 6)
+    n_byes        = 2 if playoff_teams >= 4 else 0
+
+    # roster_id ordered by dynasty value (team_rows already sorted desc)
+    name_to_rid = {v: k for k, v in roster_map.items()}
+    seeded_rids  = [name_to_rid.get(r["name"]) for r in team_rows if name_to_rid.get(r["name"])]
+    seeded_rids  = [str(rid) for rid in seeded_rids[:playoff_teams]]
+
+    seed_map_override: dict = {rid: i + 1 for i, rid in enumerate(seeded_rids)}
+
+    def _rid(seed: int):
+        """Return int roster_id for 1-based seed, or None if not enough teams."""
+        if seed <= len(seeded_rids):
+            v = seeded_rids[seed - 1]
+            try:
+                return int(v)
+            except Exception:
+                return v
+        return None
+
+    # Build a standard projected bracket for the configured playoff size
+    # Seeding: 1,2 get byes; R1 pairings are 3v(N), 4v(N-1), …
+    synthetic_bracket: list[dict] = []
+    match_id = 1
+
+    if playoff_teams == 6:
+        # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 4}},
+            {"m": 3, "r": 2, "t1": _rid(1), "t2": None,    "t1_from": None, "t2_from": {"w": 2}, "w": {"m": 5}},
+            {"m": 4, "r": 2, "t1": _rid(2), "t2": None,    "t1_from": None, "t2_from": {"w": 1}, "w": {"m": 5}},
+            {"m": 5, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}},
+        ]
+    elif playoff_teams == 4:
+        # R1 (Semis): 1v4, 2v3 → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(4), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(2), "t2": _rid(3), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 3, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}},
+        ]
+    elif playoff_teams == 8:
+        # R1: 1v8, 4v5 (top half) + 2v7, 3v6 (bottom half) → Semis → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(8), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 3, "r": 1, "t1": _rid(2), "t2": _rid(7), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 4, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 5, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}, "w": {"m": 7}},
+            {"m": 6, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}, "w": {"m": 7}},
+            {"m": 7, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 5}, "t2_from": {"w": 6}},
+        ]
+    else:
+        # Generic: no bracket available
+        synthetic_bracket = []
+
     power_playoffs_html = render_power_and_playoffs(
         synthetic_ts, roster_map, league_id_str, platform, season,
+        bracket_override=synthetic_bracket,
+        seed_map_override=seed_map_override,
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────

@@ -5076,31 +5076,48 @@ thead th {
 
 .bracket {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
   max-width: 100%;
   overflow-x: auto;
   color: var(--accent);
   background-color: var(--card);
   border-radius: 14px;
-  padding: 10px 12px 0;
+  padding: 12px 14px 14px;
+}
+
+.bracket-projected-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  background: var(--card-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-bottom: 10px;
+  display: inline-block;
 }
 
 .bracket-match {
   position: relative;
-  width: 234px;
-  border-radius: 16px;
-  border: 2px solid var(--accent);
+  width: 210px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
   background: var(--card);
-  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  padding: 10px 12px;
   margin: 5px 0;
+  transition: border-color .15s;
 }
+.bracket-match:hover { border-color: var(--accent-soft, #94a3b8); }
 
 .bracket-match .match-id {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -5112,11 +5129,14 @@ thead th {
 }
 
 .bracket-round .round-title {
-  padding-right: 30px;
+  padding-right: 12px;
   text-align: center;
-  font-size: 20px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-subtle);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
 }
 
 .m-slide, .matchup-carousel .m-slide {
@@ -7098,23 +7118,57 @@ thead th {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  gap: 6px;
+  padding: 5px 0;
+}
+
+.team-row .team-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.team-row .team-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.team-row .team-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
 }
 
 .team-row.bye .team-name {
   text-transform: uppercase;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .team-row.top {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 1px;
 }
 
 .team-score {
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
-  margin-left: 8px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.bracket-match .team-avatar {
+  width: 22px;
+  height: 22px;
+  background: var(--card-soft);
 }
 
 .team-section {
