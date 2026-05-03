@@ -588,7 +588,6 @@ ul {
 
   .nav-pill-dropdown-wrapper .nav-pill {
     width: 100%;
-    padding: 12px;
     border-radius: 8px;
     font-size: 14px;
     display: flex;
@@ -6387,7 +6386,6 @@ thead th {
 .page-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   position: sticky;
   top: 12px;
   height: fit-content;
@@ -7349,6 +7347,7 @@ img, svg, canvas {
     margin-bottom: 4px;
     user-select: none;
     width: 100%;
+    background: var(--bg);
   }
   .page-sidebar-toggle .sidebar-toggle-icon,
   .otc-side-toggle .sidebar-toggle-icon {
@@ -7669,9 +7668,10 @@ img, svg, canvas {
 
   .nav-pill {
     width: 100%;
-    padding: 12px;
+    padding: 6px 12px;
     border-radius: 8px;
-    text-align: left;
+    text-align: center;
+    justify-content: center;
     font-size: 14px;
   }
 
@@ -8512,9 +8512,10 @@ img, svg, canvas {
   }
 
   .nav-pill {
-    font-size: 0.75rem;
+    font-size: 14px;
     padding: 4px 6px;
     min-height: 28px;
+    margin-top: 4px;
   }
 
   .refresh-icon {

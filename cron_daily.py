@@ -1,6 +1,8 @@
 from datetime import date, datetime
 import gc
 import os
+import subprocess
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -8,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from dashboard_services.api import get_nfl_state
-from data_building.build_daily_value_table import build_daily_data, build_daily_market_pulse
 from utils.paths import DATA_DIR
 
 
@@ -21,12 +22,10 @@ def _today() -> date:
 
 
 def _model_values_fresh() -> bool:
-    """True if model_values JSON was already built today."""
     return (DATA_DIR / f"model_values_{_today().isoformat()}.json").exists()
 
 
 def _vendor_values_fresh() -> bool:
-    """True if FC and DP source CSVs were already fetched today."""
     fc  = DATA_DIR / f"fantasycalc_api_values_{_today().isoformat()}.csv"
     dp  = DATA_DIR / f"dynastyprocess_values_{_today().isoformat()}.csv"
     eng = DATA_DIR / f"engine_values_{_today().isoformat()}.csv"
@@ -34,12 +33,10 @@ def _vendor_values_fresh() -> bool:
 
 
 def _usage_table_fresh() -> bool:
-    """True if the usage snapshot was already written today."""
     return (DATA_DIR / f"usage_table_{_today().isoformat()}.json").exists()
 
 
 def _player_values_fresh() -> bool:
-    """True if player_values rows were saved to DB today."""
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -55,7 +52,6 @@ def _player_values_fresh() -> bool:
 
 
 def _trade_intel_fresh() -> bool:
-    """True if the trade intel crawl ran today."""
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -72,7 +68,6 @@ def _trade_intel_fresh() -> bool:
 
 
 def _wls_fresh() -> bool:
-    """True if WLS calibration already ran today."""
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -88,347 +83,235 @@ def _wls_fresh() -> bool:
     return False
 
 
-def build_daily_advanced_metrics():
-    """
-    Calculate and save advanced efficiency metrics for all players.
-    """
-    from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
-    from utils.utils import load_usage_table
-    from dashboard_services.api import get_nfl_state
+# ---------------------------------------------------------------------------
+# Subprocess runner — each step gets a fresh process so memory fully releases
+# ---------------------------------------------------------------------------
 
+def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
+    """
+    Run Python code in a fresh interpreter subprocess.
+    stdout/stderr flow through. Returns True on success.
+    Memory from the subprocess is fully released when it exits.
+    """
+    print(f"[cron] -> {step_name}")
     try:
-        usage_table = load_usage_table()
-        if not usage_table:
-            print("[cron] No usage table found, skipping advanced metrics")
-            return
-
-        nfl_state = get_nfl_state() or {}
-        season_type = str(nfl_state.get("season_type", "")).lower().strip()
-        is_offseason = season_type == "off"
-        current_season = int(nfl_state.get("season") or datetime.now().year)
-
-        players_with_games = sum(1 for p in usage_table if p.get("usage", {}).get("games", 0) > 0)
-
-        if players_with_games == 0 and is_offseason:
-            print("[cron] Offseason detected, skipping advanced metrics")
-            return
-
-        metrics_list = []
-        failed_count = 0
-        for player in usage_table:
-            player_id = player.get("id")
-            position = player.get("position")
-            usage = player.get("usage", {})
-
-            if not player_id or not position or not usage or usage.get("games", 0) == 0:
-                continue
-
-            try:
-                metrics = calculate_player_metrics(player_id, usage, position)
-                metrics_list.append(metrics)
-            except Exception:
-                failed_count += 1
-
-        if metrics_list:
-            today = date.today().isoformat()
-            save_metrics_snapshot(metrics_list, today, season=current_season)
-            print(f"[cron] Advanced metrics: {len(metrics_list)} processed, {failed_count} failed")
-        else:
-            print("[cron] No advanced metrics calculated")
-
-    except Exception as e:
-        print(f"[cron] Advanced metrics failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-def build_weekly_rookie_data(state: dict) -> None:
-    """
-    Run the full rookie pipeline (eval metrics + scoring) once a week during
-    the offseason.
-
-    Fires only when:
-      - Today is Sunday
-      - NFL season_type is "off" or "pre" (skipped during reg/post season)
-    """
-    from datetime import date as _date
-    today = _date.today()
-
-    if today.weekday() != 6:  # 0=Mon … 6=Sun
-        return
-
-    season_type = str(state.get("season_type", "")).lower().strip()
-    if season_type in ("reg", "post"):
-        print(f"[cron] Rookie weekly run skipped — season_type={season_type!r}")
-        return
-
-    from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
-    from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
-
-    try:
-        year = get_active_rookie_class()
-        print(f"[cron] Weekly rookie refresh — {year} draft class (season_type={season_type!r})")
-
-        eval_result = run_rookie_evaluation_pipeline(year)
-        print(
-            f"[cron] Eval pipeline: {eval_result.get('profile_count', 0)} profiles, "
-            f"db_metrics_rows={eval_result.get('db_metrics_rows', 0)}"
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            timeout=timeout,
+            env=os.environ.copy(),
         )
-
-        result = run_rookie_pipeline(year)
-        print(
-            f"[cron] Scoring pipeline: {len(result.get('prospects', []))} prospects, "
-            f"{len(result.get('scores', {}))} scored, {len(result.get('values', {}))} values"
-        )
+        if result.returncode != 0:
+            print(f"[cron] {step_name} exited with code {result.returncode}")
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        print(f"[cron] {step_name} timed out after {timeout}s")
+        return False
     except Exception as e:
-        print(f"[cron] Weekly rookie refresh failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-def backfill_historical_advanced_metrics():
-    """
-    Backfill advanced metrics for seasons 2022-2025.
-    Safe to re-run — uses upsert logic.
-    """
-    from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
-    from data_building.external_data.sleeper_usage import build_usage_map_for_season
-    from utils.utils import load_players_index
-
-    seasons = [2022, 2023, 2024, 2025]
-    print(f"[cron] Backfilling advanced metrics for seasons: {seasons}")
-
-    players_index = load_players_index() or {}
-    if not players_index:
-        print("[cron] Could not load players index, skipping backfill")
-        return
-
-    for season in seasons:
-        try:
-            print(f"[cron] Backfill season {season}...")
-            usage_map = build_usage_map_for_season(season, weeks=range(1, 19))
-            metrics_list = []
-            skipped = 0
-            failed = 0
-
-            for pid, usage in usage_map.items():
-                if usage.get("games", 0) == 0:
-                    skipped += 1
-                    continue
-                meta = players_index.get(pid) or players_index.get(str(pid)) or {}
-                pos = meta.get("pos") or meta.get("position")
-                if pos not in ("QB", "RB", "WR", "TE"):
-                    skipped += 1
-                    continue
-                try:
-                    metrics_list.append(calculate_player_metrics(str(pid), usage, pos))
-                except Exception as e:
-                    print(f"[cron]   [warn] player {pid}: {e}")
-                    failed += 1
-
-            if metrics_list:
-                as_of_date = f"{season + 1}-01-10"
-                save_metrics_snapshot(metrics_list, as_of_date, season=season)
-                print(f"[cron]   Season {season}: saved {len(metrics_list)} players (skipped={skipped}, failed={failed})")
-            else:
-                print(f"[cron]   Season {season}: no metrics to save (skipped={skipped}, failed={failed})")
-
-        except Exception as e:
-            print(f"[cron] Backfill season {season} failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-    print("[cron] Historical advanced metrics backfill complete")
-
-
-def build_daily_breakout_candidates(season: int, week: int, nfl_state: dict):
-    """
-    Calculate breakout candidates using the upgraded BreakoutEngine.
-
-    This uses the new multi-component scoring system with:
-    - Opportunity opened signals
-    - Competition removed/added tracking
-    - Player readiness scoring
-    - Team environment analysis
-    - Role trajectory (in-season)
-    """
-    from datetime import date as date_module
-    from data_building.breakout_engine.calculate_breakouts_with_real_data import main as calculate_breakouts
-
-    season_type = str(nfl_state.get("season_type", "")).lower().strip()
-
-    # Determine if we should run based on season phase
-    # Run year-round but more frequently during key periods
-    should_run = True
-
-    # Skip during playoffs (Jan 1 - Mar 14) unless explicitly needed
-    today = date_module.today()
-    if today.month == 1 or today.month == 2 or (today.month == 3 and today.day < 15):
-        print(f"[cron] Breakout calculations skipped - playoff/early offseason period")
-        return
-
-    print(f"[cron] Starting breakout calculations for season={season}, week={week}, type={season_type}")
-
-    try:
-        # Run the new BreakoutEngine
-        result = calculate_breakouts()
-
-        print(f"[cron] Breakout scoring completed:")
-        print(f"  - Season: {result.get('season', season)}")
-        print(f"  - Phase: {result.get('phase', 'unknown')}")
-        print(f"  - Players analyzed: {result.get('players_loaded', 0)}")
-        print(f"  - Raw candidates: {result.get('raw_candidates', 0)}")
-        print(f"  - Filtered candidates: {result.get('filtered_candidates', 0)}")
-        print(f"  - Scores saved: {result.get('saved_count', 0)}")
-
-        # Show filter summary if available
-        filter_summary = result.get('filter_summary', {})
-        if filter_summary:
-            print(f"  - Filter breakdown:")
-            print(f"    • Excluded stars: {filter_summary.get('excluded_star', 0)}")
-            print(f"    • Excluded true dust: {filter_summary.get('excluded_true_dust', 0)}")
-            print(f"    • Excluded age: {filter_summary.get('excluded_age', 0)}")
-            print(f"    • Ideal breakout band: {filter_summary.get('ideal_breakout_band', 0)}")
-            print(f"    • Viable small role: {filter_summary.get('viable_small_role', 0)}")
-            print(f"    • Longshot: {filter_summary.get('longshot', 0)}")
-
-    except Exception as e:
-        print(f"[cron] Breakout calculations failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[cron] {step_name} failed to launch: {e}")
+        return False
 
 
 def main():
     state = get_nfl_state() or {}
     season = int(state.get("season"))
     week = int(state.get("week"))
+    season_type = str(state.get("season_type", "")).lower().strip()
+    today_weekday = date.today().weekday()  # 6 = Sunday
 
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
 
-    try:
-        if _vendor_values_fresh() and _usage_table_fresh():
-            print("[cron] Vendor + usage data already fresh today, skipping build_daily_data")
-        else:
-            build_daily_data(season, week)
-        gc.collect()
+    # ------------------------------------------------------------------ #
+    # Step 1: Vendor data + usage table                                   #
+    # ------------------------------------------------------------------ #
+    if _vendor_values_fresh() and _usage_table_fresh():
+        print("[cron] Vendor + usage data already fresh today, skipping")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.build_daily_value_table import build_daily_data
+build_daily_data({season!r}, {week!r})
+""", "build_daily_data")
 
-        build_daily_advanced_metrics()
-        gc.collect()
+    # ------------------------------------------------------------------ #
+    # Step 2: Advanced metrics                                            #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime, date
+from dashboard_services.api import get_nfl_state
+from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
+from utils.utils import load_usage_table
 
-        from data_building.build_daily_value_table import build_daily_model_values
-        from utils.utils import load_model_value_table
-        from utils.email_notifications import send_cron_failure_notification, send_database_save_notification
+nfl_state = get_nfl_state() or {{}}
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+is_offseason = season_type == "off"
+current_season = int(nfl_state.get("season") or datetime.now().year)
 
-        if _model_values_fresh():
-            print("[cron] Model values already built today, skipping")
-        else:
-            build_daily_model_values()
-        gc.collect()
-
-        value_table = load_model_value_table()
-        if not value_table:
-            raise RuntimeError("No value table available after build_daily_model_values")
-
-        if _player_values_fresh():
-            print("[cron] Player values already saved to DB today, skipping")
-        else:
-            from data_building.update_player_values_with_rankings import update_player_values_with_rankings
-            expected_count = len(value_table)
-            value_count = update_player_values_with_rankings()
-            print(f"[cron] Saved {value_count} player values")
-            if value_count < expected_count * 0.8:
-                send_database_save_notification(value_count, expected_count)
-
-        del value_table
-        gc.collect()
-
-        # build_daily_market_pulse()
-        build_daily_breakout_candidates(season, week, state)
-        gc.collect()
-        build_weekly_rookie_data(state)
-        gc.collect()
-
-        try:
-            from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
-            from data_building.trade_intel.trade_crawler import run_crawl
-            from data_building.trade_intel.analytics import run_analytics
-            from data_building.trade_intel.trade_value_model import run_trade_value_model
-
-            # One-time backfill: populate is_superflex for leagues discovered before
-            # the column was added.  No-ops once every league has been tagged.
-            backfilled = backfill_superflex(batch_size=500)
-            if backfilled:
-                print(f"[cron] Backfilled is_superflex for {backfilled} leagues")
-
-            if _trade_intel_fresh():
-                print("[cron] Trade intel already crawled today, skipping discovery + crawl")
-            else:
-                discovered = run_discovery(target=200)
-                print(f"[cron] Trade intel: discovered {discovered} new leagues")
-                crawl_result = run_crawl(batch_size=100)
-                print(f"[cron] Trade intel: {crawl_result}")
-                analytics_result = run_analytics(season=season)
-                print(f"[cron] Trade intel analytics: {analytics_result}")
-
-            # Draft ADP crawl — runs every day regardless of trade-intel freshness
-            # so new rookie drafts get picked up promptly during draft season.
+usage_table = load_usage_table()
+if not usage_table:
+    print("[cron] No usage table found, skipping advanced metrics")
+else:
+    players_with_games = sum(1 for p in usage_table if p.get("usage", {{}}).get("games", 0) > 0)
+    if players_with_games == 0 and is_offseason:
+        print("[cron] Offseason detected, skipping advanced metrics")
+    else:
+        metrics_list = []
+        failed_count = 0
+        for player in usage_table:
+            player_id = player.get("id")
+            position = player.get("position")
+            usage = player.get("usage", {{}})
+            if not player_id or not position or not usage or usage.get("games", 0) == 0:
+                continue
             try:
-                from data_building.trade_intel.draft_adp_crawler import run_draft_adp_crawl
-                adp_result = run_draft_adp_crawl(batch_size=500, workers=10)
-                print(f"[cron] Draft ADP: {adp_result}")
-            except Exception as adp_err:
-                print(f"[cron] Draft ADP crawl failed (non-fatal): {adp_err}")
+                metrics_list.append(calculate_player_metrics(player_id, usage, position))
+            except Exception:
+                failed_count += 1
+        if metrics_list:
+            save_metrics_snapshot(metrics_list, date.today().isoformat(), season=current_season)
+            print(f"[cron] Advanced metrics: {{len(metrics_list)}} processed, {{failed_count}} failed")
+        else:
+            print("[cron] No advanced metrics calculated")
+""", "build_daily_advanced_metrics")
 
-        except Exception as ti_err:
-            print(f"[cron] Trade intel discovery/crawl failed (non-fatal): {ti_err}")
+    # ------------------------------------------------------------------ #
+    # Step 3: Model values                                                #
+    # ------------------------------------------------------------------ #
+    if _model_values_fresh():
+        print("[cron] Model values already built today, skipping")
+    else:
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.build_daily_value_table import build_daily_model_values
+build_daily_model_values()
+""", "build_daily_model_values")
 
+    # ------------------------------------------------------------------ #
+    # Step 4: Save player values to DB                                   #
+    # ------------------------------------------------------------------ #
+    if _player_values_fresh():
+        print("[cron] Player values already saved to DB today, skipping")
+    else:
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.update_player_values_with_rankings import update_player_values_with_rankings
+n = update_player_values_with_rankings()
+print(f"[cron] Saved {n} player values")
+""", "update_player_values_with_rankings")
+
+    # ------------------------------------------------------------------ #
+    # Step 5: Breakout candidates                                        #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import date
+today = date.today()
+if today.month in (1, 2) or (today.month == 3 and today.day < 15):
+    print("[cron] Breakout skipped — playoff/early offseason period")
+else:
+    from data_building.breakout_engine.calculate_breakouts_with_real_data import main as run_breakouts
+    result = run_breakouts()
+    print(f"[cron] Breakout: {{result.get('saved_count', 0)}} saved, "
+          f"{{result.get('filtered_candidates', 0)}} candidates")
+""", "build_daily_breakout_candidates")
+
+    # ------------------------------------------------------------------ #
+    # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
+    # ------------------------------------------------------------------ #
+    if today_weekday == 6 and season_type not in ("reg", "post"):
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
+from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
+year = get_active_rookie_class()
+print(f"[cron] Weekly rookie refresh — {{year}} draft class")
+eval_result = run_rookie_evaluation_pipeline(year)
+print(f"[cron] Eval: {{eval_result.get('profile_count', 0)}} profiles")
+result = run_rookie_pipeline(year)
+print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
+""", "build_weekly_rookie_data")
+    else:
+        print(f"[cron] Rookie weekly run skipped — weekday={today_weekday}, season_type={season_type!r}")
+
+    # ------------------------------------------------------------------ #
+    # Step 7: Trade intel discovery + crawl + analytics                  #
+    # ------------------------------------------------------------------ #
+    if _trade_intel_fresh():
+        print("[cron] Trade intel already crawled today, skipping discovery + crawl")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
+from data_building.trade_intel.trade_crawler import run_crawl
+from data_building.trade_intel.analytics import run_analytics
+backfilled = backfill_superflex(batch_size=500)
+if backfilled:
+    print(f"[cron] Backfilled is_superflex for {{backfilled}} leagues")
+discovered = run_discovery(target=200)
+print(f"[cron] Trade intel: discovered {{discovered}} new leagues")
+crawl_result = run_crawl(batch_size=100)
+print(f"[cron] Trade intel: {{crawl_result}}")
+analytics_result = run_analytics(season={season!r})
+print(f"[cron] Trade intel analytics: {{analytics_result}}")
+""", "trade_intel_discovery_crawl")
+
+    # ------------------------------------------------------------------ #
+    # Step 8: Draft ADP crawl                                            #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.trade_intel.draft_adp_crawler import run_draft_adp_crawl
+result = run_draft_adp_crawl(batch_size=300, workers=4)
+print(f"[cron] Draft ADP: {result}")
+""", "draft_adp_crawl")
+
+    # ------------------------------------------------------------------ #
+    # Step 9: WLS calibration (one subprocess covers all combos)         #
+    # ------------------------------------------------------------------ #
+    if _wls_fresh():
+        print("[cron] WLS calibration already ran today, skipping")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.trade_intel.trade_value_model import run_trade_value_model
+for lt, lt_name in ((2, "dynasty"), (1, "redraft")):
+    for sz in (10, 12):
         try:
-            from data_building.trade_intel.trade_value_model import run_trade_value_model
-            from data_building.build_daily_value_table import record_calibrated_history_snapshot
+            res = run_trade_value_model(season={season!r}, league_type=lt, league_size=sz)
+            print(f"[cron] WLS {{lt_name}} {{sz}}-team: {{res}}")
+        except Exception as e:
+            print(f"[cron] WLS {{lt_name}} {{sz}}-team failed: {{e}}")
+""", "wls_calibration")
 
-            if _wls_fresh():
-                print("[cron] WLS calibration already ran today, skipping")
-            else:
-                # Run WLS for core combinations only (2 league types × 2 common sizes)
-                # to reduce peak memory usage in the daily cron job.
-                for _lt, _lt_name in ((2, "dynasty"), (1, "redraft")):
-                    for _sz in (10, 12):
-                        try:
-                            _res = run_trade_value_model(
-                                season=season, league_type=_lt, league_size=_sz
-                            )
-                            print(f"[cron] WLS {_lt_name} {_sz}-team: {_res}")
-                        except Exception as _wls_sz_err:
-                            print(f"[cron] WLS {_lt_name} {_sz}-team failed (non-fatal): {_wls_sz_err}")
+    # ------------------------------------------------------------------ #
+    # Step 10: Calibrated history snapshot                               #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.build_daily_value_table import record_calibrated_history_snapshot
+n = record_calibrated_history_snapshot()
+print(f"[cron] Calibrated history snapshot: {n} players")
+""", "record_calibrated_history_snapshot")
 
-            # Always write calibrated values to history (covers re-runs and first run)
-            cal_n = record_calibrated_history_snapshot()
-            print(f"[cron] Calibrated history snapshot: {cal_n} players")
-        except Exception as wls_err:
-            import traceback
-            print(f"[cron] WLS/calibration failed (non-fatal): {wls_err}")
-            traceback.print_exc()
+    print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
-        print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
+if __name__ == "__main__":
+    try:
+        main()
     except Exception as e:
         print(f"[cron] Daily run failed: {e}")
         import traceback
         traceback.print_exc()
-        
-        # Send email notification
         try:
             from utils.email_notifications import send_cron_failure_notification
+            from dashboard_services.api import get_nfl_state
+            state = get_nfl_state() or {}
             send_cron_failure_notification(e, {
-                'season': season,
-                'week': week,
+                'season': state.get("season"),
+                'week': state.get("week"),
                 'timestamp': datetime.now().isoformat()
             })
-        except ImportError:
-            print("[cron] Email notifications not available")
-        except Exception as email_error:
-            print(f"[cron] Failed to send email notification: {email_error}")
-
-
-if __name__ == "__main__":
-    main()
+        except Exception:
+            pass

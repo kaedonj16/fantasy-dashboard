@@ -61,6 +61,18 @@ def get_database_url() -> str:
     return url
 
 
+def is_connection_healthy(conn: psycopg.Connection) -> bool:
+    """Check if the database connection is still alive and usable."""
+    if not conn or conn.closed:
+        return False
+    try:
+        # Simple health check - execute a lightweight query
+        conn.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
 @contextmanager
 def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Connection]:
     url = get_database_url()
@@ -94,8 +106,16 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
     except Exception as e:
         logger.error("Exception in conn %d: %s: %s", id(conn), type(e).__name__, e)
         if not autocommit:
-            conn.rollback()
-            logger.info("Rollback complete: conn %d", id(conn))
+            try:
+                # Check if connection is still alive before attempting rollback
+                if is_connection_healthy(conn):
+                    conn.rollback()
+                    logger.info("Rollback complete: conn %d", id(conn))
+                else:
+                    logger.warning("Connection unhealthy, skipping rollback: conn %d", id(conn))
+            except Exception as rollback_error:
+                logger.error("Rollback failed for conn %d: %s", id(conn), rollback_error)
+                # Don't re-raise rollback error - the original exception is more important
         raise
     finally:
         conn.close()

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from collections import defaultdict
 from datetime import date
 
@@ -167,25 +168,43 @@ def smooth_value_history(
         logger.info("[smooth] Dry run — no changes written.")
         return {"rows_read": len(rows), "rows_updated": 0, "dry_run": True, "would_update": len(updates)}
 
-    # Write back in batches
+    # Write back in batches with connection recovery
     BATCH = 500
     written = 0
-    with get_conn() as conn:
-        for i in range(0, len(updates), BATCH):
-            batch = updates[i : i + BATCH]
-            for smoothed_val, d, pid in batch:
-                conn.execute(
-                    """
-                    UPDATE player_value_history
-                       SET value = %s
-                     WHERE as_of_date = %s
-                       AND player_id  = %s
-                       AND source     = %s
-                    """,
-                    (smoothed_val, d, pid, source),
-                )
-            written += len(batch)
-            logger.info("[smooth] Written %d / %d", written, len(updates))
+    for batch_start in range(0, len(updates), BATCH):
+        batch = updates[batch_start : batch_start + BATCH]
+        batch_written = 0
+        
+        # Retry each batch up to 3 times with fresh connections
+        for attempt in range(3):
+            try:
+                with get_conn(autocommit=True) as conn:
+                    for smoothed_val, d, pid in batch:
+                        conn.execute(
+                            """
+                            UPDATE player_value_history
+                               SET value = %s
+                             WHERE as_of_date = %s
+                               AND player_id  = %s
+                               AND source     = %s
+                            """,
+                            (smoothed_val, d, pid, source),
+                        )
+                    
+                    batch_written = len(batch)
+                    written += batch_written
+                    logger.info("[smooth] Written batch %d-%d (%d rows) - Total: %d / %d", 
+                               batch_start, batch_start + len(batch) - 1, batch_written, written, len(updates))
+                    break  # Success, exit retry loop
+                    
+            except Exception as e:
+                logger.warning("[smooth] Batch %d-%d failed (attempt %d/3): %s", 
+                             batch_start, batch_start + len(batch) - 1, attempt + 1, e)
+                if attempt == 2:  # Last attempt failed
+                    logger.error("[smooth] Failed to write batch %d-%d after 3 attempts, skipping", 
+                                batch_start, batch_start + len(batch) - 1)
+                    raise
+                time.sleep(2 ** attempt)  # Exponential backoff
 
     logger.info("[smooth] Done. %d rows smoothed.", written)
     return {"rows_read": len(rows), "rows_updated": written}
