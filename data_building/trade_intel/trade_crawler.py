@@ -35,8 +35,8 @@ retry_strategy = Retry(
     status_forcelist=[429, 500, 502, 503, 504],
 )
 adapter = HTTPAdapter(
-    pool_connections=20,  # Increase from default 10
-    pool_maxsize=20,      # Increase from default 10  
+    pool_connections=4,
+    pool_maxsize=8,
     max_retries=retry_strategy
 )
 SESSION.mount("http://", adapter)

@@ -107,45 +107,46 @@ def _load_model_values(season: int) -> dict[str, dict]:
 
 def _load_trades(season: int) -> list[dict]:
     with get_conn() as conn:
-        trade_rows = conn.execute(
+        rows = conn.execute(
             """
             SELECT t.id, t.transaction_id, t.created_at,
-                   COALESCE(l.num_teams, 10) AS num_teams
+                   COALESCE(l.num_teams, 10) AS num_teams,
+                   a.side, a.asset_type, a.player_id,
+                   a.pick_season, a.pick_round, a.pick_order
             FROM trade_intel_trades t
             LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+            LEFT JOIN trade_intel_assets  a ON a.trade_id  = t.id
             WHERE t.season = %s AND t.status = 'complete'
-            ORDER BY t.created_at
+            ORDER BY t.id
             """,
-            (season,)
+            (season,),
         ).fetchall()
 
-        if not trade_rows:
-            return []
+    if not rows:
+        return []
 
-        trade_ids = [r["id"] for r in trade_rows]
-        asset_rows = conn.execute(
-            """
-            SELECT trade_id, side, asset_type, player_id, pick_season, pick_round, pick_order
-            FROM trade_intel_assets
-            WHERE trade_id = ANY(%s)
-            """,
-            (trade_ids,)
-        ).fetchall()
+    trades: dict[int, dict] = {}
+    for r in rows:
+        tid = r["id"]
+        if tid not in trades:
+            trades[tid] = {
+                "trade_id":       tid,
+                "transaction_id": r["transaction_id"],
+                "created_at":     r["created_at"],
+                "num_teams":      int(r["num_teams"] or 10),
+                "assets":         [],
+            }
+        if r["side"] is not None:
+            trades[tid]["assets"].append({
+                "side":        r["side"],
+                "asset_type":  r["asset_type"],
+                "player_id":   r["player_id"],
+                "pick_season": r["pick_season"],
+                "pick_round":  r["pick_round"],
+                "pick_order":  r["pick_order"],
+            })
 
-    assets_by_trade: dict[int, list] = defaultdict(list)
-    for a in asset_rows:
-        assets_by_trade[a["trade_id"]].append(dict(a))
-
-    trades = []
-    for r in trade_rows:
-        trades.append({
-            "trade_id":       r["id"],
-            "transaction_id": r["transaction_id"],
-            "created_at":     r["created_at"],
-            "num_teams":      int(r["num_teams"] or 10),
-            "assets":         assets_by_trade.get(r["id"], []),
-        })
-    return trades
+    return list(trades.values())
 
 
 # ---------------------------------------------------------------------------
