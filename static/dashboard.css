@@ -4699,46 +4699,6 @@ thead th {
   color: var(--text);
 }
 
-/* Offseason standings table */
-.os-std-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.os-std-table thead th {
-  text-align: left;
-  padding: 8px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-}
-.os-std-table tbody tr {
-  border-bottom: 1px solid var(--border);
-  transition: background 0.15s;
-}
-.os-std-table tbody tr:last-child { border-bottom: none; }
-.os-std-table tbody tr:hover { background: var(--card-soft); }
-.os-std-rank {
-  padding: 10px 10px 10px 14px;
-  width: 36px;
-  font-weight: 700;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.os-std-team {
-  padding: 10px 8px;
-  font-weight: 600;
-  color: var(--accent);
-}
-.os-std-num {
-  padding: 10px 14px 10px 8px;
-  text-align: right;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
 .card-subhead {
   font-size: 13px;
   color: var(--text-muted);

@@ -3216,15 +3216,20 @@ def render_team_stats(team_stats, df_weekly) -> str:
 
 
 def _build_offseason_standings_body(ctx: dict) -> str:
-    """Offseason standings: teams ranked by total dynasty roster value."""
-    roster_map       = ctx["roster_map"]
-    rosters          = ctx["rosters"]
+    """
+    Offseason standings: left = dynasty rankings table, right = power rankings
+    cards (same order as the Teams page) + Playoff Odds.
+    """
+    roster_map        = ctx["roster_map"]
+    rosters           = ctx["rosters"]
+    users             = ctx.get("users") or []
     model_value_table = ctx.get("model_value_table") or []
-    picks_by_roster  = ctx.get("picks_by_roster") or {}
-    platform         = ctx["platform"]
-    season           = ctx["season"]
-    league_id_str    = str(ctx.get("league_id") or "")
+    picks_by_roster   = ctx.get("picks_by_roster") or {}
+    platform          = ctx["platform"]
+    season            = ctx["season"]
+    league_id_str     = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
+    # ── dynasty value lookup ──────────────────────────────────────────────────
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
@@ -3235,7 +3240,22 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     pick_by_key: dict[str, float] = load_pick_value_table() or {}
 
-    rows: list[dict] = []
+    # ── avatar lookup from users ──────────────────────────────────────────────
+    user_by_id = {str(u.get("user_id", "")): u for u in users}
+    rid_to_avatar: dict[str, str] = {}
+    for r in rosters:
+        rid      = str(r.get("roster_id"))
+        owner_id = str(r.get("owner_id") or "")
+        u        = user_by_id.get(owner_id) or {}
+        u_meta   = u.get("metadata") or {}
+        u_av     = u.get("avatar") or ""
+        av_raw   = u_meta.get("avatar") or (
+            f"https://sleepercdn.com/avatars/{u_av}" if platform == "sleeper" and u_av else u_av
+        )
+        rid_to_avatar[rid] = _avatar_url(av_raw) or ""
+
+    # ── build per-team data ───────────────────────────────────────────────────
+    team_rows: list[dict] = []
     for r in rosters:
         rid      = str(r.get("roster_id"))
         name     = roster_map.get(rid, f"Roster {rid}")
@@ -3244,60 +3264,97 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         picks    = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
         pick_v   = _team_pick_value(picks, pick_by_key, platform=platform,
                                     league_id=league_id_str, season=_safe_int(season, 0))
-        rows.append({
+        total    = player_v + pick_v
+        team_rows.append({
             "rid": rid, "name": name,
             "player_v": player_v, "pick_v": pick_v,
-            "total": player_v + pick_v,
-            "n_players": len(pids), "n_picks": len(picks),
+            "total": total, "n_players": len(pids), "n_picks": len(picks),
+            "avatar": rid_to_avatar.get(rid, ""),
         })
 
-    rows.sort(key=lambda x: x["total"], reverse=True)
+    team_rows.sort(key=lambda x: x["total"], reverse=True)
 
+    # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
+    raw_vals = [r["total"] for r in team_rows]
+    raw_max  = max(raw_vals) if raw_vals else 1
+    for r in team_rows:
+        r["power_score"] = round(100.0 + r["total"] / max(raw_max, 1) * 60.0, 2)
+
+    # ── synthetic team_stats DataFrame for render_power_and_playoffs ─────────
+    df_rows = []
+    for i, r in enumerate(team_rows):
+        df_rows.append({
+            "owner":      r["name"],
+            "Wins":       0,
+            "Losses":     0,
+            "Ties":       0,
+            "G":          0,
+            "Win%":       0.0,
+            "PF":         0.0,
+            "PA":         0.0,
+            "PowerScore": r["power_score"],
+            "Streak":     "",
+            "StreakLen":  0,
+            "StreakType": "",
+            "avatar":     r["avatar"],
+        })
+    synthetic_ts = pd.DataFrame(df_rows)
+
+    power_playoffs_html = render_power_and_playoffs(
+        synthetic_ts, roster_map, league_id_str, platform, season,
+    )
+
+    # ── left-column dynasty rankings table ───────────────────────────────────
     table_rows_html = ""
-    for i, row in enumerate(rows, 1):
-        medal = ("🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}")
+    for i, row in enumerate(team_rows, 1):
+        av = row["avatar"]
+        img = (
+            f"<img class='avatar sm' src='{av}' onerror=\"this.style.display='none'\">"
+            if av else ""
+        )
+        first_rd = sum(
+            1 for pk in (picks_by_roster.get(row["rid"], []) if isinstance(picks_by_roster, dict) else [])
+            if int(pk.get("round") or 0) == 1
+        )
+        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
         table_rows_html += (
             f"<tr>"
-            f"<td class='os-std-rank'>{medal}</td>"
-            f"<td class='os-std-team'>{row['name']}</td>"
-            f"<td class='os-std-num'>{row['total']:.0f}</td>"
-            f"<td class='os-std-num'>{row['player_v']:.0f}</td>"
-            f"<td class='os-std-num'>{row['pick_v']:.0f}</td>"
-            f"<td class='os-std-num'>{row['n_players']}</td>"
+            f"<td class='num'>{i}</td>"
+            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='num'>{row['total']:.0f}</td>"
+            f"<td class='num'>{row['player_v']:.0f}</td>"
+            f"<td class='num'>{picks_label}</td>"
             f"</tr>"
         )
 
-    power_playoffs_html = render_power_and_playoffs(
-        pd.DataFrame(),
-        roster_map,
-        ctx.get("resolved_league_id", league_id_str),
-        platform,
-        season,
-    )
+    table_html = f"""
+        <table class="standings-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Team</th>
+              <th>Total Value</th>
+              <th>Players</th>
+              <th>Draft Capital</th>
+            </tr>
+          </thead>
+          <tbody>{table_rows_html}</tbody>
+        </table>
+        <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
+    """
 
     return f"""
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
-          <div class="card-header">
-            <h2>Offseason Power Rankings</h2>
-            <p class="card-subhead">Ranked by total dynasty value (players + picks). Season hasn't started yet.</p>
-          </div>
-          <div class="card-body">
-            <div class="table-scroll">
-              <table class="os-std-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Team</th>
-                    <th>Total Value</th>
-                    <th>Players</th>
-                    <th>Picks</th>
-                    <th>Roster Size</th>
-                  </tr>
-                </thead>
-                <tbody>{table_rows_html}</tbody>
-              </table>
+          <div class="card-tabs">
+            <div class="tab-strip">
+              <button class="tab-btn active" data-tab="standings">Dynasty Rankings</button>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="standings">
+                  {table_html}
+                </div>
+              </div>
             </div>
           </div>
         </div>
