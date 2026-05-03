@@ -7322,6 +7322,11 @@ img, svg, canvas {
   .page-layout .page-sidebar {
     order: -1;
   }
+
+  .teams-sidebar {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 /* Shared mobile sidebar toggle styles — active at both breakpoints */
@@ -7945,6 +7950,21 @@ img, svg, canvas {
     padding-left: 6px;
     padding-right: 6px;
     font-size: 0.75rem;
+  }
+
+  #teamsAnalyticsTabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  #teamsAnalyticsTabs::-webkit-scrollbar {
+    display: none;
+  }
+  #teamsAnalyticsTabs .tab-btn {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    letter-spacing: 0;
   }
 }
 
