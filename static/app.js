@@ -1366,34 +1366,44 @@ window.initTradePage = function initTradePage(root = document) {
 
     const errorBox = root.querySelector("#errorBox");
 
-    try {
-      const res = await fetch("/api/league-players", { cache: "no-store" });
-      if (!res.ok) {
-        throw new Error("Failed to load players (" + res.status + ").");
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 1000));
+      try {
+        const res = await fetch("/api/league-players", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
+        const data = await res.json();
+        const rawData = Array.isArray(data) ? data : [];
+
+        const players = rawData.filter(p => p.position !== "PICK");
+        const picks = rawData.filter(p => p.position === "PICK");
+
+        allPlayers = [
+          ...players
+            .filter(p => p && typeof p === "object" && p.id != null)
+            .map(normalizePlayerRow)
+            .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
+          ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
+        ].sort((a, b) => {
+          const vb = Number(b.value || 0);
+          const va = Number(a.value || 0);
+          if (vb !== va) return vb - va;
+          return String(a.name || "").localeCompare(String(b.name || ""));
+        });
+
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn("[trade] ensurePlayersLoaded attempt", attempt + 1, "failed:", err.message);
       }
-      const data = await res.json();
-      const rawData = Array.isArray(data) ? data : [];
+    }
 
-      const players = rawData.filter(p => p.position !== "PICK");
-      const picks = rawData.filter(p => p.position === "PICK");
-
-      allPlayers = [
-        ...players
-          .filter(p => p && typeof p === "object" && p.id != null)
-          .map(normalizePlayerRow)
-          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
-        ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
-      ].sort((a, b) => {
-        const vb = Number(b.value || 0);
-        const va = Number(a.value || 0);
-        if (vb !== va) return vb - va;
-        return String(a.name || "").localeCompare(String(b.name || ""));
-      });
-    } catch (err) {
-      console.error("Error loading data:", err);
+    if (lastErr) {
+      console.error("Error loading data:", lastErr);
       if (errorBox) {
         errorBox.style.display = "block";
-        errorBox.textContent = err.message || "Failed to load data.";
+        errorBox.textContent = lastErr.message || "Failed to load data.";
       }
       return;
     }
@@ -1802,8 +1812,7 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = "";
       }
 
-      fetchTradeIntel();
-      fetchSimilarTrades();
+      Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -1910,12 +1919,15 @@ window.initTradePage = function initTradePage(root = document) {
     intelBody.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:#9ca3af;font-size:12px;padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading market data...</div>';
     intelPanel.style.display = "";
 
+    const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
     const results = await Promise.all(
       playerIds.map(p =>
-        fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => d ? { ...d, name: p.name, side: p.side } : null)
-          .catch(() => null)
+        Promise.race([
+          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d ? { ...d, name: p.name, side: p.side } : null),
+          _timeout(8000),
+        ]).catch(() => null)
       )
     );
 
