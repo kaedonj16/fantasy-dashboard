@@ -8156,6 +8156,10 @@ img, svg, canvas {
     grid-template-columns: 1fr !important;
   }
 
+  .podium .podium-header h3 {
+    font-size: 20px;
+  }
+
   .rank-item {
     grid-template-columns: auto 1fr auto !important;
     gap: 10px;
