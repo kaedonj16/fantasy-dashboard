@@ -133,51 +133,64 @@ def _save_users(user_ids: List[str], source: str = "bfs", usernames: Optional[Di
         return
     usernames = usernames or {}
     
-    # Use executemany with psycopg 3.x to avoid deadlock
     import time
     import random
     from psycopg import errors
     
-    # Prepare data for executemany
+    # Prepare data for batch processing
     values = [(uid, usernames.get(uid), source) for uid in user_ids]
     
-    # Retry with exponential backoff for deadlock handling
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            with get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.executemany(
-                    """
-                    INSERT INTO trade_intel_users (user_id, username, source)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (user_id) DO NOTHING
-                    """,
-                    values
-                )
-                break  # Success, exit retry loop
-        except errors.DeadlockDetected:
-            if attempt == max_retries - 1:
-                # Last attempt failed, re-raise
-                raise
-            # Add jittered exponential backoff
-            backoff = (2 ** attempt) + random.uniform(0, 1)
-            time.sleep(backoff)
-        except Exception as e:
-            # For other exceptions, don't retry
-            raise
+    # Write in batches with connection recovery to prevent timeouts
+    BATCH = 500
+    for batch_start in range(0, len(values), BATCH):
+        batch = values[batch_start : batch_start + BATCH]
+        
+        # Retry each batch up to 3 times with fresh connections
+        for attempt in range(3):
+            try:
+                with get_conn(autocommit=True) as conn:
+                    cursor = conn.cursor()
+                    cursor.executemany(
+                        """
+                        INSERT INTO trade_intel_users (user_id, username, source)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id) DO NOTHING
+                        """,
+                        batch
+                    )
+                    print(f"[_save_users] Written batch {batch_start}-{batch_start + len(batch) - 1} ({len(batch)} users)")
+                    break  # Success, exit retry loop
+                    
+            except errors.DeadlockDetected:
+                if attempt == 2:  # Last attempt failed
+                    print(f"[_save_users] Deadlock in batch {batch_start}-{batch_start + len(batch) - 1} after 3 attempts, skipping.")
+                    break
+                else:
+                    # Add jittered exponential backoff for deadlocks
+                    backoff = (2 ** attempt) + random.uniform(0, 1)
+                    print(f"[_save_users] Deadlock in batch {batch_start}-{batch_start + len(batch) - 1} (attempt {attempt + 1}/3). Retrying in {backoff:.1f}s...")
+                    time.sleep(backoff)
+            except Exception as e:
+                if attempt == 2:  # Last attempt failed
+                    print(f"[_save_users] Failed to write batch {batch_start}-{batch_start + len(batch) - 1} after 3 attempts, skipping. Error: {e}")
+                    # Continue with next batch instead of failing completely
+                    break
+                else:
+                    # Wait before retry with exponential backoff
+                    wait_time = (2 ** attempt) + 1
+                    print(f"[_save_users] Batch {batch_start}-{batch_start + len(batch) - 1} failed (attempt {attempt + 1}/3): {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
 
 
 def _save_leagues(leagues: list[dict]) -> int:
     if not leagues:
         return 0
     
-    # Use executemany with psycopg 3.x to avoid potential deadlocks
     import time
     import random
     from psycopg import errors
     
-    # Prepare data for executemany
+    # Prepare data for batch processing
     values = [
         (
             lg["league_id"],
@@ -191,38 +204,56 @@ def _save_leagues(leagues: list[dict]) -> int:
         for lg in leagues
     ]
     
-    # Retry with exponential backoff for deadlock handling
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            with get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.executemany(
-                    """
-                    INSERT INTO trade_intel_leagues
-                        (league_id, season, num_teams, scoring_type, league_type,
-                         is_superflex, crawl_enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (league_id) DO UPDATE SET
-                        crawl_enabled = TRUE,
-                        is_superflex  = EXCLUDED.is_superflex,
-                        league_type   = EXCLUDED.league_type
-                    """,
-                    values
-                )
-                break  # Success, exit retry loop
-        except errors.DeadlockDetected:
-            if attempt == max_retries - 1:
-                # Last attempt failed, re-raise
-                raise
-            # Add jittered exponential backoff
-            backoff = (2 ** attempt) + random.uniform(0, 1)
-            time.sleep(backoff)
-        except Exception as e:
-            # For other exceptions, don't retry
-            raise
+    written = 0
     
-    return len(leagues)
+    # Write in batches with connection recovery to prevent timeouts
+    BATCH = 500
+    for batch_start in range(0, len(values), BATCH):
+        batch = values[batch_start : batch_start + BATCH]
+        
+        # Retry each batch up to 3 times with fresh connections
+        for attempt in range(3):
+            try:
+                with get_conn(autocommit=True) as conn:
+                    cursor = conn.cursor()
+                    cursor.executemany(
+                        """
+                        INSERT INTO trade_intel_leagues
+                            (league_id, season, num_teams, scoring_type, league_type,
+                             is_superflex, crawl_enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (league_id) DO UPDATE SET
+                            crawl_enabled = TRUE,
+                            is_superflex  = EXCLUDED.is_superflex,
+                            league_type   = EXCLUDED.league_type
+                        """,
+                        batch
+                    )
+                    written += len(batch)
+                    print(f"[_save_leagues] Written batch {batch_start}-{batch_start + len(batch) - 1} ({len(batch)} leagues) - Total: {written} / {len(leagues)}")
+                    break  # Success, exit retry loop
+                    
+            except errors.DeadlockDetected:
+                if attempt == 2:  # Last attempt failed
+                    print(f"[_save_leagues] Deadlock in batch {batch_start}-{batch_start + len(batch) - 1} after 3 attempts, skipping.")
+                    break
+                else:
+                    # Add jittered exponential backoff for deadlocks
+                    backoff = (2 ** attempt) + random.uniform(0, 1)
+                    print(f"[_save_leagues] Deadlock in batch {batch_start}-{batch_start + len(batch) - 1} (attempt {attempt + 1}/3). Retrying in {backoff:.1f}s...")
+                    time.sleep(backoff)
+            except Exception as e:
+                if attempt == 2:  # Last attempt failed
+                    print(f"[_save_leagues] Failed to write batch {batch_start}-{batch_start + len(batch) - 1} after 3 attempts, skipping. Error: {e}")
+                    # Continue with next batch instead of failing completely
+                    break
+                else:
+                    # Wait before retry with exponential backoff
+                    wait_time = (2 ** attempt) + 1
+                    print(f"[_save_leagues] Batch {batch_start}-{batch_start + len(batch) - 1} failed (attempt {attempt + 1}/3): {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+    
+    return written
 
 
 def _classify_scoring(settings: dict) -> str:
