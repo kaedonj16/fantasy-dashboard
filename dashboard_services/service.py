@@ -10,7 +10,7 @@ import pandas as pd
 import requests
 
 from dashboard_services.api import (
-    _avatar_url,
+    avatar_url,
     get_nfl_state,
     avatar_from_users,
 )
@@ -319,7 +319,7 @@ def build_tables(
             avatar_id = user_meta.get("avatar") or (
                 f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
 
-        owner_avatar[display] = _avatar_url(avatar_id)
+        owner_avatar[display] = avatar_url(avatar_id)
 
     def _fetch_week(week: int) -> list[dict]:
         try:

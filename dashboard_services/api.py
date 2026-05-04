@@ -350,7 +350,7 @@ def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg")
         return []
 
 
-def _avatar_url(avatar_id: str) -> Union[str, None]:
+def avatar_url(avatar_id: str) -> Union[str, None]:
     if not avatar_id:
         return None
     return f"{avatar_id}"

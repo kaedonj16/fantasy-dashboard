@@ -4853,7 +4853,7 @@ thead th {
 .os-waiver-right {
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
+  align-items: center;
   gap: 5px;
   flex-shrink: 0;
 }

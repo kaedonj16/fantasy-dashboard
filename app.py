@@ -47,6 +47,7 @@ from dashboard_services.api import (
     get_sleeper_user_leagues,
     get_total_rosters,
     resolve_league_id_for_season,
+    avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG
@@ -3250,7 +3251,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         av_raw   = u_meta.get("avatar") or (
             f"https://sleepercdn.com/avatars/{u_av}" if platform == "sleeper" and u_av else u_av
         )
-        rid_to_avatar[rid] = _avatar_url(av_raw) or ""
+        rid_to_avatar[rid] = avatar_url(av_raw) or ""
 
     # ── build per-team data ───────────────────────────────────────────────────
     team_rows: list[dict] = []
