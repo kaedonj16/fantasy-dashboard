@@ -3013,12 +3013,23 @@ def render_power_and_playoffs(
         seed_map=seed_map,
     )
 
+    # Check if playoff bracket is available
+    has_playoff_bracket = not bracket_html.strip().startswith('<div class=\'po-empty\'>')
+
+    # Build tab buttons conditionally
+    playoff_tab_html = ""
+    playoff_panel_html = ""
+    
+    if has_playoff_bracket:
+        playoff_tab_html = '<button class="tab-btn" data-tab="playoff">Playoff Picture</button>'
+        playoff_panel_html = f'<div class="tab-panel" data-tab="playoff">{bracket_html}</div>'
+
     podium_card = f"""
           <div class="card power" data-section="overview">
             <div class="card-tabs" data-card="power">
               <div class="tab-strip">
                 <button class="tab-btn active" data-tab="power">Power Rankings</button>
-                <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+                {playoff_tab_html}
                 <button class="tab-btn" data-tab="playoff-odds"
                         data-league-id="{league_id}"
                         data-platform="{platform}"
@@ -3029,9 +3040,7 @@ def render_power_and_playoffs(
                   {podium_html}
                   {rankings_html}
                 </div>
-                <div class="tab-panel" data-tab="playoff">
-                  {bracket_html}
-                </div>
+                {playoff_panel_html}
                 <div class="tab-panel" data-tab="playoff-odds" id="playoffOddsPanel">
                   <div class="playoff-odds-loading">
                     <div class="loading-spinner-sm"></div>
