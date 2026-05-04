@@ -780,7 +780,6 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
 _PLAYERS_INDEX_GLOBAL = None
-_TEAMS_INDEX_GLOBAL = None
 
 
 def get_players_global():
@@ -795,13 +794,6 @@ def get_players_index_global():
     if _PLAYERS_INDEX_GLOBAL is None:
         _PLAYERS_INDEX_GLOBAL = load_players_index()
     return _PLAYERS_INDEX_GLOBAL
-
-
-def get_teams_index_global():
-    global _TEAMS_INDEX_GLOBAL
-    if _TEAMS_INDEX_GLOBAL is None:
-        _TEAMS_INDEX_GLOBAL = load_teams_index()
-    return _TEAMS_INDEX_GLOBAL
 
 
 def run_daily_data_async(season: int, week: int) -> None:
@@ -2849,9 +2841,10 @@ def render_power_and_playoffs(
         """Convert a PowerScore into a 2–100% bar width."""
         if p is None:
             return 100.0
-        if pmax == pmin:
+        span = abs(pmax - pmin)
+        if span == 0:
             return 100.0
-        return max(2.0, (float(v) - pmin) / (pmax - pmin) * 100.0)
+        return max(2.0, min(100.0, (float(v) - min(pmin, pmax)) / span * 100.0))
 
     def safe_int(val, default=0):
         try:
@@ -10907,6 +10900,17 @@ _MODEL_VALUE_CACHE = None
 _MODEL_VALUE_CACHE_TS = 0
 _MODEL_VALUE_TTL = 60 * 60  # 1 hour
 
+# Caches for advanced-metrics endpoints (10-minute TTL)
+_ROLE_PLAYERS_CACHE: dict = {}
+_ROLE_PLAYERS_CACHE_TS: dict = {}
+_BREAKOUT_CACHE = None
+_BREAKOUT_CACHE_TS = 0.0
+_ADVANCED_METRICS_TTL = 600
+
+# Cache for player-details available-years scan (5-minute TTL)
+_PLAYER_DETAIL_YEARS_CACHE: set = set()
+_PLAYER_DETAIL_YEARS_CACHE_TS = 0.0
+_PLAYER_DETAIL_YEARS_TTL = 300
 
 def get_model_value_table_cached():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -11274,7 +11278,10 @@ def api_trade_outcome():
 @app.route("/api/trade-eval", methods=["POST"])
 @limiter.limit("10 per minute")
 def api_trade_eval():
-    payload = request.get_json(force=True)
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON payload"}), 400
 
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
@@ -11529,9 +11536,9 @@ def api_players():
         q     (str, optional)    — prefix/substring filter applied before paging
     """
     try:
-        from utils.utils import load_players_index, load_model_value_table
+        from utils.utils import load_players_index
         players_index = load_players_index() or {}
-        value_table = load_model_value_table() or []
+        value_table = get_model_value_table_cached() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
         results = []
@@ -11992,7 +11999,7 @@ def api_player_indicators():
         elites = []
 
         # Load model value table to get current player values
-        value_table = load_model_value_table() or []
+        value_table = get_model_value_table_cached() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
         # Top-N positional rank cutoffs for a 12-man PPR dynasty league
@@ -12099,7 +12106,7 @@ def api_breakout_candidates():
 
                 # Enrich with full player data
                 players_index = load_players_index() or {}
-                value_table = load_model_value_table() or []
+                value_table = get_model_value_table_cached() or []
                 values_by_id = {str(p.get("id")): p for p in value_table}
 
                 for b in breakout_ids:
@@ -12331,6 +12338,7 @@ def api_top_role_players():
         ]
     """
     try:
+        global _ROLE_PLAYERS_CACHE, _ROLE_PLAYERS_CACHE_TS
         from data_building.advanced_metrics import get_top_role_players
 
         position = request.args.get("position")
@@ -12345,6 +12353,11 @@ def api_top_role_players():
         except (TypeError, ValueError):
             limit = 50
 
+        cache_key = (position, limit)
+        now = time.time()
+        if cache_key in _ROLE_PLAYERS_CACHE and now - _ROLE_PLAYERS_CACHE_TS.get(cache_key, 0) < _ADVANCED_METRICS_TTL:
+            return jsonify(_ROLE_PLAYERS_CACHE[cache_key])
+
         players = get_top_role_players(position=position, limit=limit)
 
         # Clean up internal fields
@@ -12355,6 +12368,8 @@ def api_top_role_players():
                 if v is not None and k not in ("player_id", "position", "as_of_date"):
                     player[k] = float(v)
 
+        _ROLE_PLAYERS_CACHE[cache_key] = players
+        _ROLE_PLAYERS_CACHE_TS[cache_key] = now
         return jsonify(players)
 
     except Exception as e:
@@ -12393,6 +12408,7 @@ def api_advanced_metrics_breakout_candidates():
         ]
     """
     try:
+        global _BREAKOUT_CACHE, _BREAKOUT_CACHE_TS
         from data_building.advanced_metrics import detect_breakout_candidates
 
         try:
@@ -12407,11 +12423,17 @@ def api_advanced_metrics_breakout_candidates():
         except (TypeError, ValueError):
             min_games = 2
 
+        now = time.time()
+        if _BREAKOUT_CACHE is not None and now - _BREAKOUT_CACHE_TS < _ADVANCED_METRICS_TTL:
+            return jsonify(_BREAKOUT_CACHE)
+
         candidates = detect_breakout_candidates(
             lookback_days=lookback_days,
             min_games=min_games,
         )
 
+        _BREAKOUT_CACHE = candidates
+        _BREAKOUT_CACHE_TS = now
         return jsonify(candidates)
 
     except Exception as e:
@@ -12526,8 +12548,7 @@ def api_offseason_breakout_candidates():
 
         # Filter out elite players (they shouldn't be breakout candidates)
         # Load model values to check elite thresholds
-        from utils.utils import load_model_value_table
-        model_values = load_model_value_table() or []
+        model_values = get_model_value_table_cached() or []
         values_by_id = {str(p["id"]): p for p in model_values if isinstance(p, dict) and p.get("id")}
 
         # Position-specific elite thresholds
@@ -12740,21 +12761,25 @@ def api_player_details(player_id: str):
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
 
-        # Find all available season years (handle both old and new naming patterns)
-        stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
-        available_years = set()
-        for stats_file in stats_files:
-            try:
-                basename = os.path.basename(stats_file)
-                # New pattern: sleeper_stats_s2025_w1_2025-12-16.json
-                if basename.startswith("sleeper_stats_s"):
-                    # Use regex to extract year from s{YEAR}_w{WEEK} pattern
-                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                    if match:
-                        year = int(match.group(1))
-                        available_years.add(year)
-            except Exception:
-                continue
+        # Find all available season years — cached for 5 minutes to avoid
+        # repeated glob scans on every player-details request.
+        global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
+        now = time.time()
+        if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
+            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+            _fresh_years: set = set()
+            for stats_file in stats_files:
+                try:
+                    basename = os.path.basename(stats_file)
+                    if basename.startswith("sleeper_stats_s"):
+                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                        if match:
+                            _fresh_years.add(int(match.group(1)))
+                except Exception:
+                    continue
+            _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
+            _PLAYER_DETAIL_YEARS_CACHE_TS = now
+        available_years = _PLAYER_DETAIL_YEARS_CACHE
 
         # Process each available year
         for season_year in sorted(available_years, reverse=True):  # Most recent first
@@ -14744,14 +14769,17 @@ def api_trade_database():
             if not match_ids:
                 return jsonify({"trades": [], "total": 0, "has_more": False})
 
-        sf_filter = ""
+        # Build superflex filter as a parameterized condition (no f-string interpolation)
+        sf_param = None
         if league_type == "sf":
-            sf_filter = "AND l.is_superflex = TRUE"
+            sf_param = True
         elif league_type == "1qb":
-            sf_filter = "AND l.is_superflex = FALSE"
+            sf_param = False
+        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
         with get_conn() as conn:
             if match_ids:
+                base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
                     SELECT COUNT(DISTINCT t.id) AS n
@@ -14759,12 +14787,13 @@ def api_trade_database():
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_filter}
+                      AND t.season = %s {sf_clause}
                     """,
-                    (match_ids, season),
+                    base_params_count,
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
+                base_params_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
                     SELECT DISTINCT
@@ -14774,34 +14803,36 @@ def api_trade_database():
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_filter}
+                      AND t.season = %s {sf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
-                    (match_ids, season, limit + 1, page * limit),
+                    base_params_rows,
                 ).fetchall()
             else:
+                base_params_count = [season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
                     SELECT COUNT(*) AS n FROM trade_intel_trades t
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_filter}
+                    WHERE t.season = %s {sf_clause}
                     """,
-                    (season,),
+                    base_params_count,
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
+                base_params_rows = [season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
                     SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
                            l.scoring_type, l.is_superflex, l.num_teams
                     FROM trade_intel_trades t
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_filter}
+                    WHERE t.season = %s {sf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
-                    (season, limit + 1, page * limit),
+                    base_params_rows,
                 ).fetchall()
 
             has_more = len(trade_rows) > limit
