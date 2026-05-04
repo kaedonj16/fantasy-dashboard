@@ -1955,6 +1955,50 @@ button:hover {
   height: 46px;
 }
 
+/* ── Standings table mobile ───────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .standings-table {
+    font-size: 12px;
+  }
+  .standings-table td,
+  .standings-table th {
+    padding: 6px 4px;
+  }
+  .standings-table tr {
+    height: auto;
+  }
+  .standings-table td.team {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Hide SOS columns on main standings */
+  .standings-table[data-page="standings"] th:nth-child(n+7),
+  .standings-table[data-page="standings"] td:nth-child(n+7) {
+    display: none;
+  }
+  /* Hide Best/Worst Week on detailed stats */
+  #stats.standings-table th:nth-child(n+7),
+  #stats.standings-table td:nth-child(n+7) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .standings-table {
+    font-size: 11px;
+  }
+  .standings-table td.team {
+    max-width: 85px;
+  }
+  /* Also hide PA on main standings */
+  .standings-table[data-page="standings"] th:nth-child(5),
+  .standings-table[data-page="standings"] td:nth-child(5) {
+    display: none;
+  }
+}
+
 .table-stats {
   min-height: 695px;
 }
@@ -5086,19 +5130,6 @@ thead th {
   padding: 12px 14px 14px;
 }
 
-.bracket-projected-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--text-muted);
-  background: var(--card-soft);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 9px;
-  margin-bottom: 10px;
-  display: inline-block;
-}
 
 .bracket-match {
   position: relative;

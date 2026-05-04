@@ -1021,7 +1021,6 @@ def playoff_bracket(
         roster_avatar_map,
         match_scores=None,
         seed_map=None,
-        projected=False,
 ):
     if not winners_bracket:
         return "<div class='po-empty'>No playoff bracket available.</div>"
@@ -1266,13 +1265,7 @@ def playoff_bracket(
     if not html_rounds:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
-    projected_label = (
-        "<div style='padding:0 2px 6px'>"
-        "<span class='bracket-projected-label'>Projected · based on playoff odds</span>"
-        "</div>"
-        if projected else ""
-    )
-    return "<div class='bracket'>" + projected_label + "".join(html_rounds) + "</div>"
+    return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
 
 
 def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):

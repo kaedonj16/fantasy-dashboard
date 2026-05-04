@@ -3010,7 +3010,6 @@ def render_power_and_playoffs(
         roster_name_map=roster_map,
         roster_avatar_map=roster_avatar_map,
         seed_map=seed_map,
-        projected=(bracket_override is not None),
     )
 
     podium_card = f"""
@@ -3497,13 +3496,12 @@ def build_standings_body(ctx: dict) -> str:
                 </div>
               </div>
             </div>
-          </div
+          </div>
         </div>
       </div>
-    </div>
-    <div class="standings-col">
-      {power_playoffs_html}
-    </div>
+      <div class="standings-col">
+        {power_playoffs_html}
+      </div>
     </div>
     <aside class="overview-sidebar">
       {sidebar_html}
