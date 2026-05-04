@@ -12634,7 +12634,7 @@ def api_player_details(player_id: str):
                     if match:
                         year = int(match.group(1))
                         available_years.add(year)
-            except:
+            except Exception:
                 continue
 
         # Process each available year
@@ -13105,7 +13105,7 @@ def api_team_details(roster_id: str):
                                 "previous_owner": int(tp.get("previous_owner_id")),
                                 "trade_data": tp
                             })
-                    except:
+                    except Exception:
                         pass
 
                 # Second check: This team's own draft position pick (only if not already found as acquired)
@@ -13124,7 +13124,7 @@ def api_team_details(roster_id: str):
                                     "trade_data": tp
                                 })
                                 break
-                        except:
+                        except Exception:
                             pass
 
                 # If no traded picks found, check if this team owns their own pick by default
@@ -13142,7 +13142,7 @@ def api_team_details(roster_id: str):
                                     int(tp.get("owner_id")) != int(roster_id)):
                                 pick_traded_away = True
                                 break
-                        except:
+                        except Exception:
                             pass
 
                     if not pick_traded_away:
@@ -14908,7 +14908,7 @@ def api_trade_intel_similar_trades():
             trade_date = None
             if r["created_at"]:
                 try:    trade_date = r["created_at"].strftime("%m/%d/%y")
-                except: trade_date = str(r["created_at"])[:10]
+                except Exception: trade_date = str(r["created_at"])[:10]
             result.append({
                 "trade_id":     r["transaction_id"],
                 "date":         trade_date,

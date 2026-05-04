@@ -359,7 +359,10 @@ def build_tables(
             df_weekly.loc[i1, "points_against"] = p2
             df_weekly.loc[i2, "points_against"] = p1
 
-    df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
+    if "owner" in df_weekly.columns:
+        df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
+    else:
+        df_weekly["avatar"] = None
 
     _state = get_nfl_state() or {}
     state_season_type = (_state.get("season_type") or "").lower()

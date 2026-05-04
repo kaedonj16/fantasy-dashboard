@@ -920,15 +920,6 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .breakout-filter-btn:hover {
   background: var(--bg-alt);
   border-color: var(--accent);
@@ -1934,6 +1925,11 @@ button:hover {
 
 .standings-table td.team {
   text-align: left;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 38%;
 }
 
 .standings-table td.team img {
@@ -1953,16 +1949,6 @@ button:hover {
 
 .standings-table tr {
   height: 46px;
-}
-
-/* ── Standings / dynasty table mobile ────────────────────────────────────── */
-/* Team-name cell: use max-width:0 trick so ellipsis fires in table layout  */
-.standings-table td.team {
-  max-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 38%;
 }
 
 @media (max-width: 640px) {
