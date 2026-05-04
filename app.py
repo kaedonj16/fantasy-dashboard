@@ -47,6 +47,7 @@ from dashboard_services.api import (
     get_sleeper_user_leagues,
     get_total_rosters,
     resolve_league_id_for_season,
+    _avatar_url,
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG

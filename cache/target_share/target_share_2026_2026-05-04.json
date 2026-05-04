@@ -47,234 +47,6 @@
     "total_targets": 11.0,
     "target_share": 0.021153846153846155
   },
-  "[\"BAL\", \"Justice Hill\"]": {
-    "total_targets": 27.0,
-    "target_share": 0.0661764705882353
-  },
-  "[\"BAL\", \"Derrick Henry\"]": {
-    "total_targets": 21.0,
-    "target_share": 0.051470588235294115
-  },
-  "[\"BAL\", \"Keaton Mitchell\"]": {
-    "total_targets": 12.0,
-    "target_share": 0.029411764705882353
-  },
-  "[\"BAL\", \"Rasheen Ali\"]": {
-    "total_targets": 11.0,
-    "target_share": 0.02696078431372549
-  },
-  "[\"BAL\", \"Patrick Ricard\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004901960784313725
-  },
-  "[\"BAL\", \"Zay Flowers\"]": {
-    "total_targets": 118.0,
-    "target_share": 0.28921568627450983
-  },
-  "[\"BAL\", \"Rashod Bateman\"]": {
-    "total_targets": 39.0,
-    "target_share": 0.09558823529411764
-  },
-  "[\"BAL\", \"DeAndre Hopkins\"]": {
-    "total_targets": 38.0,
-    "target_share": 0.09313725490196079
-  },
-  "[\"BAL\", \"Devontez Walker\"]": {
-    "total_targets": 8.0,
-    "target_share": 0.0196078431372549
-  },
-  "[\"BAL\", \"Tylan Wallace\"]": {
-    "total_targets": 8.0,
-    "target_share": 0.0196078431372549
-  },
-  "[\"BAL\", \"Mark Andrews\"]": {
-    "total_targets": 70.0,
-    "target_share": 0.1715686274509804
-  },
-  "[\"BAL\", \"Isaiah Likely\"]": {
-    "total_targets": 37.0,
-    "target_share": 0.09068627450980392
-  },
-  "[\"BAL\", \"Charlie Kolar\"]": {
-    "total_targets": 15.0,
-    "target_share": 0.03676470588235294
-  },
-  "[\"BAL\", \"Zaire Mitchell-Paden\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004901960784313725
-  },
-  "[\"CHI\", \"D'Andre Swift\"]": {
-    "total_targets": 48.0,
-    "target_share": 0.09073724007561437
-  },
-  "[\"CHI\", \"Kyle Monangai\"]": {
-    "total_targets": 30.0,
-    "target_share": 0.05671077504725898
-  },
-  "[\"CHI\", \"Brittain Brown\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.001890359168241966
-  },
-  "[\"CHI\", \"Rome Odunze\"]": {
-    "total_targets": 90.0,
-    "target_share": 0.17013232514177692
-  },
-  "[\"CHI\", \"DJ Moore\"]": {
-    "total_targets": 85.0,
-    "target_share": 0.16068052930056712
-  },
-  "[\"CHI\", \"Olamide Zaccheaus\"]": {
-    "total_targets": 65.0,
-    "target_share": 0.12287334593572778
-  },
-  "[\"CHI\", \"Luther Burden III\"]": {
-    "total_targets": 60.0,
-    "target_share": 0.11342155009451796
-  },
-  "[\"CHI\", \"Jahdae Walker\"]": {
-    "total_targets": 10.0,
-    "target_share": 0.01890359168241966
-  },
-  "[\"CHI\", \"Devin Duvernay\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.00945179584120983
-  },
-  "[\"CHI\", \"Colston Loveland\"]": {
-    "total_targets": 81.0,
-    "target_share": 0.15311909262759923
-  },
-  "[\"CHI\", \"Cole Kmet\"]": {
-    "total_targets": 48.0,
-    "target_share": 0.09073724007561437
-  },
-  "[\"CHI\", \"Durham Smythe\"]": {
-    "total_targets": 6.0,
-    "target_share": 0.011342155009451797
-  },
-  "[\"BUF\", \"James Cook\"]": {
-    "total_targets": 40.0,
-    "target_share": 0.08350730688935282
-  },
-  "[\"BUF\", \"Ty Johnson\"]": {
-    "total_targets": 33.0,
-    "target_share": 0.06889352818371608
-  },
-  "[\"BUF\", \"Ray Davis\"]": {
-    "total_targets": 13.0,
-    "target_share": 0.027139874739039668
-  },
-  "[\"BUF\", \"Reggie Gilliam\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.0041753653444676405
-  },
-  "[\"BUF\", \"Khalil Shakir\"]": {
-    "total_targets": 95.0,
-    "target_share": 0.19832985386221294
-  },
-  "[\"BUF\", \"Keon Coleman\"]": {
-    "total_targets": 59.0,
-    "target_share": 0.12317327766179541
-  },
-  "[\"BUF\", \"Joshua Palmer\"]": {
-    "total_targets": 37.0,
-    "target_share": 0.07724425887265135
-  },
-  "[\"BUF\", \"Tyrell Shavers\"]": {
-    "total_targets": 23.0,
-    "target_share": 0.04801670146137787
-  },
-  "[\"BUF\", \"Gabe Davis\"]": {
-    "total_targets": 18.0,
-    "target_share": 0.037578288100208766
-  },
-  "[\"BUF\", \"Elijah Moore\"]": {
-    "total_targets": 17.0,
-    "target_share": 0.03549060542797495
-  },
-  "[\"BUF\", \"Brandin Cooks\"]": {
-    "total_targets": 11.0,
-    "target_share": 0.022964509394572025
-  },
-  "[\"BUF\", \"Curtis Samuel\"]": {
-    "total_targets": 9.0,
-    "target_share": 0.018789144050104383
-  },
-  "[\"BUF\", \"Mecole Hardman\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0020876826722338203
-  },
-  "[\"BUF\", \"Dalton Kincaid\"]": {
-    "total_targets": 49.0,
-    "target_share": 0.1022964509394572
-  },
-  "[\"BUF\", \"Dawson Knox\"]": {
-    "total_targets": 49.0,
-    "target_share": 0.1022964509394572
-  },
-  "[\"BUF\", \"Jackson Hawes\"]": {
-    "total_targets": 19.0,
-    "target_share": 0.03966597077244259
-  },
-  "[\"BUF\", \"Keleki Latu\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.008350730688935281
-  },
-  "[\"CAR\", \"Rico Dowdle\"]": {
-    "total_targets": 50.0,
-    "target_share": 0.10395010395010396
-  },
-  "[\"CAR\", \"Chuba Hubbard\"]": {
-    "total_targets": 39.0,
-    "target_share": 0.08108108108108109
-  },
-  "[\"CAR\", \"Trevor Etienne\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.006237006237006237
-  },
-  "[\"CAR\", \"Tetairoa McMillan\"]": {
-    "total_targets": 122.0,
-    "target_share": 0.25363825363825365
-  },
-  "[\"CAR\", \"Xavier Legette\"]": {
-    "total_targets": 64.0,
-    "target_share": 0.13305613305613306
-  },
-  "[\"CAR\", \"Jalen Coker\"]": {
-    "total_targets": 43.0,
-    "target_share": 0.0893970893970894
-  },
-  "[\"CAR\", \"Hunter Renfrow\"]": {
-    "total_targets": 26.0,
-    "target_share": 0.05405405405405406
-  },
-  "[\"CAR\", \"Brycen Tremayne\"]": {
-    "total_targets": 19.0,
-    "target_share": 0.0395010395010395
-  },
-  "[\"CAR\", \"Jimmy Horn Jr.\"]": {
-    "total_targets": 15.0,
-    "target_share": 0.031185031185031187
-  },
-  "[\"CAR\", \"David Moore\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.002079002079002079
-  },
-  "[\"CAR\", \"Tommy Tremble\"]": {
-    "total_targets": 37.0,
-    "target_share": 0.07692307692307693
-  },
-  "[\"CAR\", \"Ja'Tavion Sanders\"]": {
-    "total_targets": 34.0,
-    "target_share": 0.07068607068607069
-  },
-  "[\"CAR\", \"Mitchell Evans\"]": {
-    "total_targets": 25.0,
-    "target_share": 0.05197505197505198
-  },
-  "[\"CAR\", \"James Mitchell\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.006237006237006237
-  },
   "[\"ARI\", \"Michael Carter\"]": {
     "total_targets": 45.0,
     "target_share": 0.07293354943273905
@@ -355,117 +127,297 @@
     "total_targets": 2.0,
     "target_share": 0.0032414910858995136
   },
-  "[\"DET\", \"Jahmyr Gibbs\"]": {
-    "total_targets": 94.0,
-    "target_share": 0.17122040072859745
+  "[\"BUF\", \"James Cook\"]": {
+    "total_targets": 40.0,
+    "target_share": 0.08350730688935282
   },
-  "[\"DET\", \"David Montgomery\"]": {
-    "total_targets": 29.0,
-    "target_share": 0.052823315118397086
+  "[\"BUF\", \"Ty Johnson\"]": {
+    "total_targets": 33.0,
+    "target_share": 0.06889352818371608
   },
-  "[\"DET\", \"Amon-Ra St. Brown\"]": {
-    "total_targets": 172.0,
-    "target_share": 0.3132969034608379
-  },
-  "[\"DET\", \"Jameson Williams\"]": {
-    "total_targets": 101.0,
-    "target_share": 0.18397085610200364
-  },
-  "[\"DET\", \"Kalif Raymond\"]": {
-    "total_targets": 30.0,
-    "target_share": 0.0546448087431694
-  },
-  "[\"DET\", \"Isaac TeSlaa\"]": {
-    "total_targets": 27.0,
-    "target_share": 0.04918032786885246
-  },
-  "[\"DET\", \"Tom Kennedy\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.007285974499089253
-  },
-  "[\"DET\", \"Sam LaPorta\"]": {
-    "total_targets": 49.0,
-    "target_share": 0.08925318761384335
-  },
-  "[\"DET\", \"Brock Wright\"]": {
-    "total_targets": 22.0,
-    "target_share": 0.04007285974499089
-  },
-  "[\"DET\", \"Anthony Firkser\"]": {
-    "total_targets": 10.0,
-    "target_share": 0.018214936247723135
-  },
-  "[\"DET\", \"Shane Zylstra\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.009107468123861567
-  },
-  "[\"DET\", \"Ross Dwelley\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.009107468123861567
-  },
-  "[\"DET\", \"Giovanni Ricci\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0018214936247723133
-  },
-  "[\"DAL\", \"Javonte Williams\"]": {
-    "total_targets": 51.0,
-    "target_share": 0.08401976935749589
-  },
-  "[\"DAL\", \"Hunter Luepke\"]": {
-    "total_targets": 15.0,
-    "target_share": 0.02471169686985173
-  },
-  "[\"DAL\", \"Miles Sanders\"]": {
-    "total_targets": 8.0,
-    "target_share": 0.013179571663920923
-  },
-  "[\"DAL\", \"Malik Davis\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.008237232289950576
-  },
-  "[\"DAL\", \"Phil Mafah\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.0032948929159802307
-  },
-  "[\"DAL\", \"Jaydon Blue\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0016474464579901153
-  },
-  "[\"DAL\", \"George Pickens\"]": {
-    "total_targets": 137.0,
-    "target_share": 0.2257001647446458
-  },
-  "[\"DAL\", \"CeeDee Lamb\"]": {
-    "total_targets": 117.0,
-    "target_share": 0.1927512355848435
-  },
-  "[\"DAL\", \"Ryan Flournoy\"]": {
-    "total_targets": 56.0,
-    "target_share": 0.09225700164744646
-  },
-  "[\"DAL\", \"KaVontae Turpin\"]": {
-    "total_targets": 38.0,
-    "target_share": 0.06260296540362438
-  },
-  "[\"DAL\", \"Jalen Tolbert\"]": {
-    "total_targets": 34.0,
-    "target_share": 0.05601317957166392
-  },
-  "[\"DAL\", \"Jonathan Mingo\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.008237232289950576
-  },
-  "[\"DAL\", \"Jake Ferguson\"]": {
-    "total_targets": 102.0,
-    "target_share": 0.16803953871499178
-  },
-  "[\"DAL\", \"Luke Schoonmaker\"]": {
-    "total_targets": 23.0,
-    "target_share": 0.03789126853377265
-  },
-  "[\"DAL\", \"Brevyn Spann-Ford\"]": {
+  "[\"BUF\", \"Ray Davis\"]": {
     "total_targets": 13.0,
-    "target_share": 0.0214168039538715
+    "target_share": 0.027139874739039668
+  },
+  "[\"BUF\", \"Reggie Gilliam\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.0041753653444676405
+  },
+  "[\"BUF\", \"Khalil Shakir\"]": {
+    "total_targets": 95.0,
+    "target_share": 0.19832985386221294
+  },
+  "[\"BUF\", \"Keon Coleman\"]": {
+    "total_targets": 59.0,
+    "target_share": 0.12317327766179541
+  },
+  "[\"BUF\", \"Joshua Palmer\"]": {
+    "total_targets": 37.0,
+    "target_share": 0.07724425887265135
+  },
+  "[\"BUF\", \"Tyrell Shavers\"]": {
+    "total_targets": 23.0,
+    "target_share": 0.04801670146137787
+  },
+  "[\"BUF\", \"Gabe Davis\"]": {
+    "total_targets": 18.0,
+    "target_share": 0.037578288100208766
+  },
+  "[\"BUF\", \"Elijah Moore\"]": {
+    "total_targets": 17.0,
+    "target_share": 0.03549060542797495
+  },
+  "[\"BUF\", \"Brandin Cooks\"]": {
+    "total_targets": 11.0,
+    "target_share": 0.022964509394572025
+  },
+  "[\"BUF\", \"Curtis Samuel\"]": {
+    "total_targets": 9.0,
+    "target_share": 0.018789144050104383
+  },
+  "[\"BUF\", \"Mecole Hardman\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0020876826722338203
+  },
+  "[\"BUF\", \"Dalton Kincaid\"]": {
+    "total_targets": 49.0,
+    "target_share": 0.1022964509394572
+  },
+  "[\"BUF\", \"Dawson Knox\"]": {
+    "total_targets": 49.0,
+    "target_share": 0.1022964509394572
+  },
+  "[\"BUF\", \"Jackson Hawes\"]": {
+    "total_targets": 19.0,
+    "target_share": 0.03966597077244259
+  },
+  "[\"BUF\", \"Keleki Latu\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.008350730688935281
+  },
+  "[\"BAL\", \"Justice Hill\"]": {
+    "total_targets": 27.0,
+    "target_share": 0.0661764705882353
+  },
+  "[\"BAL\", \"Derrick Henry\"]": {
+    "total_targets": 21.0,
+    "target_share": 0.051470588235294115
+  },
+  "[\"BAL\", \"Keaton Mitchell\"]": {
+    "total_targets": 12.0,
+    "target_share": 0.029411764705882353
+  },
+  "[\"BAL\", \"Rasheen Ali\"]": {
+    "total_targets": 11.0,
+    "target_share": 0.02696078431372549
+  },
+  "[\"BAL\", \"Patrick Ricard\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004901960784313725
+  },
+  "[\"BAL\", \"Zay Flowers\"]": {
+    "total_targets": 118.0,
+    "target_share": 0.28921568627450983
+  },
+  "[\"BAL\", \"Rashod Bateman\"]": {
+    "total_targets": 39.0,
+    "target_share": 0.09558823529411764
+  },
+  "[\"BAL\", \"DeAndre Hopkins\"]": {
+    "total_targets": 38.0,
+    "target_share": 0.09313725490196079
+  },
+  "[\"BAL\", \"Devontez Walker\"]": {
+    "total_targets": 8.0,
+    "target_share": 0.0196078431372549
+  },
+  "[\"BAL\", \"Tylan Wallace\"]": {
+    "total_targets": 8.0,
+    "target_share": 0.0196078431372549
+  },
+  "[\"BAL\", \"Mark Andrews\"]": {
+    "total_targets": 70.0,
+    "target_share": 0.1715686274509804
+  },
+  "[\"BAL\", \"Isaiah Likely\"]": {
+    "total_targets": 37.0,
+    "target_share": 0.09068627450980392
+  },
+  "[\"BAL\", \"Charlie Kolar\"]": {
+    "total_targets": 15.0,
+    "target_share": 0.03676470588235294
+  },
+  "[\"BAL\", \"Zaire Mitchell-Paden\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004901960784313725
+  },
+  "[\"CAR\", \"Rico Dowdle\"]": {
+    "total_targets": 50.0,
+    "target_share": 0.10395010395010396
+  },
+  "[\"CAR\", \"Chuba Hubbard\"]": {
+    "total_targets": 39.0,
+    "target_share": 0.08108108108108109
+  },
+  "[\"CAR\", \"Trevor Etienne\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.006237006237006237
+  },
+  "[\"CAR\", \"Tetairoa McMillan\"]": {
+    "total_targets": 122.0,
+    "target_share": 0.25363825363825365
+  },
+  "[\"CAR\", \"Xavier Legette\"]": {
+    "total_targets": 64.0,
+    "target_share": 0.13305613305613306
+  },
+  "[\"CAR\", \"Jalen Coker\"]": {
+    "total_targets": 43.0,
+    "target_share": 0.0893970893970894
+  },
+  "[\"CAR\", \"Hunter Renfrow\"]": {
+    "total_targets": 26.0,
+    "target_share": 0.05405405405405406
+  },
+  "[\"CAR\", \"Brycen Tremayne\"]": {
+    "total_targets": 19.0,
+    "target_share": 0.0395010395010395
+  },
+  "[\"CAR\", \"Jimmy Horn Jr.\"]": {
+    "total_targets": 15.0,
+    "target_share": 0.031185031185031187
+  },
+  "[\"CAR\", \"David Moore\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.002079002079002079
+  },
+  "[\"CAR\", \"Tommy Tremble\"]": {
+    "total_targets": 37.0,
+    "target_share": 0.07692307692307693
+  },
+  "[\"CAR\", \"Ja'Tavion Sanders\"]": {
+    "total_targets": 34.0,
+    "target_share": 0.07068607068607069
+  },
+  "[\"CAR\", \"Mitchell Evans\"]": {
+    "total_targets": 25.0,
+    "target_share": 0.05197505197505198
+  },
+  "[\"CAR\", \"James Mitchell\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.006237006237006237
+  },
+  "[\"CHI\", \"D'Andre Swift\"]": {
+    "total_targets": 48.0,
+    "target_share": 0.09073724007561437
+  },
+  "[\"CHI\", \"Kyle Monangai\"]": {
+    "total_targets": 30.0,
+    "target_share": 0.05671077504725898
+  },
+  "[\"CHI\", \"Brittain Brown\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.001890359168241966
+  },
+  "[\"CHI\", \"Rome Odunze\"]": {
+    "total_targets": 90.0,
+    "target_share": 0.17013232514177692
+  },
+  "[\"CHI\", \"DJ Moore\"]": {
+    "total_targets": 85.0,
+    "target_share": 0.16068052930056712
+  },
+  "[\"CHI\", \"Olamide Zaccheaus\"]": {
+    "total_targets": 65.0,
+    "target_share": 0.12287334593572778
+  },
+  "[\"CHI\", \"Luther Burden III\"]": {
+    "total_targets": 60.0,
+    "target_share": 0.11342155009451796
+  },
+  "[\"CHI\", \"Jahdae Walker\"]": {
+    "total_targets": 10.0,
+    "target_share": 0.01890359168241966
+  },
+  "[\"CHI\", \"Devin Duvernay\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.00945179584120983
+  },
+  "[\"CHI\", \"Colston Loveland\"]": {
+    "total_targets": 81.0,
+    "target_share": 0.15311909262759923
+  },
+  "[\"CHI\", \"Cole Kmet\"]": {
+    "total_targets": 48.0,
+    "target_share": 0.09073724007561437
+  },
+  "[\"CHI\", \"Durham Smythe\"]": {
+    "total_targets": 6.0,
+    "target_share": 0.011342155009451797
+  },
+  "[\"CLE\", \"Dylan Sampson\"]": {
+    "total_targets": 40.0,
+    "target_share": 0.07677543186180422
+  },
+  "[\"CLE\", \"Quinshon Judkins\"]": {
+    "total_targets": 36.0,
+    "target_share": 0.0690978886756238
+  },
+  "[\"CLE\", \"Jerome Ford\"]": {
+    "total_targets": 32.0,
+    "target_share": 0.061420345489443376
+  },
+  "[\"CLE\", \"Trayveon Williams\"]": {
+    "total_targets": 8.0,
+    "target_share": 0.015355086372360844
+  },
+  "[\"CLE\", \"Raheim Sanders\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.007677543186180422
+  },
+  "[\"CLE\", \"Jerry Jeudy\"]": {
+    "total_targets": 106.0,
+    "target_share": 0.2034548944337812
+  },
+  "[\"CLE\", \"Isaiah Bond\"]": {
+    "total_targets": 44.0,
+    "target_share": 0.08445297504798464
+  },
+  "[\"CLE\", \"Cedric Tillman\"]": {
+    "total_targets": 39.0,
+    "target_share": 0.07485604606525911
+  },
+  "[\"CLE\", \"Jamari Thrash\"]": {
+    "total_targets": 15.0,
+    "target_share": 0.028790786948176585
+  },
+  "[\"CLE\", \"Gage Larvadain\"]": {
+    "total_targets": 14.0,
+    "target_share": 0.026871401151631478
+  },
+  "[\"CLE\", \"Malachi Corley\"]": {
+    "total_targets": 14.0,
+    "target_share": 0.026871401151631478
+  },
+  "[\"CLE\", \"Harold Fannin Jr.\"]": {
+    "total_targets": 107.0,
+    "target_share": 0.2053742802303263
+  },
+  "[\"CLE\", \"David Njoku\"]": {
+    "total_targets": 48.0,
+    "target_share": 0.09213051823416507
+  },
+  "[\"CLE\", \"Blake Whiteheart\"]": {
+    "total_targets": 6.0,
+    "target_share": 0.011516314779270634
+  },
+  "[\"CLE\", \"Sal Cannella\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.009596928982725527
+  },
+  "[\"CLE\", \"Brenden Bates\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.005758157389635317
   },
   "[\"DEN\", \"RJ Harvey\"]": {
     "total_targets": 58.0,
@@ -587,6 +539,118 @@
     "total_targets": 2.0,
     "target_share": 0.0032948929159802307
   },
+  "[\"DAL\", \"Javonte Williams\"]": {
+    "total_targets": 51.0,
+    "target_share": 0.08401976935749589
+  },
+  "[\"DAL\", \"Hunter Luepke\"]": {
+    "total_targets": 15.0,
+    "target_share": 0.02471169686985173
+  },
+  "[\"DAL\", \"Miles Sanders\"]": {
+    "total_targets": 8.0,
+    "target_share": 0.013179571663920923
+  },
+  "[\"DAL\", \"Malik Davis\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.008237232289950576
+  },
+  "[\"DAL\", \"Phil Mafah\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.0032948929159802307
+  },
+  "[\"DAL\", \"Jaydon Blue\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0016474464579901153
+  },
+  "[\"DAL\", \"George Pickens\"]": {
+    "total_targets": 137.0,
+    "target_share": 0.2257001647446458
+  },
+  "[\"DAL\", \"CeeDee Lamb\"]": {
+    "total_targets": 117.0,
+    "target_share": 0.1927512355848435
+  },
+  "[\"DAL\", \"Ryan Flournoy\"]": {
+    "total_targets": 56.0,
+    "target_share": 0.09225700164744646
+  },
+  "[\"DAL\", \"KaVontae Turpin\"]": {
+    "total_targets": 38.0,
+    "target_share": 0.06260296540362438
+  },
+  "[\"DAL\", \"Jalen Tolbert\"]": {
+    "total_targets": 34.0,
+    "target_share": 0.05601317957166392
+  },
+  "[\"DAL\", \"Jonathan Mingo\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.008237232289950576
+  },
+  "[\"DAL\", \"Jake Ferguson\"]": {
+    "total_targets": 102.0,
+    "target_share": 0.16803953871499178
+  },
+  "[\"DAL\", \"Luke Schoonmaker\"]": {
+    "total_targets": 23.0,
+    "target_share": 0.03789126853377265
+  },
+  "[\"DAL\", \"Brevyn Spann-Ford\"]": {
+    "total_targets": 13.0,
+    "target_share": 0.0214168039538715
+  },
+  "[\"DET\", \"Jahmyr Gibbs\"]": {
+    "total_targets": 94.0,
+    "target_share": 0.17122040072859745
+  },
+  "[\"DET\", \"David Montgomery\"]": {
+    "total_targets": 29.0,
+    "target_share": 0.052823315118397086
+  },
+  "[\"DET\", \"Amon-Ra St. Brown\"]": {
+    "total_targets": 172.0,
+    "target_share": 0.3132969034608379
+  },
+  "[\"DET\", \"Jameson Williams\"]": {
+    "total_targets": 101.0,
+    "target_share": 0.18397085610200364
+  },
+  "[\"DET\", \"Kalif Raymond\"]": {
+    "total_targets": 30.0,
+    "target_share": 0.0546448087431694
+  },
+  "[\"DET\", \"Isaac TeSlaa\"]": {
+    "total_targets": 27.0,
+    "target_share": 0.04918032786885246
+  },
+  "[\"DET\", \"Tom Kennedy\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.007285974499089253
+  },
+  "[\"DET\", \"Sam LaPorta\"]": {
+    "total_targets": 49.0,
+    "target_share": 0.08925318761384335
+  },
+  "[\"DET\", \"Brock Wright\"]": {
+    "total_targets": 22.0,
+    "target_share": 0.04007285974499089
+  },
+  "[\"DET\", \"Anthony Firkser\"]": {
+    "total_targets": 10.0,
+    "target_share": 0.018214936247723135
+  },
+  "[\"DET\", \"Shane Zylstra\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.009107468123861567
+  },
+  "[\"DET\", \"Ross Dwelley\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.009107468123861567
+  },
+  "[\"DET\", \"Giovanni Ricci\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0018214936247723133
+  },
   "[\"GB\", \"Josh Jacobs\"]": {
     "total_targets": 44.0,
     "target_share": 0.09843400447427293
@@ -650,130 +714,6 @@
   "[\"GB\", \"Drake Dabney\"]": {
     "total_targets": 2.0,
     "target_share": 0.0044742729306487695
-  },
-  "[\"CLE\", \"Dylan Sampson\"]": {
-    "total_targets": 40.0,
-    "target_share": 0.07677543186180422
-  },
-  "[\"CLE\", \"Quinshon Judkins\"]": {
-    "total_targets": 36.0,
-    "target_share": 0.0690978886756238
-  },
-  "[\"CLE\", \"Jerome Ford\"]": {
-    "total_targets": 32.0,
-    "target_share": 0.061420345489443376
-  },
-  "[\"CLE\", \"Trayveon Williams\"]": {
-    "total_targets": 8.0,
-    "target_share": 0.015355086372360844
-  },
-  "[\"CLE\", \"Raheim Sanders\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.007677543186180422
-  },
-  "[\"CLE\", \"Jerry Jeudy\"]": {
-    "total_targets": 106.0,
-    "target_share": 0.2034548944337812
-  },
-  "[\"CLE\", \"Isaiah Bond\"]": {
-    "total_targets": 44.0,
-    "target_share": 0.08445297504798464
-  },
-  "[\"CLE\", \"Cedric Tillman\"]": {
-    "total_targets": 39.0,
-    "target_share": 0.07485604606525911
-  },
-  "[\"CLE\", \"Jamari Thrash\"]": {
-    "total_targets": 15.0,
-    "target_share": 0.028790786948176585
-  },
-  "[\"CLE\", \"Gage Larvadain\"]": {
-    "total_targets": 14.0,
-    "target_share": 0.026871401151631478
-  },
-  "[\"CLE\", \"Malachi Corley\"]": {
-    "total_targets": 14.0,
-    "target_share": 0.026871401151631478
-  },
-  "[\"CLE\", \"Harold Fannin Jr.\"]": {
-    "total_targets": 107.0,
-    "target_share": 0.2053742802303263
-  },
-  "[\"CLE\", \"David Njoku\"]": {
-    "total_targets": 48.0,
-    "target_share": 0.09213051823416507
-  },
-  "[\"CLE\", \"Blake Whiteheart\"]": {
-    "total_targets": 6.0,
-    "target_share": 0.011516314779270634
-  },
-  "[\"CLE\", \"Sal Cannella\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.009596928982725527
-  },
-  "[\"CLE\", \"Brenden Bates\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.005758157389635317
-  },
-  "[\"IND\", \"Jonathan Taylor\"]": {
-    "total_targets": 55.0,
-    "target_share": 0.10396975425330812
-  },
-  "[\"IND\", \"Ameer Abdullah\"]": {
-    "total_targets": 17.0,
-    "target_share": 0.03213610586011342
-  },
-  "[\"IND\", \"Tyler Goodson\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.005671077504725898
-  },
-  "[\"IND\", \"DJ Giddens\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.003780718336483932
-  },
-  "[\"IND\", \"Michael Pittman Jr\"]": {
-    "total_targets": 111.0,
-    "target_share": 0.20982986767485823
-  },
-  "[\"IND\", \"Josh Downs\"]": {
-    "total_targets": 88.0,
-    "target_share": 0.166351606805293
-  },
-  "[\"IND\", \"Alec Pierce\"]": {
-    "total_targets": 84.0,
-    "target_share": 0.15879017013232513
-  },
-  "[\"IND\", \"Adonai Mitchell\"]": {
-    "total_targets": 16.0,
-    "target_share": 0.030245746691871456
-  },
-  "[\"IND\", \"Ashton Dulin\"]": {
-    "total_targets": 10.0,
-    "target_share": 0.01890359168241966
-  },
-  "[\"IND\", \"Anthony Gould\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.003780718336483932
-  },
-  "[\"IND\", \"Coleman Owen\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.001890359168241966
-  },
-  "[\"IND\", \"Tyler Warren\"]": {
-    "total_targets": 112.0,
-    "target_share": 0.21172022684310018
-  },
-  "[\"IND\", \"Mo Alie-Cox\"]": {
-    "total_targets": 20.0,
-    "target_share": 0.03780718336483932
-  },
-  "[\"IND\", \"Drew Ogletree\"]": {
-    "total_targets": 6.0,
-    "target_share": 0.011342155009451797
-  },
-  "[\"IND\", \"Will Mallory\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.003780718336483932
   },
   "[\"HOU\", \"Woody Marks\"]": {
     "total_targets": 36.0,
@@ -843,6 +783,66 @@
     "total_targets": 2.0,
     "target_share": 0.003616636528028933
   },
+  "[\"IND\", \"Jonathan Taylor\"]": {
+    "total_targets": 55.0,
+    "target_share": 0.10396975425330812
+  },
+  "[\"IND\", \"Ameer Abdullah\"]": {
+    "total_targets": 17.0,
+    "target_share": 0.03213610586011342
+  },
+  "[\"IND\", \"Tyler Goodson\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.005671077504725898
+  },
+  "[\"IND\", \"DJ Giddens\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.003780718336483932
+  },
+  "[\"IND\", \"Michael Pittman Jr\"]": {
+    "total_targets": 111.0,
+    "target_share": 0.20982986767485823
+  },
+  "[\"IND\", \"Josh Downs\"]": {
+    "total_targets": 88.0,
+    "target_share": 0.166351606805293
+  },
+  "[\"IND\", \"Alec Pierce\"]": {
+    "total_targets": 84.0,
+    "target_share": 0.15879017013232513
+  },
+  "[\"IND\", \"Adonai Mitchell\"]": {
+    "total_targets": 16.0,
+    "target_share": 0.030245746691871456
+  },
+  "[\"IND\", \"Ashton Dulin\"]": {
+    "total_targets": 10.0,
+    "target_share": 0.01890359168241966
+  },
+  "[\"IND\", \"Anthony Gould\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.003780718336483932
+  },
+  "[\"IND\", \"Coleman Owen\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.001890359168241966
+  },
+  "[\"IND\", \"Tyler Warren\"]": {
+    "total_targets": 112.0,
+    "target_share": 0.21172022684310018
+  },
+  "[\"IND\", \"Mo Alie-Cox\"]": {
+    "total_targets": 20.0,
+    "target_share": 0.03780718336483932
+  },
+  "[\"IND\", \"Drew Ogletree\"]": {
+    "total_targets": 6.0,
+    "target_share": 0.011342155009451797
+  },
+  "[\"IND\", \"Will Mallory\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.003780718336483932
+  },
   "[\"LAR\", \"Kyren Williams\"]": {
     "total_targets": 50.0,
     "target_share": 0.08605851979345955
@@ -890,70 +890,6 @@
   "[\"LAR\", \"Terrance Ferguson\"]": {
     "total_targets": 25.0,
     "target_share": 0.043029259896729774
-  },
-  "[\"JAX\", \"Travis Etienne Jr.\"]": {
-    "total_targets": 52.0,
-    "target_share": 0.0948905109489051
-  },
-  "[\"JAX\", \"Bhayshul Tuten\"]": {
-    "total_targets": 14.0,
-    "target_share": 0.025547445255474453
-  },
-  "[\"JAX\", \"LeQuint Allen Jr.\"]": {
-    "total_targets": 11.0,
-    "target_share": 0.020072992700729927
-  },
-  "[\"JAX\", \"DeeJay Dallas\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0018248175182481751
-  },
-  "[\"JAX\", \"Parker Washington\"]": {
-    "total_targets": 95.0,
-    "target_share": 0.17335766423357665
-  },
-  "[\"JAX\", \"Brian Thomas Jr.\"]": {
-    "total_targets": 91.0,
-    "target_share": 0.16605839416058393
-  },
-  "[\"JAX\", \"Jakobi Meyers\"]": {
-    "total_targets": 61.0,
-    "target_share": 0.11131386861313869
-  },
-  "[\"JAX\", \"Travis Hunter\"]": {
-    "total_targets": 45.0,
-    "target_share": 0.08211678832116788
-  },
-  "[\"JAX\", \"Dyami Brown\"]": {
-    "total_targets": 37.0,
-    "target_share": 0.06751824817518248
-  },
-  "[\"JAX\", \"Tim Patrick\"]": {
-    "total_targets": 25.0,
-    "target_share": 0.04562043795620438
-  },
-  "[\"JAX\", \"Austin Trammell\"]": {
-    "total_targets": 10.0,
-    "target_share": 0.01824817518248175
-  },
-  "[\"JAX\", \"Tim Jones\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0018248175182481751
-  },
-  "[\"JAX\", \"Brenton Strange\"]": {
-    "total_targets": 60.0,
-    "target_share": 0.10948905109489052
-  },
-  "[\"JAX\", \"Johnny Mundt\"]": {
-    "total_targets": 19.0,
-    "target_share": 0.03467153284671533
-  },
-  "[\"JAX\", \"Hunter Long\"]": {
-    "total_targets": 17.0,
-    "target_share": 0.03102189781021898
-  },
-  "[\"JAX\", \"Quintin Morris\"]": {
-    "total_targets": 9.0,
-    "target_share": 0.016423357664233577
   },
   "[\"KC\", \"Brashard Smith\"]": {
     "total_targets": 35.0,
@@ -1022,6 +958,70 @@
   "[\"KC\", \"Jared Wiley\"]": {
     "total_targets": 1.0,
     "target_share": 0.0018248175182481751
+  },
+  "[\"JAX\", \"Travis Etienne Jr.\"]": {
+    "total_targets": 52.0,
+    "target_share": 0.0948905109489051
+  },
+  "[\"JAX\", \"Bhayshul Tuten\"]": {
+    "total_targets": 14.0,
+    "target_share": 0.025547445255474453
+  },
+  "[\"JAX\", \"LeQuint Allen Jr.\"]": {
+    "total_targets": 11.0,
+    "target_share": 0.020072992700729927
+  },
+  "[\"JAX\", \"DeeJay Dallas\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0018248175182481751
+  },
+  "[\"JAX\", \"Parker Washington\"]": {
+    "total_targets": 95.0,
+    "target_share": 0.17335766423357665
+  },
+  "[\"JAX\", \"Brian Thomas Jr.\"]": {
+    "total_targets": 91.0,
+    "target_share": 0.16605839416058393
+  },
+  "[\"JAX\", \"Jakobi Meyers\"]": {
+    "total_targets": 61.0,
+    "target_share": 0.11131386861313869
+  },
+  "[\"JAX\", \"Travis Hunter\"]": {
+    "total_targets": 45.0,
+    "target_share": 0.08211678832116788
+  },
+  "[\"JAX\", \"Dyami Brown\"]": {
+    "total_targets": 37.0,
+    "target_share": 0.06751824817518248
+  },
+  "[\"JAX\", \"Tim Patrick\"]": {
+    "total_targets": 25.0,
+    "target_share": 0.04562043795620438
+  },
+  "[\"JAX\", \"Austin Trammell\"]": {
+    "total_targets": 10.0,
+    "target_share": 0.01824817518248175
+  },
+  "[\"JAX\", \"Tim Jones\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0018248175182481751
+  },
+  "[\"JAX\", \"Brenton Strange\"]": {
+    "total_targets": 60.0,
+    "target_share": 0.10948905109489052
+  },
+  "[\"JAX\", \"Johnny Mundt\"]": {
+    "total_targets": 19.0,
+    "target_share": 0.03467153284671533
+  },
+  "[\"JAX\", \"Hunter Long\"]": {
+    "total_targets": 17.0,
+    "target_share": 0.03102189781021898
+  },
+  "[\"JAX\", \"Quintin Morris\"]": {
+    "total_targets": 9.0,
+    "target_share": 0.016423357664233577
   },
   "[\"LAC\", \"Omarion Hampton\"]": {
     "total_targets": 35.0,
@@ -1155,6 +1155,198 @@
     "total_targets": 1.0,
     "target_share": 0.0020242914979757085
   },
+  "[\"NO\", \"Alvin Kamara\"]": {
+    "total_targets": 39.0,
+    "target_share": 0.06927175843694494
+  },
+  "[\"NO\", \"Devin Neal\"]": {
+    "total_targets": 19.0,
+    "target_share": 0.03374777975133215
+  },
+  "[\"NO\", \"Audric Estim\\u00e9\"]": {
+    "total_targets": 13.0,
+    "target_share": 0.023090586145648313
+  },
+  "[\"NO\", \"Kendre Miller\"]": {
+    "total_targets": 5.0,
+    "target_share": 0.008880994671403197
+  },
+  "[\"NO\", \"Evan Hull\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0017761989342806395
+  },
+  "[\"NO\", \"Chris Olave\"]": {
+    "total_targets": 156.0,
+    "target_share": 0.27708703374777977
+  },
+  "[\"NO\", \"Rashid Shaheed\"]": {
+    "total_targets": 66.0,
+    "target_share": 0.1172291296625222
+  },
+  "[\"NO\", \"Devaughn Vele\"]": {
+    "total_targets": 39.0,
+    "target_share": 0.06927175843694494
+  },
+  "[\"NO\", \"Brandin Cooks\"]": {
+    "total_targets": 25.0,
+    "target_share": 0.04440497335701599
+  },
+  "[\"NO\", \"Kevin Austin Jr\"]": {
+    "total_targets": 23.0,
+    "target_share": 0.04085257548845471
+  },
+  "[\"NO\", \"Mason Tipton\"]": {
+    "total_targets": 17.0,
+    "target_share": 0.03019538188277087
+  },
+  "[\"NO\", \"Dante Pettis\"]": {
+    "total_targets": 11.0,
+    "target_share": 0.019538188277087035
+  },
+  "[\"NO\", \"Ronnie Bell\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.007104795737122558
+  },
+  "[\"NO\", \"Samori Toure\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.0053285968028419185
+  },
+  "[\"NO\", \"Juwan Johnson\"]": {
+    "total_targets": 102.0,
+    "target_share": 0.1811722912966252
+  },
+  "[\"NO\", \"Taysom Hill\"]": {
+    "total_targets": 16.0,
+    "target_share": 0.028419182948490232
+  },
+  "[\"NO\", \"Jack Stoll\"]": {
+    "total_targets": 11.0,
+    "target_share": 0.019538188277087035
+  },
+  "[\"NO\", \"Foster Moreau\"]": {
+    "total_targets": 10.0,
+    "target_share": 0.017761989342806393
+  },
+  "[\"NO\", \"Moliki Matavao\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.003552397868561279
+  },
+  "[\"NO\", \"Zaire Mitchell-Paden\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.0017761989342806395
+  },
+  "[\"MIN\", \"Aaron Jones Sr.\"]": {
+    "total_targets": 41.0,
+    "target_share": 0.0876068376068376
+  },
+  "[\"MIN\", \"Zavier Scott\"]": {
+    "total_targets": 16.0,
+    "target_share": 0.03418803418803419
+  },
+  "[\"MIN\", \"Jordan Mason\"]": {
+    "total_targets": 16.0,
+    "target_share": 0.03418803418803419
+  },
+  "[\"MIN\", \"Ty Chandler\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.008547008547008548
+  },
+  "[\"MIN\", \"C.J. Ham\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004273504273504274
+  },
+  "[\"MIN\", \"Cam Akers\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.002136752136752137
+  },
+  "[\"MIN\", \"Justin Jefferson\"]": {
+    "total_targets": 141.0,
+    "target_share": 0.30128205128205127
+  },
+  "[\"MIN\", \"Jordan Addison\"]": {
+    "total_targets": 79.0,
+    "target_share": 0.16880341880341881
+  },
+  "[\"MIN\", \"Jalen Nailor\"]": {
+    "total_targets": 53.0,
+    "target_share": 0.11324786324786325
+  },
+  "[\"MIN\", \"Adam Thielen\"]": {
+    "total_targets": 18.0,
+    "target_share": 0.038461538461538464
+  },
+  "[\"MIN\", \"Tai Felton\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.00641025641025641
+  },
+  "[\"MIN\", \"T.J. Hockenson\"]": {
+    "total_targets": 66.0,
+    "target_share": 0.14102564102564102
+  },
+  "[\"MIN\", \"Josh Oliver\"]": {
+    "total_targets": 19.0,
+    "target_share": 0.0405982905982906
+  },
+  "[\"MIN\", \"Ben Sims\"]": {
+    "total_targets": 6.0,
+    "target_share": 0.01282051282051282
+  },
+  "[\"MIN\", \"Ben Yurosek\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.00641025641025641
+  },
+  "[\"NE\", \"TreVeyon Henderson\"]": {
+    "total_targets": 42.0,
+    "target_share": 0.08731808731808732
+  },
+  "[\"NE\", \"Rhamondre Stevenson\"]": {
+    "total_targets": 37.0,
+    "target_share": 0.07692307692307693
+  },
+  "[\"NE\", \"Antonio Gibson\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.006237006237006237
+  },
+  "[\"NE\", \"Terrell Jennings\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.002079002079002079
+  },
+  "[\"NE\", \"Stefon Diggs\"]": {
+    "total_targets": 102.0,
+    "target_share": 0.21205821205821207
+  },
+  "[\"NE\", \"Mack Hollins\"]": {
+    "total_targets": 65.0,
+    "target_share": 0.13513513513513514
+  },
+  "[\"NE\", \"Kayshon Boutte\"]": {
+    "total_targets": 46.0,
+    "target_share": 0.09563409563409564
+  },
+  "[\"NE\", \"DeMario Douglas\"]": {
+    "total_targets": 46.0,
+    "target_share": 0.09563409563409564
+  },
+  "[\"NE\", \"Kyle Williams\"]": {
+    "total_targets": 21.0,
+    "target_share": 0.04365904365904366
+  },
+  "[\"NE\", \"Efton Chism III\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.006237006237006237
+  },
+  "[\"NE\", \"Hunter Henry\"]": {
+    "total_targets": 87.0,
+    "target_share": 0.18087318087318088
+  },
+  "[\"NE\", \"Austin Hooper\"]": {
+    "total_targets": 26.0,
+    "target_share": 0.05405405405405406
+  },
+  "[\"NE\", \"Jack Westover\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004158004158004158
+  },
   "[\"MIA\", \"De'Von Achane\"]": {
     "total_targets": 85.0,
     "target_share": 0.18398268398268397
@@ -1218,66 +1410,6 @@
   "[\"MIA\", \"Tanner Conner\"]": {
     "total_targets": 15.0,
     "target_share": 0.032467532467532464
-  },
-  "[\"MIN\", \"Aaron Jones Sr.\"]": {
-    "total_targets": 41.0,
-    "target_share": 0.0876068376068376
-  },
-  "[\"MIN\", \"Zavier Scott\"]": {
-    "total_targets": 16.0,
-    "target_share": 0.03418803418803419
-  },
-  "[\"MIN\", \"Jordan Mason\"]": {
-    "total_targets": 16.0,
-    "target_share": 0.03418803418803419
-  },
-  "[\"MIN\", \"Ty Chandler\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.008547008547008548
-  },
-  "[\"MIN\", \"C.J. Ham\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004273504273504274
-  },
-  "[\"MIN\", \"Cam Akers\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.002136752136752137
-  },
-  "[\"MIN\", \"Justin Jefferson\"]": {
-    "total_targets": 141.0,
-    "target_share": 0.30128205128205127
-  },
-  "[\"MIN\", \"Jordan Addison\"]": {
-    "total_targets": 79.0,
-    "target_share": 0.16880341880341881
-  },
-  "[\"MIN\", \"Jalen Nailor\"]": {
-    "total_targets": 53.0,
-    "target_share": 0.11324786324786325
-  },
-  "[\"MIN\", \"Adam Thielen\"]": {
-    "total_targets": 18.0,
-    "target_share": 0.038461538461538464
-  },
-  "[\"MIN\", \"Tai Felton\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.00641025641025641
-  },
-  "[\"MIN\", \"T.J. Hockenson\"]": {
-    "total_targets": 66.0,
-    "target_share": 0.14102564102564102
-  },
-  "[\"MIN\", \"Josh Oliver\"]": {
-    "total_targets": 19.0,
-    "target_share": 0.0405982905982906
-  },
-  "[\"MIN\", \"Ben Sims\"]": {
-    "total_targets": 6.0,
-    "target_share": 0.01282051282051282
-  },
-  "[\"MIN\", \"Ben Yurosek\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.00641025641025641
   },
   "[\"NYJ\", \"Breece Hall\"]": {
     "total_targets": 48.0,
@@ -1415,138 +1547,6 @@
     "total_targets": 3.0,
     "target_share": 0.005952380952380952
   },
-  "[\"NE\", \"TreVeyon Henderson\"]": {
-    "total_targets": 42.0,
-    "target_share": 0.08731808731808732
-  },
-  "[\"NE\", \"Rhamondre Stevenson\"]": {
-    "total_targets": 37.0,
-    "target_share": 0.07692307692307693
-  },
-  "[\"NE\", \"Antonio Gibson\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.006237006237006237
-  },
-  "[\"NE\", \"Terrell Jennings\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.002079002079002079
-  },
-  "[\"NE\", \"Stefon Diggs\"]": {
-    "total_targets": 102.0,
-    "target_share": 0.21205821205821207
-  },
-  "[\"NE\", \"Mack Hollins\"]": {
-    "total_targets": 65.0,
-    "target_share": 0.13513513513513514
-  },
-  "[\"NE\", \"Kayshon Boutte\"]": {
-    "total_targets": 46.0,
-    "target_share": 0.09563409563409564
-  },
-  "[\"NE\", \"DeMario Douglas\"]": {
-    "total_targets": 46.0,
-    "target_share": 0.09563409563409564
-  },
-  "[\"NE\", \"Kyle Williams\"]": {
-    "total_targets": 21.0,
-    "target_share": 0.04365904365904366
-  },
-  "[\"NE\", \"Efton Chism III\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.006237006237006237
-  },
-  "[\"NE\", \"Hunter Henry\"]": {
-    "total_targets": 87.0,
-    "target_share": 0.18087318087318088
-  },
-  "[\"NE\", \"Austin Hooper\"]": {
-    "total_targets": 26.0,
-    "target_share": 0.05405405405405406
-  },
-  "[\"NE\", \"Jack Westover\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004158004158004158
-  },
-  "[\"NO\", \"Alvin Kamara\"]": {
-    "total_targets": 39.0,
-    "target_share": 0.06927175843694494
-  },
-  "[\"NO\", \"Devin Neal\"]": {
-    "total_targets": 19.0,
-    "target_share": 0.03374777975133215
-  },
-  "[\"NO\", \"Audric Estim\\u00e9\"]": {
-    "total_targets": 13.0,
-    "target_share": 0.023090586145648313
-  },
-  "[\"NO\", \"Kendre Miller\"]": {
-    "total_targets": 5.0,
-    "target_share": 0.008880994671403197
-  },
-  "[\"NO\", \"Evan Hull\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0017761989342806395
-  },
-  "[\"NO\", \"Chris Olave\"]": {
-    "total_targets": 156.0,
-    "target_share": 0.27708703374777977
-  },
-  "[\"NO\", \"Rashid Shaheed\"]": {
-    "total_targets": 66.0,
-    "target_share": 0.1172291296625222
-  },
-  "[\"NO\", \"Devaughn Vele\"]": {
-    "total_targets": 39.0,
-    "target_share": 0.06927175843694494
-  },
-  "[\"NO\", \"Brandin Cooks\"]": {
-    "total_targets": 25.0,
-    "target_share": 0.04440497335701599
-  },
-  "[\"NO\", \"Kevin Austin Jr\"]": {
-    "total_targets": 23.0,
-    "target_share": 0.04085257548845471
-  },
-  "[\"NO\", \"Mason Tipton\"]": {
-    "total_targets": 17.0,
-    "target_share": 0.03019538188277087
-  },
-  "[\"NO\", \"Dante Pettis\"]": {
-    "total_targets": 11.0,
-    "target_share": 0.019538188277087035
-  },
-  "[\"NO\", \"Ronnie Bell\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.007104795737122558
-  },
-  "[\"NO\", \"Samori Toure\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.0053285968028419185
-  },
-  "[\"NO\", \"Juwan Johnson\"]": {
-    "total_targets": 102.0,
-    "target_share": 0.1811722912966252
-  },
-  "[\"NO\", \"Taysom Hill\"]": {
-    "total_targets": 16.0,
-    "target_share": 0.028419182948490232
-  },
-  "[\"NO\", \"Jack Stoll\"]": {
-    "total_targets": 11.0,
-    "target_share": 0.019538188277087035
-  },
-  "[\"NO\", \"Foster Moreau\"]": {
-    "total_targets": 10.0,
-    "target_share": 0.017761989342806393
-  },
-  "[\"NO\", \"Moliki Matavao\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.003552397868561279
-  },
-  "[\"NO\", \"Zaire Mitchell-Paden\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.0017761989342806395
-  },
   "[\"PHI\", \"Saquon Barkley\"]": {
     "total_targets": 50.0,
     "target_share": 0.10752688172043011
@@ -1602,6 +1602,66 @@
   "[\"PHI\", \"Kylen Granson\"]": {
     "total_targets": 9.0,
     "target_share": 0.01935483870967742
+  },
+  "[\"SEA\", \"Ken Walker III\"]": {
+    "total_targets": 36.0,
+    "target_share": 0.07912087912087912
+  },
+  "[\"SEA\", \"Zach Charbonnet\"]": {
+    "total_targets": 24.0,
+    "target_share": 0.05274725274725275
+  },
+  "[\"SEA\", \"George Holani\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004395604395604396
+  },
+  "[\"SEA\", \"Jaxon Smith-Njigba\"]": {
+    "total_targets": 163.0,
+    "target_share": 0.35824175824175825
+  },
+  "[\"SEA\", \"Cooper Kupp\"]": {
+    "total_targets": 70.0,
+    "target_share": 0.15384615384615385
+  },
+  "[\"SEA\", \"Rashid Shaheed\"]": {
+    "total_targets": 26.0,
+    "target_share": 0.05714285714285714
+  },
+  "[\"SEA\", \"Tory Horton\"]": {
+    "total_targets": 22.0,
+    "target_share": 0.04835164835164835
+  },
+  "[\"SEA\", \"Cody White\"]": {
+    "total_targets": 4.0,
+    "target_share": 0.008791208791208791
+  },
+  "[\"SEA\", \"Dareke Young\"]": {
+    "total_targets": 3.0,
+    "target_share": 0.006593406593406593
+  },
+  "[\"SEA\", \"Jake Bobo\"]": {
+    "total_targets": 2.0,
+    "target_share": 0.004395604395604396
+  },
+  "[\"SEA\", \"AJ Barner\"]": {
+    "total_targets": 68.0,
+    "target_share": 0.14945054945054945
+  },
+  "[\"SEA\", \"Elijah Arroyo\"]": {
+    "total_targets": 26.0,
+    "target_share": 0.05714285714285714
+  },
+  "[\"SEA\", \"Eric Saubert\"]": {
+    "total_targets": 7.0,
+    "target_share": 0.015384615384615385
+  },
+  "[\"SEA\", \"Nick Kallerup\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.002197802197802198
+  },
+  "[\"SEA\", \"Brady Russell\"]": {
+    "total_targets": 1.0,
+    "target_share": 0.002197802197802198
   },
   "[\"PIT\", \"Kenneth Gainwell\"]": {
     "total_targets": 85.0,
@@ -1714,66 +1774,6 @@
   "[\"TB\", \"Devin Culp\"]": {
     "total_targets": 1.0,
     "target_share": 0.0018552875695732839
-  },
-  "[\"SEA\", \"Ken Walker III\"]": {
-    "total_targets": 36.0,
-    "target_share": 0.07912087912087912
-  },
-  "[\"SEA\", \"Zach Charbonnet\"]": {
-    "total_targets": 24.0,
-    "target_share": 0.05274725274725275
-  },
-  "[\"SEA\", \"George Holani\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004395604395604396
-  },
-  "[\"SEA\", \"Jaxon Smith-Njigba\"]": {
-    "total_targets": 163.0,
-    "target_share": 0.35824175824175825
-  },
-  "[\"SEA\", \"Cooper Kupp\"]": {
-    "total_targets": 70.0,
-    "target_share": 0.15384615384615385
-  },
-  "[\"SEA\", \"Rashid Shaheed\"]": {
-    "total_targets": 26.0,
-    "target_share": 0.05714285714285714
-  },
-  "[\"SEA\", \"Tory Horton\"]": {
-    "total_targets": 22.0,
-    "target_share": 0.04835164835164835
-  },
-  "[\"SEA\", \"Cody White\"]": {
-    "total_targets": 4.0,
-    "target_share": 0.008791208791208791
-  },
-  "[\"SEA\", \"Dareke Young\"]": {
-    "total_targets": 3.0,
-    "target_share": 0.006593406593406593
-  },
-  "[\"SEA\", \"Jake Bobo\"]": {
-    "total_targets": 2.0,
-    "target_share": 0.004395604395604396
-  },
-  "[\"SEA\", \"AJ Barner\"]": {
-    "total_targets": 68.0,
-    "target_share": 0.14945054945054945
-  },
-  "[\"SEA\", \"Elijah Arroyo\"]": {
-    "total_targets": 26.0,
-    "target_share": 0.05714285714285714
-  },
-  "[\"SEA\", \"Eric Saubert\"]": {
-    "total_targets": 7.0,
-    "target_share": 0.015384615384615385
-  },
-  "[\"SEA\", \"Nick Kallerup\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.002197802197802198
-  },
-  "[\"SEA\", \"Brady Russell\"]": {
-    "total_targets": 1.0,
-    "target_share": 0.002197802197802198
   },
   "[\"SF\", \"Christian McCaffrey\"]": {
     "total_targets": 129.0,
