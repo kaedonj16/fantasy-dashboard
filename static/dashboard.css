@@ -1955,6 +1955,54 @@ button:hover {
   height: 46px;
 }
 
+/* ── Standings / dynasty table mobile ────────────────────────────────────── */
+/* Team-name cell: use max-width:0 trick so ellipsis fires in table layout  */
+.standings-table td.team {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 38%;
+}
+
+@media (max-width: 640px) {
+  .standings-table {
+    font-size: 12px;
+  }
+  .standings-table td,
+  .standings-table th {
+    padding: 6px 4px;
+  }
+  .standings-table tr {
+    height: auto;
+  }
+  /* Hide SOS columns on main standings */
+  .standings-table[data-page="standings"] th:nth-child(n+7),
+  .standings-table[data-page="standings"] td:nth-child(n+7) {
+    display: none;
+  }
+  /* Hide Best/Worst Week on detailed stats */
+  #stats.standings-table th:nth-child(n+7),
+  #stats.standings-table td:nth-child(n+7) {
+    display: none;
+  }
+  /* Playoff odds: hide Proj W-L, tighten bar column */
+  .po-proj { display: none; }
+  .po-odds { min-width: 90px; }
+  .po-team { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (max-width: 480px) {
+  .standings-table {
+    font-size: 11px;
+  }
+  /* Also hide PA on main standings */
+  .standings-table[data-page="standings"] th:nth-child(5),
+  .standings-table[data-page="standings"] td:nth-child(5) {
+    display: none;
+  }
+}
+
 .table-stats {
   min-height: 695px;
 }
@@ -2111,14 +2159,6 @@ thead th {
   flex-wrap: wrap;
 }
 
-.inj-row .chip {
-  background: var(--card-soft);
-  border: 1px solid var(--border);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
 
 .otc-add-pick-btn {
   background: rgba(59, 130, 246, 0.1);
@@ -4707,6 +4747,12 @@ thead th {
   color: var(--text);
 }
 
+.card-subhead {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
 .os-snapshot-top, .os-waiver-row {
   display: flex;
   justify-content: space-between;
@@ -4917,6 +4963,87 @@ thead th {
   color: #78350f;
 }
 
+/* ---- Playoff Odds tab ---- */
+.playoff-odds-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.loading-spinner-sm {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.po-wrap { padding: 4px 0 8px; }
+.po-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  padding: 0 4px;
+}
+.po-error {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 16px 4px;
+}
+.po-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.po-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  padding: 0 6px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.po-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  vertical-align: middle;
+}
+.po-table tr:last-child td { border-bottom: none; }
+.po-team { font-weight: 500; max-width: 140px; }
+.po-rec  { color: var(--text-muted); white-space: nowrap; }
+.po-odds { min-width: 120px; }
+.po-bye  { text-align: center; color: var(--text-muted); white-space: nowrap; }
+.po-proj { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
+.po-bar-wrap {
+  background: var(--border);
+  border-radius: 3px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.po-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+.po-bar-green  { background: #22c55e; }
+.po-bar-yellow { background: #eab308; }
+.po-bar-red    { background: #ef4444; }
+.po-label { font-size: 12px; font-weight: 600; }
+.po-pct-sym { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+.po-made   { color: #22c55e; font-weight: 600; font-size: 12px; }
+.po-missed { color: var(--text-muted); font-size: 12px; }
+
+[data-theme="dark"] .po-bar-green  { background: #16a34a; }
+[data-theme="dark"] .po-bar-yellow { background: #ca8a04; }
+[data-theme="dark"] .po-bar-red    { background: #dc2626; }
+
+/* ---- Power rankings grid ---- */
 .rank-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4997,31 +5124,35 @@ thead th {
 
 .bracket {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
   max-width: 100%;
   overflow-x: auto;
   color: var(--accent);
   background-color: var(--card);
   border-radius: 14px;
-  padding: 10px 12px 0;
+  padding: 12px 14px 14px;
 }
+
 
 .bracket-match {
   position: relative;
-  width: 234px;
-  border-radius: 16px;
-  border: 2px solid var(--accent);
+  width: 210px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
   background: var(--card);
-  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  padding: 10px 12px;
   margin: 5px 0;
+  transition: border-color .15s;
 }
+.bracket-match:hover { border-color: var(--accent-soft, #94a3b8); }
 
 .bracket-match .match-id {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -5033,11 +5164,14 @@ thead th {
 }
 
 .bracket-round .round-title {
-  padding-right: 30px;
+  padding-right: 12px;
   text-align: center;
-  font-size: 20px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-subtle);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
 }
 
 .m-slide, .matchup-carousel .m-slide {
@@ -5906,57 +6040,118 @@ thead th {
   display: none;
 }
 
-.inj-acc {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  margin-bottom: 8px;
-}
-
-.inj-acc summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.inj-body {
-  margin-top: 6px;
-}
-
-.inj-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid #f1f5f9;
-  color: var(--accent);
-}
-
-.inj-row .pname {
-  font-weight: 700;
-}
-
-.inj-row .right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.inj-row .sub {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.inj-row:first-child {
-  border-top: 0;
-}
-
+/* ── Injury accordion ──────────────────────────────────────────────────── */
 .injury-overview {
   display: flex;
   flex-direction: column;
-  min-height: 653px;
+}
+
+.inj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inj-acc {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.inj-acc summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.inj-acc summary::-webkit-details-marker { display: none; }
+.inj-acc[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.inj-team {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.inj-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.inj-badge-ir   { background:#fee2e2; color:#991b1b; }
+.inj-badge-out  { background:#fecaca; color:#b91c1c; }
+.inj-badge-dbt  { background:#ffedd5; color:#c2410c; }
+.inj-badge-q    { background:#fef9c3; color:#854d0e; }
+.inj-badge-note { background:#f1f5f9; color:#64748b; }
+
+.inj-body {
+  padding: 4px 14px 10px;
+}
+
+.inj-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.inj-row:first-child { border-top: none; }
+
+.inj-left { flex: 1; min-width: 0; }
+
+.inj-pname {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.inj-pname:hover { text-decoration: underline; }
+
+.inj-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.inj-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.inj-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.inj-chip-ir           { background:#fee2e2; color:#991b1b; }
+.inj-chip-out          { background:#fecaca; color:#b91c1c; }
+.inj-chip-doubtful     { background:#ffedd5; color:#c2410c; }
+.inj-chip-questionable { background:#fef9c3; color:#854d0e; }
+.inj-chip-note         { background:#f1f5f9; color:#64748b; }
+
+.inj-upd {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .io {
@@ -6574,6 +6769,25 @@ thead th {
   box-shadow: 0 8px 28px rgba(234, 88, 12, 0.22);
 }
 
+/* Mobile: make second and third podium slots smaller than first */
+@media (max-width: 768px) {
+  .podium .slot.second,
+  .podium .slot.third {
+    padding: 8px;
+    font-size: 13px;
+  }
+  
+  .podium .slot.second .name,
+  .podium .slot.third .name {
+    font-size: 14px;
+  }
+  
+  .podium .slot.second .rec,
+  .podium .slot.third .rec {
+    font-size: 11px;
+  }
+}
+
 .pos-badge {
   height: 25px;
   width: 36px;
@@ -6951,30 +7165,64 @@ thead th {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  max-height: 1134pxgit add .;
+  max-height: 1134px;
 }
 
 .team-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  gap: 6px;
+  padding: 5px 0;
+}
+
+.team-row .team-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.team-row .team-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.team-row .team-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
 }
 
 .team-row.bye .team-name {
   text-transform: uppercase;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .team-row.top {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 1px;
 }
 
 .team-score {
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
-  margin-left: 8px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.bracket-match .team-avatar {
+  width: 22px;
+  height: 22px;
+  background: var(--card-soft);
 }
 
 .team-section {
@@ -7927,6 +8175,10 @@ img, svg, canvas {
     grid-template-columns: 1fr !important;
   }
 
+  .podium .podium-header h3 {
+    font-size: 20px;
+  }
+
   .rank-item {
     grid-template-columns: auto 1fr auto !important;
     gap: 10px;
@@ -7963,6 +8215,10 @@ img, svg, canvas {
     -webkit-overflow-scrolling: touch;
     flex-wrap: nowrap;
     scrollbar-width: none;
+    /* Fade right edge to hint at scrollable overflow */
+    -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    padding-right: 20px;
   }
   #teamsAnalyticsTabs::-webkit-scrollbar {
     display: none;

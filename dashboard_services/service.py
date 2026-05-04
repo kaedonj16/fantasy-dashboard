@@ -321,27 +321,29 @@ def build_tables(
 
         owner_avatar[display] = _avatar_url(avatar_id)
 
-    weekly_rows: list[dict] = []
-    for week in range(1, max_week + 1):
+    def _fetch_week(week: int) -> list[dict]:
         try:
-            week_data = get_matchups(platform, league_id, week, season)
-        except requests.HTTPError:
-            break
-        if not week_data:
-            continue
-
+            week_data = get_matchups(platform, league_id, week, season) or []
+        except Exception:
+            return []
+        rows = []
         for m in week_data:
             rid = str(m.get("roster_id"))
-            weekly_rows.append(
-                {
-                    "week": week,
-                    "matchup_id": m.get("matchup_id"),
-                    "roster_id": rid,
-                    "owner": roster_map.get(rid, f"Roster {rid}"),
-                    "points": float(m.get("points", 0.0)),
-                }
-            )
-        time.sleep(0.12)
+            rows.append({
+                "week": week,
+                "matchup_id": m.get("matchup_id"),
+                "roster_id": rid,
+                "owner": roster_map.get(rid, f"Roster {rid}"),
+                "points": float(m.get("points", 0.0)),
+            })
+        return rows
+
+    weeks_to_fetch = list(range(1, max_week + 1))
+    weekly_rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(len(weeks_to_fetch), 8)) as pool:
+        futures = {pool.submit(_fetch_week, w): w for w in weeks_to_fetch}
+        for fut in as_completed(futures):
+            weekly_rows.extend(fut.result())
 
     df_weekly = pd.DataFrame(weekly_rows)
     if df_weekly.empty:
@@ -580,17 +582,25 @@ def get_owner_id(
 
 
 def build_matchups_by_week(league_id, weeks, roster_map, players_map, season, platform):
+    week_list = list(weeks)
+
+    def _fetch(w: int) -> tuple[int, list]:
+        try:
+            return w, build_matchup_preview(
+                league_id=league_id,
+                week=w,
+                roster_map=roster_map,
+                players_map=players_map,
+                season=season,
+                platform=platform,
+            ) or []
+        except Exception:
+            return w, []
+
     by_week: dict[int, list] = {}
-    for w in weeks:
-        matchups = build_matchup_preview(
-            league_id=league_id,
-            week=w,
-            roster_map=roster_map,
-            players_map=players_map,
-            season=season,
-            platform=platform
-        )
-        by_week[w] = matchups or []
+    with ThreadPoolExecutor(max_workers=min(len(week_list), 8)) as pool:
+        for w, matchups in pool.map(_fetch, week_list):
+            by_week[w] = matchups
     return by_week
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
@@ -181,43 +182,68 @@ def record_calibrated_history_snapshot() -> int:
         return 0
 
     written = 0
-    with get_conn() as conn:
-        for r in rows:
-            player_name = name_map.get(str(r["player_id"])) or f"Player {r['player_id']}"
-            conn.execute(
-                """
-                INSERT INTO player_value_history
-                    (as_of_date, player_id, name, position, team,
-                     value, value_sf, value_8, value_12, value_14,
-                     sf_value_8, sf_value_12, sf_value_14, source)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
-                ON CONFLICT (as_of_date, player_id, source)
-                DO UPDATE SET
-                    name        = EXCLUDED.name,
-                    value       = EXCLUDED.value,
-                    value_sf    = EXCLUDED.value_sf,
-                    value_8     = EXCLUDED.value_8,
-                    value_12    = EXCLUDED.value_12,
-                    value_14    = EXCLUDED.value_14,
-                    sf_value_8  = EXCLUDED.sf_value_8,
-                    sf_value_12 = EXCLUDED.sf_value_12,
-                    sf_value_14 = EXCLUDED.sf_value_14,
-                    position    = EXCLUDED.position,
-                    team        = EXCLUDED.team
-                """,
-                (
-                    today, r["player_id"], player_name, r["position"], r["team"],
-                    float(r["value"] or 0),
-                    float(r["value_sf"] or 0),
-                    float(r["value_8"] or 0),
-                    float(r["value_12"] or 0),
-                    float(r["value_14"] or 0),
-                    float(r["sf_value_8"] or 0),
-                    float(r["sf_value_12"] or 0),
-                    float(r["sf_value_14"] or 0),
-                ),
-            )
-            written += 1
+    
+    # Write in batches with connection recovery to prevent timeouts
+    BATCH = 500
+    for batch_start in range(0, len(rows), BATCH):
+        batch = rows[batch_start : batch_start + BATCH]
+        batch_written = 0
+        
+        # Retry each batch up to 3 times with fresh connections
+        for attempt in range(3):
+            try:
+                with get_conn(autocommit=True) as conn:
+                    for r in batch:
+                        player_name = name_map.get(str(r["player_id"])) or f"Player {r['player_id']}"
+                        conn.execute(
+                            """
+                            INSERT INTO player_value_history
+                                (as_of_date, player_id, name, position, team,
+                                 value, value_sf, value_8, value_12, value_14,
+                                 sf_value_8, sf_value_12, sf_value_14, source)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
+                            ON CONFLICT (as_of_date, player_id, source)
+                            DO UPDATE SET
+                                name        = EXCLUDED.name,
+                                value       = EXCLUDED.value,
+                                value_sf    = EXCLUDED.value_sf,
+                                value_8     = EXCLUDED.value_8,
+                                value_12    = EXCLUDED.value_12,
+                                value_14    = EXCLUDED.value_14,
+                                sf_value_8  = EXCLUDED.sf_value_8,
+                                sf_value_12 = EXCLUDED.sf_value_12,
+                                sf_value_14 = EXCLUDED.sf_value_14,
+                                position    = EXCLUDED.position,
+                                team        = EXCLUDED.team
+                            """,
+                            (
+                                today, r["player_id"], player_name, r["position"], r["team"],
+                                float(r["value"] or 0),
+                                float(r["value_sf"] or 0),
+                                float(r["value_8"] or 0),
+                                float(r["value_12"] or 0),
+                                float(r["value_14"] or 0),
+                                float(r["sf_value_8"] or 0),
+                                float(r["sf_value_12"] or 0),
+                                float(r["sf_value_14"] or 0),
+                            ),
+                        )
+                        batch_written += 1
+                    
+                    written += batch_written
+                    print(f"[record_calibrated_history_snapshot] Written batch {batch_start}-{batch_start + len(batch) - 1} ({batch_written} rows) - Total: {written} / {len(rows)}")
+                    break  # Success, exit retry loop
+                    
+            except Exception as e:
+                if attempt == 2:  # Last attempt failed
+                    print(f"[record_calibrated_history_snapshot] Failed to write batch {batch_start}-{batch_start + len(batch) - 1} after 3 attempts, skipping. Error: {e}")
+                    # Continue with next batch instead of failing completely
+                    break
+                else:
+                    # Wait before retry with exponential backoff
+                    wait_time = (2 ** attempt) + 1
+                    print(f"[record_calibrated_history_snapshot] Batch {batch_start}-{batch_start + len(batch) - 1} failed (attempt {attempt + 1}/3): {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
 
     print(f"[record_calibrated_history_snapshot] Wrote {written} calibrated values to player_value_history")
     return written

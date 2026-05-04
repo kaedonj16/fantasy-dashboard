@@ -24,8 +24,6 @@ from flask import (
     session,
     send_file,
 )
-from plotly.offline import get_plotlyjs
-
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
@@ -49,6 +47,7 @@ from dashboard_services.api import (
     get_sleeper_user_leagues,
     get_total_rosters,
     resolve_league_id_for_season,
+    _avatar_url,
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG
@@ -170,6 +169,18 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+
+@app.after_request
+def _add_cache_headers(response):
+    path = request.path
+    if path.startswith("/static/"):
+        # Versioned assets (e.g. ?v=123) can be cached aggressively; others get 1-day
+        if request.args.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 if not _secret_key:
     logging.warning(
@@ -179,8 +190,6 @@ if not _secret_key:
     _secret_key = 'dev-secret-key-change-in-production'
 app.secret_key = _secret_key
 del _secret_key
-
-plotly_js = get_plotlyjs()
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _redis_url = os.environ.get("REDIS_URL", "")
@@ -477,9 +486,7 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
 
-    <script>
-      {plotly_js}
-    </script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});
@@ -1069,9 +1076,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Database",   "page_trade_database", "trade-database", False),
         ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
-    # Show Weekly Hub if draft has ended (during offseason) OR if in-season
+    # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
-    if draft_ended or not offseason_mode:
+    if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
@@ -1085,8 +1092,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False),
         ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
-    if not offseason_mode:
-        nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
+    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -1249,7 +1255,6 @@ def render_page(
         title=title,
         nav=nav_html,
         body=wrapped_body,
-        plotly_js=plotly_js,
         privacy_url=league_url("privacy", league_id),
         faq_url=league_url("faq", league_id),
         support_url=league_url("support", league_id),
@@ -1410,25 +1415,49 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     resolved_league_id = league_id
 
-    # Core league data
-    league = get_league(platform, resolved_league_id, season)
-    users = get_users(platform, resolved_league_id, season)
-    rosters = get_rosters(platform, resolved_league_id, season)
+    # ── Fetch core league data and NFL state in parallel ─────────────────────
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
 
-    traded = None
-    if platform == "sleeper":
-        traded = get_traded_picks(platform, resolved_league_id, season)
+    def _get_league():   return get_league(platform, resolved_league_id, season)
+    def _get_users():    return get_users(platform, resolved_league_id, season)
+    def _get_rosters():  return get_rosters(platform, resolved_league_id, season)
+    def _get_traded():   return get_traded_picks(platform, resolved_league_id, season) if platform == "sleeper" else None
+    def _get_drafts():
+        try:
+            return get_drafts(platform, resolved_league_id, season) or []
+        except Exception as e:
+            print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+            return []
+    def _get_state():    return get_nfl_state() or {}
+
+    _tasks = {
+        "league":  _get_league,
+        "users":   _get_users,
+        "rosters": _get_rosters,
+        "traded":  _get_traded,
+        "drafts":  _get_drafts,
+        "state":   _get_state,
+    }
+    _results: dict = {}
+    with _TPE(max_workers=len(_tasks)) as _pool:
+        _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
+        for _fut in _ac(_fmap):
+            _results[_fmap[_fut]] = _fut.result()
+
+    league  = _results["league"]
+    users   = _results["users"]
+    rosters = _results["rosters"]
+    traded  = _results["traded"]
+    drafts  = _results["drafts"]
+    current = _results["state"]
 
     try:
-        drafts = get_drafts(platform, resolved_league_id, season) or []
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
     except Exception as e:
-        print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+        print(f"[build_league_context] failed to resolve latest draft: {e}")
         drafts = []
         latest_draft = None
 
-    # Global NFL state
-    current = get_nfl_state() or {}
     season_type = (current.get("season_type") or "").lower()
     current_season = int(current.get("season") or datetime.now().year)
     current_week = int(current.get("week") or 0)
@@ -2661,29 +2690,19 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
-    print(f"[dashboard] Building dashboard body")
-    print(f"[dashboard] Viewer data: {viewer}")
-    print(f"[dashboard] Viewer roster ID: {viewer_roster_id}")
-
     gm_memo_html = ""
     front_office_html = ""
 
     if viewer_roster_id:
-        print(f"[dashboard] Attempting to get GM memo for roster {viewer_roster_id}")
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-            print(f"[dashboard] GM memo result: {len(gm_memo_html)} chars")
-        except Exception as e:
-            print(f"[dashboard] gm memo exception: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            pass
     else:
-        print(f"[dashboard] No viewer_roster_id, skipping GM memo")
-
         try:
             front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[dashboard] front office briefing skipped: {e}")
+        except Exception:
+            pass
 
     standings_html = render_standings(team_stats, 5)
 
@@ -2776,11 +2795,21 @@ def build_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id: str, platform, season) -> str:
+def render_power_and_playoffs(
+    team_stats,
+    roster_map: Dict[str, str],
+    league_id: str,
+    platform,
+    season,
+    bracket_override=None,
+    seed_map_override=None,
+) -> str:
     """
     Single card that shows:
       - Power Rankings (by PowerScore if present)
       - Playoff Picture (using bracket)
+    bracket_override: pre-built bracket list; skips API fetch when provided.
+    seed_map_override: {roster_id: seed_int}; skips seed_top6 calculation.
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -2968,14 +2997,14 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
     rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
 
     # ---- Playoff bracket ----
-    wb = get_bracket(platform, league_id, "winners", season)
+    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
         if pd.notna(owner)
     }
 
-    seed_map = seed_top6_from_team_stats(team_stats, roster_map)
+    seed_map = seed_map_override if seed_map_override is not None else seed_top6_from_team_stats(team_stats, roster_map)
 
     bracket_html = playoff_bracket(
         wb,
@@ -2990,6 +3019,10 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
               <div class="tab-strip">
                 <button class="tab-btn active" data-tab="power">Power Rankings</button>
                 <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+                <button class="tab-btn" data-tab="playoff-odds"
+                        data-league-id="{league_id}"
+                        data-platform="{platform}"
+                        data-season="{season}">Playoff Odds</button>
               </div>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="power">
@@ -2998,6 +3031,12 @@ def render_power_and_playoffs(team_stats, roster_map: Dict[str, str], league_id:
                 </div>
                 <div class="tab-panel" data-tab="playoff">
                   {bracket_html}
+                </div>
+                <div class="tab-panel" data-tab="playoff-odds" id="playoffOddsPanel">
+                  <div class="playoff-odds-loading">
+                    <div class="loading-spinner-sm"></div>
+                    <span>Running simulation…</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3177,6 +3216,241 @@ def render_team_stats(team_stats, df_weekly) -> str:
     return table_html
 
 
+def _build_offseason_standings_body(ctx: dict) -> str:
+    """
+    Offseason standings: left = dynasty rankings table, right = power rankings
+    cards (same order as the Teams page) + Playoff Odds.
+    """
+    roster_map        = ctx["roster_map"]
+    rosters           = ctx["rosters"]
+    users             = ctx.get("users") or []
+    model_value_table = ctx.get("model_value_table") or []
+    picks_by_roster   = ctx.get("picks_by_roster") or {}
+    platform          = ctx["platform"]
+    season            = ctx["season"]
+    league_id_str     = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
+
+    # ── dynasty value lookup ──────────────────────────────────────────────────
+    values_by_id: dict[str, float] = {}
+    for row in model_value_table:
+        if isinstance(row, dict) and row.get("id") is not None:
+            try:
+                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+            except Exception:
+                pass
+
+    pick_by_key: dict[str, float] = load_pick_value_table() or {}
+
+    # ── avatar lookup from users ──────────────────────────────────────────────
+    user_by_id = {str(u.get("user_id", "")): u for u in users}
+    rid_to_avatar: dict[str, str] = {}
+    for r in rosters:
+        rid      = str(r.get("roster_id"))
+        owner_id = str(r.get("owner_id") or "")
+        u        = user_by_id.get(owner_id) or {}
+        u_meta   = u.get("metadata") or {}
+        u_av     = u.get("avatar") or ""
+        av_raw   = u_meta.get("avatar") or (
+            f"https://sleepercdn.com/avatars/{u_av}" if platform == "sleeper" and u_av else u_av
+        )
+        rid_to_avatar[rid] = _avatar_url(av_raw) or ""
+
+    # ── build per-team data ───────────────────────────────────────────────────
+    team_rows: list[dict] = []
+    for r in rosters:
+        rid      = str(r.get("roster_id"))
+        name     = roster_map.get(rid, f"Roster {rid}")
+        pids     = [str(p) for p in (r.get("players") or [])]
+        player_v = sum(values_by_id.get(p, 0.0) for p in pids)
+        picks    = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
+        pick_v   = _team_pick_value(picks, pick_by_key, platform=platform,
+                                    league_id=league_id_str, season=_safe_int(season, 0))
+        total    = player_v + pick_v
+        team_rows.append({
+            "rid": rid, "name": name,
+            "player_v": player_v, "pick_v": pick_v,
+            "total": total, "n_players": len(pids), "n_picks": len(picks),
+            "avatar": rid_to_avatar.get(rid, ""),
+        })
+
+    team_rows.sort(key=lambda x: x["total"], reverse=True)
+
+    # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
+    raw_vals = [r["total"] for r in team_rows]
+    raw_max  = max(raw_vals) if raw_vals else 1
+    for r in team_rows:
+        r["power_score"] = round(100.0 + r["total"] / max(raw_max, 1) * 60.0, 2)
+
+    # ── synthetic team_stats DataFrame for render_power_and_playoffs ─────────
+    df_rows = []
+    for i, r in enumerate(team_rows):
+        df_rows.append({
+            "owner":      r["name"],
+            "Wins":       0,
+            "Losses":     0,
+            "Ties":       0,
+            "G":          0,
+            "Win%":       0.0,
+            "PF":         0.0,
+            "PA":         0.0,
+            "PowerScore": r["power_score"],
+            "Streak":     "",
+            "StreakLen":  0,
+            "StreakType": "",
+            "avatar":     r["avatar"],
+        })
+    synthetic_ts = pd.DataFrame(df_rows)
+
+    # ── seed map from playoff odds simulation and projected bracket ──────────
+    settings      = ctx.get("league_settings") or {}
+    playoff_teams = int(settings.get("playoff_teams") or 6)
+
+    # Run the Monte Carlo sim to get odds-based seedings (same data as the
+    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
+    try:
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+    except Exception:
+        odds_list = []
+
+    if odds_list:
+        odds_list_sorted = sorted(
+            odds_list,
+            key=lambda o: (
+                -o.get("first_seed_pct", 0),
+                -o.get("bye_pct", 0),
+                -o.get("playoff_pct", 0),
+                -o.get("avg_final_wins", 0),
+            ),
+        )
+        seeded_rids = [str(o["roster_id"]) for o in odds_list_sorted[:playoff_teams]]
+    else:
+        # Fallback: use dynasty value order
+        name_to_rid = {v: k for k, v in roster_map.items()}
+        seeded_rids = [
+            str(name_to_rid[r["name"]])
+            for r in team_rows
+            if r["name"] in name_to_rid
+        ][:playoff_teams]
+
+    seed_map_override: dict = {rid: i + 1 for i, rid in enumerate(seeded_rids)}
+
+    def _rid(seed: int):
+        """Return int roster_id for 1-based seed, or None if not enough teams."""
+        if seed <= len(seeded_rids):
+            v = seeded_rids[seed - 1]
+            try:
+                return int(v)
+            except Exception:
+                return v
+        return None
+
+    # Build a standard projected bracket for the configured playoff size
+    # Seeding: 1,2 get byes; R1 pairings are 3v(N), 4v(N-1), …
+    synthetic_bracket: list[dict] = []
+    match_id = 1
+
+    if playoff_teams == 6:
+        # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 4}},
+            {"m": 3, "r": 2, "t1": _rid(1), "t2": None,    "t1_from": None, "t2_from": {"w": 2}, "w": {"m": 5}},
+            {"m": 4, "r": 2, "t1": _rid(2), "t2": None,    "t1_from": None, "t2_from": {"w": 1}, "w": {"m": 5}},
+            {"m": 5, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}},
+        ]
+    elif playoff_teams == 4:
+        # R1 (Semis): 1v4, 2v3 → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(4), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(2), "t2": _rid(3), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 3, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}},
+        ]
+    elif playoff_teams == 8:
+        # R1: 1v8, 4v5 (top half) + 2v7, 3v6 (bottom half) → Semis → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(8), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 3, "r": 1, "t1": _rid(2), "t2": _rid(7), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 4, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 5, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}, "w": {"m": 7}},
+            {"m": 6, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}, "w": {"m": 7}},
+            {"m": 7, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 5}, "t2_from": {"w": 6}},
+        ]
+    else:
+        # Generic: no bracket available
+        synthetic_bracket = []
+
+    power_playoffs_html = render_power_and_playoffs(
+        synthetic_ts, roster_map, league_id_str, platform, season,
+        bracket_override=synthetic_bracket,
+        seed_map_override=seed_map_override,
+    )
+
+    # ── left-column dynasty rankings table ───────────────────────────────────
+    table_rows_html = ""
+    for i, row in enumerate(team_rows, 1):
+        av = row["avatar"]
+        img = (
+            f"<img class='avatar sm' src='{av}' onerror=\"this.style.display='none'\">"
+            if av else ""
+        )
+        first_rd = sum(
+            1 for pk in (picks_by_roster.get(row["rid"], []) if isinstance(picks_by_roster, dict) else [])
+            if int(pk.get("round") or 0) == 1
+        )
+        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
+        table_rows_html += (
+            f"<tr>"
+            f"<td class='num'>{i}</td>"
+            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='num'>{row['total']:.0f}</td>"
+            f"<td class='num'>{row['player_v']:.0f}</td>"
+            f"<td class='num'>{picks_label}</td>"
+            f"</tr>"
+        )
+
+    table_html = f"""
+        <div class="table-wrap">
+          <table class="standings-table dynasty-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Team</th>
+                <th>Value</th>
+                <th>Players</th>
+                <th>Draft Capital</th>
+              </tr>
+            </thead>
+            <tbody>{table_rows_html}</tbody>
+          </table>
+        </div>
+        <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
+    """
+
+    return f"""
+    <div class="standings-main two-col-standings">
+      <div class="standings-col">
+        <div class="card">
+          <div class="card-tabs">
+            <div class="tab-strip">
+              <button class="tab-btn active" data-tab="standings">Value Rankings</button>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="standings">
+                  {table_html}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="standings-col">
+        {power_playoffs_html}
+      </div>
+    </div>
+    """
+
+
 def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
@@ -3225,13 +3499,12 @@ def build_standings_body(ctx: dict) -> str:
                 </div>
               </div>
             </div>
-          </div
+          </div>
         </div>
       </div>
-    </div>
-    <div class="standings-col">
-      {power_playoffs_html}
-    </div>
+      <div class="standings-col">
+        {power_playoffs_html}
+      </div>
     </div>
     <aside class="overview-sidebar">
       {sidebar_html}
@@ -7146,15 +7419,7 @@ def page_standings(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
     if ctx.get("offseason_mode"):
-        body = """
-        <div class="card central">
-          <div class="card-header"><h2>Standings Unavailable</h2></div>
-          <div class="card-body">
-            <p>Standings will appear once the season begins.</p>
-            <p>During the offseason, use Teams, Activity, and Trade Calc for roster planning.</p>
-          </div>
-        </div>
-        """
+        body = _build_offseason_standings_body(ctx)
     else:
         body = build_standings_body(ctx)
 
@@ -7164,9 +7429,18 @@ def page_standings(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    draft_ended = has_draft_ended(league_id, platform, season)
 
-    if not draft_ended:
+    if ctx.get("offseason_mode"):
+        body = """
+        <div class="card central">
+          <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
+          <div class="card-body">
+            <p>The Weekly Hub becomes active once the season begins and games are being played.</p>
+            <p>Use the Dashboard, Teams, and Trade tools for offseason planning.</p>
+          </div>
+        </div>
+        """
+    elif not has_draft_ended(league_id, platform, season):
         body = """
         <div class="card central">
           <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
@@ -7574,7 +7848,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prRender()"
+              <select id="prSort" onchange="prPage=1;prRender()"
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
                 <option value="rank">Overall Rank</option>
@@ -7835,6 +8109,69 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         letter-spacing: 0.04em;
       }
 
+      /* Pagination */
+      .pr-pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+        margin-top: 12px;
+      }
+      .pr-pagination-info {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .pr-pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .pr-pagination-btn {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .pr-pagination-btn:hover:not(:disabled) {
+        background: var(--bg-alt);
+        border-color: var(--accent-color);
+      }
+      .pr-pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .pr-page-numbers {
+        display: flex;
+        gap: 4px;
+      }
+      .pr-page-num {
+        min-width: 32px;
+        height: 32px;
+        padding: 0 6px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+      .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
       /* Mobile responsive */
       @media (max-width: 768px) {
         .filter-row-primary {
@@ -7880,6 +8217,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
+      var prPage = 1;
+      var prPageSize = 50;
 
       // ---- Fuzzy search (mirrors trade calc logic) ----
       function prFuzzyScore(name, query) {
@@ -7985,6 +8324,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           prPosFilters.clear();
         }
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8000,6 +8340,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         });
 
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8016,6 +8357,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         });
 
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8039,6 +8381,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             b.classList.toggle('active', prPosFilters.has(p));
           }
         });
+        prPage = 1;
         prRender();
       }
 
@@ -8046,6 +8389,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prSearch').value = '';
         prSearchQuery = '';
         document.getElementById('prSearchClear').style.display = 'none';
+        prPage = 1;
         prRender();
       }
 
@@ -8124,18 +8468,30 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           empty.style.display = 'block';
           header.style.display = 'none';
           count.style.display = 'none';
+          prRenderPagination(0, 0);
           return;
         }
+
+        const total = players.length;
+        const totalPages = Math.max(1, Math.ceil(total / prPageSize));
+        if (prPage > totalPages) prPage = totalPages;
+        const start = (prPage - 1) * prPageSize;
+        const end   = Math.min(start + prPageSize, total);
+        const pageSlice = players.slice(start, end);
+        
+        // Store filtered players count for pagination navigation
+        window.prFilteredPlayers = players;
 
         empty.style.display = 'none';
         header.style.display = 'grid';
         count.style.display = 'block';
-        count.textContent = players.length + ' player' + (players.length !== 1 ? 's' : '');
+        count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
         const rankMap = prBuildRankMap();
 
         list.innerHTML = '';
-        players.forEach((p, idx) => {
+        pageSlice.forEach((p, i) => {
+          const idx = start + i;
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
           row.style.cursor = 'pointer';
@@ -8168,23 +8524,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-                    let rankArrow = '';
+          let rankArrow = '';
           if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
-            // Debug: Check if Font Awesome is loaded
-            if (window.debugFA === undefined) {
-              setTimeout(() => {
-                const testIcon = document.querySelector('.fa-arrow-up, .fa-arrow-down');
-                if (testIcon) {
-                  const styles = window.getComputedStyle(testIcon);
-                  console.log('Icon font-family:', styles.fontFamily);
-                  console.log('Icon display:', styles.display);
-                }
-                window.debugFA = true;
-              }, 1000);
-            }
           }
 
           row.innerHTML =
@@ -8198,6 +8542,88 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           list.appendChild(row);
         });
+
+        prRenderPagination(prPage, totalPages);
+      }
+
+      function prRenderPagination(page, totalPages) {
+        let bar = document.getElementById('prPagination');
+        if (!bar) {
+          bar = document.createElement('div');
+          bar.id = 'prPagination';
+          bar.className = 'pr-pagination';
+          document.getElementById('prList').insertAdjacentElement('afterend', bar);
+          bar.innerHTML = `
+            <div class="pr-pagination-info">
+              <span id="prPaginationText">Showing 1-50 of 100 players</span>
+            </div>
+            <div class="pr-pagination-controls">
+              <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
+                <i class="fa-solid fa-chevron-left"></i> Previous
+              </button>
+              <div id="prPageNumbers" class="pr-page-numbers"></div>
+              <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
+                Next <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+          `;
+        }
+        
+        if (totalPages <= 1) { 
+          bar.style.display = 'none'; 
+          return;
+        }
+
+        bar.style.display = 'flex';
+
+        // Update info text
+        const start = (page - 1) * prPageSize + 1;
+        const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
+        const total = window.prFilteredPlayers.length;
+        document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
+
+        // Update Previous/Next buttons
+        const prevBtn = document.getElementById('prPrevBtn');
+        const nextBtn = document.getElementById('prNextBtn');
+        prevBtn.disabled = page === 1;
+        nextBtn.disabled = page === totalPages;
+
+        // Update page numbers
+        const pageNumbers = document.getElementById('prPageNumbers');
+        const maxPages = 5;
+        let pages = [];
+        
+        if (totalPages <= maxPages) {
+          for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else {
+          pages = [1];
+          let lo = Math.max(2, page - 2), hi = Math.min(totalPages - 1, page + 2);
+          if (lo > 2) pages.push('…');
+          for (let i = lo; i <= hi; i++) pages.push(i);
+          if (hi < totalPages - 1) pages.push('…');
+          pages.push(totalPages);
+        }
+
+        pageNumbers.innerHTML = pages.map(p => {
+          if (p === '…') return '<span style="color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 32px;">…</span>';
+          const active = p === page ? ' pr-page-active' : '';
+          return `<button class="pr-page-num${active}" onclick="prGoPage(${p})">${p}</button>`;
+        }).join('');
+      }
+
+      function prGoPage(p) {
+        if (p === 'prev') {
+          prPage = Math.max(1, prPage - 1);
+        } else if (p === 'next') {
+          const totalPages = Math.ceil(window.prFilteredPlayers.length / prPageSize);
+          prPage = Math.min(totalPages, prPage + 1);
+        } else {
+          prPage = p;
+        }
+        prRender();
+        // Scroll to top of player list
+        const el = document.getElementById('prTableHeader');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
 
       // Wire up search input
@@ -8209,6 +8635,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         inp.addEventListener('input', function() {
           prSearchQuery = inp.value.trim();
           clear.style.display = prSearchQuery.length > 0 ? 'block' : 'none';
+          prPage = 1;
           prRender();
         });
       })();
@@ -10367,18 +10794,7 @@ def api_refresh_page():
                 body_html = build_dashboard_body(ctx)
 
         elif page == "standings":
-            if ctx.get("offseason_mode"):
-                body_html = """
-                <div class="card central">
-                  <div class="card-header"><h2>Standings Unavailable</h2></div>
-                  <div class="card-body">
-                    <p>Standings will appear once the season begins.</p>
-                    <p>During the offseason, use Teams, Activity, and Trade Calc for roster planning.</p>
-                  </div>
-                </div>
-                """
-            else:
-                body_html = build_standings_body(ctx)
+            body_html = _build_offseason_standings_body(ctx) if ctx.get("offseason_mode") else build_standings_body(ctx)
 
         elif page == "weekly":
             if ctx.get("offseason_mode"):
@@ -13410,6 +13826,55 @@ def api_schedule_strength():
         return jsonify({"error": "Internal error"}), 500
 
 
+@app.route("/api/playoff-odds")
+def api_playoff_odds():
+    """
+    Run Monte Carlo playoff odds simulation for a league.
+
+    In-season: simulates remaining regular-season games (10 000 runs) using
+    each team's historical scoring distribution and returns probabilities.
+    Offseason / complete: returns 100 / 0 based on final standings.
+
+    Query params: platform, league_id, season
+    """
+    platform  = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season_s  = (request.args.get("season") or "").strip()
+
+    if not league_id or not season_s:
+        return jsonify({"error": "missing params"}), 400
+    try:
+        season = int(season_s)
+    except ValueError:
+        return jsonify({"error": "invalid season"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        if not ctx:
+            return jsonify({"error": "league not found"}), 404
+
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        odds = simulate_playoff_odds(ctx, platform=platform)
+
+        settings           = ctx.get("league_settings") or {}
+        playoff_week_start = int(settings.get("playoff_week_start") or 15)
+        playoff_teams      = int(settings.get("playoff_teams") or 6)
+        current_week       = int(ctx.get("current_week") or 0)
+        is_complete        = bool(odds and odds[0].get("is_complete"))
+
+        return jsonify({
+            "odds":                odds,
+            "season":              season,
+            "current_week":        current_week,
+            "playoff_week_start":  playoff_week_start,
+            "playoff_teams":       playoff_teams,
+            "is_complete":         is_complete,
+        })
+    except Exception as exc:
+        logger.exception("[playoff-odds] %s", exc)
+        return jsonify({"error": "Internal error"}), 500
+
+
 def _fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     """
     Fetch dynasty rookie ADP from FantasyCalc and return a map of
@@ -13845,7 +14310,10 @@ def api_draft_grades():
             # for bigger reaches the adp_diff already captures the cost, so
             # applying BPA on top would double-count and turn a D into an F.
             if is_bpa:
-                score += 2
+                # A reach is still a reach even if this was the best player left.
+                # Cap the BPA bonus at +1 when the pick was already a meaningful
+                # reach (adp_diff < -3) so BPA alone can't rescue a D to a B.
+                score += 1 if adp_diff < -3 else 2
             elif bpa_gap is not None and bpa_gap >= 5:
                 score = max(score - 1, 0)   # better player available (was -2)
             # Moderate BPA gap (3-4) no longer penalises — adp_diff already
