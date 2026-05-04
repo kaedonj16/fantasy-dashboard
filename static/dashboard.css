@@ -8157,6 +8157,10 @@ img, svg, canvas {
     -webkit-overflow-scrolling: touch;
     flex-wrap: nowrap;
     scrollbar-width: none;
+    /* Fade right edge to hint at scrollable overflow */
+    -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    padding-right: 20px;
   }
   #teamsAnalyticsTabs::-webkit-scrollbar {
     display: none;

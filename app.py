@@ -2689,29 +2689,19 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
-    print(f"[dashboard] Building dashboard body")
-    print(f"[dashboard] Viewer data: {viewer}")
-    print(f"[dashboard] Viewer roster ID: {viewer_roster_id}")
-
     gm_memo_html = ""
     front_office_html = ""
 
     if viewer_roster_id:
-        print(f"[dashboard] Attempting to get GM memo for roster {viewer_roster_id}")
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-            print(f"[dashboard] GM memo result: {len(gm_memo_html)} chars")
-        except Exception as e:
-            print(f"[dashboard] gm memo exception: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            pass
     else:
-        print(f"[dashboard] No viewer_roster_id, skipping GM memo")
-
         try:
             front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception as e:
-            print(f"[dashboard] front office briefing skipped: {e}")
+        except Exception:
+            pass
 
     standings_html = render_standings(team_stats, 5)
 

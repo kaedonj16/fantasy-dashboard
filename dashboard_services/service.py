@@ -324,7 +324,7 @@ def build_tables(
     def _fetch_week(week: int) -> list[dict]:
         try:
             week_data = get_matchups(platform, league_id, week, season) or []
-        except requests.HTTPError:
+        except Exception:
             return []
         rows = []
         for m in week_data:
@@ -585,14 +585,17 @@ def build_matchups_by_week(league_id, weeks, roster_map, players_map, season, pl
     week_list = list(weeks)
 
     def _fetch(w: int) -> tuple[int, list]:
-        return w, build_matchup_preview(
-            league_id=league_id,
-            week=w,
-            roster_map=roster_map,
-            players_map=players_map,
-            season=season,
-            platform=platform,
-        ) or []
+        try:
+            return w, build_matchup_preview(
+                league_id=league_id,
+                week=w,
+                roster_map=roster_map,
+                players_map=players_map,
+                season=season,
+                platform=platform,
+            ) or []
+        except Exception:
+            return w, []
 
     by_week: dict[int, list] = {}
     with ThreadPoolExecutor(max_workers=min(len(week_list), 8)) as pool:
