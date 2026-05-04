@@ -1955,7 +1955,16 @@ button:hover {
   height: 46px;
 }
 
-/* ── Standings table mobile ───────────────────────────────────────────────── */
+/* ── Standings / dynasty table mobile ────────────────────────────────────── */
+/* Team-name cell: use max-width:0 trick so ellipsis fires in table layout  */
+.standings-table td.team {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 38%;
+}
+
 @media (max-width: 640px) {
   .standings-table {
     font-size: 12px;
@@ -1967,12 +1976,6 @@ button:hover {
   .standings-table tr {
     height: auto;
   }
-  .standings-table td.team {
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   /* Hide SOS columns on main standings */
   .standings-table[data-page="standings"] th:nth-child(n+7),
   .standings-table[data-page="standings"] td:nth-child(n+7) {
@@ -1983,14 +1986,15 @@ button:hover {
   #stats.standings-table td:nth-child(n+7) {
     display: none;
   }
+  /* Playoff odds: hide Proj W-L, tighten bar column */
+  .po-proj { display: none; }
+  .po-odds { min-width: 90px; }
+  .po-team { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 @media (max-width: 480px) {
   .standings-table {
     font-size: 11px;
-  }
-  .standings-table td.team {
-    max-width: 85px;
   }
   /* Also hide PA on main standings */
   .standings-table[data-page="standings"] th:nth-child(5),

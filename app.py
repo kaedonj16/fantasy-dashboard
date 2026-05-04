@@ -3323,6 +3323,9 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             ),
         )
         seeded_rids = [str(o["roster_id"]) for o in odds_list_sorted[:playoff_teams]]
+        # Reorder team_rows to match odds-based ranking (last-season PPG → projected performance)
+        odds_rank = {str(o["roster_id"]): i for i, o in enumerate(odds_list_sorted)}
+        team_rows.sort(key=lambda r: odds_rank.get(str(r["rid"]), len(team_rows)))
     else:
         # Fallback: use dynasty value order
         name_to_rid = {v: k for k, v in roster_map.items()}
@@ -3410,18 +3413,20 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         )
 
     table_html = f"""
-        <table class="standings-table">
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Team</th>
-              <th>Total Value</th>
-              <th>Players</th>
-              <th>Draft Capital</th>
-            </tr>
-          </thead>
-          <tbody>{table_rows_html}</tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="standings-table dynasty-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Team</th>
+                <th>Value</th>
+                <th>Players</th>
+                <th>Draft Capital</th>
+              </tr>
+            </thead>
+            <tbody>{table_rows_html}</tbody>
+          </table>
+        </div>
         <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
     """
 
