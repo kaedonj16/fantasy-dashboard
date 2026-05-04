@@ -329,7 +329,7 @@ function _renderPlayoffOdds(data) {
   const subtitle = is_complete
     ? 'Final standings'
     : isProjected
-      ? `Preseason projection · based on roster values · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`
+      ? `Preseason projection · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`
       : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`;
 
   const showBye = playoff_teams >= 4;
