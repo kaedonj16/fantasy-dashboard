@@ -2129,10 +2129,14 @@ window.initTradePage = function initTradePage(root = document) {
                                viewer_roster_id: viewerRosterId,
                                target_player_id: playerId, league_type: leagueType }),
       });
-      const data = await res.json();
-
       const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
         style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
+
+      if (!res.ok) {
+        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">Failed to load packages.</span>`;
+        return;
+      }
+      const data = await res.json();
 
       if (!data.success || !data.packages) {
         panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;
@@ -4113,6 +4117,7 @@ document.addEventListener('DOMContentLoaded', function() {
           })
         });
 
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
         if (data.success) {
@@ -6393,6 +6398,10 @@ async function checkTradeOutcome(btn) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      resultEl.innerHTML = `<p class="outcome-error">Could not load outcome data.</p>`;
+      return;
+    }
     const data = await res.json();
 
     if (!data.success) {
