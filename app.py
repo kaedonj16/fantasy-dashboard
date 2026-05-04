@@ -10650,18 +10650,7 @@ def api_refresh_page():
                 body_html = build_dashboard_body(ctx)
 
         elif page == "standings":
-            if ctx.get("offseason_mode"):
-                body_html = """
-                <div class="card central">
-                  <div class="card-header"><h2>Standings Unavailable</h2></div>
-                  <div class="card-body">
-                    <p>Standings will appear once the season begins.</p>
-                    <p>During the offseason, use Teams, Activity, and Trade Calc for roster planning.</p>
-                  </div>
-                </div>
-                """
-            else:
-                body_html = build_standings_body(ctx)
+            body_html = _build_offseason_standings_body(ctx) if ctx.get("offseason_mode") else build_standings_body(ctx)
 
         elif page == "weekly":
             if ctx.get("offseason_mode"):
