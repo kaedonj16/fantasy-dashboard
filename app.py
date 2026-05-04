@@ -6353,23 +6353,14 @@ def build_teams_body(ctx: dict) -> str:
             "showlegend":   False,
             "bargap":       0.3,
         })
+        _chart_data_attr  = html.escape(_chart_data,   quote=True)
+        _chart_layout_attr = html.escape(_chart_layout, quote=True)
         _chart_html = (
-            f"<div id='{_chart_div_id}' class='team-value-chart'></div>"
-            f"<script>(function(){{"
-            f"  var d={_chart_data},l={_chart_layout};"
-            f"  function createChart(){{"
-            f"    if(typeof Plotly!=='undefined'){{"
-            f"      Plotly.newPlot('{_chart_div_id}',d,l,{{responsive:true,displayModeBar:false}});"
-            f"    }} else {{"
-            f"      setTimeout(createChart, 100);"
-            f"    }}"
-            f"  }}"
-            f"  if(document.readyState==='loading'){{"
-            f"    document.addEventListener('DOMContentLoaded', createChart);"
-            f"  }} else {{"
-            f"    createChart();"
-            f"  }}"
-            f"}})();</script>"
+            f'<div id="{_chart_div_id}" class="team-value-chart team-chart-lazy"'
+            f' data-chart="{_chart_data_attr}"'
+            f' data-layout="{_chart_layout_attr}">'
+            f'<div class="team-chart-skeleton"></div>'
+            f'</div>'
         )
 
         _gdata = team_grades.get(rid, {})
@@ -7029,6 +7020,40 @@ def build_teams_body(ctx: dict) -> str:
       }});
       // Default sort on load
       sortTeams('posindex');
+
+      // Lazy-render Plotly charts as they scroll into view
+      (function() {{
+        function renderChart(el) {{
+          if (el.dataset.rendered) return;
+          el.dataset.rendered = '1';
+          try {{
+            var trace  = JSON.parse(el.getAttribute('data-chart'));
+            var layout = JSON.parse(el.getAttribute('data-layout'));
+            el.innerHTML = '';
+            Plotly.newPlot(el.id, trace, layout, {{responsive: true, displayModeBar: false}});
+          }} catch(e) {{}}
+        }}
+        function tryRender(el) {{
+          if (typeof Plotly !== 'undefined') {{
+            renderChart(el);
+          }} else {{
+            var t = setInterval(function() {{
+              if (typeof Plotly !== 'undefined') {{ clearInterval(t); renderChart(el); }}
+            }}, 80);
+          }}
+        }}
+        var charts = document.querySelectorAll('.team-chart-lazy');
+        if ('IntersectionObserver' in window) {{
+          var obs = new IntersectionObserver(function(entries) {{
+            entries.forEach(function(e) {{
+              if (e.isIntersecting) {{ tryRender(e.target); obs.unobserve(e.target); }}
+            }});
+          }}, {{ rootMargin: '300px' }});
+          charts.forEach(function(el) {{ obs.observe(el); }});
+        }} else {{
+          charts.forEach(tryRender);
+        }}
+      }})();
     }})();
     </script>
     """
