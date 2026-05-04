@@ -7847,7 +7847,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prRender()"
+              <select id="prSort" onchange="prPage=1;prRender()"
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
                 <option value="rank">Overall Rank</option>
@@ -8108,6 +8108,32 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         letter-spacing: 0.04em;
       }
 
+      /* Pagination */
+      .pr-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 16px 0 4px;
+        flex-wrap: wrap;
+      }
+      .pr-pg-btn {
+        min-width: 34px;
+        height: 34px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      .pr-pg-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+      .pr-pg-btn.pr-pg-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .pr-pg-ellipsis { color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 34px; }
+
       /* Mobile responsive */
       @media (max-width: 768px) {
         .filter-row-primary {
@@ -8153,6 +8179,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
+      var prPage = 1;
+      var prPageSize = 50;
 
       // ---- Fuzzy search (mirrors trade calc logic) ----
       function prFuzzyScore(name, query) {
@@ -8258,6 +8286,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           prPosFilters.clear();
         }
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8273,6 +8302,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         });
 
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8289,6 +8319,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         });
 
         updateSettingsIndicator();
+        prPage = 1;
         prRender();
       }
 
@@ -8312,6 +8343,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             b.classList.toggle('active', prPosFilters.has(p));
           }
         });
+        prPage = 1;
         prRender();
       }
 
@@ -8319,6 +8351,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prSearch').value = '';
         prSearchQuery = '';
         document.getElementById('prSearchClear').style.display = 'none';
+        prPage = 1;
         prRender();
       }
 
@@ -8397,18 +8430,27 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           empty.style.display = 'block';
           header.style.display = 'none';
           count.style.display = 'none';
+          prRenderPagination(0, 0);
           return;
         }
+
+        const total = players.length;
+        const totalPages = Math.max(1, Math.ceil(total / prPageSize));
+        if (prPage > totalPages) prPage = totalPages;
+        const start = (prPage - 1) * prPageSize;
+        const end   = Math.min(start + prPageSize, total);
+        const pageSlice = players.slice(start, end);
 
         empty.style.display = 'none';
         header.style.display = 'grid';
         count.style.display = 'block';
-        count.textContent = players.length + ' player' + (players.length !== 1 ? 's' : '');
+        count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
         const rankMap = prBuildRankMap();
 
         list.innerHTML = '';
-        players.forEach((p, idx) => {
+        pageSlice.forEach((p, i) => {
+          const idx = start + i;
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
           row.style.cursor = 'pointer';
@@ -8441,23 +8483,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-                    let rankArrow = '';
+          let rankArrow = '';
           if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
-            // Debug: Check if Font Awesome is loaded
-            if (window.debugFA === undefined) {
-              setTimeout(() => {
-                const testIcon = document.querySelector('.fa-arrow-up, .fa-arrow-down');
-                if (testIcon) {
-                  const styles = window.getComputedStyle(testIcon);
-                  console.log('Icon font-family:', styles.fontFamily);
-                  console.log('Icon display:', styles.display);
-                }
-                window.debugFA = true;
-              }, 1000);
-            }
           }
 
           row.innerHTML =
@@ -8471,6 +8501,46 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           list.appendChild(row);
         });
+
+        prRenderPagination(prPage, totalPages);
+      }
+
+      function prRenderPagination(page, totalPages) {
+        let bar = document.getElementById('prPagination');
+        if (!bar) {
+          bar = document.createElement('div');
+          bar.id = 'prPagination';
+          bar.className = 'pr-pagination';
+          document.getElementById('prList').insertAdjacentElement('afterend', bar);
+        }
+        if (totalPages <= 1) { bar.innerHTML = ''; return; }
+
+        const maxButtons = 7;
+        let pages = [];
+        if (totalPages <= maxButtons) {
+          for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else {
+          pages = [1];
+          let lo = Math.max(2, page - 2), hi = Math.min(totalPages - 1, page + 2);
+          if (lo > 2) pages.push('…');
+          for (let i = lo; i <= hi; i++) pages.push(i);
+          if (hi < totalPages - 1) pages.push('…');
+          pages.push(totalPages);
+        }
+
+        bar.innerHTML = pages.map(p => {
+          if (p === '…') return '<span class="pr-pg-ellipsis">…</span>';
+          const active = p === page ? ' pr-pg-active' : '';
+          return `<button class="pr-pg-btn${active}" onclick="prGoPage(${p})">${p}</button>`;
+        }).join('');
+      }
+
+      function prGoPage(p) {
+        prPage = p;
+        prRender();
+        // Scroll to top of player list
+        const el = document.getElementById('prTableHeader');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
 
       // Wire up search input
@@ -8482,6 +8552,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         inp.addEventListener('input', function() {
           prSearchQuery = inp.value.trim();
           clear.style.display = prSearchQuery.length > 0 ? 'block' : 'none';
+          prPage = 1;
           prRender();
         });
       })();
