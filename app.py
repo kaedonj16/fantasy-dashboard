@@ -3434,7 +3434,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip">
-              <button class="tab-btn active" data-tab="standings">Dynasty Rankings</button>
+              <button class="tab-btn active" data-tab="standings">Value Rankings</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
                   {table_html}
