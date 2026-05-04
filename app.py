@@ -11623,6 +11623,8 @@ def api_league_players():
         "sf_value_8", "sf_value_12", "sf_value_14",
     ]
     for _p in model_value_table:
+        if _p.get("is_rookie"):
+            continue
         _pos   = str(_p.get("position") or "").upper()
         _tiers = _DEPTH_DECAY.get(_pos)
         if not _tiers:
