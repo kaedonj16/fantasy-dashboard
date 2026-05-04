@@ -1898,6 +1898,23 @@ button:hover {
   margin-bottom: 12px;
 }
 
+.team-chart-skeleton {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(90deg,
+    var(--bg-alt, #1e293b) 25%,
+    var(--border, #334155) 50%,
+    var(--bg-alt, #1e293b) 75%);
+  background-size: 200% 100%;
+  animation: chartShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes chartShimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 .pos-strength-table {
   width: 100%;
   border-collapse: collapse;
