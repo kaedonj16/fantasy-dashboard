@@ -121,6 +121,7 @@ def build_injury_report(
             rows.append(
                 {
                     "Team": roster_map.get(rid, f"Roster {rid}"),
+                    "PlayerID": pid_s,
                     "Player": name,
                     "Pos": pos,
                     "NFL": nfl_team,
@@ -137,6 +138,7 @@ def build_injury_report(
         df = df[
             [
                 "Team",
+                "PlayerID",
                 "Player",
                 "Pos",
                 "NFL",
@@ -202,11 +204,11 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
             sev_class  = _INJ_SEV_CLASS.get(status_raw.upper(), "inj-chip-note")
             label      = status_raw or "Note"
 
-            player   = r["Player"]
-            nfl      = r["NFL"]
-            pos      = r["Pos"]
-            body     = r.get("Body") or ""
-            news_url = r["NewsUrl"]
+            player    = r["Player"]
+            player_id = r.get("PlayerID") or ""
+            nfl       = r["NFL"]
+            pos       = r["Pos"]
+            body      = r.get("Body") or ""
 
             last_upd = r.get("Last Updated")
             upd_str  = ""
@@ -221,7 +223,8 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
             rows.append(
                 f"<div class='inj-row'>"
                 f"  <div class='inj-left'>"
-                f"    <a class='inj-pname' href='{news_url}' target='_blank' rel='noopener noreferrer'>{player}</a>"
+                f"    <span class='inj-pname player-clickable' style='cursor:pointer'"
+                f"      data-player-id='{player_id}' data-player-name='{player}'>{player}</span>"
                 f"    <div class='inj-meta'>{meta}</div>"
                 f"  </div>"
                 f"  <div class='inj-right'>"
