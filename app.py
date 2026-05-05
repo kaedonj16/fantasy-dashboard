@@ -13314,6 +13314,11 @@ def api_player_details(player_id: str):
         players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id, {})
 
+        # Fall back to full players index if not found in relevant index
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(player_id, {})
+
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
