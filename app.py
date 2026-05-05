@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Union, Tuple
 from zoneinfo import ZoneInfo
@@ -77,7 +77,14 @@ from dashboard_services.platform_api import (
     sync_league_globals,
 )
 from dashboard_services.players import get_players_map
-from dashboard_services.subscriptions import has_premium_access
+from dashboard_services.subscriptions import (
+    has_premium_access,
+    create_league_subscription,
+    create_user_subscription,
+    cancel_subscription,
+)
+import stripe
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.service import (
     build_matchups_by_week,
@@ -9780,8 +9787,8 @@ def _pricing_body() -> str:
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/month</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="alert('Stripe checkout coming soon!')" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe for League <span style="opacity:.7;font-size:12px;">(coming soon)</span>
+            <button onclick="initiatePurchase('league')" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe for League
             </button>
           </div>
 
@@ -9794,8 +9801,8 @@ def _pricing_body() -> str:
               $5<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/month</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
-            <button onclick="alert('Stripe checkout coming soon!')" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe Personally <span style="opacity:.7;font-size:12px;">(coming soon)</span>
+            <button onclick="initiatePurchase('user')" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Personally
             </button>
           </div>
 
@@ -9817,6 +9824,127 @@ def _pricing_body() -> str:
       }}
     </style>
     """
+
+
+_STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
+_STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+_STRIPE_PRICES = {
+    "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
+    "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
+}
+
+
+@app.route("/api/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    user_id = session.get("viewer_username")
+    if not user_id:
+        return jsonify({"error": "Must be logged in to subscribe"}), 401
+
+    payload   = request.get_json(force=True)
+    plan      = str(payload.get("plan") or "").strip()
+    league_id = str(payload.get("league_id") or "").strip()
+
+    if plan not in _STRIPE_PRICES:
+        return jsonify({"error": "Invalid plan"}), 400
+
+    price_spec = _STRIPE_PRICES[plan]
+    base_url   = request.host_url.rstrip("/")
+
+    try:
+        checkout = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product": price_spec["product"],
+                    "unit_amount": price_spec["unit_amount"],
+                    "recurring": {"interval": "month"},
+                },
+                "quantity": 1,
+            }],
+            success_url=base_url + "/pricing?success=1",
+            cancel_url=base_url + "/pricing?canceled=1",
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id},
+        )
+        return jsonify({"url": checkout.url})
+    except Exception as e:
+        logger.exception("[stripe] checkout session error: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stripe-webhook", methods=["POST"])
+def stripe_webhook():
+    payload = request.get_data()
+    sig     = request.headers.get("Stripe-Signature", "")
+    secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        return "", 400
+
+    etype = event["type"]
+
+    if etype == "checkout.session.completed":
+        s         = event["data"]["object"]
+        meta      = s.get("metadata") or {}
+        plan      = meta.get("plan")
+        user_id   = meta.get("user_id")
+        league_id = meta.get("league_id") or ""
+        sub_id    = s.get("subscription")
+        cust_id   = s.get("customer")
+
+        # Retrieve subscription to get the real period end
+        try:
+            sub = stripe.Subscription.retrieve(sub_id)
+            expires_at = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
+        except Exception:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=32)
+
+        if plan == "league" and league_id and user_id:
+            create_league_subscription(
+                league_id, user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+        elif plan == "user" and user_id:
+            create_user_subscription(
+                user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+
+    elif etype == "invoice.paid":
+        # Renew expiry on each successful billing cycle
+        s      = event["data"]["object"]
+        sub_id = s.get("subscription")
+        if sub_id:
+            try:
+                sub        = stripe.Subscription.retrieve(sub_id)
+                expires_at = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
+                # Update whichever table holds this subscription
+                from dashboard_services.db import get_conn
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, sub_id),
+                        )
+                        cur.execute(
+                            "UPDATE user_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, sub_id),
+                        )
+            except Exception as e:
+                logger.exception("[stripe] invoice.paid renewal error: %s", e)
+
+    elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
+        s = event["data"]["object"]
+        if s.get("status") in ("canceled", "unpaid", "past_due"):
+            sub_id = s.get("id")
+            cancel_subscription(sub_id, "league")
+            cancel_subscription(sub_id, "user")
+
+    return "", 200
 
 
 @app.route("/<platform>/<int:season>/<league_id>/trade-database")

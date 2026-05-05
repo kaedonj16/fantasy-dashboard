@@ -117,8 +117,24 @@ function showPaywall(feature) {
 /**
  * Initiate purchase flow (placeholder - implement with Stripe)
  */
-function initiatePurchase(type) {
-  window.location.href = '/pricing?plan=' + type;
+async function initiatePurchase(type) {
+  const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
+    window.location.pathname.split('/').filter(Boolean)[2] || '';
+  try {
+    const res = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: type, league_id: leagueId }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert(data.error || 'Could not start checkout. Make sure you are logged in.');
+    }
+  } catch (e) {
+    alert('Checkout unavailable. Please try again.');
+  }
 }
 
 /**
