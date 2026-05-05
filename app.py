@@ -993,9 +993,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Prospects",       "/prospects",   "prospects"),
                 ("Breakouts",       "/breakouts", "breakouts"),
-                ("Prospects",         "/prospects",   "prospects"),
-            ], ["players", "breakouts", "prospects"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
@@ -1088,7 +1088,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Player Rankings", "page_players",  "players",  False),
         ("Prospect Rankings", "page_prospects",  "prospects",   False),
         ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "breakouts", "prospects"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
