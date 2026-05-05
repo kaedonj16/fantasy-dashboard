@@ -11444,6 +11444,10 @@ def api_trade_suggestions():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
+    user_id = session.get("viewer_username")
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         html_out = get_trade_suggestions_html(ctx, viewer_roster_id)
@@ -16245,6 +16249,10 @@ def api_trade_ideas_for_target():
 
     if not league_id or not viewer_roster_id or not target_player_id:
         return jsonify({"error": "Missing required parameters"}), 400
+
+    user_id = session.get("viewer_username")
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
         from utils.utils import load_model_value_table
