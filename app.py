@@ -8484,15 +8484,18 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!prLoaded) return;
         const sortBy = document.getElementById('prSort').value;
 
-        // Update dynamic column header
-        const sortMeta = PR_SORT_META[sortBy] || PR_SORT_META.rank;
+        // On mobile (≤768px) the Age column is hidden, so switch the sort column
+        // to show whatever is being sorted. On desktop all columns are visible.
+        const isMobile = window.innerWidth <= 768;
+        const sortMeta = isMobile ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
         const sortHeaderEl = document.getElementById('prSortHeader');
         if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
-        // Hide age header col when sort=age (shown in sort col instead)
+        // Hide age col only on mobile when sort=age (shown in sort col instead)
         const ageHeaderEl = document.getElementById('prAgeHeader');
-        if (ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
+        if (isMobile && ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
         const ageColEls = document.querySelectorAll('.pr-age');
-        ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
+        if (isMobile) ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
+        else ageColEls.forEach(el => el.style.visibility = '');
 
         let players = prAllPlayers.slice();
 

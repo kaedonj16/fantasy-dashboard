@@ -770,8 +770,10 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     if (!rkLoaded) return;
     var sortBy = document.getElementById('rkSort').value;
 
-    // Update dynamic sort column header
-    var rkSortMeta = RK_SORT_META[sortBy] || RK_SORT_META.adp;
+    // On mobile (≤768px) age and score are hidden, so switch the sort column
+    // to show whatever is being sorted. On desktop all columns are visible.
+    var isMobile = window.innerWidth <= 768;
+    var rkSortMeta = isMobile ? (RK_SORT_META[sortBy] || RK_SORT_META.adp) : RK_SORT_META.adp;
     var rkSortHdr = document.getElementById('rkSortHeader');
     if (rkSortHdr) rkSortHdr.textContent = rkSortMeta.label;
 
