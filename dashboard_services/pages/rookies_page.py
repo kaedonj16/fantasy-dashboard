@@ -294,7 +294,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     transition: all 0.12s;
   }
   .settings-reset-btn:hover {
-    background: var(--card-bg);
+    background: var(--card);
     color: var(--text);
   }
   .active-settings-indicator {
