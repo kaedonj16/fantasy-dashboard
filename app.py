@@ -1429,18 +1429,23 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "drafts":  _get_drafts,
         "state":   _get_state,
     }
-    _results: dict = {}
+    _defaults = {"league": {}, "users": [], "rosters": [], "traded": [], "drafts": [], "state": {}}
+    _results: dict = dict(_defaults)
     with _TPE(max_workers=len(_tasks)) as _pool:
         _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
         for _fut in _ac(_fmap):
-            _results[_fmap[_fut]] = _fut.result()
+            _name = _fmap[_fut]
+            try:
+                _results[_name] = _fut.result()
+            except Exception as _e:
+                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
 
-    league  = _results["league"]
-    users   = _results["users"]
-    rosters = _results["rosters"]
-    traded  = _results["traded"]
-    drafts  = _results["drafts"]
-    current = _results["state"]
+    league  = _results["league"] or {}
+    users   = _results["users"] or []
+    rosters = _results["rosters"] or []
+    traded  = _results["traded"] or []
+    drafts  = _results["drafts"] or []
+    current = _results["state"] or {}
 
     try:
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
@@ -10539,10 +10544,12 @@ def index():
         # pages are fast on first click.
         def _preload_history(p: str, lid: str, s: int) -> None:
             try:
+                time.sleep(3)  # let the foreground redirect complete first
                 hist_seasons = get_available_history_seasons(p, lid, s)
-                for hist_s in hist_seasons:
+                for hist_s in hist_seasons[:3]:  # cap at 3 most-recent seasons
                     rid = resolve_league_id_for_season(p, lid, s, hist_s)
                     get_league_ctx_from_cache(p, rid, hist_s)
+                    time.sleep(2)  # spread out API load to avoid rate limiting
             except Exception:
                 pass
 

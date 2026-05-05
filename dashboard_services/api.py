@@ -557,11 +557,10 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
 
     cache_key = f"{platform}:{league_id}"
 
-    # check cache
-    # cached = LEAGUE_HISTORY_CACHE.get(cache_key)
-    # now = time.time()
-    # if cached and (now - cached["ts"] < LEAGUE_HISTORY_TTL):
-    #     return cached["map"]
+    now = time.time()
+    cached = LEAGUE_HISTORY_CACHE.get(cache_key)
+    if cached and (now - cached["ts"] < LEAGUE_HISTORY_TTL):
+        return cached["map"]
 
     season_map: dict[int, str] = {}
     seen: set[str] = set()
@@ -573,7 +572,6 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         seen.add(cursor_league_id)
         try:
             league = get_league(cursor_league_id) or {}
-
         except Exception:
             break
 
@@ -595,11 +593,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         cursor_league_id = prev_id
         season_cursor = (league_season - 1) if league_season else (season_cursor - 1)
 
-    # cache it
-    # LEAGUE_HISTORY_CACHE[cache_key] = {
-    #     "ts": now,
-    #     "map": season_map,
-    # }
+    LEAGUE_HISTORY_CACHE[cache_key] = {"ts": now, "map": season_map}
 
     return season_map
 
