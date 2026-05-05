@@ -91,7 +91,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
             <option value="value">Value</option>
             <option value="score">Prospect Score</option>
             <option value="age">Age</option>
-            <option value="pick">Draft Pick</option>
+            <option value="adp">ADP</option>
           </select>
         </div>
       </div>
@@ -106,7 +106,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       <span>Prospect</span>
       <span style="text-align:center;">Pos</span>
       <span style="text-align:center;">Age</span>
-      <span style="text-align:center;">ADP</span>
+      <span id="rkSortHeader" style="text-align:center;">ADP</span>
       <span style="text-align:right;">Score</span>
       <span style="text-align:right;">Value</span>
     </div>
@@ -534,17 +534,16 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   /* Mobile */
   @media (max-width: 768px) {
-    /* Show: rank | name | pos | draft | value — hide age and score */
-    .rk-grid-row { grid-template-columns: 34px 1fr 46px 56px 54px !important; }
+    /* Show: rank | name | pos | sort-col | value — hide age and score */
+    .rk-grid-row { grid-template-columns: 34px 1fr 46px 54px 54px !important; }
     .rk-score, #rkHeader span:nth-child(6) { display: none; }
     .rk-age,   #rkHeader span:nth-child(4) { display: none; }
     .rk-row { padding: 8px 10px; }
   }
   @media (max-width: 480px) {
-    /* Show: rank | name | pos | value — also hide draft */
-    .rk-grid-row { grid-template-columns: 30px 1fr 44px 52px !important; }
-    .rk-draft, #rkHeader span:nth-child(5) { display: none; }
-    .rk-draft { font-size: 10px; }
+    /* Show: rank | name | sort-col | value — hide pos */
+    .rk-grid-row { grid-template-columns: 30px 1fr 52px 52px !important; }
+    .rk-pos,  #rkHeader span:nth-child(3) { display: none; }
   }
 
   /* Pagination Styles */
@@ -731,9 +730,23 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       'T' + (tier||'?') + '</span>';
   }
 
+  // Map sort key → { header label, cell value function }
+  var RK_SORT_META = {
+    rank:  { label: 'ADP',   cell: function(r) { return r.adp_rank != null ? parseFloat(r.adp_rank).toFixed(1) : '—'; } },
+    value: { label: 'Value', cell: function(r) { var v = rkGetValue(r); return v > 0 ? v.toFixed(1) : '—'; } },
+    score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '—'; } },
+    age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '—'; } },
+    adp:   { label: 'ADP',   cell: function(r) { return r.adp_rank != null ? parseFloat(r.adp_rank).toFixed(1) : '—'; } },
+  };
+
   function rkRender() {
     if (!rkLoaded) return;
     var sortBy = document.getElementById('rkSort').value;
+
+    // Update dynamic sort column header
+    var rkSortMeta = RK_SORT_META[sortBy] || RK_SORT_META.adp;
+    var rkSortHdr = document.getElementById('rkSortHeader');
+    if (rkSortHdr) rkSortHdr.textContent = rkSortMeta.label;
 
     // 1. Start with full list
     var players = rkAllPlayers.slice();
@@ -760,7 +773,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
           case 'value': return rkGetValue(b) - rkGetValue(a);
           case 'score': return parseFloat(b.prospect_score||0) - parseFloat(a.prospect_score||0);
           case 'age':   return parseFloat(a.age||99) - parseFloat(b.age||99);
-          case 'pick':  return (a.projected_pick||999) - (b.projected_pick||999);
+          case 'adp':   return (a.adp_rank != null ? a.adp_rank : 999) - (b.adp_rank != null ? b.adp_rank : 999);
           default:      return (a.overall_rank||999) - (b.overall_rank||999);
         }
       });
@@ -803,11 +816,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
       var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
-      // Show dynasty rookie ADP avg pick from real drafts or FC rankings
-      var adpDisplay = '—';
-      if (r.adp_rank != null) {
-        adpDisplay = r.adp_rank.toFixed(1);
-      }
+      var sortColDisplay = rkSortMeta.cell(r);
       var posRk = r.position || '';
       if (r.position_rank) posRk += r.position_rank;
 
@@ -831,7 +840,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
         '</div>' +
         '<span class="rk-pos">' + (r.position||'') + '</span>' +
         '<span class="rk-age">' + age + '</span>' +
-        '<span class="rk-draft">' + adpDisplay + '</span>' +
+        '<span class="rk-draft">' + sortColDisplay + '</span>' +
         '<span class="rk-score"><span class="rk-score-bar">' +
           '<span class="rk-score-dot" style="background:' + scoreColor + ';"></span>' +
           score.toFixed(2) + '</span></span>' +
@@ -1066,6 +1075,11 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     .then(function(r){ return r.json(); })
     .then(function(status) {
       rkDraftComplete = status.draft_complete || false;
+      // 1 week after the draft, default sort switches to ADP
+      if (rkDraftComplete && (status.days_since_draft || 0) >= 7) {
+        var sortEl = document.getElementById('rkSort');
+        if (sortEl && sortEl.value === 'rank') sortEl.value = 'adp';
+      }
       return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })

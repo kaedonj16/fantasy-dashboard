@@ -765,20 +765,41 @@ def auto_link(player_id: str):
 def draft_status():
     """Check if the draft is complete for a given year."""
     try:
+        import datetime as _dt
         year = request.args.get("year", type=int)
         if year is None:
             from data_building.rookie_pipeline.pipeline import get_active_rookie_class
             year = get_active_rookie_class()
-        
+
         from data_building.rookie_pipeline.pipeline import is_draft_complete
         from dashboard_services.db import get_conn
-        
+
+        draft_date = None
         with get_conn() as conn:
             draft_complete = is_draft_complete(year, conn)
-        
+            try:
+                row = conn.execute(
+                    "SELECT draft_date FROM rookie_active_class WHERE draft_class_year = %s",
+                    (year,),
+                ).fetchone()
+                if row and row["draft_date"]:
+                    d = row["draft_date"]
+                    if isinstance(d, str):
+                        d = _dt.datetime.strptime(d[:10], "%Y-%m-%d").date()
+                    draft_date = d
+            except Exception:
+                pass
+
+        if draft_date is None:
+            draft_date = _dt.date(year, 4, 26)  # typical end-of-draft fallback
+
+        today = _dt.date.today()
+        days_since = (today - draft_date).days if draft_complete else None
+
         return jsonify({
-            "draft_year": year,
-            "draft_complete": draft_complete
+            "draft_year":       year,
+            "draft_complete":   draft_complete,
+            "days_since_draft": days_since,
         })
     except Exception as exc:
         log.exception("[rookie_api] /draft-status error")

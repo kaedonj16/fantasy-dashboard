@@ -7929,7 +7929,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:34px 20px 1fr 64px 50px 50px 64px;
+             grid-template-columns:28px 18px 1fr 52px 46px 46px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -7938,9 +7938,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           <span style="text-align:center;"></span>
           <span>Player</span>
           <span style="text-align:center;">Pos</span>
-          <span style="text-align:center;">Age</span>
+          <span id="prAgeHeader" style="text-align:center;">Age</span>
           <span style="text-align:right;">Team</span>
-          <span style="text-align:right;">Value</span>
+          <span id="prSortHeader" style="text-align:right;">Value</span>
         </div>
 
         <!-- Player rows -->
@@ -7958,7 +7958,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 25px 25px 1fr 64px 50px 50px 64px;
+        grid-template-columns: 28px 18px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -8263,6 +8263,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         .filter-sort select {
           width: 100%;
         }
+        /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
+        .pr-age,  #prAgeHeader  { display: none !important; }
+      }
+      @media (max-width: 480px) {
+        /* Phone: rank | arrow | name | sort — hide pos and team */
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
+        .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
+        .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
     </style>
 
@@ -8460,10 +8469,30 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         return new Map(ranked.map((p, i) => [String(p.id), i + 1]));
       }
 
+      // Map sort key → { header label, cell value function }
+      const PR_SORT_META = {
+        rank:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        value:    { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        age:      { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '—' },
+        pos_rank: { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
+          ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
+          : (p.pos_rank_label || p.position) },
+      };
+
       // Sort and filter players, then render rows into the main table
       function prRender() {
         if (!prLoaded) return;
         const sortBy = document.getElementById('prSort').value;
+
+        // Update dynamic column header
+        const sortMeta = PR_SORT_META[sortBy] || PR_SORT_META.rank;
+        const sortHeaderEl = document.getElementById('prSortHeader');
+        if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
+        // Hide age header col when sort=age (shown in sort col instead)
+        const ageHeaderEl = document.getElementById('prAgeHeader');
+        if (ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
+        const ageColEls = document.querySelectorAll('.pr-age');
+        ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
 
         let players = prAllPlayers.slice();
 
@@ -8589,6 +8618,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
+          const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -8596,7 +8626,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value">' + prFormatValue(val) + '</span>';
+            '<span class="pr-value">' + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
