@@ -994,8 +994,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Breakouts",       "/breakouts", "breakouts"),
-                ("Rookies",         "/rookies",   "rookies"),
-            ], ["players", "breakouts", "rookies"], "playersNavDropdown"),
+                ("Prospects",         "/prospects",   "prospects"),
+            ], ["players", "breakouts", "prospects"], "playersNavDropdown"),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
