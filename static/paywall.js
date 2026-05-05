@@ -87,7 +87,7 @@ function showPaywall(feature) {
             </div>
             <div class="pricing-price">$10<span>/month</span></div>
             <p class="pricing-desc">Premium for all managers in your league</p>
-            <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('league')">
+            <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('league', this)">
               Subscribe for League
             </button>
           </div>
@@ -97,7 +97,7 @@ function showPaywall(feature) {
             </div>
             <div class="pricing-price">$5<span>/month</span></div>
             <p class="pricing-desc">Premium for all your leagues</p>
-            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('user')">
+            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('user', this)">
               Subscribe Personally
             </button>
           </div>
@@ -114,12 +114,19 @@ function showPaywall(feature) {
   });
 }
 
-/**
- * Initiate purchase flow (placeholder - implement with Stripe)
- */
-async function initiatePurchase(type) {
+async function initiatePurchase(type, btn) {
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] || '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.origText = btn.innerHTML;
+    btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px;justify-content:center;">' +
+      '<span style="width:16px;height:16px;border:2px solid currentColor;border-top-color:transparent;' +
+      'border-radius:50%;display:inline-block;animation:paywall-spin .7s linear infinite;flex-shrink:0;"></span>' +
+      'Redirecting…</span>';
+  }
+
   try {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
@@ -130,9 +137,11 @@ async function initiatePurchase(type) {
     if (data.url) {
       window.location.href = data.url;
     } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
       alert(data.error || 'Could not start checkout. Make sure you are logged in.');
     }
   } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
     alert('Checkout unavailable. Please try again.');
   }
 }
