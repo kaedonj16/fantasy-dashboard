@@ -69,6 +69,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
                 <button class="settings-toggle" data-value="14" onclick="rkSetSize(14)">14</button>
               </div>
             </div>
+            <button class="settings-reset-btn" onclick="rkResetSettings()">Reset to defaults</button>
           </div>
         </div>
       </div>
@@ -278,6 +279,23 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     background: var(--accent);
     color: #fff;
     border-color: var(--accent);
+  }
+  .settings-reset-btn {
+    width: 100%;
+    margin-top: 12px;
+    padding: 7px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .settings-reset-btn:hover {
+    background: var(--card-bg);
+    color: var(--text);
   }
   .active-settings-indicator {
     display: flex;
@@ -678,6 +696,11 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     updateRookieSettingsIndicator();
     rkCurrentPage = 1;
     rkRender();
+  }
+
+  function rkResetSettings() {
+    rkSetLeague('1qb');
+    rkSetSize(10);
   }
 
   function rkTogglePos(pos) {
