@@ -147,10 +147,14 @@ TABLE_CONFIG = [
         "table": "trade_intel_trades",
         "conflict_cols": ["transaction_id"],
         "skip_cols": ["id"],
-        # NOTE: trade_intel_assets is NOT synced here because its trade_id FK
-        # references the BIGSERIAL id of trade_intel_trades, which differs
-        # between local and prod.  Syncing assets requires mapping local ids
-        # to prod ids via transaction_id — use the draft-adp tables instead.
+    },
+    # trade_intel_assets is handled separately via _migrate_assets() because
+    # its trade_id FK references the BIGSERIAL id of trade_intel_trades, which
+    # auto-increments independently on local and prod.  We remap via transaction_id.
+    {
+        "table": "trade_intel_assets",
+        "special": "assets",  # triggers _migrate_assets() instead of _migrate_table()
+        "skip_cols": [],
     },
     {
         "table": "trade_intel_player_stats",
@@ -243,6 +247,7 @@ TABLE_GROUPS: dict[str, set[str]] = {
         "trade_intel_leagues",
         "trade_intel_users",
         "trade_intel_trades",
+        "trade_intel_assets",
         "trade_intel_player_stats",
         "trade_intel_packages",
     },
@@ -275,6 +280,81 @@ def _table_exists(conn: psycopg.Connection, table: str) -> bool:
         (table,),
     ).fetchone()
     return row is not None
+
+
+def _migrate_assets(
+    local_conn: psycopg.Connection,
+    prod_conn: psycopg.Connection,
+    dry_run: bool = False,
+) -> tuple[int, int]:
+    """
+    Sync trade_intel_assets with trade_id remapping.
+
+    trade_intel_trades.id is a BIGSERIAL that auto-increments independently on
+    local and prod, so we can't copy trade_id values directly.  Instead we:
+      1. Build a map  transaction_id → prod trade id  (after trades are synced).
+      2. Find prod trade ids that already have assets (skip those — assumed complete).
+      3. For each local asset whose trade is new to prod, insert it using the
+         prod-assigned trade id.
+    """
+    if not _table_exists(local_conn, "trade_intel_assets"):
+        return 0, 0
+
+    local_assets = local_conn.execute("SELECT * FROM trade_intel_assets").fetchall()
+    if not local_assets:
+        return 0, 0
+
+    if dry_run:
+        return len(local_assets), 0
+
+    # local trade_id → transaction_id
+    local_txn_by_id: dict[int, str] = {
+        row["id"]: row["transaction_id"]
+        for row in local_conn.execute("SELECT id, transaction_id FROM trade_intel_trades").fetchall()
+    }
+
+    # transaction_id → prod trade id  (only trades that exist in prod)
+    prod_id_by_txn: dict[str, int] = {
+        row["transaction_id"]: row["id"]
+        for row in prod_conn.execute("SELECT id, transaction_id FROM trade_intel_trades").fetchall()
+    }
+
+    # prod trade ids that already have assets — skip these entirely
+    prod_trades_with_assets: set[int] = {
+        row["trade_id"]
+        for row in prod_conn.execute("SELECT DISTINCT trade_id FROM trade_intel_assets").fetchall()
+    }
+
+    insert_sql = """
+        INSERT INTO trade_intel_assets
+            (trade_id, side, asset_type, player_id, pick_season, pick_round, pick_order)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """
+
+    inserted = 0
+    with prod_conn.cursor() as cur:
+        for asset in local_assets:
+            txn_id = local_txn_by_id.get(asset["trade_id"])
+            if not txn_id:
+                continue
+            prod_trade_id = prod_id_by_txn.get(txn_id)
+            if not prod_trade_id:
+                continue
+            if prod_trade_id in prod_trades_with_assets:
+                continue
+            cur.execute(insert_sql, (
+                prod_trade_id,
+                asset["side"],
+                asset["asset_type"],
+                asset["player_id"],
+                asset["pick_season"],
+                asset["pick_round"],
+                asset["pick_order"],
+            ))
+            inserted += cur.rowcount
+
+    prod_conn.commit()
+    return len(local_assets), inserted
 
 
 def _migrate_table(
@@ -391,9 +471,14 @@ def main() -> int:
         for cfg in tables_to_run:
             table = cfg["table"]
             try:
-                n_read, n_upserted = _migrate_table(
-                    local_conn, prod_conn, cfg, dry_run=args.dry_run
-                )
+                if cfg.get("special") == "assets":
+                    n_read, n_upserted = _migrate_assets(
+                        local_conn, prod_conn, dry_run=args.dry_run
+                    )
+                else:
+                    n_read, n_upserted = _migrate_table(
+                        local_conn, prod_conn, cfg, dry_run=args.dry_run
+                    )
                 if n_read == 0:
                     print(f"  {table:<42} (skipped — table empty or not found)")
                 elif args.dry_run:
