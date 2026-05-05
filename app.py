@@ -47,7 +47,7 @@ from dashboard_services.api import (
     get_sleeper_user_leagues,
     get_total_rosters,
     resolve_league_id_for_season,
-    avatar_url
+    _avatar_url,
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG
@@ -780,6 +780,7 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
 _PLAYERS_INDEX_GLOBAL = None
+_TEAMS_INDEX_GLOBAL = None
 
 
 def get_players_global():
@@ -794,6 +795,13 @@ def get_players_index_global():
     if _PLAYERS_INDEX_GLOBAL is None:
         _PLAYERS_INDEX_GLOBAL = load_players_index()
     return _PLAYERS_INDEX_GLOBAL
+
+
+def get_teams_index_global():
+    global _TEAMS_INDEX_GLOBAL
+    if _TEAMS_INDEX_GLOBAL is None:
+        _TEAMS_INDEX_GLOBAL = load_teams_index()
+    return _TEAMS_INDEX_GLOBAL
 
 
 def run_daily_data_async(season: int, week: int) -> None:
@@ -1430,23 +1438,18 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "drafts":  _get_drafts,
         "state":   _get_state,
     }
-    _defaults = {"league": {}, "users": [], "rosters": [], "traded": [], "drafts": [], "state": {}}
-    _results: dict = dict(_defaults)
+    _results: dict = {}
     with _TPE(max_workers=len(_tasks)) as _pool:
         _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
         for _fut in _ac(_fmap):
-            _name = _fmap[_fut]
-            try:
-                _results[_name] = _fut.result()
-            except Exception as _e:
-                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
+            _results[_fmap[_fut]] = _fut.result()
 
-    league  = _results["league"] or {}
-    users   = _results["users"] or []
-    rosters = _results["rosters"] or []
-    traded  = _results["traded"] or []
-    drafts  = _results["drafts"] or []
-    current = _results["state"] or {}
+    league  = _results["league"]
+    users   = _results["users"]
+    rosters = _results["rosters"]
+    traded  = _results["traded"]
+    drafts  = _results["drafts"]
+    current = _results["state"]
 
     try:
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
@@ -2846,10 +2849,9 @@ def render_power_and_playoffs(
         """Convert a PowerScore into a 2–100% bar width."""
         if p is None:
             return 100.0
-        span = abs(pmax - pmin)
-        if span == 0:
+        if pmax == pmin:
             return 100.0
-        return max(2.0, min(100.0, (float(v) - min(pmin, pmax)) / span * 100.0))
+        return max(2.0, (float(v) - pmin) / (pmax - pmin) * 100.0)
 
     def safe_int(val, default=0):
         try:
@@ -3011,12 +3013,23 @@ def render_power_and_playoffs(
         seed_map=seed_map,
     )
 
+    # Check if playoff bracket is available
+    has_playoff_bracket = not bracket_html.strip().startswith('<div class=\'po-empty\'>')
+
+    # Build tab buttons conditionally
+    playoff_tab_html = ""
+    playoff_panel_html = ""
+    
+    if has_playoff_bracket:
+        playoff_tab_html = '<button class="tab-btn" data-tab="playoff">Playoff Picture</button>'
+        playoff_panel_html = f'<div class="tab-panel" data-tab="playoff">{bracket_html}</div>'
+
     podium_card = f"""
           <div class="card power" data-section="overview">
             <div class="card-tabs" data-card="power">
               <div class="tab-strip">
                 <button class="tab-btn active" data-tab="power">Power Rankings</button>
-                <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+                {playoff_tab_html}
                 <button class="tab-btn" data-tab="playoff-odds"
                         data-league-id="{league_id}"
                         data-platform="{platform}"
@@ -3027,9 +3040,7 @@ def render_power_and_playoffs(
                   {podium_html}
                   {rankings_html}
                 </div>
-                <div class="tab-panel" data-tab="playoff">
-                  {bracket_html}
-                </div>
+                {playoff_panel_html}
                 <div class="tab-panel" data-tab="playoff-odds" id="playoffOddsPanel">
                   <div class="playoff-odds-loading">
                     <div class="loading-spinner-sm"></div>
@@ -3251,7 +3262,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         av_raw   = u_meta.get("avatar") or (
             f"https://sleepercdn.com/avatars/{u_av}" if platform == "sleeper" and u_av else u_av
         )
-        rid_to_avatar[rid] = avatar_url(av_raw) or ""
+        rid_to_avatar[rid] = _avatar_url(av_raw) or ""
 
     # ── build per-team data ───────────────────────────────────────────────────
     team_rows: list[dict] = []
@@ -3432,7 +3443,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip">
-              <button class="tab-btn active" data-tab="standings">Dynasty Rankings</button>
+              <button class="tab-btn active" data-tab="standings">Value Rankings</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
                   {table_html}
@@ -6342,14 +6353,23 @@ def build_teams_body(ctx: dict) -> str:
             "showlegend":   False,
             "bargap":       0.3,
         })
-        _chart_data_attr  = html.escape(_chart_data,   quote=True)
-        _chart_layout_attr = html.escape(_chart_layout, quote=True)
         _chart_html = (
-            f'<div id="{_chart_div_id}" class="team-value-chart team-chart-lazy"'
-            f' data-chart="{_chart_data_attr}"'
-            f' data-layout="{_chart_layout_attr}">'
-            f'<div class="team-chart-skeleton"></div>'
-            f'</div>'
+            f"<div id='{_chart_div_id}' class='team-value-chart'></div>"
+            f"<script>(function(){{"
+            f"  var d={_chart_data},l={_chart_layout};"
+            f"  function createChart(){{"
+            f"    if(typeof Plotly!=='undefined'){{"
+            f"      Plotly.newPlot('{_chart_div_id}',d,l,{{responsive:true,displayModeBar:false}});"
+            f"    }} else {{"
+            f"      setTimeout(createChart, 100);"
+            f"    }}"
+            f"  }}"
+            f"  if(document.readyState==='loading'){{"
+            f"    document.addEventListener('DOMContentLoaded', createChart);"
+            f"  }} else {{"
+            f"    createChart();"
+            f"  }}"
+            f"}})();</script>"
         )
 
         _gdata = team_grades.get(rid, {})
@@ -7009,40 +7029,6 @@ def build_teams_body(ctx: dict) -> str:
       }});
       // Default sort on load
       sortTeams('posindex');
-
-      // Lazy-render Plotly charts as they scroll into view
-      (function() {{
-        function renderChart(el) {{
-          if (el.dataset.rendered) return;
-          el.dataset.rendered = '1';
-          try {{
-            var trace  = JSON.parse(el.getAttribute('data-chart'));
-            var layout = JSON.parse(el.getAttribute('data-layout'));
-            el.innerHTML = '';
-            Plotly.newPlot(el.id, trace, layout, {{responsive: true, displayModeBar: false}});
-          }} catch(e) {{}}
-        }}
-        function tryRender(el) {{
-          if (typeof Plotly !== 'undefined') {{
-            renderChart(el);
-          }} else {{
-            var t = setInterval(function() {{
-              if (typeof Plotly !== 'undefined') {{ clearInterval(t); renderChart(el); }}
-            }}, 80);
-          }}
-        }}
-        var charts = document.querySelectorAll('.team-chart-lazy');
-        if ('IntersectionObserver' in window) {{
-          var obs = new IntersectionObserver(function(entries) {{
-            entries.forEach(function(e) {{
-              if (e.isIntersecting) {{ tryRender(e.target); obs.unobserve(e.target); }}
-            }});
-          }}, {{ rootMargin: '300px' }});
-          charts.forEach(function(el) {{ obs.observe(el); }});
-        }} else {{
-          charts.forEach(tryRender);
-        }}
-      }})();
     }})();
     </script>
     """
@@ -8135,17 +8121,52 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       /* Pagination */
       .pr-pagination {
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        justify-content: center;
-        gap: 4px;
-        padding: 16px 0 4px;
-        flex-wrap: wrap;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+        margin-top: 12px;
       }
-      .pr-pg-btn {
-        min-width: 34px;
-        height: 34px;
-        padding: 0 8px;
-        border-radius: 8px;
+      .pr-pagination-info {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .pr-pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .pr-pagination-btn {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .pr-pagination-btn:hover:not(:disabled) {
+        background: var(--bg-alt);
+        border-color: var(--accent-color);
+      }
+      .pr-pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .pr-page-numbers {
+        display: flex;
+        gap: 4px;
+      }
+      .pr-page-num {
+        min-width: 32px;
+        height: 32px;
+        padding: 0 6px;
+        border-radius: 6px;
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text);
@@ -8153,10 +8174,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-weight: 600;
         cursor: pointer;
         transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      .pr-pg-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-      .pr-pg-btn.pr-pg-active { background: var(--accent); color: #fff; border-color: var(--accent); }
-      .pr-pg-ellipsis { color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 34px; }
+      .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+      .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -8464,6 +8487,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const start = (prPage - 1) * prPageSize;
         const end   = Math.min(start + prPageSize, total);
         const pageSlice = players.slice(start, end);
+        
+        // Store filtered players count for pagination navigation
+        window.prFilteredPlayers = players;
 
         empty.style.display = 'none';
         header.style.display = 'grid';
@@ -8536,12 +8562,47 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           bar.id = 'prPagination';
           bar.className = 'pr-pagination';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
+          bar.innerHTML = `
+            <div class="pr-pagination-info">
+              <span id="prPaginationText">Showing 1-50 of 100 players</span>
+            </div>
+            <div class="pr-pagination-controls">
+              <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
+                <i class="fa-solid fa-chevron-left"></i> Previous
+              </button>
+              <div id="prPageNumbers" class="pr-page-numbers"></div>
+              <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
+                Next <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+          `;
         }
-        if (totalPages <= 1) { bar.innerHTML = ''; return; }
+        
+        if (totalPages <= 1) { 
+          bar.style.display = 'none'; 
+          return;
+        }
 
-        const maxButtons = 7;
+        bar.style.display = 'flex';
+
+        // Update info text
+        const start = (page - 1) * prPageSize + 1;
+        const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
+        const total = window.prFilteredPlayers.length;
+        document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
+
+        // Update Previous/Next buttons
+        const prevBtn = document.getElementById('prPrevBtn');
+        const nextBtn = document.getElementById('prNextBtn');
+        prevBtn.disabled = page === 1;
+        nextBtn.disabled = page === totalPages;
+
+        // Update page numbers
+        const pageNumbers = document.getElementById('prPageNumbers');
+        const maxPages = 5;
         let pages = [];
-        if (totalPages <= maxButtons) {
+        
+        if (totalPages <= maxPages) {
           for (let i = 1; i <= totalPages; i++) pages.push(i);
         } else {
           pages = [1];
@@ -8552,15 +8613,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           pages.push(totalPages);
         }
 
-        bar.innerHTML = pages.map(p => {
-          if (p === '…') return '<span class="pr-pg-ellipsis">…</span>';
-          const active = p === page ? ' pr-pg-active' : '';
-          return `<button class="pr-pg-btn${active}" onclick="prGoPage(${p})">${p}</button>`;
+        pageNumbers.innerHTML = pages.map(p => {
+          if (p === '…') return '<span style="color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 32px;">…</span>';
+          const active = p === page ? ' pr-page-active' : '';
+          return `<button class="pr-page-num${active}" onclick="prGoPage(${p})">${p}</button>`;
         }).join('');
       }
 
       function prGoPage(p) {
-        prPage = p;
+        if (p === 'prev') {
+          prPage = Math.max(1, prPage - 1);
+        } else if (p === 'next') {
+          const totalPages = Math.ceil(window.prFilteredPlayers.length / prPageSize);
+          prPage = Math.min(totalPages, prPage + 1);
+        } else {
+          prPage = p;
+        }
         prRender();
         // Scroll to top of player list
         const el = document.getElementById('prTableHeader');
@@ -10545,12 +10613,10 @@ def index():
         # pages are fast on first click.
         def _preload_history(p: str, lid: str, s: int) -> None:
             try:
-                time.sleep(3)  # let the foreground redirect complete first
                 hist_seasons = get_available_history_seasons(p, lid, s)
-                for hist_s in hist_seasons[:3]:  # cap at 3 most-recent seasons
+                for hist_s in hist_seasons:
                     rid = resolve_league_id_for_season(p, lid, s, hist_s)
                     get_league_ctx_from_cache(p, rid, hist_s)
-                    time.sleep(2)  # spread out API load to avoid rate limiting
             except Exception:
                 pass
 
@@ -10816,17 +10882,6 @@ _MODEL_VALUE_CACHE = None
 _MODEL_VALUE_CACHE_TS = 0
 _MODEL_VALUE_TTL = 60 * 60  # 1 hour
 
-# Caches for advanced-metrics endpoints (10-minute TTL)
-_ROLE_PLAYERS_CACHE: dict = {}
-_ROLE_PLAYERS_CACHE_TS: dict = {}
-_BREAKOUT_CACHE = None
-_BREAKOUT_CACHE_TS = 0.0
-_ADVANCED_METRICS_TTL = 600
-
-# Cache for player-details available-years scan (5-minute TTL)
-_PLAYER_DETAIL_YEARS_CACHE: set = set()
-_PLAYER_DETAIL_YEARS_CACHE_TS = 0.0
-_PLAYER_DETAIL_YEARS_TTL = 300
 
 def get_model_value_table_cached():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -11194,10 +11249,7 @@ def api_trade_outcome():
 @app.route("/api/trade-eval", methods=["POST"])
 @limiter.limit("10 per minute")
 def api_trade_eval():
-    try:
-        payload = request.get_json(force=True) or {}
-    except Exception:
-        return jsonify({"error": "Invalid JSON payload"}), 400
+    payload = request.get_json(force=True)
 
     league_id = str(payload.get("league_id") or "").strip()
     season = int(payload.get("season") or datetime.now().year)
@@ -11452,9 +11504,9 @@ def api_players():
         q     (str, optional)    — prefix/substring filter applied before paging
     """
     try:
-        from utils.utils import load_players_index
+        from utils.utils import load_players_index, load_model_value_table
         players_index = load_players_index() or {}
-        value_table = get_model_value_table_cached() or []
+        value_table = load_model_value_table() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
         results = []
@@ -11663,8 +11715,6 @@ def api_league_players():
         "sf_value_8", "sf_value_12", "sf_value_14",
     ]
     for _p in model_value_table:
-        if _p.get("is_rookie"):
-            continue
         _pos   = str(_p.get("position") or "").upper()
         _tiers = _DEPTH_DECAY.get(_pos)
         if not _tiers:
@@ -11915,7 +11965,7 @@ def api_player_indicators():
         elites = []
 
         # Load model value table to get current player values
-        value_table = get_model_value_table_cached() or []
+        value_table = load_model_value_table() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
         # Top-N positional rank cutoffs for a 12-man PPR dynasty league
@@ -12022,7 +12072,7 @@ def api_breakout_candidates():
 
                 # Enrich with full player data
                 players_index = load_players_index() or {}
-                value_table = get_model_value_table_cached() or []
+                value_table = load_model_value_table() or []
                 values_by_id = {str(p.get("id")): p for p in value_table}
 
                 for b in breakout_ids:
@@ -12254,7 +12304,6 @@ def api_top_role_players():
         ]
     """
     try:
-        global _ROLE_PLAYERS_CACHE, _ROLE_PLAYERS_CACHE_TS
         from data_building.advanced_metrics import get_top_role_players
 
         position = request.args.get("position")
@@ -12269,11 +12318,6 @@ def api_top_role_players():
         except (TypeError, ValueError):
             limit = 50
 
-        cache_key = (position, limit)
-        now = time.time()
-        if cache_key in _ROLE_PLAYERS_CACHE and now - _ROLE_PLAYERS_CACHE_TS.get(cache_key, 0) < _ADVANCED_METRICS_TTL:
-            return jsonify(_ROLE_PLAYERS_CACHE[cache_key])
-
         players = get_top_role_players(position=position, limit=limit)
 
         # Clean up internal fields
@@ -12284,8 +12328,6 @@ def api_top_role_players():
                 if v is not None and k not in ("player_id", "position", "as_of_date"):
                     player[k] = float(v)
 
-        _ROLE_PLAYERS_CACHE[cache_key] = players
-        _ROLE_PLAYERS_CACHE_TS[cache_key] = now
         return jsonify(players)
 
     except Exception as e:
@@ -12324,7 +12366,6 @@ def api_advanced_metrics_breakout_candidates():
         ]
     """
     try:
-        global _BREAKOUT_CACHE, _BREAKOUT_CACHE_TS
         from data_building.advanced_metrics import detect_breakout_candidates
 
         try:
@@ -12339,17 +12380,11 @@ def api_advanced_metrics_breakout_candidates():
         except (TypeError, ValueError):
             min_games = 2
 
-        now = time.time()
-        if _BREAKOUT_CACHE is not None and now - _BREAKOUT_CACHE_TS < _ADVANCED_METRICS_TTL:
-            return jsonify(_BREAKOUT_CACHE)
-
         candidates = detect_breakout_candidates(
             lookback_days=lookback_days,
             min_games=min_games,
         )
 
-        _BREAKOUT_CACHE = candidates
-        _BREAKOUT_CACHE_TS = now
         return jsonify(candidates)
 
     except Exception as e:
@@ -12464,7 +12499,8 @@ def api_offseason_breakout_candidates():
 
         # Filter out elite players (they shouldn't be breakout candidates)
         # Load model values to check elite thresholds
-        model_values = get_model_value_table_cached() or []
+        from utils.utils import load_model_value_table
+        model_values = load_model_value_table() or []
         values_by_id = {str(p["id"]): p for p in model_values if isinstance(p, dict) and p.get("id")}
 
         # Position-specific elite thresholds
@@ -12677,25 +12713,21 @@ def api_player_details(player_id: str):
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
 
-        # Find all available season years — cached for 5 minutes to avoid
-        # repeated glob scans on every player-details request.
-        global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
-        now = time.time()
-        if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
-            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
-            _fresh_years: set = set()
-            for stats_file in stats_files:
-                try:
-                    basename = os.path.basename(stats_file)
-                    if basename.startswith("sleeper_stats_s"):
-                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                        if match:
-                            _fresh_years.add(int(match.group(1)))
-                except Exception:
-                    continue
-            _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
-            _PLAYER_DETAIL_YEARS_CACHE_TS = now
-        available_years = _PLAYER_DETAIL_YEARS_CACHE
+        # Find all available season years (handle both old and new naming patterns)
+        stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+        available_years = set()
+        for stats_file in stats_files:
+            try:
+                basename = os.path.basename(stats_file)
+                # New pattern: sleeper_stats_s2025_w1_2025-12-16.json
+                if basename.startswith("sleeper_stats_s"):
+                    # Use regex to extract year from s{YEAR}_w{WEEK} pattern
+                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    if match:
+                        year = int(match.group(1))
+                        available_years.add(year)
+            except Exception:
+                continue
 
         # Process each available year
         for season_year in sorted(available_years, reverse=True):  # Most recent first
@@ -14685,17 +14717,14 @@ def api_trade_database():
             if not match_ids:
                 return jsonify({"trades": [], "total": 0, "has_more": False})
 
-        # Build superflex filter as a parameterized condition (no f-string interpolation)
-        sf_param = None
+        sf_filter = ""
         if league_type == "sf":
-            sf_param = True
+            sf_filter = "AND l.is_superflex = TRUE"
         elif league_type == "1qb":
-            sf_param = False
-        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+            sf_filter = "AND l.is_superflex = FALSE"
 
         with get_conn() as conn:
             if match_ids:
-                base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
                     SELECT COUNT(DISTINCT t.id) AS n
@@ -14703,13 +14732,12 @@ def api_trade_database():
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
+                      AND t.season = %s {sf_filter}
                     """,
-                    base_params_count,
+                    (match_ids, season),
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
-                base_params_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
                     SELECT DISTINCT
@@ -14719,36 +14747,34 @@ def api_trade_database():
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
+                      AND t.season = %s {sf_filter}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
-                    base_params_rows,
+                    (match_ids, season, limit + 1, page * limit),
                 ).fetchall()
             else:
-                base_params_count = [season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
                     SELECT COUNT(*) AS n FROM trade_intel_trades t
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
+                    WHERE t.season = %s {sf_filter}
                     """,
-                    base_params_count,
+                    (season,),
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
-                base_params_rows = [season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
                     SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
                            l.scoring_type, l.is_superflex, l.num_teams
                     FROM trade_intel_trades t
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
+                    WHERE t.season = %s {sf_filter}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
-                    base_params_rows,
+                    (season, limit + 1, page * limit),
                 ).fetchall()
 
             has_more = len(trade_rows) > limit
