@@ -145,6 +145,10 @@ else:
     logger.info("[sentry] SENTRY_DSN not set — error tracking disabled")
 
 DASHBOARD_CACHE = {}
+# Per-key locks prevent simultaneous first-loads for the same league from both
+# running the full build_league_context (~40 API calls) at the same time.
+_CTX_LOCKS: dict = {}
+_CTX_LOCKS_LOCK = threading.Lock()
 
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 6  # 6 hours
@@ -780,19 +784,25 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
 _PLAYERS_INDEX_GLOBAL = None
+_players_global_lock = threading.Lock()
+_players_index_lock = threading.Lock()
 
 
 def get_players_global():
     global _PLAYERS_GLOBAL
     if _PLAYERS_GLOBAL is None:
-        _PLAYERS_GLOBAL = get_nfl_players()
+        with _players_global_lock:
+            if _PLAYERS_GLOBAL is None:
+                _PLAYERS_GLOBAL = get_nfl_players()
     return _PLAYERS_GLOBAL
 
 
 def get_players_index_global():
     global _PLAYERS_INDEX_GLOBAL
     if _PLAYERS_INDEX_GLOBAL is None:
-        _PLAYERS_INDEX_GLOBAL = load_players_index()
+        with _players_index_lock:
+            if _PLAYERS_INDEX_GLOBAL is None:
+                _PLAYERS_INDEX_GLOBAL = load_players_index()
     return _PLAYERS_INDEX_GLOBAL
 
 
@@ -1418,7 +1428,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         try:
             return get_drafts(platform, resolved_league_id, season) or []
         except Exception as e:
-            print(f"[build_league_context] failed to load drafts for league {resolved_league_id}: {e}")
+            logger.warning("[build_league_context] failed to load drafts for league %s: %s", resolved_league_id, e)
             return []
     def _get_state():    return get_nfl_state() or {}
 
@@ -1451,7 +1461,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     try:
         latest_draft = get_most_recent_valid_draft_for_season(drafts, season)
     except Exception as e:
-        print(f"[build_league_context] failed to resolve latest draft: {e}")
+        logger.warning("[build_league_context] failed to resolve latest draft: %s", e)
         drafts = []
         latest_draft = None
 
@@ -1491,12 +1501,22 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # For ESPN we need an explicit sync step.
     sync_league_globals(platform, resolved_league_id, season)
 
-    # League settings
-    scoring_settings = get_effective_scoring_settings()
-    raw_scoring_settings = get_effective_scoring_settings() if "get_scoring_settings" in globals() else None
-    roster_positions = get_roster_positions()
-    league_settings = get_league_settings()
-    total_rosters = get_total_rosters()
+    # League settings — read directly from the league dict for Sleeper to avoid reading
+    # module-level globals that may have been overwritten by a concurrent request.
+    if platform == "sleeper":
+        from dashboard_services.api import SCORING_DEFAULTS as _SCORING_DEFAULTS
+        _raw_ss = (league or {}).get("scoring_settings") or {}
+        scoring_settings = {**_SCORING_DEFAULTS, **_raw_ss}
+        raw_scoring_settings = dict(_raw_ss)
+        roster_positions = (league or {}).get("roster_positions") or []
+        league_settings = (league or {}).get("settings") or {}
+        total_rosters = int((league or {}).get("total_rosters") or 0)
+    else:
+        scoring_settings = get_effective_scoring_settings()
+        raw_scoring_settings = {}
+        roster_positions = get_roster_positions()
+        league_settings = get_league_settings()
+        total_rosters = get_total_rosters()
 
     # Core computed tables
     if offseason_mode:
@@ -2085,9 +2105,7 @@ def api_history_summary(platform: str, season: int, league_id: str):
         return jsonify({"html": html})
 
     except Exception as e:
-        print(f"[api_history_summary] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("[api_history_summary] Error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -2126,9 +2144,7 @@ def api_history_standings(platform: str, season: int, league_id: str):
         return jsonify({"html": html})
 
     except Exception as e:
-        print(f"[api_history_standings] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("[api_history_standings] Error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -2185,9 +2201,7 @@ def api_history_chart(platform: str, season: int, league_id: str):
         return jsonify({"data": chart_data})
 
     except Exception as e:
-        print(f"[api_history_chart] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("[api_history_chart] Error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -7384,14 +7398,26 @@ def league_url(slug: str, league_id: Optional[str] = None, platform: Optional[st
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
-    if not entry or (time.time() - entry.get("ts", 0) > CACHE_TTL):
+    if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+        ctx = entry["ctx"]
+        ctx["viewer"] = get_viewer_session()
+        return ctx
+
+    with _CTX_LOCKS_LOCK:
+        if key not in _CTX_LOCKS:
+            _CTX_LOCKS[key] = threading.Lock()
+        key_lock = _CTX_LOCKS[key]
+
+    with key_lock:
+        # Re-check after acquiring lock — another thread may have built it while we waited
+        entry = DASHBOARD_CACHE.get(key)
+        if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+            ctx = entry["ctx"]
+            ctx["viewer"] = get_viewer_session()
+            return ctx
         ctx = build_league_context(platform, league_id, season)
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
         return ctx
-    # Update viewer session with fresh data even for cached contexts
-    ctx = entry["ctx"]
-    ctx["viewer"] = get_viewer_session()
-    return ctx
 
 
 @app.route("/api/trade-count")
@@ -12080,7 +12106,7 @@ def api_breakout_candidates():
         return jsonify(candidates[:limit])
 
     except Exception as e:
-        print(f"[breakout-candidates] Error: {e}")
+        logger.exception("[breakout-candidates] Error")
         import traceback
         traceback.print_exc()
         return jsonify([])
@@ -12222,7 +12248,7 @@ def api_player_advanced_metrics(player_id: str):
         })
 
     except Exception as e:
-        print(f"[player-advanced-metrics] Error for {player_id}: {e}")
+        logger.exception("[player-advanced-metrics] Error for %s", player_id)
         import traceback
         traceback.print_exc()
         return jsonify({
@@ -12289,7 +12315,7 @@ def api_top_role_players():
         return jsonify(players)
 
     except Exception as e:
-        print(f"[top-role-players] Error: {e}")
+        logger.exception("[top-role-players] Error")
         import traceback
         traceback.print_exc()
         return jsonify([])
@@ -12353,7 +12379,7 @@ def api_advanced_metrics_breakout_candidates():
         return jsonify(candidates)
 
     except Exception as e:
-        print(f"[breakout-candidates] Error: {e}")
+        logger.exception("[breakout-candidates] Error")
         import traceback
         traceback.print_exc()
         return jsonify([])
@@ -12716,7 +12742,7 @@ def api_player_details(player_id: str):
                         if isinstance(games, list) and week_num not in schedule_by_week:
                             schedule_by_week[week_num] = games
                 except Exception as e:
-                    print(f"[api_player_details] Error loading schedule {schedule_file}: {e}")
+                    logger.warning("[api_player_details] Error loading schedule %s: %s", schedule_file, e)
                     continue
 
             # Load all stats for this season into memory
@@ -12999,7 +13025,7 @@ def api_player_details(player_id: str):
         return jsonify(response)
 
     except Exception as e:
-        print(f"[api_player_details] Error: {e}")
+        logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -13378,7 +13404,7 @@ def api_team_details(roster_id: str):
                 print(
                     f"[api_team_details] No graphs generated - team_stats: {team_stats is not None}, df_weekly: {df_weekly is not None and not df_weekly.empty}")
         except Exception as graph_err:
-            print(f"[api_team_details] Error getting graph data: {graph_err}")
+            logger.warning("[api_team_details] Error getting graph data: %s", graph_err)
             import traceback
             traceback.print_exc()
             # Continue without graph data
@@ -13403,7 +13429,7 @@ def api_team_details(roster_id: str):
         return jsonify(cleaned_response)
 
     except Exception as e:
-        print(f"[api_team_details] Error: {e}")
+        logger.exception("[api_team_details] Error")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

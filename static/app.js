@@ -27,11 +27,11 @@ window.addEventListener('beforeunload', function() {
 
 // Prevent any programmatic scrolls during initial page load
 let scrollBlocked = true;
-window.addEventListener('scroll', function(e) {
+window.addEventListener('scroll', function() {
   if (scrollBlocked) {
     window.scrollTo(0, 0);
   }
-}, { passive: false });
+}, { passive: true });
 
 // Unblock scrolling after page is fully loaded and initialized
 window.addEventListener('load', function() {
@@ -4177,7 +4177,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const awardsContent = document.getElementById('historyAwardsContent');
       if (awardsContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/summary?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               awardsContent.innerHTML = data.html;
@@ -4197,7 +4197,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const standingsContent = document.getElementById('historyStandingsContent');
       if (standingsContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/standings?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               standingsContent.innerHTML = data.html;
@@ -4215,7 +4215,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const chartContent = document.getElementById('historyChartContent');
       if (chartContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/chart?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               // Empty state or error message
@@ -4328,7 +4328,7 @@ function openPlayerModal(playerId, playerName) {
 
   // Fetch player data
   fetch(apiUrl)
-    .then(res => res.json())
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(data => {
 
       const modalBody = document.getElementById('playerModalBody');
@@ -4950,7 +4950,7 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
 
   fetch(url)
-    .then(res => res.json())
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(metricsData => {
       if (metricsData.error || metricsData.premium_required) {
         const section = document.getElementById('advancedMetricsSection');
@@ -5588,7 +5588,7 @@ function openProspectModal(playerId, playerName) {
 
       // Fetch comparables
       fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
-        .then(function(res){ return res.json(); })
+        .then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(function(cd) {
           var cb = document.getElementById('rkComparablesBody');
           if (!cb) return;
@@ -5723,7 +5723,7 @@ function openCompareSearch(player1Data) {
           ? `/api/player-details/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
           : `/api/player-details/${pid}`;
         fetch(apiUrl)
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
           .then(p2Data => openComparisonView(player1Data, p2Data))
           .catch(() => {
             body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Failed to load player data</div></div>';
@@ -6592,6 +6592,7 @@ function openBreakoutModal(playerId, playerName) {
       return res.json();
     })
     .then(data => {
+      if (!data) return;
       if (data.error) {
         document.getElementById('bkModalBody').innerHTML = `
           <div class="player-modal-loading">

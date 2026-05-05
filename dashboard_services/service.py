@@ -118,7 +118,7 @@ def matchup_cards_last_week(
 
     cards = []
     for mid, rows in by_mid.items():
-        if not rows:
+        if not rows or mid is None or mid == 0:
             continue
         rows = sorted(rows, key=lambda r: str(r.get("roster_id")))
         L = rows[0]

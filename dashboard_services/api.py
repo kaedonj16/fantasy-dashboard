@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import threading
 import time
 from typing import Any, List, Dict, Optional, Union
 
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 _tank01_breaker = get_breaker("tank01", failure_threshold=5, reset_timeout=300)
 
 # ---- League context globals ----
+# Protected by _league_globals_lock to prevent concurrent league loads overwriting each other.
+_league_globals_lock = threading.Lock()
 SCORING_SETTINGS: Dict[str, Any] = {}
 ROSTER_POSITIONS: List[str] = []
 LEAGUE_SETTINGS: Dict[str, Any] = {}
@@ -216,10 +219,11 @@ def get_league(league_id: str) -> dict:
     league = fetch_json(f"/league/{league_id}") or {}
 
     if isinstance(league, dict):
-        SCORING_SETTINGS = league.get("scoring_settings") or {}
-        ROSTER_POSITIONS = league.get("roster_positions") or []
-        LEAGUE_SETTINGS = league.get("settings") or {}
-        TOTAL_ROSTERS = int(league.get("total_rosters") or 0)
+        with _league_globals_lock:
+            SCORING_SETTINGS = league.get("scoring_settings") or {}
+            ROSTER_POSITIONS = league.get("roster_positions") or []
+            LEAGUE_SETTINGS = league.get("settings") or {}
+            TOTAL_ROSTERS = int(league.get("total_rosters") or 0)
 
     return league
 
@@ -264,14 +268,15 @@ def set_league_globals(
     that are normally populated by a Sleeper get_league() call.
     """
     global SCORING_SETTINGS, ROSTER_POSITIONS, LEAGUE_SETTINGS, TOTAL_ROSTERS
-    if scoring_settings is not None:
-        SCORING_SETTINGS = scoring_settings
-    if roster_positions is not None:
-        ROSTER_POSITIONS = roster_positions
-    if league_settings is not None:
-        LEAGUE_SETTINGS = league_settings
-    if total_rosters is not None:
-        TOTAL_ROSTERS = int(total_rosters)
+    with _league_globals_lock:
+        if scoring_settings is not None:
+            SCORING_SETTINGS = scoring_settings
+        if roster_positions is not None:
+            ROSTER_POSITIONS = roster_positions
+        if league_settings is not None:
+            LEAGUE_SETTINGS = league_settings
+        if total_rosters is not None:
+            TOTAL_ROSTERS = int(total_rosters)
 
 
 @ttl_cache(ttl=300)
@@ -362,7 +367,7 @@ def get_sleeper_user_by_username(username: str) -> dict | None:
     if not username:
         return None
 
-    resp = requests.get(f"{SLEEPER_BASE}/user/{username}", timeout=10)
+    resp = SESSION.get(f"{SLEEPER_BASE}/user/{username}", timeout=10)
     if resp.status_code == 404:
         return None
     resp.raise_for_status()
@@ -372,7 +377,7 @@ def get_sleeper_user_by_username(username: str) -> dict | None:
 
 @ttl_cache(ttl=300)
 def get_sleeper_user_leagues(user_id: str, season: int, sport: str = "nfl") -> list[dict]:
-    resp = requests.get(
+    resp = SESSION.get(
         f"{SLEEPER_BASE}/user/{user_id}/leagues/{sport}/{season}",
         timeout=10,
     )

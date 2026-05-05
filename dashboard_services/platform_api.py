@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
 
 from dashboard_services.api import (
     get_league as sleeper_get_league,
@@ -105,4 +108,4 @@ def sync_league_globals(platform: str, league_id: str, season: int) -> None:
                 total_rosters=data.get("total_rosters"),
             )
     except Exception as e:
-        print(f"[sync_league_globals] ESPN failed for league {league_id}: {e}")
+        logger.warning("[sync_league_globals] ESPN failed for league %s: %s", league_id, e)
