@@ -115,6 +115,8 @@ sklearn==0.0
 
 soupsieve==2.8
 
+stripe>=15.0
+
 threadpoolctl==3.6.0
 
 tqdm==4.67.1
