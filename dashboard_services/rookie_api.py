@@ -116,9 +116,8 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP. Try real league draft data first; fall back
-        # to FantasyCalc dynasty rankings when the season's drafts haven't started.
-        _adp_set = False
+        # Overlay dynasty rookie ADP. Use real league draft data where available,
+        # then fill in any remaining players from FantasyCalc dynasty rankings.
         try:
             from dashboard_services.db import get_conn as _gc
             is_sf = league_type == "sf"
@@ -144,12 +143,13 @@ def rankings():
                     if sid and sid in _adp_map:
                         d["adp_rank"] = _adp_map[sid]
                         d["adp_source"] = "db"
-                _adp_set = True
         except Exception:
             pass
 
-        if not _adp_set:
-            # Fall back to FantasyCalc dynasty values to rank rookies by dynasty ADP order
+        # Fill in ADP for any prospects that still have no adp_rank (either the DB
+        # had no data, or the player hasn't been drafted in enough leagues yet).
+        _needs_adp = [d for d in result if d.get("adp_rank") is None]
+        if _needs_adp:
             try:
                 import requests as _req, json as _json
                 from datetime import date as _date
@@ -178,8 +178,11 @@ def rankings():
                     if _sid and _p.get("rosterPosition") != "P":
                         _fc_by_sid[_sid] = _entry.get("overallRank") or 9999
 
-                # Rank only the prospects in this result by their FC overall rank
-                _prospect_sids = [(d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in result]
+                # Rank only the prospects without DB ADP by their FC overall rank
+                _prospect_sids = [
+                    (d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999))
+                    for d in _needs_adp
+                ]
                 _prospect_sids.sort(key=lambda x: x[1])
                 for _rank, (_d, _fc_rank) in enumerate(_prospect_sids, start=1):
                     if _fc_rank < 9999:

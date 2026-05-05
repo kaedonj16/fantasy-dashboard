@@ -994,8 +994,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Breakouts",       "/breakouts", "breakouts"),
-                ("Rookies",         "/rookies",   "rookies"),
-            ], ["players", "breakouts", "rookies"], "playersNavDropdown"),
+                ("Prospects",         "/prospects",   "prospects"),
+            ], ["players", "breakouts", "prospects"], "playersNavDropdown"),
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
@@ -9041,6 +9041,35 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       </div>
     </div>
 
+    <!-- Trade History Modal -->
+    <div id="tiTradesOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeTITradesModal()">
+      <div class="ti-trades-modal">
+        <div class="ti-trades-header">
+          <div>
+            <div id="tiTradesName" class="ti-trades-name"></div>
+            <div id="tiTradesMeta" class="ti-trades-meta"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <button class="ti-profile-btn" onclick="viewTIPlayerProfile()">View Profile</button>
+            <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
+          </div>
+        </div>
+        <div class="ti-trades-lf-bar">
+          <button class="ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
+          <button class="ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
+          <button class="ti-lf-btn" data-lf="1qb" onclick="switchTILF('1qb')">1QB</button>
+        </div>
+        <div id="tiTradesBody" class="ti-trades-body">
+          <div class="ti-trades-msg">Loading trades&hellip;</div>
+        </div>
+        <div id="tiTradesPager" class="ti-trades-pager" style="display:none;">
+          <button id="tiTradesPrev" onclick="prevTITrades()" disabled>&larr; Prev</button>
+          <span id="tiTradesPagerInfo"></span>
+          <button id="tiTradesNext" onclick="nextTITrades()" disabled>Next &rarr;</button>
+        </div>
+      </div>
+    </div>
+
     <style>
       .ti-controls {{
         display: flex;
@@ -9208,6 +9237,92 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         color: var(--card);
         border-color: var(--accent-color);
         font-weight: 700;
+      }}
+
+      /* ── Trade History Modal ── */
+      .ti-trades-modal {{
+        background: var(--card-bg);
+        border-radius: 16px;
+        width: min(600px, 96vw);
+        max-height: 82vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      }}
+      .ti-trades-header {{
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 20px 20px 14px;
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }}
+      .ti-trades-name {{ font-size: 18px; font-weight: 700; }}
+      .ti-trades-meta {{ font-size: 13px; color: var(--text-muted); margin-top: 3px; }}
+      .ti-trades-close {{
+        background: none; border: none; font-size: 20px;
+        color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
+      }}
+      .ti-trades-close:hover {{ color: var(--text-color); }}
+      .ti-profile-btn {{
+        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        border: 1px solid var(--border-color); background: var(--bg-alt, #f1f5f9);
+        color: var(--text-color); cursor: pointer; white-space: nowrap;
+        transition: opacity .15s;
+      }}
+      .ti-profile-btn:hover {{ opacity: .75; }}
+      .ti-trades-lf-bar {{
+        display: flex; gap: 6px; padding: 12px 20px;
+        border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+      }}
+      .ti-lf-btn {{
+        padding: 5px 14px; border-radius: 20px;
+        border: 1px solid var(--border-color); background: var(--card-bg);
+        color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
+        transition: all .15s;
+      }}
+      .ti-lf-btn.active {{
+        background: var(--text-color); color: var(--card-bg);
+        border-color: var(--text-color);
+      }}
+      .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
+      .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
+      .ti-trade-item {{
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border-color);
+      }}
+      .ti-trade-item:last-child {{ border-bottom: none; }}
+      .ti-trade-date {{
+        font-size: 11px; color: var(--text-muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+      }}
+      .ti-trade-sides {{
+        display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
+      }}
+      .ti-trade-side-label {{
+        font-size: 10px; font-weight: 700; letter-spacing: .06em;
+        color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
+      }}
+      .ti-trade-asset {{ font-size: 13px; padding: 2px 0; line-height: 1.4; }}
+      .ti-trade-asset.focus {{ font-weight: 700; }}
+      .ti-trade-asset.other {{ color: var(--text-muted); }}
+      .ti-trade-asset.pick {{ color: var(--text-muted); font-style: italic; }}
+      .ti-trade-arrow {{ text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }}
+      .ti-trades-pager {{
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px; border-top: 1px solid var(--border-color); flex-shrink: 0;
+      }}
+      .ti-trades-pager button {{
+        padding: 6px 14px; border-radius: 8px;
+        border: 1px solid var(--border-color); background: var(--card-bg);
+        color: var(--text-color); font-size: 13px; cursor: pointer;
+      }}
+      .ti-trades-pager button:disabled {{ opacity: .4; cursor: default; }}
+      #tiTradesPagerInfo {{ font-size: 13px; color: var(--text-muted); }}
+      @media (max-width: 480px) {{
+        .ti-trades-modal {{ border-radius: 12px 12px 0 0; max-height: 90vh; align-self: flex-end; width: 100%; }}
+        #tiTradesOverlay {{ align-items: flex-end !important; }}
       }}
     </style>
 
@@ -9378,9 +9493,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           // Pre-process strings to avoid backslashes
           const player_json = JSON.stringify(p).replace(/"/g, '\\"');
           const escaped_name = name.replace(/'/g, "\\'");
-          const onclick_js = p.is_rookie && p.is_rookie !== 'False' ? `rkOpenModal(${{player_json}})` : `openPlayerModal(${{p.player_id}},'${{escaped_name}}')`;
 
-          return `<div class="ti-card" onclick="${{onclick_js}}">
+          return `<div class="ti-card" onclick="openTITradesModal(${{player_json}})">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{name}}</div>
@@ -9398,6 +9512,130 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         }}).join('');
       }}
       
+      // ── Trade History Modal ────────────────────────────────────────────────
+      const _tiTrades = {{
+        player: null,
+        page: 1,
+        leagueFilter: 'all',
+        total: 0,
+        totalPages: 1,
+      }};
+
+      window.openTITradesModal = function(playerData) {{
+        _tiTrades.player = playerData;
+        _tiTrades.page = 1;
+        _tiTrades.leagueFilter = 'all';
+        document.getElementById('tiTradesName').textContent = playerData.name || 'Player';
+        const pos  = playerData.position || '';
+        const team = playerData.team || '';
+        const cnt  = playerData.trade_count_all;
+        const cntTxt = cnt ? ` · ${{cnt}} trades tracked` : '';
+        document.getElementById('tiTradesMeta').textContent = [pos, team].filter(Boolean).join(' · ') + cntTxt;
+        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === 'all'));
+        const overlay = document.getElementById('tiTradesOverlay');
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        _loadTITrades(1);
+      }};
+
+      window.closeTITradesModal = function() {{
+        document.getElementById('tiTradesOverlay').style.display = 'none';
+        document.body.style.overflow = '';
+      }};
+
+      window.viewTIPlayerProfile = function() {{
+        const p = _tiTrades.player;
+        if (!p) return;
+        closeTITradesModal();
+        if (p.is_rookie && p.is_rookie !== 'False') {{
+          rkOpenModal(p);
+        }} else {{
+          const name = (p.name || '').replace(/'/g, "\\'");
+          openPlayerModal(p.player_id, name);
+        }}
+      }};
+
+      window.switchTILF = function(lf) {{
+        _tiTrades.leagueFilter = lf;
+        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
+        _loadTITrades(1);
+      }};
+
+      window.prevTITrades = function() {{ if (_tiTrades.page > 1) _loadTITrades(_tiTrades.page - 1); }};
+      window.nextTITrades = function() {{ if (_tiTrades.page < _tiTrades.totalPages) _loadTITrades(_tiTrades.page + 1); }};
+
+      function _loadTITrades(page) {{
+        const p = _tiTrades.player;
+        if (!p) return;
+        _tiTrades.page = page;
+        document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
+        document.getElementById('tiTradesPager').style.display = 'none';
+        const qs = new URLSearchParams({{
+          season: TI_SEASON,
+          league_type: _tiTrades.leagueFilter,
+          page,
+          limit: 15,
+        }});
+        fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
+          .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
+          .then(_renderTITrades)
+          .catch(() => {{
+            document.getElementById('tiTradesBody').innerHTML =
+              '<div class="ti-trades-msg">Failed to load trades.</div>';
+          }});
+      }}
+
+      function _renderTITrades(data) {{
+        const body = document.getElementById('tiTradesBody');
+        _tiTrades.total = data.total || 0;
+        _tiTrades.totalPages = data.total_pages || 1;
+
+        if (!data.trades || data.trades.length === 0) {{
+          body.innerHTML = '<div class="ti-trades-msg">No trades found for this filter.</div>';
+          return;
+        }}
+
+        function assetHtml(a) {{
+          if (a.type === 'pick') {{
+            return `<div class="ti-trade-asset pick">${{a.name}}</div>`;
+          }}
+          const posTag = a.position && a.position !== '?' ? ` <span style="font-size:11px;opacity:.6;">${{a.position}}</span>` : '';
+          const cls = a.is_focus ? 'focus' : 'other';
+          return `<div class="ti-trade-asset ${{cls}}">${{a.name}}${{posTag}}</div>`;
+        }}
+
+        body.innerHTML = data.trades.map(t => {{
+          const sideA = (t.side_a || []).map(assetHtml).join('');
+          const sideB = (t.side_b || []).map(assetHtml).join('');
+          const fmt   = t.is_superflex ? 'SF' : t.is_superflex === false ? '1QB' : '';
+          const teams = t.num_teams ? `${{t.num_teams}}-team` : '';
+          const ctx   = [teams, fmt].filter(Boolean).join(' ');
+          const meta  = [t.date, ctx].filter(Boolean).join(' · ');
+          return `<div class="ti-trade-item">
+            <div class="ti-trade-date">${{meta}}</div>
+            <div class="ti-trade-sides">
+              <div>
+                <div class="ti-trade-side-label">Side A</div>
+                ${{sideA}}
+              </div>
+              <div class="ti-trade-arrow">&#x21C4;</div>
+              <div>
+                <div class="ti-trade-side-label">Side B</div>
+                ${{sideB}}
+              </div>
+            </div>
+          </div>`;
+        }}).join('');
+
+        if (_tiTrades.totalPages > 1 || _tiTrades.total > 0) {{
+          document.getElementById('tiTradesPager').style.display = 'flex';
+          document.getElementById('tiTradesPrev').disabled = !data.has_prev;
+          document.getElementById('tiTradesNext').disabled = !data.has_next;
+          document.getElementById('tiTradesPagerInfo').textContent =
+            `Page ${{data.page}} of ${{data.total_pages}} · ${{data.total}} trades`;
+        }}
+      }}
+
       // Expose functions to global scope for onclick handlers
       window.loadTIPage = loadTIPage;
     }})();
@@ -14956,6 +15194,146 @@ def api_trade_database():
 
     except Exception:
         logger.exception("[trade-database] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/player-trades/<player_id>")
+def api_trade_intel_player_trades(player_id: str):
+    """
+    Paginated trade history for a single player.
+    ?season=<int>  &league_type=all|sf|1qb  &page=<int>  &limit=<int>
+    Returns each trade with both sides and is_focus=True on the queried player.
+    """
+    try:
+        season      = int(request.args.get("season") or datetime.now().year)
+        league_type = (request.args.get("league_type") or "all").strip().lower()
+        page        = max(1, int(request.args.get("page") or 1))
+        limit       = min(int(request.args.get("limit") or 15), 50)
+        offset      = (page - 1) * limit
+
+        sf_param = None
+        if league_type == "sf":
+            sf_param = True
+        elif league_type == "1qb":
+            sf_param = False
+        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+
+        players_map = load_players_index() or {}
+
+        with get_conn() as conn:
+            base = [player_id, season] + ([sf_param] if sf_param is not None else [])
+
+            count_row = conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT t.id) AS n
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.season = %s {sf_clause}
+                """,
+                base,
+            ).fetchone()
+            total = int(count_row["n"]) if count_row else 0
+
+            trade_rows = conn.execute(
+                f"""
+                SELECT DISTINCT
+                    t.id, t.transaction_id, t.season, t.week, t.created_at,
+                    l.is_superflex, l.num_teams
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.season = %s {sf_clause}
+                ORDER BY t.created_at DESC NULLS LAST
+                LIMIT %s OFFSET %s
+                """,
+                base + [limit, offset],
+            ).fetchall()
+
+            if not trade_rows:
+                return jsonify({"trades": [], "total": total, "page": page,
+                                "total_pages": 0, "has_prev": False, "has_next": False})
+
+            trade_ids = [r["id"] for r in trade_rows]
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order, pick_slot
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        assets_by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in assets_by_trade:
+                assets_by_trade[tid] = {"a": [], "b": []}
+            assets_by_trade[tid][a["side"]].append(a)
+
+        def describe(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = str(a["player_id"])
+                info = players_map.get(pid) or {}
+                return {
+                    "type":      "player",
+                    "player_id": pid,
+                    "name":      info.get("name") or pid,
+                    "position":  info.get("pos") or "?",
+                    "is_focus":  pid == str(player_id),
+                }
+            s     = str(a["pick_season"]) if a["pick_season"] else "?"
+            r     = str(a["pick_round"])  if a["pick_round"]  else "?"
+            slot  = a.get("pick_slot")
+            if slot:
+                name = f"{s} Pick {r}.{str(slot).zfill(2)}"
+            else:
+                order = a["pick_order"] or ""
+                name  = f"{s} Round {r}" + (f" ({order})" if order else "")
+            return {"type": "pick", "name": name, "is_focus": False}
+
+        result = []
+        for r in trade_rows:
+            tid   = r["id"]
+            sides = assets_by_trade.get(tid, {"a": [], "b": []})
+            side_a = [describe(a) for a in sides["a"]]
+            side_b = [describe(a) for a in sides["b"]]
+            if not side_a or not side_b:
+                continue
+            trade_date = None
+            if r["created_at"]:
+                try:
+                    trade_date = r["created_at"].strftime("%-m/%-d/%y")
+                except Exception:
+                    trade_date = str(r["created_at"])[:10]
+            result.append({
+                "trade_id":    r["transaction_id"],
+                "date":        trade_date,
+                "is_superflex": r["is_superflex"],
+                "num_teams":   r["num_teams"],
+                "side_a":      side_a,
+                "side_b":      side_b,
+            })
+
+        total_pages = max(1, (total + limit - 1) // limit)
+        return jsonify({
+            "trades":      result,
+            "total":       total,
+            "page":        page,
+            "total_pages": total_pages,
+            "has_prev":    page > 1,
+            "has_next":    page < total_pages,
+        })
+
+    except Exception:
+        logger.exception("[player-trades] error")
         return jsonify({"error": "Internal error"}), 500
 
 
