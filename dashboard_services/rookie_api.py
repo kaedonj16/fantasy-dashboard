@@ -116,78 +116,95 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP. Use real league draft data where available,
-        # then fill in any remaining players from FantasyCalc dynasty rankings.
+        # Overlay dynasty rookie ADP for both SF and 1QB formats.
+        # Returns adp_rank (1QB) and sf_adp_rank (SF) so the client can pick the
+        # right field without needing a separate fetch per format.
         try:
             from dashboard_services.db import get_conn as _gc
-            is_sf = league_type == "sf"
+            _ADP_SQL = """
+                SELECT player_id,
+                       SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick
+                FROM draft_adp
+                WHERE season = %s AND draft_type = 'rookie' AND is_superflex = %s
+                GROUP BY player_id
+                HAVING SUM(sample_size) >= 1
+                ORDER BY avg_pick ASC
+            """
             with _gc() as _conn:
-                _adp_rows = _conn.execute(
-                    """
-                    SELECT player_id,
-                           SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick,
-                           SUM(sample_size) AS total_samples
-                    FROM draft_adp
-                    WHERE season = %s AND draft_type = 'rookie'
-                      AND is_superflex = %s
-                    GROUP BY player_id
-                    HAVING SUM(sample_size) >= 3
-                    ORDER BY avg_pick ASC
-                    """,
-                    (year, is_sf),
-                ).fetchall()
-            if _adp_rows:
-                _adp_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _adp_rows}
-                for d in result:
-                    sid = str(d.get("sleeper_id") or "")
-                    if sid and sid in _adp_map:
-                        d["adp_rank"] = _adp_map[sid]
-                        d["adp_source"] = "db"
+                _sf_rows  = _conn.execute(_ADP_SQL, (year, True)).fetchall()
+                _qb1_rows = _conn.execute(_ADP_SQL, (year, False)).fetchall()
+            _sf_map  = {str(r["player_id"]): float(r["avg_pick"]) for r in _sf_rows}
+            _qb1_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _qb1_rows}
+            for d in result:
+                sid = str(d.get("sleeper_id") or "")
+                if sid:
+                    if sid in _sf_map:
+                        d["sf_adp_rank"] = _sf_map[sid]
+                    if sid in _qb1_map:
+                        d["adp_rank"] = _qb1_map[sid]
         except Exception:
             pass
 
-        # Fill in ADP for any prospects that still have no adp_rank (either the DB
-        # had no data, or the player hasn't been drafted in enough leagues yet).
-        _needs_adp = [d for d in result if d.get("adp_rank") is None]
-        if _needs_adp:
+        # FC fallback: for each format, fill in any prospects still missing ADP.
+        # Results are cached in-memory per process (keyed by date) to avoid live
+        # network calls on every request.
+        _FC_CACHE: dict = getattr(_get_rankings, "_fc_cache", {})
+        if not hasattr(_get_rankings, "_fc_cache"):
+            _get_rankings._fc_cache = _FC_CACHE  # type: ignore[attr-defined]
+
+        def _get_fc_data(is_sf_flag: bool):
+            from datetime import date as _date
+            import requests as _req, json as _json
+            _key = ("sf" if is_sf_flag else "1qb", _date.today().isoformat())
+            if _key in _FC_CACHE:
+                return _FC_CACHE[_key]
             try:
-                import requests as _req, json as _json
-                from datetime import date as _date
                 from utils.paths import DATA_DIR
-                is_sf = league_type == "sf"
-                _fc_cache = DATA_DIR / f"fc_dynasty_rookie_adp_{'sf' if is_sf else '1qb'}_{_date.today().isoformat()}.json"
-                if _fc_cache.exists():
-                    _fc_data = _json.loads(_fc_cache.read_text())
+                _cache_file = DATA_DIR / f"fc_dynasty_rookie_adp_{'sf' if is_sf_flag else '1qb'}_{_key[1]}.json"
+                if _cache_file.exists():
+                    data = _json.loads(_cache_file.read_text())
                 else:
-                    _num_qbs = 2 if is_sf else 1
+                    _num_qbs = 2 if is_sf_flag else 1
                     _resp = _req.get(
                         f"https://fantasycalc.com/api/values/current?numQbs={_num_qbs}&type=1&ppr=0.5",
-                        timeout=8, headers={"User-Agent": "fantasy-dashboard/1.0"},
+                        timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"},
                     )
-                    _fc_data = _resp.json() if _resp.ok else []
+                    data = _resp.json() if _resp.ok else []
                     try:
-                        _fc_cache.write_text(_json.dumps(_fc_data))
+                        _cache_file.write_text(_json.dumps(data))
                     except Exception:
                         pass
+                _FC_CACHE[_key] = data
+                return data
+            except Exception:
+                return []
 
-                # Build sleeper_id -> overall rank for rookies only
-                _fc_by_sid = {}
-                for _entry in (_fc_data or []):
-                    _p = _entry.get("player") or {}
-                    _sid = str(_p.get("sleeperId") or "")
-                    if _sid and _p.get("rosterPosition") != "P":
-                        _fc_by_sid[_sid] = _entry.get("overallRank") or 9999
+        def _apply_fc_adp(prospects, adp_field: str, is_sf_flag: bool):
+            _fc_data = _get_fc_data(is_sf_flag)
+            _fc_by_sid = {}
+            for _entry in (_fc_data or []):
+                _p = _entry.get("player") or {}
+                _sid = str(_p.get("sleeperId") or "")
+                if _sid and _p.get("rosterPosition") != "P":
+                    _fc_by_sid[_sid] = _entry.get("overallRank") or 9999
+            ranked = sorted(
+                [(d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in prospects],
+                key=lambda x: x[1],
+            )
+            for _rank, (_d, _fc_rank) in enumerate(ranked, start=1):
+                if _fc_rank < 9999:
+                    _d[adp_field] = float(_rank)
 
-                # Rank only the prospects without DB ADP by their FC overall rank
-                _prospect_sids = [
-                    (d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999))
-                    for d in _needs_adp
-                ]
-                _prospect_sids.sort(key=lambda x: x[1])
-                for _rank, (_d, _fc_rank) in enumerate(_prospect_sids, start=1):
-                    if _fc_rank < 9999:
-                        _d["adp_rank"] = float(_rank)
-                        _d["adp_source"] = "fc"
+        _needs_sf  = [d for d in result if d.get("sf_adp_rank")  is None]
+        _needs_qb1 = [d for d in result if d.get("adp_rank") is None]
+        if _needs_sf:
+            try:
+                _apply_fc_adp(_needs_sf, "sf_adp_rank", True)
+            except Exception:
+                pass
+        if _needs_qb1:
+            try:
+                _apply_fc_adp(_needs_qb1, "adp_rank", False)
             except Exception:
                 pass
 
