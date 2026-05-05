@@ -127,7 +127,7 @@ def rankings():
                 FROM draft_adp
                 WHERE season = %s AND draft_type = 'rookie' AND is_superflex = %s
                 GROUP BY player_id
-                HAVING SUM(sample_size) >= 1
+                HAVING SUM(sample_size) >= 2
                 ORDER BY avg_pick ASC
             """
             with _gc() as _conn:
