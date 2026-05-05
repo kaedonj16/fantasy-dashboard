@@ -77,7 +77,7 @@
   --card: #ffffff;
   --card-soft: #f8fafc;
   --row: #f8fafc;
-  --text: #111827;
+  --text: #122d4b;
   --text-muted: #6b7280;
   --text-subtle: #94a3b8;
   --border: #dbe2ea;
@@ -918,15 +918,6 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 
 .settings-menu-item.refresh-spinner .settings-menu-icon {
   animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .breakout-filter-btn:hover {
@@ -1907,6 +1898,23 @@ button:hover {
   margin-bottom: 12px;
 }
 
+.team-chart-skeleton {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(90deg,
+    var(--bg-alt, #1e293b) 25%,
+    var(--border, #334155) 50%,
+    var(--bg-alt, #1e293b) 75%);
+  background-size: 200% 100%;
+  animation: chartShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes chartShimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 .pos-strength-table {
   width: 100%;
   border-collapse: collapse;
@@ -1934,6 +1942,11 @@ button:hover {
 
 .standings-table td.team {
   text-align: left;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 38%;
 }
 
 .standings-table td.team img {
@@ -1953,16 +1966,6 @@ button:hover {
 
 .standings-table tr {
   height: 46px;
-}
-
-/* ── Standings / dynasty table mobile ────────────────────────────────────── */
-/* Team-name cell: use max-width:0 trick so ellipsis fires in table layout  */
-.standings-table td.team {
-  max-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 38%;
 }
 
 @media (max-width: 640px) {
@@ -4850,7 +4853,7 @@ thead th {
 .os-waiver-right {
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
+  align-items: center;
   gap: 5px;
   flex-shrink: 0;
 }
@@ -6357,6 +6360,7 @@ thead th {
 
 .manager-pill:hover {
   background: var(--accent);
+  color: white;
 }
 
 .manager-pills-carousel {

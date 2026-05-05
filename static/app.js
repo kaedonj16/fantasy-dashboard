@@ -27,11 +27,11 @@ window.addEventListener('beforeunload', function() {
 
 // Prevent any programmatic scrolls during initial page load
 let scrollBlocked = true;
-window.addEventListener('scroll', function(e) {
+window.addEventListener('scroll', function() {
   if (scrollBlocked) {
     window.scrollTo(0, 0);
   }
-}, { passive: false });
+}, { passive: true });
 
 // Unblock scrolling after page is fully loaded and initialized
 window.addEventListener('load', function() {
@@ -1366,34 +1366,44 @@ window.initTradePage = function initTradePage(root = document) {
 
     const errorBox = root.querySelector("#errorBox");
 
-    try {
-      const res = await fetch("/api/league-players", { cache: "no-store" });
-      if (!res.ok) {
-        throw new Error("Failed to load players (" + res.status + ").");
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 1000));
+      try {
+        const res = await fetch("/api/league-players", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
+        const data = await res.json();
+        const rawData = Array.isArray(data) ? data : [];
+
+        const players = rawData.filter(p => p.position !== "PICK");
+        const picks = rawData.filter(p => p.position === "PICK");
+
+        allPlayers = [
+          ...players
+            .filter(p => p && typeof p === "object" && p.id != null)
+            .map(normalizePlayerRow)
+            .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
+          ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
+        ].sort((a, b) => {
+          const vb = Number(b.value || 0);
+          const va = Number(a.value || 0);
+          if (vb !== va) return vb - va;
+          return String(a.name || "").localeCompare(String(b.name || ""));
+        });
+
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn("[trade] ensurePlayersLoaded attempt", attempt + 1, "failed:", err.message);
       }
-      const data = await res.json();
-      const rawData = Array.isArray(data) ? data : [];
+    }
 
-      const players = rawData.filter(p => p.position !== "PICK");
-      const picks = rawData.filter(p => p.position === "PICK");
-
-      allPlayers = [
-        ...players
-          .filter(p => p && typeof p === "object" && p.id != null)
-          .map(normalizePlayerRow)
-          .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
-        ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
-      ].sort((a, b) => {
-        const vb = Number(b.value || 0);
-        const va = Number(a.value || 0);
-        if (vb !== va) return vb - va;
-        return String(a.name || "").localeCompare(String(b.name || ""));
-      });
-    } catch (err) {
-      console.error("Error loading data:", err);
+    if (lastErr) {
+      console.error("Error loading data:", lastErr);
       if (errorBox) {
         errorBox.style.display = "block";
-        errorBox.textContent = err.message || "Failed to load data.";
+        errorBox.textContent = lastErr.message || "Failed to load data.";
       }
       return;
     }
@@ -1802,8 +1812,7 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = "";
       }
 
-      fetchTradeIntel();
-      fetchSimilarTrades();
+      Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -1910,12 +1919,15 @@ window.initTradePage = function initTradePage(root = document) {
     intelBody.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:#9ca3af;font-size:12px;padding:4px 0;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading market data...</div>';
     intelPanel.style.display = "";
 
+    const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
     const results = await Promise.all(
       playerIds.map(p =>
-        fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => d ? { ...d, name: p.name, side: p.side } : null)
-          .catch(() => null)
+        Promise.race([
+          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d ? { ...d, name: p.name, side: p.side } : null),
+          _timeout(8000),
+        ]).catch(() => null)
       )
     );
 
@@ -2129,10 +2141,14 @@ window.initTradePage = function initTradePage(root = document) {
                                viewer_roster_id: viewerRosterId,
                                target_player_id: playerId, league_type: leagueType }),
       });
-      const data = await res.json();
-
       const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
         style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
+
+      if (!res.ok) {
+        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">Failed to load packages.</span>`;
+        return;
+      }
+      const data = await res.json();
 
       if (!data.success || !data.packages) {
         panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;
@@ -4113,6 +4129,7 @@ document.addEventListener('DOMContentLoaded', function() {
           })
         });
 
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
         if (data.success) {
@@ -4160,7 +4177,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const awardsContent = document.getElementById('historyAwardsContent');
       if (awardsContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/summary?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               awardsContent.innerHTML = data.html;
@@ -4180,7 +4197,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const standingsContent = document.getElementById('historyStandingsContent');
       if (standingsContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/standings?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               standingsContent.innerHTML = data.html;
@@ -4198,7 +4215,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const chartContent = document.getElementById('historyChartContent');
       if (chartContent) {
         fetch(`/api/history/${platform}/${season}/${leagueId}/chart?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => res.json())
+          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
           .then(data => {
             if (data.html) {
               // Empty state or error message
@@ -4311,7 +4328,7 @@ function openPlayerModal(playerId, playerName) {
 
   // Fetch player data
   fetch(apiUrl)
-    .then(res => res.json())
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(data => {
 
       const modalBody = document.getElementById('playerModalBody');
@@ -4933,7 +4950,7 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
 
   fetch(url)
-    .then(res => res.json())
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(metricsData => {
       if (metricsData.error || metricsData.premium_required) {
         const section = document.getElementById('advancedMetricsSection');
@@ -5571,7 +5588,7 @@ function openProspectModal(playerId, playerName) {
 
       // Fetch comparables
       fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
-        .then(function(res){ return res.json(); })
+        .then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(function(cd) {
           var cb = document.getElementById('rkComparablesBody');
           if (!cb) return;
@@ -5706,7 +5723,7 @@ function openCompareSearch(player1Data) {
           ? `/api/player-details/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
           : `/api/player-details/${pid}`;
         fetch(apiUrl)
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
           .then(p2Data => openComparisonView(player1Data, p2Data))
           .catch(() => {
             body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Failed to load player data</div></div>';
@@ -6393,6 +6410,10 @@ async function checkTradeOutcome(btn) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      resultEl.innerHTML = `<p class="outcome-error">Could not load outcome data.</p>`;
+      return;
+    }
     const data = await res.json();
 
     if (!data.success) {
@@ -6571,6 +6592,7 @@ function openBreakoutModal(playerId, playerName) {
       return res.json();
     })
     .then(data => {
+      if (!data) return;
       if (data.error) {
         document.getElementById('bkModalBody').innerHTML = `
           <div class="player-modal-loading">

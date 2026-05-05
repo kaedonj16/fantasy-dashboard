@@ -10,7 +10,7 @@ import pandas as pd
 import requests
 
 from dashboard_services.api import (
-    _avatar_url,
+    avatar_url,
     get_nfl_state,
     avatar_from_users,
 )
@@ -118,7 +118,7 @@ def matchup_cards_last_week(
 
     cards = []
     for mid, rows in by_mid.items():
-        if not rows:
+        if not rows or mid is None or mid == 0:
             continue
         rows = sorted(rows, key=lambda r: str(r.get("roster_id")))
         L = rows[0]
@@ -319,7 +319,7 @@ def build_tables(
             avatar_id = user_meta.get("avatar") or (
                 f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
 
-        owner_avatar[display] = _avatar_url(avatar_id)
+        owner_avatar[display] = avatar_url(avatar_id)
 
     def _fetch_week(week: int) -> list[dict]:
         try:
@@ -359,7 +359,10 @@ def build_tables(
             df_weekly.loc[i1, "points_against"] = p2
             df_weekly.loc[i2, "points_against"] = p1
 
-    df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
+    if "owner" in df_weekly.columns:
+        df_weekly["avatar"] = df_weekly["owner"].map(owner_avatar)
+    else:
+        df_weekly["avatar"] = None
 
     _state = get_nfl_state() or {}
     state_season_type = (_state.get("season_type") or "").lower()
@@ -1513,8 +1516,10 @@ def build_picks_by_roster(
         traded: List[dict] = None,
         draft_ended: bool = False,
 ) -> Dict[str, List[dict]]:
-    current_season = int(league["season"])
-    num_rounds = int(league["settings"].get("draft_rounds", 4))
+    current_season = int((league or {}).get("season") or 0)
+    if not current_season:
+        return {}
+    num_rounds = int((league or {}).get("settings", {}).get("draft_rounds", 4))
     start_offset = 1 if draft_ended else 0
 
     all_picks: List[dict] = []

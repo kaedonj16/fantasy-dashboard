@@ -277,7 +277,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NULL
                   AND league_type IN (1, 2)  -- dynasty and redraft
-                ORDER BY discovered_at ASC
+                ORDER BY discovered_at DESC
                 LIMIT %s
             """
             params = (batch_size,)
@@ -290,7 +290,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                   AND last_crawled_week IS NOT NULL
                   AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
                   AND league_type IN (1, 2)  -- dynasty and redraft
-                ORDER BY last_crawled_at ASC NULLS FIRST
+                ORDER BY last_crawled_at DESC NULLS LAST
                 LIMIT %s
             """
             params = (recrawl_days, batch_size)
@@ -303,7 +303,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                     WHERE crawl_enabled = TRUE
                       AND last_crawled_week IS NULL
                       AND league_type = 2
-                    ORDER BY discovered_at ASC
+                    ORDER BY discovered_at DESC
                     LIMIT %s
                 ),
                 existing_leagues AS (
@@ -313,7 +313,7 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                       AND last_crawled_week IS NOT NULL
                       AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
                       AND league_type = 2
-                    ORDER BY last_crawled_at ASC NULLS FIRST
+                    ORDER BY last_crawled_at DESC NULLS LAST
                     LIMIT %s
                 ),
                 combined AS (

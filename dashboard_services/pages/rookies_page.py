@@ -625,13 +625,16 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
   var RK_PER_PAGE = 50;
 
   function rkGetValue(r) {
-    var key;
+    // Prefer values from the main player_values DB (overlaid by server when sleeper_id
+    // is linked), so the prospects page stays in sync with the /players page.
     if (rkLeague === 'sf') {
-      key = rkSize === 10 ? 'rookie_sf_value' : 'rookie_sf_value_' + rkSize;
-      return parseFloat(r[key] || r['rookie_sf_value'] || 0);
+      var dbKey = rkSize === 10 ? 'sf_value' : 'sf_value_' + rkSize;
+      var pipeKey = rkSize === 10 ? 'rookie_sf_value' : 'rookie_sf_value_' + rkSize;
+      return parseFloat(r[dbKey] || r['sf_value'] || r[pipeKey] || r['rookie_sf_value'] || 0);
     } else {
-      key = rkSize === 10 ? 'rookie_value' : 'rookie_value_' + rkSize;
-      return parseFloat(r[key] || r['rookie_value'] || 0);
+      var dbKey = rkSize === 10 ? 'value' : 'value_' + rkSize;
+      var pipeKey = rkSize === 10 ? 'rookie_value' : 'rookie_value_' + rkSize;
+      return parseFloat(r[dbKey] || r['value'] || r[pipeKey] || r['rookie_value'] || 0);
     }
   }
 
@@ -847,8 +850,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
     var modal   = document.getElementById('rkModal');
     var content = document.getElementById('rkModalContent');
 
-    var val1qb = parseFloat(r.rookie_value||0);
-    var valsf  = parseFloat(r.rookie_sf_value||0);
+    var val1qb = parseFloat(r.value || r.rookie_value || 0);
+    var valsf  = parseFloat(r.sf_value || r.rookie_sf_value || 0);
     var score  = parseFloat(r.prospect_score||0);
     var conf   = parseFloat(r.confidence_score||0);
     var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '—';

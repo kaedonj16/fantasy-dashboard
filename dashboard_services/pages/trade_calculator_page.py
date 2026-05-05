@@ -1,4 +1,7 @@
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
@@ -32,7 +35,7 @@ def build_trade_calculator_body(
                 count = result[0] if result else 0
             trade_count = f"{count:,}"
     except Exception as e:
-        print("Trade count error:", e)
+        logger.warning("Trade count error: %s", e)
         pass
 
     # Clamp logged-in league size to nearest supported value
