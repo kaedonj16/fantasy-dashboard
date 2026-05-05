@@ -6773,6 +6773,25 @@ thead th {
   box-shadow: 0 8px 28px rgba(234, 88, 12, 0.22);
 }
 
+/* Mobile: make second and third podium slots smaller than first */
+@media (max-width: 768px) {
+  .podium .slot.second,
+  .podium .slot.third {
+    padding: 8px;
+    font-size: 13px;
+  }
+  
+  .podium .slot.second .name,
+  .podium .slot.third .name {
+    font-size: 14px;
+  }
+  
+  .podium .slot.second .rec,
+  .podium .slot.third .rec {
+    font-size: 11px;
+  }
+}
+
 .pos-badge {
   height: 25px;
   width: 36px;

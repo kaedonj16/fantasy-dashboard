@@ -3025,12 +3025,23 @@ def render_power_and_playoffs(
         seed_map=seed_map,
     )
 
+    # Check if playoff bracket is available
+    has_playoff_bracket = not bracket_html.strip().startswith('<div class=\'po-empty\'>')
+
+    # Build tab buttons conditionally
+    playoff_tab_html = ""
+    playoff_panel_html = ""
+    
+    if has_playoff_bracket:
+        playoff_tab_html = '<button class="tab-btn" data-tab="playoff">Playoff Picture</button>'
+        playoff_panel_html = f'<div class="tab-panel" data-tab="playoff">{bracket_html}</div>'
+
     podium_card = f"""
           <div class="card power" data-section="overview">
             <div class="card-tabs" data-card="power">
               <div class="tab-strip">
                 <button class="tab-btn active" data-tab="power">Power Rankings</button>
-                <button class="tab-btn" data-tab="playoff">Playoff Picture</button>
+                {playoff_tab_html}
                 <button class="tab-btn" data-tab="playoff-odds"
                         data-league-id="{league_id}"
                         data-platform="{platform}"
@@ -3041,9 +3052,7 @@ def render_power_and_playoffs(
                   {podium_html}
                   {rankings_html}
                 </div>
-                <div class="tab-panel" data-tab="playoff">
-                  {bracket_html}
-                </div>
+                {playoff_panel_html}
                 <div class="tab-panel" data-tab="playoff-odds" id="playoffOddsPanel">
                   <div class="playoff-odds-loading">
                     <div class="loading-spinner-sm"></div>
@@ -3446,7 +3455,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip">
-              <button class="tab-btn active" data-tab="standings">Dynasty Rankings</button>
+              <button class="tab-btn active" data-tab="standings">Value Rankings</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
                   {table_html}
@@ -8161,17 +8170,52 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       /* Pagination */
       .pr-pagination {
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        justify-content: center;
-        gap: 4px;
-        padding: 16px 0 4px;
-        flex-wrap: wrap;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+        margin-top: 12px;
       }
-      .pr-pg-btn {
-        min-width: 34px;
-        height: 34px;
-        padding: 0 8px;
-        border-radius: 8px;
+      .pr-pagination-info {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .pr-pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .pr-pagination-btn {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .pr-pagination-btn:hover:not(:disabled) {
+        background: var(--bg-alt);
+        border-color: var(--accent-color);
+      }
+      .pr-pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .pr-page-numbers {
+        display: flex;
+        gap: 4px;
+      }
+      .pr-page-num {
+        min-width: 32px;
+        height: 32px;
+        padding: 0 6px;
+        border-radius: 6px;
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text);
@@ -8179,10 +8223,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-weight: 600;
         cursor: pointer;
         transition: background 0.12s, border-color 0.12s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      .pr-pg-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-      .pr-pg-btn.pr-pg-active { background: var(--accent); color: #fff; border-color: var(--accent); }
-      .pr-pg-ellipsis { color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 34px; }
+      .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+      .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -8490,6 +8536,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const start = (prPage - 1) * prPageSize;
         const end   = Math.min(start + prPageSize, total);
         const pageSlice = players.slice(start, end);
+        
+        // Store filtered players count for pagination navigation
+        window.prFilteredPlayers = players;
 
         empty.style.display = 'none';
         header.style.display = 'grid';
@@ -8562,12 +8611,47 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           bar.id = 'prPagination';
           bar.className = 'pr-pagination';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
+          bar.innerHTML = `
+            <div class="pr-pagination-info">
+              <span id="prPaginationText">Showing 1-50 of 100 players</span>
+            </div>
+            <div class="pr-pagination-controls">
+              <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
+                <i class="fa-solid fa-chevron-left"></i> Previous
+              </button>
+              <div id="prPageNumbers" class="pr-page-numbers"></div>
+              <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
+                Next <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+          `;
         }
-        if (totalPages <= 1) { bar.innerHTML = ''; return; }
+        
+        if (totalPages <= 1) { 
+          bar.style.display = 'none'; 
+          return;
+        }
 
-        const maxButtons = 7;
+        bar.style.display = 'flex';
+
+        // Update info text
+        const start = (page - 1) * prPageSize + 1;
+        const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
+        const total = window.prFilteredPlayers.length;
+        document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
+
+        // Update Previous/Next buttons
+        const prevBtn = document.getElementById('prPrevBtn');
+        const nextBtn = document.getElementById('prNextBtn');
+        prevBtn.disabled = page === 1;
+        nextBtn.disabled = page === totalPages;
+
+        // Update page numbers
+        const pageNumbers = document.getElementById('prPageNumbers');
+        const maxPages = 5;
         let pages = [];
-        if (totalPages <= maxButtons) {
+        
+        if (totalPages <= maxPages) {
           for (let i = 1; i <= totalPages; i++) pages.push(i);
         } else {
           pages = [1];
@@ -8578,15 +8662,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           pages.push(totalPages);
         }
 
-        bar.innerHTML = pages.map(p => {
-          if (p === '…') return '<span class="pr-pg-ellipsis">…</span>';
-          const active = p === page ? ' pr-pg-active' : '';
-          return `<button class="pr-pg-btn${active}" onclick="prGoPage(${p})">${p}</button>`;
+        pageNumbers.innerHTML = pages.map(p => {
+          if (p === '…') return '<span style="color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 32px;">…</span>';
+          const active = p === page ? ' pr-page-active' : '';
+          return `<button class="pr-page-num${active}" onclick="prGoPage(${p})">${p}</button>`;
         }).join('');
       }
 
       function prGoPage(p) {
-        prPage = p;
+        if (p === 'prev') {
+          prPage = Math.max(1, prPage - 1);
+        } else if (p === 'next') {
+          const totalPages = Math.ceil(window.prFilteredPlayers.length / prPageSize);
+          prPage = Math.min(totalPages, prPage + 1);
+        } else {
+          prPage = p;
+        }
         prRender();
         // Scroll to top of player list
         const el = document.getElementById('prTableHeader');
