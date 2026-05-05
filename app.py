@@ -77,6 +77,7 @@ from dashboard_services.platform_api import (
     sync_league_globals,
 )
 from dashboard_services.players import get_players_map
+from dashboard_services.subscriptions import has_premium_access
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.service import (
     build_matchups_by_week,
@@ -489,6 +490,7 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
+    <link rel="stylesheet" href="/static/paywall.css">
 
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script>
@@ -558,6 +560,7 @@ BASE_HTML = """
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="/static/paywall.js"></script>
     <script>
       // Initialize AdSense ads after page loads
       window.addEventListener('load', function() {{
@@ -8808,6 +8811,8 @@ def page_prospects(platform: str, season: int, league_id: str):
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform)
     body_html = f"""
     <div class="card central">
       <div class="card-header">
@@ -8844,6 +8849,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     </div>
 
     <script>
+      const BO_HAS_PREMIUM = {str(has_premium).lower()};
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
 
@@ -8891,9 +8897,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
         document.getElementById('breakoutsEmpty').style.display = 'none';
         container.style.display = 'block';
 
+        const FREE_LIMIT = 3;
+        const visible = BO_HAS_PREMIUM ? filtered : filtered.slice(0, FREE_LIMIT);
+        const locked = !BO_HAS_PREMIUM && filtered.length > FREE_LIMIT;
+
         let html = '<div class="breakout-grid">';
 
-        filtered.forEach(candidate => {{
+        visible.forEach(candidate => {{
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
@@ -8974,6 +8984,16 @@ def page_breakouts(platform: str, season: int, league_id: str):
           `;
         }});
 
+        if (locked) {{
+          html += `
+            <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
+              <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+              <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
+              <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
+              <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+            </div>
+          `;
+        }}
         html += '</div>';
         container.innerHTML = html;
       }}
@@ -9000,6 +9020,8 @@ def page_breakouts_guest():
 
 @app.route("/<platform>/<int:season>/<league_id>/trade-intel")
 def page_trade_intel(platform: str, season: int, league_id: str):
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform)
     body_html = f"""
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
@@ -9362,6 +9384,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     <script>
     (function() {{
       const TI_SEASON = {season};
+      const TI_HAS_PREMIUM = {str(has_premium).lower()};
       let currentPage = 1;
       let paginationData = null;
       let currentTab = 'trending';
@@ -9476,7 +9499,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         
         const grid  = document.getElementById('tiGrid');
         const empty = document.getElementById('tiEmpty');
-        
+
         if (filteredPlayers.length === 0) {{
           grid.style.display = 'none';
           empty.style.display = '';
@@ -9485,7 +9508,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         empty.style.display = 'none';
         grid.style.display = '';
 
-        grid.innerHTML = filteredPlayers.map(p => {{
+        const FREE_LIMIT = 5;
+        const displayPlayers = TI_HAS_PREMIUM ? filteredPlayers : filteredPlayers.slice(0, FREE_LIMIT);
+        const showPaywallCard = !TI_HAS_PREMIUM && filteredPlayers.length > FREE_LIMIT;
+
+        grid.innerHTML = displayPlayers.map(p => {{
           const name   = p.name || 'Unknown';
           const pos    = p.position || '?';
           const team   = p.team || '?';
@@ -9540,7 +9567,13 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
           </div>`;
-        }}).join('');
+        }}).join('') + (showPaywallCard ? `
+          <div class="ti-card" onclick="showPaywall('trade-history')" style="cursor:pointer;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:160px;background:var(--card);">
+            <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+            <div style="font-weight:700;font-size:14px;">Unlock Full Access</div>
+            <div style="font-size:12px;color:var(--text-muted);text-align:center;">See all players &amp; trade history<br>with a premium subscription</div>
+            <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+          </div>` : '');
       }}
       
       // ── Trade History Modal ────────────────────────────────────────────────
@@ -9553,6 +9586,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }};
 
       window.openTITradesModal = function(playerData) {{
+        if (!TI_HAS_PREMIUM) {{ showPaywall('trade-history'); return; }}
         _tiTrades.player = playerData;
         _tiTrades.page = 1;
         _tiTrades.leagueFilter = 'all';
@@ -9680,6 +9714,109 @@ def page_trade_intel_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/pricing")
+def page_pricing(platform: str, season: int, league_id: str):
+    body_html = _pricing_body()
+    return render_page("Pricing", league_id, None, body_html, platform, season)
+
+
+@app.route("/pricing")
+def page_pricing_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    body_html = _pricing_body()
+    return render_page("Pricing", None, None, body_html, "sleeper", current_season)
+
+
+def _pricing_body() -> str:
+    plan = request.args.get("plan", "")
+    league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
+    user_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user" else ""
+    return f"""
+    <div class="card central" style="max-width:760px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
+        <h2 style="margin:0 0 6px;font-size:22px;">BR Fantasy Premium</h2>
+        <div style="font-size:14px;color:var(--text-muted);">
+          Unlock advanced analytics and insights for your dynasty league
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:28px;">
+
+        <!-- Feature list -->
+        <div style="margin-bottom:28px;">
+          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What you get</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-chart-line" style="color:#667eea;width:16px;text-align:center;"></i>
+              Full Trade Intelligence feed
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-fire" style="color:#667eea;width:16px;text-align:center;"></i>
+              All Breakout Engine candidates
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-clock-rotate-left" style="color:#667eea;width:16px;text-align:center;"></i>
+              Player trade history
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-star" style="color:#667eea;width:16px;text-align:center;"></i>
+              All future premium features
+            </div>
+          </div>
+        </div>
+
+        <!-- Pricing cards -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
+
+          <!-- League plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="font-size:17px;font-weight:700;">League Plan</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/month</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
+            <button onclick="alert('Stripe checkout coming soon!')" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe for League <span style="opacity:.7;font-size:12px;">(coming soon)</span>
+            </button>
+          </div>
+
+          <!-- Personal plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{user_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
+              <div style="font-size:17px;font-weight:700;">Personal Plan</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $5<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/month</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
+            <button onclick="alert('Stripe checkout coming soon!')" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Personally <span style="opacity:.7;font-size:12px;">(coming soon)</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Free tier note -->
+        <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
+          <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
+          ADP rankings and basic player data are always free.
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      @media (max-width: 540px) {{
+        .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
+        .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
+      }}
+    </style>
+    """
 
 
 @app.route("/<platform>/<int:season>/<league_id>/trade-database")

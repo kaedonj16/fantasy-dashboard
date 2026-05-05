@@ -51,9 +51,10 @@ async function getSubscriptionInfo(userId, leagueId) {
  */
 function showPaywall(feature) {
   const featureNames = {
-    'breakout-candidates': 'Breakout Candidates',
+    'breakout-candidates': 'Breakout Engine',
     'advanced-metrics': 'Advanced Metrics',
-    'ai-insights': 'AI Insights'
+    'ai-insights': 'AI Insights',
+    'trade-history': 'Trade History'
   };
 
   const featureName = featureNames[feature] || 'Premium Feature';
@@ -83,8 +84,8 @@ function showPaywall(feature) {
               <h4>League Plan</h4>
               <div class="pricing-badge">Recommended</div>
             </div>
-            <div class="pricing-price">$29.99<span>/year</span></div>
-            <p class="pricing-desc">Entire league gets premium access</p>
+            <div class="pricing-price">$10<span>/month</span></div>
+            <p class="pricing-desc">Premium for all managers in your league</p>
             <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('league')">
               Subscribe for League
             </button>
@@ -93,8 +94,8 @@ function showPaywall(feature) {
             <div class="pricing-header">
               <h4>Personal Plan</h4>
             </div>
-            <div class="pricing-price">$19.99<span>/year</span></div>
-            <p class="pricing-desc">Premium access for all your leagues</p>
+            <div class="pricing-price">$5<span>/month</span></div>
+            <p class="pricing-desc">Premium for all your leagues</p>
             <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('user')">
               Subscribe Personally
             </button>
@@ -116,9 +117,7 @@ function showPaywall(feature) {
  * Initiate purchase flow (placeholder - implement with Stripe)
  */
 function initiatePurchase(type) {
-  console.log(`[paywall] Initiating ${type} purchase`);
-  // TODO: Implement Stripe checkout
-  alert(`${type} subscription checkout coming soon! This will integrate with Stripe.`);
+  window.location.href = '/pricing?plan=' + type;
 }
 
 /**
