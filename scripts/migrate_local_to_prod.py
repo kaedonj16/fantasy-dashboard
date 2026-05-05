@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
 """
-Migrate all data from a local Postgres database to the production database.
-Each table is read from the local DB and upserted into the prod DB so that
-local data wins on conflict. Tables that have foreign-key dependencies are
-migrated in the correct order.
+Sync data from a local Postgres database to the production database.
+
+Only ADDS rows that prod doesn't have yet — never overwrites existing prod data.
+Tables with foreign-key dependencies are synced in the correct order.
+
 Usage:
     LOCAL_DATABASE_URL=postgresql://... PROD_DATABASE_URL=postgresql://... \\
         python scripts/migrate_local_to_prod.py
-    # Migrate only rookie-related tables:
+
+    # Sync only ADP tables:
+    LOCAL_DATABASE_URL=... PROD_DATABASE_URL=... \\
+        python scripts/migrate_local_to_prod.py --tables adp
+
+    # Sync only rookie-related tables:
     LOCAL_DATABASE_URL=... PROD_DATABASE_URL=... \\
         python scripts/migrate_local_to_prod.py --tables rookie
-    # Migrate specific tables:
+
+    # Sync specific tables:
     LOCAL_DATABASE_URL=... PROD_DATABASE_URL=... \\
-        python scripts/migrate_local_to_prod.py --tables rookie_prospects rookie_rankings
+        python scripts/migrate_local_to_prod.py --tables draft_adp rookie_rankings
+
     # Preview row counts without writing anything:
     LOCAL_DATABASE_URL=... PROD_DATABASE_URL=... \\
         python scripts/migrate_local_to_prod.py --dry-run
@@ -131,14 +139,18 @@ TABLE_CONFIG = [
         "skip_cols": [],
     },
     {
+        "table": "trade_intel_users",
+        "conflict_cols": ["user_id"],
+        "skip_cols": [],
+    },
+    {
         "table": "trade_intel_trades",
         "conflict_cols": ["transaction_id"],
         "skip_cols": ["id"],
-    },
-    {
-        "table": "trade_intel_assets",
-        "conflict_cols": ["trade_id", "side", "asset_type"],
-        "skip_cols": ["id"],
+        # NOTE: trade_intel_assets is NOT synced here because its trade_id FK
+        # references the BIGSERIAL id of trade_intel_trades, which differs
+        # between local and prod.  Syncing assets requires mapping local ids
+        # to prod ids via transaction_id — use the draft-adp tables instead.
     },
     {
         "table": "trade_intel_player_stats",
@@ -149,6 +161,22 @@ TABLE_CONFIG = [
         "table": "trade_intel_packages",
         "conflict_cols": ["anchor_player_id", "package_key", "season"],
         "skip_cols": ["id"],
+    },
+    # Draft ADP (migrate in FK order: leagues → drafts → picks → aggregated)
+    {
+        "table": "draft_adp_drafts",
+        "conflict_cols": ["draft_id"],
+        "skip_cols": [],
+    },
+    {
+        "table": "draft_adp_picks",
+        "conflict_cols": ["draft_id", "pick_no"],
+        "skip_cols": ["id"],
+    },
+    {
+        "table": "draft_adp",
+        "conflict_cols": ["player_id", "draft_type", "season", "is_superflex", "num_teams"],
+        "skip_cols": [],
     },
     # Rookie tables — migrate in FK order (active_class and prospects first)
     {
@@ -195,16 +223,33 @@ TABLE_CONFIG = [
     },
 ]
 
-ROOKIE_TABLE_NAMES = {
-    "rookie_active_class",
-    "rookie_prospects",
-    "rookie_prospect_source_data",
-    "rookie_prospect_athleticism",
-    "rookie_mock_draft_entries",
-    "rookie_mock_draft_consensus",
-    "rookie_rankings",
-    "rookie_value_history",
+TABLE_GROUPS: dict[str, set[str]] = {
+    "rookie": {
+        "rookie_active_class",
+        "rookie_prospects",
+        "rookie_prospect_source_data",
+        "rookie_prospect_athleticism",
+        "rookie_mock_draft_entries",
+        "rookie_mock_draft_consensus",
+        "rookie_rankings",
+        "rookie_value_history",
+    },
+    "adp": {
+        "draft_adp_drafts",
+        "draft_adp_picks",
+        "draft_adp",
+    },
+    "trade": {
+        "trade_intel_leagues",
+        "trade_intel_users",
+        "trade_intel_trades",
+        "trade_intel_player_stats",
+        "trade_intel_packages",
+    },
 }
+
+# Keep for backwards compatibility
+ROOKIE_TABLE_NAMES = TABLE_GROUPS["rookie"]
 
 
 def _adapt(v: Any) -> Any:
@@ -267,21 +312,10 @@ def _migrate_table(
     else:
         conflict_target = ", ".join(cfg["conflict_cols"])
 
-    # Columns to update (everything except the conflict key columns)
-    conflict_key_set = set(cfg.get("conflict_cols", []))
-    update_cols = [c for c in insert_cols if c not in conflict_key_set]
-
-    if update_cols:
-        update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
-        upsert_sql = (
-            f"INSERT INTO {table} ({col_names}) VALUES ({col_placeholders}) "
-            f"ON CONFLICT ({conflict_target}) DO UPDATE SET {update_set}"
-        )
-    else:
-        upsert_sql = (
-            f"INSERT INTO {table} ({col_names}) VALUES ({col_placeholders}) "
-            f"ON CONFLICT ({conflict_target}) DO NOTHING"
-        )
+    upsert_sql = (
+        f"INSERT INTO {table} ({col_names}) VALUES ({col_placeholders}) "
+        f"ON CONFLICT ({conflict_target}) DO NOTHING"
+    )
 
     upserted = 0
     with prod_conn.cursor() as cur:
@@ -305,8 +339,8 @@ def main() -> int:
         nargs="*",
         metavar="TABLE",
         help=(
-            "Tables to migrate. Use 'rookie' as a shorthand for all rookie tables. "
-            "Omit to migrate all tables."
+            "Tables to sync. Use a group shorthand (rookie, adp, trade) or individual "
+            "table names. Omit to sync all tables."
         ),
     )
     parser.add_argument(
@@ -325,21 +359,22 @@ def main() -> int:
     else:
         expanded: set[str] = set()
         for t in args.tables:
-            if t == "rookie":
-                expanded |= ROOKIE_TABLE_NAMES
+            if t in TABLE_GROUPS:
+                expanded |= TABLE_GROUPS[t]
             else:
                 expanded.add(t)
         tables_to_run = [cfg for cfg in TABLE_CONFIG if cfg["table"] in expanded]
         if not tables_to_run:
             print(f"No matching tables found for: {args.tables}")
+            print(f"Groups available: {', '.join(TABLE_GROUPS)}")
             return 1
 
-    print("Local DB -> Prod DB Migration")
+    print("Local DB -> Prod DB Sync  (add-only, never overwrites prod data)")
     print("=" * 60)
     if args.dry_run:
         print("DRY RUN — no writes to prod DB")
     else:
-        print(f"Migrating {len(tables_to_run)} table(s) to prod DB.")
+        print(f"Syncing {len(tables_to_run)} table(s) to prod DB.")
         confirm = input("Proceed? [y/N] ").strip().lower()
         if confirm != "y":
             print("Aborted.")
@@ -380,7 +415,7 @@ def main() -> int:
     if args.dry_run:
         print(f"Dry run complete — {total_read} rows across {len(tables_to_run)} table(s).")
     else:
-        print(f"Done — {total_read} rows read, {total_upserted} upserted.")
+        print(f"Done — {total_read} rows read, {total_upserted} inserted (skipped existing).")
 
     if errors:
         print(f"\n{len(errors)} table(s) had errors:")
