@@ -9049,7 +9049,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <div id="tiTradesName" class="ti-trades-name"></div>
             <div id="tiTradesMeta" class="ti-trades-meta"></div>
           </div>
-          <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <button class="ti-profile-btn" onclick="viewTIPlayerProfile()">View Profile</button>
+            <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
+          </div>
         </div>
         <div class="ti-trades-lf-bar">
           <button class="ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
@@ -9262,6 +9265,13 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
       }}
       .ti-trades-close:hover {{ color: var(--text-color); }}
+      .ti-profile-btn {{
+        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        border: 1px solid var(--border-color); background: var(--bg-alt, #f1f5f9);
+        color: var(--text-color); cursor: pointer; white-space: nowrap;
+        transition: opacity .15s;
+      }}
+      .ti-profile-btn:hover {{ opacity: .75; }}
       .ti-trades-lf-bar {{
         display: flex; gap: 6px; padding: 12px 20px;
         border-bottom: 1px solid var(--border-color); flex-shrink: 0;
@@ -9531,6 +9541,18 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       window.closeTITradesModal = function() {{
         document.getElementById('tiTradesOverlay').style.display = 'none';
         document.body.style.overflow = '';
+      }};
+
+      window.viewTIPlayerProfile = function() {{
+        const p = _tiTrades.player;
+        if (!p) return;
+        closeTITradesModal();
+        if (p.is_rookie && p.is_rookie !== 'False') {{
+          rkOpenModal(p);
+        }} else {{
+          const name = (p.name || '').replace(/'/g, "\\'");
+          openPlayerModal(p.player_id, name);
+        }}
       }};
 
       window.switchTILF = function(lf) {{
