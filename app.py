@@ -9826,8 +9826,10 @@ def _pricing_body() -> str:
     """
 
 
-_STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
-_STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+# _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
+_STRIPE_LEAGUE_PRODUCT = "prod_USj7i4E40vAdni"
+# _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+_STRIPE_USER_PRODUCT   = "prod_USj7L3ejZEHoMO"
 _STRIPE_PRICES = {
     "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
