@@ -77,7 +77,7 @@
   --card: #ffffff;
   --card-soft: #f8fafc;
   --row: #f8fafc;
-  --text: #111827;
+  --text: #122d4b;
   --text-muted: #6b7280;
   --text-subtle: #94a3b8;
   --border: #dbe2ea;
@@ -6360,6 +6360,7 @@ thead th {
 
 .manager-pill:hover {
   background: var(--accent);
+  color: white;
 }
 
 .manager-pills-carousel {
