@@ -9520,11 +9520,9 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             }}
           }}
 
-          // Pre-process strings to avoid backslashes
-          const player_json = JSON.stringify(p).replace(/"/g, '\\"');
-          const escaped_name = name.replace(/'/g, "\\'");
+          const player_json = JSON.stringify(p).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-          return `<div class="ti-card" onclick="openTITradesModal(${{player_json}})">
+          return `<div class="ti-card" data-player="${{player_json}}" onclick="openTITradesModal(JSON.parse(this.dataset.player))">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{name}}</div>

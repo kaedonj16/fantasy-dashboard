@@ -55,14 +55,14 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
               <span class="settings-section-label">League Format</span>
-              <div class="settings-toggle-group">
+              <div id="rkLeagueGroup" class="settings-toggle-group">
                 <button class="settings-toggle active" data-value="1qb" onclick="rkSetLeague('1qb')">1QB</button>
                 <button class="settings-toggle" data-value="sf" onclick="rkSetLeague('sf')">SF</button>
               </div>
             </div>
             <div class="settings-section">
               <span class="settings-section-label">League Size</span>
-              <div class="settings-toggle-group">
+              <div id="rkSizeGroup" class="settings-toggle-group">
                 <button class="settings-toggle" data-value="8" onclick="rkSetSize(8)">8</button>
                 <button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>
                 <button class="settings-toggle" data-value="12" onclick="rkSetSize(12)">12</button>
@@ -662,11 +662,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkSetLeague(type) {
     rkLeague = type;
-    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
-      var section = btn.closest('.settings-section');
-      if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
-        btn.classList.toggle('active', btn.getAttribute('data-value') === type);
-      }
+    document.querySelectorAll('#rkLeagueGroup .settings-toggle').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-value') === type);
     });
     updateRookieSettingsIndicator();
     rkCurrentPage = 1;
@@ -675,11 +672,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkSetSize(sz) {
     rkSize = sz;
-    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
-      var section = btn.closest('.settings-section');
-      if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
-        btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
-      }
+    document.querySelectorAll('#rkSizeGroup .settings-toggle').forEach(function(btn) {
+      btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
     });
     updateRookieSettingsIndicator();
     rkCurrentPage = 1;
@@ -730,13 +724,23 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
       'T' + (tier||'?') + '</span>';
   }
 
+  function rkAdpField(r) {
+    var v = rkLeague === 'sf' ? r.sf_adp_rank : r.adp_rank;
+    return v != null ? parseFloat(v).toFixed(1) : '—';
+  }
+  function rkAdpSort(a, b) {
+    var af = rkLeague === 'sf' ? a.sf_adp_rank : a.adp_rank;
+    var bf = rkLeague === 'sf' ? b.sf_adp_rank : b.adp_rank;
+    return (af != null ? af : 999) - (bf != null ? bf : 999);
+  }
+
   // Map sort key → { header label, cell value function }
   var RK_SORT_META = {
-    rank:  { label: 'ADP',   cell: function(r) { return r.adp_rank != null ? parseFloat(r.adp_rank).toFixed(1) : '—'; } },
+    rank:  { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
     value: { label: 'Value', cell: function(r) { var v = rkGetValue(r); return v > 0 ? v.toFixed(1) : '—'; } },
     score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '—'; } },
     age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '—'; } },
-    adp:   { label: 'ADP',   cell: function(r) { return r.adp_rank != null ? parseFloat(r.adp_rank).toFixed(1) : '—'; } },
+    adp:   { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
   };
 
   function rkRender() {
@@ -773,7 +777,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
           case 'value': return rkGetValue(b) - rkGetValue(a);
           case 'score': return parseFloat(b.prospect_score||0) - parseFloat(a.prospect_score||0);
           case 'age':   return parseFloat(a.age||99) - parseFloat(b.age||99);
-          case 'adp':   return (a.adp_rank != null ? a.adp_rank : 999) - (b.adp_rank != null ? b.adp_rank : 999);
+          case 'adp':   return rkAdpSort(a, b);
           default:      return (a.overall_rank||999) - (b.overall_rank||999);
         }
       });
