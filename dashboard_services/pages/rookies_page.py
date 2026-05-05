@@ -55,14 +55,14 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
               <span class="settings-section-label">League Format</span>
-              <div class="settings-toggle-group">
+              <div id="rkLeagueGroup" class="settings-toggle-group">
                 <button class="settings-toggle active" data-value="1qb" onclick="rkSetLeague('1qb')">1QB</button>
                 <button class="settings-toggle" data-value="sf" onclick="rkSetLeague('sf')">SF</button>
               </div>
             </div>
             <div class="settings-section">
               <span class="settings-section-label">League Size</span>
-              <div class="settings-toggle-group">
+              <div id="rkSizeGroup" class="settings-toggle-group">
                 <button class="settings-toggle" data-value="8" onclick="rkSetSize(8)">8</button>
                 <button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>
                 <button class="settings-toggle" data-value="12" onclick="rkSetSize(12)">12</button>
@@ -662,11 +662,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkSetLeague(type) {
     rkLeague = type;
-    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
-      var section = btn.closest('.settings-section');
-      if (section && section.querySelector('.settings-section-label').textContent.includes('Format')) {
-        btn.classList.toggle('active', btn.getAttribute('data-value') === type);
-      }
+    document.querySelectorAll('#rkLeagueGroup .settings-toggle').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-value') === type);
     });
     updateRookieSettingsIndicator();
     rkCurrentPage = 1;
@@ -675,11 +672,8 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkSetSize(sz) {
     rkSize = sz;
-    document.querySelectorAll('#rkSettingsPanel .settings-toggle[data-value]').forEach(function(btn) {
-      var section = btn.closest('.settings-section');
-      if (section && section.querySelector('.settings-section-label').textContent.includes('Size')) {
-        btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
-      }
+    document.querySelectorAll('#rkSizeGroup .settings-toggle').forEach(function(btn) {
+      btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
     });
     updateRookieSettingsIndicator();
     rkCurrentPage = 1;
