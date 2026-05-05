@@ -8999,7 +8999,7 @@ def page_breakouts_guest():
 def page_trade_intel(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
           Actionable insights from thousands of real dynasty trades across multiple platforms
@@ -9127,8 +9127,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         transition: all .15s;
       }}
       .ti-tab.active {{
-        background: var(--card-bg);
-        color: var(--text-color);
+        background: var(--card);
+        color: var(--text);
         box-shadow: 0 1px 3px rgba(0,0,0,.12);
       }}
       .ti-pos-filters {{
@@ -9138,8 +9138,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-pos {{
         padding: 6px 13px;
         border-radius: 20px;
-        border: 1px solid var(--border-color);
-        background: var(--card-bg);
+        border: 1px solid var(--border);
+        background: var(--card);
         color: var(--text-muted);
         cursor: pointer;
         font-size: 12px;
@@ -9147,9 +9147,9 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         transition: all .15s;
       }}
       .ti-pos.active {{
-        background: var(--text-color);
-        color: var(--card-bg);
-        border-color: var(--text-color);
+        background: var(--text);
+        color: var(--card);
+        border-color: var(--text);
       }}
       .ti-grid {{
         display: grid;
@@ -9157,12 +9157,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         gap: 12px;
       }}
       .ti-card {{
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--border);
         border-radius: 12px;
         padding: 14px;
         cursor: pointer;
         transition: transform .12s, box-shadow .12s;
-        background: var(--card-bg);
+        background: var(--card);
       }}
       .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
       .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
@@ -9172,7 +9172,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         font-size:11px; font-weight:700;
         padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
       }}
-      .ti-divider {{ height:1px; background:var(--border-color); margin:8px 0; }}
+      .ti-divider {{ height:1px; background:var(--border); margin:8px 0; }}
       .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
       .ti-row-label {{ color:var(--text-muted); }}
       .ti-row-val {{ font-weight:600; }}
@@ -9185,7 +9185,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         gap: 6px 24px;
         font-size: 12px; color: var(--text-muted);
         background: var(--bg-alt, #f8fafc);
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--border);
         border-radius: 10px; padding: 12px 16px;
         margin-bottom: 20px; line-height: 1.4;
       }}
@@ -9201,7 +9201,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         border-radius: 3px; opacity: .8;
       }}
       .ti-key-label {{
-        font-weight: 600; color: var(--text-color);
+        font-weight: 600; color: var(--text);
         margin-right: 4px;
       }}
       .ti-pagination {{
@@ -9210,7 +9210,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         align-items: center;
         margin: 20px 0;
         padding: 12px 0;
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--border);
       }}
       .ti-pagination-info {{
         font-size: 13px;
@@ -9223,10 +9223,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
       .ti-pagination-btn {{
         padding: 6px 12px;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--border);
         border-radius: 6px;
-        background: var(--card-bg);
-        color: var(--text-color);
+        background: var(--card);
+        color: var(--text);
         cursor: pointer;
         font-size: 12px;
         font-weight: 500;
@@ -9237,7 +9237,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
       .ti-pagination-btn:hover:not(:disabled) {{
         background: var(--bg-alt);
-        border-color: var(--primary-color);
+        border-color: var(--accent);
       }}
       .ti-pagination-btn:disabled {{
         opacity: 0.5;
@@ -9249,10 +9249,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
       .ti-page-number {{
         padding: 4px 8px;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--border);
         border-radius: 4px;
-        background: var(--card-bg);
-        color: var(--text-color);
+        background: var(--card);
+        color: var(--text);
         cursor: pointer;
         font-size: 12px;
         font-weight: 500;
@@ -9271,7 +9271,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
       /* ── Trade History Modal ── */
       .ti-trades-modal {{
-        background: var(--card-bg);
+        background: var(--card);
         border-radius: 16px;
         width: min(600px, 96vw);
         max-height: 82vh;
@@ -9285,7 +9285,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         align-items: flex-start;
         justify-content: space-between;
         padding: 20px 20px 14px;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border);
         flex-shrink: 0;
       }}
       .ti-trades-name {{ font-size: 18px; font-weight: 700; }}
@@ -9294,33 +9294,33 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         background: none; border: none; font-size: 20px;
         color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
       }}
-      .ti-trades-close:hover {{ color: var(--text-color); }}
+      .ti-trades-close:hover {{ color: var(--text); }}
       .ti-profile-btn {{
         padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
-        border: 1px solid var(--border-color); background: var(--bg-alt, #f1f5f9);
-        color: var(--text-color); cursor: pointer; white-space: nowrap;
+        border: 1px solid var(--border); background: var(--bg-alt, #f1f5f9);
+        color: var(--text); cursor: pointer; white-space: nowrap;
         transition: opacity .15s;
       }}
       .ti-profile-btn:hover {{ opacity: .75; }}
       .ti-trades-lf-bar {{
         display: flex; gap: 6px; padding: 12px 20px;
-        border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+        border-bottom: 1px solid var(--border); flex-shrink: 0;
       }}
       .ti-lf-btn {{
         padding: 5px 14px; border-radius: 20px;
-        border: 1px solid var(--border-color); background: var(--card-bg);
+        border: 1px solid var(--border); background: var(--card);
         color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
         transition: all .15s;
       }}
       .ti-lf-btn.active {{
-        background: var(--text-color); color: var(--card-bg);
-        border-color: var(--text-color);
+        background: var(--text); color: var(--card);
+        border-color: var(--text);
       }}
       .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
       .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
       .ti-trade-item {{
         padding: 14px 0;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border);
       }}
       .ti-trade-item:last-child {{ border-bottom: none; }}
       .ti-trade-date {{
@@ -9341,12 +9341,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-trade-arrow {{ text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }}
       .ti-trades-pager {{
         display: flex; align-items: center; justify-content: space-between;
-        padding: 12px 20px; border-top: 1px solid var(--border-color); flex-shrink: 0;
+        padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
       }}
       .ti-trades-pager button {{
         padding: 6px 14px; border-radius: 8px;
-        border: 1px solid var(--border-color); background: var(--card-bg);
-        color: var(--text-color); font-size: 13px; cursor: pointer;
+        border: 1px solid var(--border); background: var(--card);
+        color: var(--text); font-size: 13px; cursor: pointer;
       }}
       .ti-trades-pager button:disabled {{ opacity: .4; cursor: default; }}
       #tiTradesPagerInfo {{ font-size: 13px; color: var(--text-muted); }}
@@ -9683,7 +9683,7 @@ def page_trade_intel_guest():
 def page_trade_database(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border-color);padding-bottom:16px;margin-bottom:0;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
         <div style="font-size:13px;color:var(--text-muted);">
           Explore thousands of real dynasty trades to understand player values and market trends
@@ -9737,8 +9737,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-search-wrap {{
         flex: 1; min-width: 200px;
         display: flex; align-items: center;
-        border: 1px solid var(--border-color); border-radius: 8px;
-        background: var(--card-bg); padding: 0 12px; gap: 8px;
+        border: 1px solid var(--border); border-radius: 8px;
+        background: var(--card); padding: 0 12px; gap: 8px;
       }}
       .tdb-search-icon {{
         display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
@@ -9748,14 +9748,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-search {{
         flex: 1; padding: 9px 0; border: none; background: transparent;
-        color: var(--text-color); font-size: 14px; outline: none;
+        color: var(--text); font-size: 14px; outline: none;
         min-width: 0;
       }}
       .tdb-search-wrap:focus-within {{ border-color: var(--accent-color, #3b82f6); }}
       .tdb-lt-filters {{ display: flex; gap: 4px; }}
       .tdb-lt {{
-        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-color);
-        background: var(--card-bg); color: var(--text-muted); cursor: pointer;
+        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--card); color: var(--text-muted); cursor: pointer;
         font-size: 13px; font-weight: 600; transition: all .15s;
       }}
       .tdb-lt.active {{
