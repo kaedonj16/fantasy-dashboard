@@ -10033,7 +10033,8 @@ def _try_grant_from_stripe_success() -> None:
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-        elif plan == "user":
+        elif plan in ("user", "league"):
+            # "league" without league_id → user subscription fallback
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10327,16 +10328,18 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
                         "created" if ok else "FAILED", league_id, user_id, expires_at)
-        elif plan == "user" and user_id:
+        elif plan in ("user", "league") and user_id:
+            # "league" plan without a league_id (subscribed from /pricing without league context)
+            # falls back to a user subscription so the payment is honoured
             ok = create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
-                        "created" if ok else "FAILED", user_id, expires_at)
+            logger.info("[stripe] webhook user subscription %s for user=%s plan=%s expires=%s",
+                        "created" if ok else "FAILED", user_id, plan, expires_at)
         else:
-            logger.warning("[stripe] webhook checkout.session.completed missing plan/user/league: meta=%s", meta)
+            logger.warning("[stripe] webhook checkout.session.completed missing user_id: meta=%s", meta)
 
     elif etype == "invoice.paid":
         # Renew expiry on each successful billing cycle
