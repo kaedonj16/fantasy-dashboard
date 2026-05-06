@@ -10010,11 +10010,13 @@ def _try_grant_from_stripe_success() -> None:
         sub_id    = cs.subscription
         cust_id   = cs.customer
 
-        if plan not in ("league", "user"):
+        if plan not in ("league", "user", "combo"):
             return
         if plan == "user" and not user_id:
             return
         if plan == "league" and not league_id:
+            return
+        if plan == "combo" and not league_id and not user_id:
             return
 
         # Skip if already active (webhook may have already fired)
@@ -10030,13 +10032,13 @@ def _try_grant_from_stripe_success() -> None:
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=366)
 
-        if plan == "league" and league_id:
+        if plan in ("league", "combo") and league_id:
             create_league_subscription(
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-        elif plan == "user" and user_id:
+        if plan in ("user", "combo") and user_id:
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10133,7 +10135,8 @@ def _pricing_body() -> str:
     """
 
     league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
-    user_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user" else ""
+    user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
+    combo_highlight  = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "combo"  else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -10174,13 +10177,12 @@ def _pricing_body() -> str:
         </div>
 
         <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
 
           <!-- League plan -->
           <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
               <div style="font-size:17px;font-weight:700;">League Plan</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
@@ -10188,6 +10190,21 @@ def _pricing_body() -> str:
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
             <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe for League
+            </button>
+          </div>
+
+          <!-- Combo plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{combo_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="font-size:17px;font-weight:700;">League + Personal</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
+            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Both
             </button>
           </div>
 
@@ -10217,7 +10234,7 @@ def _pricing_body() -> str:
     </div>
 
     <style>
-      @media (max-width: 540px) {{
+      @media (max-width: 760px) {{
         .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
         .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
       }}
@@ -10227,9 +10244,11 @@ def _pricing_body() -> str:
 
 _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
 _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+_STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
 _STRIPE_PRICES = {
     "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
+    "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
 }
 
 
@@ -10322,7 +10341,7 @@ def stripe_webhook():
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
-        if plan == "league" and league_id:
+        if plan in ("league", "combo") and league_id:
             ok = create_league_subscription(
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
@@ -10330,7 +10349,7 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
                         "created" if ok else "FAILED", league_id, user_id, expires_at)
-        elif plan == "user" and user_id:
+        if plan in ("user", "combo") and user_id:
             ok = create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10338,7 +10357,7 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
                         "created" if ok else "FAILED", user_id, expires_at)
-        else:
+        if plan not in ("league", "user", "combo"):
             logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
                            plan, league_id, user_id)
 

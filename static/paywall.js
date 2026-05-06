@@ -84,12 +84,22 @@ function showPaywall(feature) {
           <div class="pricing-option">
             <div class="pricing-header">
               <h4>League Plan</h4>
-              <div class="pricing-badge">Recommended</div>
             </div>
             <div class="pricing-price">$10<span>/year</span></div>
             <p class="pricing-desc">Premium for all managers in your league</p>
             <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('league', this)">
               Subscribe for League
+            </button>
+          </div>
+          <div class="pricing-option">
+            <div class="pricing-header">
+              <h4>League + Personal</h4>
+              <div class="pricing-badge">Best value</div>
+            </div>
+            <div class="pricing-price">$12<span>/year</span></div>
+            <p class="pricing-desc">League premium + all your personal leagues</p>
+            <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('combo', this)">
+              Subscribe Both
             </button>
           </div>
           <div class="pricing-option">
