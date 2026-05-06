@@ -185,8 +185,22 @@ def rankings():
             for r in _adp_rows:
                 if r["avg_pick"] is not None:
                     (sf_map if r["is_superflex"] else qb1_map)[str(r["player_id"])] = float(r["avg_pick"])
+
+            # Build name→sleeper_id lookup for prospects that have no sleeper_id linked yet
+            _name_to_sid: Dict[str, str] = {}
+            try:
+                from utils.utils import load_players_index
+                for _sid, _pd in (load_players_index() or {}).items():
+                    _n = (_pd.get("name") or "").strip().lower()
+                    if _n:
+                        _name_to_sid[_n] = str(_sid)
+            except Exception:
+                pass
+
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
+                if not sid:
+                    sid = _name_to_sid.get((d.get("name") or "").strip().lower(), "")
                 if sid:
                     if sid in sf_map:
                         d["sf_adp_rank"] = sf_map[sid]
