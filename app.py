@@ -10004,7 +10004,7 @@ def _try_grant_from_stripe_success() -> None:
         if cs.status != "complete":
             return
 
-        meta      = cs.metadata or {}
+        meta      = dict(cs.metadata) if cs.metadata else {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
         league_id = meta.get("league_id") or ""
@@ -10309,7 +10309,7 @@ def stripe_webhook():
 
     if etype == "checkout.session.completed":
         s         = event["data"]["object"]
-        meta      = s.metadata or {}
+        meta      = dict(s.metadata) if s.metadata else {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
         league_id = meta.get("league_id") or ""
