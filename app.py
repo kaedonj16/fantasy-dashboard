@@ -4116,33 +4116,76 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     return body
 
 
-_TIER_THRESHOLDS = [750, 500, 300, 150]
-
 # Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
 _DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
 
-# Tier cap: upper bound on how much a non-anchor asset can contribute, based on its individual tier.
-# T1 assets are never capped; low-tier assets can't inflate a trade regardless of quantity.
+# Tier cap: upper bound on how much a non-anchor asset can contribute, by individual tier.
+# T1 assets are never capped; fringe assets can't inflate a trade regardless of quantity.
 _TIER_CAPS = {1: 1.0, 2: 0.90, 3: 0.72, 4: 0.55, 5: 0.40}
 
+_FALLBACK_THRESHOLDS = [750.0, 500.0, 300.0, 150.0]
 
-def _asset_tier(value: float) -> int:
-    for i, threshold in enumerate(_TIER_THRESHOLDS):
+
+def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
+                             num_tiers: int = 5) -> list:
+    """
+    Derive tier breakpoints from the largest natural gaps in the player value rankings.
+    Scans the top players sorted by descending value, finds the (num_tiers-1) biggest
+    consecutive drops, and uses their midpoints as tier boundaries.
+    """
+    if league_type == "sf":
+        primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
+    else:
+        primary = "value" if league_size == 10 else f"value_{league_size}"
+
+    vals = []
+    for p in (value_table or []):
+        if not isinstance(p, dict):
+            continue
+        pos = (p.get("position") or "").upper()
+        if pos in ("K", "DEF"):
+            continue
+        v = float(p.get(primary) or p.get("value") or 0)
+        if v >= 50:
+            vals.append(v)
+
+    vals.sort(reverse=True)
+    top = vals[:min(300, len(vals))]
+
+    if len(top) < num_tiers * 3:
+        return _FALLBACK_THRESHOLDS
+
+    # Find the (num_tiers - 1) largest drops; use their midpoint as the boundary
+    gaps = sorted(
+        [(top[i] - top[i + 1], (top[i] + top[i + 1]) / 2.0)
+         for i in range(len(top) - 1)],
+        key=lambda x: x[0],
+        reverse=True,
+    )[:num_tiers - 1]
+
+    return sorted([g[1] for g in gaps], reverse=True)
+
+
+def _asset_tier(value: float, thresholds: list = None) -> int:
+    t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
+    for i, threshold in enumerate(t):
         if value >= threshold:
             return i + 1
-    return 5
+    return len(t) + 1
 
 
-def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
+def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
+                                 tier_thresholds: list = None) -> None:
     """
     Tier-aware trade evaluation.
 
     Each side's highest-value asset (the "anchor") counts at full face value.
     Every additional asset is worth min(depth_mult, tier_cap) × its face value,
-    where tier_cap is determined by that individual player's tier. This means
-    stacking lower-tier players against an elite anchor produces meaningful
-    discounts, while adding a quality T2 player barely reduces their value.
+    where tier_cap is driven by that player's individual tier derived from the
+    live value-table gaps. Stacking lower-tier players against an elite anchor
+    produces compounding discounts; adding a quality T2 player is barely penalised.
     """
+    thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
 
     def _compute_side(side):
         bd = side.get("breakdown") or []
@@ -4165,7 +4208,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
                 effective += v  # anchor — always full value
             else:
                 depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
-                tier_m  = _TIER_CAPS[_asset_tier(v)]
+                tier_m  = _TIER_CAPS[_asset_tier(v, thresholds)]
                 effective += v * min(depth_m, tier_m)
 
         return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
@@ -4186,7 +4229,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
         sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
         for idx, item in enumerate(sorted_bd):
             val  = item.get("value", 0.0)
-            tier = _asset_tier(val)
+            tier = _asset_tier(val, thresholds)
             if idx == 0:
                 m = 1.0
             else:
@@ -12487,7 +12530,8 @@ def api_trade_eval():
     side_a = build_side(side_a_players, side_a_picks)
     side_b = build_side(side_b_players, side_b_picks)
 
-    apply_multi_for_one_adjustment(side_a, side_b)
+    tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
+    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds)
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -12554,6 +12598,7 @@ def api_trade_eval():
         "verdict": verdict,
         "analysis_html": analysis_html,
         "depth_warnings": depth_warnings,
+        "tier_thresholds": [round(t, 1) for t in tier_thresholds],
     })
 
 

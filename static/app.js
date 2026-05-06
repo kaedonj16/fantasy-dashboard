@@ -1748,7 +1748,8 @@ window.initTradePage = function initTradePage(root = document) {
       const container = root.querySelector(side === 'a' ? '#sideAChips' : '#sideBChips');
       if (!container) return;
 
-      // Tag each player chip with its individual tier badge
+      // Tag each player chip with its individual tier badge (tier is computed server-side
+      // from live value-table gaps, so it reflects the current rankings)
       container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
         const pid = chip.dataset.playerId;
         const item = byId[pid];
@@ -1756,6 +1757,7 @@ window.initTradePage = function initTradePage(root = document) {
 
         const tier = item.tier;
         const tc = _TIER_COLORS[tier] || '#6b7280';
+        const label = _TIER_LABELS[tier] || ('Tier ' + tier);
 
         let badge = chip.querySelector('.otc-tier-badge');
         if (!badge) {
@@ -1765,17 +1767,17 @@ window.initTradePage = function initTradePage(root = document) {
           if (metaEl) metaEl.appendChild(badge);
         }
         badge.textContent = 'T' + tier;
-        badge.title = _TIER_LABELS[tier] || ('Tier ' + tier);
+        badge.title = label;
         badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
       });
 
-      // Show a depth-discount note beneath the total when discounts are applied
+      // Depth-adjustment note beneath the side total
       const noteId = 'sideDepthNote' + side.toUpperCase();
       let noteEl = root.querySelector('#' + noteId);
-      const rawTotal  = sideData.raw_total  || 0;
-      const effTotal  = sideData.effective_total || 0;
-      const discount  = rawTotal - effTotal;
-      const totalEl   = root.querySelector(side === 'a' ? '#sideATotal' : '#sideBTotal');
+      const rawTotal = sideData.raw_total  || 0;
+      const effTotal = sideData.effective_total || 0;
+      const discount = rawTotal - effTotal;
+      const totalEl  = root.querySelector(side === 'a' ? '#sideATotal' : '#sideBTotal');
       if (totalEl) {
         if (!noteEl) {
           noteEl = document.createElement('div');
@@ -1786,6 +1788,45 @@ window.initTradePage = function initTradePage(root = document) {
         noteEl.textContent = discount >= 5 ? `↓ ${Math.round(discount)} depth adj.` : '';
       }
     });
+
+    // Render a tier legend showing the live breakpoints from this value table
+    _renderTierLegend(data.tier_thresholds || []);
+  }
+
+  function _renderTierLegend(thresholds) {
+    const legendId = 'otcTierLegend';
+    let legend = root.querySelector('#' + legendId);
+    if (!thresholds.length) {
+      if (legend) legend.remove();
+      return;
+    }
+
+    const numTiers = thresholds.length + 1;
+    // Build rows: T1 ≥ thresholds[0], T2 ≥ thresholds[1], ..., T5 < last
+    const rows = thresholds.map((t, i) => {
+      const tc = _TIER_COLORS[i + 1] || '#6b7280';
+      const next = thresholds[i + 1];
+      const range = next != null
+        ? `${Math.round(next)}–${Math.round(t)}`
+        : `≥ ${Math.round(t)}`;
+      return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
+        `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${i + 1}</span>` +
+        `<span style="font-size:10px;color:var(--text-muted);">${range}</span></span>`;
+    });
+    // Last tier (T5 or whatever)
+    const lastTc = _TIER_COLORS[numTiers] || '#6b7280';
+    rows.push(`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
+      `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${lastTc}22;color:${lastTc};border:1px solid ${lastTc}44;">T${numTiers}</span>` +
+      `<span style="font-size:10px;color:var(--text-muted);">< ${Math.round(thresholds[thresholds.length - 1])}</span></span>`);
+
+    if (!legend) {
+      legend = document.createElement('div');
+      legend.id = legendId;
+      legend.style.cssText = 'padding:6px 12px 4px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px;';
+      const verdictEl = root.querySelector('#tradeVerdict');
+      if (verdictEl) verdictEl.parentNode.insertBefore(legend, verdictEl.nextSibling);
+    }
+    legend.innerHTML = rows.join('');
   }
 
   async function recomputeTrade() {
