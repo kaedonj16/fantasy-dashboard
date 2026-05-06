@@ -10869,12 +10869,13 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
     season_ctx_map: dict = {}
-    with ThreadPoolExecutor(max_workers=min(len(season_rids), 6)) as pool:
-        futures = {pool.submit(_fetch_ctx, sr): sr for sr in season_rids}
-        for fut in as_completed(futures):
-            hist_s, ctx = fut.result()
-            if ctx is not None:
-                season_ctx_map[hist_s] = ctx
+    if season_rids:
+        with ThreadPoolExecutor(max_workers=min(len(season_rids), 6)) as pool:
+            futures = {pool.submit(_fetch_ctx, sr): sr for sr in season_rids}
+            for fut in as_completed(futures):
+                hist_s, ctx = fut.result()
+                if ctx is not None:
+                    season_ctx_map[hist_s] = ctx
 
     for hist_s in available:
         ctx = season_ctx_map.get(hist_s)

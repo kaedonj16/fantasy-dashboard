@@ -1988,6 +1988,12 @@ window.initTradePage = function initTradePage(root = document) {
     const body = root.querySelector("#tradeTargetsBody");
     if (!body) return;
 
+    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+    if (!hasPremium) {
+      if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+      return;
+    }
+
     const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
     const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
     const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
@@ -2012,6 +2018,12 @@ window.initTradePage = function initTradePage(root = document) {
         `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
         { cache: "no-store" }
       );
+      if (res.status === 403) {
+        const errData = await res.json().catch(() => ({}));
+        if (errData.paywall && typeof showPaywall === "function") showPaywall("trade-suggestions");
+        else body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Premium required.</div>';
+        return;
+      }
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
