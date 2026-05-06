@@ -4116,98 +4116,161 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
+# Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
+_DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
+
+# Tier cap: upper bound on how much a non-anchor asset can contribute, by individual tier.
+# Spread linearly from 1.0 (T1, no cap) down to 0.38 (T9, fringe), extended for extra tiers.
+def _build_tier_caps(num_tiers: int) -> dict:
+    high, low = 1.0, 0.38
+    if num_tiers <= 1:
+        return {1: 1.0}
+    return {t: round(high - (high - low) * (t - 1) / (num_tiers - 1), 3)
+            for t in range(1, num_tiers + 1)}
+
+_NUM_TIERS = 9
+_TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
+_FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
+
+
+def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
+                             num_tiers: int = _NUM_TIERS) -> list:
     """
-    Multi-for-one adjustment:
+    Derive tier breakpoints from normalized gap significance across the full player list.
 
-    - Counts total assets (players + picks) on each side.
-    - Gives a bonus to the side with FEWER total assets, scaled by:
-        * gap in player value between the stud and the opponent's best player
-        * how much of that side is concentrated in its best player ("stud")
-        * how many extra pieces the other side is sending (including picks)
-    - Adjustment is added on top of raw_total.
+    Each gap is scored relative to the local median gap in a sliding window so that
+    the algorithm detects meaningful separations regardless of value density. Boundaries
+    are chosen with a minimum spacing (min_group players) so no tier ends up with a
+    single isolated player.
     """
-
-    vals_a = side_a.get("player_values", []) or []
-    vals_b = side_b.get("player_values", []) or []
-    picks_a = len(side_a.get("pick_ids", []) or [])
-    picks_b = len(side_b.get("pick_ids", []) or [])
-
-    # Total assets (players + picks) on each side
-    assets_a = len(vals_a) + picks_a
-    assets_b = len(vals_b) + picks_b
-
-    # No assets on either side, or same total asset count → no adjustment.
-    if assets_a == 0 or assets_b == 0 or assets_a == assets_b:
-        side_a["effective_total"] = side_a["raw_total"]
-        side_b["effective_total"] = side_b["raw_total"]
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = 0.0
-        return
-
-    # Decide which side is consolidating (fewer total assets)
-    if assets_a < assets_b:
-        fewer = side_a
-        more = side_b
-        fewer_is_a = True
+    if league_type == "sf":
+        primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
     else:
-        fewer = side_b
-        more = side_a
-        fewer_is_a = False
+        primary = "value" if league_size == 10 else f"value_{league_size}"
 
-    fewer_vals = fewer.get("player_values", []) or []
-    more_vals = more.get("player_values", []) or []
+    vals = []
+    for p in (value_table or []):
+        if not isinstance(p, dict):
+            continue
+        pos = (p.get("position") or "").upper()
+        if pos in ("K", "DEF"):
+            continue
+        v = float(p.get(primary) or p.get("value") or 0)
+        if v >= 5:
+            vals.append(v)
 
-    # Player-only totals (picks excluded from gap calc)
-    fewer_players_total = float(fewer.get("raw_players_total", 0.0) or 0.0)
-    more_players_total = float(more.get("raw_players_total", 0.0) or 0.0)
+    vals.sort(reverse=True)
 
-    # Safety guard — need at least one player on the consolidating side
-    if not fewer_vals or fewer_players_total <= 0:
-        side_a["effective_total"] = side_a["raw_total"]
-        side_b["effective_total"] = side_b["raw_total"]
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = 0.0
-        return
+    if len(vals) < num_tiers * 3:
+        return _FALLBACK_THRESHOLDS
 
-    # Extra pieces = total asset count difference (players + picks)
-    extra_pieces = abs(assets_a - assets_b)
+    # Score each gap by how large it is relative to nearby gaps (local significance)
+    window  = 12
+    min_grp = 3   # minimum players per tier
+    scored  = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # How big is the stud relative to the consolidating side?
-    stud_val = max(fewer_vals)
-    stud_share = stud_val / max(fewer_players_total, 1.0)  # 0–1
-    stud_share = max(0.0, min(stud_share, 1.0))
+    # Select top (num_tiers-1) gaps, enforcing minimum group spacing
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
+    boundaries = []
+    for _sig, pos, midpoint in scored:
+        if len(boundaries) >= num_tiers - 1:
+            break
+        if pos < min_grp or pos > len(vals) - 1 - min_grp:
+            continue
+        if any(abs(pos - p) < min_grp for p in chosen_pos):
+            continue
+        chosen_pos.append(pos)
+        boundaries.append(midpoint)
 
-    # Gap in player value between the two sides
-    player_gap = abs(more_players_total - fewer_players_total)
+    if not boundaries:
+        return _FALLBACK_THRESHOLDS
 
-    # --- Adjustment recipe ---
-    # 1. Base from player_gap, scaled heavier when stud dominates the side.
-    base_from_gap = player_gap * (0.35 + 0.45 * stud_share)
+    return sorted(boundaries, reverse=True)
 
-    # 2. Extra multiplier per extra piece: 1 extra ~0.55, 2 ~0.75, 3+ ~0.90
-    piece_factor = 0.55 + 0.20 * min(extra_pieces - 1, 2)
 
-    raw_adj = base_from_gap * piece_factor
+def _asset_tier(value: float, thresholds: list = None) -> int:
+    t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
+    for i, threshold in enumerate(t):
+        if value >= threshold:
+            return i + 1
+    return len(t) + 1
 
-    # 3. Caps: at most 80% of the stud value, or 55% of the consolidating
-    #    side's total player value — whichever is smaller.
-    cap_stud = 0.80 * stud_val
-    cap_side = 0.55 * fewer_players_total
-    adj_cap = max(0.0, min(cap_stud, cap_side))
 
-    adj = min(raw_adj, adj_cap)
+def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
+                                 tier_thresholds: list = None) -> None:
+    """
+    Tier-aware trade evaluation.
 
-    # Apply to the consolidating (fewer-asset) side only
-    if fewer_is_a:
-        side_a["adjustment"] = adj
-        side_b["adjustment"] = 0.0
-    else:
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = adj
+    Each side's highest-value asset (the "anchor") counts at full face value.
+    Every additional asset is worth min(depth_mult, tier_cap) × its face value,
+    where tier_cap is driven by that player's individual tier derived from the
+    live value-table gaps. Stacking lower-tier players against an elite anchor
+    produces compounding discounts; adding a quality T2 player is barely penalised.
+    """
+    thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
+    tier_caps  = _build_tier_caps(len(thresholds) + 1)
 
-    side_a["effective_total"] = side_a["raw_total"] + side_a["adjustment"]
-    side_b["effective_total"] = side_b["raw_total"] + side_b["adjustment"]
+    def _compute_side(side):
+        bd = side.get("breakdown") or []
+        if bd:
+            vals = sorted([item.get("value", 0.0) for item in bd], reverse=True)
+        else:
+            # Fallback for call sites that omit per-asset breakdown
+            vals = sorted(list(side.get("player_values", []) or []), reverse=True)
+            raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
+            if raw_picks > 0.0:
+                vals.append(raw_picks)
+                vals.sort(reverse=True)
+
+        if not vals:
+            return float(side.get("raw_total", 0.0) or 0.0), 0.0
+
+        effective = 0.0
+        for i, v in enumerate(vals):
+            if i == 0:
+                effective += v  # anchor — always full value
+            else:
+                depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
+                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
+                effective += v * min(depth_m, tier_m)
+
+        return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
+
+    eff_a, adj_a = _compute_side(side_a)
+    eff_b, adj_b = _compute_side(side_b)
+
+    side_a["effective_total"] = eff_a
+    side_b["effective_total"] = eff_b
+    side_a["adjustment"] = adj_a
+    side_b["adjustment"] = adj_b
+
+    # Annotate each breakdown item with its individual tier + context-aware effective value
+    for side in (side_a, side_b):
+        bd = side.get("breakdown") or []
+        if not bd:
+            continue
+        sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
+        for idx, item in enumerate(sorted_bd):
+            val  = item.get("value", 0.0)
+            tier = _asset_tier(val, thresholds)
+            if idx == 0:
+                m = 1.0
+            else:
+                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
+            item["tier"]            = tier
+            item["stack_mult"]      = round(m, 3)
+            item["effective_value"] = round(val * m, 1)
+
+
+apply_multi_for_one_adjustment = apply_tier_stack_adjustment
 
 
 def render_weekly_top_scorers_for_week(
@@ -8938,6 +9001,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
+
+          const _PR_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
+          const _PR_TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
+          const _tier = prGetTier(p);
+          const _tc   = _PR_TIER_COLORS[_tier] || '#64748b';
+          const _tl   = _PR_TIER_LABELS[_tier]  || ('Tier ' + _tier);
+          const tierBadge = _tier
+            ? `<span class="pr-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;white-space:nowrap;">T${_tier}</span>`
+            : '';
+
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -8945,7 +9018,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value">' + sortDisplay + '</span>';
+            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + tierBadge + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
@@ -9060,14 +9133,30 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         }
       });
 
+      var prTierThresholds = {};
+
+      function prGetTier(p) {
+        const lt  = prLeagueType || '1qb';
+        const sz  = String(prLeagueSize || 10);
+        const tbl = (prTierThresholds[lt] || {})[sz] || (prTierThresholds['1qb'] || {})['10'] || [];
+        if (!tbl.length) return null;
+        const val = prGetValue(p);
+        for (let i = 0; i < tbl.length; i++) {
+          if (val >= tbl[i]) return i + 1;
+        }
+        return tbl.length + 1;
+      }
+
       // Load data
       Promise.all([
         fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
         fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
           .then(r => r.json()).catch(() => ({}))
-      ]).then(([players, indicators]) => {
+      ]).then(([resp, indicators]) => {
         prIndicators = indicators || {};
-        const rawPlayers = Array.isArray(players) ? players : [];
+        // Support both old (array) and new (object with players + tier_thresholds) format
+        const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
+        prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
 
         prAllPlayers = rawPlayers
           .filter(p => p && p.id != null)
@@ -12498,7 +12587,8 @@ def api_trade_eval():
     side_a = build_side(side_a_players, side_a_picks)
     side_b = build_side(side_b_players, side_b_picks)
 
-    apply_multi_for_one_adjustment(side_a, side_b)
+    tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
+    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds)
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -12565,6 +12655,7 @@ def api_trade_eval():
         "verdict": verdict,
         "analysis_html": analysis_html,
         "depth_warnings": depth_warnings,
+        "tier_thresholds": [round(t, 1) for t in tier_thresholds],
     })
 
 
@@ -12841,7 +12932,21 @@ def api_league_players():
         int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
     ))
 
-    return jsonify(_sanitize_for_json(model_value_table))
+    # Compute tier thresholds for every league-type × size combination so the
+    # frontend can display each player's tier badge without a second API call.
+    _tier_thresholds_all = {}
+    for _lt in ("1qb", "sf"):
+        _tier_thresholds_all[_lt] = {}
+        for _sz in (8, 10, 12, 14):
+            _tier_thresholds_all[_lt][str(_sz)] = [
+                round(v, 1) for v in
+                compute_tier_thresholds(model_value_table, _lt, _sz)
+            ]
+
+    return jsonify(_sanitize_for_json({
+        "players": model_value_table,
+        "tier_thresholds": _tier_thresholds_all,
+    }))
 
 
 @app.route("/api/teams")

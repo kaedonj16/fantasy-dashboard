@@ -1560,6 +1560,7 @@ window.initTradePage = function initTradePage(root = document) {
     players.forEach((p, idx) => {
       const chip = document.createElement("div");
       chip.className = "otc-chip";
+      if (p.id) chip.dataset.playerId = String(p.id);
 
       const leftWrap = document.createElement("div");
       leftWrap.className = "otc-chip-main";
@@ -1733,6 +1734,101 @@ window.initTradePage = function initTradePage(root = document) {
     renderChips(side);
   }
 
+  const _TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
+  const _TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
+
+  function _applyTierBadges(data) {
+    ['a', 'b'].forEach(side => {
+      const sideData = data['side_' + side];
+      if (!sideData) return;
+      const bd = sideData.breakdown || [];
+      const byId = {};
+      bd.forEach(item => { if (item.id) byId[String(item.id)] = item; });
+
+      const container = root.querySelector(side === 'a' ? '#sideAChips' : '#sideBChips');
+      if (!container) return;
+
+      // Tag each player chip with its individual tier badge (tier is computed server-side
+      // from live value-table gaps, so it reflects the current rankings)
+      container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
+        const pid = chip.dataset.playerId;
+        const item = byId[pid];
+        if (!item) return;
+
+        const tier = item.tier;
+        const tc = _TIER_COLORS[tier] || '#6b7280';
+        const label = _TIER_LABELS[tier] || ('Tier ' + tier);
+
+        let badge = chip.querySelector('.otc-tier-badge');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'otc-tier-badge';
+          const metaEl = chip.querySelector('.otc-chip-meta');
+          if (metaEl) metaEl.appendChild(badge);
+        }
+        badge.textContent = 'T' + tier;
+        badge.title = label;
+        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
+      });
+
+      // Depth-adjustment note beneath the side total
+      const noteId = 'sideDepthNote' + side.toUpperCase();
+      let noteEl = root.querySelector('#' + noteId);
+      const rawTotal = sideData.raw_total  || 0;
+      const effTotal = sideData.effective_total || 0;
+      const discount = rawTotal - effTotal;
+      const totalEl  = root.querySelector(side === 'a' ? '#sideATotal' : '#sideBTotal');
+      if (totalEl) {
+        if (!noteEl) {
+          noteEl = document.createElement('div');
+          noteEl.id = noteId;
+          noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
+          totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
+        }
+        noteEl.textContent = discount >= 5 ? `↓ ${Math.round(discount)} depth adj.` : '';
+      }
+    });
+
+    // Render a tier legend showing the live breakpoints from this value table
+    _renderTierLegend(data.tier_thresholds || []);
+  }
+
+  function _renderTierLegend(thresholds) {
+    const legendId = 'otcTierLegend';
+    let legend = root.querySelector('#' + legendId);
+    if (!thresholds.length) {
+      if (legend) legend.remove();
+      return;
+    }
+
+    const numTiers = thresholds.length + 1;
+    // Build rows: T1 ≥ thresholds[0], T2 ≥ thresholds[1], ..., T5 < last
+    const rows = thresholds.map((t, i) => {
+      const tc = _TIER_COLORS[i + 1] || '#6b7280';
+      const next = thresholds[i + 1];
+      const range = next != null
+        ? `${Math.round(next)}–${Math.round(t)}`
+        : `≥ ${Math.round(t)}`;
+      return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
+        `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${i + 1}</span>` +
+        `<span style="font-size:10px;color:var(--text-muted);">${range}</span></span>`;
+    });
+    // Last tier (T5 or whatever)
+    const lastTc = _TIER_COLORS[numTiers] || '#6b7280';
+    rows.push(`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
+      `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${lastTc}22;color:${lastTc};border:1px solid ${lastTc}44;">T${numTiers}</span>` +
+      `<span style="font-size:10px;color:var(--text-muted);">< ${Math.round(thresholds[thresholds.length - 1])}</span></span>`);
+
+    if (!legend) {
+      legend = document.createElement('div');
+      legend.id = legendId;
+      legend.style.cssText = 'padding:6px 12px 4px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px;';
+      const verdictEl = root.querySelector('#tradeVerdict');
+      if (verdictEl) verdictEl.parentNode.insertBefore(legend, verdictEl.nextSibling);
+    }
+    legend.innerHTML = rows.join('');
+  }
+
   async function recomputeTrade() {
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
@@ -1820,6 +1916,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
       }
+
+      _applyTierBadges(data);
 
       Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
     } catch (err) {
@@ -5806,6 +5904,52 @@ function openCompareSearch(player1Data) {
   });
 }
 
+function _computeSeasonStats(p) {
+  const yearMap = p.game_logs_by_year || {};
+  const latestYear = Object.keys(yearMap).sort((a, b) => b - a)[0];
+  if (!latestYear) return { ppg: null, total: null, season: null, games: 0 };
+  const logs = yearMap[latestYear] || [];
+  const played = logs.filter(g => parseFloat(g.fantasy_pts || 0) > 0);
+  const total = played.reduce((s, g) => s + parseFloat(g.fantasy_pts || 0), 0);
+  return {
+    ppg: played.length > 0 ? (total / played.length).toFixed(1) : null,
+    total: played.length > 0 ? total.toFixed(1) : null,
+    season: latestYear,
+    games: played.length,
+  };
+}
+
+function _buildComparePPGRow(p1, p2) {
+  const s1 = _computeSeasonStats(p1);
+  const s2 = _computeSeasonStats(p2);
+  if (!s1.total && !s2.total) return '';
+
+  const season = s1.season || s2.season || '';
+
+  function cell(val, label) {
+    return `<div class="compare-pts-cell">
+      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-label">${label}</div>
+    </div>`;
+  }
+
+  return `
+    <div class="compare-pts-row">
+      <div class="compare-pts-player">
+        ${cell(s1.ppg, 'PPG')}
+        ${cell(s1.total, 'Total Pts')}
+        ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
+      </div>
+      <div class="compare-pts-divider"></div>
+      <div class="compare-pts-player compare-pts-player-right">
+        ${cell(s2.ppg, 'PPG')}
+        ${cell(s2.total, 'Total Pts')}
+        ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
@@ -6127,12 +6271,15 @@ function openComparisonView(p1, p2) {
   }
 
   // Build the comparison body
+  const ppgRowHTML = _buildComparePPGRow(p1, p2);
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2">${_buildCompareHeroHTML(p2)}</div>
       </div>
+
+      ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}
 
       <hr class="pm-section-divider">
 
@@ -6149,16 +6296,21 @@ function openComparisonView(p1, p2) {
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
 
-      <div style="margin-top:16px;">
+      <div class="compare-nav-btns">
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
+        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
       </div>
     </div>
   `;
 
-  // Back button
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
     openPlayerModal(p1.player_id, p1.name);
+  });
+
+  document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    openPlayerModal(p2.player_id, p2.name);
   });
 
   // Fetch NFL state to determine if it's offseason
