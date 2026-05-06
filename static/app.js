@@ -3039,6 +3039,23 @@ window.initTradePage = function initTradePage(root = document) {
     bindShareButton();
     initMoversBreakoutsTabs();
 
+    // Re-verify premium status client-side so stale page renders don't lock out subscribers
+    (async function checkPremiumState() {
+      const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+      if (!leagueId) return;
+      try {
+        const res = await fetch(`/api/subscription-status?league_id=${encodeURIComponent(leagueId)}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.has_premium) {
+          const premiumInput = root.querySelector("#otcHasPremium");
+          if (premiumInput) premiumInput.value = "true";
+          const lockIcon = root.querySelector("#targetsLockIcon");
+          if (lockIcon) lockIcon.style.display = "none";
+        }
+      } catch (_) {}
+    })();
+
     // Try to load trade from URL first, otherwise load from localStorage
     const loadedFromURL = loadTradeFromURL();
     if (!loadedFromURL) {
