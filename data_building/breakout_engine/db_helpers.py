@@ -578,6 +578,16 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
         List of player dicts with keys: player_id, player_name, position,
         team, age, years_exp — compatible with the breakout engine.
     """
+    # Load players_index for name resolution
+    players_index = {}
+    try:
+        players_index_path = os.path.join("cache", "players_index.json")
+        if os.path.exists(players_index_path):
+            with open(players_index_path, 'r') as f:
+                players_index = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        pass  # Non-fatal — names will remain NULL
+
     query = """
         SELECT
             player_id::text                                         AS player_id,
@@ -597,7 +607,18 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, {"min_rank": min_value_rank})
-                return [dict(row) for row in cur.fetchall()]
+                players = [dict(row) for row in cur.fetchall()]
+                
+                # Enrich with player names from players_index
+                for player in players:
+                    player_id = str(player.get('player_id', ''))
+                    if player_id and players_index:
+                        player_data = players_index.get(player_id, {})
+                        player['player_name'] = player_data.get('name', 'unknown')
+                    else:
+                        player['player_name'] = 'unknown'
+                
+                return players
     except Exception:
         return []
 

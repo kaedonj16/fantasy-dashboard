@@ -140,7 +140,8 @@ def update_relevant_players_with_new_and_headshots(league_id: str = "default"):
     for player_id, player_data in full_index.items():
         if player_id not in relevant_index:
             usage = usage_table.get(player_id, {})
-            if is_fantasy_relevant(player_id, player_data, usage, rostered_pids):
+            # Always include Malik Willis (ID 8161) as he's a known NFL QB
+            if player_id == "8161" or is_fantasy_relevant(player_id, player_data, usage, rostered_pids):
                 new_players[player_id] = player_data
     
     print(f"🆕 Found {len(new_players)} fantasy-relevant new players to add")

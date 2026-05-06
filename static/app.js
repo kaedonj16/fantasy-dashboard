@@ -2144,11 +2144,19 @@ window.initTradePage = function initTradePage(root = document) {
       const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
         style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
 
+      const data = await res.json();
+
+      if (data.paywall) {
+        panel.style.display = 'none';
+        panel.removeAttribute('data-open');
+        if (typeof showPaywall === 'function') showPaywall('trade-suggestions');
+        return;
+      }
+
       if (!res.ok) {
         panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">Failed to load packages.</span>`;
         return;
       }
-      const data = await res.json();
 
       if (!data.success || !data.packages) {
         panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;

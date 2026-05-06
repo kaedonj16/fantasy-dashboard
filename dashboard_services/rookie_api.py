@@ -25,6 +25,53 @@ rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 # Invalidated on refresh or on first hit per process.
 _cache: Dict[Any, List[Dict[str, Any]]] = {}
 
+# FantasyCalc ADP fallback — keyed by ("sf"|"1qb", YYYY-MM-DD), lives for the day.
+_FC_ADP_CACHE: Dict[tuple, list] = {}
+
+
+def _get_fc_data(is_sf: bool) -> list:
+    from datetime import date
+    import requests, json as _json
+    key = ("sf" if is_sf else "1qb", date.today().isoformat())
+    if key in _FC_ADP_CACHE:
+        return _FC_ADP_CACHE[key]
+    try:
+        from utils.paths import DATA_DIR
+        cache_file = DATA_DIR / f"fc_dynasty_rookie_adp_{key[0]}_{key[1]}.json"
+        if cache_file.exists():
+            data = _json.loads(cache_file.read_text())
+        else:
+            num_qbs = 2 if is_sf else 1
+            resp = requests.get(
+                f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5",
+                timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"},
+            )
+            data = resp.json() if resp.ok else []
+            try:
+                cache_file.write_text(_json.dumps(data))
+            except Exception:
+                pass
+        _FC_ADP_CACHE[key] = data
+        return data
+    except Exception:
+        return []
+
+
+def _apply_fc_adp(prospects: list, adp_field: str, is_sf: bool) -> None:
+    fc_data = _get_fc_data(is_sf)
+    fc_by_sid: Dict[str, int] = {}
+    for entry in fc_data:
+        p = entry.get("player") or {}
+        sid = str(p.get("sleeperId") or "")
+        if sid and p.get("rosterPosition") != "P":
+            fc_by_sid[sid] = entry.get("overallRank") or 9999
+    ranked = sorted(
+        [(d, fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in prospects],
+        key=lambda x: x[1],
+    )
+    for rank, (d, _) in enumerate(ranked, start=1):
+        d[adp_field] = float(rank)
+
 
 def _nfl_draft_complete(draft_year: int) -> bool:
     from data_building.rookie_pipeline.pipeline import is_draft_complete
@@ -116,97 +163,51 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP for both SF and 1QB formats.
+        # Overlay dynasty rookie ADP for both SF and 1QB in a single query.
         # Returns adp_rank (1QB) and sf_adp_rank (SF) so the client can pick the
         # right field without needing a separate fetch per format.
         try:
             from dashboard_services.db import get_conn as _gc
-            _ADP_SQL = """
-                SELECT player_id,
-                       SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick
-                FROM draft_adp
-                WHERE season = %s AND draft_type = 'rookie' AND is_superflex = %s
-                GROUP BY player_id
-                HAVING SUM(sample_size) >= 2
-                ORDER BY avg_pick ASC
-            """
             with _gc() as _conn:
-                _sf_rows  = _conn.execute(_ADP_SQL, (year, True)).fetchall()
-                _qb1_rows = _conn.execute(_ADP_SQL, (year, False)).fetchall()
-            _sf_map  = {str(r["player_id"]): float(r["avg_pick"]) for r in _sf_rows}
-            _qb1_map = {str(r["player_id"]): float(r["avg_pick"]) for r in _qb1_rows}
+                _adp_rows = _conn.execute(
+                    """
+                    SELECT player_id, is_superflex,
+                           SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick
+                    FROM draft_adp
+                    WHERE season = %s AND draft_type = 'rookie'
+                    GROUP BY player_id, is_superflex
+                    HAVING SUM(sample_size) >= 1
+                    """,
+                    (year,),
+                ).fetchall()
+            sf_map:  Dict[str, float] = {}
+            qb1_map: Dict[str, float] = {}
+            for r in _adp_rows:
+                if r["avg_pick"] is not None:
+                    (sf_map if r["is_superflex"] else qb1_map)[str(r["player_id"])] = float(r["avg_pick"])
+
+            # Build name→sleeper_id lookup for prospects that have no sleeper_id linked yet
+            _name_to_sid: Dict[str, str] = {}
+            try:
+                from utils.utils import load_players_index
+                for _sid, _pd in (load_players_index() or {}).items():
+                    _n = (_pd.get("name") or "").strip().lower()
+                    if _n:
+                        _name_to_sid[_n] = str(_sid)
+            except Exception:
+                pass
+
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
+                if not sid:
+                    sid = _name_to_sid.get((d.get("name") or "").strip().lower(), "")
                 if sid:
-                    if sid in _sf_map:
-                        d["sf_adp_rank"] = _sf_map[sid]
-                    if sid in _qb1_map:
-                        d["adp_rank"] = _qb1_map[sid]
+                    if sid in sf_map:
+                        d["sf_adp_rank"] = sf_map[sid]
+                    if sid in qb1_map:
+                        d["adp_rank"] = qb1_map[sid]
         except Exception:
             pass
-
-        # FC fallback: for each format, fill in any prospects still missing ADP.
-        # Results are cached in-memory per process (keyed by date) to avoid live
-        # network calls on every request.
-        _FC_CACHE: dict = getattr(_get_rankings, "_fc_cache", {})
-        if not hasattr(_get_rankings, "_fc_cache"):
-            _get_rankings._fc_cache = _FC_CACHE  # type: ignore[attr-defined]
-
-        def _get_fc_data(is_sf_flag: bool):
-            from datetime import date as _date
-            import requests as _req, json as _json
-            _key = ("sf" if is_sf_flag else "1qb", _date.today().isoformat())
-            if _key in _FC_CACHE:
-                return _FC_CACHE[_key]
-            try:
-                from utils.paths import DATA_DIR
-                _cache_file = DATA_DIR / f"fc_dynasty_rookie_adp_{'sf' if is_sf_flag else '1qb'}_{_key[1]}.json"
-                if _cache_file.exists():
-                    data = _json.loads(_cache_file.read_text())
-                else:
-                    _num_qbs = 2 if is_sf_flag else 1
-                    _resp = _req.get(
-                        f"https://fantasycalc.com/api/values/current?numQbs={_num_qbs}&type=1&ppr=0.5",
-                        timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"},
-                    )
-                    data = _resp.json() if _resp.ok else []
-                    try:
-                        _cache_file.write_text(_json.dumps(data))
-                    except Exception:
-                        pass
-                _FC_CACHE[_key] = data
-                return data
-            except Exception:
-                return []
-
-        def _apply_fc_adp(prospects, adp_field: str, is_sf_flag: bool):
-            _fc_data = _get_fc_data(is_sf_flag)
-            _fc_by_sid = {}
-            for _entry in (_fc_data or []):
-                _p = _entry.get("player") or {}
-                _sid = str(_p.get("sleeperId") or "")
-                if _sid and _p.get("rosterPosition") != "P":
-                    _fc_by_sid[_sid] = _entry.get("overallRank") or 9999
-            ranked = sorted(
-                [(d, _fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in prospects],
-                key=lambda x: x[1],
-            )
-            for _rank, (_d, _fc_rank) in enumerate(ranked, start=1):
-                if _fc_rank < 9999:
-                    _d[adp_field] = float(_rank)
-
-        _needs_sf  = [d for d in result if d.get("sf_adp_rank")  is None]
-        _needs_qb1 = [d for d in result if d.get("adp_rank") is None]
-        if _needs_sf:
-            try:
-                _apply_fc_adp(_needs_sf, "sf_adp_rank", True)
-            except Exception:
-                pass
-        if _needs_qb1:
-            try:
-                _apply_fc_adp(_needs_qb1, "adp_rank", False)
-            except Exception:
-                pass
 
         # Overlay values from the main player_values DB for linked prospects,
         # so the prospects page shows the same numbers as the /players page.
