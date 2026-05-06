@@ -9988,14 +9988,71 @@ def page_trade_intel_guest():
     return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
 
+def _try_grant_from_stripe_success() -> None:
+    """
+    When a user returns from Stripe checkout, verify the session server-side
+    and grant the subscription immediately. This is a reliable fallback for
+    when the webhook is delayed or misconfigured.
+    """
+    if request.args.get("success") != "1":
+        return
+    checkout_session_id = request.args.get("session_id", "").strip()
+    if not checkout_session_id:
+        return
+    try:
+        cs = stripe.checkout.Session.retrieve(checkout_session_id)
+        if cs.get("status") != "complete":
+            return
+
+        meta      = cs.get("metadata") or {}
+        plan      = meta.get("plan")
+        user_id   = meta.get("user_id")
+        league_id = meta.get("league_id") or ""
+        sub_id    = cs.get("subscription")
+        cust_id   = cs.get("customer")
+
+        if not user_id or plan not in ("league", "user"):
+            return
+
+        # Skip if already active (webhook may have already fired)
+        if has_premium_access(user_id, league_id or None, "sleeper"):
+            return
+
+        try:
+            sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
+            expires_at = (
+                datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
+                if sub else datetime.now(timezone.utc) + timedelta(days=366)
+            )
+        except Exception:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
+
+        if plan == "league" and league_id:
+            create_league_subscription(
+                league_id, user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+        elif plan == "user":
+            create_user_subscription(
+                user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+    except Exception:
+        logger.exception("[stripe] success-page session verification failed")
+
+
 @app.route("/<platform>/<int:season>/<league_id>/pricing")
 def page_pricing(platform: str, season: int, league_id: str):
+    _try_grant_from_stripe_success()
     body_html = _pricing_body()
     return render_page("Pricing", league_id, None, body_html, platform, season)
 
 
 @app.route("/pricing")
 def page_pricing_guest():
+    _try_grant_from_stripe_success()
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     body_html = _pricing_body()
@@ -10187,6 +10244,11 @@ def create_checkout_session():
     if plan not in _STRIPE_PRICES:
         return jsonify({"error": "Invalid plan"}), 400
 
+    # Block duplicate subscriptions before hitting Stripe
+    check_league = league_id if league_id else None
+    if has_premium_access(user_id, check_league, "sleeper"):
+        return jsonify({"error": "You already have an active premium subscription."}), 400
+
     price_spec = _STRIPE_PRICES[plan]
     base_url   = request.host_url.rstrip("/")
 
@@ -10226,9 +10288,17 @@ def stripe_webhook():
     sig     = request.headers.get("Stripe-Signature", "")
     secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+    if not secret:
+        logger.error("[stripe] STRIPE_WEBHOOK_SECRET not set — webhook will always fail signature check")
+        return "", 400
+
     try:
         event = stripe.Webhook.construct_event(payload, sig, secret)
-    except (ValueError, stripe.error.SignatureVerificationError):
+    except ValueError as e:
+        logger.error("[stripe] webhook bad payload: %s", e)
+        return "", 400
+    except stripe.error.SignatureVerificationError as e:
+        logger.error("[stripe] webhook signature mismatch: %s", e)
         return "", 400
 
     etype = event["type"]
@@ -10250,17 +10320,23 @@ def stripe_webhook():
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
         if plan == "league" and league_id and user_id:
-            create_league_subscription(
+            ok = create_league_subscription(
                 league_id, user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
+            logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
+                        "created" if ok else "FAILED", league_id, user_id, expires_at)
         elif plan == "user" and user_id:
-            create_user_subscription(
+            ok = create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
+            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
+                        "created" if ok else "FAILED", user_id, expires_at)
+        else:
+            logger.warning("[stripe] webhook checkout.session.completed missing plan/user/league: meta=%s", meta)
 
     elif etype == "invoice.paid":
         # Renew expiry on each successful billing cycle
