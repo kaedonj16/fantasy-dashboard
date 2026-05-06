@@ -10001,15 +10001,15 @@ def _try_grant_from_stripe_success() -> None:
         return
     try:
         cs = stripe.checkout.Session.retrieve(checkout_session_id)
-        if cs.get("status") != "complete":
+        if cs.status != "complete":
             return
 
-        meta      = cs.get("metadata") or {}
+        meta      = cs.metadata or {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
         league_id = meta.get("league_id") or ""
-        sub_id    = cs.get("subscription")
-        cust_id   = cs.get("customer")
+        sub_id    = cs.subscription
+        cust_id   = cs.customer
 
         if plan not in ("league", "user"):
             return
@@ -10025,7 +10025,7 @@ def _try_grant_from_stripe_success() -> None:
         try:
             sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
             expires_at = (
-                datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
+                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
                 if sub else datetime.now(timezone.utc) + timedelta(days=366)
             )
         except Exception:
@@ -10309,17 +10309,17 @@ def stripe_webhook():
 
     if etype == "checkout.session.completed":
         s         = event["data"]["object"]
-        meta      = s.get("metadata") or {}
+        meta      = s.metadata or {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
         league_id = meta.get("league_id") or ""
-        sub_id    = s.get("subscription")
-        cust_id   = s.get("customer")
+        sub_id    = s.subscription
+        cust_id   = s.customer
 
         # Retrieve subscription to get the real period end
         try:
             sub = stripe.Subscription.retrieve(sub_id)
-            expires_at = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
+            expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
@@ -10344,14 +10344,12 @@ def stripe_webhook():
                            plan, league_id, user_id)
 
     elif etype == "invoice.paid":
-        # Renew expiry on each successful billing cycle
         s      = event["data"]["object"]
-        sub_id = s.get("subscription")
+        sub_id = s.subscription
         if sub_id:
             try:
                 sub        = stripe.Subscription.retrieve(sub_id)
-                expires_at = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
-                # Update whichever table holds this subscription
+                expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
                 from dashboard_services.db import get_conn
                 with get_conn() as conn:
                     with conn.cursor() as cur:
@@ -10368,8 +10366,8 @@ def stripe_webhook():
 
     elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
         s = event["data"]["object"]
-        if s.get("status") in ("canceled", "unpaid", "past_due"):
-            sub_id = s.get("id")
+        if s.status in ("canceled", "unpaid", "past_due"):
+            sub_id = s.id
             cancel_subscription(sub_id, "league")
             cancel_subscription(sub_id, "user")
 
