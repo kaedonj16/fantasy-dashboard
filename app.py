@@ -499,7 +499,7 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/font-awesome.css">
     <link rel="stylesheet" href="/static/paywall.css">
 
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});
@@ -10011,11 +10011,15 @@ def _try_grant_from_stripe_success() -> None:
         sub_id    = cs.get("subscription")
         cust_id   = cs.get("customer")
 
-        if not user_id or plan not in ("league", "user"):
+        if plan not in ("league", "user"):
+            return
+        if plan == "user" and not user_id:
+            return
+        if plan == "league" and not league_id:
             return
 
         # Skip if already active (webhook may have already fired)
-        if has_premium_access(user_id, league_id or None, "sleeper"):
+        if has_premium_access(user_id or None, league_id or None, "sleeper"):
             return
 
         try:
@@ -10029,12 +10033,11 @@ def _try_grant_from_stripe_success() -> None:
 
         if plan == "league" and league_id:
             create_league_subscription(
-                league_id, user_id, expires_at,
+                league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-        elif plan in ("user", "league"):
-            # "league" without league_id → user subscription fallback
+        elif plan == "user" and user_id:
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10320,26 +10323,25 @@ def stripe_webhook():
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
-        if plan == "league" and league_id and user_id:
+        if plan == "league" and league_id:
             ok = create_league_subscription(
-                league_id, user_id, expires_at,
+                league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
             logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
                         "created" if ok else "FAILED", league_id, user_id, expires_at)
-        elif plan in ("user", "league") and user_id:
-            # "league" plan without a league_id (subscribed from /pricing without league context)
-            # falls back to a user subscription so the payment is honoured
+        elif plan == "user" and user_id:
             ok = create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-            logger.info("[stripe] webhook user subscription %s for user=%s plan=%s expires=%s",
-                        "created" if ok else "FAILED", user_id, plan, expires_at)
+            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
+                        "created" if ok else "FAILED", user_id, expires_at)
         else:
-            logger.warning("[stripe] webhook checkout.session.completed missing user_id: meta=%s", meta)
+            logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
+                           plan, league_id, user_id)
 
     elif etype == "invoice.paid":
         # Renew expiry on each successful billing cycle
