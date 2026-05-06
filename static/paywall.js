@@ -75,21 +75,32 @@ function showPaywall(feature) {
         <h3>${featureName}</h3>
         <p>This is a premium feature. Upgrade to access:</p>
         <ul class="paywall-features">
-          <li>✓ AI-powered insights and recommendations</li>
-          <li>✓ Breakout candidate predictions</li>
+          <li>✓ AI-powered trade suggestions</li>
+          <li>✓ Full Trade Intelligence feed &amp; history</li>
+          <li>✓ Breakout Engine candidate predictions</li>
           <li>✓ Advanced player metrics and analytics</li>
-          <li>✓ All premium features for your league</li>
+          <li>✓ All future premium features</li>
         </ul>
         <div class="paywall-pricing">
           <div class="pricing-option">
             <div class="pricing-header">
               <h4>League Plan</h4>
-              <div class="pricing-badge">Recommended</div>
             </div>
             <div class="pricing-price">$10<span>/year</span></div>
             <p class="pricing-desc">Premium for all managers in your league</p>
             <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('league', this)">
               Subscribe for League
+            </button>
+          </div>
+          <div class="pricing-option">
+            <div class="pricing-header">
+              <h4>League + Personal</h4>
+              <div class="pricing-badge">Best value</div>
+            </div>
+            <div class="pricing-price">$12<span>/year</span></div>
+            <p class="pricing-desc">League premium + all your personal leagues</p>
+            <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('combo', this)">
+              Subscribe Both
             </button>
           </div>
           <div class="pricing-option">

@@ -1285,10 +1285,19 @@ window.initTradePage = function initTradePage(root = document) {
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-day-filters");
+    const lockIcon = root.querySelector("#targetsLockIcon");
+    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+
+    if (hasPremium && lockIcon) lockIcon.style.display = "none";
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         const tab = btn.dataset.tab;
+
+        if (tab === "targets" && !hasPremium) {
+          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+          return;
+        }
 
         tabButtons.forEach(b => b.classList.remove("is-active"));
         btn.classList.add("is-active");

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 from dashboard_services.ai.cache import load_cached_ai_text, save_cached_ai_text
 from dashboard_services.ai.prompts import get_ai_client
@@ -465,51 +466,61 @@ def _fallback_recap(history_ctx: dict, roster_id: str) -> str:
 
 
 def get_league_season_summary(history_ctx: dict, season: int) -> str:
-    """Generate AI-powered league season summary for the page subtitle."""
+    """Return cached AI subtitle immediately; trigger generation in background if missing."""
     league = history_ctx.get("league", {})
     league_id = league.get('league_id', 'unknown')
     cache_key = f"league_summary_{league_id}_{season}"
 
-    # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
+    fallback = _fallback_league_summary(history_ctx, season)
+
     if not ai_available():
-        return _fallback_league_summary(history_ctx, season)
+        return fallback
 
-    try:
-        summary = history_ctx.get("summary", {})
+    # Generate in background so the page renders immediately with fallback
+    def _bg_generate(ctx_snapshot, cache_key_inner, season_inner):
+        try:
+            summary = ctx_snapshot.get("summary", {})
+            payload = _build_league_summary_payload(ctx_snapshot, season_inner)
+            result = _generate_league_summary_ai(payload)
+            save_cached_ai_text(cache_key_inner, result)
+        except Exception:
+            pass
 
-        payload = {
-            "season": season,
-            "champion": summary.get("champion", "Unknown"),
-            "champion_record": summary.get("champion_record", ""),
-            "runner_up": summary.get("runner_up", "Unknown"),
-            "runner_up_record": summary.get("runner_up_record", ""),
-            "top_scorer": summary.get("top_scorer_team", "Unknown"),
-            "top_scorer_total": summary.get("top_scorer_value", 0),
-            "best_defense": summary.get("best_defense_team", "Unknown"),
-            "highest_week": summary.get("highest_week_value", 0),
-            "highest_week_team": summary.get("highest_week_team", "Unknown"),
-            "lowest_week": summary.get("lowest_week_value", 0),
-            "closest_margin": summary.get("closest_margin", 0),
-            "biggest_blowout_margin": summary.get("biggest_blowout_margin", 0),
-            "unluckiest_team": summary.get("unluckiest_team", "Unknown"),
-            "unluckiest_delta": summary.get("unluckiest_delta", 0),
-            "league_name": league.get("name", "League"),
-            "total_teams": len(league.get("rosters", [])),
-        }
+    threading.Thread(
+        target=_bg_generate,
+        args=(history_ctx, cache_key, season),
+        daemon=True,
+    ).start()
 
-        result = _generate_league_summary_ai(payload)
+    return fallback
 
-        # Cache the result
-        save_cached_ai_text(cache_key, result)
-        return result
 
-    except Exception as e:
-        print(f"[league-summary] AI error: {e}")
-        return _fallback_league_summary(history_ctx, season)
+def _build_league_summary_payload(history_ctx: dict, season: int) -> dict:
+    league = history_ctx.get("league", {})
+    summary = history_ctx.get("summary", {})
+    return {
+        "season": season,
+        "champion": summary.get("champion", "Unknown"),
+        "champion_record": summary.get("champion_record", ""),
+        "runner_up": summary.get("runner_up", "Unknown"),
+        "runner_up_record": summary.get("runner_up_record", ""),
+        "top_scorer": summary.get("top_scorer_team", "Unknown"),
+        "top_scorer_total": summary.get("top_scorer_value", 0),
+        "best_defense": summary.get("best_defense_team", "Unknown"),
+        "highest_week": summary.get("highest_week_value", 0),
+        "highest_week_team": summary.get("highest_week_team", "Unknown"),
+        "lowest_week": summary.get("lowest_week_value", 0),
+        "closest_margin": summary.get("closest_margin", 0),
+        "biggest_blowout_margin": summary.get("biggest_blowout_margin", 0),
+        "unluckiest_team": summary.get("unluckiest_team", "Unknown"),
+        "unluckiest_delta": summary.get("unluckiest_delta", 0),
+        "league_name": league.get("name", "League"),
+        "total_teams": len(league.get("rosters", [])),
+    }
 
 
 def _generate_league_summary_ai(payload: dict) -> str:

@@ -88,6 +88,7 @@ import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.service import (
+    age_from_bday,
     build_matchups_by_week,
     build_picks_by_roster,
     build_standings_map,
@@ -538,6 +539,14 @@ BASE_HTML = """
       </div>
     </footer>
 
+    <!-- Page navigation loading overlay -->
+    <div id="navLoadingOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.35);backdrop-filter:blur(2px);align-items:center;justify-content:center;">
+      <div style="background:var(--card,#1e293b);border-radius:12px;padding:24px 32px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+        <div style="width:22px;height:22px;border:3px solid rgba(255,255,255,0.2);border-top-color:#38bdf8;border-radius:50%;animation:paywall-spin .7s linear infinite;flex-shrink:0;"></div>
+        <span style="color:var(--text,#f1f5f9);font-size:15px;font-weight:500;">Loading&hellip;</span>
+      </div>
+    </div>
+
     <!-- Cookie Consent Banner -->
     <div id="cookieConsent" class="cookie-consent" style="display: none;">
       <div class="cookie-consent-content">
@@ -579,6 +588,38 @@ BASE_HTML = """
           localStorage.setItem(consentKey, 'declined');
           consentBanner.style.display = 'none';
           // Optionally disable ads for users who decline
+        }});
+      }})();
+
+      // Page navigation loading spinner
+      (function() {{
+        var overlay = document.getElementById('navLoadingOverlay');
+        if (!overlay) return;
+        var shown = false;
+        function showOverlay() {{
+          if (shown) return;
+          shown = true;
+          overlay.style.display = 'flex';
+        }}
+        document.addEventListener('click', function(e) {{
+          var a = e.target.closest('a[href]');
+          if (!a) return;
+          var href = a.getAttribute('href');
+          if (!href || href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto')) return;
+          if (a.target === '_blank') return;
+          var url;
+          try {{ url = new URL(href, window.location.href); }} catch(err) {{ return; }}
+          if (url.origin !== window.location.origin) return;
+          if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+          showOverlay();
+        }});
+        window.addEventListener('popstate', function() {{
+          shown = false;
+          overlay.style.display = 'none';
+        }});
+        window.addEventListener('pageshow', function() {{
+          shown = false;
+          overlay.style.display = 'none';
         }});
       }})();
     </script>
@@ -1671,9 +1712,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         position = str(position).upper()
 
         team = mv.get("team") or pmeta.get("team") or ""
-        age = mv.get("age")
-        if age in (None, ""):
-            age = pmeta.get("age")
+        age  = age_from_bday(pmeta.get("bDay")) or mv.get("age") or pmeta.get("age")
 
         value = safe_float(mv.get("value"))
         name = (
@@ -7516,6 +7555,7 @@ def page_weekly(platform: str, season: int, league_id: str):
 @app.route("/trade")
 @app.route("/<platform>/<int:season>/<league_id>/trade")
 def page_trade(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    user_id = session.get("viewer_username") or None
     if league_id:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         league_id_safe = ctx.get("league_id") or league_id
@@ -7525,13 +7565,16 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None, lea
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
         viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
+        has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                            scoring_format=scoring_format,
-                                           viewer_roster_id=viewer_roster_id)
+                                           viewer_roster_id=viewer_roster_id,
+                                           has_premium=has_premium)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
-        body = build_trade_calculator_body(None, current_season)
+        has_premium = has_premium_access(user_id, None, "sleeper")
+        body = build_trade_calculator_body(None, current_season, has_premium=has_premium)
 
     return render_page("BR Fantasy Trade Calculator", league_id, "trade", body, platform, season)
 
@@ -10011,11 +10054,13 @@ def _try_grant_from_stripe_success() -> None:
         sub_id    = cs.subscription
         cust_id   = cs.customer
 
-        if plan not in ("league", "user"):
+        if plan not in ("league", "user", "combo"):
             return
         if plan == "user" and not user_id:
             return
         if plan == "league" and not league_id:
+            return
+        if plan == "combo" and not league_id and not user_id:
             return
 
         # Skip if already active (webhook may have already fired)
@@ -10031,13 +10076,13 @@ def _try_grant_from_stripe_success() -> None:
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=366)
 
-        if plan == "league" and league_id:
+        if plan in ("league", "combo") and league_id:
             create_league_subscription(
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
             )
-        elif plan == "user" and user_id:
+        if plan in ("user", "combo") and user_id:
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10134,7 +10179,8 @@ def _pricing_body() -> str:
     """
 
     league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
-    user_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user" else ""
+    user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
+    combo_highlight  = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "combo"  else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -10175,13 +10221,12 @@ def _pricing_body() -> str:
         </div>
 
         <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
 
           <!-- League plan -->
           <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
               <div style="font-size:17px;font-weight:700;">League Plan</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
@@ -10189,6 +10234,21 @@ def _pricing_body() -> str:
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
             <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe for League
+            </button>
+          </div>
+
+          <!-- Combo plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{combo_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="font-size:17px;font-weight:700;">League + Personal</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
+            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Both
             </button>
           </div>
 
@@ -10218,7 +10278,7 @@ def _pricing_body() -> str:
     </div>
 
     <style>
-      @media (max-width: 540px) {{
+      @media (max-width: 760px) {{
         .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
         .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
       }}
@@ -10228,9 +10288,11 @@ def _pricing_body() -> str:
 
 _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
 _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+_STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
 _STRIPE_PRICES = {
     "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
+    "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
 }
 
 
@@ -10323,7 +10385,7 @@ def stripe_webhook():
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
-        if plan == "league" and league_id:
+        if plan in ("league", "combo") and league_id:
             ok = create_league_subscription(
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
@@ -10331,7 +10393,7 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
                         "created" if ok else "FAILED", league_id, user_id, expires_at)
-        elif plan == "user" and user_id:
+        if plan in ("user", "combo") and user_id:
             ok = create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -10339,7 +10401,7 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
                         "created" if ok else "FAILED", user_id, expires_at)
-        else:
+        if plan not in ("league", "user", "combo"):
             logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
                            plan, league_id, user_id)
 
@@ -10794,11 +10856,29 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     season_records: list = []
     user_id_to_name: dict = {}  # user_id → latest known display name
 
-    for hist_s in available:
-        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+    # Resolve league IDs and prefetch all historical contexts in parallel
+    season_rids = [(hist_s, resolve_league_id_for_season(platform, league_id, season, hist_s))
+                   for hist_s in available]
+
+    def _fetch_ctx(hist_s_rid):
+        hist_s, rid = hist_s_rid
         try:
-            ctx = get_league_ctx_from_cache(platform, rid, hist_s)
+            return hist_s, get_league_ctx_from_cache(platform, rid, hist_s)
         except Exception:
+            return hist_s, None
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    season_ctx_map: dict = {}
+    with ThreadPoolExecutor(max_workers=min(len(season_rids), 6)) as pool:
+        futures = {pool.submit(_fetch_ctx, sr): sr for sr in season_rids}
+        for fut in as_completed(futures):
+            hist_s, ctx = fut.result()
+            if ctx is not None:
+                season_ctx_map[hist_s] = ctx
+
+    for hist_s in available:
+        ctx = season_ctx_map.get(hist_s)
+        if ctx is None:
             continue
 
         df = ctx.get("df_weekly", pd.DataFrame())
@@ -16412,6 +16492,10 @@ def api_trade_targets():
 
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "league_id and viewer_roster_id required"}), 400
+
+    user_id = session.get("viewer_username") or None
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)

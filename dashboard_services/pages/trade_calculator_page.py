@@ -14,6 +14,7 @@ def build_trade_calculator_body(
         num_teams: Optional[int] = None,
         scoring_format: Optional[str] = None,
         viewer_roster_id: Optional[str] = None,
+        has_premium: bool = False,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -92,6 +93,7 @@ def build_trade_calculator_body(
     )
 
     is_guest_str = 'true' if is_guest else 'false'
+    has_premium_str = 'true' if has_premium else 'false'
 
     # League type toggle: checkbox with 1QB and SF labels
     league_type_block = f"""
@@ -136,6 +138,7 @@ def build_trade_calculator_body(
         <input type="hidden" id="viewerRosterIdInput" value="{viewer_roster_val}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
+        <input type="hidden" id="otcHasPremium" value="{has_premium_str}">
 
         <div class="otc-shell">
           <div class="otc-page-head">
@@ -408,7 +411,7 @@ def build_trade_calculator_body(
                 <div class="otc-mini-tabs">
                   <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
                   <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
-                  <button class="otc-mini-tab" data-tab="targets">Targets</button>
+                  <button class="otc-mini-tab" data-tab="targets">Targets <i class="fa-solid fa-lock" style="font-size:9px;opacity:0.6;" id="targetsLockIcon"></i></button>
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
