@@ -82,7 +82,9 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
     Returns:
         {
             "has_premium": bool,
-            "subscription_type": "league" | "user" | None,
+            "subscription_type": "league" | "user" | "combo" | None,
+            "has_league_subscription": bool,
+            "has_user_subscription": bool,
             "expires_at": datetime | None,
             "subscriber_user_id": str | None  # Only for league subscriptions
         }
@@ -90,6 +92,8 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
     result = {
         "has_premium": False,
         "subscription_type": None,
+        "has_league_subscription": False,
+        "has_user_subscription": False,
         "expires_at": None,
         "subscriber_user_id": None
     }
@@ -99,7 +103,6 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                # Check league subscription first
                 if league_id:
                     cur.execute("""
                         SELECT expires_at, subscriber_user_id
@@ -110,16 +113,12 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                           AND expires_at > %s
                         LIMIT 1
                     """, (league_id, platform, now))
-
                     row = cur.fetchone()
                     if row:
-                        result["has_premium"] = True
-                        result["subscription_type"] = "league"
+                        result["has_league_subscription"] = True
                         result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
                         result["subscriber_user_id"] = row["subscriber_user_id"]
-                        return result
 
-                # Check user subscription
                 if user_id:
                     cur.execute("""
                         SELECT expires_at
@@ -130,15 +129,23 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                           AND expires_at > %s
                         LIMIT 1
                     """, (user_id, platform, now))
-
                     row = cur.fetchone()
                     if row:
-                        result["has_premium"] = True
-                        result["subscription_type"] = "user"
-                        result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
-                        return result
+                        result["has_user_subscription"] = True
+                        if not result["expires_at"]:
+                            result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
 
-                return result
+        has_league = result["has_league_subscription"]
+        has_user = result["has_user_subscription"]
+        if has_league and has_user:
+            result["subscription_type"] = "combo"
+        elif has_league:
+            result["subscription_type"] = "league"
+        elif has_user:
+            result["subscription_type"] = "user"
+
+        result["has_premium"] = has_league or has_user
+        return result
 
     except Exception as e:
         print(f"[subscriptions] Error getting subscription info: {e}")
