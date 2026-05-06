@@ -1735,6 +1735,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   const _TIER_COLORS = ['', '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#6b7280'];
+  const _TIER_LABELS = ['', 'Elite', 'Star', 'Starter', 'Depth', 'Fringe'];
 
   function _applyTierBadges(data) {
     ['a', 'b'].forEach(side => {
@@ -1747,17 +1748,15 @@ window.initTradePage = function initTradePage(root = document) {
       const container = root.querySelector(side === 'a' ? '#sideAChips' : '#sideBChips');
       if (!container) return;
 
+      // Tag each player chip with its individual tier badge
       container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
         const pid = chip.dataset.playerId;
         const item = byId[pid];
         if (!item) return;
 
         const tier = item.tier;
-        const effVal = item.effective_value;
-        const rawVal = item.value;
         const tc = _TIER_COLORS[tier] || '#6b7280';
 
-        // Update or add tier badge
         let badge = chip.querySelector('.otc-tier-badge');
         if (!badge) {
           badge = document.createElement('span');
@@ -1766,14 +1765,26 @@ window.initTradePage = function initTradePage(root = document) {
           if (metaEl) metaEl.appendChild(badge);
         }
         badge.textContent = 'T' + tier;
-        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;`;
-
-        // Show effective value if it differs meaningfully from raw
-        const valueEl = chip.querySelector('.otc-chip-value');
-        if (valueEl && effVal != null && Math.abs(effVal - rawVal) >= 2) {
-          valueEl.innerHTML = `<span style="text-decoration:line-through;opacity:0.45;font-size:11px;">${formatValue(rawVal)}</span> <span>${formatValue(effVal)}</span>`;
-        }
+        badge.title = _TIER_LABELS[tier] || ('Tier ' + tier);
+        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
       });
+
+      // Show a depth-discount note beneath the total when discounts are applied
+      const noteId = 'sideDepthNote' + side.toUpperCase();
+      let noteEl = root.querySelector('#' + noteId);
+      const rawTotal  = sideData.raw_total  || 0;
+      const effTotal  = sideData.effective_total || 0;
+      const discount  = rawTotal - effTotal;
+      const totalEl   = root.querySelector(side === 'a' ? '#sideATotal' : '#sideBTotal');
+      if (totalEl) {
+        if (!noteEl) {
+          noteEl = document.createElement('div');
+          noteEl.id = noteId;
+          noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
+          totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
+        }
+        noteEl.textContent = discount >= 5 ? `↓ ${Math.round(discount)} depth adj.` : '';
+      }
     });
   }
 

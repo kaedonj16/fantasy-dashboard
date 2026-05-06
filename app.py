@@ -4117,7 +4117,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
 
 _TIER_THRESHOLDS = [750, 500, 300, 150]
-_STACK_MULTS = [1.0, 0.82, 0.68, 0.56, 0.47, 0.40]
+
+# Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
+_DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
+
+# Tier cap: upper bound on how much a non-anchor asset can contribute, based on its individual tier.
+# T1 assets are never capped; low-tier assets can't inflate a trade regardless of quantity.
+_TIER_CAPS = {1: 1.0, 2: 0.90, 3: 0.72, 4: 0.55, 5: 0.40}
 
 
 def _asset_tier(value: float) -> int:
@@ -4127,15 +4133,15 @@ def _asset_tier(value: float) -> int:
     return 5
 
 
-def _stack_mult(idx: int) -> float:
-    return _STACK_MULTS[min(idx, len(_STACK_MULTS) - 1)]
-
-
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
     """
-    Tier-aware stack discount: assets sorted by value descending; each
-    additional asset receives a diminishing multiplier. Prevents a stack of
-    mid-tier players from matching a single elite asset at face value.
+    Tier-aware trade evaluation.
+
+    Each side's highest-value asset (the "anchor") counts at full face value.
+    Every additional asset is worth min(depth_mult, tier_cap) × its face value,
+    where tier_cap is determined by that individual player's tier. This means
+    stacking lower-tier players against an elite anchor produces meaningful
+    discounts, while adding a quality T2 player barely reduces their value.
     """
 
     def _compute_side(side):
@@ -4153,7 +4159,15 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
         if not vals:
             return float(side.get("raw_total", 0.0) or 0.0), 0.0
 
-        effective = sum(v * _stack_mult(i) for i, v in enumerate(vals))
+        effective = 0.0
+        for i, v in enumerate(vals):
+            if i == 0:
+                effective += v  # anchor — always full value
+            else:
+                depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
+                tier_m  = _TIER_CAPS[_asset_tier(v)]
+                effective += v * min(depth_m, tier_m)
+
         return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
 
     eff_a, adj_a = _compute_side(side_a)
@@ -4164,16 +4178,22 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
     side_a["adjustment"] = adj_a
     side_b["adjustment"] = adj_b
 
-    # Annotate breakdown items with tier and per-asset effective value for UI display
+    # Annotate each breakdown item with its individual tier + context-aware effective value
     for side in (side_a, side_b):
         bd = side.get("breakdown") or []
         if not bd:
             continue
         sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
         for idx, item in enumerate(sorted_bd):
-            item["tier"] = _asset_tier(item.get("value", 0.0))
-            item["stack_mult"] = round(_stack_mult(idx), 3)
-            item["effective_value"] = round(item.get("value", 0.0) * _stack_mult(idx), 1)
+            val  = item.get("value", 0.0)
+            tier = _asset_tier(val)
+            if idx == 0:
+                m = 1.0
+            else:
+                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], _TIER_CAPS[tier])
+            item["tier"]            = tier
+            item["stack_mult"]      = round(m, 3)
+            item["effective_value"] = round(val * m, 1)
 
 
 apply_multi_for_one_adjustment = apply_tier_stack_adjustment
