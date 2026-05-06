@@ -82,7 +82,7 @@ function showPaywall(feature) {
           <li>✓ All future premium features</li>
         </ul>
         <div class="paywall-pricing">
-          <div class="pricing-option">
+          <div class="pricing-option" data-plan="league">
             <div class="pricing-header">
               <h4>League Plan</h4>
             </div>
@@ -92,7 +92,7 @@ function showPaywall(feature) {
               Subscribe for League
             </button>
           </div>
-          <div class="pricing-option">
+          <div class="pricing-option" data-plan="combo">
             <div class="pricing-header">
               <h4>League + Personal</h4>
               <div class="pricing-badge">Best value</div>
@@ -103,7 +103,7 @@ function showPaywall(feature) {
               Subscribe Both
             </button>
           </div>
-          <div class="pricing-option">
+          <div class="pricing-option" data-plan="user">
             <div class="pricing-header">
               <h4>Personal Plan</h4>
             </div>
@@ -120,10 +120,46 @@ function showPaywall(feature) {
 
   document.body.appendChild(modal);
 
-  // Close on overlay click
   modal.querySelector('.paywall-overlay').addEventListener('click', () => {
     modal.remove();
   });
+
+  // Disable already-subscribed plans
+  _applySubscriptionState(modal);
+}
+
+async function _applySubscriptionState(modal) {
+  const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
+    window.location.pathname.split('/').filter(Boolean)[2] || '';
+
+  let data;
+  try {
+    const params = new URLSearchParams();
+    if (leagueId) params.append('league_id', leagueId);
+    const res = await fetch(`/api/subscription-status?${params}`);
+    data = await res.json();
+  } catch (_) { return; }
+
+  const hasLeague = data.has_league_subscription || false;
+  const hasUser   = data.has_user_subscription   || false;
+
+  function disablePlan(planAttr, reason) {
+    const card = modal.querySelector(`[data-plan="${planAttr}"]`);
+    if (!card) return;
+    const btn = card.querySelector('.paywall-cta');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = reason;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'default';
+      btn.onclick = null;
+    }
+    card.style.opacity = '0.6';
+  }
+
+  if (hasLeague) disablePlan('league', 'Already subscribed');
+  if (hasUser)   disablePlan('user',   'Already subscribed');
+  if (hasLeague && hasUser) disablePlan('combo', 'Already subscribed');
 }
 
 async function initiatePurchase(type, btn) {
