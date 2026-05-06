@@ -88,6 +88,7 @@ import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.service import (
+    age_from_bday,
     build_matchups_by_week,
     build_picks_by_roster,
     build_standings_map,
@@ -1671,9 +1672,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         position = str(position).upper()
 
         team = mv.get("team") or pmeta.get("team") or ""
-        age = mv.get("age")
-        if age in (None, ""):
-            age = pmeta.get("age")
+        age  = age_from_bday(pmeta.get("bDay")) or mv.get("age") or pmeta.get("age")
 
         value = safe_float(mv.get("value"))
         name = (
