@@ -484,9 +484,8 @@ BASE_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845"
-            crossorigin="anonymous"></script>
-    
+    {adsense_script}
+
     <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#38bdf8">
@@ -510,27 +509,13 @@ BASE_HTML = """
     <div id="app-scale">
       {nav}
 
-      <!-- Top Banner Ad -->
-      <div class="ad-container ad-top-banner">
-        <ins class="adsbygoogle"
-             style="display:block;max-height:90px;overflow:hidden;"
-             data-ad-client="ca-pub-9164153092633845"
-             data-ad-slot="5233061286"
-             data-ad-format="horizontal"></ins>
-      </div>
+      {ad_top}
 
       <main id="page-root" class="overview-layout">
         {body}
       </main>
 
-      <!-- Bottom Content Ad -->
-      <div class="ad-container ad-bottom-content">
-        <ins class="adsbygoogle"
-             style="display:block;max-height:90px;overflow:hidden;"
-             data-ad-client="ca-pub-9164153092633845"
-             data-ad-slot="5233061286"
-             data-ad-format="horizontal"></ins>
-      </div>
+      {ad_bottom}
     </div>
 
     <footer class="site-footer">
@@ -569,17 +554,7 @@ BASE_HTML = """
     <script src="/static/app.js"></script>
     <script src="/static/paywall.js"></script>
     <script>
-      // Initialize AdSense ads after page loads
-      window.addEventListener('load', function() {{
-        setTimeout(function() {{
-          try {{
-            (adsbygoogle = window.adsbygoogle || []).push({{}});
-            (adsbygoogle = window.adsbygoogle || []).push({{}});
-          }} catch (e) {{
-            console.warn('AdSense initialization error:', e);
-          }}
-        }}, 100);
-      }});
+      {adsense_init}
 
       // Cookie consent handling
       (function() {{
@@ -1249,6 +1224,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
 
+_AD_SCRIPT = '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845" crossorigin="anonymous"></script>'
+_AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
+_AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
+_AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1260,13 +1241,19 @@ def render_page(
         **kwargs,
 ) -> str:
     nav_html = build_nav(league_id, active, platform, season)
-
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
+
+    user_id = session.get("viewer_username")
+    is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
 
     return BASE_HTML.format(
         title=title,
         nav=nav_html,
         body=wrapped_body,
+        adsense_script="" if is_premium else _AD_SCRIPT,
+        ad_top="" if is_premium else _AD_TOP,
+        ad_bottom="" if is_premium else _AD_BOTTOM,
+        adsense_init="" if is_premium else _AD_INIT,
         privacy_url=league_url("privacy", league_id),
         faq_url=league_url("faq", league_id),
         support_url=league_url("support", league_id),
