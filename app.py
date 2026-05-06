@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
@@ -10002,10 +10003,84 @@ def page_pricing_guest():
 
 
 def _pricing_body() -> str:
-    plan = request.args.get("plan", "")
+    plan      = request.args.get("plan", "")
+    success   = request.args.get("success") == "1"
+    canceled  = request.args.get("canceled") == "1"
+    return_to = request.args.get("return_to", "").strip()
+
+    if success:
+        safe_return = html.escape(return_to) if return_to else ""
+        return f"""
+    <div class="card central" style="max-width:560px;text-align:center;">
+      <div class="card-body" style="padding:48px 32px;">
+        <div id="sub-icon" style="font-size:56px;margin-bottom:20px;">
+          <i class="fa-solid fa-circle-check" style="color:#22c55e;"></i>
+        </div>
+        <h2 id="sub-heading" style="margin:0 0 10px;font-size:24px;">Payment confirmed!</h2>
+        <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
+          Your premium access is activating&nbsp;&mdash; just a moment&hellip;
+        </p>
+        <div id="sub-spinner" style="margin:0 auto 24px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
+        {'<a id="sub-return" href="' + safe_return + '" style="display:none;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>' if return_to else ''}
+      </div>
+    </div>
+    <script>
+    (function() {{
+      var returnTo = {json.dumps(return_to)};
+      var attempts = 0, maxAttempts = 20;
+
+      // Extract league_id from return URL path (/{platform}/{season}/{league_id}/...)
+      var leagueId = '';
+      try {{
+        if (returnTo) {{
+          var parts = new URL(returnTo, window.location.origin).pathname.split('/').filter(Boolean);
+          if (parts.length >= 3) leagueId = parts[2];
+        }}
+      }} catch(e) {{}}
+      var statusUrl = '/api/subscription-status' + (leagueId ? '?league_id=' + encodeURIComponent(leagueId) : '');
+
+      function activate() {{
+        attempts++;
+        fetch(statusUrl)
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.has_premium) {{
+              document.getElementById('sub-spinner').style.display = 'none';
+              document.getElementById('sub-msg').textContent = 'Premium is active on your account!';
+              if (returnTo) {{
+                setTimeout(function() {{ window.location.href = returnTo; }}, 1200);
+              }} else {{
+                document.getElementById('sub-heading').textContent = 'You\\'re all set!';
+              }}
+            }} else if (attempts < maxAttempts) {{
+              setTimeout(activate, 2000);
+            }} else {{
+              document.getElementById('sub-spinner').style.display = 'none';
+              document.getElementById('sub-msg').textContent =
+                'Your access is being set up. If it isn\\'t active in a minute, try refreshing the page.';
+              var btn = document.getElementById('sub-return');
+              if (btn) btn.style.display = 'inline-block';
+            }}
+          }})
+          .catch(function() {{
+            if (attempts < maxAttempts) setTimeout(activate, 2000);
+          }});
+      }}
+
+      setTimeout(activate, 1500);
+    }})();
+    </script>
+    """
+
     league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
     user_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user" else ""
+    canceled_banner = """
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
+      <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
+      Checkout was canceled. You have not been charged.
+    </div>""" if canceled else ""
     return f"""
+    {canceled_banner}
     <div class="card central" style="max-width:760px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
         <h2 style="margin:0 0 6px;font-size:22px;">BR Fantasy Premium</h2>
@@ -10104,15 +10179,24 @@ def create_checkout_session():
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401
 
-    payload   = request.get_json(force=True)
-    plan      = str(payload.get("plan") or "").strip()
-    league_id = str(payload.get("league_id") or "").strip()
+    payload    = request.get_json(force=True)
+    plan       = str(payload.get("plan") or "").strip()
+    league_id  = str(payload.get("league_id") or "").strip()
+    return_url = str(payload.get("return_url") or "").strip()
 
     if plan not in _STRIPE_PRICES:
         return jsonify({"error": "Invalid plan"}), 400
 
     price_spec = _STRIPE_PRICES[plan]
     base_url   = request.host_url.rstrip("/")
+
+    # Validate return_url is same-origin
+    if return_url and not (return_url.startswith(base_url) or return_url.startswith("/")):
+        return_url = ""
+
+    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
+    if return_url:
+        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
 
     try:
         checkout = stripe.checkout.Session.create(
@@ -10126,7 +10210,7 @@ def create_checkout_session():
                 },
                 "quantity": 1,
             }],
-            success_url=base_url + "/pricing?success=1",
+            success_url=success_url,
             cancel_url=base_url + "/pricing?canceled=1",
             metadata={"plan": plan, "user_id": user_id, "league_id": league_id},
         )

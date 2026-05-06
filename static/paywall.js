@@ -132,7 +132,7 @@ async function initiatePurchase(type, btn) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: window.location.href }),
     });
     const data = await res.json();
     if (data.url) {
