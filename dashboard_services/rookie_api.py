@@ -176,14 +176,15 @@ def rankings():
                     FROM draft_adp
                     WHERE season = %s AND draft_type = 'rookie'
                     GROUP BY player_id, is_superflex
-                    HAVING SUM(sample_size) >= 2
+                    HAVING SUM(sample_size) >= 1
                     """,
                     (year,),
                 ).fetchall()
             sf_map:  Dict[str, float] = {}
             qb1_map: Dict[str, float] = {}
             for r in _adp_rows:
-                (sf_map if r["is_superflex"] else qb1_map)[str(r["player_id"])] = float(r["avg_pick"])
+                if r["avg_pick"] is not None:
+                    (sf_map if r["is_superflex"] else qb1_map)[str(r["player_id"])] = float(r["avg_pick"])
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
                 if sid:
@@ -193,19 +194,6 @@ def rankings():
                         d["adp_rank"] = qb1_map[sid]
         except Exception:
             pass
-
-        needs_sf  = [d for d in result if d.get("sf_adp_rank") is None]
-        needs_qb1 = [d for d in result if d.get("adp_rank")    is None]
-        if needs_sf:
-            try:
-                _apply_fc_adp(needs_sf, "sf_adp_rank", True)
-            except Exception:
-                pass
-        if needs_qb1:
-            try:
-                _apply_fc_adp(needs_qb1, "adp_rank", False)
-            except Exception:
-                pass
 
         # Overlay values from the main player_values DB for linked prospects,
         # so the prospects page shows the same numbers as the /players page.
