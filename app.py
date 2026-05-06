@@ -9001,6 +9001,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
+
+          const _PR_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
+          const _PR_TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
+          const _tier = prGetTier(p);
+          const _tc   = _PR_TIER_COLORS[_tier] || '#64748b';
+          const _tl   = _PR_TIER_LABELS[_tier]  || ('Tier ' + _tier);
+          const tierBadge = _tier
+            ? `<span class="pr-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;white-space:nowrap;">T${_tier}</span>`
+            : '';
+
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -9008,7 +9018,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value">' + sortDisplay + '</span>';
+            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + tierBadge + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
@@ -9123,14 +9133,30 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         }
       });
 
+      var prTierThresholds = {};
+
+      function prGetTier(p) {
+        const lt  = prLeagueType || '1qb';
+        const sz  = String(prLeagueSize || 10);
+        const tbl = (prTierThresholds[lt] || {})[sz] || (prTierThresholds['1qb'] || {})['10'] || [];
+        if (!tbl.length) return null;
+        const val = prGetValue(p);
+        for (let i = 0; i < tbl.length; i++) {
+          if (val >= tbl[i]) return i + 1;
+        }
+        return tbl.length + 1;
+      }
+
       // Load data
       Promise.all([
         fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
         fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
           .then(r => r.json()).catch(() => ({}))
-      ]).then(([players, indicators]) => {
+      ]).then(([resp, indicators]) => {
         prIndicators = indicators || {};
-        const rawPlayers = Array.isArray(players) ? players : [];
+        // Support both old (array) and new (object with players + tier_thresholds) format
+        const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
+        prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
 
         prAllPlayers = rawPlayers
           .filter(p => p && p.id != null)
@@ -12906,7 +12932,21 @@ def api_league_players():
         int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
     ))
 
-    return jsonify(_sanitize_for_json(model_value_table))
+    # Compute tier thresholds for every league-type × size combination so the
+    # frontend can display each player's tier badge without a second API call.
+    _tier_thresholds_all = {}
+    for _lt in ("1qb", "sf"):
+        _tier_thresholds_all[_lt] = {}
+        for _sz in (8, 10, 12, 14):
+            _tier_thresholds_all[_lt][str(_sz)] = [
+                round(v, 1) for v in
+                compute_tier_thresholds(model_value_table, _lt, _sz)
+            ]
+
+    return jsonify(_sanitize_for_json({
+        "players": model_value_table,
+        "tier_thresholds": _tier_thresholds_all,
+    }))
 
 
 @app.route("/api/teams")
