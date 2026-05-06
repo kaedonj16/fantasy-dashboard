@@ -1560,6 +1560,7 @@ window.initTradePage = function initTradePage(root = document) {
     players.forEach((p, idx) => {
       const chip = document.createElement("div");
       chip.className = "otc-chip";
+      if (p.id) chip.dataset.playerId = String(p.id);
 
       const leftWrap = document.createElement("div");
       leftWrap.className = "otc-chip-main";
@@ -1733,6 +1734,49 @@ window.initTradePage = function initTradePage(root = document) {
     renderChips(side);
   }
 
+  const _TIER_COLORS = ['', '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#6b7280'];
+
+  function _applyTierBadges(data) {
+    ['a', 'b'].forEach(side => {
+      const sideData = data['side_' + side];
+      if (!sideData) return;
+      const bd = sideData.breakdown || [];
+      const byId = {};
+      bd.forEach(item => { if (item.id) byId[String(item.id)] = item; });
+
+      const container = root.querySelector(side === 'a' ? '#sideAChips' : '#sideBChips');
+      if (!container) return;
+
+      container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
+        const pid = chip.dataset.playerId;
+        const item = byId[pid];
+        if (!item) return;
+
+        const tier = item.tier;
+        const effVal = item.effective_value;
+        const rawVal = item.value;
+        const tc = _TIER_COLORS[tier] || '#6b7280';
+
+        // Update or add tier badge
+        let badge = chip.querySelector('.otc-tier-badge');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'otc-tier-badge';
+          const metaEl = chip.querySelector('.otc-chip-meta');
+          if (metaEl) metaEl.appendChild(badge);
+        }
+        badge.textContent = 'T' + tier;
+        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;`;
+
+        // Show effective value if it differs meaningfully from raw
+        const valueEl = chip.querySelector('.otc-chip-value');
+        if (valueEl && effVal != null && Math.abs(effVal - rawVal) >= 2) {
+          valueEl.innerHTML = `<span style="text-decoration:line-through;opacity:0.45;font-size:11px;">${formatValue(rawVal)}</span> <span>${formatValue(effVal)}</span>`;
+        }
+      });
+    });
+  }
+
   async function recomputeTrade() {
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
@@ -1820,6 +1864,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
       }
+
+      _applyTierBadges(data);
 
       Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
     } catch (err) {

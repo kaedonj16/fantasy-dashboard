@@ -4116,98 +4116,67 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     return body
 
 
-def apply_multi_for_one_adjustment(side_a: dict, side_b: dict) -> None:
+_TIER_THRESHOLDS = [750, 500, 300, 150]
+_STACK_MULTS = [1.0, 0.82, 0.68, 0.56, 0.47, 0.40]
+
+
+def _asset_tier(value: float) -> int:
+    for i, threshold in enumerate(_TIER_THRESHOLDS):
+        if value >= threshold:
+            return i + 1
+    return 5
+
+
+def _stack_mult(idx: int) -> float:
+    return _STACK_MULTS[min(idx, len(_STACK_MULTS) - 1)]
+
+
+def apply_tier_stack_adjustment(side_a: dict, side_b: dict) -> None:
     """
-    Multi-for-one adjustment:
-
-    - Counts total assets (players + picks) on each side.
-    - Gives a bonus to the side with FEWER total assets, scaled by:
-        * gap in player value between the stud and the opponent's best player
-        * how much of that side is concentrated in its best player ("stud")
-        * how many extra pieces the other side is sending (including picks)
-    - Adjustment is added on top of raw_total.
+    Tier-aware stack discount: assets sorted by value descending; each
+    additional asset receives a diminishing multiplier. Prevents a stack of
+    mid-tier players from matching a single elite asset at face value.
     """
 
-    vals_a = side_a.get("player_values", []) or []
-    vals_b = side_b.get("player_values", []) or []
-    picks_a = len(side_a.get("pick_ids", []) or [])
-    picks_b = len(side_b.get("pick_ids", []) or [])
+    def _compute_side(side):
+        bd = side.get("breakdown") or []
+        if bd:
+            vals = sorted([item.get("value", 0.0) for item in bd], reverse=True)
+        else:
+            # Fallback for call sites that omit per-asset breakdown
+            vals = sorted(list(side.get("player_values", []) or []), reverse=True)
+            raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
+            if raw_picks > 0.0:
+                vals.append(raw_picks)
+                vals.sort(reverse=True)
 
-    # Total assets (players + picks) on each side
-    assets_a = len(vals_a) + picks_a
-    assets_b = len(vals_b) + picks_b
+        if not vals:
+            return float(side.get("raw_total", 0.0) or 0.0), 0.0
 
-    # No assets on either side, or same total asset count → no adjustment.
-    if assets_a == 0 or assets_b == 0 or assets_a == assets_b:
-        side_a["effective_total"] = side_a["raw_total"]
-        side_b["effective_total"] = side_b["raw_total"]
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = 0.0
-        return
+        effective = sum(v * _stack_mult(i) for i, v in enumerate(vals))
+        return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
 
-    # Decide which side is consolidating (fewer total assets)
-    if assets_a < assets_b:
-        fewer = side_a
-        more = side_b
-        fewer_is_a = True
-    else:
-        fewer = side_b
-        more = side_a
-        fewer_is_a = False
+    eff_a, adj_a = _compute_side(side_a)
+    eff_b, adj_b = _compute_side(side_b)
 
-    fewer_vals = fewer.get("player_values", []) or []
-    more_vals = more.get("player_values", []) or []
+    side_a["effective_total"] = eff_a
+    side_b["effective_total"] = eff_b
+    side_a["adjustment"] = adj_a
+    side_b["adjustment"] = adj_b
 
-    # Player-only totals (picks excluded from gap calc)
-    fewer_players_total = float(fewer.get("raw_players_total", 0.0) or 0.0)
-    more_players_total = float(more.get("raw_players_total", 0.0) or 0.0)
+    # Annotate breakdown items with tier and per-asset effective value for UI display
+    for side in (side_a, side_b):
+        bd = side.get("breakdown") or []
+        if not bd:
+            continue
+        sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
+        for idx, item in enumerate(sorted_bd):
+            item["tier"] = _asset_tier(item.get("value", 0.0))
+            item["stack_mult"] = round(_stack_mult(idx), 3)
+            item["effective_value"] = round(item.get("value", 0.0) * _stack_mult(idx), 1)
 
-    # Safety guard — need at least one player on the consolidating side
-    if not fewer_vals or fewer_players_total <= 0:
-        side_a["effective_total"] = side_a["raw_total"]
-        side_b["effective_total"] = side_b["raw_total"]
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = 0.0
-        return
 
-    # Extra pieces = total asset count difference (players + picks)
-    extra_pieces = abs(assets_a - assets_b)
-
-    # How big is the stud relative to the consolidating side?
-    stud_val = max(fewer_vals)
-    stud_share = stud_val / max(fewer_players_total, 1.0)  # 0–1
-    stud_share = max(0.0, min(stud_share, 1.0))
-
-    # Gap in player value between the two sides
-    player_gap = abs(more_players_total - fewer_players_total)
-
-    # --- Adjustment recipe ---
-    # 1. Base from player_gap, scaled heavier when stud dominates the side.
-    base_from_gap = player_gap * (0.35 + 0.45 * stud_share)
-
-    # 2. Extra multiplier per extra piece: 1 extra ~0.55, 2 ~0.75, 3+ ~0.90
-    piece_factor = 0.55 + 0.20 * min(extra_pieces - 1, 2)
-
-    raw_adj = base_from_gap * piece_factor
-
-    # 3. Caps: at most 80% of the stud value, or 55% of the consolidating
-    #    side's total player value — whichever is smaller.
-    cap_stud = 0.80 * stud_val
-    cap_side = 0.55 * fewer_players_total
-    adj_cap = max(0.0, min(cap_stud, cap_side))
-
-    adj = min(raw_adj, adj_cap)
-
-    # Apply to the consolidating (fewer-asset) side only
-    if fewer_is_a:
-        side_a["adjustment"] = adj
-        side_b["adjustment"] = 0.0
-    else:
-        side_a["adjustment"] = 0.0
-        side_b["adjustment"] = adj
-
-    side_a["effective_total"] = side_a["raw_total"] + side_a["adjustment"]
-    side_b["effective_total"] = side_b["raw_total"] + side_b["adjustment"]
+apply_multi_for_one_adjustment = apply_tier_stack_adjustment
 
 
 def render_weekly_top_scorers_for_week(
