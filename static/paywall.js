@@ -75,10 +75,11 @@ function showPaywall(feature) {
         <h3>${featureName}</h3>
         <p>This is a premium feature. Upgrade to access:</p>
         <ul class="paywall-features">
-          <li>✓ AI-powered insights and recommendations</li>
-          <li>✓ Breakout candidate predictions</li>
+          <li>✓ AI-powered trade suggestions</li>
+          <li>✓ Full Trade Intelligence feed &amp; history</li>
+          <li>✓ Breakout Engine candidate predictions</li>
           <li>✓ Advanced player metrics and analytics</li>
-          <li>✓ All premium features for your league</li>
+          <li>✓ All future premium features</li>
         </ul>
         <div class="paywall-pricing">
           <div class="pricing-option">
