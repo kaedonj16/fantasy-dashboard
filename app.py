@@ -10090,7 +10090,7 @@ def _pricing_body() -> str:
       var returnTo = {json.dumps(return_to)};
       var attempts = 0, maxAttempts = 20;
 
-      // Extract league_id from return URL path (/{platform}/{season}/{league_id}/...)
+      // Extract league_id from return URL path (/{{platform}}/{{season}}/{{league_id}}/...)
       var leagueId = '';
       try {{
         if (returnTo) {{
