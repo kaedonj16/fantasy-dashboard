@@ -10856,30 +10856,11 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     season_records: list = []
     user_id_to_name: dict = {}  # user_id → latest known display name
 
-    # Resolve league IDs and prefetch all historical contexts in parallel
-    season_rids = [(hist_s, resolve_league_id_for_season(platform, league_id, season, hist_s))
-                   for hist_s in available]
-
-    def _fetch_ctx(hist_s_rid):
-        hist_s, rid = hist_s_rid
-        try:
-            return hist_s, get_league_ctx_from_cache(platform, rid, hist_s)
-        except Exception:
-            return hist_s, None
-
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    season_ctx_map: dict = {}
-    if season_rids:
-        with ThreadPoolExecutor(max_workers=min(len(season_rids), 6)) as pool:
-            futures = {pool.submit(_fetch_ctx, sr): sr for sr in season_rids}
-            for fut in as_completed(futures):
-                hist_s, ctx = fut.result()
-                if ctx is not None:
-                    season_ctx_map[hist_s] = ctx
-
     for hist_s in available:
-        ctx = season_ctx_map.get(hist_s)
-        if ctx is None:
+        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+        try:
+            ctx = get_league_ctx_from_cache(platform, rid, hist_s)
+        except Exception:
             continue
 
         df = ctx.get("df_weekly", pd.DataFrame())
