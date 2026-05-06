@@ -10004,7 +10004,7 @@ def _try_grant_from_stripe_success() -> None:
         if cs.status != "complete":
             return
 
-        meta      = dict(cs.metadata) if cs.metadata else {}
+        meta      = cs.metadata.to_dict() if cs.metadata else {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
         league_id = meta.get("league_id") or ""
