@@ -69,9 +69,8 @@ def _apply_fc_adp(prospects: list, adp_field: str, is_sf: bool) -> None:
         [(d, fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in prospects],
         key=lambda x: x[1],
     )
-    for rank, (d, fc_rank) in enumerate(ranked, start=1):
-        if fc_rank < 9999:
-            d[adp_field] = float(rank)
+    for rank, (d, _) in enumerate(ranked, start=1):
+        d[adp_field] = float(rank)
 
 
 def _nfl_draft_complete(draft_year: int) -> bool:
