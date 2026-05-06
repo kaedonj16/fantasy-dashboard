@@ -1070,10 +1070,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
-        ("Player Rankings", "page_players",  "players",  False),
-        ("Prospect Rankings", "page_prospects",  "prospects",   False),
-        ("Breakout Engine", "page_breakouts","breakouts", False),
-    ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
+        ("Player Rankings",   "page_players",        "players",        False),
+        ("Prospect Rankings", "page_prospects",       "prospects",      False),
+        ("Breakout Engine",   "page_breakouts",       "breakouts",      False),
+        ("Auction Values",    "page_auction_values",  "auction-values", False),
+    ], ["players", "prospects", "breakouts", "auction-values"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -7814,6 +7815,285 @@ def _build_career_graphs_ctx_live(
         "season_pf_df": season_pf_df,
         "is_career": True,
     }
+
+
+
+
+@app.route("/auction-values")
+@app.route("/<platform>/<int:season>/<league_id>/auction-values")
+def page_auction_values(platform: str = None, season: int = None, league_id: str = None):
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+
+    if not has_premium:
+        # Show teaser with paywall
+        body_html = """
+    <div class="card central" style="max-width:900px;">
+      <div class="card-header">
+        <h2>Startup Auction Values</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Dynasty startup auction dollar values for every player — by league type, size, and budget
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-gavel"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          Get precise auction dollar values for dynasty startup drafts,<br>
+          customizable by league format and budget.
+        </div>
+        <button onclick="showPaywall('auction-values')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Auction Values
+        </button>
+      </div>
+    </div>
+    <script>
+      // Pre-open paywall so user sees it immediately
+      document.addEventListener('DOMContentLoaded', function() { showPaywall('auction-values'); });
+    </script>
+    """
+        return render_page("Auction Values", league_id, "auction-values", body_html, platform, season)
+
+    body_html = f"""
+    <div class="card central" style="max-width:900px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;">Startup Auction Values</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Dynasty startup dollar values based on BR model — adjust format and budget below
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:20px;">
+
+        <!-- Settings row -->
+        <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;margin-bottom:20px;padding:14px 16px;background:var(--bg-alt,#f8fafc);border:1px solid var(--border);border-radius:10px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">League Type</div>
+            <div style="display:flex;gap:4px;" id="avLeagueGroup">
+              <button class="av-toggle active" data-val="1qb" onclick="avSetLeague('1qb')">1QB</button>
+              <button class="av-toggle" data-val="sf" onclick="avSetLeague('sf')">SF</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">League Size</div>
+            <div style="display:flex;gap:4px;" id="avSizeGroup">
+              <button class="av-toggle" data-val="8" onclick="avSetSize(8)">8</button>
+              <button class="av-toggle active" data-val="10" onclick="avSetSize(10)">10</button>
+              <button class="av-toggle" data-val="12" onclick="avSetSize(12)">12</button>
+              <button class="av-toggle" data-val="14" onclick="avSetSize(14)">14</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Budget / Team ($)</div>
+            <input id="avBudget" type="number" min="50" max="1000" step="10" value="200"
+              style="width:80px;padding:5px 9px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;"
+              oninput="avRender()">
+          </div>
+          <div style="margin-left:auto;">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Position</div>
+            <div style="display:flex;gap:4px;">
+              <button class="av-pos active" data-pos="ALL" onclick="avSetPos('ALL')">All</button>
+              <button class="av-pos" data-pos="QB" onclick="avSetPos('QB')">QB</button>
+              <button class="av-pos" data-pos="RB" onclick="avSetPos('RB')">RB</button>
+              <button class="av-pos" data-pos="WR" onclick="avSetPos('WR')">WR</button>
+              <button class="av-pos" data-pos="TE" onclick="avSetPos('TE')">TE</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary strip -->
+        <div id="avSummary" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;"></div>
+
+        <!-- Table -->
+        <div id="avLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+          Loading player values…
+        </div>
+        <div id="avTableWrap" style="display:none;overflow-x:auto;">
+          <table id="avTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('rank')"># <span id="avSortRank"></span></th>
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Name</th>
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Pos</th>
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Team</th>
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('age')">Age <span id="avSortAge"></span></th>
+                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('value')">Value <span id="avSortValue"></span></th>
+                <th style="padding:8px 10px 8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('auction')">Auction $ <span id="avSortAuction"></span></th>
+              </tr>
+            </thead>
+            <tbody id="avBody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .av-toggle, .av-pos {{
+        padding:5px 12px;border-radius:7px;border:1px solid var(--border);
+        background:var(--card);color:var(--text-muted);cursor:pointer;
+        font-size:12px;font-weight:600;transition:all .15s;
+      }}
+      .av-toggle.active, .av-pos.active {{
+        background:var(--text);color:var(--card);border-color:var(--text);
+      }}
+      #avTable tbody tr:hover {{ background:var(--bg-alt,#f8fafc); }}
+      #avTable tbody td {{ padding:8px 6px;border-bottom:1px solid var(--border); }}
+      .av-dollar {{ font-weight:800;font-size:15px; }}
+      .av-dollar.top {{ color:#10b981; }}
+      .av-dollar.mid {{ color:#3b82f6; }}
+      .av-dollar.low {{ color:var(--text-muted); }}
+      @media (max-width:600px) {{
+        .av-col-team, .av-col-value {{ display:none; }}
+      }}
+    </style>
+
+    <script>
+    (function() {{
+      const POS_COLORS = {{QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#8b5cf6'}};
+      // Roster spots per team by league size (dynasty startup pool)
+      const ROSTER = {{8:25, 10:24, 12:23, 14:22}};
+
+      let allPlayers = [];
+      let avLeague = '1qb';
+      let avSize = 10;
+      let avPos = 'ALL';
+      let avSortCol = 'auction';
+      let avSortDir = -1; // -1 = desc
+
+      fetch('/api/league-players')
+        .then(r => r.json())
+        .then(data => {{
+          allPlayers = (data.players || []).filter(p =>
+            ['QB','RB','WR','TE'].includes((p.position || '').toUpperCase())
+          );
+          document.getElementById('avLoading').style.display = 'none';
+          document.getElementById('avTableWrap').style.display = '';
+          avRender();
+        }})
+        .catch(() => {{
+          document.getElementById('avLoading').innerHTML =
+            '<div style="color:var(--text-muted)">Could not load player data.</div>';
+        }});
+
+      function getVal(p) {{
+        const sz = avSize;
+        if (avLeague === 'sf') {{
+          if (sz === 8)  return p.sf_value_8  || p.sf_value || 0;
+          if (sz === 12) return p.sf_value_12 || p.sf_value || 0;
+          if (sz === 14) return p.sf_value_14 || p.sf_value || 0;
+          return p.sf_value || 0;
+        }} else {{
+          if (sz === 8)  return p.value_8  || p.value || 0;
+          if (sz === 12) return p.value_12 || p.value || 0;
+          if (sz === 14) return p.value_14 || p.value || 0;
+          return p.value || 0;
+        }}
+      }}
+
+      window.avRender = function() {{
+        const budget = Math.max(50, parseInt(document.getElementById('avBudget').value) || 200);
+        const totalBudget = budget * avSize;
+        const poolSize = (ROSTER[avSize] || 24) * avSize;
+
+        // Sort all players by value, take top poolSize
+        const sorted = [...allPlayers]
+          .map(p => ({{ ...p, _val: getVal(p) }}))
+          .sort((a, b) => b._val - a._val)
+          .slice(0, poolSize);
+
+        const totalVal = sorted.reduce((s, p) => s + p._val, 0);
+
+        // Calculate auction value: each rostered player gets at least $1
+        // surplus budget distributed proportionally
+        const minPerPlayer = 1;
+        const surplusBudget = totalBudget - poolSize * minPerPlayer;
+        const sortedWithAuction = sorted.map(p => ({{
+          ...p,
+          _auction: Math.max(1, Math.round(minPerPlayer + (p._val / totalVal) * surplusBudget)),
+        }}));
+
+        // Sort by selected column
+        sortedWithAuction.sort((a, b) => {{
+          let av, bv;
+          if (avSortCol === 'auction') {{ av = a._auction; bv = b._auction; }}
+          else if (avSortCol === 'value')  {{ av = a._val;    bv = b._val; }}
+          else if (avSortCol === 'age')    {{ av = parseFloat(a.age) || 99; bv = parseFloat(b.age) || 99; }}
+          else {{ av = a._auction; bv = b._auction; }} // rank = auction
+          return avSortDir * (bv - av);
+        }});
+
+        // Apply position filter
+        const display = avPos === 'ALL' ? sortedWithAuction
+          : sortedWithAuction.filter(p => (p.position || '').toUpperCase() === avPos);
+
+        // Update sort indicators
+        ['Rank','Age','Value','Auction'].forEach(c => {{
+          const el = document.getElementById('avSort' + c);
+          if (el) el.textContent = '';
+        }});
+        const colKey = avSortCol === 'rank' ? 'Rank' :
+                       avSortCol === 'age'  ? 'Age'  :
+                       avSortCol === 'value'? 'Value': 'Auction';
+        const sortEl = document.getElementById('avSort' + colKey);
+        if (sortEl) sortEl.textContent = avSortDir === -1 ? ' ↓' : ' ↑';
+
+        // Summary
+        document.getElementById('avSummary').textContent =
+          `${{avSize}}-team · ${{avLeague.toUpperCase()}} · ${{poolSize}} players in pool · ${{totalBudget}} total budget`;
+
+        // Render rows
+        const body = document.getElementById('avBody');
+        body.innerHTML = display.map((p, i) => {{
+          const pos = (p.position || '').toUpperCase();
+          const col = POS_COLORS[pos] || 'var(--text-muted)';
+          const age = p.age ? parseFloat(p.age).toFixed(1) : '—';
+          const val = p._val ? p._val.toFixed(1) : '—';
+          const auc = p._auction;
+          const dollarClass = auc >= 40 ? 'top' : auc >= 10 ? 'mid' : 'low';
+          return `<tr>
+            <td style="color:var(--text-muted);">${{i + 1}}</td>
+            <td style="font-weight:600;">${{p.name || '—'}}</td>
+            <td><span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:${{col}}20;color:${{col}};">${{pos}}</span></td>
+            <td class="av-col-team" style="color:var(--text-muted);">${{p.team || '—'}}</td>
+            <td>${{age}}</td>
+            <td class="av-col-value" style="color:var(--text-muted);">${{val}}</td>
+            <td style="padding-right:10px;"><span class="av-dollar ${{dollarClass}}">$${{auc}}</span></td>
+          </tr>`;
+        }}).join('');
+      }};
+
+      window.avSetLeague = function(val) {{
+        avLeague = val;
+        document.querySelectorAll('#avLeagueGroup .av-toggle').forEach(b =>
+          b.classList.toggle('active', b.dataset.val === val));
+        avRender();
+      }};
+
+      window.avSetSize = function(val) {{
+        avSize = val;
+        document.querySelectorAll('#avSizeGroup .av-toggle').forEach(b =>
+          b.classList.toggle('active', b.dataset.val == val));
+        avRender();
+      }};
+
+      window.avSetPos = function(val) {{
+        avPos = val;
+        document.querySelectorAll('.av-pos').forEach(b =>
+          b.classList.toggle('active', b.dataset.pos === val));
+        avRender();
+      }};
+
+      window.avSort = function(col) {{
+        if (avSortCol === col) {{ avSortDir *= -1; }}
+        else {{ avSortCol = col; avSortDir = col === 'age' ? 1 : -1; }}
+        avRender();
+      }};
+    }})();
+    </script>
+    """
+    return render_page("Auction Values", league_id, "auction-values", body_html, platform, season)
 
 
 @app.route("/players")

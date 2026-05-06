@@ -55,7 +55,8 @@ function showPaywall(feature) {
     'advanced-metrics': 'Advanced Metrics',
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade History',
-    'trade-suggestions': 'Trade Suggestions'
+    'trade-suggestions': 'Trade Suggestions',
+    'auction-values': 'Auction Values'
   };
 
   const featureName = featureNames[feature] || 'Premium Feature';
