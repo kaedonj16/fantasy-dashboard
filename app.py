@@ -1070,11 +1070,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
-        ("Player Rankings",   "page_players",        "players",        False),
-        ("Prospect Rankings", "page_prospects",       "prospects",      False),
-        ("Breakout Engine",   "page_breakouts",       "breakouts",      False),
-        ("Auction Values",    "page_auction_values",  "auction-values", False),
-    ], ["players", "prospects", "breakouts", "auction-values"], "playersNavDropdown"))
+        ("Player Rankings",   "page_players",   "players",   False),
+        ("Prospect Rankings", "page_prospects",  "prospects", False),
+        ("Breakout Engine",   "page_breakouts",  "breakouts", False),
+    ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",  "page_awards",  "awards",  False),
         ("Graphs",  "page_graphs",  "graphs",  False),
@@ -7819,8 +7818,6 @@ def _build_career_graphs_ctx_live(
 
 
 
-@app.route("/auction-values")
-@app.route("/<platform>/<int:season>/<league_id>/auction-values")
 def page_auction_values(platform: str = None, season: int = None, league_id: str = None):
     user_id = session.get("viewer_username")
     has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
