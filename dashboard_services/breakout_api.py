@@ -166,6 +166,18 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
     candidates.sort(key=lambda x: float(x['breakout_opportunity_score']), reverse=True)
 
+    # Fill in missing names and headshots from players_index
+    try:
+        from utils.utils import load_players_index
+        players_index = load_players_index() or {}
+        for c in candidates:
+            pmeta = players_index.get(str(c.get('player_id') or ''), {})
+            if not c.get('player_name'):
+                c['player_name'] = pmeta.get('full_name') or pmeta.get('name')
+            c['espnHeadshot'] = pmeta.get('espnHeadshot')
+    except Exception:
+        pass
+
     return {
         'season': season,
         'candidates': candidates,
@@ -268,11 +280,16 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
 
     candidate = enrich_candidate_with_type(dict(row))
 
-    # Add headshot from players index
-    from utils.utils import load_players_index
-    players_index = load_players_index() or {}
-    player_meta = players_index.get(player_id, {})
-    candidate['espnHeadshot'] = player_meta.get('espnHeadshot')
+    # Fill missing name / headshot from players_index
+    try:
+        from utils.utils import load_players_index
+        players_index = load_players_index() or {}
+        player_meta = players_index.get(str(player_id), {})
+        if not candidate.get('player_name'):
+            candidate['player_name'] = player_meta.get('full_name') or player_meta.get('name')
+        candidate['espnHeadshot'] = player_meta.get('espnHeadshot')
+    except Exception:
+        pass
 
     return candidate
 
