@@ -149,6 +149,11 @@
   background: var(--card);
 }
 
+.pricing-option.featured {
+  border-color: #667eea;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+}
+
 .pricing-option:hover {
   border-color: #667eea;
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);

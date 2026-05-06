@@ -10287,7 +10287,6 @@ def _pricing_body() -> str:
 
     league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
     user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
-    combo_highlight  = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "combo"  else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -10331,7 +10330,7 @@ def _pricing_body() -> str:
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
 
           <!-- League plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
               <div style="font-size:17px;font-weight:700;">League Plan</div>
             </div>
@@ -10339,16 +10338,16 @@ def _pricing_body() -> str:
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe for League
             </button>
           </div>
 
           <!-- Combo plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{combo_highlight}">
+          <div style="border:2px solid #667eea;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
               <div style="font-size:17px;font-weight:700;">League + Personal</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
               $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
