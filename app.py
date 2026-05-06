@@ -540,11 +540,9 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <div id="navLoadingOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.35);backdrop-filter:blur(2px);align-items:center;justify-content:center;">
-      <div style="background:var(--card,#1e293b);border-radius:12px;padding:24px 32px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
-        <div style="width:22px;height:22px;border:3px solid rgba(255,255,255,0.2);border-top-color:#38bdf8;border-radius:50%;animation:paywall-spin .7s linear infinite;flex-shrink:0;"></div>
-        <span style="color:var(--text,#f1f5f9);font-size:15px;font-weight:500;">Loading&hellip;</span>
-      </div>
+    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" style="display:none;">
+      <div class="loading-spinner"></div>
+      <div class="fullscreen-loading-text">Loading&hellip;</div>
     </div>
 
     <!-- Cookie Consent Banner -->
@@ -599,7 +597,7 @@ BASE_HTML = """
         function showOverlay() {{
           if (shown) return;
           shown = true;
-          overlay.style.display = 'flex';
+          overlay.style.display = '';
         }}
         document.addEventListener('click', function(e) {{
           var a = e.target.closest('a[href]');
