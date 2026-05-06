@@ -5806,6 +5806,52 @@ function openCompareSearch(player1Data) {
   });
 }
 
+function _computeSeasonStats(p) {
+  const yearMap = p.game_logs_by_year || {};
+  const latestYear = Object.keys(yearMap).sort((a, b) => b - a)[0];
+  if (!latestYear) return { ppg: null, total: null, season: null, games: 0 };
+  const logs = yearMap[latestYear] || [];
+  const played = logs.filter(g => parseFloat(g.fantasy_pts || 0) > 0);
+  const total = played.reduce((s, g) => s + parseFloat(g.fantasy_pts || 0), 0);
+  return {
+    ppg: played.length > 0 ? (total / played.length).toFixed(1) : null,
+    total: played.length > 0 ? total.toFixed(1) : null,
+    season: latestYear,
+    games: played.length,
+  };
+}
+
+function _buildComparePPGRow(p1, p2) {
+  const s1 = _computeSeasonStats(p1);
+  const s2 = _computeSeasonStats(p2);
+  if (!s1.total && !s2.total) return '';
+
+  const season = s1.season || s2.season || '';
+
+  function cell(val, label) {
+    return `<div class="compare-pts-cell">
+      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-label">${label}</div>
+    </div>`;
+  }
+
+  return `
+    <div class="compare-pts-row">
+      <div class="compare-pts-player">
+        ${cell(s1.ppg, 'PPG')}
+        ${cell(s1.total, 'Total Pts')}
+        ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
+      </div>
+      <div class="compare-pts-divider"></div>
+      <div class="compare-pts-player compare-pts-player-right">
+        ${cell(s2.ppg, 'PPG')}
+        ${cell(s2.total, 'Total Pts')}
+        ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
@@ -6127,12 +6173,15 @@ function openComparisonView(p1, p2) {
   }
 
   // Build the comparison body
+  const ppgRowHTML = _buildComparePPGRow(p1, p2);
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2">${_buildCompareHeroHTML(p2)}</div>
       </div>
+
+      ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}
 
       <hr class="pm-section-divider">
 
@@ -6149,16 +6198,21 @@ function openComparisonView(p1, p2) {
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
 
-      <div style="margin-top:16px;">
+      <div class="compare-nav-btns">
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
+        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
       </div>
     </div>
   `;
 
-  // Back button
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
     openPlayerModal(p1.player_id, p1.name);
+  });
+
+  document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    openPlayerModal(p2.player_id, p2.name);
   });
 
   // Fetch NFL state to determine if it's offseason

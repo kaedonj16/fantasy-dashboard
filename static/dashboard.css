@@ -11921,6 +11921,59 @@ img, svg, canvas {
 }
 
 /* Back button */
+/* PPG / Total Points row */
+.compare-pts-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+.compare-pts-player {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.compare-pts-player-right {
+  justify-content: flex-end;
+}
+.compare-pts-cell {
+  text-align: center;
+}
+.compare-pts-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+.compare-pts-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.compare-pts-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  align-self: flex-end;
+  padding-bottom: 2px;
+}
+.compare-pts-divider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  margin: 0 4px;
+}
+
+/* Navigation buttons row */
+.compare-nav-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
 .compare-back-btn {
   background: var(--bg-alt);
   border: 1px solid var(--border);
@@ -11932,6 +11985,20 @@ img, svg, canvas {
   transition: color 0.15s;
 }
 .compare-back-btn:hover {
+  color: var(--text);
+}
+.compare-profile-btn {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s;
+  margin-left: auto;
+}
+.compare-profile-btn:hover {
   color: var(--text);
 }
 
