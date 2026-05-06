@@ -1734,8 +1734,8 @@ window.initTradePage = function initTradePage(root = document) {
     renderChips(side);
   }
 
-  const _TIER_COLORS = ['', '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#6b7280'];
-  const _TIER_LABELS = ['', 'Elite', 'Star', 'Starter', 'Depth', 'Fringe'];
+  const _TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
+  const _TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
 
   function _applyTierBadges(data) {
     ['a', 'b'].forEach(side => {

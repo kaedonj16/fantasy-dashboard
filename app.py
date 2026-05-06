@@ -4120,18 +4120,28 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 _DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
 
 # Tier cap: upper bound on how much a non-anchor asset can contribute, by individual tier.
-# T1 assets are never capped; fringe assets can't inflate a trade regardless of quantity.
-_TIER_CAPS = {1: 1.0, 2: 0.90, 3: 0.72, 4: 0.55, 5: 0.40}
+# Spread linearly from 1.0 (T1, no cap) down to 0.38 (T9, fringe), extended for extra tiers.
+def _build_tier_caps(num_tiers: int) -> dict:
+    high, low = 1.0, 0.38
+    if num_tiers <= 1:
+        return {1: 1.0}
+    return {t: round(high - (high - low) * (t - 1) / (num_tiers - 1), 3)
+            for t in range(1, num_tiers + 1)}
 
-_FALLBACK_THRESHOLDS = [750.0, 500.0, 300.0, 150.0]
+_NUM_TIERS = 9
+_TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
+_FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 
 
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
-                             num_tiers: int = 5) -> list:
+                             num_tiers: int = _NUM_TIERS) -> list:
     """
-    Derive tier breakpoints from the largest natural gaps in the player value rankings.
-    Scans the top players sorted by descending value, finds the (num_tiers-1) biggest
-    consecutive drops, and uses their midpoints as tier boundaries.
+    Derive tier breakpoints from normalized gap significance across the full player list.
+
+    Each gap is scored relative to the local median gap in a sliding window so that
+    the algorithm detects meaningful separations regardless of value density. Boundaries
+    are chosen with a minimum spacing (min_group players) so no tier ends up with a
+    single isolated player.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4146,24 +4156,44 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         if pos in ("K", "DEF"):
             continue
         v = float(p.get(primary) or p.get("value") or 0)
-        if v >= 50:
+        if v >= 5:
             vals.append(v)
 
     vals.sort(reverse=True)
-    top = vals[:min(300, len(vals))]
 
-    if len(top) < num_tiers * 3:
+    if len(vals) < num_tiers * 3:
         return _FALLBACK_THRESHOLDS
 
-    # Find the (num_tiers - 1) largest drops; use their midpoint as the boundary
-    gaps = sorted(
-        [(top[i] - top[i + 1], (top[i] + top[i + 1]) / 2.0)
-         for i in range(len(top) - 1)],
-        key=lambda x: x[0],
-        reverse=True,
-    )[:num_tiers - 1]
+    # Score each gap by how large it is relative to nearby gaps (local significance)
+    window  = 12
+    min_grp = 3   # minimum players per tier
+    scored  = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    return sorted([g[1] for g in gaps], reverse=True)
+    # Select top (num_tiers-1) gaps, enforcing minimum group spacing
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
+    boundaries = []
+    for _sig, pos, midpoint in scored:
+        if len(boundaries) >= num_tiers - 1:
+            break
+        if pos < min_grp or pos > len(vals) - 1 - min_grp:
+            continue
+        if any(abs(pos - p) < min_grp for p in chosen_pos):
+            continue
+        chosen_pos.append(pos)
+        boundaries.append(midpoint)
+
+    if not boundaries:
+        return _FALLBACK_THRESHOLDS
+
+    return sorted(boundaries, reverse=True)
 
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
@@ -4186,6 +4216,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
     produces compounding discounts; adding a quality T2 player is barely penalised.
     """
     thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
+    tier_caps  = _build_tier_caps(len(thresholds) + 1)
 
     def _compute_side(side):
         bd = side.get("breakdown") or []
@@ -4208,7 +4239,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
                 effective += v  # anchor — always full value
             else:
                 depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
-                tier_m  = _TIER_CAPS[_asset_tier(v, thresholds)]
+                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
                 effective += v * min(depth_m, tier_m)
 
         return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
@@ -4233,7 +4264,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
             if idx == 0:
                 m = 1.0
             else:
-                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], _TIER_CAPS[tier])
+                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
             item["tier"]            = tier
             item["stack_mult"]      = round(m, 3)
             item["effective_value"] = round(val * m, 1)
