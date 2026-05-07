@@ -15346,6 +15346,7 @@ def _fetch_league_adp_from_db(
                 WHERE da.draft_type   = %s
                   AND da.season       = %s
                   AND da.is_superflex = %s
+                  AND da.num_teams BETWEEN 8 AND 16
                 GROUP BY da.player_id
                 HAVING SUM(da.sample_size) >= %s
                 ORDER BY avg_pick ASC
