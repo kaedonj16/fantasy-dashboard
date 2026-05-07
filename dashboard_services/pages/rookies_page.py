@@ -8,7 +8,7 @@ the filters/sorts are instant without round-trips.
 from __future__ import annotations
 
 
-def build_prospects_body(platform: str, season: int, league_id: str) -> str:
+def build_prospects_body() -> str:
     return """
 <div class="card central">
   <div class="card-header">
@@ -749,7 +749,7 @@ def build_prospects_body(platform: str, season: int, league_id: str) -> str:
 
   function rkAdpField(r) {
     var v = rkLeague === 'sf' ? r.sf_adp_rank : r.adp_rank;
-    return v != null ? parseFloat(v).toFixed(1) : '—';
+    return v != null ? parseFloat(v).toFixed(2) : '—';
   }
   function rkAdpSort(a, b) {
     var af = rkLeague === 'sf' ? a.sf_adp_rank : a.adp_rank;

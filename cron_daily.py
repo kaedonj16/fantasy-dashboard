@@ -274,7 +274,7 @@ print(f"[cron] Trade intel analytics: {{analytics_result}}")
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.draft_adp_crawler import run_draft_adp_crawl
-result = run_draft_adp_crawl(batch_size=150, workers=2)
+result = run_draft_adp_crawl(batch_size=150, workers=2, crawl_mode="both", recrawl_days=30)
 print(f"[cron] Draft ADP: {result}")
 """, "draft_adp_crawl")
 
