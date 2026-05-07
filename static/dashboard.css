@@ -11822,14 +11822,16 @@ img, svg, canvas {
 }
 .compare-pts-player {
   display: flex;
-  gap: 20px;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
 }
-.compare-pts-player-right {
-  justify-content: center;
-  flex-direction: row-reverse;
-
+.compare-pts-stats {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.compare-pts-player-right .compare-pts-stats {
+  justify-content: flex-end;
 }
 .compare-pts-cell { text-align: center; }
 .compare-pts-val {
@@ -11850,6 +11852,9 @@ img, svg, canvas {
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+.compare-pts-player-right .compare-pts-meta {
+  text-align: right;
 }
 .compare-pts-divider {
   width: 1px;

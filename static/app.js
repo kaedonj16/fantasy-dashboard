@@ -5900,14 +5900,18 @@ function _buildComparePPGRow(p1, p2) {
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
-        ${cell(s1.ppg, 'PPG')}
-        ${cell(s1.total, 'Total Pts')}
+        <div class="compare-pts-stats">
+          ${cell(s1.ppg, 'PPG')}
+          ${cell(s1.total, 'Total Pts')}
+        </div>
         ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
-        ${cell(s2.ppg, 'PPG')}
-        ${cell(s2.total, 'Total Pts')}
+        <div class="compare-pts-stats">
+          ${cell(s2.ppg, 'PPG')}
+          ${cell(s2.total, 'Total Pts')}
+        </div>
         ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
       </div>
     </div>
