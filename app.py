@@ -9178,32 +9178,72 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
         prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
 
+        // Helper function to calculate precise age from birthday
+        function calculateAgeFromBirthday(bDay) {
+          if (!bDay) return null;
+          try {
+            const parts = bDay.split('/');
+            if (parts.length !== 3) return null;
+            const [month, day, year] = parts.map(Number);
+            const birthDate = new Date(year, month - 1, day);
+            const today = new Date();
+            
+            // Calculate precise age including partial years
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            const dayDiff = today.getDate() - birthDate.getDate();
+            
+            if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+              age--;
+            }
+            
+            // Calculate partial year as decimal
+            const lastBirthday = new Date(
+              today.getFullYear() - (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? 1 : 0),
+              birthDate.getMonth(),
+              birthDate.getDate()
+            );
+            const daysSinceBirthday = (today - lastBirthday) / (1000 * 60 * 60 * 24);
+            const daysInYear = (today.getFullYear() % 4 === 0 && (today.getFullYear() % 100 !== 0 || today.getFullYear() % 400 === 0)) ? 366 : 365;
+            
+            age += daysSinceBirthday / daysInYear;
+            return Math.round(age * 10) / 10; // Round to 1 decimal place
+          } catch (e) {
+            return null;
+          }
+        }
+
         prAllPlayers = rawPlayers
           .filter(p => p && p.id != null)
-          .map(p => ({
-            id:               String(p.id),
-            name:             p.name || p.full_name || 'Unknown',
-            team:             p.team || '',
-            position:         String(p.position || '').toUpperCase(),
-            age:              p.age != null ? Number(p.age) : null,
-            value:            Number(p.value    || 0),
-            value_8:          Number(p.value_8  || p.value    || 0),
-            value_12:         Number(p.value_12 || p.value    || 0),
-            value_14:         Number(p.value_14 || p.value    || 0),
-            sf_value:         Number(p.sf_value    || p.value || 0),
-            sf_value_8:       Number(p.sf_value_8  || p.sf_value || p.value || 0),
-            sf_value_12:      Number(p.sf_value_12 || p.sf_value || p.value || 0),
-            sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
-            redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
-            redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
-            pos_rank_label:   p.pos_rank_label    || '',
-            sf_pos_rank_label:p.sf_pos_rank_label || '',
-            pos_rank:         Number(p.pos_rank    || 9999),
-            sf_pos_rank:      Number(p.sf_pos_rank || 9999),
-            search_name:      p.search_name || '',
-            is_rookie:        p.is_rookie === true,
-            rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
-          }))
+          .map(p => {
+            // Calculate precise age from birthday if available
+            const preciseAge = calculateAgeFromBirthday(p.bDay);
+            
+            return {
+              id:               String(p.id),
+              name:             p.name || p.full_name || 'Unknown',
+              team:             p.team || '',
+              position:         String(p.position || '').toUpperCase(),
+              age:              preciseAge !== null ? preciseAge : (p.age != null ? Number(p.age) : null),
+              value:            Number(p.value    || 0),
+              value_8:          Number(p.value_8  || p.value    || 0),
+              value_12:         Number(p.value_12 || p.value    || 0),
+              value_14:         Number(p.value_14 || p.value    || 0),
+              sf_value:         Number(p.sf_value    || p.value || 0),
+              sf_value_8:       Number(p.sf_value_8  || p.sf_value || p.value || 0),
+              sf_value_12:      Number(p.sf_value_12 || p.sf_value || p.value || 0),
+              sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
+              redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
+              redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
+              pos_rank_label:   p.pos_rank_label    || '',
+              sf_pos_rank_label:p.sf_pos_rank_label || '',
+              pos_rank:         Number(p.pos_rank    || 9999),
+              sf_pos_rank:      Number(p.sf_pos_rank || 9999),
+              search_name:      p.search_name || '',
+              is_rookie:        p.is_rookie === true,
+              rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
+            };
+          })
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
           
         document.getElementById('prLoading').style.display = 'none';
@@ -12950,6 +12990,20 @@ def api_league_players():
         -(float(p.get("value") or 0)),  # Negative for descending sort by value
         int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
     ))
+
+    # Add birthday data for precise age calculation in frontend
+    try:
+        from utils.utils import load_players_index
+        players_index = load_players_index() or {}
+        
+        # Enrich player data with birthday information
+        for player in model_value_table:
+            player_id = str(player.get("id") or "")
+            player_data = players_index.get(player_id)
+            if player_data:
+                player["bDay"] = player_data.get("bDay")
+    except Exception as e:
+        print(f"[api/league-players] Could not add birthday data: {e}")
 
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.

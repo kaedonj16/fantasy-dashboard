@@ -399,32 +399,24 @@ def load_current_values_from_db() -> list[dict]:
             asset["name"] = player_data.get("name")
             asset["team"] = asset.get("team") or player_data.get("team")
             
-            # Calculate age from birthday if age is not available
+            # Calculate age from birthday if age is not available, using the consistent age_from_bday function
             if not asset.get("age"):
                 birthday = player_data.get("bDay")
                 if birthday:
                     try:
-                        from datetime import datetime
-                        # Parse birthday format "5/31/2005"
-                        birth_date = datetime.strptime(birthday, "%m/%d/%Y")
-                        today = datetime.now()
-                        # Calculate precise age including partial years
-                        age = today.year - birth_date.year
-                        # Subtract 1 if birthday hasn't occurred yet this year
-                        if (today.month, today.day) < (birth_date.month, birth_date.day):
-                            age -= 1
-                        # Add partial year as decimal
-                        next_birthday = datetime(today.year if (today.month, today.day) >= (birth_date.month, birth_date.day) else today.year - 1, birth_date.month, birth_date.day)
-                        days_since_birthday = (today - next_birthday).days
-                        days_in_year = 366 if today.year % 4 == 0 and (today.year % 100 != 0 or today.year % 400 == 0) else 365
-                        age += days_since_birthday / days_in_year
-                        asset["age"] = round(age, 1)
+                        from dashboard_services.service import age_from_bday
+                        calculated_age = age_from_bday(birthday)
+                        asset["age"] = calculated_age if calculated_age is not None else player_data.get("age")
                     except Exception:
                         asset["age"] = player_data.get("age")
                 else:
                     asset["age"] = player_data.get("age")
             else:
-                asset["age"] = asset.get("age")
+                # Ensure existing age is properly rounded to 1 decimal place for consistency
+                try:
+                    asset["age"] = round(float(asset["age"]), 1)
+                except Exception:
+                    pass
         
         # Normalise field names expected by the rest of the app
         asset.setdefault("sf_value", asset.get("value") or 0.0)
