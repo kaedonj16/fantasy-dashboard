@@ -1786,7 +1786,8 @@ window.initTradePage = function initTradePage(root = document) {
         const item = byId[pid];
         if (!item) return;
 
-        const tier = item.tier;
+        const playerObj = allPlayers.find(p => String(p.id) === pid);
+        const tier = playerObj ? _getOtcTier(playerObj) : item.tier;
         const tc = _TIER_COLORS[tier] || '#6b7280';
         const label = _TIER_LABELS[tier] || ('Tier ' + tier);
 
