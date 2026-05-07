@@ -15317,9 +15317,9 @@ def _fetch_league_adp_from_db(
     """
     Pull ADP from real league draft data stored by the draft ADP crawler.
 
-    Tries an exact num_teams match first, then widens to ±2 if not enough
-    samples exist.  Returns player_id -> {adp_rank, avg_pick, std_pick,
-    sample_size, position} or empty dict when data is sparse.
+    Aggregates across all league sizes for the given league type (1QB/SF) so
+    that sample sizes are maximized.  Returns player_id -> {adp_rank,
+    avg_pick, std_pick, sample_size, position} or empty dict when data is sparse.
     """
     try:
         from dashboard_services.db import get_conn
@@ -15327,7 +15327,7 @@ def _fetch_league_adp_from_db(
         import json as _json
 
         # Day-level cache so we don't hit the DB on every page load
-        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{num_teams}t_{season}_{date.today().isoformat()}.json"
+        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{season}_{date.today().isoformat()}.json"
         cache_path = DATA_DIR / cache_key
         if cache_path.exists():
             try:
@@ -15338,16 +15338,19 @@ def _fetch_league_adp_from_db(
         with get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT da.player_id, da.avg_pick, da.std_pick, da.avg_round, da.sample_size
+                SELECT
+                    da.player_id,
+                    SUM(da.avg_pick * da.sample_size) / SUM(da.sample_size) AS avg_pick,
+                    SUM(da.sample_size) AS sample_size
                 FROM draft_adp da
-                WHERE da.draft_type  = %s
-                  AND da.season      = %s
+                WHERE da.draft_type   = %s
+                  AND da.season       = %s
                   AND da.is_superflex = %s
-                  AND da.num_teams BETWEEN %s AND %s
-                  AND da.sample_size >= %s
-                ORDER BY da.avg_pick ASC
+                GROUP BY da.player_id
+                HAVING SUM(da.sample_size) >= %s
+                ORDER BY avg_pick ASC
                 """,
-                (draft_type, season, is_sf, num_teams - 2, num_teams + 2, min_samples),
+                (draft_type, season, is_sf, min_samples),
             ).fetchall()
 
         if not rows:
@@ -15373,11 +15376,11 @@ def _fetch_league_adp_from_db(
             pos = pos_map.get(pid, "")
             pos_counters[pos] = pos_counters.get(pos, 0) + 1
             result[pid] = {
-                "adp_rank":   rank,
-                "avg_pick":   float(row["avg_pick"] or rank),
-                "std_pick":   float(row["std_pick"] or 0),
-                "pos_rank":   pos_counters[pos],
-                "position":   pos,
+                "adp_rank":    rank,
+                "avg_pick":    float(row["avg_pick"] or rank),
+                "std_pick":    0,
+                "pos_rank":    pos_counters[pos],
+                "position":    pos,
                 "sample_size": int(row["sample_size"] or 0),
             }
 
