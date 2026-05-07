@@ -57,22 +57,6 @@ def _get_fc_data(is_sf: bool) -> list:
         return []
 
 
-def _apply_fc_adp(prospects: list, adp_field: str, is_sf: bool) -> None:
-    fc_data = _get_fc_data(is_sf)
-    fc_by_sid: Dict[str, int] = {}
-    for entry in fc_data:
-        p = entry.get("player") or {}
-        sid = str(p.get("sleeperId") or "")
-        if sid and p.get("rosterPosition") != "P":
-            fc_by_sid[sid] = entry.get("overallRank") or 9999
-    ranked = sorted(
-        [(d, fc_by_sid.get(str(d.get("sleeper_id") or ""), 9999)) for d in prospects],
-        key=lambda x: x[1],
-    )
-    for rank, (d, _) in enumerate(ranked, start=1):
-        d[adp_field] = float(rank)
-
-
 def _nfl_draft_complete(draft_year: int) -> bool:
     from data_building.rookie_pipeline.pipeline import is_draft_complete
     try:
@@ -198,9 +182,10 @@ def rankings():
                 pass
 
             for d in result:
-                sid = str(d.get("sleeper_id") or "")
+                sid = str(d.get("sleeper_id"))
                 if not sid:
-                    sid = _name_to_sid.get((d.get("name") or "").strip().lower(), "")
+                    name = (d.get("name") or "").strip().lower()
+                    sid = _name_to_sid.get(name, "")
                 if sid:
                     if sid in sf_map:
                         d["sf_adp_rank"] = sf_map[sid]

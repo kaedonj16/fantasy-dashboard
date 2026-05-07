@@ -15277,7 +15277,7 @@ def _fetch_league_adp_from_db(
     season: int,
     draft_type: str,
     num_teams: int,
-    min_samples: int = 20,
+    min_samples: int = 40,
 ) -> dict:
     """
     Pull ADP from real league draft data stored by the draft ADP crawler.
