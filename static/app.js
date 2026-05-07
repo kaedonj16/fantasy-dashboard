@@ -1560,7 +1560,7 @@ window.initTradePage = function initTradePage(root = document) {
     players.forEach((p, idx) => {
       const chip = document.createElement("div");
       chip.className = "otc-chip";
-      if (p.id) chip.dataset.playerId = String(p.id);
+      if (p.id) chip.dataset.chipPid = String(p.id);
 
       const leftWrap = document.createElement("div");
       leftWrap.className = "otc-chip-main";
@@ -1752,8 +1752,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Tag each player chip with its individual tier badge (tier is computed server-side
       // from live value-table gaps, so it reflects the current rankings)
-      container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
-        const pid = chip.dataset.playerId;
+      container.querySelectorAll('.otc-chip[data-chip-pid]').forEach(chip => {
+        const pid = chip.dataset.chipPid;
         const item = byId[pid];
         if (!item) return;
 

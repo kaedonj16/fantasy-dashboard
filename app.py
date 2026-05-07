@@ -8320,7 +8320,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:28px 18px 1fr 52px 46px 46px 76px;
+             grid-template-columns:28px 18px 1fr 52px 46px 46px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -8349,7 +8349,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 18px 1fr 52px 46px 46px 76px;
+        grid-template-columns: 28px 18px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -8670,12 +8670,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
         }
         /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 72px !important; }
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort — hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 72px !important; }
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
@@ -9029,15 +9029,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
 
-          const _PR_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
-          const _PR_TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
-          const _tier = prGetTier(p);
-          const _tc   = _PR_TIER_COLORS[_tier] || '#64748b';
-          const _tl   = _PR_TIER_LABELS[_tier]  || ('Tier ' + _tier);
-          const tierBadge = _tier
-            ? `<span class="pr-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;white-space:nowrap;">T${_tier}</span>`
-            : '';
-
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -9045,7 +9036,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + sortDisplay + tierBadge + '</span>';
+            '<span class="pr-value">' + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
