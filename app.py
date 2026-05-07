@@ -183,6 +183,16 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+def _static_hash(filename: str) -> str:
+    path = Path(__file__).parent / "static" / filename
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+_APP_JS_V = _static_hash("app.js")
+_PAYWALL_JS_V = _static_hash("paywall.js")
+
 
 @app.after_request
 def _add_cache_headers(response):
@@ -559,8 +569,8 @@ BASE_HTML = """
       </div>
     </div>
 
-    <script src="/static/app.js"></script>
-    <script src="/static/paywall.js"></script>
+    <script src="/static/app.js?v={app_js_v}"></script>
+    <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
 
@@ -1299,6 +1309,8 @@ def render_page(
         support_url=league_url("support", league_id),
         contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
+        app_js_v=_APP_JS_V,
+        paywall_js_v=_PAYWALL_JS_V,
     )
 
 
@@ -8308,7 +8320,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:28px 18px 1fr 52px 46px 46px 60px;
+             grid-template-columns:28px 18px 1fr 52px 46px 46px 76px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -8337,7 +8349,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 18px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 28px 18px 1fr 52px 46px 46px 76px;
         align-items: center;
         gap: 0;
       }
@@ -8658,12 +8670,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
         }
         /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 72px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort — hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 16px 1fr 72px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
@@ -9033,7 +9045,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + tierBadge + sortDisplay + '</span>';
+            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + sortDisplay + tierBadge + '</span>';
 
           list.appendChild(row);
         });

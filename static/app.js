@@ -1636,7 +1636,8 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.type = "button";
       removeBtn.className = "otc-chip-remove";
       removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
         players.splice(idx, 1);
         saveState();
         renderChips(side);
@@ -1680,7 +1681,8 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.type = "button";
       removeBtn.className = "otc-chip-remove";
       removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
         picks.splice(idx, 1);
         saveState();
         renderChips(side);
@@ -1789,44 +1791,6 @@ window.initTradePage = function initTradePage(root = document) {
       }
     });
 
-    // Render a tier legend showing the live breakpoints from this value table
-    _renderTierLegend(data.tier_thresholds || []);
-  }
-
-  function _renderTierLegend(thresholds) {
-    const legendId = 'otcTierLegend';
-    let legend = root.querySelector('#' + legendId);
-    if (!thresholds.length) {
-      if (legend) legend.remove();
-      return;
-    }
-
-    const numTiers = thresholds.length + 1;
-    // Build rows: T1 ≥ thresholds[0], T2 ≥ thresholds[1], ..., T5 < last
-    const rows = thresholds.map((t, i) => {
-      const tc = _TIER_COLORS[i + 1] || '#6b7280';
-      const next = thresholds[i + 1];
-      const range = next != null
-        ? `${Math.round(next)}–${Math.round(t)}`
-        : `≥ ${Math.round(t)}`;
-      return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
-        `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${i + 1}</span>` +
-        `<span style="font-size:10px;color:var(--text-muted);">${range}</span></span>`;
-    });
-    // Last tier (T5 or whatever)
-    const lastTc = _TIER_COLORS[numTiers] || '#6b7280';
-    rows.push(`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
-      `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${lastTc}22;color:${lastTc};border:1px solid ${lastTc}44;">T${numTiers}</span>` +
-      `<span style="font-size:10px;color:var(--text-muted);">< ${Math.round(thresholds[thresholds.length - 1])}</span></span>`);
-
-    if (!legend) {
-      legend = document.createElement('div');
-      legend.id = legendId;
-      legend.style.cssText = 'padding:6px 12px 4px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px;';
-      const verdictEl = root.querySelector('#tradeVerdict');
-      if (verdictEl) verdictEl.parentNode.insertBefore(legend, verdictEl.nextSibling);
-    }
-    legend.innerHTML = rows.join('');
   }
 
   async function recomputeTrade() {
