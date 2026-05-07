@@ -8562,10 +8562,10 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .pr-pagination-controls {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
       }
       .pr-pagination-btn {
-        padding: 6px 12px;
+        padding: 6px 10px;
         border: 1px solid var(--border);
         border-radius: 6px;
         background: var(--card-bg);
@@ -8585,6 +8585,21 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .pr-pagination-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+      @media (max-width: 540px) {
+        .pr-pagination {
+          flex-direction: column;
+          gap: 8px;
+          align-items: center;
+        }
+        .pr-pagination-btn .pr-btn-label {
+          display: none;
+        }
+        .pr-pagination-btn {
+          padding: 6px 10px;
+          min-width: 36px;
+          justify-content: center;
+        }
       }
       .pr-page-numbers {
         display: flex;
@@ -9039,11 +9054,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             </div>
             <div class="pr-pagination-controls">
               <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
-                <i class="fa-solid fa-chevron-left"></i> Previous
+                <i class="fa-solid fa-chevron-left"></i><span class="pr-btn-label"> Previous</span>
               </button>
               <div id="prPageNumbers" class="pr-page-numbers"></div>
               <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
-                Next <i class="fa-solid fa-chevron-right"></i>
+                <span class="pr-btn-label">Next </span><i class="fa-solid fa-chevron-right"></i>
               </button>
             </div>
           `;
@@ -9070,14 +9085,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         // Update page numbers
         const pageNumbers = document.getElementById('prPageNumbers');
-        const maxPages = 5;
+        const isMobile = window.innerWidth <= 540;
+        const maxPages = isMobile ? 3 : 5;
+        const wing = isMobile ? 1 : 2;
         let pages = [];
-        
+
         if (totalPages <= maxPages) {
           for (let i = 1; i <= totalPages; i++) pages.push(i);
         } else {
           pages = [1];
-          let lo = Math.max(2, page - 2), hi = Math.min(totalPages - 1, page + 2);
+          let lo = Math.max(2, page - wing), hi = Math.min(totalPages - 1, page + wing);
           if (lo > 2) pages.push('…');
           for (let i = lo; i <= hi; i++) pages.push(i);
           if (hi < totalPages - 1) pages.push('…');

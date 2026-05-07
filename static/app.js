@@ -1382,7 +1382,7 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch("/api/league-players", { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
         const data = await res.json();
-        const rawData = Array.isArray(data) ? data : [];
+        const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
 
         const players = rawData.filter(p => p.position !== "PICK");
         const picks = rawData.filter(p => p.position === "PICK");
