@@ -183,6 +183,16 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+def _static_hash(filename: str) -> str:
+    path = Path(__file__).parent / "static" / filename
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+_APP_JS_V = _static_hash("app.js")
+_PAYWALL_JS_V = _static_hash("paywall.js")
+
 
 @app.after_request
 def _add_cache_headers(response):
@@ -559,8 +569,8 @@ BASE_HTML = """
       </div>
     </div>
 
-    <script src="/static/app.js"></script>
-    <script src="/static/paywall.js"></script>
+    <script src="/static/app.js?v={app_js_v}"></script>
+    <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
 
@@ -1299,6 +1309,8 @@ def render_page(
         support_url=league_url("support", league_id),
         contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
+        app_js_v=_APP_JS_V,
+        paywall_js_v=_PAYWALL_JS_V,
     )
 
 
@@ -9017,15 +9029,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
 
-          const _PR_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
-          const _PR_TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
-          const _tier = prGetTier(p);
-          const _tc   = _PR_TIER_COLORS[_tier] || '#64748b';
-          const _tl   = _PR_TIER_LABELS[_tier]  || ('Tier ' + _tier);
-          const tierBadge = _tier
-            ? `<span class="pr-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;white-space:nowrap;">T${_tier}</span>`
-            : '';
-
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -9033,7 +9036,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value" style="display:flex;align-items:center;gap:5px;justify-content:flex-end;">' + tierBadge + sortDisplay + '</span>';
+            '<span class="pr-value">' + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
@@ -10284,7 +10287,6 @@ def _pricing_body() -> str:
 
     league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
     user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
-    combo_highlight  = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "combo"  else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -10328,7 +10330,7 @@ def _pricing_body() -> str:
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
 
           <!-- League plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
               <div style="font-size:17px;font-weight:700;">League Plan</div>
             </div>
@@ -10336,16 +10338,16 @@ def _pricing_body() -> str:
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe for League
             </button>
           </div>
 
           <!-- Combo plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{combo_highlight}">
+          <div style="border:2px solid #667eea;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
               <div style="font-size:17px;font-weight:700;">League + Personal</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best value</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
               $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>

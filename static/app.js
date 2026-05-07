@@ -1560,7 +1560,7 @@ window.initTradePage = function initTradePage(root = document) {
     players.forEach((p, idx) => {
       const chip = document.createElement("div");
       chip.className = "otc-chip";
-      if (p.id) chip.dataset.playerId = String(p.id);
+      if (p.id) chip.dataset.chipPid = String(p.id);
 
       const leftWrap = document.createElement("div");
       leftWrap.className = "otc-chip-main";
@@ -1636,7 +1636,8 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.type = "button";
       removeBtn.className = "otc-chip-remove";
       removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
         players.splice(idx, 1);
         saveState();
         renderChips(side);
@@ -1680,7 +1681,8 @@ window.initTradePage = function initTradePage(root = document) {
       removeBtn.type = "button";
       removeBtn.className = "otc-chip-remove";
       removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
         picks.splice(idx, 1);
         saveState();
         renderChips(side);
@@ -1750,8 +1752,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Tag each player chip with its individual tier badge (tier is computed server-side
       // from live value-table gaps, so it reflects the current rankings)
-      container.querySelectorAll('.otc-chip[data-player-id]').forEach(chip => {
-        const pid = chip.dataset.playerId;
+      container.querySelectorAll('.otc-chip[data-chip-pid]').forEach(chip => {
+        const pid = chip.dataset.chipPid;
         const item = byId[pid];
         if (!item) return;
 
@@ -1789,44 +1791,6 @@ window.initTradePage = function initTradePage(root = document) {
       }
     });
 
-    // Render a tier legend showing the live breakpoints from this value table
-    _renderTierLegend(data.tier_thresholds || []);
-  }
-
-  function _renderTierLegend(thresholds) {
-    const legendId = 'otcTierLegend';
-    let legend = root.querySelector('#' + legendId);
-    if (!thresholds.length) {
-      if (legend) legend.remove();
-      return;
-    }
-
-    const numTiers = thresholds.length + 1;
-    // Build rows: T1 ≥ thresholds[0], T2 ≥ thresholds[1], ..., T5 < last
-    const rows = thresholds.map((t, i) => {
-      const tc = _TIER_COLORS[i + 1] || '#6b7280';
-      const next = thresholds[i + 1];
-      const range = next != null
-        ? `${Math.round(next)}–${Math.round(t)}`
-        : `≥ ${Math.round(t)}`;
-      return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
-        `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;">T${i + 1}</span>` +
-        `<span style="font-size:10px;color:var(--text-muted);">${range}</span></span>`;
-    });
-    // Last tier (T5 or whatever)
-    const lastTc = _TIER_COLORS[numTiers] || '#6b7280';
-    rows.push(`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">` +
-      `<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${lastTc}22;color:${lastTc};border:1px solid ${lastTc}44;">T${numTiers}</span>` +
-      `<span style="font-size:10px;color:var(--text-muted);">< ${Math.round(thresholds[thresholds.length - 1])}</span></span>`);
-
-    if (!legend) {
-      legend = document.createElement('div');
-      legend.id = legendId;
-      legend.style.cssText = 'padding:6px 12px 4px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px;';
-      const verdictEl = root.querySelector('#tradeVerdict');
-      if (verdictEl) verdictEl.parentNode.insertBefore(legend, verdictEl.nextSibling);
-    }
-    legend.innerHTML = rows.join('');
   }
 
   async function recomputeTrade() {
@@ -5936,14 +5900,18 @@ function _buildComparePPGRow(p1, p2) {
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
-        ${cell(s1.ppg, 'PPG')}
-        ${cell(s1.total, 'Total Pts')}
+        <div class="compare-pts-stats">
+          ${cell(s1.ppg, 'PPG')}
+          ${cell(s1.total, 'Total Pts')}
+        </div>
         ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
-        ${cell(s2.ppg, 'PPG')}
-        ${cell(s2.total, 'Total Pts')}
+        <div class="compare-pts-stats">
+          ${cell(s2.ppg, 'PPG')}
+          ${cell(s2.total, 'Total Pts')}
+        </div>
         ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
       </div>
     </div>
@@ -5956,23 +5924,24 @@ function _buildCompareHeroHTML(p) {
   const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '—');
   return `
     <div class="compare-hero-row">
-      <div class="pm-hero-stat pm-hero-primary">
+      <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
-        <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
       </div>
-      <div class="pm-hero-stat">
+      <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
-        <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '—'}</div>
       </div>
-      <div class="pm-hero-stat">
+      <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Pos Rank</div>
-        <div class="pm-hero-val">${posRankLabel}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
       </div>
     </div>
   `;
 }
 
 function _buildComparePlayerHeader(p) {
+  const sep = '<span style="opacity:.3;margin:0 4px;">·</span>';
   const metaParts = [];
   if (p.position) metaParts.push(`<span style="font-weight:600;">${p.position}</span>`);
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
@@ -5983,7 +5952,7 @@ function _buildComparePlayerHeader(p) {
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
       <div class="compare-player-header-info">
         <div class="compare-player-name">${p.name}</div>
-        <div class="compare-player-meta">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>
+        <div class="compare-player-meta">${metaParts.join(sep)}</div>
       </div>
     </div>
   `;
