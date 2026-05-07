@@ -1470,7 +1470,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     items.forEach(p => {
       const tier = activePosFilter === "ALL" ? _getOtcTier(p) : null;
-      if (tier && tier !== prevTier && prevTier !== null) {
+      if (tier && tier !== prevTier) {
         const tc = _TC[tier] || '#64748b';
         const div = document.createElement("div");
         div.className = "otc-tier-divider";

@@ -9010,7 +9010,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         let prevTier = null;
         pageSlice.forEach((p, i) => {
           const _tier = sortBy === 'value' ? prGetTier(p) : null;
-          if (_tier && _tier !== prevTier && prevTier !== null) {
+          if (_tier && _tier !== prevTier) {
             const tc = _PR_TIER_COLORS[_tier] || '#64748b';
             const tl = _PR_TIER_LABELS[_tier] || ('Tier ' + _tier);
             const div = document.createElement('div');
