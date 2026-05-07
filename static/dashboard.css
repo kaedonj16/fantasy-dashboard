@@ -11824,10 +11824,12 @@ img, svg, canvas {
   display: flex;
   gap: 20px;
   align-items: center;
+  justify-content: center;
 }
 .compare-pts-player-right {
-  justify-content: flex-end;
+  justify-content: center;
   flex-direction: row-reverse;
+
 }
 .compare-pts-cell { text-align: center; }
 .compare-pts-val {
