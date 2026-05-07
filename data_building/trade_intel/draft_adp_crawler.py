@@ -251,7 +251,7 @@ def _leagues_to_crawl(batch_size: int) -> list[dict]:
         ).fetchall()
 
 
-def run_draft_adp_crawl(batch_size: int = 500, workers: int = 10) -> dict:
+def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10) -> dict:
     """
     Crawl draft pick data from all eligible dynasty leagues and recompute ADP.
 
