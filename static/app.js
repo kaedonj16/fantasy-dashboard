@@ -5920,23 +5920,24 @@ function _buildCompareHeroHTML(p) {
   const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '—');
   return `
     <div class="compare-hero-row">
-      <div class="pm-hero-stat pm-hero-primary">
+      <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
-        <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
       </div>
-      <div class="pm-hero-stat">
+      <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
-        <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '—'}</div>
       </div>
-      <div class="pm-hero-stat">
+      <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Pos Rank</div>
-        <div class="pm-hero-val">${posRankLabel}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
       </div>
     </div>
   `;
 }
 
 function _buildComparePlayerHeader(p) {
+  const sep = '<span style="opacity:.3;margin:0 4px;">·</span>';
   const metaParts = [];
   if (p.position) metaParts.push(`<span style="font-weight:600;">${p.position}</span>`);
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
@@ -5947,7 +5948,7 @@ function _buildComparePlayerHeader(p) {
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
       <div class="compare-player-header-info">
         <div class="compare-player-name">${p.name}</div>
-        <div class="compare-player-meta">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>
+        <div class="compare-player-meta">${metaParts.join(sep)}</div>
       </div>
     </div>
   `;
