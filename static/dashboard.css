@@ -1492,10 +1492,10 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
   max-width: 320px;
   width: 320px !important;
-  max-height: unset;
+  max-height: 800px;
   min-height: 400px;
 }
 
@@ -7190,7 +7190,6 @@ thead th {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  max-height: 1134px;
 }
 
 .team-row {
