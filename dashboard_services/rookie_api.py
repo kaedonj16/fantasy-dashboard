@@ -160,7 +160,7 @@ def rankings():
                     FROM draft_adp
                     WHERE season = %s AND draft_type = 'rookie'
                     GROUP BY player_id, is_superflex
-                    HAVING SUM(sample_size) >= 1
+                    HAVING SUM(sample_size) >= 50
                     """,
                     (year,),
                 ).fetchall()

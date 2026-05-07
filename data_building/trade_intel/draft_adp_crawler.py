@@ -223,35 +223,76 @@ def compute_adp() -> int:
         return row["n"] if row else 0
 
 
-def _leagues_to_crawl(batch_size: int) -> list[dict]:
+def _leagues_to_crawl(batch_size: int, crawl_mode: str = "new", recrawl_days: int = 30) -> list[dict]:
     """
-    Return dynasty leagues that haven't had their drafts indexed recently.
+    Return dynasty leagues based on crawl mode.
 
-    Priority:
-      1. Never crawled (last_draft_adp_crawled_at IS NULL)
-      2. Not crawled in RECRAWL_DAYS days
+    crawl_mode:
+      - "new": Only uncrawled leagues
+      - "existing": Previously crawled leagues not crawled in recrawl_days
+      - "both": Mix of new and existing leagues
     """
     with get_conn() as conn:
-        return conn.execute(
+        if crawl_mode == "new":
+            # Only uncrawled dynasty leagues
+            query = """
+                SELECT league_id,
+                       COALESCE(num_teams, 12) AS num_teams,
+                       COALESCE(is_superflex, FALSE) AS is_superflex
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND league_type = 2          -- dynasty only
+                  AND last_draft_adp_crawled_at IS NULL
+                ORDER BY discovered_at DESC
+                LIMIT %s
             """
-            SELECT league_id,
-                   COALESCE(num_teams, 12) AS num_teams,
-                   COALESCE(is_superflex, FALSE) AS is_superflex
-            FROM trade_intel_leagues
-            WHERE crawl_enabled = TRUE
-              AND league_type = 2          -- dynasty only
-              AND (
-                  last_draft_adp_crawled_at IS NULL
-                  OR last_draft_adp_crawled_at < NOW() - INTERVAL '%s days'
-              )
-            ORDER BY last_draft_adp_crawled_at ASC NULLS FIRST
-            LIMIT %s
-            """,
-            (RECRAWL_DAYS, batch_size),
-        ).fetchall()
+            params = (batch_size,)
+        elif crawl_mode == "existing":
+            # Only previously crawled leagues, but not recently
+            query = """
+                SELECT league_id,
+                       COALESCE(num_teams, 12) AS num_teams,
+                       COALESCE(is_superflex, FALSE) AS is_superflex
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND league_type = 2          -- dynasty only
+                  AND last_draft_adp_crawled_at IS NOT NULL
+                  AND last_draft_adp_crawled_at < NOW() - INTERVAL '%s days'
+                ORDER BY last_draft_adp_crawled_at DESC
+                LIMIT %s
+            """
+            params = (recrawl_days, batch_size)
+        else:  # both
+            # Mix of new and existing, prioritize new
+            query = """
+                (SELECT league_id, num_teams, is_superflex, 1 as priority
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND league_type = 2
+                  AND last_draft_adp_crawled_at IS NULL
+                ORDER BY discovered_at DESC
+                LIMIT %s)
+                UNION ALL
+                (SELECT league_id, num_teams, is_superflex, 2 as priority
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND league_type = 2
+                  AND last_draft_adp_crawled_at IS NOT NULL
+                  AND last_draft_adp_crawled_at < NOW() - INTERVAL '%s days'
+                ORDER BY last_draft_adp_crawled_at DESC
+                LIMIT %s)
+                ORDER BY priority ASC, league_id
+                LIMIT %s
+            """
+            # Split batch between new and existing (70% new, 30% existing)
+            new_batch = int(batch_size * 0.7)
+            existing_batch = batch_size - new_batch
+            params = (new_batch, recrawl_days, existing_batch, batch_size)
+        
+        return conn.execute(query, params).fetchall()
 
 
-def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10) -> dict:
+def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10, crawl_mode: str = "new", recrawl_days: int = 30) -> dict:
     """
     Crawl draft pick data from all eligible dynasty leagues and recompute ADP.
 
@@ -260,7 +301,7 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10) -> dict:
 
     Returns a summary dict with new_picks and adp_entries.
     """
-    leagues = _leagues_to_crawl(batch_size)
+    leagues = _leagues_to_crawl(batch_size, crawl_mode, recrawl_days)
     if not leagues:
         print("[draft_adp] No leagues need crawling right now.")
         return {"new_picks": 0, "adp_entries": 0}
@@ -304,12 +345,103 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10) -> dict:
     return {"new_picks": total_new_picks, "adp_entries": adp_count}
 
 
+def run_draft_adp_crawl_continuous(
+    batch_size: int = 2000,
+    workers: int = 10,
+    interval_minutes: int = 30,
+    hours: float = 4.0,
+) -> dict:
+    """
+    Run draft ADP crawl continuously for a given time period.
+    
+    Parameters:
+    - batch_size: max leagues to process per batch
+    - workers: concurrent league crawlers
+    - interval_minutes: minutes between crawl batches
+    - hours: total hours to run
+    
+    Returns summary dict with cumulative results.
+    """
+    from datetime import datetime, timedelta
+    
+    deadline = datetime.now() + timedelta(hours=hours)
+    logger.info("Starting continuous draft ADP crawl. Deadline: %s", deadline.strftime("%H:%M:%S"))
+    
+    batch_num = 0
+    total_new_picks = 0
+    total_adp_entries = 0
+    
+    while datetime.now() < deadline:
+        batch_num += 1
+        remaining_minutes = (deadline - datetime.now()).total_seconds() / 60
+        
+        logger.info(
+            "Batch %d | batch_size=%d | time remaining=%.1f min",
+            batch_num,
+            batch_size,
+            remaining_minutes,
+        )
+        
+        result = run_draft_adp_crawl(batch_size=batch_size, workers=workers)
+        new_picks = result.get("new_picks", 0)
+        adp_entries = result.get("adp_entries", 0)
+        total_new_picks += new_picks
+        total_adp_entries = adp_entries  # ADP entries are total count, not cumulative
+        
+        logger.info(
+            "Batch %d done: %d new picks, %d ADP entries (cumulative picks: %d)",
+            batch_num, new_picks, adp_entries, total_new_picks,
+        )
+        
+        if datetime.now() >= deadline:
+            break
+        
+        next_run = datetime.now() + timedelta(minutes=interval_minutes)
+        if next_run >= deadline:
+            break
+        
+        sleep_secs = (next_run - datetime.now()).total_seconds()
+        logger.info("Sleeping %.0f seconds until next batch...", sleep_secs)
+        time.sleep(max(sleep_secs, 0))
+    
+    logger.info(
+        "Continuous crawl complete. %d batches | %d total new picks | %d final ADP entries",
+        batch_num, total_new_picks, total_adp_entries,
+    )
+    
+    return {
+        "batches": batch_num,
+        "total_new_picks": total_new_picks,
+        "final_adp_entries": total_adp_entries,
+    }
+
+
 if __name__ == "__main__":
     import sys
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Draft ADP crawler")
+    parser.add_argument("--continuous", action="store_true", help="Run continuously for given time")
+    parser.add_argument("--interval", type=int, default=30, help="Minutes between batches (continuous mode)")
+    parser.add_argument("--hours", type=float, default=4.0, help="Hours to run (continuous mode)")
+    parser.add_argument("--batch-size", type=int, default=2000, help="Leagues per batch")
+    parser.add_argument("--workers", type=int, default=10, help="Concurrent workers")
+    args = parser.parse_args()
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-    result = run_draft_adp_crawl()
+    
+    if args.continuous:
+        result = run_draft_adp_crawl_continuous(
+            batch_size=args.batch_size,
+            workers=args.workers,
+            interval_minutes=args.interval,
+            hours=args.hours,
+        )
+    else:
+        result = run_draft_adp_crawl(batch_size=args.batch_size, workers=args.workers)
+    
     print(result)

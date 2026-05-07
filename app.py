@@ -719,13 +719,20 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_team_name"] = viewer.get("viewer_team_name")
 
 
+_SEED_SEMAPHORE = threading.Semaphore(1)
+
+
 def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     """Fire-and-forget: seed dynasty leagues for a Sleeper user on first login."""
     def _run():
+        if not _SEED_SEMAPHORE.acquire(blocking=False):
+            return  # another seed already running; skip rather than pile up
         try:
             _seed_user_leagues(user_id, username=username)
         except Exception:
-            pass  # never crash the request thread
+            pass
+        finally:
+            _SEED_SEMAPHORE.release()
     threading.Thread(target=_run, daemon=True).start()
 
 
@@ -9301,7 +9308,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page — active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
-    body_html = build_prospects_body(platform, season, league_id)
+    body_html = build_prospects_body()
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 

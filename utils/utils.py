@@ -1283,8 +1283,16 @@ def build_teams_overview(
         # Keep stable relative ordering for anything we didn't consume
         return ordered + leftovers
 
+    _DISPLAY_POSITIONS = {"QB", "RB", "WR", "TE", "K", "DEF"}
+
     def enrich_list(pids: List[str]) -> List[dict]:
-        return [pinfo_for_pid(pid, players_index, teams_index, players) for pid in pids]
+        result = []
+        for pid in pids:
+            p = pinfo_for_pid(pid, players_index, teams_index, players)
+            pos = normalize_pos(p.get("pos") or p.get("position") or "")
+            if not pos or pos in _DISPLAY_POSITIONS:
+                result.append(p)
+        return result
 
     for r in rosters:
         rid = str(r["roster_id"])
