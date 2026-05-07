@@ -11824,6 +11824,7 @@ img, svg, canvas {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: center;
 }
 .compare-pts-stats {
   display: flex;
