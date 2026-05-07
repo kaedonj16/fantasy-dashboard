@@ -8598,6 +8598,25 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         opacity: 0.5;
         cursor: not-allowed;
       }
+      .pr-tier-divider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0 3px;
+        pointer-events: none;
+      }
+      .pr-tier-divider-line {
+        flex: 1;
+        height: 1px;
+        opacity: 0.5;
+      }
+      .pr-tier-divider-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        opacity: 0.75;
+        white-space: nowrap;
+      }
       @media (max-width: 540px) {
         .pr-pagination {
           flex-direction: column;
@@ -8984,9 +9003,25 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
         const rankMap = prBuildRankMap();
+        const _PR_TIER_COLORS = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
+        const _PR_TIER_LABELS = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
 
         list.innerHTML = '';
+        let prevTier = null;
         pageSlice.forEach((p, i) => {
+          const _tier = sortBy === 'value' ? prGetTier(p) : null;
+          if (_tier && _tier !== prevTier && prevTier !== null) {
+            const tc = _PR_TIER_COLORS[_tier] || '#64748b';
+            const tl = _PR_TIER_LABELS[_tier] || ('Tier ' + _tier);
+            const div = document.createElement('div');
+            div.className = 'pr-tier-divider';
+            div.innerHTML =
+              `<div class="pr-tier-divider-line" style="background:${tc};"></div>` +
+              `<span class="pr-tier-divider-label" style="color:${tc};" title="${tl}">T${_tier}</span>` +
+              `<div class="pr-tier-divider-line" style="background:${tc};"></div>`;
+            list.appendChild(div);
+          }
+          if (_tier) prevTier = _tier;
           const idx = start + i;
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';

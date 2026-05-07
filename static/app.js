@@ -1370,6 +1370,18 @@ window.initTradePage = function initTradePage(root = document) {
     };
   }
 
+  let _tierThresholds = {};
+
+  function _getOtcTier(player) {
+    const lt = getLeagueType();
+    const sz = String(getLeagueSize());
+    const tbl = (_tierThresholds[lt] || {})[ sz] || (_tierThresholds["1qb"] || {})["10"] || [];
+    if (!tbl.length) return null;
+    const val = getPlayerValue(player);
+    for (let i = 0; i < tbl.length; i++) { if (val >= tbl[i]) return i + 1; }
+    return tbl.length + 1;
+  }
+
   async function ensurePlayersLoaded() {
     if (allPlayers.length > 0) return;
 
@@ -1383,6 +1395,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
         const data = await res.json();
         const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
+        if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
 
         const players = rawData.filter(p => p.position !== "PICK");
         const picks = rawData.filter(p => p.position === "PICK");
@@ -1451,7 +1464,23 @@ window.initTradePage = function initTradePage(root = document) {
       })
       .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 
+    const _TC = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
+    const _TL = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
+    let prevTier = null;
+
     items.forEach(p => {
+      const tier = activePosFilter === "ALL" ? _getOtcTier(p) : null;
+      if (tier && tier !== prevTier && prevTier !== null) {
+        const tc = _TC[tier] || '#64748b';
+        const div = document.createElement("div");
+        div.className = "otc-tier-divider";
+        div.innerHTML =
+          `<div class="otc-tier-divider-line" style="background:${tc};"></div>` +
+          `<span class="otc-tier-divider-label" style="color:${tc};" title="${_TL[tier] || ''}">T${tier}</span>` +
+          `<div class="otc-tier-divider-line" style="background:${tc};"></div>`;
+        container.appendChild(div);
+      }
+      if (tier) prevTier = tier;
       const overallRank = overallRankMap.get(String(p.id));
       container.appendChild(buildPlayerValueRow(p, overallRank));
     });

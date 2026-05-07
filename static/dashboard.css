@@ -3686,6 +3686,26 @@ thead th {
   overflow: auto;
   padding-right: 4px;
 }
+.otc-tier-divider {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0 0;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+.otc-tier-divider-line {
+  flex: 1;
+  height: 1px;
+  opacity: 0.45;
+}
+.otc-tier-divider-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
 
 .otc-verdict {
   margin-top: 14px;
