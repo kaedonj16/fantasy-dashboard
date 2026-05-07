@@ -6577,6 +6577,7 @@ thead th {
 
 .overview-sidebar-left {
   flex: 0 0 280px;
+  align-self: flex-start;
 }
 
 .overview-sidebar > .card:last-child,

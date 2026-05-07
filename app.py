@@ -719,13 +719,20 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_team_name"] = viewer.get("viewer_team_name")
 
 
+_SEED_SEMAPHORE = threading.Semaphore(1)
+
+
 def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     """Fire-and-forget: seed dynasty leagues for a Sleeper user on first login."""
     def _run():
+        if not _SEED_SEMAPHORE.acquire(blocking=False):
+            return  # another seed already running; skip rather than pile up
         try:
             _seed_user_leagues(user_id, username=username)
         except Exception:
-            pass  # never crash the request thread
+            pass
+        finally:
+            _SEED_SEMAPHORE.release()
     threading.Thread(target=_run, daemon=True).start()
 
 
