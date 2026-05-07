@@ -344,7 +344,7 @@ ul {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr) 340px;
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
   overflow-x: hidden;
 }
 
@@ -4733,6 +4733,12 @@ thead th {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.os-snapshot-list {
+  max-height: 1038px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .os-snapshot-meta {
