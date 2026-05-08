@@ -8451,7 +8451,28 @@ img, svg, canvas {
     padding: 3px;
   }
 
-  
+  .team-strength-card .card-header-row {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 44px;
+    padding-bottom: 4px;
+  }
+
+  .team-strength-card .card-header-row .mini-label {
+    width: 100%;
+  }
+
+  .teams-sort-bar {
+    gap: 4px;
+  }
+
+  .teams-sort-btn {
+    flex: 1;
+    text-align: center;
+    padding: 4px 4px;
+    font-size: 11px;
+  }
+
   .activity-card {
     padding: 8px;
   }
