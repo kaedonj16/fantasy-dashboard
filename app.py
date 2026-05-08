@@ -161,13 +161,13 @@ _CTX_LOCKS: dict = {}
 _CTX_LOCKS_LOCK = threading.Lock()
 
 # How long a league context is considered fresh
-CACHE_TTL = 60 * 60 * 6  # 6 hours
+CACHE_TTL = 60 * 60 * 12  # 12 hours
 
 # How long value-table cache entries live
-VALUE_CACHE_TTL = 60 * 60 * 3  # 3 hours
+VALUE_CACHE_TTL = 60 * 60 * 6  # 6 hours
 
 # How long to cache rendered page HTML (Teams, Activity, Graphs) per league
-PAGE_HTML_TTL = 60 * 10  # 10 minutes
+PAGE_HTML_TTL = 60 * 30  # 30 minutes
 
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
