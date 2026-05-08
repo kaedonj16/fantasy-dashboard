@@ -723,7 +723,13 @@ _SEED_SEMAPHORE = threading.Semaphore(1)
 
 
 def _background_seed_user(user_id: str, username: Optional[str]) -> None:
-    """Fire-and-forget: seed dynasty leagues for a Sleeper user on first login."""
+    """Fire-and-forget: record login and seed dynasty leagues for a Sleeper user."""
+    from data_building.trade_intel.league_discovery import _save_users as _tiu_save_users
+    try:
+        _tiu_save_users([user_id], source="login", usernames={user_id: username} if username else None)
+    except Exception:
+        pass
+
     def _run():
         if not _SEED_SEMAPHORE.acquire(blocking=False):
             return  # another seed already running; skip rather than pile up
