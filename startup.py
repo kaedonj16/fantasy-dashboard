@@ -11,60 +11,50 @@ from datetime import datetime
 
 
 def main():
-    print("🌟 Production Startup - Fantasy Dashboard")
-    print(f"📅 Started: {datetime.now().isoformat()}")
+    print("Production Startup - Fantasy Dashboard")
+    print(f"Started: {datetime.now().isoformat()}")
 
-    # Check if this is the first run
     first_run_flag = "/tmp/fantasy_dashboard_initialized"
 
     if not os.path.exists(first_run_flag):
-        print("🔧 First deployment detected - running initialization...")
-
-        # Run the comprehensive initialization
+        print("First deployment detected - running initialization...")
         try:
             from scripts.initialize_production import main as init_main
             init_main()
-
-            # Create flag file to prevent re-initialization
             with open(first_run_flag, 'w') as f:
                 f.write(f"Initialized: {datetime.now().isoformat()}")
-
-            print("✅ First-time initialization completed successfully")
-
+            print("First-time initialization completed successfully")
         except Exception as e:
-            print(f"❌ First-time initialization failed: {e}")
-            print("🔄 Continuing with app startup (manual initialization may be needed)")
-
+            print(f"First-time initialization failed: {e}")
+            print("Continuing with app startup (manual initialization may be needed)")
     else:
-        print("🔄 Existing deployment detected - skipping initialization")
+        print("Existing deployment detected - skipping initialization")
         with open(first_run_flag, 'r') as f:
-            init_time = f.read().strip()
-            print(f"📅 Previously initialized: {init_time}")
+            print(f"Previously initialized: {f.read().strip()}")
 
-    # Start the Flask application
-    print("\n" + "=" * 60)
-    print("🚀 STARTING FLASK APPLICATION")
-    print("=" * 60)
+    port = int(os.environ.get('PORT', 5000))
+    workers = int(os.environ.get('WEB_WORKERS', 3))
+    threads = int(os.environ.get('WEB_THREADS', 2))
 
-    try:
-        # Import and run the Flask app
-        from app import app
+    print(f"\nStarting gunicorn on port {port} ({workers} workers x {threads} threads)")
 
-        # Get port from environment (Render provides this)
-        port = int(os.environ.get('PORT', 5000))
-
-        print(f"🌐 Server starting on port {port}")
-        print(f"🌍 Environment: {os.environ.get('PYTHON_ENV', 'development')}")
-        print(f"🔗 Database URL: {'✅ Set' if os.environ.get('DATABASE_URL') else '❌ Not set'}")
-
-        # Start the application
-        app.run(host='0.0.0.0', port=port, debug=False)
-
-    except Exception as e:
-        print(f"❌ Failed to start Flask application: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    import subprocess
+    cmd = [
+        sys.executable, "-m", "gunicorn",
+        "app:app",
+        "--bind", f"0.0.0.0:{port}",
+        "--workers", str(workers),
+        "--threads", str(threads),
+        "--worker-class", "gthread",
+        "--timeout", "120",
+        "--keep-alive", "5",
+        "--max-requests", "1000",
+        "--max-requests-jitter", "100",
+        "--preload",
+        "--access-logfile", "-",
+        "--error-logfile", "-",
+    ]
+    os.execvp(sys.executable, cmd)
 
 
 if __name__ == "__main__":
