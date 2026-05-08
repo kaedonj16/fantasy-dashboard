@@ -344,7 +344,7 @@ ul {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr) 340px;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   overflow-x: hidden;
 }
 
@@ -359,6 +359,8 @@ ul {
 .os-col-fill {
   flex-grow: 1;
   margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .os-right-col > .os-sidebar-shell {
@@ -4736,7 +4738,8 @@ thead th {
 }
 
 .os-snapshot-list {
-  max-height: 1038px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
