@@ -147,45 +147,16 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP for both SF and 1QB in a single query.
-        # Returns adp_rank (1QB) and sf_adp_rank (SF) so the client can pick the
-        # right field without needing a separate fetch per format.
+        # Overlay dynasty rookie ADP using the same source as the draft-grades tab.
         try:
-            from dashboard_services.db import get_conn as _gc
-            with _gc() as _conn:
-                _adp_rows = _conn.execute(
-                    """
-                    SELECT player_id, is_superflex,
-                           SUM(avg_pick * sample_size) / NULLIF(SUM(sample_size), 0) AS avg_pick
-                    FROM draft_adp
-                    WHERE season = %s AND draft_type = 'rookie'
-                    GROUP BY player_id, is_superflex
-                    HAVING SUM(sample_size) >= 50
-                    """,
-                    (year,),
-                ).fetchall()
-            sf_map:  Dict[str, float] = {}
-            qb1_map: Dict[str, float] = {}
-            for r in _adp_rows:
-                if r["avg_pick"] is not None:
-                    (sf_map if r["is_superflex"] else qb1_map)[str(r["player_id"])] = float(r["avg_pick"])
-
-            # Build name→sleeper_id lookup for prospects that have no sleeper_id linked yet
-            _name_to_sid: Dict[str, str] = {}
-            try:
-                from utils.utils import load_players_index
-                for _sid, _pd in (load_players_index() or {}).items():
-                    _n = (_pd.get("name") or "").strip().lower()
-                    if _n:
-                        _name_to_sid[_n] = str(_sid)
-            except Exception:
-                pass
+            from dashboard_services.adp_service import fetch_league_adp_from_db
+            _sf_adp  = fetch_league_adp_from_db(is_sf=True,  season=year, draft_type='rookie')
+            _qb1_adp = fetch_league_adp_from_db(is_sf=False, season=year, draft_type='rookie')
+            sf_map:  Dict[str, float] = {sid: d["avg_pick"] for sid, d in _sf_adp.items()}
+            qb1_map: Dict[str, float] = {sid: d["avg_pick"] for sid, d in _qb1_adp.items()}
 
             for d in result:
-                sid = str(d.get("sleeper_id"))
-                if not sid:
-                    name = (d.get("name") or "").strip().lower()
-                    sid = _name_to_sid.get(name, "")
+                sid = str(d.get("sleeper_id") or "")
                 if sid:
                     if sid in sf_map:
                         d["sf_adp_rank"] = sf_map[sid]
