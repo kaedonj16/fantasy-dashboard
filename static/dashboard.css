@@ -359,6 +359,8 @@ ul {
 .os-col-fill {
   flex-grow: 1;
   margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .os-right-col > .os-sidebar-shell {
@@ -1497,6 +1499,7 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   width: 320px !important;
   max-height: 800px;
   min-height: 400px;
+  max-height: 1225px;
 }
 
 .gm-card {
@@ -4559,6 +4562,7 @@ thead th {
   margin-bottom: 18px;
   background: var(--card);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  max-height: 1225px;
 }
 
 .os-card-soft {
@@ -4733,6 +4737,13 @@ thead th {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.os-snapshot-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .os-snapshot-meta {
