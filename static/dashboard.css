@@ -8451,7 +8451,15 @@ img, svg, canvas {
     padding: 3px;
   }
 
-  
+  .pos-strength-table th:nth-child(4),
+  .pos-strength-table td.pos-avg {
+    display: none;
+  }
+
+  .mini-label {
+    font-size: 10px;
+  }
+
   .activity-card {
     padding: 8px;
   }
@@ -8996,6 +9004,11 @@ img, svg, canvas {
   .pos-strength-table th,
   .pos-strength-table td {
     padding: 2px;
+  }
+
+  .pos-strength-table th:nth-child(5),
+  .pos-strength-table td.pos-z {
+    display: none;
   }
 
   .team-row {
