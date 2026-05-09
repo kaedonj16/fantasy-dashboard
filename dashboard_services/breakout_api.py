@@ -170,13 +170,12 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     filtered = []
     for c in candidates:
         if c.get('position') == 'QB':
-            if c.get('projected_role_tag') == 'Backup QB':
-                continue
             qb_age = float(c.get('age') or 0)
+            # Too old to be a dynasty breakout
             if qb_age > 31:
                 continue
-            # Exclude established veteran starters — they already broke out.
-            # usage_baseline_score == 20 means 450+ attempts last season (full starter).
+            # Already an established veteran starter — not a breakout
+            # usage_baseline_score == 20 means 450+ attempts last season
             if qb_age >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
                 continue
         filtered.append(c)
