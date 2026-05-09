@@ -1293,6 +1293,9 @@ _AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoo
 _AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
 
 
+_NO_ADS_PAGES = {"home", "privacy", "support", "faq", "contact"}
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1308,15 +1311,17 @@ def render_page(
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    # Don't serve ads on thin-content / navigation-only pages (AdSense policy)
+    suppress_ads = active in _NO_ADS_PAGES or active is None
 
     return BASE_HTML.format(
         title=title,
         nav=nav_html,
         body=wrapped_body,
-        adsense_script="" if is_premium else _AD_SCRIPT,
-        ad_top="" if is_premium else _AD_TOP,
-        ad_bottom="" if is_premium else _AD_BOTTOM,
-        adsense_init="" if is_premium else _AD_INIT,
+        adsense_script="" if (is_premium or suppress_ads) else _AD_SCRIPT,
+        ad_top="" if (is_premium or suppress_ads) else _AD_TOP,
+        ad_bottom="" if (is_premium or suppress_ads) else _AD_BOTTOM,
+        adsense_init="" if (is_premium or suppress_ads) else _AD_INIT,
         privacy_url=league_url("privacy", league_id),
         faq_url=league_url("faq", league_id),
         support_url=league_url("support", league_id),

@@ -164,6 +164,18 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             rows = cursor.fetchall()
 
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
+
+    # Filter out QB non-breakout profiles: backup QBs and QBs past their prime (>31)
+    filtered = []
+    for c in candidates:
+        if c.get('position') == 'QB':
+            if c.get('projected_role_tag') == 'Backup QB':
+                continue
+            if float(c.get('age') or 0) > 31:
+                continue
+        filtered.append(c)
+    candidates = filtered
+
     candidates.sort(key=lambda x: float(x['breakout_opportunity_score']), reverse=True)
 
     # Fill in missing names and headshots from players_index
