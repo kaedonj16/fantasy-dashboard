@@ -151,7 +151,8 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             projected_role_tag,
             as_of_date,
             calculated_at,
-            (component_details->'player_readiness'->>'age')::numeric as age
+            (component_details->'player_readiness'->>'age')::numeric as age,
+            (component_details->'player_readiness'->>'usage_baseline_score')::numeric as readiness_usage_baseline
         FROM breakout_opportunity_scores
         WHERE season = %s
           AND breakout_opportunity_score >= %s
@@ -165,13 +166,18 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
 
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
 
-    # Filter out QB non-breakout profiles: backup QBs and QBs past their prime (>31)
+    # Filter out QB non-breakout profiles
     filtered = []
     for c in candidates:
         if c.get('position') == 'QB':
             if c.get('projected_role_tag') == 'Backup QB':
                 continue
-            if float(c.get('age') or 0) > 31:
+            qb_age = float(c.get('age') or 0)
+            if qb_age > 31:
+                continue
+            # Exclude established veteran starters — they already broke out.
+            # usage_baseline_score == 20 means 450+ attempts last season (full starter).
+            if qb_age >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
                 continue
         filtered.append(c)
     candidates = filtered
