@@ -4902,7 +4902,6 @@ function openPlayerModal(playerId, playerName) {
       `;
 
       // ── Assemble 5 panels into modal body ─────────────────────────────────
-      const modalBody = document.getElementById('playerModalBody');
       modalBody.innerHTML = `
         <div class="pm-panel pm-panel-active" id="pm-panel-overview">${overviewHTML}</div>
         <div class="pm-panel" id="pm-panel-stats">${statsHTML}</div>
