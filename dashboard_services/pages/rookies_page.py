@@ -334,6 +334,26 @@ def build_prospects_body() -> str:
       gap: 8px;
     }
   }
+  @media (max-width: 600px) {
+    /* Stack search and pills on separate rows */
+    .filter-controls-container > .filter-row:first-child {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .filter-search {
+      width: 100%;
+    }
+    .rk-pills-row {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .filter-positions {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 
   /* Table grid */
   .rk-grid-row {

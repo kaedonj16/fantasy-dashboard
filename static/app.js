@@ -7533,38 +7533,33 @@ document.addEventListener('click', (e) => {
           var pid   = playerEl.dataset.playerId;
           var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
-          
-          // Start checking immediately and frequently
+
           var attempts = 0;
-          var maxAttempts = 30; // More attempts
+          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('playerModal');
             if (modal) {
               var body = document.getElementById('playerModalBody');
-              // Check for modal being visible and having advanced metrics section
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasAdvancedMetrics = body && body.querySelector('#advancedMetricsSection');
-              
-              // Position spotlight when advanced metrics section is loaded
+
               if (isVisible && hasAdvancedMetrics) {
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
-                return; // Stop checking once positioned
+                return;
               }
-              
-              // If modal exists but advanced metrics not loaded yet, keep checking frequently
+
               if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
+                setTimeout(checkAndPosition, 100);
               } else {
-                // Fallback: position on modal even if advanced metrics didn't load
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
               }
             }
           }
-          setTimeout(checkAndPosition, 100); // Start checking after 100ms
-        }, 100); // Minimal delay before opening modal
+          setTimeout(checkAndPosition, 400);
+        }, 200);
       }
     } else if (step.action === 'openTeamModal') {
       var teamEl = document.querySelector('.team-clickable[data-roster-id]');
@@ -7573,29 +7568,25 @@ document.addEventListener('click', (e) => {
           var rid   = teamEl.dataset.rosterId;
           var tname = teamEl.dataset.teamName || '';
           if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
-          
-          // Start checking immediately and frequently for team weekly chart
+
           var attempts = 0;
-          var maxAttempts = 30;
+          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('teamModal');
             if (modal) {
               var body = document.getElementById('teamModalBody');
-              // Check for modal being visible and having team weekly chart
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasWeeklyChart = body && body.querySelector('#teamWeeklyChart');
-              
-              // Position spotlight when team weekly chart is loaded
+
               if (isVisible && hasWeeklyChart) {
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
-                return; // Stop checking once positioned
+                return;
               }
-              
-              // If modal exists but weekly chart not loaded yet, keep checking frequently
+
               if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
+                setTimeout(checkAndPosition, 100);
               } else {
                 // Fallback: position on modal even if weekly chart didn't load
                 positionOverlays(modal); 
@@ -7603,8 +7594,8 @@ document.addEventListener('click', (e) => {
               }
             }
           }
-          setTimeout(checkAndPosition, 100); // Start checking after 100ms
-        }, 100); // Minimal delay before opening modal
+          setTimeout(checkAndPosition, 400);
+        }, 200);
       }
     }
   }

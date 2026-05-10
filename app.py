@@ -7555,90 +7555,137 @@ def _build_tour_mock_history_ctx() -> dict:
     }
 
 
-def _build_tour_mock_awards_data() -> tuple:
-    """Deterministic mock data for the awards page tour preview."""
+def _build_tour_mock_df_for_seed(seed: int) -> "pd.DataFrame":
+    """Same structure as _build_tour_mock_df_weekly but with a custom seed."""
     import random as _rand
-    rng = _rand.Random(99)
+    rng = _rand.Random(seed)
+    rows = []
+    for week in range(1, 14):
+        pairs = [(0, 1), (2, 3), (4, 5)] if week % 2 == 0 else [(0, 2), (1, 4), (3, 5)]
+        for mid, (a, b) in enumerate(pairs, start=week * 10):
+            rows += [
+                {"week": week, "matchup_id": mid, "owner": _TOUR_MOCK_TEAMS[a],
+                 "points": round(rng.gauss(98, 12), 2), "finalized": True},
+                {"week": week, "matchup_id": mid, "owner": _TOUR_MOCK_TEAMS[b],
+                 "points": round(rng.gauss(95, 11), 2), "finalized": True},
+            ]
+    return pd.DataFrame(rows)
+
+
+def _build_tour_mock_awards_data() -> tuple:
+    """Mock data for the awards page derived from the same seeded weekly scores as graphs/history."""
+    import random as _rand
 
     mock_ids = ["u1", "u2", "u3", "u4", "u5", "u6"]
     id_to_name = dict(zip(mock_ids, _TOUR_MOCK_TEAMS))
+    name_to_uid = {n: u for u, n in id_to_name.items()}
 
-    career_owners: dict = {}
-    for i, uid in enumerate(mock_ids):
-        seasons_played = rng.randint(3, 5)
-        games_per_season = 13
-        total_games = seasons_played * games_per_season
-        wins = rng.randint(int(total_games * 0.35), int(total_games * 0.70))
-        losses = total_games - wins
-        weekly_pts = [round(rng.gauss(95 + i * 2, 11), 2) for _ in range(total_games)]
-        career_owners[uid] = {
-            "Wins": wins,
-            "Losses": losses,
-            "Ties": 0,
-            "PF": sum(weekly_pts),
-            "PA": round(sum(weekly_pts) * rng.uniform(0.92, 1.08), 2),
-            "seasons": seasons_played,
-            "weekly_pts": weekly_pts,
-            "close_wins": rng.randint(2, 8),
-            "bench_pts": round(rng.gauss(600, 80), 1),
-            "waiver_adds": rng.randint(10, 35),
-            "activity": rng.randint(20, 60),
-            "playoff_delta_sum": round(rng.gauss(0, 15), 1),
-            "playoff_delta_n": rng.randint(2, 4),
-        }
-
-    championships: dict = {
-        "u1": [2022, 2024],
-        "u3": [2023],
-        "u5": [2021],
+    season_dfs = {
+        2024: _build_tour_mock_df_weekly(),           # seed 42
+        2023: _build_tour_mock_df_for_seed(43),
+        2022: _build_tour_mock_df_for_seed(44),
     }
 
-    season_records = [
-        {
-            "season": 2024,
-            "champion": _TOUR_MOCK_TEAMS[0],
-            "champion_uid": "u1",
-            "runner_up": _TOUR_MOCK_TEAMS[2],
-            "runner_up_uid": "u3",
-            "champion_record": "10-3",
-            "top_pf_team": _TOUR_MOCK_TEAMS[1],
-            "top_pf": 1412.6,
-            "highest_week_team": _TOUR_MOCK_TEAMS[4],
-            "highest_week_value": 187.4,
-            "closest_matchup": f"{_TOUR_MOCK_TEAMS[1]} vs {_TOUR_MOCK_TEAMS[3]}",
-            "closest_margin": 0.72,
-        },
-        {
-            "season": 2023,
-            "champion": _TOUR_MOCK_TEAMS[2],
-            "champion_uid": "u3",
-            "runner_up": _TOUR_MOCK_TEAMS[5],
-            "runner_up_uid": "u6",
-            "champion_record": "11-2",
-            "top_pf_team": _TOUR_MOCK_TEAMS[0],
-            "top_pf": 1388.2,
-            "highest_week_team": _TOUR_MOCK_TEAMS[2],
-            "highest_week_value": 179.8,
-            "closest_matchup": f"{_TOUR_MOCK_TEAMS[0]} vs {_TOUR_MOCK_TEAMS[4]}",
-            "closest_margin": 1.18,
-        },
-        {
-            "season": 2022,
-            "champion": _TOUR_MOCK_TEAMS[0],
-            "champion_uid": "u1",
-            "runner_up": _TOUR_MOCK_TEAMS[1],
-            "runner_up_uid": "u2",
-            "champion_record": "9-4",
-            "top_pf_team": _TOUR_MOCK_TEAMS[3],
-            "top_pf": 1357.9,
-            "highest_week_team": _TOUR_MOCK_TEAMS[3],
-            "highest_week_value": 193.1,
-            "closest_matchup": f"{_TOUR_MOCK_TEAMS[2]} vs {_TOUR_MOCK_TEAMS[5]}",
-            "closest_margin": 0.34,
-        },
-    ]
+    # Derive W/L/PF/PA per team per season from the actual matchup data
+    career_owners: dict = {uid: {
+        "Wins": 0, "Losses": 0, "Ties": 0,
+        "PF": 0.0, "PA": 0.0,
+        "seasons": 0, "weekly_pts": [],
+        "close_wins": 0, "bench_pts": 0.0,
+        "waiver_adds": 0, "activity": 0,
+        "playoff_delta_sum": 0.0, "playoff_delta_n": 0,
+    } for uid in mock_ids}
 
-    available = [2024, 2023, 2022]
+    season_records = []
+    rng = _rand.Random(7)  # only for minor auxiliary fields
+
+    for yr, df in sorted(season_dfs.items(), reverse=True):
+        # Build matchup-level results for regular-season weeks (1-13)
+        reg = df[df["week"] <= 13].copy()
+        matchup_pts: dict = {}
+        for _, row in reg.iterrows():
+            mid = row["matchup_id"]
+            matchup_pts.setdefault(mid, []).append((row["owner"], row["points"]))
+
+        wins_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
+        losses_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
+        pf_season: dict = {t: 0.0 for t in _TOUR_MOCK_TEAMS}
+        pa_season: dict = {t: 0.0 for t in _TOUR_MOCK_TEAMS}
+        close_wins_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
+
+        for mid, sides in matchup_pts.items():
+            if len(sides) != 2:
+                continue
+            (t1, p1), (t2, p2) = sides
+            pf_season[t1] += p1; pa_season[t1] += p2
+            pf_season[t2] += p2; pa_season[t2] += p1
+            if p1 > p2:
+                wins_season[t1] += 1; losses_season[t2] += 1
+                if abs(p1 - p2) < 5:
+                    close_wins_season[t1] += 1
+            else:
+                wins_season[t2] += 1; losses_season[t1] += 1
+                if abs(p1 - p2) < 5:
+                    close_wins_season[t2] += 1
+
+        # Accumulate into career
+        for i, (uid, name) in enumerate(id_to_name.items()):
+            pts_list = list(reg[reg["owner"] == name]["points"])
+            career_owners[uid]["Wins"]     += wins_season[name]
+            career_owners[uid]["Losses"]   += losses_season[name]
+            career_owners[uid]["PF"]       += pf_season[name]
+            career_owners[uid]["PA"]       += pa_season[name]
+            career_owners[uid]["seasons"]  += 1
+            career_owners[uid]["weekly_pts"].extend(pts_list)
+            career_owners[uid]["close_wins"] += close_wins_season[name]
+            career_owners[uid]["bench_pts"]  += round(rng.gauss(200, 30), 1)
+            career_owners[uid]["waiver_adds"] += rng.randint(3, 12)
+            career_owners[uid]["activity"]   += rng.randint(6, 20)
+            career_owners[uid]["playoff_delta_sum"] += round(rng.gauss(0, 8), 1)
+            career_owners[uid]["playoff_delta_n"]   += 1
+
+        # Champion = most wins; runner-up = second most
+        sorted_teams = sorted(_TOUR_MOCK_TEAMS, key=lambda t: (wins_season[t], pf_season[t]), reverse=True)
+        champ_name, runner_name = sorted_teams[0], sorted_teams[1]
+        top_pf_name = max(_TOUR_MOCK_TEAMS, key=lambda t: pf_season[t])
+        high_week_name = str(reg.loc[reg["points"].idxmax(), "owner"])
+        high_week_val  = round(float(reg["points"].max()), 1)
+        # Closest matchup
+        margins = {}
+        for mid, sides in matchup_pts.items():
+            if len(sides) == 2:
+                margins[mid] = abs(sides[0][1] - sides[1][1])
+        closest_mid = min(margins, key=margins.get) if margins else None
+        if closest_mid:
+            (ct1, _), (ct2, _) = matchup_pts[closest_mid]
+            closest_str = f"{ct1} vs {ct2}"
+            closest_margin = round(margins[closest_mid], 2)
+        else:
+            closest_str, closest_margin = "—", 0.0
+
+        champ_w = wins_season[champ_name]
+        champ_l = losses_season[champ_name]
+        season_records.append({
+            "season": yr,
+            "champion": champ_name,
+            "champion_uid": name_to_uid[champ_name],
+            "runner_up": runner_name,
+            "runner_up_uid": name_to_uid[runner_name],
+            "champion_record": f"{champ_w}-{champ_l}",
+            "top_pf_team": top_pf_name,
+            "top_pf": round(pf_season[top_pf_name], 1),
+            "highest_week_team": high_week_name,
+            "highest_week_value": high_week_val,
+            "closest_matchup": closest_str,
+            "closest_margin": closest_margin,
+        })
+
+    championships: dict = {}
+    for rec in season_records:
+        uid = rec["champion_uid"]
+        championships.setdefault(uid, []).append(rec["season"])
+
+    available = sorted(season_dfs.keys(), reverse=True)
     return available, career_owners, championships, season_records, id_to_name
 
 

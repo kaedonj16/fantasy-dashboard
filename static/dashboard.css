@@ -2022,6 +2022,11 @@ button:hover {
   .standings-table[data-page="standings"] td:nth-child(5) {
     display: none;
   }
+  /* Hide Draft Capital on value rankings dynasty table */
+  .standings-table.dynasty-table th:nth-child(5),
+  .standings-table.dynasty-table td:nth-child(5) {
+    display: none;
+  }
 }
 
 .table-stats {
