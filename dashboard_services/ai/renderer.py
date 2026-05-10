@@ -19,13 +19,29 @@ from dashboard_services.ai.prompts import (
     generate_power_rankings_result,
     generate_trade_suggestions_result,
 )
+import logging
+
+from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
 from dashboard_services.providers.espn_api import safe_float
+
+logger = logging.getLogger(__name__)
 
 AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
 
 
 def ai_available() -> bool:
     return AI_ENABLED and bool(os.getenv("OPENAI_API_KEY"))
+
+
+def _ai_error_notice(reason: str = "") -> str:
+    msg = "AI analysis temporarily unavailable"
+    if reason:
+        msg += f" ({reason})"
+    return (
+        f"<div class='ai-copy ai-error-notice'>"
+        f"<span class='ai-error-icon'>&#x26A0;&#xFE0F;</span> {html.escape(msg)}. "
+        f"Showing data-based summary below.</div>"
+    )
 
 
 def _wrap_text_html(text: str) -> str:
@@ -109,11 +125,21 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     try:
         result = generate_team_ai_result(team_ctx, mode="gm_memo")
         html_out = render_team_ai_result(result, mode="gm_memo")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+    except (AIRateLimitError, AIUnavailableError) as e:
+        reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
+        logger.warning("[ai gm_memo] %s: %s", reason, e)
         top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = f"""
+        html_out = _ai_error_notice(reason) + f"""
+        <div class="ai-copy">
+          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
+          <p>Top assets: {html.escape(top_assets)}.</p>
+          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
+        </div>
+        """
+    except Exception as e:
+        logger.exception("[ai gm_memo] unexpected error: %s", e)
+        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
+        html_out = _ai_error_notice() + f"""
         <div class="ai-copy">
           <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
           <p>Top assets: {html.escape(top_assets)}.</p>
@@ -151,11 +177,23 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     try:
         result = generate_team_ai_result(team_ctx, mode="front_office_briefing")
         html_out = render_team_ai_result(result, mode="front_office_briefing")
-    except Exception as e:
-        print(f"[ai front office] fallback: {e}")
+    except (AIRateLimitError, AIUnavailableError) as e:
+        reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
+        logger.warning("[ai front_office] %s: %s", reason, e)
         strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
         weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = f"""
+        html_out = _ai_error_notice(reason) + f"""
+        <div class="ai-copy">
+          <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
+          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
+          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
+        </div>
+        """
+    except Exception as e:
+        logger.exception("[ai front_office] unexpected error: %s", e)
+        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
+        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
+        html_out = _ai_error_notice() + f"""
         <div class="ai-copy">
           <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
           <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
@@ -315,18 +353,33 @@ def get_trade_ai_analysis(
         html_out = render_trade_ai_html(result)
         save_cached_ai_text(cache_key, html_out)
         return html_out
-    except Exception as e:
-        print(f"[trade-ai] fallback: {e}")
+    except (AIRateLimitError, AIUnavailableError) as e:
+        reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
+        logger.warning("[trade-ai] %s: %s", reason, e)
         verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
         fallback = {
             "verdict": verdict,
-            "summary": f"The trade is being judged for a {team_ctx.get('direction') or 'balanced'} roster profile. Market delta: {market_delta:.1f}.",
+            "summary": f"AI analysis {reason}. Market delta: {market_delta:.1f} — verdict based on value differential only.",
+            "helps": ["Market value calculation is based on current dynasty rankings."],
+            "risks": [f"AI is {reason}; this is a data-only estimate without roster context."],
+            "counter": "Try again shortly for a full AI-powered front-office recommendation.",
+            "confidence": "low",
+        }
+        html_out = _ai_error_notice(reason) + render_trade_ai_html(fallback)
+        save_cached_ai_text(cache_key, html_out)
+        return html_out
+    except Exception as e:
+        logger.exception("[trade-ai] unexpected error: %s", e)
+        verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
+        fallback = {
+            "verdict": verdict,
+            "summary": f"The trade is evaluated for a {team_ctx.get('direction') or 'balanced'} roster profile. Market delta: {market_delta:.1f}.",
             "helps": ["The return may line up with your current roster direction."],
-            "risks": ["The LLM call failed, so this is a simplified fallback."],
+            "risks": ["AI call failed; this is a simplified market-value estimate."],
             "counter": "Try adjusting the pick side or a secondary asset if the deal feels close.",
             "confidence": "low",
         }
-        html_out = render_trade_ai_html(fallback)
+        html_out = _ai_error_notice() + render_trade_ai_html(fallback)
         save_cached_ai_text(cache_key, html_out)
         return html_out
 
@@ -479,8 +532,12 @@ def get_power_rankings_html(ctx: dict) -> str:
         narratives = {r["roster_id"]: r["narrative"] for r in (result.get("rankings") or [])}
         momentums = {r["roster_id"]: r.get("momentum", "steady") for r in (result.get("rankings") or [])}
         html_out = _render_power_rankings_html_from_data(teams, narratives, momentums)
+    except (AIRateLimitError, AIUnavailableError) as e:
+        reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
+        logger.warning("[power-rankings-ai] %s: %s", reason, e)
+        html_out = _ai_error_notice(reason) + _render_power_rankings_html_from_data(teams, fallback_narratives)
     except Exception as e:
-        print(f"[power-rankings-ai] fallback: {e}")
+        logger.exception("[power-rankings-ai] unexpected error: %s", e)
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
 
     save_cached_ai_text(cache_key, html_out)
@@ -556,8 +613,12 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     try:
         result = generate_trade_suggestions_result(suggestions_ctx)
         html_out = _render_trade_suggestions_from_data(result.get("suggestions") or [])
+    except (AIRateLimitError, AIUnavailableError) as e:
+        reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
+        logger.warning("[trade-suggestions-ai] %s: %s", reason, e)
+        html_out = _ai_error_notice(reason) + _render_trade_suggestions_fallback(suggestions_ctx)
     except Exception as e:
-        print(f"[trade-suggestions-ai] fallback: {e}")
+        logger.exception("[trade-suggestions-ai] unexpected error: %s", e)
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
 
     save_cached_ai_text(cache_key, html_out)

@@ -258,6 +258,14 @@ try:
 except Exception as e:
     logger.warning("[rookie-api] Registration skipped: %s", e)
 
+# Register public pages blueprint (privacy, faq, support, contact, sw.js, ads.txt)
+try:
+    from routes.public_bp import public_bp
+    app.register_blueprint(public_bp)
+    logger.info("[public-bp] Public routes registered")
+except Exception as e:
+    logger.warning("[public-bp] Registration skipped: %s", e)
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -518,6 +526,9 @@ BASE_HTML = """
     </script>
   </head>
   <body>
+    <!-- Page navigation progress bar -->
+    <div id="page-load-bar"></div>
+
     <div id="app-scale">
       {nav}
 
@@ -1087,11 +1098,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled)."""
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled[, premium])."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         item_html = ""
-        for item_label, endpoint, item_key, disabled in items:
+        for item_tuple in items:
+            item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
+            disabled = item_tuple[3] if len(item_tuple) > 3 else False
+            is_premium = item_tuple[4] if len(item_tuple) > 4 else False
+            pro_badge = "<span class='nav-pro-badge'>PRO</span>" if is_premium else ""
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
@@ -1101,7 +1116,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             else:
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}{pro_badge}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
         return (
@@ -1122,9 +1137,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Calculator", "page_trade",          "trade",          False),
-        ("Trade Database",   "page_trade_database", "trade-database", False),
-        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
+        ("Trade Calculator", "page_trade",          "trade",          False, False),
+        ("Trade Database",   "page_trade_database", "trade-database", False, False),
+        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False, True),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -1133,14 +1148,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
-        ("Player Rankings",   "page_players",   "players",   False),
-        ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Breakout Engine",   "page_breakouts",  "breakouts", False),
+        ("Player Rankings",   "page_players",   "players",   False, False),
+        ("Prospect Rankings", "page_prospects",  "prospects", False, False),
+        ("Breakout Engine",   "page_breakouts",  "breakouts", False, True),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
-        ("Awards",  "page_awards",  "awards",  False),
-        ("Graphs",  "page_graphs",  "graphs",  False),
-        ("History", "page_history", "history", False),
+        ("Awards",  "page_awards",  "awards",  False, False),
+        ("Graphs",  "page_graphs",  "graphs",  False, False),
+        ("History", "page_history", "history", False, False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
@@ -7199,314 +7214,7 @@ def build_teams_body(ctx: dict) -> str:
     """
 
 
-@app.route("/sw.js")
-def service_worker():
-    """Serve service worker from root scope so it can control all pages."""
-    return send_file("static/sw.js", mimetype="application/javascript")
-
-
-@app.route("/privacy")
-@app.route("/<platform>/<int:season>/<league_id>/privacy")
-def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
-    body = """
-        <div class="static-page">
-          <div class="static-card-page">
-
-            <h1 class="static-hero-title">Privacy Policy</h1>
-            <div class="static-section">
-              <div class="static-section-title">What We Collect</div>
-              <p>
-                We use your Sleeper league ID and public Sleeper data to build dashboards,
-                projections, and tools. No passwords, payment info, or sensitive personal data
-                is collected.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">What We Don't Collect</div>
-              <p>
-                We don’t store personal identifying information, sell data, or track you outside
-                of this site.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Data Storage</div>
-              <p>
-                League data is cached temporarily on the server to improve performance.
-                You may request removal at any time via the Contact page.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Trade Analytics</div>
-              <p>
-                When you enter your Sleeper username, your connected league IDs and Sleeper
-                user ID may be used to improve trade value accuracy across the platform.
-                This data is not sold or shared with third parties.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Advertising</div>
-              <p>
-                This site displays advertisements through Google AdSense. Google uses cookies
-                to serve ads based on your prior visits to this site or other websites.
-                Google's use of advertising cookies enables it and its partners to serve ads
-                based on your visit to this site and/or other sites on the Internet.
-              </p>
-              <p style="margin-top:8px;">
-                You may opt out of personalized advertising by visiting
-                <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">
-                  Google's Ads Settings
-                </a> or
-                <a href="http://www.aboutads.info/choices/" target="_blank" rel="noopener">
-                  www.aboutads.info
-                </a>.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Cookies</div>
-              <p>
-                We use cookies to maintain your login session and improve your experience.
-                Third-party vendors, including Google, also use cookies to serve ads based
-                on your browsing activity. By using this site, you consent to the use of
-                cookies as described in this policy.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Third-Party Links</div>
-              <p>
-                Our site may contain links to external websites. We are not responsible
-                for the privacy practices or content of these third-party sites.
-              </p>
-            </div>
-
-            <div class="highlight-box">
-              Have questions or want your league data removed?
-              Reach out using the Contact page.
-            </div>
-
-          </div>
-        </div>
-        """
-    return render_page("BR Fantasy Privacy", league_id if league_id else None, "privacy", body, platform, season)
-
-
-@app.route("/support")
-@app.route("/<platform>/<int:season>/<league_id>/support")
-def support_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
-    body = """
-        <div class="static-page">
-          <div class="static-card-page">
-            <h1 class="static-hero-title">Support the Site</h1>
-
-            <div class="static-section">
-              <div class="static-section-title">1. Direct Support</div>
-              <p>
-                If you find the dashboard helpful for your league, you can support
-                ongoing development and hosting costs.
-              </p>
-              <p style="margin-top:6px;">
-                <a
-                  class="link-pill"
-                  href="https://buymeacoffee.com/brfantasy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  💸 Make a donation
-                </a>
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">2. Premium Ad-Free Mode (Coming Soon)</div>
-              <p>
-                The long-term plan is to offer a premium, ad-free experience with extra
-                features (advanced graphs, additional projections, league history views,
-                and more) while keeping a solid free version for everyone.
-              </p>
-              <p style="margin-top:8px;">
-                Want early access or to give feedback on premium ideas? Reach out on the
-                Contact page and include “Premium” in your message.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">3. Share With Your League</div>
-              <p>
-                Honestly one of the best ways to support this is just using it.
-                Share the link with your league mates, show the dashboards on stream,
-                or use the matchup previews in your weekly recaps.
-              </p>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">4. Follow & Subscribe</div>
-              <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
-              </div>
-            </div>
-
-            <div class="highlight-box">
-              Every bit of support helps keep the site online and evolving for future seasons.
-              Thanks for using BR Fantasy.
-            </div>
-          </div>
-        </div>
-        """
-    return render_page("BR Fantasy Support", league_id if league_id else None, "support", body, platform, season)
-
-
-@app.route("/faq")
-@app.route("/<platform>/<int:season>/<league_id>/faq")
-def faq_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
-    body = """
-        <div class="static-page">
-          <div class="static-card-page">
-            <h1 class="static-hero-title">FAQ</h1>
-
-            <div class="static-section">
-              <div class="static-section-title">General</div>
-
-              <details class="faq-item" open>
-                <summary>What is the BR Fantasy Dashboard?</summary>
-                <p>
-                  It’s a custom fantasy football dashboard that pulls in your Sleeper league
-                  data and turns it into power rankings, weekly summaries, matchup previews,
-                  graphs, and more—all in one place.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>What do I need to use it?</summary>
-                <p>
-                  All you need is your Sleeper or ESPN league ID. Paste it into the home screen,
-                  and the dashboard will fetch public data for that league.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Does this change anything in my Fantasy league?</summary>
-                <p>
-                  No. The dashboard is read-only. It just reads public data from your league’s
-                  API and never modifies your league, rosters, or settings.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Data & Privacy</div>
-
-              <details class="faq-item">
-                <summary>What data do you store?</summary>
-                <p>
-                  Some league data may be cached temporarily so pages load quickly
-                  (rosters, users, scores, projections, etc.). We do not store your
-                  password or payment information. See the Privacy Policy for more details.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Can I have my league data removed?</summary>
-                <p>
-                  Yes. Use the Contact page to send your Sleeper league ID and request
-                  removal. We’ll clear cached data for that league.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Premium / Ads / Support</div>
-
-              <details class="faq-item">
-                <summary>Is there a premium or ad-free mode?</summary>
-                <p>
-                  A premium, ad-free experience is planned. The idea is to keep a fully
-                  functional free tier while offering extra features and an ad-free UI for
-                  people who want to support the project.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>How can I support the site?</summary>
-                <p>
-                  You can support the project through donations, using premium when it’s
-                  available, or by sharing the site with your league mates.
-                  Visit the Support page for options.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Issues & Feedback</div>
-
-              <details class="faq-item">
-                <summary>The numbers look wrong—what should I do?</summary>
-                <p>
-                  First, hit the refresh button on the nav to clear cached data for your
-                  league. If something still looks off, send a message via the Contact
-                  page with your league ID and a short description of the issue.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Can I request new features?</summary>
-                <p>
-                  Absolutely. This project is built for fantasy degenerates.
-                  Drop your ideas on the Contact page and they might make it onto the roadmap.
-                </p>
-              </details>
-            </div>
-          </div>
-        </div>
-        """
-    return render_page("BR Fantasy FAQ", league_id if league_id else None, "faq", body, platform, season)
-
-
-@app.route("/contact", methods=["GET", "POST"])
-@app.route("/<platform>/<int:season>/<league_id>/contact", methods=["GET", "POST"])
-def contact_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
-    # super simple "email us" style page; you can later hook this to a form handler
-    body = """
-        <div class="static-page">
-          <div class="static-card-page">
-
-            <h1 class="static-hero-title">Contact</h1>
-
-            <div class="static-section">
-              <div class="static-section-title">Message</div>
-              <p>You can message the creator directly via social platforms:</p>
-
-              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
-              </div>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">What to include</div>
-              <ul style="margin-left:20px; color:#4b5563; font-size:14px;">
-                <li>Your Sleeper league ID</li>
-                <li>Which page you were on</li>
-                <li>What wasn’t working or looked incorrect</li>
-                <li>Screenshots if possible</li>
-              </ul>
-            </div>
-
-            <div class="highlight-box">
-              Feedback helps shape future features — thanks for helping improve BR Fantasy.
-            </div>
-
-          </div>
-        </div>
-        """
-    return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body, platform, season)
+# Public page routes (privacy, support, faq, contact, sw.js, ads.txt) are in routes/public_bp.py
 
 
 def league_url(slug: str, league_id: Optional[str] = None, platform: Optional[str] = None, season: Optional[int] = None) -> str:
@@ -7756,6 +7464,93 @@ def _build_tour_mock_history_ctx() -> dict:
         "rosters": [],
         "offseason_mode": False,
     }
+
+
+def _build_tour_mock_awards_data() -> tuple:
+    """Deterministic mock data for the awards page tour preview."""
+    import random as _rand
+    rng = _rand.Random(99)
+
+    mock_ids = ["u1", "u2", "u3", "u4", "u5", "u6"]
+    id_to_name = dict(zip(mock_ids, _TOUR_MOCK_TEAMS))
+
+    career_owners: dict = {}
+    for i, uid in enumerate(mock_ids):
+        seasons_played = rng.randint(3, 5)
+        games_per_season = 13
+        total_games = seasons_played * games_per_season
+        wins = rng.randint(int(total_games * 0.35), int(total_games * 0.70))
+        losses = total_games - wins
+        weekly_pts = [round(rng.gauss(95 + i * 2, 11), 2) for _ in range(total_games)]
+        career_owners[uid] = {
+            "Wins": wins,
+            "Losses": losses,
+            "Ties": 0,
+            "PF": sum(weekly_pts),
+            "PA": round(sum(weekly_pts) * rng.uniform(0.92, 1.08), 2),
+            "seasons": seasons_played,
+            "weekly_pts": weekly_pts,
+            "close_wins": rng.randint(2, 8),
+            "bench_pts": round(rng.gauss(600, 80), 1),
+            "waiver_adds": rng.randint(10, 35),
+            "activity": rng.randint(20, 60),
+            "playoff_delta_sum": round(rng.gauss(0, 15), 1),
+            "playoff_delta_n": rng.randint(2, 4),
+        }
+
+    championships: dict = {
+        "u1": [2022, 2024],
+        "u3": [2023],
+        "u5": [2021],
+    }
+
+    season_records = [
+        {
+            "season": 2024,
+            "champion": _TOUR_MOCK_TEAMS[0],
+            "champion_uid": "u1",
+            "runner_up": _TOUR_MOCK_TEAMS[2],
+            "runner_up_uid": "u3",
+            "champion_record": "10-3",
+            "top_pf_team": _TOUR_MOCK_TEAMS[1],
+            "top_pf": 1412.6,
+            "highest_week_team": _TOUR_MOCK_TEAMS[4],
+            "highest_week_value": 187.4,
+            "closest_matchup": f"{_TOUR_MOCK_TEAMS[1]} vs {_TOUR_MOCK_TEAMS[3]}",
+            "closest_margin": 0.72,
+        },
+        {
+            "season": 2023,
+            "champion": _TOUR_MOCK_TEAMS[2],
+            "champion_uid": "u3",
+            "runner_up": _TOUR_MOCK_TEAMS[5],
+            "runner_up_uid": "u6",
+            "champion_record": "11-2",
+            "top_pf_team": _TOUR_MOCK_TEAMS[0],
+            "top_pf": 1388.2,
+            "highest_week_team": _TOUR_MOCK_TEAMS[2],
+            "highest_week_value": 179.8,
+            "closest_matchup": f"{_TOUR_MOCK_TEAMS[0]} vs {_TOUR_MOCK_TEAMS[4]}",
+            "closest_margin": 1.18,
+        },
+        {
+            "season": 2022,
+            "champion": _TOUR_MOCK_TEAMS[0],
+            "champion_uid": "u1",
+            "runner_up": _TOUR_MOCK_TEAMS[1],
+            "runner_up_uid": "u2",
+            "champion_record": "9-4",
+            "top_pf_team": _TOUR_MOCK_TEAMS[3],
+            "top_pf": 1357.9,
+            "highest_week_team": _TOUR_MOCK_TEAMS[3],
+            "highest_week_value": 193.1,
+            "closest_matchup": f"{_TOUR_MOCK_TEAMS[2]} vs {_TOUR_MOCK_TEAMS[5]}",
+            "closest_margin": 0.34,
+        },
+    ]
+
+    available = [2024, 2023, 2022]
+    return available, career_owners, championships, season_records, id_to_name
 
 
 @app.route("/<platform>/<int:season>/<league_id>/graphs")
@@ -11645,6 +11440,18 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
+    # Tour preview: render with mock data, bypass real multi-season fetch
+    if request.args.get("tour"):
+        try:
+            available, career_owners, championships, season_records, id_to_name = _build_tour_mock_awards_data()
+            body_html = _build_awards_html(
+                career_owners, championships, season_records, id_to_name,
+                platform=platform, season=season, league_id=league_id, league_name="Demo League",
+            )
+        except Exception as exc:
+            body_html = f"<div class='card central'><div class='card-body'><p>Awards preview unavailable: {exc}</p></div></div>"
+        return render_page("League Awards", league_id, "awards", body_html, platform, season)
+
     cached = get_page_html_from_cache(platform, season, league_id, "awards")
     if cached:
         return render_page("League Awards", league_id, "awards", cached, platform, season)
@@ -11803,19 +11610,7 @@ def maybe_run_daily():
         logger.warning("[daily] before_request check failed (non-fatal): %s", _daily_exc)
 
 
-@app.route("/ads.txt")
-def ads_txt():
-    """Serve ads.txt file for ad network authorization"""
-    try:
-        ads_file = Path(__file__).resolve().parent / "ads.txt"
-        if ads_file.exists():
-            return send_file(ads_file, mimetype="text/plain")
-        else:
-            # Return a placeholder if file doesn't exist
-            return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
-    except Exception as e:
-        print(f"[ads.txt] Error serving file: {e}")
-        return "# ads.txt unavailable", 500, {"Content-Type": "text/plain"}
+# /ads.txt is served by routes/public_bp.py
 
 
 @app.route("/", methods=["GET", "POST"])

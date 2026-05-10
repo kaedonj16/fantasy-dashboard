@@ -1011,8 +1011,11 @@ def calculate_player_readiness_score(
     efficiency_score = 0.0
     raw_efficiency_score = 0.0
     sample_multiplier = 1.0
+    # Position-specific adjustments (set below)
+    wr_fp_penalty = 0.0
+    skill_lift = 0.0
 
-    if position in ["WR", "TE"]:
+    if position == "WR":
         yards_per_target = _safe_float(prev_usage.get("yards_per_target", 0))
         catch_rate = _safe_float(prev_usage.get("catch_rate", 0))
         prev_targets = _safe_float(prev_usage.get("targets", 0))
@@ -1037,6 +1040,71 @@ def calculate_player_readiness_score(
 
         raw_efficiency_score = ypt_score + cr_score
         sample_multiplier = _sample_confidence(prev_targets, full_confidence=50, min_confidence=0.35)
+        efficiency_score = raw_efficiency_score * sample_multiplier
+
+        # ── WR false-positive penalty: contested-catch profiles ─────────────
+        # High draft capital + poor efficiency proxy = overrated prospect
+        if (
+            prev_targets >= WR_FP_MIN_TARGETS
+            and catch_rate < WR_FP_CATCH_RATE_THRESHOLD
+            and yards_per_target < WR_FP_YPT_THRESHOLD
+            and not is_drafted_rookie   # only penalize non-rookies with real data
+        ):
+            draft_round = _safe_int((draft_capital or {}).get("round", 5), 5)
+            if draft_round == 1:
+                wr_fp_penalty = WR_FP_PENALTY_R1
+            elif draft_round == 2:
+                wr_fp_penalty = WR_FP_PENALTY_R2
+            else:
+                wr_fp_penalty = WR_FP_PENALTY_OTHER
+
+        # ── Skill-over-draft lift: Day-2/3 WRs with elite efficiency ────────
+        # Captures Kupp/Nacua archetypes that routinely beat their draft slot
+        if (
+            not is_drafted_rookie
+            and prev_targets >= WR_SKILL_LIFT_MIN_TARGETS
+            and yards_per_target >= WR_SKILL_LIFT_YPT_THRESHOLD
+            and catch_rate >= WR_SKILL_LIFT_CATCH_THRESHOLD
+        ):
+            draft_round = _safe_int((draft_capital or {}).get("round", 5), 5)
+            if draft_round == 1:
+                skill_lift = WR_SKILL_LIFT_R1
+            elif draft_round == 2:
+                skill_lift = WR_SKILL_LIFT_R2
+            elif draft_round <= 4:
+                skill_lift = WR_SKILL_LIFT_R3_R4
+            else:
+                skill_lift = WR_SKILL_LIFT_UDFA
+
+    elif position == "TE":
+        yards_per_target = _safe_float(prev_usage.get("yards_per_target", 0))
+        catch_rate = _safe_float(prev_usage.get("catch_rate", 0))
+        prev_targets = _safe_float(prev_usage.get("targets", 0))
+
+        # TE uses slightly higher efficiency thresholds and more shrinkage toward mean
+        if yards_per_target >= TE_ELITE_YPT:
+            ypt_score = EFFICIENCY_YPT_MAX
+        elif yards_per_target >= TE_GOOD_YPT:
+            ypt_score = 14
+        elif yards_per_target >= WR_AVERAGE_YARDS_PER_TARGET:
+            ypt_score = 9
+        else:
+            ypt_score = 4
+
+        if catch_rate >= TE_ELITE_CATCH_RATE:
+            cr_score = EFFICIENCY_CATCH_RATE_MAX
+        elif catch_rate >= TE_GOOD_CATCH_RATE:
+            cr_score = 9
+        elif catch_rate >= WR_AVERAGE_CATCH_RATE:
+            cr_score = 4
+        else:
+            cr_score = 0
+
+        raw_efficiency_score = ypt_score + cr_score
+        # Higher min_confidence shrinks TE scores toward mean — stabilizes outliers
+        sample_multiplier = _sample_confidence(
+            prev_targets, full_confidence=50, min_confidence=TE_SAMPLE_MIN_CONFIDENCE
+        )
         efficiency_score = raw_efficiency_score * sample_multiplier
 
     elif position == "RB":
@@ -1068,6 +1136,18 @@ def calculate_player_readiness_score(
         target_multiplier = _sample_confidence(prev_targets, full_confidence=25, min_confidence=0.35)
         sample_multiplier = _weighted_average([(carry_multiplier, 0.7), (target_multiplier, 0.3)])
         efficiency_score = raw_efficiency_score * sample_multiplier
+
+        # ── Skill-over-draft lift: Day-2/3 RBs with elite efficiency ────────
+        if (
+            not is_drafted_rookie
+            and prev_carries >= RB_SKILL_LIFT_MIN_CARRIES
+            and yards_per_carry >= RB_SKILL_LIFT_YPC_THRESHOLD
+        ):
+            draft_round = _safe_int((draft_capital or {}).get("round", 5), 5)
+            if draft_round == 2:
+                skill_lift = RB_SKILL_LIFT_R2
+            elif draft_round >= 3:
+                skill_lift = RB_SKILL_LIFT_R3_R4
 
     elif position == "QB":
         pass_td_rate = _safe_float(prev_usage.get("pass_td_rate", 0))
@@ -1155,6 +1235,9 @@ def calculate_player_readiness_score(
         else exp_score + efficiency_score + usage_baseline_score
     )
 
+    # Apply position-specific adjustments
+    base_score += skill_lift + wr_fp_penalty
+
     # --- Injury status modifier ---
     injury_status_penalty = 0.0
     injury_history_penalty = 0.0
@@ -1194,6 +1277,8 @@ def calculate_player_readiness_score(
         "draft_score": round(draft_score, 2) if is_drafted_rookie else None,
         "usage_baseline_score": round(usage_baseline_score, 2) if not is_drafted_rookie else None,
         "is_rookie": is_drafted_rookie,
+        "skill_lift": round(skill_lift, 2),
+        "contested_catch_penalty": round(wr_fp_penalty, 2),
         "injury_status": injury_status_used,
         "injury_status_penalty": round(injury_status_penalty, 2),
         "injury_history_penalty": round(injury_history_penalty, 2),

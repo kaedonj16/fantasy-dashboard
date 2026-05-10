@@ -21,6 +21,42 @@ document.documentElement.scrollTop = 0;
 document.body.scrollTop = 0;
 
 // Prevent scroll during page load
+// ── Page navigation progress bar ─────────────────────────────────────────────
+(function () {
+  var bar = null;
+  function getBar() {
+    if (!bar) bar = document.getElementById('page-load-bar');
+    return bar;
+  }
+  function startBar() {
+    var b = getBar(); if (!b) return;
+    b.className = '';
+    b.style.width = '0%';
+    b.style.opacity = '1';
+    requestAnimationFrame(function () { b.className = 'plb-active'; });
+  }
+  function finishBar() {
+    var b = getBar(); if (!b) return;
+    b.className = 'plb-done';
+    setTimeout(function () { b.className = ''; b.style.width = '0%'; }, 500);
+  }
+
+  // Show bar when a same-origin link is clicked (not anchor, not external, not new tab)
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href') || '';
+    if (link.target === '_blank' || href.startsWith('#') || href.startsWith('javascript:') ||
+        href.startsWith('mailto:') || (href.startsWith('http') && !href.startsWith(window.location.origin))) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    startBar();
+  }, true);
+
+  // Finish bar once the new page is interactive
+  window.addEventListener('pageshow', finishBar);
+  window.addEventListener('DOMContentLoaded', finishBar);
+})();
+
 window.addEventListener('beforeunload', function() {
   window.scrollTo(0, 0);
 });
@@ -7297,18 +7333,18 @@ document.addEventListener('click', (e) => {
   const TOUR_STEPS = [
     {
       page: 'dashboard', selector: null,
-      title: 'Welcome!',
-      body: "Let's take a 30-second tour of your dynasty dashboard.",
+      title: 'Welcome to your dynasty hub!',
+      body: "Let's take a quick tour of the key features. Hit Next to get started.",
     },
     {
       page: 'dashboard', selector: '#settingsGearBtn',
       title: 'Settings & Leagues',
-      body: 'Switch leagues, toggle dark mode, or view the changelog here.',
+      body: 'Manage leagues, refresh your data, toggle dark mode, and view the changelog here.',
     },
     {
       page: 'dashboard', selector: '#settingsDropdown',
       title: 'Settings Menu',
-      body: 'Here you can refresh data, view notifications, switch leagues, and toggle dark mode.',
+      body: 'Switch between leagues, force a data refresh, or flip to dark mode — all in one place.',
       beforeShow: function () {
         var dd = document.getElementById('settingsDropdown');
         if (dd) dd.style.display = 'block';
@@ -7321,7 +7357,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: '#settingsChangelogBtn',
       title: "What's New",
-      body: 'The bell shows new features and updates. A red dot means something new dropped.',
+      body: 'The bell lights up when new features or data drop. Never miss an update.',
       beforeShow: function () {
         var dd = document.getElementById('settingsDropdown');
         if (dd) dd.style.display = 'block';
@@ -7334,112 +7370,48 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: '.nav-pills-container',
       title: 'Navigation',
-      body: 'Jump between Dashboard, Trade Calc, Teams, Activity, Players, and more.',
+      body: 'Jump to Trade Calc, Teams, Activity, Players, Breakouts, Prospects, and more from here.',
     },
     {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
-      body: 'Click any player to see their dynasty value, trend, and breakout score.',
+      body: 'Click any player to see their dynasty value history, trend, news, and breakout score.',
       action: 'openPlayerModal',
     },
     {
       page: 'dashboard', selector: '.team-clickable, .team-row',
       title: 'Team Cards',
-      body: 'Click any team to see their full roster and asset values.',
+      body: 'Click any team to pull up their full roster, positional grades, and asset values.',
       action: 'openTeamModal',
     },
     {
       page: 'dashboard', selector: 'a[href*="/weekly"]',
       title: 'Weekly Hub',
-      body: 'During the season, see live scores, matchup previews, and weekly recaps here.',
+      body: 'Live scores, matchup previews, and weekly projections during the season.',
       onlyIfPresent: false,
     },
     {
       page: 'history', selector: '.card',
       title: 'Season History',
-      body: 'Review past season awards, standings, and scoring trends for every year.',
+      body: 'Week-by-week recaps, season standings, power rankings, and scoring trends for every past year.',
       navigate: 'history',
-      beforeShow: function () {
-        // Create mock data for history page during tour
-        setTimeout(() => {
-          // Mock season awards
-          const awardsContainer = document.querySelector('.awards-container');
-          if (awardsContainer && !awardsContainer.querySelector('.tour-mock-data')) {
-            awardsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>2024 Season Awards</h4>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-trophy" aria-hidden="true"></i> Team Alpha</span>
-                  <span class="award-desc">League Champion</span>
-                </div>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-star" aria-hidden="true"></i> Player One</span>
-                  <span class="award-desc">MVP</span>
-                </div>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-rocket" aria-hidden="true"></i> Player Two</span>
-                  <span class="award-desc">Breakout Player</span>
-                </div>
-              </div>
-            `;
-          }
-
-          // Mock regular season standings
-          const standingsContainer = document.querySelector('.standings-container');
-          if (standingsContainer && !standingsContainer.querySelector('.tour-mock-data')) {
-            standingsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>2024 Regular Season Standings</h4>
-                <table class="standings-table">
-                  <thead>
-                    <tr><th>Team</th><th>W-L</th><th>PF</th><th>PA</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><td>Team Alpha</td><td>12-1</td><td>2,450</td><td>1,890</td></tr>
-                    <tr><td>Team Beta</td><td>10-3</td><td>2,320</td><td>1,950</td></tr>
-                    <tr><td>Team Gamma</td><td>8-5</td><td>2,180</td><td>2,010</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            `;
-          }
-
-          // Mock season trends
-          const trendsContainer = document.querySelector('.trends-container');
-          if (trendsContainer && !trendsContainer.querySelector('.tour-mock-data')) {
-            trendsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>Season Scoring Trends</h4>
-                <div class="trend-chart">
-                  <div class="trend-item">
-                    <span class="trend-label">Avg Score:</span>
-                    <span class="trend-value">142.5 pts</span>
-                  </div>
-                  <div class="trend-item">
-                    <span class="trend-label">High Score:</span>
-                    <span class="trend-value">198.2 pts</span>
-                  </div>
-                  <div class="trend-item">
-                    <span class="trend-label">Low Score:</span>
-                    <span class="trend-value">89.7 pts</span>
-                  </div>
-                </div>
-              </div>
-            `;
-          }
-        }, 1000); // Wait for page to load
-      },
+    },
+    {
+      page: 'awards', selector: '.card',
+      title: 'All-Time Awards',
+      body: 'Career records, championship history, and fun awards like "most bench points left on the table."',
+      navigate: 'awards',
     },
     {
       page: 'graphs', selector: '.card',
       title: 'League Analytics',
-      body: 'Explore PF vs PA scatter plots, weekly score lines, and a head-to-head radar chart.',
+      body: 'PF vs PA scatter plots, weekly scoring lines, and head-to-head radar charts for every team.',
       navigate: 'graphs',
     },
     {
       page: 'dashboard', selector: null,
       title: "You're all set!",
-      body: 'Explore your dynasty empire. Good luck this season!',
+      body: "Explore your dynasty empire. Check out Trade Calc, Breakouts, and Prospects when you're ready.",
     },
   ];
 

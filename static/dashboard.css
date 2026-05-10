@@ -577,6 +577,21 @@ ul {
   pointer-events: none;
 }
 
+.nav-pro-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 4px;
+  vertical-align: middle;
+  line-height: 14px;
+}
+
 .nav-pill-dropdown-item + .nav-pill-dropdown-item {
   border-top: 1px solid var(--border);
 }
@@ -2968,6 +2983,22 @@ thead th {
   animation: spin 1s linear infinite;
 }
 
+/* Page-level navigation progress bar */
+#page-load-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent, #38bdf8), #60a5fa);
+  z-index: 999999;
+  transition: width 0.25s ease, opacity 0.3s ease 0.1s;
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+}
+#page-load-bar.plb-active { width: 75%; transition: width 8s cubic-bezier(0.1, 0.05, 0, 1); }
+#page-load-bar.plb-done   { width: 100%; opacity: 0; transition: width 0.15s ease, opacity 0.3s ease 0.15s; }
+
 .fullscreen-loading-overlay {
   position: fixed;
   top: 0;
@@ -4099,6 +4130,20 @@ thead th {
   line-height: 1.55;
   font-size: 0.96rem;
 }
+
+.ai-error-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 35%, transparent);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.ai-error-icon { font-size: 1rem; flex-shrink: 0; }
 
 .history-awards-grid {
   display: grid;
@@ -13675,4 +13720,58 @@ img, svg, canvas {
 @media (max-width: 480px) {
   .awards-records-grid { grid-template-columns: 1fr !important; }
   .fun-awards-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Mobile polish (consolidated) ────────────────────────────────────────── */
+
+/* Tab strips: horizontally scrollable on narrow screens instead of wrapping */
+@media (max-width: 640px) {
+  .card .tab-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 4px;
+    padding-bottom: 6px;
+  }
+  .card .tab-strip::-webkit-scrollbar { display: none; }
+  .card .tab-btn {
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+}
+
+/* Player modal: edge-to-edge on small phones */
+@media (max-width: 480px) {
+  .player-modal-overlay { padding: 0; align-items: flex-end; }
+  .player-modal {
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh;
+  }
+  .player-modal-header { padding-left: 16px; padding-right: 16px; }
+  .player-modal-headshot { width: 80px; height: 68px; }
+  .player-modal-name { font-size: 1.05rem; }
+}
+
+/* PRO badge: smaller on mobile, never break nav layout */
+@media (max-width: 640px) {
+  .nav-pro-badge { font-size: 8px; padding: 1px 4px; }
+}
+
+/* Trade calculator: prevent two-column layout from breaking on phone */
+@media (max-width: 540px) {
+  .otc-two-col, .trade-sides { flex-direction: column; }
+  .otc-col { min-width: 0; width: 100%; }
+}
+
+/* Breakout/prospect page table: clip long names on very small screens */
+@media (max-width: 480px) {
+  .breakout-name-cell, .prospect-name-cell {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
