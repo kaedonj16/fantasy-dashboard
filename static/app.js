@@ -57,6 +57,37 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── Data freshness chip ───────────────────────────────────────────────────────
+(function () {
+  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours — matches server CACHE_TTL
+  function initFreshness() {
+    var main = document.getElementById('page-root');
+    if (!main) return;
+    var ts = parseInt(main.dataset.cacheTs || '0', 10);
+    if (!ts) return;
+    var chip = document.getElementById('cache-freshness');
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.id = 'cache-freshness';
+      document.body.appendChild(chip);
+    }
+    function update() {
+      var diff = Date.now() - ts;
+      var mins = Math.floor(diff / 60000);
+      var label;
+      if (mins < 1) label = 'Data just updated';
+      else if (mins < 60) label = 'Data • ' + mins + 'm ago';
+      else label = 'Data • ' + Math.floor(mins / 60) + 'h ago';
+      chip.textContent = label;
+      chip.classList.add('cf-visible');
+      chip.classList.toggle('cf-stale', diff > STALE_MS);
+    }
+    update();
+    setInterval(update, 60000);
+  }
+  document.addEventListener('DOMContentLoaded', initFreshness);
+})();
+
 window.addEventListener('beforeunload', function() {
   window.scrollTo(0, 0);
 });

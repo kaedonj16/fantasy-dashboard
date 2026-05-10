@@ -13775,3 +13775,23 @@ img, svg, canvas {
     white-space: nowrap;
   }
 }
+
+/* ── Data freshness chip ─────────────────────────────────────────────────── */
+#cache-freshness {
+  display: none;
+  position: fixed;
+  bottom: 14px;
+  right: 16px;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  white-space: nowrap;
+}
+#cache-freshness.cf-visible { display: block; }
+#cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }

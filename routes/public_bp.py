@@ -38,6 +38,61 @@ def ads_txt():
     return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
 
 
+# ── Robots.txt ────────────────────────────────────────────────────────────────
+
+@public_bp.route("/robots.txt")
+def robots_txt():
+    base = request.host_url.rstrip("/")
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /set-viewer\n"
+        "Disallow: /logout\n"
+        "\n"
+        f"Sitemap: {base}/sitemap.xml\n"
+    )
+    return body, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+# ── Sitemap.xml ───────────────────────────────────────────────────────────────
+
+@public_bp.route("/sitemap.xml")
+def sitemap_xml():
+    from app import get_nfl_state
+    base = request.host_url.rstrip("/")
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or 2025)
+
+    # Static pages always indexed
+    static_urls = [
+        ("", "1.0", "daily"),
+        ("/trade", "0.9", "daily"),
+        ("/trade-intel", "0.9", "daily"),
+        ("/trade-database", "0.8", "weekly"),
+        ("/players", "0.8", "weekly"),
+        ("/breakouts", "0.8", "weekly"),
+        ("/prospects", "0.7", "weekly"),
+        ("/pricing", "0.6", "monthly"),
+        ("/privacy", "0.3", "monthly"),
+        ("/faq", "0.4", "monthly"),
+        ("/support", "0.4", "monthly"),
+        ("/contact", "0.3", "monthly"),
+    ]
+
+    import xml.etree.ElementTree as ET
+    urlset = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+    for path, priority, changefreq in static_urls:
+        url_el = ET.SubElement(urlset, "url")
+        ET.SubElement(url_el, "loc").text = base + path
+        ET.SubElement(url_el, "priority").text = priority
+        ET.SubElement(url_el, "changefreq").text = changefreq
+
+    xml_bytes = ET.tostring(urlset, encoding="unicode", xml_declaration=False)
+    body = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
+    return body, 200, {"Content-Type": "application/xml; charset=utf-8"}
+
+
 # ── Privacy ───────────────────────────────────────────────────────────────────
 
 @public_bp.route("/privacy")

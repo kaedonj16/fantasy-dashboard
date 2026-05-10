@@ -258,13 +258,34 @@ try:
 except Exception as e:
     logger.warning("[rookie-api] Registration skipped: %s", e)
 
-# Register public pages blueprint (privacy, faq, support, contact, sw.js, ads.txt)
+# Register blueprints
 try:
     from routes.public_bp import public_bp
     app.register_blueprint(public_bp)
-    logger.info("[public-bp] Public routes registered")
+    logger.info("[public-bp] registered")
 except Exception as e:
-    logger.warning("[public-bp] Registration skipped: %s", e)
+    logger.warning("[public-bp] skipped: %s", e)
+
+try:
+    from routes.auth_bp import auth_bp
+    app.register_blueprint(auth_bp)
+    logger.info("[auth-bp] registered")
+except Exception as e:
+    logger.warning("[auth-bp] skipped: %s", e)
+
+try:
+    from routes.billing_bp import billing_bp
+    app.register_blueprint(billing_bp)
+    logger.info("[billing-bp] registered")
+except Exception as e:
+    logger.warning("[billing-bp] skipped: %s", e)
+
+try:
+    from routes.trade_bp import trade_bp
+    app.register_blueprint(trade_bp)
+    logger.info("[trade-bp] registered")
+except Exception as e:
+    logger.warning("[trade-bp] skipped: %s", e)
 
 
 def generate_recent_updates_html(limit=5):
@@ -501,6 +522,7 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
+    {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
@@ -534,7 +556,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout">
+      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
         {body}
       </main>
 
@@ -1311,6 +1333,58 @@ _AD_INIT = """window.addEventListener('load', function() { setTimeout(function()
 _NO_ADS_PAGES = {"home", "privacy", "support", "faq", "contact"}
 
 
+_OG_DESCRIPTIONS = {
+    "home":          "Dynasty fantasy football tools — power rankings, trade calculator, matchup analysis, and more.",
+    "dashboard":     "Power rankings, matchup previews, and weekly scores for your dynasty league.",
+    "standings":     "League standings and power rankings for your dynasty league.",
+    "weekly":        "Weekly scoring hub with matchup previews and highlights.",
+    "trade":         "Dynasty trade calculator — evaluate any trade with real player market values.",
+    "trade-intel":   "Real dynasty trade data — buy-low, sell-high targets and market trends.",
+    "trade-database":"Browse thousands of real dynasty trades to understand player market values.",
+    "players":       "Dynasty player profiles, ADP, and values for every NFL player.",
+    "breakouts":     "Breakout candidates for the upcoming dynasty fantasy football season.",
+    "graphs":        "Dynasty league scoring trends and performance graphs.",
+    "history":       "League history and standings across multiple seasons.",
+    "awards":        "All-time league awards, records, and career statistics.",
+    "teams":         "Dynasty team rosters, grades, and analysis.",
+    "activity":      "League activity — recent moves, trades, and waiver claims.",
+    "pricing":       "BR Fantasy Premium — unlock advanced dynasty analytics, ad-free.",
+}
+_OG_IMAGE_PATH = "/static/Website_Logo.png"
+
+
+def _build_og_tags(title: str, active: str) -> str:
+    desc = _OG_DESCRIPTIONS.get(active or "", _OG_DESCRIPTIONS["home"])
+    try:
+        base = request.host_url.rstrip("/")
+        canonical = request.url
+        image = base + _OG_IMAGE_PATH
+    except RuntimeError:
+        # Outside request context
+        base = "https://brfantasy.com"
+        canonical = base
+        image = base + _OG_IMAGE_PATH
+    import html as _html
+    safe_title = _html.escape(title)
+    safe_desc  = _html.escape(desc)
+    safe_url   = _html.escape(canonical)
+    safe_img   = _html.escape(image)
+    return (
+        f'<meta property="og:type" content="website">'
+        f'<meta property="og:site_name" content="BR Fantasy">'
+        f'<meta property="og:title" content="{safe_title}">'
+        f'<meta property="og:description" content="{safe_desc}">'
+        f'<meta property="og:url" content="{safe_url}">'
+        f'<meta property="og:image" content="{safe_img}">'
+        f'<meta name="description" content="{safe_desc}">'
+        f'<meta name="twitter:card" content="summary_large_image">'
+        f'<meta name="twitter:site" content="@hoodiekj16">'
+        f'<meta name="twitter:title" content="{safe_title}">'
+        f'<meta name="twitter:description" content="{safe_desc}">'
+        f'<meta name="twitter:image" content="{safe_img}">'
+    )
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1329,8 +1403,20 @@ def render_page(
     # Don't serve ads on thin-content / navigation-only pages (AdSense policy)
     suppress_ads = active in _NO_ADS_PAGES or active is None
 
+    # Compute cache freshness timestamp for the data-cache-ts attribute
+    cache_ts = ""
+    if league_id and platform and season:
+        try:
+            entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+            if entry and entry.get("ts"):
+                cache_ts = str(int(entry["ts"] * 1000))  # ms epoch for JS Date
+        except Exception:
+            pass
+
     return BASE_HTML.format(
         title=title,
+        og_tags=_build_og_tags(title, active),
+        cache_ts=cache_ts,
         nav=nav_html,
         body=wrapped_body,
         adsense_script="" if (is_premium or suppress_ads) else _AD_SCRIPT,
@@ -2073,43 +2159,70 @@ def get_trade_ai_analysis(
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
 
 
+def _error_page(code: int, headline: str, detail: str) -> str:
+    emoji = "⚡" if code == 500 else "🔍" if code == 404 else "⏱️"
+    return (
+        "<!doctype html><html lang='en'><head>"
+        "<meta charset='utf-8'>"
+        f"<title>{code} — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<link rel='icon' href='/static/BR_Logo.png' type='image/x-icon'>"
+        "<link rel='stylesheet' href='/static/dashboard.css'>"
+        "<style>"
+        "body{display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".err-box{text-align:center;padding:48px 28px;max-width:440px;}"
+        ".err-emoji{font-size:52px;margin-bottom:16px;line-height:1;}"
+        ".err-code{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;"
+        "color:var(--text-muted,#94a3b8);margin-bottom:8px;}"
+        ".err-h{margin:0 0 10px;font-size:24px;font-weight:800;}"
+        ".err-p{color:var(--text-muted,#94a3b8);margin:0 0 28px;font-size:14px;line-height:1.6;}"
+        ".err-btn{display:inline-block;padding:11px 24px;background:#3b82f6;color:#fff;"
+        "border-radius:9px;text-decoration:none;font-weight:700;font-size:14px;}"
+        ".err-btn:hover{opacity:.88;}"
+        ".err-brand{margin-top:32px;font-size:12px;color:var(--text-muted,#94a3b8);}"
+        "</style>"
+        "</head><body>"
+        "<div class='err-box'>"
+        f"<div class='err-emoji'>{emoji}</div>"
+        f"<div class='err-code'>Error {code}</div>"
+        f"<h1 class='err-h'>{headline}</h1>"
+        f"<p class='err-p'>{detail}</p>"
+        "<a href='/' class='err-btn'>&#8592; Back to home</a>"
+        "<div class='err-brand'>BR Fantasy</div>"
+        "</div>"
+        "</body></html>"
+    )
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return _error_page(
+        404,
+        "Page not found",
+        "The page you're looking for doesn't exist or may have moved.",
+    ), 404
+
+
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
-    return (
-        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
-        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
-        ".box{text-align:center;padding:40px 24px;max-width:400px;}"
-        "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
-        "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
-        "</head><body><div class='box'>"
-        "<h2>Something went wrong</h2>"
-        "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
-        "<a href='/'>&#8592; Back to home</a>"
-        "</div></body></html>"
+    return _error_page(
+        500,
+        "Something went wrong",
+        "The server hit an unexpected error. This usually fixes itself — please try again in a moment.",
     ), 500
 
 
-@app.route("/health")
-def health():
-    """Uptime / readiness probe used by Render and load balancers."""
-    from dashboard_services.db import get_database_url
-    db_ok = False
-    try:
-        import psycopg
-        url = get_database_url()
-        with psycopg.connect(url, connect_timeout=3) as conn:
-            conn.execute("SELECT 1")
-        db_ok = True
-    except Exception as exc:
-        logger.warning("[health] DB check failed: %s", exc)
+@app.errorhandler(429)
+def handle_429(e):
+    return _error_page(
+        429,
+        "Too many requests",
+        "You've made too many requests in a short time. Please wait a moment before trying again.",
+    ), 429
 
-    payload = {"status": "ok" if db_ok else "degraded", "db": db_ok}
-    status_code = 200 if db_ok else 503
-    return jsonify(payload), status_code
+
+# /health → routes/auth_bp.py :: health()
 
 
 @app.route("/api/history/ai-recap")
@@ -7351,31 +7464,7 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
-@app.route("/trade")
-@app.route("/<platform>/<int:season>/<league_id>/trade")
-def page_trade(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
-    user_id = session.get("viewer_username") or None
-    if league_id:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-        league_id_safe = ctx.get("league_id") or league_id
-        season_safe = int(ctx.get("season") or season or datetime.now().year)
-        num_teams = ctx.get("total_rosters") or None
-        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
-        scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
-        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
-        viewer_roster_id = viewer.get("viewer_roster_id") or ""
-        has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
-        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                           scoring_format=scoring_format,
-                                           viewer_roster_id=viewer_roster_id,
-                                           has_premium=has_premium)
-    else:
-        state = get_nfl_state() or {}
-        current_season = int(state.get("season") or datetime.now().year)
-        has_premium = has_premium_access(user_id, None, "sleeper")
-        body = build_trade_calculator_body(None, current_season, has_premium=has_premium)
-
-    return render_page("BR Fantasy Trade Calculator", league_id, "trade", body, platform, season)
+# /trade → routes/trade_bp.py :: page_trade()
 
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
@@ -9327,1484 +9416,18 @@ def page_breakouts_guest():
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_breakouts(platform="sleeper", season=current_season, league_id=None)
 
-
-@app.route("/<platform>/<int:season>/<league_id>/trade-intel")
-def page_trade_intel(platform: str, season: int, league_id: str):
-    user_id = session.get("viewer_username")
-    has_premium = has_premium_access(user_id, league_id, platform)
-    body_html = f"""
-    <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
-        <div style="font-size:13px;color:var(--text-muted);">
-          Actionable insights from thousands of real dynasty trades across multiple platforms
-        </div>
-      </div>
-      <div class="card-body" style="padding-top:20px;">
-
-        <div class="ti-controls">
-          <div class="ti-tabs">
-            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')"><i class="fa-solid fa-fire"></i> Trending</button>
-            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
-            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
-          </div>
-          <div class="ti-pos-filters">
-            <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
-            <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
-            <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
-            <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
-            <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
-          </div>
-        </div>
-
-        <div class="ti-key">
-          <div class="ti-key-item">
-            <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
-            <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
-          </div>
-          <div class="ti-key-item">
-            <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
-            <span><span class="ti-key-label">BR Model</span> BR Production Model Value</span>
-          </div>
-          <div class="ti-key-item">
-            <span class="ti-key-swatch ti-key-delta"></span>
-            <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
-          </div>
-          <div class="ti-key-item">
-            <span style="display:inline-flex;align-items:center;vertical-align:middle;">
-              <span style="width:8px;height:8px;border-radius:50%;color:#10b981;display:flex;align-items:center;line-height:1;">▲</span>
-              <span style="width:8px;height:8px;border-radius:50%;color:#ef4444;display:inline-block;line-height:1;">▼</span>
-            </span>
-            <span><span class="ti-key-label">Momentum</span> Rising or Falling Market Price</span>
-          </div>
-        </div>
-
-        <div id="tiPagination" class="ti-pagination" style="display:none;">
-          <div class="ti-pagination-info">
-            <span id="tiPaginationText">Showing 1-20 of 100 players</span>
-          </div>
-          <div class="ti-pagination-controls">
-            <button id="tiPrevBtn" class="ti-pagination-btn" onclick="loadTIPage('prev')" disabled>
-              <i class="fa-solid fa-chevron-left"></i> Previous
-            </button>
-            <div id="tiPageNumbers" class="ti-page-numbers"></div>
-            <button id="tiNextBtn" class="ti-pagination-btn" onclick="loadTIPage('next')" disabled>
-              Next <i class="fa-solid fa-chevron-right"></i>
-            </button>
-          </div>
-        </div>
-
-        <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
-          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-          Loading trade data...
-        </div>
-        <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
-          No data for this filter yet — analytics need to run to populate this view.
-        </div>
-        <div id="tiGrid" class="ti-grid" style="display:none;"></div>
-
-      </div>
-    </div>
-
-    <!-- Trade History Modal -->
-    <div id="tiTradesOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeTITradesModal()">
-      <div class="ti-trades-modal">
-        <div class="ti-trades-header">
-          <div>
-            <div id="tiTradesName" class="ti-trades-name"></div>
-            <div id="tiTradesMeta" class="ti-trades-meta"></div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-            <button class="ti-profile-btn" onclick="viewTIPlayerProfile()">View Profile</button>
-            <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
-          </div>
-        </div>
-        <div class="ti-trades-lf-bar">
-          <button class="ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
-          <button class="ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
-          <button class="ti-lf-btn" data-lf="1qb" onclick="switchTILF('1qb')">1QB</button>
-        </div>
-        <div id="tiTradesBody" class="ti-trades-body">
-          <div class="ti-trades-msg">Loading trades&hellip;</div>
-        </div>
-        <div id="tiTradesPager" class="ti-trades-pager" style="display:none;">
-          <button id="tiTradesPrev" onclick="prevTITrades()" disabled>&larr; Prev</button>
-          <span id="tiTradesPagerInfo"></span>
-          <button id="tiTradesNext" onclick="nextTITrades()" disabled>Next &rarr;</button>
-        </div>
-      </div>
-    </div>
-
-    <style>
-      .ti-controls {{
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-      }}
-      .ti-tabs {{
-        display: flex;
-        background: var(--bg-alt, #f1f5f9);
-        border-radius: 10px;
-        padding: 3px;
-        gap: 2px;
-      }}
-      .ti-tab {{
-        padding: 7px 16px;
-        border-radius: 8px;
-        border: none;
-        background: transparent;
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-        transition: all .15s;
-      }}
-      .ti-tab.active {{
-        background: var(--card);
-        color: var(--text);
-        box-shadow: 0 1px 3px rgba(0,0,0,.12);
-      }}
-      .ti-pos-filters {{
-        display: flex;
-        gap: 6px;
-      }}
-      .ti-pos {{
-        padding: 6px 13px;
-        border-radius: 20px;
-        border: 1px solid var(--border);
-        background: var(--card);
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all .15s;
-      }}
-      .ti-pos.active {{
-        background: var(--text);
-        color: var(--card);
-        border-color: var(--text);
-      }}
-      .ti-grid {{
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-        gap: 12px;
-      }}
-      .ti-card {{
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 14px;
-        cursor: pointer;
-        transition: transform .12s, box-shadow .12s;
-        background: var(--card);
-      }}
-      .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
-      .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
-      .ti-name {{ font-weight:700; font-size:14px; line-height:1.3; }}
-      .ti-meta {{ font-size:11px; color:var(--text-muted); margin-top:2px; }}
-      .ti-chip {{
-        font-size:11px; font-weight:700;
-        padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
-      }}
-      .ti-divider {{ height:1px; background:var(--border); margin:8px 0; }}
-      .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
-      .ti-row-label {{ color:var(--text-muted); }}
-      .ti-row-val {{ font-weight:600; }}
-      .ti-delta-pos {{ color:#10b981; }}
-      .ti-delta-neg {{ color:#ef4444; }}
-      .ti-momentum {{ font-size:11px; font-weight:600; margin-top:6px; display:flex; align-items:center; gap:4px; }}
-      .ti-key {{
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6px 24px;
-        font-size: 12px; color: var(--text-muted);
-        background: var(--bg-alt, #f8fafc);
-        border: 1px solid var(--border);
-        border-radius: 10px; padding: 12px 16px;
-        margin-bottom: 20px; line-height: 1.4;
-      }}
-      .ti-key-item {{
-        display: flex; align-items: center; gap: 8px;
-      }}
-      .ti-key-swatch {{
-        display: inline-block; width: 12px; height: 12px;
-        flex-shrink: 0; margin-top: 1px;
-      }}
-      .ti-key-delta {{
-        background: linear-gradient(135deg, #10b981 50%, #ef4444 50%);
-        border-radius: 3px; opacity: .8;
-      }}
-      .ti-key-label {{
-        font-weight: 600; color: var(--text);
-        margin-right: 4px;
-      }}
-      .ti-pagination {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: 20px 0;
-        padding: 12px 0;
-        border-top: 1px solid var(--border);
-      }}
-      .ti-pagination-info {{
-        font-size: 13px;
-        color: var(--text-muted);
-      }}
-      .ti-pagination-controls {{
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }}
-      .ti-pagination-btn {{
-        padding: 6px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        transition: all .15s;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }}
-      .ti-pagination-btn:hover:not(:disabled) {{
-        background: var(--bg-alt);
-        border-color: var(--accent);
-      }}
-      .ti-pagination-btn:disabled {{
-        opacity: 0.5;
-        cursor: not-allowed;
-      }}
-      .ti-page-numbers {{
-        display: flex;
-        gap: 4px;
-      }}
-      .ti-page-number {{
-        padding: 4px 8px;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        min-width: 28px;
-        text-align: center;
-      }}
-      .ti-page-number:hover {{
-        background: var(--bg-alt);
-      }}
-      .ti-page-number.active {{
-        background: var(--accent-color);
-        color: var(--card);
-        border-color: var(--accent-color);
-        font-weight: 700;
-      }}
-
-      /* ── Trade History Modal ── */
-      .ti-trades-modal {{
-        background: var(--card);
-        border-radius: 16px;
-        width: min(600px, 96vw);
-        max-height: 82vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        box-shadow: 0 20px 60px rgba(0,0,0,.35);
-      }}
-      .ti-trades-header {{
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        padding: 20px 20px 14px;
-        border-bottom: 1px solid var(--border);
-        flex-shrink: 0;
-      }}
-      .ti-trades-name {{ font-size: 18px; font-weight: 700; }}
-      .ti-trades-meta {{ font-size: 13px; color: var(--text-muted); margin-top: 3px; }}
-      .ti-trades-close {{
-        background: none; border: none; font-size: 20px;
-        color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
-      }}
-      .ti-trades-close:hover {{ color: var(--text); }}
-      .ti-profile-btn {{
-        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
-        border: 1px solid var(--border); background: var(--bg-alt, #f1f5f9);
-        color: var(--text); cursor: pointer; white-space: nowrap;
-        transition: opacity .15s;
-      }}
-      .ti-profile-btn:hover {{ opacity: .75; }}
-      .ti-trades-lf-bar {{
-        display: flex; gap: 6px; padding: 12px 20px;
-        border-bottom: 1px solid var(--border); flex-shrink: 0;
-      }}
-      .ti-lf-btn {{
-        padding: 5px 14px; border-radius: 20px;
-        border: 1px solid var(--border); background: var(--card);
-        color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
-        transition: all .15s;
-      }}
-      .ti-lf-btn.active {{
-        background: var(--text); color: var(--card);
-        border-color: var(--text);
-      }}
-      .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
-      .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
-      .ti-trade-item {{
-        padding: 14px 0;
-        border-bottom: 1px solid var(--border);
-      }}
-      .ti-trade-item:last-child {{ border-bottom: none; }}
-      .ti-trade-date {{
-        font-size: 11px; color: var(--text-muted); font-weight: 600;
-        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
-      }}
-      .ti-trade-sides {{
-        display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
-      }}
-      .ti-trade-side-label {{
-        font-size: 10px; font-weight: 700; letter-spacing: .06em;
-        color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
-      }}
-      .ti-trade-asset {{ font-size: 13px; padding: 2px 0; line-height: 1.4; }}
-      .ti-trade-asset.focus {{ font-weight: 700; }}
-      .ti-trade-asset.other {{ color: var(--text-muted); }}
-      .ti-trade-asset.pick {{ color: var(--text-muted); font-style: italic; }}
-      .ti-trade-arrow {{ text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }}
-      .ti-trades-pager {{
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
-      }}
-      .ti-trades-pager button {{
-        padding: 6px 14px; border-radius: 8px;
-        border: 1px solid var(--border); background: var(--card);
-        color: var(--text); font-size: 13px; cursor: pointer;
-      }}
-      .ti-trades-pager button:disabled {{ opacity: .4; cursor: default; }}
-      #tiTradesPagerInfo {{ font-size: 13px; color: var(--text-muted); }}
-      @media (max-width: 480px) {{
-        .ti-trades-modal {{ border-radius: 12px 12px 0 0; max-height: 90vh; align-self: flex-end; width: 100%; }}
-        #tiTradesOverlay {{ align-items: flex-end !important; }}
-      }}
-    </style>
-
-    <script>
-    (function() {{
-      const TI_SEASON = {season};
-      const TI_HAS_PREMIUM = {str(has_premium).lower()};
-      let currentPage = 1;
-      let paginationData = null;
-      let currentTab = 'trending';
-      let currentPos = 'ALL';
-
-      // Load initial page
-      loadTIPage(1);
-
-      function loadTIPage(page) {{
-        if (typeof page === 'string') {{
-          if (page === 'prev' && currentPage > 1) {{
-            page = currentPage - 1;
-          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
-            page = currentPage + 1;
-          }} else {{
-            return;
-          }}
-        }}
-        
-        currentPage = page;
-        document.getElementById('tiLoading').style.display = '';
-        document.getElementById('tiGrid').style.display = 'none';
-        document.getElementById('tiPagination').style.display = 'none';
-        
-        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page)
-          .then(r => r.json())
-          .then(data => {{
-            if (data.error) {{
-              throw new Error(data.error);
-            }}
-            paginationData = data.pagination;
-            document.getElementById('tiLoading').style.display = 'none';
-            document.getElementById('tiGrid').style.display = '';
-            updatePaginationControls();
-            renderTI(data.players || []);
-          }})
-          .catch(() => {{
-            document.getElementById('tiLoading').innerHTML =
-              '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
-          }});
-      }}
-
-      function updatePaginationControls() {{
-        if (!paginationData) return;
-        
-        const prevBtn = document.getElementById('tiPrevBtn');
-        const nextBtn = document.getElementById('tiNextBtn');
-        const pageNumbers = document.getElementById('tiPageNumbers');
-        const paginationText = document.getElementById('tiPaginationText');
-        
-        // Update button states
-        prevBtn.disabled = !paginationData.has_prev;
-        nextBtn.disabled = !paginationData.has_next;
-        
-        // Update text
-        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
-        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
-        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} players`;
-        
-        // Update page numbers
-        pageNumbers.innerHTML = '';
-        const maxPages = 5;
-        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
-        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
-        
-        if (endPage - startPage < maxPages - 1) {{
-          startPage = Math.max(1, endPage - maxPages + 1);
-        }}
-        
-        for (let i = startPage; i <= endPage; i++) {{
-          const pageBtn = document.createElement('button');
-          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
-          pageBtn.textContent = i;
-          pageBtn.onclick = () => loadTIPage(i);
-          pageNumbers.appendChild(pageBtn);
-        }}
-        
-        document.getElementById('tiPagination').style.display = 'flex';
-      }}
-
-      window.switchTITab = function(tab) {{
-        currentTab = tab;
-        document.querySelectorAll('.ti-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-        renderTI();
-      }};
-
-      window.filterTI = function(pos) {{
-        currentPos = pos;
-        document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
-        loadTIPage(currentPage); // Reload current page with new filter
-      }};
-
-      function renderTI(players = null) {{
-        // If no players provided, we need to load current page data
-        if (!players) {{
-          loadTIPage(currentPage);
-          return;
-        }}
-        
-        // Apply position filtering
-        let filteredPlayers = currentPos === 'ALL' ? players : players.filter(p => p.position === currentPos);
-        
-        // Apply tab filtering for non-trending tabs
-        if (currentTab !== 'trending') {{
-          const withDelta = filteredPlayers.filter(p => p.value_delta != null && p.model_value > 0);
-          if (currentTab === 'buylows') {{
-            filteredPlayers = withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta);
-          }} else if (currentTab === 'sellhigh') {{
-            filteredPlayers = withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta);
-          }}
-        }}
-        
-        const grid  = document.getElementById('tiGrid');
-        const empty = document.getElementById('tiEmpty');
-
-        if (filteredPlayers.length === 0) {{
-          grid.style.display = 'none';
-          empty.style.display = '';
-          return;
-        }}
-        empty.style.display = 'none';
-        grid.style.display = '';
-
-        const FREE_LIMIT = 5;
-        const displayPlayers = TI_HAS_PREMIUM ? filteredPlayers : filteredPlayers.slice(0, FREE_LIMIT);
-        const showPaywallCard = !TI_HAS_PREMIUM && filteredPlayers.length > FREE_LIMIT;
-
-        grid.innerHTML = displayPlayers.map(p => {{
-          const name   = p.name || 'Unknown';
-          const pos    = p.position || '?';
-          const team   = p.team || '?';
-          const cnt7   = p.trade_count_7d  || 0;
-          const cnt30  = p.trade_count_30d || 0;
-          const cntAll = p.trade_count_all || 0;
-          const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
-          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
-          const delta  = p.value_delta;
-          const trend  = p.market_trend;
-
-          let chipBg, chipColor, chipText;
-          if (currentTab === 'trending') {{
-            chipBg = '#3b82f620'; chipColor = '#3b82f6';
-            chipText = (cntAll) + ' trades';
-          }} else if (currentTab === 'buylows') {{
-            chipBg = '#10b98120'; chipColor = '#10b981';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
-          }} else {{
-            chipBg = '#f59e0b20'; chipColor = '#f59e0b';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
-          }}
-
-          const deltaHtml = delta != null
-            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
-            : '<span style="color:var(--text-muted)">—</span>';
-
-          // Momentum: 14d median minus 90d median. Threshold ±5 to avoid noise.
-          let momentumHtml = '';
-          if (trend != null) {{
-            if (trend >= 5) {{
-              momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
-            }} else if (trend <= -5) {{
-              momentumHtml = '<span style="color:#ef4444;">▼</span> Falling';
-            }}
-          }}
-
-          const player_json = JSON.stringify(p).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-
-          return `<div class="ti-card" data-player="${{player_json}}" onclick="openTITradesModal(JSON.parse(this.dataset.player))">
-            <div class="ti-card-top">
-              <div>
-                <div class="ti-name">${{name}}</div>
-                <div class="ti-meta">${{pos}} · ${{team}}</div>
-              </div>
-              <div class="ti-chip" style="background:${{chipBg}};color:${{chipColor}};">${{chipText}}</div>
-            </div>
-            <div class="ti-divider"></div>
-            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
-            ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
-          </div>`;
-        }}).join('') + (showPaywallCard ? `
-          <div class="ti-card" onclick="showPaywall('trade-history')" style="cursor:pointer;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:160px;background:var(--card);">
-            <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-            <div style="font-weight:700;font-size:14px;">Unlock Full Access</div>
-            <div style="font-size:12px;color:var(--text-muted);text-align:center;">See all players &amp; trade history<br>with a premium subscription</div>
-            <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-          </div>` : '');
-      }}
-      
-      // ── Trade History Modal ────────────────────────────────────────────────
-      const _tiTrades = {{
-        player: null,
-        page: 1,
-        leagueFilter: 'all',
-        total: 0,
-        totalPages: 1,
-      }};
-
-      window.openTITradesModal = function(playerData) {{
-        if (!TI_HAS_PREMIUM) {{ showPaywall('trade-history'); return; }}
-        _tiTrades.player = playerData;
-        _tiTrades.page = 1;
-        _tiTrades.leagueFilter = 'all';
-        document.getElementById('tiTradesName').textContent = playerData.name || 'Player';
-        const pos  = playerData.position || '';
-        const team = playerData.team || '';
-        const cnt  = playerData.trade_count_all;
-        const cntTxt = cnt ? ` · ${{cnt}} trades tracked` : '';
-        document.getElementById('tiTradesMeta').textContent = [pos, team].filter(Boolean).join(' · ') + cntTxt;
-        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === 'all'));
-        const overlay = document.getElementById('tiTradesOverlay');
-        overlay.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-        _loadTITrades(1);
-      }};
-
-      window.closeTITradesModal = function() {{
-        document.getElementById('tiTradesOverlay').style.display = 'none';
-        document.body.style.overflow = '';
-      }};
-
-      window.viewTIPlayerProfile = function() {{
-        const p = _tiTrades.player;
-        if (!p) return;
-        closeTITradesModal();
-        if (p.is_rookie && p.is_rookie !== 'False') {{
-          rkOpenModal(p);
-        }} else {{
-          const name = (p.name || '').replace(/'/g, "\\'");
-          openPlayerModal(p.player_id, name);
-        }}
-      }};
-
-      window.switchTILF = function(lf) {{
-        _tiTrades.leagueFilter = lf;
-        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
-        _loadTITrades(1);
-      }};
-
-      window.prevTITrades = function() {{ if (_tiTrades.page > 1) _loadTITrades(_tiTrades.page - 1); }};
-      window.nextTITrades = function() {{ if (_tiTrades.page < _tiTrades.totalPages) _loadTITrades(_tiTrades.page + 1); }};
-
-      function _loadTITrades(page) {{
-        const p = _tiTrades.player;
-        if (!p) return;
-        _tiTrades.page = page;
-        document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
-        document.getElementById('tiTradesPager').style.display = 'none';
-        const qs = new URLSearchParams({{
-          season: TI_SEASON,
-          league_type: _tiTrades.leagueFilter,
-          page,
-          limit: 15,
-        }});
-        fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
-          .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
-          .then(_renderTITrades)
-          .catch(() => {{
-            document.getElementById('tiTradesBody').innerHTML =
-              '<div class="ti-trades-msg">Failed to load trades.</div>';
-          }});
-      }}
-
-      function _renderTITrades(data) {{
-        const body = document.getElementById('tiTradesBody');
-        _tiTrades.total = data.total || 0;
-        _tiTrades.totalPages = data.total_pages || 1;
-
-        if (!data.trades || data.trades.length === 0) {{
-          body.innerHTML = '<div class="ti-trades-msg">No trades found for this filter.</div>';
-          return;
-        }}
-
-        function assetHtml(a) {{
-          if (a.type === 'pick') {{
-            return `<div class="ti-trade-asset pick">${{a.name}}</div>`;
-          }}
-          const posTag = a.position && a.position !== '?' ? ` <span style="font-size:11px;opacity:.6;">${{a.position}}</span>` : '';
-          const cls = a.is_focus ? 'focus' : 'other';
-          return `<div class="ti-trade-asset ${{cls}}">${{a.name}}${{posTag}}</div>`;
-        }}
-
-        body.innerHTML = data.trades.map(t => {{
-          const sideA = (t.side_a || []).map(assetHtml).join('');
-          const sideB = (t.side_b || []).map(assetHtml).join('');
-          const fmt   = t.is_superflex ? 'SF' : t.is_superflex === false ? '1QB' : '';
-          const teams = t.num_teams ? `${{t.num_teams}}-team` : '';
-          const ctx   = [teams, fmt].filter(Boolean).join(' ');
-          const meta  = [t.date, ctx].filter(Boolean).join(' · ');
-          return `<div class="ti-trade-item">
-            <div class="ti-trade-date">${{meta}}</div>
-            <div class="ti-trade-sides">
-              <div>
-                <div class="ti-trade-side-label">Side A</div>
-                ${{sideA}}
-              </div>
-              <div class="ti-trade-arrow">&#x21C4;</div>
-              <div>
-                <div class="ti-trade-side-label">Side B</div>
-                ${{sideB}}
-              </div>
-            </div>
-          </div>`;
-        }}).join('');
-
-        if (_tiTrades.totalPages > 1 || _tiTrades.total > 0) {{
-          document.getElementById('tiTradesPager').style.display = 'flex';
-          document.getElementById('tiTradesPrev').disabled = !data.has_prev;
-          document.getElementById('tiTradesNext').disabled = !data.has_next;
-          document.getElementById('tiTradesPagerInfo').textContent =
-            `Page ${{data.page}} of ${{data.total_pages}} · ${{data.total}} trades`;
-        }}
-      }}
-
-      // Expose functions to global scope for onclick handlers
-      window.loadTIPage = loadTIPage;
-    }})();
-    </script>
-    """
-    return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
-
-
-@app.route("/trade-intel")
+# /trade-intel → routes/trade_bp.py :: page_trade_intel()
+# /trade-intel (guest) → routes/trade_bp.py :: page_trade_intel_guest()
 def page_trade_intel_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
 
-def _try_grant_from_stripe_success() -> None:
-    """
-    When a user returns from Stripe checkout, verify the session server-side
-    and grant the subscription immediately. This is a reliable fallback for
-    when the webhook is delayed or misconfigured.
-    """
-    if request.args.get("success") != "1":
-        return
-    checkout_session_id = request.args.get("session_id", "").strip()
-    if not checkout_session_id:
-        return
-    try:
-        cs = stripe.checkout.Session.retrieve(checkout_session_id)
-        if cs.status != "complete":
-            return
+# /pricing, /api/create-checkout-session, /api/stripe-webhook → routes/billing_bp.py
 
-        meta      = cs.metadata.to_dict() if cs.metadata else {}
-        plan      = meta.get("plan")
-        user_id   = meta.get("user_id")
-        league_id = meta.get("league_id") or ""
-        sub_id    = cs.subscription
-        cust_id   = cs.customer
-
-        if plan not in ("league", "user", "combo"):
-            return
-        if plan == "user" and not user_id:
-            return
-        if plan == "league" and not league_id:
-            return
-        if plan == "combo" and not league_id and not user_id:
-            return
-
-        # Skip if already active (webhook may have already fired)
-        if has_premium_access(user_id or None, league_id or None, "sleeper"):
-            return
-
-        try:
-            sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
-            expires_at = (
-                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
-                if sub else datetime.now(timezone.utc) + timedelta(days=366)
-            )
-        except Exception:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
-
-        if plan in ("league", "combo") and league_id:
-            create_league_subscription(
-                league_id, user_id or "", expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-            )
-        if plan in ("user", "combo") and user_id:
-            create_user_subscription(
-                user_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-            )
-    except Exception:
-        logger.exception("[stripe] success-page session verification failed")
-
-
-@app.route("/<platform>/<int:season>/<league_id>/pricing")
-def page_pricing(platform: str, season: int, league_id: str):
-    _try_grant_from_stripe_success()
-    body_html = _pricing_body()
-    return render_page("Pricing", league_id, None, body_html, platform, season)
-
-
-@app.route("/pricing")
-def page_pricing_guest():
-    _try_grant_from_stripe_success()
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    body_html = _pricing_body()
-    return render_page("Pricing", None, None, body_html, "sleeper", current_season)
-
-
-def _pricing_body() -> str:
-    plan      = request.args.get("plan", "")
-    success   = request.args.get("success") == "1"
-    canceled  = request.args.get("canceled") == "1"
-    return_to = request.args.get("return_to", "").strip()
-
-    if success:
-        safe_return = html.escape(return_to) if return_to else ""
-        return f"""
-    <div class="card central" style="max-width:560px;text-align:center;">
-      <div class="card-body" style="padding:48px 32px;">
-        <div id="sub-icon" style="font-size:56px;margin-bottom:20px;">
-          <i class="fa-solid fa-circle-check" style="color:#22c55e;"></i>
-        </div>
-        <h2 id="sub-heading" style="margin:0 0 10px;font-size:24px;">Payment confirmed!</h2>
-        <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
-          Your premium access is activating&nbsp;&mdash; just a moment&hellip;
-        </p>
-        <div id="sub-spinner" style="margin:0 auto 24px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
-        {'<a id="sub-return" href="' + safe_return + '" style="display:none;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>' if return_to else ''}
-      </div>
-    </div>
-    <script>
-    (function() {{
-      var returnTo = {json.dumps(return_to)};
-      var attempts = 0, maxAttempts = 20;
-
-      // Extract league_id from return URL path (/{{platform}}/{{season}}/{{league_id}}/...)
-      var leagueId = '';
-      try {{
-        if (returnTo) {{
-          var parts = new URL(returnTo, window.location.origin).pathname.split('/').filter(Boolean);
-          if (parts.length >= 3) leagueId = parts[2];
-        }}
-      }} catch(e) {{}}
-      var statusUrl = '/api/subscription-status' + (leagueId ? '?league_id=' + encodeURIComponent(leagueId) : '');
-
-      function activate() {{
-        attempts++;
-        fetch(statusUrl)
-          .then(function(r) {{ return r.json(); }})
-          .then(function(d) {{
-            if (d.has_premium) {{
-              document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent = 'Premium is active on your account!';
-              if (returnTo) {{
-                setTimeout(function() {{ window.location.href = returnTo; }}, 1200);
-              }} else {{
-                document.getElementById('sub-heading').textContent = 'You\\'re all set!';
-              }}
-            }} else if (attempts < maxAttempts) {{
-              setTimeout(activate, 2000);
-            }} else {{
-              document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent =
-                'Your access is being set up. If it isn\\'t active in a minute, try refreshing the page.';
-              var btn = document.getElementById('sub-return');
-              if (btn) btn.style.display = 'inline-block';
-            }}
-          }})
-          .catch(function() {{
-            if (attempts < maxAttempts) setTimeout(activate, 2000);
-          }});
-      }}
-
-      setTimeout(activate, 1500);
-    }})();
-    </script>
-    """
-
-    league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
-    user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
-    canceled_banner = """
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
-      <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
-      Checkout was canceled. You have not been charged.
-    </div>""" if canceled else ""
-    return f"""
-    {canceled_banner}
-    <div class="card central" style="max-width:760px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
-        <h2 style="margin:0 0 6px;font-size:22px;">BR Fantasy Premium</h2>
-        <div style="font-size:14px;color:var(--text-muted);">
-          Unlock advanced analytics and insights for your dynasty league
-        </div>
-      </div>
-      <div class="card-body" style="padding-top:28px;">
-
-        <!-- Feature list -->
-        <div style="margin-bottom:28px;">
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What you get</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-chart-line" style="color:#667eea;width:16px;text-align:center;"></i>
-              Full Trade Intelligence feed
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-fire" style="color:#667eea;width:16px;text-align:center;"></i>
-              All Breakout Engine candidates
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-clock-rotate-left" style="color:#667eea;width:16px;text-align:center;"></i>
-              Player trade history
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-star" style="color:#667eea;width:16px;text-align:center;"></i>
-              All future premium features
-            </div>
-          </div>
-        </div>
-
-        <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
-
-          <!-- League plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:17px;font-weight:700;">League Plan</div>
-            </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe for League
-            </button>
-          </div>
-
-          <!-- Combo plan -->
-          <div style="border:2px solid #667eea;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-              <div style="font-size:17px;font-weight:700;">League + Personal</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
-            </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
-            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe Both
-            </button>
-          </div>
-
-          <!-- Personal plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{user_highlight}">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:17px;font-weight:700;">Personal Plan</div>
-            </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $5<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
-            <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
-              Subscribe Personally
-            </button>
-          </div>
-
-        </div>
-
-        <!-- Free tier note -->
-        <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
-          <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
-          ADP rankings and basic player data are always free.
-        </div>
-
-      </div>
-    </div>
-
-    <style>
-      @media (max-width: 760px) {{
-        .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
-        .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
-      }}
-    </style>
-    """
-
-
-_STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
-_STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
-_STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
-_STRIPE_PRICES = {
-    "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
-    "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
-    "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
-}
-
-
-@app.route("/api/create-checkout-session", methods=["POST"])
-def create_checkout_session():
-    user_id = session.get("viewer_username")
-    if not user_id:
-        return jsonify({"error": "Must be logged in to subscribe"}), 401
-
-    payload    = request.get_json(force=True)
-    plan       = str(payload.get("plan") or "").strip()
-    league_id  = str(payload.get("league_id") or "").strip()
-    return_url = str(payload.get("return_url") or "").strip()
-
-    if plan not in _STRIPE_PRICES:
-        return jsonify({"error": "Invalid plan"}), 400
-
-    # Block duplicate subscriptions before hitting Stripe
-    check_league = league_id if league_id else None
-    if has_premium_access(user_id, check_league, "sleeper"):
-        return jsonify({"error": "You already have an active premium subscription."}), 400
-
-    price_spec = _STRIPE_PRICES[plan]
-    base_url   = request.host_url.rstrip("/")
-
-    # Validate return_url is same-origin
-    if return_url and not (return_url.startswith(base_url) or return_url.startswith("/")):
-        return_url = ""
-
-    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
-    if return_url:
-        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
-
-    try:
-        checkout = stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{
-                "price_data": {
-                    "currency": "usd",
-                    "product": price_spec["product"],
-                    "unit_amount": price_spec["unit_amount"],
-                    "recurring": {"interval": "year"},
-                },
-                "quantity": 1,
-            }],
-            success_url=success_url,
-            cancel_url=base_url + "/pricing?canceled=1",
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id},
-        )
-        return jsonify({"url": checkout.url})
-    except Exception as e:
-        logger.exception("[stripe] checkout session error: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/stripe-webhook", methods=["POST"])
-def stripe_webhook():
-    payload = request.get_data()
-    sig     = request.headers.get("Stripe-Signature", "")
-    secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-
-    if not secret:
-        logger.error("[stripe] STRIPE_WEBHOOK_SECRET not set — webhook will always fail signature check")
-        return "", 400
-
-    try:
-        event = stripe.Webhook.construct_event(payload, sig, secret)
-    except ValueError as e:
-        logger.error("[stripe] webhook bad payload: %s", e)
-        return "", 400
-    except stripe.error.SignatureVerificationError as e:
-        logger.error("[stripe] webhook signature mismatch: %s", e)
-        return "", 400
-
-    etype = event["type"]
-
-    if etype == "checkout.session.completed":
-        s         = event["data"]["object"]
-        meta      = dict(s.metadata) if s.metadata else {}
-        plan      = meta.get("plan")
-        user_id   = meta.get("user_id")
-        league_id = meta.get("league_id") or ""
-        sub_id    = s.subscription
-        cust_id   = s.customer
-
-        # Retrieve subscription to get the real period end
-        try:
-            sub = stripe.Subscription.retrieve(sub_id)
-            expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
-        except Exception:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=32)
-
-        if plan in ("league", "combo") and league_id:
-            ok = create_league_subscription(
-                league_id, user_id or "", expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-            )
-            logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
-                        "created" if ok else "FAILED", league_id, user_id, expires_at)
-        if plan in ("user", "combo") and user_id:
-            ok = create_user_subscription(
-                user_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-            )
-            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
-                        "created" if ok else "FAILED", user_id, expires_at)
-        if plan not in ("league", "user", "combo"):
-            logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
-                           plan, league_id, user_id)
-
-    elif etype == "invoice.paid":
-        s      = event["data"]["object"]
-        sub_id = s.subscription
-        if sub_id:
-            try:
-                sub        = stripe.Subscription.retrieve(sub_id)
-                expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
-                from dashboard_services.db import get_conn
-                with get_conn() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
-                            (expires_at, sub_id),
-                        )
-                        cur.execute(
-                            "UPDATE user_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
-                            (expires_at, sub_id),
-                        )
-            except Exception as e:
-                logger.exception("[stripe] invoice.paid renewal error: %s", e)
-
-    elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
-        s = event["data"]["object"]
-        if s.status in ("canceled", "unpaid", "past_due"):
-            sub_id = s.id
-            cancel_subscription(sub_id, "league")
-            cancel_subscription(sub_id, "user")
-
-    return "", 200
-
-
-@app.route("/<platform>/<int:season>/<league_id>/trade-database")
-def page_trade_database(platform: str, season: int, league_id: str):
-    body_html = f"""
-    <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
-        <div style="font-size:13px;color:var(--text-muted);">
-          Explore thousands of real dynasty trades to understand player values and market trends
-        </div>
-      </div>
-      <div class="card-body" style="padding-top:20px;">
-
-        <div class="tdb-toolbar">
-          <div class="tdb-search-wrap">
-            <span class="tdb-search-icon" aria-hidden="true"></span>
-            <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
-          </div>
-          <div class="tdb-lt-filters">
-            <button class="tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
-            <button class="tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
-            <button class="tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
-          </div>
-        </div>
-
-        <div id="tdbStatus" class="tdb-status"></div>
-        <div id="tdbList"   class="tdb-list"></div>
-        
-        <div id="tdbLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);display:none;">
-          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-          Loading trade data...
-        </div>
-        
-        <div id="tdbPagination" class="ti-pagination" style="display:none;">
-          <div class="ti-pagination-info">
-            <span id="tdbPaginationText">Showing 1-20 of 100 trades</span>
-          </div>
-          <div class="ti-pagination-controls">
-            <button id="tdbPrevBtn" class="ti-pagination-btn" onclick="loadTDBPage('prev')" disabled>
-              <i class="fa-solid fa-chevron-left"></i> Previous
-            </button>
-            <div id="tdbPageNumbers" class="ti-page-numbers"></div>
-            <button id="tdbNextBtn" class="ti-pagination-btn" onclick="loadTDBPage('next')" disabled>
-              Next <i class="fa-solid fa-chevron-right"></i>
-            </button>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <style>
-      .tdb-toolbar {{
-        display: flex; gap: 12px; margin-bottom: 16px;
-        flex-wrap: wrap; align-items: center;
-      }}
-      .tdb-search-wrap {{
-        flex: 1; min-width: 200px;
-        display: flex; align-items: center;
-        border: 1px solid var(--border); border-radius: 8px;
-        background: var(--card); padding: 0 12px; gap: 8px;
-      }}
-      .tdb-search-icon {{
-        display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
-        background: url('/static/images/magnifying-glass-solid.png') no-repeat center / contain;
-        filter: brightness(0) saturate(100%) invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(85%) contrast(90%);
-        pointer-events: none;
-      }}
-      .tdb-search {{
-        flex: 1; padding: 9px 0; border: none; background: transparent;
-        color: var(--text); font-size: 14px; outline: none;
-        min-width: 0;
-      }}
-      .tdb-search-wrap:focus-within {{ border-color: var(--accent-color, #3b82f6); }}
-      .tdb-lt-filters {{ display: flex; gap: 4px; }}
-      .tdb-lt {{
-        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
-        background: var(--card); color: var(--text-muted); cursor: pointer;
-        font-size: 13px; font-weight: 600; transition: all .15s;
-      }}
-      .tdb-lt.active {{
-        background: var(--text-color); color: var(--card-bg); border-color: var(--text-color);
-      }}
-      .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
-      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
-      @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
-      .tdb-more-wrap {{ text-align: center; margin-top: 20px; grid-column: 1 / -1; }}
-      .tdb-more-btn {{
-        padding: 9px 28px; border-radius: 20px; border: 1px solid var(--border-color);
-        background: var(--card-bg); color: var(--text-color); cursor: pointer; font-size: 13px;
-      }}
-
-      /* Trade card */
-      .tdb-card {{
-        border: 1px solid var(--border-color); border-radius: 12px;
-        overflow: hidden; background: var(--card-bg);
-      }}
-      .tdb-card-head {{
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 8px 14px; border-bottom: 1px solid var(--border-color);
-        background: var(--bg-alt, rgba(0,0,0,.03));
-      }}
-      .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
-      .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
-      .tdb-badge {{
-        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
-        background: var(--row, #1e293b); color: var(--text);
-        border: 1px solid var(--border-color);
-      }}
-      .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
-      .tdb-card-body {{
-        display: grid; grid-template-columns: 1fr 1px 1fr;
-      }}
-      .tdb-col {{
-        padding: 12px 14px; display: flex; flex-direction: column; gap: 5px;
-      }}
-      .tdb-col-divider {{ background: var(--border-color); }}
-      .tdb-asset {{
-        font-size: 14px; color: var(--text); font-weight: 500;
-        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      }}
-      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
-      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; font-weight: 500; }}
-      .tdb-pos {{
-        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-        background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
-      }}
-      @media(max-width: 480px) {{
-        .tdb-card-body {{ grid-template-columns: 1fr; }}
-        .tdb-col-divider {{ height: 1px; width: auto; }}
-      }}
-      .ti-pagination {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: 20px 0;
-        padding: 12px 0;
-        border-top: 1px solid var(--border);
-      }}
-      .ti-pagination-info {{
-        font-size: 13px;
-        color: var(--text-muted);
-      }}
-      .ti-pagination-controls {{
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }}
-      .ti-pagination-btn {{
-        padding: 6px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        transition: all .15s;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }}
-      .ti-pagination-btn:hover:not(:disabled) {{
-        background: var(--bg-alt);
-        border-color: var(--accent-color);
-      }}
-      .ti-pagination-btn:disabled {{
-        opacity: 0.5;
-        cursor: not-allowed;
-      }}
-      .ti-page-numbers {{
-        display: flex;
-        gap: 4px;
-      }}
-      .ti-page-number {{
-        padding: 4px 8px;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        min-width: 28px;
-        text-align: center;
-      }}
-      .ti-page-number:hover {{
-        background: var(--bg-alt);
-      }}
-      .ti-page-number.active {{
-        background: var(--accent-color);
-        color: var(--card);
-        border-color: var(--accent-color);
-        font-weight: 700;
-      }}
-    </style>
-
-    <script>
-    (function() {{
-      const TDB_SEASON = {season};
-      let currentPage = 1;
-      let paginationData = null;
-      let leagueType = 'all';
-      let searchQuery = '';
-      let loading = false;
-
-      const listEl   = document.getElementById('tdbList');
-      const statusEl = document.getElementById('tdbStatus');
-      const searchEl = document.getElementById('tdbSearch');
-
-      // Load initial page
-      loadTDBPage(1);
-
-      function loadTDBPage(page) {{
-        if (loading) return;
-        if (typeof page === 'string') {{
-          if (page === 'prev' && currentPage > 1) {{
-            page = currentPage - 1;
-          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
-            page = currentPage + 1;
-          }} else {{
-            return;
-          }}
-        }}
-        
-        currentPage = page;
-        loading = true;
-        statusEl.textContent = '';
-        listEl.style.display = 'none';
-        document.getElementById('tdbLoading').style.display = '';
-        document.getElementById('tdbPagination').style.display = 'none';
-        
-        const apiPage = page - 1; // Convert to 0-based for API
-        const params = new URLSearchParams({{ page: apiPage, limit: 20, league_type: leagueType, season: TDB_SEASON }});
-        if (searchQuery) params.set('q', searchQuery);
-
-        fetch('/api/trade-database?' + params)
-          .then(r => r.json())
-          .then(data => {{
-            if (data.error) {{
-              throw new Error(data.error);
-            }}
-            const trades = data.trades || [];
-            if (trades.length === 0) {{
-              document.getElementById('tdbLoading').style.display = 'none';
-              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
-              statusEl.textContent = '';
-              document.getElementById('tdbPagination').style.display = 'none';
-              loading = false;
-              return;
-            }}
-            
-            document.getElementById('tdbLoading').style.display = 'none';
-            paginationData = data.pagination;
-            statusEl.textContent = '';
-            listEl.style.display = '';
-            updateTDBPaginationControls();
-            renderTDBTrades(trades);
-            loading = false;
-          }})
-          .catch(err => {{
-            console.error('Error loading trades:', err);
-            document.getElementById('tdbLoading').style.display = 'none';
-            statusEl.textContent = 'Error loading trades';
-            loading = false;
-          }});
-      }}
-
-      function updateTDBPaginationControls() {{
-        if (!paginationData) return;
-        
-        const prevBtn = document.getElementById('tdbPrevBtn');
-        const nextBtn = document.getElementById('tdbNextBtn');
-        const pageNumbers = document.getElementById('tdbPageNumbers');
-        const paginationText = document.getElementById('tdbPaginationText');
-        
-        // Update button states
-        prevBtn.disabled = !paginationData.has_prev;
-        nextBtn.disabled = !paginationData.has_next;
-        
-        // Update text
-        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
-        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
-        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} trades`;
-        
-        // Update page numbers
-        pageNumbers.innerHTML = '';
-        const maxPages = 5;
-        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
-        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
-        
-        if (endPage - startPage < maxPages - 1) {{
-          startPage = Math.max(1, endPage - maxPages + 1);
-        }}
-        
-        for (let i = startPage; i <= endPage; i++) {{
-          const pageBtn = document.createElement('button');
-          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
-          pageBtn.textContent = i;
-          pageBtn.onclick = () => loadTDBPage(i);
-          pageNumbers.appendChild(pageBtn);
-        }}
-        
-        document.getElementById('tdbPagination').style.display = 'flex';
-      }}
-
-      function renderTDBTrades(trades) {{
-        renderTrades(trades, searchQuery);
-      }}
-
-      function renderTrades(trades, q) {{
-        const lq = (q || '').toLowerCase();
-        trades.forEach(t => {{
-          const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
-                           : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
-          const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
-          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
-
-          function renderAsset(a) {{
-            const match = lq && a.name && a.name.toLowerCase().includes(lq);
-            const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
-            const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
-            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
-            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
-          }}
-
-          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
-          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
-
-          const card = document.createElement('div');
-          card.className = 'tdb-card';
-          card.innerHTML = `
-            <div class="tdb-card-head">
-              <span class="tdb-card-date">${{t.date || '—'}}</span>
-              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
-            </div>
-            <div class="tdb-card-body">
-              <div class="tdb-col">${{sideA}}</div>
-              <div class="tdb-col-divider"></div>
-              <div class="tdb-col">${{sideB}}</div>
-            </div>`;
-          listEl.appendChild(card);
-        }});
-      }}
-
-      window.tdbFilter = function(lt) {{
-        leagueType = lt;
-        document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
-        loadTDBPage(1); // Reset to first page when filtering
-      }};
-
-      let debounce;
-      searchEl.addEventListener('input', () => {{
-        clearTimeout(debounce);
-        debounce = setTimeout(() => {{ 
-          searchQuery = searchEl.value.trim(); 
-          loadTDBPage(1); // Reset to first page when searching
-        }}, 350);
-      }});
-
-      // Expose pagination function to global scope
-      window.loadTDBPage = loadTDBPage;
-    }})();
-    </script>
-    """
-    return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
-
-
-@app.route("/trade-database")
-def page_trade_database_guest():
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_trade_database(platform="sleeper", season=current_season, league_id=None)
-
-
-@app.route("/prospects")
+# /trade-database → routes/trade_bp.py :: page_trade_database()
+# /trade-database (guest) → routes/trade_bp.py :: page_trade_database_guest()
 def page_prospects_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
@@ -11818,31 +10441,7 @@ def api_weekly_week():
     })
 
 
-@app.route("/set-viewer", methods=["POST"])
-def set_viewer():
-    league_id = (request.form.get("league_id") or "").strip()
-    username = (request.form.get("username") or "").strip()
-    platform = (request.form.get("platform") or "sleeper").strip().lower()
-    season = int(request.form.get("season") or datetime.now().year)
-
-    if not league_id or not username:
-        return redirect(url_for("home"))
-
-    ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
-    viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
-
-    if not viewer:
-        return render_template_string(
-            FORM_BODY,
-            league=league_id,
-            error="Could not match that username to a team in this league.",
-            recent_updates=generate_recent_updates_html(),
-        )
-
-    save_viewer_session(viewer)
-    if platform == "sleeper" and viewer.get("viewer_user_id"):
-        _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
-    return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
+# /set-viewer → routes/auth_bp.py :: set_viewer()
 
 
 @app.route("/api/refresh-page", methods=["POST"])
@@ -11937,12 +10536,7 @@ def api_refresh_page():
         }), 500
 
 
-@app.route("/logout")
-def logout():
-    # Clear the session + cached league context
-    from flask import session
-    session.clear()
-    return redirect(url_for("index"))
+# /logout → routes/auth_bp.py :: logout()
 
 
 # ---------- global cache for model value table used by trade eval ----------
@@ -14581,25 +13175,7 @@ def api_team_details(roster_id: str):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-@app.route("/api/subscription-status")
-def api_subscription_status():
-    """Check if user has premium access for a league."""
-    from dashboard_services.subscriptions import get_subscription_info
-
-    user_id = request.args.get("user_id") or session.get("viewer_username")
-    league_id = request.args.get("league_id")
-    platform = request.args.get("platform", "sleeper")
-
-    try:
-        sub_info = get_subscription_info(user_id, league_id, platform)
-        return jsonify(sub_info)
-    except Exception as e:
-        print(f"[api_subscription_status] Error: {e}")
-        return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
-
-
-@app.route("/api/sleeper-user-leagues")
+# /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
 def api_sleeper_user_leagues():
     username = (request.args.get("username") or "").strip()
 
