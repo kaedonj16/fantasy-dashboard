@@ -815,6 +815,7 @@ def build_history_body(
         base_league_id: str,
         selected_history_season: int,
         resolved_history_league_id: str,
+        prerendered: Dict[str, str] | None = None,
 ) -> str:
     league = history_ctx.get("league") or {}
     df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
@@ -841,13 +842,17 @@ def build_history_body(
 
     league_name = league.get("name") or "League History"
 
-    # Loading spinner HTML
+    # Loading spinner HTML (unused when prerendered sections are provided)
     loading_spinner = """
     <div class="history-loading-state">
       <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
       <div style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 12px;">Loading...</div>
     </div>
     """
+    awards_html    = prerendered["summary"]   if prerendered else loading_spinner
+    standings_html = prerendered["standings"] if prerendered else loading_spinner
+    chart_html     = prerendered["chart"]     if prerendered else loading_spinner
+    tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
 
     return f"""
     <div class="history-page">
@@ -857,6 +862,7 @@ def build_history_body(
       <input type="hidden" id="platformInput" value="{base_platform}">
       <input type="hidden" id="historySeasonInput" value="{selected_history_season}">
       <input type="hidden" id="resolvedLeagueIdInput" value="{resolved_history_league_id}">
+      {tour_input}
 
       <div class="history-header">
         <div>
@@ -888,14 +894,14 @@ def build_history_body(
         <div class="card history-awards-panel">
           <div class="card-header"><h2>Season Awards</h2></div>
           <div class="card-body" id="historyAwardsContent">
-            {loading_spinner}
+            {awards_html}
           </div>
         </div>
 
         <div class="card history-standings-panel">
           <div class="card-header"><h2>Regular Season Standings</h2></div>
           <div class="card-body" style="padding-top:0;" id="historyStandingsContent">
-            {loading_spinner}
+            {standings_html}
           </div>
         </div>
       </div>
@@ -904,7 +910,7 @@ def build_history_body(
         <div class="card history-chart-panel">
           <div class="card-header"><h2>Season Trend</h2></div>
           <div class="card-body" id="historyChartContent">
-            {loading_spinner}
+            {chart_html}
           </div>
         </div>
 

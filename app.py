@@ -10160,7 +10160,15 @@ def page_history(platform: str, season: int, league_id: str):
     # Tour preview: render with mock data, bypass real league fetch
     if request.args.get("tour"):
         try:
+            from dashboard_services.pages.history_page import (
+                get_history_summary_html, get_history_standings_html, get_history_chart_html,
+            )
             mock_ctx = _build_tour_mock_history_ctx()
+            prerendered = {
+                "summary":   get_history_summary_html(mock_ctx),
+                "standings": get_history_standings_html(mock_ctx),
+                "chart":     get_history_chart_html(mock_ctx),
+            }
             body_html = build_history_body(
                 history_ctx=mock_ctx,
                 available_seasons=[2024],
@@ -10169,6 +10177,7 @@ def page_history(platform: str, season: int, league_id: str):
                 base_league_id=league_id,
                 selected_history_season=2024,
                 resolved_history_league_id="tour_mock",
+                prerendered=prerendered,
             )
         except Exception as exc:
             body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"

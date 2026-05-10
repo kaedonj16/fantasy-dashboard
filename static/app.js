@@ -4376,8 +4376,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const season = document.getElementById('seasonInput')?.value;
     const leagueId = document.getElementById('leagueIdInput')?.value;
     const historySeason = document.getElementById('historySeasonInput')?.value;
+    const tourMode = !!document.getElementById('historyTourMode');
 
-    if (platform && season && leagueId && historySeason) {
+    if (!tourMode && platform && season && leagueId && historySeason) {
       // Load awards section
       const awardsContent = document.getElementById('historyAwardsContent');
       if (awardsContent) {
