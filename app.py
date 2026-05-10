@@ -9418,16 +9418,14 @@ def page_breakouts_guest():
 
 # /trade-intel → routes/trade_bp.py :: page_trade_intel()
 # /trade-intel (guest) → routes/trade_bp.py :: page_trade_intel_guest()
-def page_trade_intel_guest():
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
 
 # /pricing, /api/create-checkout-session, /api/stripe-webhook → routes/billing_bp.py
 
 # /trade-database → routes/trade_bp.py :: page_trade_database()
 # /trade-database (guest) → routes/trade_bp.py :: page_trade_database_guest()
+
+@app.route("/prospects")
 def page_prospects_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
@@ -13176,6 +13174,8 @@ def api_team_details(roster_id: str):
         return jsonify({"error": str(e)}), 500
 
 # /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
+
+@app.route("/api/sleeper-user-leagues")
 def api_sleeper_user_leagues():
     username = (request.args.get("username") or "").strip()
 
