@@ -4913,8 +4913,8 @@ function openPlayerModal(playerId, playerName) {
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
       pmTabBar.style.display = '';
-      pmTabBar.dataset.playerId = playerId;
-      pmTabBar.dataset.season = season;
+      pmTabBar.dataset.pmPlayerId = playerId;
+      pmTabBar.dataset.pmSeason = season;
 
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
@@ -5126,8 +5126,8 @@ function pmSwitchTab(tab) {
 
   const pmTabBar = document.getElementById('pmTabBar');
   if (!pmTabBar) return;
-  const playerId = pmTabBar.dataset.playerId;
-  const season = pmTabBar.dataset.season;
+  const playerId = pmTabBar.dataset.pmPlayerId;
+  const season = pmTabBar.dataset.pmSeason;
 
   // ── Lazy-load Breakout tab ───────────────────────────────────────────────
   if (tab === 'breakout' && panel && !panel.dataset.loaded) {
