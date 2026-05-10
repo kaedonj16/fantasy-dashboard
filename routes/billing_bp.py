@@ -454,3 +454,37 @@ def api_subscription_status():
     except Exception as e:
         logger.error("[api_subscription_status] Error: %s", e)
         return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
+
+
+# ── Stripe Customer Portal ────────────────────────────────────────────────────
+
+@billing_bp.route("/api/create-portal-session", methods=["POST"])
+def api_create_portal_session():
+    """Create a Stripe billing portal session so users can manage subscriptions."""
+    from dashboard_services.subscriptions import get_subscription_info
+
+    user_id   = session.get("viewer_user_id") or session.get("viewer_username")
+    league_id = request.json.get("league_id") if request.is_json else request.form.get("league_id")
+    platform  = "sleeper"
+
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+
+    try:
+        sub_info    = get_subscription_info(user_id, league_id, platform)
+        customer_id = sub_info.get("stripe_customer_id")
+        if not customer_id:
+            return jsonify({"error": "No active subscription found"}), 404
+
+        return_url = request.json.get("return_url") if request.is_json else request.form.get("return_url")
+        if not return_url:
+            return_url = request.host_url.rstrip("/") + "/pricing"
+
+        portal_session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+        return jsonify({"url": portal_session.url})
+    except Exception as e:
+        logger.exception("[api_create_portal_session] Error: %s", e)
+        return jsonify({"error": str(e)}), 500

@@ -95,7 +95,8 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
         "has_league_subscription": False,
         "has_user_subscription": False,
         "expires_at": None,
-        "subscriber_user_id": None
+        "subscriber_user_id": None,
+        "stripe_customer_id": None,
     }
 
     now = datetime.now(timezone.utc)
@@ -105,7 +106,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
             with conn.cursor() as cur:
                 if league_id:
                     cur.execute("""
-                        SELECT expires_at, subscriber_user_id
+                        SELECT expires_at, subscriber_user_id, stripe_customer_id
                         FROM league_subscriptions
                         WHERE league_id = %s
                           AND platform = %s
@@ -118,10 +119,11 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                         result["has_league_subscription"] = True
                         result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
                         result["subscriber_user_id"] = row["subscriber_user_id"]
+                        result["stripe_customer_id"] = row.get("stripe_customer_id")
 
                 if user_id:
                     cur.execute("""
-                        SELECT expires_at
+                        SELECT expires_at, stripe_customer_id
                         FROM user_subscriptions
                         WHERE user_id = %s
                           AND platform = %s
@@ -134,6 +136,8 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
                         result["has_user_subscription"] = True
                         if not result["expires_at"]:
                             result["expires_at"] = row["expires_at"].isoformat() if row["expires_at"] else None
+                        if not result["stripe_customer_id"]:
+                            result["stripe_customer_id"] = row.get("stripe_customer_id")
 
         has_league = result["has_league_subscription"]
         has_user = result["has_user_subscription"]

@@ -801,6 +801,10 @@ def page_trade_database(platform: str, season: int, league_id: str):
         font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
         background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
       }}
+      .tdb-vol {{
+        font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px;
+        background: #3b82f615; color: #3b82f6; border: 1px solid #3b82f630; flex-shrink: 0;
+      }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
@@ -905,7 +909,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
             const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
             const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
             const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
-            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
+            const vol = a.trade_count && a.type === 'player' ? `<span class="tdb-vol">${{a.trade_count}} trades</span>` : '';
+            return `<div class="${{cls}}">${{a.name}}${{pos}}${{vol}}</div>`;
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
           const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';

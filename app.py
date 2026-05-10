@@ -1199,6 +1199,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"</div>"
         )
 
+        # Check if logged-in user has premium (for manage subscription button)
+        _viewer_uid = session.get("viewer_username")
+        _is_premium_user = has_premium_access(_viewer_uid, league_id, platform or "sleeper")
+        manage_sub_html = (
+            "<button type='button' class='settings-menu-item' id='manageSubBtn' "
+            "        onclick=\"(function(){fetch('/api/create-portal-session',{method:'POST',"
+            "credentials:'same-origin',headers:{'Content-Type':'application/json'},"
+            f"body:JSON.stringify({{league_id:'{league_id or ''}',return_url:window.location.href}})}}).then(r=>r.json()).then(d=>{{if(d.url)window.location.href=d.url;else alert('Could not open billing portal.');}});})()\""
+            ">"
+            "  <img src='/static/images/star.png' class='settings-menu-icon' alt='Premium'>"
+            "  <span class='settings-menu-label'>Manage Subscription</span>"
+            "</button>"
+        ) if _is_premium_user else ""
+
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
             f"<button type='button' id='refreshBtn' class='settings-menu-item' "
@@ -1214,6 +1228,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</button>"
             f"{dark_mode_toggle_html}"
             f"{league_switcher_html}"
+            f"{manage_sub_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
             "  <span class='settings-menu-label'>Logout</span>"
@@ -14278,6 +14293,7 @@ def api_trade_database():
 
         # If searching by name, resolve to player_ids first
         match_ids: list[str] = []
+        player_trade_counts: dict[str, int] = {}
         if q:
             match_ids = [
                 pid for pid, info in players_map.items()
@@ -14359,6 +14375,20 @@ def api_trade_database():
                 return jsonify({"trades": [], "total": total, "has_more": False})
 
             trade_ids = [r["id"] for r in trade_rows]
+
+            # Per-player trade volume counts (all-time, across seasons)
+            if match_ids:
+                vol_rows = conn.execute(
+                    """
+                    SELECT player_id, COUNT(DISTINCT trade_id) AS cnt
+                    FROM trade_intel_assets
+                    WHERE player_id = ANY(%s) AND asset_type = 'player'
+                    GROUP BY player_id
+                    """,
+                    (match_ids,),
+                ).fetchall()
+                player_trade_counts = {r["player_id"]: int(r["cnt"]) for r in vol_rows}
+
             asset_rows = conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
@@ -14381,9 +14411,13 @@ def api_trade_database():
             if a["asset_type"] == "player":
                 pid  = a["player_id"]
                 info = players_map.get(pid) or {}
-                return {"type": "player", "player_id": pid,
-                        "name": info.get("name") or pid,
-                        "position": info.get("pos") or "?"}
+                d = {"type": "player", "player_id": pid,
+                     "name": info.get("name") or pid,
+                     "position": info.get("pos") or "?"}
+                vol = player_trade_counts.get(pid)
+                if vol:
+                    d["trade_count"] = vol
+                return d
             s    = str(a["pick_season"]) if a["pick_season"] else "?"
             r    = str(a["pick_round"])  if a["pick_round"]  else "?"
             slot = a["pick_slot"]

@@ -141,18 +141,23 @@ def update_player_values_with_rankings() -> int:
     try:
         from dashboard_services.player_value_history import load_calibration_overrides
         calibration_overrides = load_calibration_overrides()
-        
-        # Create calibrated value column for ranking
-        df['calibrated_value'] = df['id'].apply(lambda x: calibration_overrides.get(str(x), {}).get('value', df.loc[df['id'] == x, 'value'].iloc[0]))
-        
-        # Calculate position rank based on calibrated values
-        df['pos_rank'] = df.groupby('position')['calibrated_value'].rank(ascending=False, method='min')
-        
-        print("[update_player_values] Position ranks calculated based on calibrated values")
+
+        df['calibrated_value'] = df['id'].apply(
+            lambda x: calibration_overrides.get(str(x), {}).get('value',
+                df.loc[df['id'] == x, 'value'].iloc[0])
+        )
+        df['calibrated_sf_value'] = df['id'].apply(
+            lambda x: calibration_overrides.get(str(x), {}).get('sf_value',
+                df.loc[df['id'] == x, 'sf_value'].iloc[0])
+        )
+
+        df['pos_rank']    = df.groupby('position')['calibrated_value'].rank(ascending=False, method='min')
+        df['sf_pos_rank'] = df.groupby('position')['calibrated_sf_value'].rank(ascending=False, method='min')
+        print("[update_player_values] Position ranks calculated based on calibrated values (1QB + SF)")
     except Exception as e:
         print(f"[update_player_values] Failed to load calibrated values for ranking: {e}")
-        # Fallback to raw values if calibration fails
-        df['pos_rank'] = df.groupby('position')['value'].rank(ascending=False, method='min')
+        df['pos_rank']    = df.groupby('position')['value'].rank(ascending=False, method='min')
+        df['sf_pos_rank'] = df.groupby('position')['sf_value'].rank(ascending=False, method='min')
         print("[update_player_values] Position ranks calculated based on raw values (fallback)")
 
     # Apply smoothing to reduce steep drop-offs
@@ -167,21 +172,36 @@ def update_player_values_with_rankings() -> int:
     # Convert back to list of dicts
     updated_players = []
     for _, row in df_smoothed.iterrows():
-        pid = str(row['id'])
-        cur_overall = int(row['overall_rank'])
-        cur_pos = int(row['pos_rank'])
+        pid      = str(row['id'])
+        position = row['position']
+        cur_overall    = int(row['overall_rank'])
+        cur_pos        = int(row['pos_rank'])
+        cur_sf_pos     = int(row.get('sf_pos_rank', cur_pos))
         _pr = row.get('player_rank')
         cur_player_rank = int(_pr) if (_pr is not None and not pd.isna(_pr)) else None
 
         hist = hist_ranks.get(pid)
-        rank_change_7d = (hist['overall_rank'] - cur_player_rank) if (hist and cur_player_rank is not None) else None
+        rank_change_7d     = (hist['overall_rank'] - cur_player_rank) if (hist and cur_player_rank is not None) else None
         pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
 
-        rd_1qb, rd_sf = fc_redraft.get(pid, (None, None))
+        rd_1qb, rd_sf_raw = fc_redraft.get(pid, (None, None))
+
+        # Compute a real SF redraft value using the dynasty SF/1QB ratio as a position-aware
+        # scaler.  QBs benefit most (2-3x boost); skill positions are nearly unchanged.
+        if rd_1qb is not None:
+            raw_val = float(row.get('value') or 1)
+            sf_val  = float(row.get('sf_value') or raw_val)
+            ratio   = sf_val / max(raw_val, 1.0)
+            # Cap the ratio: QBs top out ~2.2x; skill positions stay near 1.0
+            capped_ratio = min(ratio, 2.2) if position == 'QB' else min(ratio, 1.15)
+            rd_sf = round(rd_1qb * capped_ratio, 2)
+        else:
+            rd_sf = rd_sf_raw
+
         updated_players.append({
             'id': pid,
             'name': row['name'],
-            'position': row['position'],
+            'position': position,
             'team': row['team'],
             'age': row['age'],
             'value': round(row['value'], 2),
@@ -190,9 +210,9 @@ def update_player_values_with_rankings() -> int:
             'redraft_value_sf':  rd_sf,
             'overall_rank': cur_overall,
             'pos_rank': cur_pos,
-            'pos_rank_label': f"{row['position']}{cur_pos}",
-            'sf_pos_rank': cur_pos,
-            'sf_pos_rank_label': f"{row['position']}{cur_pos}",
+            'pos_rank_label': f"{position}{cur_pos}",
+            'sf_pos_rank': cur_sf_pos,
+            'sf_pos_rank_label': f"{position}{cur_sf_pos}",
             'search_name': row.get('search_name', ''),
             'rank_change_7d': rank_change_7d,
             'pos_rank_change_7d': pos_rank_change_7d,

@@ -216,15 +216,15 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
             </div>
 
             <div class="static-section">
-              <div class="static-section-title">2. Premium Ad-Free Mode (Coming Soon)</div>
+              <div class="static-section-title">2. Go Premium</div>
               <p>
-                The long-term plan is to offer a premium, ad-free experience with extra
-                features (advanced graphs, additional projections, league history views,
-                and more) while keeping a solid free version for everyone.
+                Premium unlocks AI-powered insights, breakout candidate rankings, advanced
+                metrics, and a trade intelligence database &mdash; either for your whole league
+                or just your own account across all leagues.
               </p>
               <p style="margin-top:8px;">
-                Want early access or to give feedback on premium ideas? Reach out on the
-                Contact page and include "Premium" in your message.
+                Visit the <strong>Settings</strong> menu inside your league dashboard to
+                subscribe, or reach out on the Contact page with any questions.
               </p>
             </div>
 
