@@ -4514,11 +4514,17 @@ function openPlayerModal(playerId, playerName) {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <span id="playerModalBreakoutSlot"></span>
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;"><i class="fa-regular fa-star" aria-hidden="true"></i></button>
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
+    </div>
+    <div class="pm-tab-bar" id="pmTabBar" style="display:none">
+      <button class="pm-tab active" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
+      <button class="pm-tab" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
+      <button class="pm-tab" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
+      <button class="pm-tab" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
+      <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="player-modal-loading">

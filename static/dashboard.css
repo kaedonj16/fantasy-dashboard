@@ -13799,4 +13799,58 @@ img, svg, canvas {
   white-space: nowrap;
 }
 #cache-freshness.cf-visible { display: block; }
+
+/* ── Player Modal Tab Bar ─────────────────────────────────────────────────── */
+.pm-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.pm-tab-bar::-webkit-scrollbar { display: none; }
+.pm-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.pm-tab:hover { color: var(--text); }
+.pm-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.pm-panel { display: none; }
+.pm-panel.pm-panel-active { display: block; }
+.pm-trade-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.pm-trade-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--bg-alt, rgba(0,0,0,.03));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.pm-trade-date { color: var(--text-muted); font-weight: 500; }
+.pm-trade-body {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.pm-trade-col { display: flex; flex-direction: column; gap: 4px; }
+.pm-trade-asset { font-size: 13px; font-weight: 500; color: var(--text); }
+.pm-trade-asset.pm-focus { font-weight: 700; color: var(--accent); }
+.pm-trade-asset.pm-pick { color: var(--text-muted); font-style: italic; font-size: 12px; }
 #cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }
