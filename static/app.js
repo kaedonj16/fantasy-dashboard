@@ -4610,36 +4610,8 @@ function openPlayerModal(playerId, playerName) {
         headshotEl.src = data.espnHeadshot;
       }
 
-      // Build modal body
-      let bodyHTML = '';
-
       // Extract player position
       const pos = data.position;
-
-      // Calculate breakout player status
-      const isBreakoutPlayer = !isElite(pid) && isBreakout(pid);
-
-      // Breakout button in header slot (shown when player has a breakout score)
-      if (isBreakoutPlayer) {
-        const slot = document.getElementById('playerModalBreakoutSlot');
-        if (slot) {
-          const bkHeaderBtn = document.createElement('button');
-          bkHeaderBtn.id = 'playerModalBreakoutBtn';
-          bkHeaderBtn.textContent = 'View Breakout Analysis';
-          bkHeaderBtn.style.cssText = `
-            background: rgba(16,185,129,0.1);
-            border: 1px solid rgba(16,185,129,0.3);
-            color: #10b981;
-            border-radius: 7px;
-            padding: 5px 10px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            white-space: nowrap;
-          `;
-          slot.appendChild(bkHeaderBtn);
-        }
-      }
 
       // ── Hero row ─────────────────────────────────────────────────────────
       const val1qb = data.stats?.value || 0;
@@ -4658,20 +4630,6 @@ function openPlayerModal(playerId, playerName) {
             <div class="pm-hero-label">Experience</div>
             <div class="pm-hero-val">${expLabel}</div>
           </div>`;
-
-      bodyHTML += `
-        <div class="pm-hero-row">
-          <div class="pm-hero-stat pm-hero-primary">
-            <div class="pm-hero-label">1QB Value</div>
-            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-          </div>
-          <div class="pm-hero-stat">
-            <div class="pm-hero-label">SF Value</div>
-            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-          </div>
-          ${thirdValueCard}
-        </div>
-      `;
 
       // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
       const pd = data.prospect_data;
@@ -4722,53 +4680,53 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
-      // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
+      // ── Advanced Metrics / Prospect Profile + Value History flags ──
       const hasMetrics = hasGameLogs && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      if (hasMetrics || isRookieWithProspectData || hasChart) {
-        const gridClass = isRookieWithProspectData ? 'pm-metrics-chart-grid pm-metrics-chart-grid--prospect' : 'pm-metrics-chart-grid';
-        bodyHTML += `<hr class="pm-section-divider"><div class="${gridClass}">`;
+      // ── Build Overview panel HTML ─────────────────────────────────────────
+      let overviewHTML = `
+        <div class="pm-hero-row">
+          <div class="pm-hero-stat pm-hero-primary">
+            <div class="pm-hero-label">1QB Value</div>
+            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+          </div>
+          <div class="pm-hero-stat">
+            <div class="pm-hero-label">SF Value</div>
+            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+          </div>
+          ${thirdValueCard}
+        </div>
+      `;
 
-        if (isRookieWithProspectData) {
-          bodyHTML += `<div>${pdColHTML}</div>`;
-        } else if (hasMetrics) {
-          bodyHTML += `
-            <div id="advancedMetricsSection">
-              <div class="pm-section-header">
-                <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
-              </div>
-              <div id="advMetricsPills"></div>
-              <div id="advancedMetricsContent">
-                <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
-                  <div class="loading-spinner" style="width:16px;height:16px;"></div>
-                  <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
-                </div>
-              </div>
-            </div>
-          `;
-        } else {
-          bodyHTML += `<div></div>`; // empty left cell so chart stays right
-        }
-
-        if (hasChart) {
-          bodyHTML += `
-            <div>
-              <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-              <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
-            </div>
-          `;
-        } else {
-          bodyHTML += `<div></div>`;
-        }
-
-        bodyHTML += `</div>`;
+      if (isRookieWithProspectData) {
+        overviewHTML += `<hr class="pm-section-divider"><div>${pdColHTML}</div>`;
       }
 
-      // ── Game Logs ─────────────────────────────────────────────────────────
-      if (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0) {
-        bodyHTML += `
+      if (hasChart) {
+        overviewHTML += `
           <hr class="pm-section-divider">
+          <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
+          <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
+        `;
+      }
+
+      if (data.position && data.position !== 'PICK') {
+        overviewHTML += `
+          <hr class="pm-section-divider">
+          <div class="pm-news-section" id="pmNewsSection">
+            <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
+            <div id="pmNewsBody" style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--text-muted);">
+              <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
+            </div>
+          </div>
+        `;
+      }
+
+      // ── Build Stats panel HTML ────────────────────────────────────────────
+      let statsHTML = '';
+      if (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0) {
+        statsHTML += `
           <div class="player-modal-section">
             <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
         `;
@@ -4808,11 +4766,10 @@ function openPlayerModal(playerId, playerName) {
           seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
           if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
           if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
-          if (totalRec >
-           0) seasonSummaryParts.push(`${totalRec} rec`);
+          if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
           const seasonSummary = seasonSummaryParts.join(' • ');
 
-          bodyHTML += `
+          statsHTML += `
             <div class="game-log-year-section">
               <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
                 <div class="game-log-year-header-main">
@@ -4860,7 +4817,7 @@ function openPlayerModal(playerId, playerName) {
             const val = (v) => v != null && v > 0 ? v : '—';
             const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
 
-            bodyHTML += `
+            statsHTML += `
               <tr class="${rowClass}">
                 <td>${dateStr}</td>
                 <td class="game-log-table-opp">${game.opponent || '—'}</td>
@@ -4882,7 +4839,7 @@ function openPlayerModal(playerId, playerName) {
           const valTotal = (v) => v != null && v > 0 ? v : '—';
 
           // Add season totals row in table format (inside the table)
-          bodyHTML += `
+          statsHTML += `
                   </tbody>
                   <tfoot>
                     <tr class="game-log-table-total">
@@ -4907,27 +4864,71 @@ function openPlayerModal(playerId, playerName) {
           `;
         });
 
-        bodyHTML += `
-          </div>
-        `;
+        statsHTML += `</div>`;
+      } else {
+        statsHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No game logs available.</div></div>';
       }
 
-      // ── News placeholder (lazy-loaded after modal renders) ───────────────
-      if (data.position && data.position !== 'PICK') {
-        bodyHTML += `
-          <hr class="pm-section-divider">
-          <div class="pm-news-section" id="pmNewsSection">
-            <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
-            <div id="pmNewsBody" style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--text-muted);">
-              <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
+      // ── Build Adv Metrics panel HTML ──────────────────────────────────────
+      const metricsHTML = hasMetrics ? `
+        <div id="advancedMetricsSection">
+          <div class="pm-section-header">
+            <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
+          </div>
+          <div id="advMetricsPills"></div>
+          <div id="advancedMetricsContent">
+            <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
+              <div class="loading-spinner" style="width:16px;height:16px;"></div>
+              <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
             </div>
           </div>
-        `;
-      }
+        </div>
+      ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
 
-      document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
+      // ── Build Breakout panel HTML (lazy-loaded) ───────────────────────────
+      const breakoutHTML = `
+        <div style="padding:32px 0;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading breakout analysis…</span>
+        </div>
+      `;
 
-      // Lazy-load prospect comparables for rookies
+      // ── Build Trades panel HTML (lazy-loaded) ─────────────────────────────
+      const tradesHTML = `
+        <div style="padding:32px 0;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading trade history…</span>
+        </div>
+      `;
+
+      // ── Assemble 5 panels into modal body ─────────────────────────────────
+      const modalBody = document.getElementById('playerModalBody');
+      modalBody.innerHTML = `
+        <div class="pm-panel pm-panel-active" id="pm-panel-overview">${overviewHTML}</div>
+        <div class="pm-panel" id="pm-panel-stats">${statsHTML}</div>
+        <div class="pm-panel" id="pm-panel-metrics">${metricsHTML}</div>
+        <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
+        <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
+      `;
+
+      // ── Show tab bar and configure it ─────────────────────────────────────
+      const pmTabBar = document.getElementById('pmTabBar');
+      pmTabBar.style.display = '';
+      pmTabBar.dataset.playerId = playerId;
+      pmTabBar.dataset.season = season;
+
+      // Show/hide conditional tabs
+      const tabMetrics = document.getElementById('pmTabMetrics');
+      if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
+      const tabBreakout = document.getElementById('pmTabBreakout');
+      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
+
+      // Reset to Overview tab active state
+      document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
+      const overviewTabBtn = document.querySelector('.pm-tab[data-tab="overview"]');
+      if (overviewTabBtn) overviewTabBtn.classList.add('active');
+
+      // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
           .then(r => r.json())
@@ -4962,7 +4963,7 @@ function openPlayerModal(playerId, playerName) {
           });
       }
 
-      // Lazy-load news after modal is in the DOM
+      // ── Lazy-load news into Overview panel ────────────────────────────────
       if (data.position && data.position !== 'PICK') {
         fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
           .then(r => r.json())
@@ -4992,24 +4993,13 @@ function openPlayerModal(playerId, playerName) {
           });
       }
 
-      // Wire up breakout header button
-      const bkBtn = document.getElementById('playerModalBreakoutBtn');
-      if (bkBtn) {
-        bkBtn.addEventListener('click', () => {
-          closePlayerModal();
-          openBreakoutModal(playerId, playerName);
-        });
-      }
-
-      // Wire up compare button
+      // ── Wire up compare button ────────────────────────────────────────────
       const cmpBtn = document.getElementById('playerModalCompareBtn');
       if (cmpBtn) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
-      // Watchlist functionality disabled
-
-      // Render value history chart if data exists
+      // ── Render value history chart in Overview panel ───────────────────────
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
@@ -5022,15 +5012,6 @@ function openPlayerModal(playerId, playerName) {
             // Use hardcoded month names to avoid locale/timezone issues
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
-          };
-          const formatMonthOnly = (dateStr) => {
-            if (!dateStr) return '';
-            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (!m) return '';
-            const [, year, month, day] = m;
-            // Use hardcoded month names to avoid locale/timezone issues
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            return monthNames[parseInt(month, 10) - 1];
           };
 
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
@@ -5060,12 +5041,12 @@ function openPlayerModal(playerId, playerName) {
             .getPropertyValue('--text-muted').trim() || '#6b7280';
 
           // Add empty space after the data to center the last point
-          const extendedX = [...xData, '', '', '', '']; // Add more empty categories
-          const extendedY = [...yValues, null, null, null, null]; // Add more null values
-          
+          const extendedX = [...xData, '', '', '', ''];
+          const extendedY = [...yValues, null, null, null, null];
+
           // Create hover text for actual data points only
           const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
-          
+
           const trace = {
             x: extendedX,
             y: extendedY,
@@ -5092,12 +5073,12 @@ function openPlayerModal(playerId, playerName) {
               showgrid: false,
               type: 'category',
               tickmode: 'array',
-              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3], // Include 4 empty positions
-              ticktext: [...ticktext, '', '', ''], // Empty labels for added space
+              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3],
+              ticktext: [...ticktext, '', '', ''],
               tickangle: 0,
               tickfont: { size: 11, color: mutedColor },
               fixedrange: true,
-              range: [-(xData.length * 0.3), xData.length + 2], // Center the most recent value
+              range: [-(xData.length * 0.3), xData.length + 2],
             },
             yaxis: {
               showgrid: true,
@@ -5115,13 +5096,12 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // Fetch and render advanced metrics (bars go into #advancedMetricsContent)
-      const advancedSection = document.getElementById('advancedMetricsSection');
-      if (advancedSection) {
+      // ── Pre-load advanced metrics into the hidden Metrics panel ───────────
+      if (hasMetrics) {
         const path = window.location.pathname;
         const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
-        const leagueId = match ? match[3] : null;
-        loadAdvancedMetrics(playerId, leagueId, null);
+        const leagueIdForMetrics = match ? match[3] : null;
+        loadAdvancedMetrics(playerId, leagueIdForMetrics, null);
       }
     })
     .catch(err => {
@@ -5134,6 +5114,198 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
     });
+}
+
+// ── Player Modal Tab Switching (global) ──────────────────────────────────────
+function pmSwitchTab(tab) {
+  document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
+  document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('pm-panel-' + tab);
+  const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
+  if (panel) panel.classList.add('pm-panel-active');
+  if (btn) btn.classList.add('active');
+
+  const pmTabBar = document.getElementById('pmTabBar');
+  if (!pmTabBar) return;
+  const playerId = pmTabBar.dataset.playerId;
+  const season = pmTabBar.dataset.season;
+
+  // ── Lazy-load Breakout tab ───────────────────────────────────────────────
+  if (tab === 'breakout' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const score = parseFloat(data.breakout_opportunity_score || 0);
+        let scoreColor = '#10b981';
+        if (score < 50) scoreColor = '#3b82f6';
+        if (score < 40) scoreColor = '#f59e0b';
+        if (score < 30) scoreColor = '#6b7280';
+        panel.innerHTML = _buildBkTabHTML(data, scoreColor);
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Breakout analysis not available.</div></div>';
+        }
+      });
+  }
+
+  // ── Lazy-load Trades tab ─────────────────────────────────────────────────
+  if (tab === 'trades' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    fetch(`/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const trades = data.trades || [];
+        if (!trades.length) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No recent trades found for this player.</div></div>';
+          return;
+        }
+        panel.innerHTML = '<div style="padding:4px 0;">' + trades.map(t => {
+          const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
+          const sfBadge = t.league_type === 'sf' || t.league_type === 'superflex'
+            ? '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(139,92,246,.15);color:#8b5cf6;border:1px solid rgba(139,92,246,.3);">SF</span>'
+            : '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3);">1QB</span>';
+          const scoreBadge = t.fairness_score != null
+            ? `<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(0,0,0,.05);color:var(--text-muted);">${parseFloat(t.fairness_score).toFixed(0)}</span>`
+            : '';
+          const renderAssets = (assets) => {
+            if (!assets || !assets.length) return '<span style="font-size:12px;color:var(--text-muted);">—</span>';
+            return assets.map(a => {
+              const isPick = a.is_pick || (a.name || '').toLowerCase().includes('pick') || (a.name || '').toLowerCase().includes('round');
+              const isFocus = String(a.player_id || '') === String(playerId);
+              const cls = isPick ? 'pm-trade-asset pm-pick' : (isFocus ? 'pm-trade-asset pm-focus' : 'pm-trade-asset');
+              return `<div class="${cls}">${a.name || a.player_name || '?'}</div>`;
+            }).join('');
+          };
+          const sideA = renderAssets(t.side_a);
+          const sideB = renderAssets(t.side_b);
+          return `<div class="pm-trade-card">
+            <div class="pm-trade-head">
+              <span class="pm-trade-date">${dateStr}</span>
+              <div style="display:flex;gap:5px;">${sfBadge}${scoreBadge}</div>
+            </div>
+            <div class="pm-trade-body">
+              <div class="pm-trade-col">${sideA}</div>
+              <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
+              <div class="pm-trade-col">${sideB}</div>
+            </div>
+          </div>`;
+        }).join('') + '</div>';
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load trade history.</div></div>';
+        }
+      });
+  }
+}
+
+// ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────
+function _buildBkTabHTML(data, scoreColor) {
+  const score = parseFloat(data.breakout_opportunity_score || 0);
+  const scoreStr = score.toFixed(1);
+  if (!scoreColor) {
+    scoreColor = '#10b981';
+    if (score < 50) scoreColor = '#3b82f6';
+    if (score < 40) scoreColor = '#f59e0b';
+    if (score < 30) scoreColor = '#6b7280';
+  }
+
+  const breakoutType = data.breakout_type || {};
+  const formattedPhase = data.phase
+    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : '—';
+
+  const reasons = (data.key_reasons || '').split('\n')
+    .filter(r => r.trim() && r.startsWith('•'))
+    .map(r => r.substring(1).trim());
+
+  const txnSummary    = data.vacated_usage_summary || '';
+  const addedCompSumm = data.added_competition_summary || '';
+
+  // ── Hero row ───────────────────────────────────────────────────────────────
+  let html = `
+    <div class="pm-hero-row">
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
+        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+      </div>
+      <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
+        <div class="pm-hero-label">Profile</div>
+        <div style="font-size:13px;font-weight:700;line-height:1.3;color:var(--text);margin:4px 0;">${breakoutType.profile_label || '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">Phase</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
+      </div>
+    </div>
+  `;
+
+  // ── Component breakdown ────────────────────────────────────────────────────
+  const components = [
+    { label: 'Opportunity',     val: data.opportunity_opened_score,  color: '#10b981' },
+    { label: 'Competition',     val: data.competition_removed_score, color: '#3b82f6' },
+    { label: 'Team Env.',       val: data.team_environment_score,    color: null      },
+    { label: 'Readiness',       val: data.player_readiness_score,    color: '#8b5cf6' },
+    { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
+    { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280', suffix: '%' },
+  ];
+
+  html += `<div class='pm-two-column'><div class='pm-left-column'>`;
+  html += `<hr class="pm-section-divider">`;
+  html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
+  html += '<div class="pm-comp-list-bo">';
+  components.forEach(c => {
+    const v    = parseFloat(c.val || 0);
+    const fill = Math.min(100, Math.max(0, v));
+    const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
+    const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
+    html += `
+      <div class="pm-comp-row">
+        <span class="pm-comp-label">${c.label}</span>
+        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
+        <span class="pm-comp-val" style="color:${color};">${disp}</span>
+      </div>`;
+  });
+  html += '</div></div>';
+
+  // ── Key factors ────────────────────────────────────────────────────────────
+  if (reasons.length) {
+    html += `
+      <div class='pm-right-column'>
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+    `;
+    reasons.forEach(r => {
+      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
+        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+  html += '</div>';
+
+  // ── Context boxes ──────────────────────────────────────────────────────────
+  if (txnSummary && txnSummary !== 'No departures') {
+    html += `
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Vacated Opportunity</span></div>
+      <div class="pm-context-box">${txnSummary}</div>
+    `;
+  }
+  if (addedCompSumm && addedCompSumm !== 'No new competition added') {
+    html += `
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Added Competition</span></div>
+      <div class="pm-context-box competition">${addedCompSumm}</div>
+    `;
+  }
+
+  return html;
 }
 
 function getRoleGrade(roleScore) {
