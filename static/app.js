@@ -4915,6 +4915,7 @@ function openPlayerModal(playerId, playerName) {
       pmTabBar.style.display = '';
       pmTabBar.dataset.pmPlayerId = playerId;
       pmTabBar.dataset.pmSeason = season;
+      pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
 
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
@@ -5153,13 +5154,26 @@ function pmSwitchTab(tab) {
   // ── Lazy-load Trades tab ─────────────────────────────────────────────────
   if (tab === 'trades' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
+    const playerName = pmTabBar.dataset.pmPlayerName || '';
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const tdbPlatform = pathParts[0];
+    const tdbSeason   = pathParts[1];
+    const tdbLeague   = pathParts[2];
+    const tdbBase = (tdbPlatform && tdbSeason && tdbLeague && !['players','breakouts','prospects','trade-database','trade-intel'].includes(tdbPlatform))
+      ? `/${tdbPlatform}/${tdbSeason}/${tdbLeague}/trade-database`
+      : '/trade-database';
+    const tdbLink = playerName
+      ? `${tdbBase}?q=${encodeURIComponent(playerName)}`
+      : tdbBase;
+
     fetch(`/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
         const trades = data.trades || [];
+        const linkHTML = `<div style="text-align:center;padding:12px 0 2px;"><a href="${tdbLink}" style="font-size:12px;color:var(--accent,#3b82f6);font-weight:600;text-decoration:none;">Search all trades in Trade Database →</a></div>`;
         if (!trades.length) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No recent trades found for this player.</div></div>';
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No recent trades found for this player.</div></div>' + linkHTML;
           return;
         }
         panel.innerHTML = '<div style="padding:4px 0;">' + trades.map(t => {
@@ -5192,7 +5206,7 @@ function pmSwitchTab(tab) {
               <div class="pm-trade-col">${sideB}</div>
             </div>
           </div>`;
-        }).join('') + '</div>';
+        }).join('') + '</div>' + linkHTML;
       })
       .catch(() => {
         if (panel.isConnected) {
@@ -5415,42 +5429,101 @@ function buildAdvancedMetricsHTML(metricsData) {
       const ratio = metrics.td_rate / metrics.int_rate;
       defs.push({ label: 'TD/INT Ratio', fill: Math.min(ratio * 20, 100), display: ratio.toFixed(2) });
     }
+    if (metrics.pressure_to_sack_rate != null) {
+      const v = metrics.pressure_to_sack_rate;
+      // Lower is better: elite QBs sack <20% of pressures
+      const fill = Math.max(0, 100 - v);
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444' });
+    }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.rush_td_rate != null) {
+      const v = metrics.rush_td_rate;
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 20, 100), display: v.toFixed(2) });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
       const v = metrics.pff_rushing_grade;
       defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1) });
     }
+    if (metrics.grades_pass_block != null) {
+      const v = metrics.grades_pass_block;
+      defs.push({ label: 'PFF Pass Block', fill: v, display: v.toFixed(1) });
+    }
     if (metrics.breakaway_percentage != null) {
       const v = metrics.breakaway_percentage;
       defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.explosive_runs_10_plus != null) {
+      const v = metrics.explosive_runs_10_plus;
+      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0) });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
       defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
     }
+    if (metrics.avoided_tackles != null) {
+      const v = metrics.avoided_tackles;
+      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0) });
+    }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
+    if (metrics.yards_per_touch != null) {
+      const v = metrics.yards_per_touch;
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.rush_td_rate != null) {
+      const v = metrics.rush_td_rate;
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 20, 100), display: v.toFixed(2) });
+    }
+    if (metrics.pass_block_rate != null) {
+      const v = metrics.pass_block_rate;
+      defs.push({ label: 'Pass Block %', fill: v, display: v.toFixed(1) + '%' });
+    }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
-      // Scale opportunity share differently: 25%+ is excellent (green), 15%+ is good (blue), 10%+ is average (yellow)
-      const fillPercent = Math.min(oppShare * 4, 100); // Scale up by 4x so 25% = 100%
+      const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
       defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
+    }
+    if (metrics.catch_rate != null) {
+      const pct = metrics.catch_rate * 100;
+      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
       defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
     }
+    if (metrics.catch_rate != null) {
+      const pct = metrics.catch_rate * 100;
+      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.drop_rate != null) {
+      const v = metrics.drop_rate;
+      // Lower is better; flip color: green = low drop rate
+      const fill = Math.max(0, 100 - v * 5);
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444' });
+    }
+    if (metrics.yards_per_target != null) {
+      const v = metrics.yards_per_target;
+      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.yards_per_reception != null) {
+      const v = metrics.yards_per_reception;
+      defs.push({ label: 'Yds/Reception', fill: Math.min(v / 18 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
       defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.yards_after_catch != null) {
+      const v = metrics.yards_after_catch;
+      defs.push({ label: 'YAC (season)', fill: Math.min(v / 800 * 100, 100), display: Math.round(v).toString() });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
@@ -5464,19 +5537,44 @@ function buildAdvancedMetricsHTML(metricsData) {
       const pct = metrics.target_share * 100;
       defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
     }
-    if (metrics.catch_rate != null) {
-      const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+    if (metrics.target_quality_score != null) {
+      const v = metrics.target_quality_score;
+      defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
     }
-    if (metrics.yards_per_target != null) {
-      const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+    // Alignment rates (slot / wide / inline)
+    if (metrics.slot_rate != null) {
+      const v = metrics.slot_rate;
+      defs.push({ label: 'Slot Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
     }
+    if (metrics.wide_rate != null) {
+      const v = metrics.wide_rate;
+      defs.push({ label: 'Wide Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
+    }
+    if (position === 'TE' && metrics.inline_rate != null) {
+      const v = metrics.inline_rate;
+      defs.push({ label: 'Inline Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
+    }
+  }
+
+  if (metrics.target_quality_score != null && position === 'RB') {
+    const v = metrics.target_quality_score;
+    defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
     const v = metrics.red_zone_usage;
     defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1) });
+  }
+
+  if (metrics.usage_trend != null) {
+    const trend = metrics.usage_trend;
+    const icon = trend > 5 ? '<i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> ' : trend < -5 ? '<i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i> ' : '';
+    defs.push({
+      label: 'Usage Trend',
+      fill: Math.min(Math.max((trend + 50) / 100 * 100, 0), 100),
+      display: icon + (trend > 0 ? '+' : '') + trend.toFixed(1) + '%',
+      forceColor: trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : null,
+    });
   }
 
   if (metrics.efficiency_trend != null) {
