@@ -1166,11 +1166,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
-        ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
-        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False, True),
-    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
+    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
@@ -1178,6 +1174,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
     nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill("Waivers", "page_waivers", "waivers"))
+    nav_pills.append(nav_pill_dropdown("Trades", [
+        ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
+        ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
+        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False, True),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False, False),
         ("Prospect Rankings", "page_prospects",  "prospects", False, False),
@@ -1188,7 +1189,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False, False),
         ("History", "page_history", "history", False, False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
-    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -14399,9 +14399,11 @@ def api_trade_intel_player(player_id: str):
 def api_trade_database():
     """
     Paginated, searchable real-trade log.
-    ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
+    ?player_a=<id>  &player_b=<id>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
     """
     try:
+        player_a    = (request.args.get("player_a") or "").strip()
+        player_b    = (request.args.get("player_b") or "").strip()
         q           = (request.args.get("q") or "").strip().lower()
         page        = max(0, int(request.args.get("page") or 0))
         limit       = min(int(request.args.get("limit") or 20), 50)
@@ -14413,10 +14415,18 @@ def api_trade_database():
 
         players_map = load_players_index() or {}
 
-        # If searching by name, resolve to player_ids first
+        # player_a/player_b IDs take priority over legacy text search
         match_ids: list[str] = []
+        both_ids: tuple = ()
         player_trade_counts: dict[str, int] = {}
-        if q:
+
+        if player_a and player_b:
+            both_ids = (player_a, player_b)
+        elif player_a:
+            match_ids = [player_a]
+        elif player_b:
+            match_ids = [player_b]
+        elif q:
             match_ids = [
                 pid for pid, info in players_map.items()
                 if q in (info.get("name") or "").lower()
@@ -14433,7 +14443,43 @@ def api_trade_database():
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
         with get_conn() as conn:
-            if match_ids:
+            if both_ids:
+                # Find trades where BOTH players appear (any side)
+                base_count = [both_ids[0], both_ids[1], season] + ([sf_param] if sf_param is not None else [])
+                count_row = conn.execute(
+                    f"""
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
+                        AND a1.player_id = %s AND a1.asset_type = 'player'
+                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
+                        AND a2.player_id = %s AND a2.asset_type = 'player'
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_clause}
+                    """,
+                    base_count,
+                ).fetchone()
+                total = int(count_row["n"]) if count_row else 0
+
+                base_rows = [both_ids[0], both_ids[1], season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
+                trade_rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
+                        AND a1.player_id = %s AND a1.asset_type = 'player'
+                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
+                        AND a2.player_id = %s AND a2.asset_type = 'player'
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE t.season = %s {sf_clause}
+                    ORDER BY t.created_at DESC NULLS LAST
+                    LIMIT %s OFFSET %s
+                    """,
+                    base_rows,
+                ).fetchall()
+            elif match_ids:
                 base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
@@ -14498,7 +14544,7 @@ def api_trade_database():
 
             trade_ids = [r["id"] for r in trade_rows]
 
-            # Per-player trade volume counts (all-time, across seasons)
+            # Per-player trade volume counts (not surfaced in UI, kept for API compatibility)
             if match_ids:
                 vol_rows = conn.execute(
                     """
