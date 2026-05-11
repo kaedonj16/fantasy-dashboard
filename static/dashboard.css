@@ -13970,3 +13970,84 @@ img, svg, canvas {
   transition: all 0.12s;
 }
 .login-gate-btn-secondary:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+/* Sign-in modal */
+.signin-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.signin-modal-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 28px 28px;
+  width: 360px;
+  max-width: 92vw;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+}
+.signin-modal-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.signin-modal-sub {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.signin-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 16px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.signin-modal-input:focus {
+  border-color: var(--accent);
+}
+.signin-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.signin-modal-submit {
+  flex: 1;
+  padding: 10px;
+  border-radius: 9px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.signin-modal-submit:hover { opacity: 0.88; }
+.signin-modal-cancel {
+  flex: 1;
+  padding: 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.signin-modal-cancel:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--accent);
+}
