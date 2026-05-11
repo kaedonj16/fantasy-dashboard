@@ -12742,221 +12742,11 @@ def api_player_details(player_id: str):
             league_type=_modal_lt, league_size=_modal_ls,
         )
 
-        # Load game logs from sleeper_stats for all available seasons
-        game_logs_by_year = {}
+        game_logs_by_year = {}  # lazy-loaded via /api/player-game-logs/
 
-        # Find all available season years — cached for 5 minutes to avoid
-        # repeated glob scans on every player-details request.
-        global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
-        now = time.time()
-        if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
-            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
-            _fresh_years: set = set()
-            for stats_file in stats_files:
-                try:
-                    basename = os.path.basename(stats_file)
-                    if basename.startswith("sleeper_stats_s"):
-                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                        if match:
-                            _fresh_years.add(int(match.group(1)))
-                except Exception:
-                    continue
-            _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
-            _PLAYER_DETAIL_YEARS_CACHE_TS = now
-        available_years = _PLAYER_DETAIL_YEARS_CACHE
-
-        # Process each available year
-        for season_year in sorted(available_years, reverse=True):  # Most recent first
-            game_logs = []
-
-            # Load schedule data for ALL weeks to show all games
-            schedule_by_week = {}
-            schedule_pattern = os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")
-            for schedule_file in glob.glob(schedule_pattern):
-                try:
-                    # Extract week from filename: schedule_s2024_w1_d2024-09-05.json
-                    filename = os.path.basename(schedule_file)
-                    week_num = int(filename.split('_w')[1].split('_')[0])
-
-                    with open(schedule_file, 'r') as f:
-                        games = json.load(f)
-                        # Ensure games is a list
-                        if isinstance(games, list) and week_num not in schedule_by_week:
-                            schedule_by_week[week_num] = games
-                except Exception as e:
-                    logger.warning("[api_player_details] Error loading schedule %s: %s", schedule_file, e)
-                    continue
-
-            # Load all stats for this season into memory
-            stats_by_week = {}
-            stats_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
-            week_files = glob.glob(stats_pattern)
-
-            for week_file in week_files:
-                try:
-                    basename = os.path.basename(week_file)
-                    # Extract week number from filename
-                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
-                    if match:
-                        week_num = int(match.group(2))
-                    else:
-                        continue
-
-                    with open(week_file, 'r') as f:
-                        week_stats = json.load(f)
-                        stats_by_week[week_num] = week_stats
-                except Exception as e:
-                    continue
-
-            # Check if player has ANY stats in this season
-            # Skip the season if player has no stats at all (didn't exist yet or retired)
-            player_has_stats_this_season = False
-            for week_stats in stats_by_week.values():
-                if player_id in week_stats:
-                    player_has_stats_this_season = True
-                    break
-
-            if not player_has_stats_this_season:
-                continue
-
-            # Now iterate through schedule and create game logs for ALL games
-            for week_num in sorted(schedule_by_week.keys()):
-                games = schedule_by_week[week_num]
-
-                # Ensure games is a list
-                if not isinstance(games, list):
-                    continue
-
-                # Find player's team game this week
-                opponent = ""
-                is_away = False
-                game_date = ""
-
-                for game in games:
-                    # Ensure game is a dict
-                    if not isinstance(game, dict):
-                        continue
-
-                    home_team = game.get("home", "")
-                    away_team = game.get("away", "")
-
-                    if player_team == home_team:
-                        opponent = away_team
-                        is_away = False
-                        game_date = game.get("gameDate", "")
-                        break
-                    elif player_team == away_team:
-                        opponent = home_team
-                        is_away = True
-                        game_date = game.get("gameDate", "")
-                        break
-
-                # Skip if player's team didn't have a game this week
-                if not opponent:
-                    continue
-
-                # Check if we have stats for this player this week
-                week_stats = stats_by_week.get(week_num, {})
-                stats = week_stats.get(player_id)
-
-                if stats:
-                    # Player has stats - calculate fantasy points using league scoring settings
-                    pts = 0.0
-                    
-                    # Base scoring
-                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
-                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
-                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
-                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
-                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
-                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
-                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
-                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
-                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
-                    
-                    # Yardage bonuses
-                    pass_yds = stats.get("pass_yd") or 0
-                    rush_yds = stats.get("rush_yd") or 0
-                    rec_yds = stats.get("rec_yd") or 0
-                    rush_rec_yds = rush_yds + rec_yds
-                    
-                    # Pass yardage bonuses
-                    if pass_yds >= 400:
-                        pts += scoring_settings.get("bonus_pass_yd_400", 0)
-                    elif pass_yds >= 300:
-                        pts += scoring_settings.get("bonus_pass_yd_300", 0)
-                    
-                    # Rush yardage bonuses
-                    if rush_yds >= 200:
-                        pts += scoring_settings.get("bonus_rush_yd_200", 0)
-                    elif rush_yds >= 100:
-                        pts += scoring_settings.get("bonus_rush_yd_100", 0)
-                    
-                    # Receiving yardage bonuses
-                    if rec_yds >= 200:
-                        pts += scoring_settings.get("bonus_rec_yd_200", 0)
-                    elif rec_yds >= 100:
-                        pts += scoring_settings.get("bonus_rec_yd_100", 0)
-                    
-                    # Combined rush/rec yardage bonuses
-                    if rush_rec_yds >= 200:
-                        pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
-                    elif rush_rec_yds >= 100:
-                        pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
-
-                    game_log = {
-                        "week": week_num,
-                        "date": game_date,
-                        "opponent": f"@{opponent}" if is_away else opponent,
-                        "fantasy_pts": round(pts, 1),
-                        "stats": {
-                            "pass_yd": stats.get("pass_yd"),
-                            "pass_td": stats.get("pass_td"),
-                            "pass_int": stats.get("pass_int"),
-                            "rush_att": stats.get("rush_att"),
-                            "rush_yd": stats.get("rush_yd"),
-                            "rush_td": stats.get("rush_td"),
-                            "rec": stats.get("rec"),
-                            "rec_tgt": stats.get("rec_tgt"),
-                            "rec_yd": stats.get("rec_yd"),
-                            "rec_td": stats.get("rec_td"),
-                            "fum_lost": stats.get("fum_lost"),
-                        }
-                    }
-                else:
-                    # No stats - show game but with 0 points
-                    game_log = {
-                        "week": week_num,
-                        "date": game_date,
-                        "opponent": f"@{opponent}" if is_away else opponent,
-                        "fantasy_pts": 0.0,
-                        "stats": {
-                            "pass_yd": None,
-                            "pass_td": None,
-                            "pass_int": None,
-                            "rush_att": None,
-                            "rush_yd": None,
-                            "rush_td": None,
-                            "rec": None,
-                            "rec_tgt": None,
-                            "rec_yd": None,
-                            "rec_td": None,
-                            "fum_lost": None,
-                        }
-                    }
-
-                game_logs.append(game_log)
-
-            # Only add year if there are games
-            if game_logs:
-                # Sort game logs chronologically by date (earliest to latest)
-                game_logs.sort(key=lambda g: g.get("date", "") or "")
-                game_logs_by_year[season_year] = game_logs
-
-        # Try to attach prospect data — use game_logs to detect rookies rather than years_exp
+        # Try to attach prospect data — run unconditionally since game_logs_by_year is now always empty
         prospect_data = None
-        has_game_logs = bool(game_logs_by_year)
-        if not has_game_logs:
+        if True:
             try:
                 import re as _re
                 from dashboard_services.rookie_api import _cache as _rookie_cache
@@ -13071,6 +12861,248 @@ def api_player_details(player_id: str):
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/player-game-logs/<player_id>")
+def api_player_game_logs(player_id: str):
+    """Game logs for the Stats tab — lazy loaded separately from player-details."""
+    import json, os, glob, re as _re2
+    try:
+        from utils.utils import load_relevant_index, load_model_value_table
+        from dashboard_services.api import get_effective_scoring_settings
+        from dashboard_services.platform_api import sync_league_globals
+
+        league_id   = request.args.get("league_id")
+        platform    = request.args.get("platform", "sleeper")
+        season      = int(request.args.get("season", datetime.now().year))
+
+        if league_id:
+            sync_league_globals(platform, league_id, season)
+            scoring_settings = get_effective_scoring_settings()
+        else:
+            scoring_settings = {
+                "passYards": 0.04, "passTD": 4.0, "passInterceptions": -2.0,
+                "rushYards": 0.1, "rushTD": 6.0, "pointsPerReception": 1.0,
+                "receivingYards": 0.1, "receivingTD": 6.0, "fumbles": -2.0,
+            }
+
+        players_index = load_relevant_index() or {}
+        player_meta = players_index.get(player_id) or {}
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(player_id) or {}
+        player_team = player_meta.get("team", "")
+
+        # Reuse the years cache from api_player_details
+        global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
+        now = time.time()
+        if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
+            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+            _fresh_years: set = set()
+            for sf in stats_files:
+                bn = os.path.basename(sf)
+                if bn.startswith("sleeper_stats_s"):
+                    m = _re2.match(r'sleeper_stats_s(\d+)_w(\d+)', bn)
+                    if m:
+                        _fresh_years.add(int(m.group(1)))
+            _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
+            _PLAYER_DETAIL_YEARS_CACHE_TS = now
+        available_years = _PLAYER_DETAIL_YEARS_CACHE
+
+        game_logs_by_year = {}
+
+        # Process each available year
+        for season_year in sorted(available_years, reverse=True):  # Most recent first
+            game_logs = []
+
+            # Load schedule data for ALL weeks to show all games
+            schedule_by_week = {}
+            schedule_pattern = os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")
+            for schedule_file in glob.glob(schedule_pattern):
+                try:
+                    # Extract week from filename: schedule_s2024_w1_d2024-09-05.json
+                    filename = os.path.basename(schedule_file)
+                    week_num = int(filename.split('_w')[1].split('_')[0])
+
+                    with open(schedule_file, 'r') as f:
+                        games = json.load(f)
+                        # Ensure games is a list
+                        if isinstance(games, list) and week_num not in schedule_by_week:
+                            schedule_by_week[week_num] = games
+                except Exception as e:
+                    logger.warning("[api_player_game_logs] Error loading schedule %s: %s", schedule_file, e)
+                    continue
+
+            # Load all stats for this season into memory
+            stats_by_week = {}
+            stats_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")
+            week_files = glob.glob(stats_pattern)
+
+            for week_file in week_files:
+                try:
+                    basename = os.path.basename(week_file)
+                    # Extract week number from filename
+                    match = _re2.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    if match:
+                        week_num = int(match.group(2))
+                    else:
+                        continue
+
+                    with open(week_file, 'r') as f:
+                        week_stats = json.load(f)
+                        stats_by_week[week_num] = week_stats
+                except Exception:
+                    continue
+
+            # Check if player has ANY stats in this season
+            # Skip the season if player has no stats at all (didn't exist yet or retired)
+            player_has_stats_this_season = False
+            for week_stats in stats_by_week.values():
+                if player_id in week_stats:
+                    player_has_stats_this_season = True
+                    break
+
+            if not player_has_stats_this_season:
+                continue
+
+            # Now iterate through schedule and create game logs for ALL games
+            for week_num in sorted(schedule_by_week.keys()):
+                games = schedule_by_week[week_num]
+
+                # Ensure games is a list
+                if not isinstance(games, list):
+                    continue
+
+                # Find player's team game this week
+                opponent = ""
+                is_away = False
+                game_date = ""
+
+                for game in games:
+                    # Ensure game is a dict
+                    if not isinstance(game, dict):
+                        continue
+
+                    home_team = game.get("home", "")
+                    away_team = game.get("away", "")
+
+                    if player_team == home_team:
+                        opponent = away_team
+                        is_away = False
+                        game_date = game.get("gameDate", "")
+                        break
+                    elif player_team == away_team:
+                        opponent = home_team
+                        is_away = True
+                        game_date = game.get("gameDate", "")
+                        break
+
+                # Skip if player's team didn't have a game this week
+                if not opponent:
+                    continue
+
+                # Check if we have stats for this player this week
+                week_stats = stats_by_week.get(week_num, {})
+                stats = week_stats.get(player_id)
+
+                if stats:
+                    # Player has stats - calculate fantasy points using league scoring settings
+                    pts = 0.0
+
+                    # Base scoring
+                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
+                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
+                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
+                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
+                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
+                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
+                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
+                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
+                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
+
+                    # Yardage bonuses
+                    pass_yds = stats.get("pass_yd") or 0
+                    rush_yds = stats.get("rush_yd") or 0
+                    rec_yds = stats.get("rec_yd") or 0
+                    rush_rec_yds = rush_yds + rec_yds
+
+                    # Pass yardage bonuses
+                    if pass_yds >= 400:
+                        pts += scoring_settings.get("bonus_pass_yd_400", 0)
+                    elif pass_yds >= 300:
+                        pts += scoring_settings.get("bonus_pass_yd_300", 0)
+
+                    # Rush yardage bonuses
+                    if rush_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_yd_200", 0)
+                    elif rush_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_yd_100", 0)
+
+                    # Receiving yardage bonuses
+                    if rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rec_yd_200", 0)
+                    elif rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rec_yd_100", 0)
+
+                    # Combined rush/rec yardage bonuses
+                    if rush_rec_yds >= 200:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
+                    elif rush_rec_yds >= 100:
+                        pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
+
+                    game_log = {
+                        "week": week_num,
+                        "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": round(pts, 1),
+                        "stats": {
+                            "pass_yd": stats.get("pass_yd"),
+                            "pass_td": stats.get("pass_td"),
+                            "pass_int": stats.get("pass_int"),
+                            "rush_att": stats.get("rush_att"),
+                            "rush_yd": stats.get("rush_yd"),
+                            "rush_td": stats.get("rush_td"),
+                            "rec": stats.get("rec"),
+                            "rec_tgt": stats.get("rec_tgt"),
+                            "rec_yd": stats.get("rec_yd"),
+                            "rec_td": stats.get("rec_td"),
+                            "fum_lost": stats.get("fum_lost"),
+                        }
+                    }
+                else:
+                    # No stats - show game but with 0 points
+                    game_log = {
+                        "week": week_num,
+                        "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": 0.0,
+                        "stats": {
+                            "pass_yd": None,
+                            "pass_td": None,
+                            "pass_int": None,
+                            "rush_att": None,
+                            "rush_yd": None,
+                            "rush_td": None,
+                            "rec": None,
+                            "rec_tgt": None,
+                            "rec_yd": None,
+                            "rec_td": None,
+                            "fum_lost": None,
+                        }
+                    }
+
+                game_logs.append(game_log)
+
+            # Only add year if there are games
+            if game_logs:
+                # Sort game logs chronologically by date (earliest to latest)
+                game_logs.sort(key=lambda g: g.get("date", "") or "")
+                game_logs_by_year[season_year] = game_logs
+
+        return jsonify({"game_logs_by_year": game_logs_by_year})
+    except Exception:
+        logger.exception("[api_player_game_logs] Error")
+        return jsonify({"game_logs_by_year": {}})
 
 
 def clean_nan_for_json(obj):

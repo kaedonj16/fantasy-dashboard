@@ -4739,152 +4739,6 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
-      // ── Build Stats panel HTML ────────────────────────────────────────────
-      let statsHTML = '';
-      if (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0) {
-        statsHTML += `
-          <div class="player-modal-section">
-            <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
-        `;
-
-        // Sort years in descending order (most recent first)
-        const years = Object.keys(data.game_logs_by_year).sort((a, b) => b - a);
-
-        years.forEach((year, index) => {
-          const gameLogs = data.game_logs_by_year[year];
-          const isFirstYear = index === 0;
-
-          // Calculate season totals
-          let totalFantasyPts = 0;
-          let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
-          let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
-          let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
-          let totalFumLost = 0;
-
-          gameLogs.forEach(game => {
-            totalFantasyPts += game.fantasy_pts || 0;
-            const s = game.stats;
-            totalPassYd += s.pass_yd || 0;
-            totalPassTd += s.pass_td || 0;
-            totalPassInt += s.pass_int || 0;
-            totalRushAtt += s.rush_att || 0;
-            totalRushYd += s.rush_yd || 0;
-            totalRushTd += s.rush_td || 0;
-            totalRecTgt += s.rec_tgt || 0;
-            totalRec += s.rec || 0;
-            totalRecYd += s.rec_yd || 0;
-            totalRecTd += s.rec_td || 0;
-            totalFumLost += s.fum_lost || 0;
-          });
-
-          // Build season summary for header
-          const seasonSummaryParts = [];
-          seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
-          if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
-          if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
-          if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
-          const seasonSummary = seasonSummaryParts.join(' • ');
-
-          statsHTML += `
-            <div class="game-log-year-section">
-              <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
-                <div class="game-log-year-header-main">
-                  <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
-                  <span class="game-log-year-title">${year} Season</span>
-                </div>
-              </div>
-              <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
-                <table class="game-log-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Opp</th>
-                      <th>Pts</th>
-                      <th>Pass Yd</th>
-                      <th>Pass TD</th>
-                      <th>INT</th>
-                      <th>Rush Att</th>
-                      <th>Rush Yd</th>
-                      <th>Rush TD</th>
-                      <th>Tgt</th>
-                      <th>Rec</th>
-                      <th>Rec Yd</th>
-                      <th>Rec TD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-          `;
-
-          gameLogs.forEach(game => {
-            const stats = game.stats;
-
-            // Format date: 20240908 -> 9/8
-            let dateStr = game.date || '';
-            if (dateStr.length === 8) {
-              const month = parseInt(dateStr.substring(4, 6));
-              const day = parseInt(dateStr.substring(6, 8));
-              dateStr = `${month}/${day}`;
-            }
-
-            // Check if player has any stats at all
-            const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
-                               stats.rec != null || stats.rec_tgt != null;
-
-            const val = (v) => v != null && v > 0 ? v : '—';
-            const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
-
-            statsHTML += `
-              <tr class="${rowClass}">
-                <td>${dateStr}</td>
-                <td class="game-log-table-opp">${game.opponent || '—'}</td>
-                <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
-                <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
-                <td>${val(stats.pass_td)}</td>
-                <td>${val(stats.pass_int)}</td>
-                <td>${val(stats.rush_att)}</td>
-                <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
-                <td>${val(stats.rush_td)}</td>
-                <td>${val(stats.rec_tgt)}</td>
-                <td>${val(stats.rec)}</td>
-                <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
-                <td>${val(stats.rec_td)}</td>
-              </tr>
-            `;
-          });
-
-          const valTotal = (v) => v != null && v > 0 ? v : '—';
-
-          // Add season totals row in table format (inside the table)
-          statsHTML += `
-                  </tbody>
-                  <tfoot>
-                    <tr class="game-log-table-total">
-                      <td><strong>Total</strong></td>
-                      <td><strong>${gameLogs.length}G</strong></td>
-                      <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
-                      <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalPassTd)}</strong></td>
-                      <td><strong>${valTotal(totalPassInt)}</strong></td>
-                      <td><strong>${valTotal(totalRushAtt)}</strong></td>
-                      <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalRushTd)}</strong></td>
-                      <td><strong>${valTotal(totalRecTgt)}</strong></td>
-                      <td><strong>${valTotal(totalRec)}</strong></td>
-                      <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalRecTd)}</strong></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          `;
-        });
-
-        statsHTML += `</div>`;
-      } else {
-        statsHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No game logs available.</div></div>';
-      }
-
       // ── Build Adv Metrics panel HTML ──────────────────────────────────────
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
@@ -4920,7 +4774,12 @@ function openPlayerModal(playerId, playerName) {
       // ── Assemble 5 panels into modal body ─────────────────────────────────
       modalBody.innerHTML = `
         <div class="pm-panel pm-panel-active" id="pm-panel-overview">${overviewHTML}</div>
-        <div class="pm-panel" id="pm-panel-stats">${statsHTML}</div>
+        <div class="pm-panel" id="pm-panel-stats">
+          <div class="player-modal-loading" style="padding:40px 0;">
+            <div class="loading-spinner"></div>
+            <div style="font-size:13px;margin-top:8px;color:var(--text-muted);">Loading stats…</div>
+          </div>
+        </div>
         <div class="pm-panel" id="pm-panel-metrics">${metricsHTML}</div>
         <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
         <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
@@ -5167,6 +5026,35 @@ function pmSwitchTab(tab) {
       });
   }
 
+  // ── Lazy-load Stats tab ──────────────────────────────────────────────────
+  if (tab === 'stats' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    const pathParts2 = window.location.pathname.split('/').filter(p => p);
+    const _platform = pathParts2[0] || 'sleeper';
+    const _season   = pathParts2[1] || new Date().getFullYear();
+    const _leagueId = pathParts2[2] || null;
+    const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+    const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+    let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+    if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+    fetch(logsUrl)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const logsByYear = data.game_logs_by_year || {};
+        if (!Object.keys(logsByYear).length) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
+          return;
+        }
+        panel.innerHTML = _buildStatsHTML(logsByYear);
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load stats.</div></div>';
+        }
+      });
+  }
+
   // ── Lazy-load Trades tab ─────────────────────────────────────────────────
   if (tab === 'trades' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
@@ -5335,6 +5223,153 @@ function _buildBkTabHTML(data, scoreColor) {
   }
 
   return html;
+}
+
+// ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
+function _buildStatsHTML(game_logs_by_year) {
+  let statsHTML = '';
+  if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
+    statsHTML += `
+      <div class="player-modal-section">
+        <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+    `;
+
+    // Sort years in descending order (most recent first)
+    const years = Object.keys(game_logs_by_year).sort((a, b) => b - a);
+
+    years.forEach((year, index) => {
+      const gameLogs = game_logs_by_year[year];
+      const isFirstYear = index === 0;
+
+      // Calculate season totals
+      let totalFantasyPts = 0;
+      let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
+      let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
+      let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
+      let totalFumLost = 0;
+
+      gameLogs.forEach(game => {
+        totalFantasyPts += game.fantasy_pts || 0;
+        const s = game.stats;
+        totalPassYd += s.pass_yd || 0;
+        totalPassTd += s.pass_td || 0;
+        totalPassInt += s.pass_int || 0;
+        totalRushAtt += s.rush_att || 0;
+        totalRushYd += s.rush_yd || 0;
+        totalRushTd += s.rush_td || 0;
+        totalRecTgt += s.rec_tgt || 0;
+        totalRec += s.rec || 0;
+        totalRecYd += s.rec_yd || 0;
+        totalRecTd += s.rec_td || 0;
+        totalFumLost += s.fum_lost || 0;
+      });
+
+      // Build season summary for header
+      const seasonSummaryParts = [];
+      seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
+      if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
+      if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
+      if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
+      const seasonSummary = seasonSummaryParts.join(' • ');
+
+      statsHTML += `
+        <div class="game-log-year-section">
+          <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
+            <div class="game-log-year-header-main">
+              <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
+              <span class="game-log-year-title">${year} Season</span>
+            </div>
+          </div>
+          <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
+            <table class="game-log-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opp</th>
+                  <th>Pts</th>
+                  <th>Pass Yd</th>
+                  <th>Pass TD</th>
+                  <th>INT</th>
+                  <th>Rush Att</th>
+                  <th>Rush Yd</th>
+                  <th>Rush TD</th>
+                  <th>Tgt</th>
+                  <th>Rec</th>
+                  <th>Rec Yd</th>
+                  <th>Rec TD</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      gameLogs.forEach(game => {
+        const stats = game.stats;
+
+        // Format date: 20240908 -> 9/8
+        let dateStr = game.date || '';
+        if (dateStr.length === 8) {
+          const month = parseInt(dateStr.substring(4, 6));
+          const day = parseInt(dateStr.substring(6, 8));
+          dateStr = `${month}/${day}`;
+        }
+
+        // Check if player has any stats at all
+        const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
+                           stats.rec != null || stats.rec_tgt != null;
+
+        const val = (v) => v != null && v > 0 ? v : '—';
+        const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+
+        statsHTML += `
+          <tr class="${rowClass}">
+            <td>${dateStr}</td>
+            <td class="game-log-table-opp">${game.opponent || '—'}</td>
+            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+            <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
+            <td>${val(stats.pass_td)}</td>
+            <td>${val(stats.pass_int)}</td>
+            <td>${val(stats.rush_att)}</td>
+            <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
+            <td>${val(stats.rush_td)}</td>
+            <td>${val(stats.rec_tgt)}</td>
+            <td>${val(stats.rec)}</td>
+            <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
+            <td>${val(stats.rec_td)}</td>
+          </tr>
+        `;
+      });
+
+      const valTotal = (v) => v != null && v > 0 ? v : '—';
+
+      // Add season totals row in table format (inside the table)
+      statsHTML += `
+              </tbody>
+              <tfoot>
+                <tr class="game-log-table-total">
+                  <td><strong>Total</strong></td>
+                  <td><strong>${gameLogs.length}G</strong></td>
+                  <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
+                  <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalPassTd)}</strong></td>
+                  <td><strong>${valTotal(totalPassInt)}</strong></td>
+                  <td><strong>${valTotal(totalRushAtt)}</strong></td>
+                  <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRushTd)}</strong></td>
+                  <td><strong>${valTotal(totalRecTgt)}</strong></td>
+                  <td><strong>${valTotal(totalRec)}</strong></td>
+                  <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRecTd)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    });
+
+    statsHTML += `</div>`;
+  }
+  return statsHTML || '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
 }
 
 function getRoleGrade(roleScore) {
