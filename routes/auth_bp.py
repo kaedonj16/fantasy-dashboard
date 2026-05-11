@@ -25,7 +25,7 @@ def api_identify():
     Used by the subscribe flow so guests can log in without a league context.
     Returns JSON {ok: true, username, user_id} or {error: str}.
     """
-    from dashboard_services.api import get_sleeper_user
+    from dashboard_services.api import get_sleeper_user_by_username as get_sleeper_user
     data = request.get_json(force=True) or {}
     username = str(data.get("username") or "").strip()
     if not username:
