@@ -57,6 +57,45 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── Login / subscribe gate ────────────────────────────────────────────────────
+/**
+ * Render a sign-in or subscribe prompt inside a container element.
+ * @param {string|Element} target  - element ID or DOM element
+ * @param {object} opts            - { title, description, feature }
+ */
+function showLoginGate(target, opts) {
+  const el = typeof target === 'string' ? document.getElementById(target) : target;
+  if (!el) return;
+  const ctx = window.__brctx || {};
+  const hasLeague = ctx.leagueId && ctx.leagueId !== 'None' && ctx.leagueId !== '';
+  opts = opts || {};
+
+  if (!ctx.is_logged_in) {
+    const signinBtn = hasLeague
+      ? `<button class="login-gate-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
+      : `<a class="login-gate-btn" href="/">Get Started</a>`;
+    el.innerHTML = `
+      <div class="login-gate">
+        <div class="login-gate-icon">🔐</div>
+        <div class="login-gate-title">${opts.title || 'Sign in to continue'}</div>
+        <div class="login-gate-desc">${opts.description || 'Enter your Sleeper username to see personalized data for your team.'}</div>
+        ${signinBtn}
+      </div>`;
+  } else if (!ctx.isPremium) {
+    const pricingUrl = hasLeague
+      ? `/${ctx.platform}/${ctx.season}/${ctx.leagueId}/pricing`
+      : '/pricing';
+    el.innerHTML = `
+      <div class="login-gate">
+        <div class="login-gate-icon">⭐</div>
+        <div class="login-gate-title">${opts.title || 'Premium Feature'}</div>
+        <div class="login-gate-desc">${opts.description || 'Subscribe to unlock this feature and get the full BR Fantasy experience.'}</div>
+        <a class="login-gate-btn" href="${pricingUrl}">Subscribe</a>
+        <a class="login-gate-btn-secondary" href="${pricingUrl}">View Plans</a>
+      </div>`;
+  }
+}
+
 // ── Data freshness chip ───────────────────────────────────────────────────────
 (function () {
   var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours — matches server CACHE_TTL

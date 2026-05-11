@@ -13915,3 +13915,58 @@ img, svg, canvas {
 .pm-trade-asset.pm-focus { font-weight: 700; color: var(--accent); }
 .pm-trade-asset.pm-pick { color: var(--text-muted); font-style: italic; font-size: 12px; }
 #cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }
+
+/* Login / subscribe gate card */
+.login-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+}
+.login-gate-icon {
+  font-size: 28px;
+  opacity: 0.6;
+  line-height: 1;
+}
+.login-gate-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.login-gate-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 260px;
+  line-height: 1.5;
+}
+.login-gate-btn {
+  margin-top: 4px;
+  padding: 9px 22px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: opacity 0.12s;
+}
+.login-gate-btn:hover { opacity: 0.88; }
+.login-gate-btn-secondary {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.12s;
+}
+.login-gate-btn-secondary:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }

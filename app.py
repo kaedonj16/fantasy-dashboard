@@ -613,6 +613,7 @@ BASE_HTML = """
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
+      window.__brctx = {is_logged_in:{is_logged_in_js},isPremium:{is_premium_js},leagueId:"{league_id_js}",platform:"{platform_js}",season:{season_js}};
       {adsense_init}
 
       // Cookie consent handling
@@ -1490,6 +1491,11 @@ def render_page(
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
+        is_logged_in_js="true" if user_id else "false",
+        is_premium_js="true" if is_premium else "false",
+        league_id_js=league_id or "",
+        platform_js=platform or "sleeper",
+        season_js=season or "null",
     )
 
 

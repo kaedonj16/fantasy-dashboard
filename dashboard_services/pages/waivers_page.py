@@ -128,11 +128,21 @@ function wvLoad() {{
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{
+      if (!d.positions || !Object.keys(d.positions).length) {{
+        showLoginGate('wvStartSit', {{
+          title: 'Sign in to see your lineup',
+          description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
+        }});
+        return;
+      }}
       wvStartSitData = d;
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
       wvRenderStartSit();
     }})
-    .catch(() => {{ document.getElementById('wvStartSit').innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Log in to see your lineup options</div>'; }});
+    .catch(() => showLoginGate('wvStartSit', {{
+      title: 'Sign in to see your lineup',
+      description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
+    }}));
 }}
 
 function wvRenderWaivers() {{
