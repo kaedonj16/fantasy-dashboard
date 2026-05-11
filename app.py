@@ -9082,6 +9082,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
       .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .pr-trend-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        line-height: 1;
+        flex-shrink: 0;
+        vertical-align: middle;
+      }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -9131,6 +9144,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
+      var prTrends = {};   // player_id → {class, label, color, slope_pct_month}
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
@@ -9482,6 +9496,17 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (!p.is_rookie && prIsProspect(p.id)) badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
+          const _trend = prTrends[p.id];
+          const _trendIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗' };
+          if (_trend && _trendIcons[_trend.class]) {
+            const _tc = _trend.color || '#94a3b8';
+            const _ti = _trendIcons[_trend.class];
+            const _slopeTxt = _trend.slope_pct_month != null
+              ? ' ' + (_trend.slope_pct_month >= 0 ? '+' : '') + _trend.slope_pct_month.toFixed(1) + '%/mo'
+              : '';
+            badges += `<span class="pr-trend-badge" style="background:${_tc}18;border:1px solid ${_tc}40;color:${_tc};" title="${_trend.label}${_slopeTxt}">${_ti}</span>`;
+          }
+
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
           if (rankChange != null && rankChange !== 0) {
@@ -9634,9 +9659,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       Promise.all([
         fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
         fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
-          .then(r => r.json()).catch(() => ({}))
-      ]).then(([resp, indicators]) => {
+          .then(r => r.json()).catch(() => ({})),
+        fetch('/api/player-trends').then(r => r.json()).catch(() => ({}))
+      ]).then(([resp, indicators, trends]) => {
         prIndicators = indicators || {};
+        prTrends = trends || {};
         // Support both old (array) and new (object with players + tier_thresholds) format
         const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
         prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
@@ -11716,6 +11743,60 @@ def _sanitize_for_json(obj):
     return obj
 
 
+_TREND_CACHE: dict = {}   # {"data": {...}, "ts": float}
+_TREND_CACHE_TTL = 3600  # 1 hour
+
+@app.route("/api/player-trends")
+def api_player_trends():
+    """Batch value-trend classifications for all players (cached 1 h)."""
+    import time
+    cached = _TREND_CACHE.get("data")
+    if cached and time.time() - _TREND_CACHE.get("ts", 0) < _TREND_CACHE_TTL:
+        return jsonify(cached)
+
+    try:
+        from data_building.player_value_history import classify_value_trend
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_id, as_of_date, COALESCE(value, 0) AS value
+                FROM player_value_history
+                WHERE source = 'model'
+                  AND as_of_date >= CURRENT_DATE - INTERVAL '365 days'
+                ORDER BY player_id, as_of_date
+                """
+            ).fetchall()
+
+        # Group by player_id
+        history_by_player: dict[str, list] = {}
+        for row in rows:
+            pid = str(row["player_id"])
+            history_by_player.setdefault(pid, []).append({
+                "as_of_date": str(row["as_of_date"]),
+                "value": float(row["value"]),
+            })
+
+        result = {}
+        for pid, hist in history_by_player.items():
+            t = classify_value_trend(hist)
+            if t["class"] != "unknown":
+                result[pid] = {
+                    "class": t["class"],
+                    "label": t["label"],
+                    "color": t["color"],
+                    "slope_pct_month": t["slope_pct_month"],
+                }
+
+        _TREND_CACHE["data"] = result
+        _TREND_CACHE["ts"] = time.time()
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("[api_player_trends] Error")
+        return jsonify({}), 500
+
+
 @app.route("/api/players")
 def api_players():
     """Compact player list for comparison search. No league context required.
@@ -12819,6 +12900,10 @@ def api_player_details(player_id: str):
             league_type=_modal_lt, league_size=_modal_ls,
         )
 
+        # Classify value trajectory
+        from data_building.player_value_history import classify_value_trend
+        value_trend = classify_value_trend(value_history)
+
         game_logs_by_year = {}  # lazy-loaded via /api/player-game-logs/
 
         # Try to attach prospect data — run unconditionally since game_logs_by_year is now always empty
@@ -12927,6 +13012,7 @@ def api_player_details(player_id: str):
                 "years_exp": player_meta.get("years_exp"),
             },
             "value_history": value_history,
+            "value_trend": value_trend,
             "game_logs_by_year": game_logs_by_year,
             "prospect_data": prospect_data,
         }

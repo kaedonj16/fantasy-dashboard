@@ -4701,6 +4701,26 @@ function openPlayerModal(playerId, playerName) {
       const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
+      // ── Value trend classification badge ──────────────────────────────────
+      const vt = data.value_trend || {};
+      const vtClass = vt.class || 'unknown';
+      const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
+      const vtIcon = vtIcons[vtClass] || '';
+      const vtTrendBadge = (vtClass && vtClass !== 'unknown') ? `
+        <div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:${vt.color}12;border:1px solid ${vt.color}30;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:15px;font-weight:800;color:${vt.color};">${vtIcon}</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:${vt.color};">${vt.label} Value</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${vt.description || ''}</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Trend / Mo</div>
+            <div style="font-size:13px;font-weight:700;color:${(vt.slope_pct_month||0) >= 0 ? '#10b981' : '#ef4444'};">${(vt.slope_pct_month||0) >= 0 ? '+' : ''}${(vt.slope_pct_month||0).toFixed(1)}%</div>
+          </div>
+        </div>` : '';
+
       // ── Build Overview panel HTML ─────────────────────────────────────────
       let overviewHTML = `
         <div class="pm-hero-row">
@@ -4714,6 +4734,7 @@ function openPlayerModal(playerId, playerName) {
           </div>
           ${thirdValueCard}
         </div>
+        ${vtTrendBadge}
       `;
 
       if (hasChart) {

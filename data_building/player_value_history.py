@@ -585,3 +585,110 @@ def get_top_movers(
         "risers": risers,
         "fallers": fallers,
     }
+
+
+def classify_value_trend(value_history: list[dict]) -> dict:
+    """
+    Classify a player's trade value trajectory from their value history.
+
+    Returns a dict with: class, label, description, color,
+    slope_pct_month, volatility_pct, recent_slope_pct, data_points.
+    """
+    if not value_history or len(value_history) < 8:
+        return {
+            "class": "unknown", "label": "—",
+            "description": "Not enough history to classify",
+            "color": "#9ca3af",
+            "slope_pct_month": 0.0, "volatility_pct": 0.0,
+            "recent_slope_pct": 0.0, "data_points": len(value_history),
+        }
+
+    sorted_h = sorted(value_history, key=lambda x: str(x.get("as_of_date") or ""))
+    values = [float(x.get("value") or 0) for x in sorted_h]
+
+    mean_val = sum(values) / len(values)
+    if mean_val < 1:
+        return {
+            "class": "unknown", "label": "—",
+            "description": "Insufficient value data",
+            "color": "#9ca3af",
+            "slope_pct_month": 0.0, "volatility_pct": 0.0,
+            "recent_slope_pct": 0.0, "data_points": len(values),
+        }
+
+    n = len(values)
+
+    def _linreg_slope(vals: list[float]) -> float:
+        """Return slope (value units per data point) via OLS."""
+        m = len(vals)
+        if m < 2:
+            return 0.0
+        x_mean = (m - 1) / 2.0
+        v_mean = sum(vals) / m
+        num = sum((i - x_mean) * (v - v_mean) for i, v in enumerate(vals))
+        den = sum((i - x_mean) ** 2 for i in range(m))
+        return num / den if den else 0.0
+
+    # Overall slope over full window → % per month (≈30 data points)
+    overall_slope = _linreg_slope(values)
+    slope_pct_month = overall_slope * 30 / mean_val * 100
+
+    # Recent slope: last ~30 points
+    recent_vals = values[-min(30, n):]
+    recent_slope_raw = _linreg_slope(recent_vals)
+    r_mean = sum(recent_vals) / len(recent_vals) if recent_vals else mean_val
+    recent_slope_pct = recent_slope_raw * 30 / r_mean * 100 if r_mean else 0.0
+
+    # Volatility: RMS of day-to-day changes as % of mean
+    changes = [values[i] - values[i - 1] for i in range(1, n)]
+    rms_change = (sum(c ** 2 for c in changes) / len(changes)) ** 0.5 if changes else 0.0
+    volatility_pct = rms_change / mean_val * 100
+
+    # ── Classification ────────────────────────────────────────────────────────
+    VOLATILE_THRESH = 6.0   # RMS daily change > 6 % of mean → volatile
+    TREND_THRESH    = 4.0   # slope > 4 % per month → meaningful trend
+    WEAK_THRESH     = 2.0   # slope > 2 % → weak trend (recovering boundary)
+
+    if volatility_pct > VOLATILE_THRESH:
+        cls   = "volatile"
+        label = "Volatile"
+        desc  = "Value swings sharply — high uncertainty in trades"
+        color = "#f59e0b"
+    elif slope_pct_month > TREND_THRESH:
+        if recent_slope_pct >= -WEAK_THRESH:
+            cls   = "rising"
+            label = "Rising"
+            desc  = "Sustained upward trend — buy window may be closing"
+            color = "#10b981"
+        else:
+            cls   = "peaked"
+            label = "Peaked"
+            desc  = "Reached peak value; momentum reversing — sell-high candidate"
+            color = "#8b5cf6"
+    elif slope_pct_month < -TREND_THRESH:
+        if recent_slope_pct >= WEAK_THRESH:
+            cls   = "recovering"
+            label = "Recovering"
+            desc  = "Was declining but showing recent upward momentum — buy-low candidate"
+            color = "#06b6d4"
+        else:
+            cls   = "declining"
+            label = "Declining"
+            desc  = "Consistent downward trend — sell or monitor closely"
+            color = "#ef4444"
+    else:
+        cls   = "stable"
+        label = "Stable"
+        desc  = "Steady value — low trade volatility, reliable hold"
+        color = "#3b82f6"
+
+    return {
+        "class":             cls,
+        "label":             label,
+        "description":       desc,
+        "color":             color,
+        "slope_pct_month":   round(slope_pct_month, 1),
+        "volatility_pct":    round(volatility_pct, 1),
+        "recent_slope_pct":  round(recent_slope_pct, 1),
+        "data_points":       n,
+    }
