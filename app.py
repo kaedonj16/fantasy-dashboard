@@ -613,7 +613,7 @@ BASE_HTML = """
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
-      window.__brctx = {is_logged_in:{is_logged_in_js},isPremium:{is_premium_js},leagueId:"{league_id_js}",platform:"{platform_js}",season:{season_js}};
+      window.__brctx = {{is_logged_in:{is_logged_in_js},isPremium:{is_premium_js},leagueId:"{league_id_js}",platform:"{platform_js}",season:{season_js}}};
       {adsense_init}
 
       // Cookie consent handling
