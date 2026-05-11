@@ -130,11 +130,11 @@ async function initiatePurchase(type, btn) {
   // Prompt login before hitting the API
   const ctx = window.__brctx || {};
   if (!ctx.is_logged_in) {
-    const modal = document.getElementById('signinModal');
-    if (modal) {
-      modal.style.display = 'flex';
+    const navModal = document.getElementById('signinModal');
+    if (navModal) {
+      navModal.style.display = 'flex';
     } else {
-      window.location.href = '/';
+      _showIdentifyModal(type, btn);
     }
     return;
   }
@@ -208,4 +208,72 @@ async function protectFeature(featureName, userId, leagueId, callbackIfPremium) 
   }
 
   return hasPremium;
+}
+
+/**
+ * Self-contained "enter username → subscribe" modal for guest pages
+ * that don't have the nav signin modal in the DOM.
+ */
+function _showIdentifyModal(planType, triggerBtn) {
+  const existing = document.getElementById('_identifyModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_identifyModal';
+  modal.className = 'signin-modal-overlay';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="signin-modal-box">
+      <h3 class="signin-modal-title">Sign in to subscribe</h3>
+      <p class="signin-modal-sub">Enter your Sleeper username to identify your account, then we'll take you to checkout.</p>
+      <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" autocomplete="username" autofocus>
+      <div id="_identifyError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
+      <div class="signin-modal-actions">
+        <button class="signin-modal-submit" id="_identifySubmit">Continue to Checkout</button>
+        <button class="signin-modal-cancel" onclick="document.getElementById('_identifyModal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const input = document.getElementById('_identifyInput');
+  const submitBtn = document.getElementById('_identifySubmit');
+  const errorEl = document.getElementById('_identifyError');
+
+  async function doIdentify() {
+    const username = (input.value || '').trim();
+    if (!username) { input.focus(); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Checking…';
+    errorEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        errorEl.textContent = data.error || 'Could not verify username.';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue to Checkout';
+        return;
+      }
+      // Identified — update context and proceed to checkout
+      if (window.__brctx) window.__brctx.is_logged_in = true;
+      modal.remove();
+      initiatePurchase(planType, triggerBtn);
+    } catch (e) {
+      errorEl.textContent = 'Network error. Please try again.';
+      errorEl.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Continue to Checkout';
+    }
+  }
+
+  submitBtn.addEventListener('click', doIdentify);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doIdentify(); });
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }

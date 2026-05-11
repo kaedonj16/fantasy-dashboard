@@ -17,6 +17,30 @@ auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
 
 
+# ── Identify by username only (no league required) ────────────────────────────
+
+@auth_bp.route("/api/identify", methods=["POST"])
+def api_identify():
+    """Set viewer session from a Sleeper username alone — no league needed.
+    Used by the subscribe flow so guests can log in without a league context.
+    Returns JSON {ok: true, username, user_id} or {error: str}.
+    """
+    from dashboard_services.api import get_sleeper_user
+    data = request.get_json(force=True) or {}
+    username = str(data.get("username") or "").strip()
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    try:
+        user = get_sleeper_user(username)
+    except Exception:
+        return jsonify({"error": "Could not reach Sleeper. Try again."}), 503
+    if not user:
+        return jsonify({"error": "Username not found on Sleeper"}), 404
+    session["viewer_username"] = user.get("username") or username
+    session["viewer_user_id"] = str(user.get("user_id") or "")
+    return jsonify({"ok": True, "username": session["viewer_username"], "user_id": session["viewer_user_id"]})
+
+
 # ── Health probe ──────────────────────────────────────────────────────────────
 
 @auth_bp.route("/health")
