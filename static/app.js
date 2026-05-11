@@ -4658,6 +4658,13 @@ function openPlayerModal(playerId, playerName) {
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
       const ageNum = parseFloat(data.age);
       if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
+      
+      // ── Value trend classification (small meta pill) ──────────────────────
+      const vt = data.value_trend || {};
+      const vtClass = vt.class || 'unknown';
+      const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
+      const vtIcon = vtIcons[vtClass] || '';
+      
       if (vtClass && vtClass !== 'unknown' && vtIcon) {
         const _slopeTxt = vt.slope_pct_month != null
           ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
@@ -4747,11 +4754,6 @@ function openPlayerModal(playerId, playerName) {
       const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      // ── Value trend classification (small meta pill) ──────────────────────
-      const vt = data.value_trend || {};
-      const vtClass = vt.class || 'unknown';
-      const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
-      const vtIcon = vtIcons[vtClass] || '';
       const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
