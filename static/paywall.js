@@ -127,6 +127,18 @@ function showPaywall(feature) {
 }
 
 async function initiatePurchase(type, btn) {
+  // Prompt login before hitting the API
+  const ctx = window.__brctx || {};
+  if (!ctx.is_logged_in) {
+    const modal = document.getElementById('signinModal');
+    if (modal) {
+      modal.style.display = 'flex';
+    } else {
+      window.location.href = '/';
+    }
+    return;
+  }
+
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] || '';
 
