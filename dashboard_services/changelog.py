@@ -5,6 +5,36 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-11",
+        "tag": "new",
+        "text": "Start/Sit Advisor: Weekly lineup recommendations on the Waivers page. Shows your starters, FLEX slot picks, and bench players ranked by projected points with opponent matchup adjustments. Injury status (OUT/Q/D) and bye week flags included.",
+        "link": "/waivers"
+    },
+    {
+        "date": "2026-05-11",
+        "tag": "new",
+        "text": "Waiver Wire: Ranked free agent targets on the Waivers page. Filter by position and see pickup signals (Breakout, Rising, Value) with dynasty value scores.",
+        "link": "/waivers"
+    },
+    {
+        "date": "2026-05-11",
+        "tag": "feature",
+        "text": "Player Modal: Tabbed layout with Overview, Stats, Adv Metrics, Breakout, and Trades — each tab loads on demand so the modal opens significantly faster.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-05-11",
+        "tag": "feature",
+        "text": "Prospect Tab: Rookie players who haven't played an NFL game yet get a dedicated Prospect tab in the player modal showing component scores, draft capital, and historical comparables.",
+        "link": "/prospects"
+    },
+    {
+        "date": "2026-05-11",
+        "tag": "feature",
+        "text": "Trade Database: Search with multiple players on each side of a trade to find exact multi-player packages from real dynasty leagues.",
+        "link": "/trade-database"
+    },
+    {
         "date": "2026-05-02",
         "tag": "new",
         "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick — ADP value, positional need, and best player available. View by team (accordion) or by round with prev/next pagination. ADP sourced from real drafts in similar leagues when available.",
