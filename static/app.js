@@ -4523,6 +4523,7 @@ function openPlayerModal(playerId, playerName) {
       <button class="pm-tab active" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
       <button class="pm-tab" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
       <button class="pm-tab" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
+      <button class="pm-tab" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
       <button class="pm-tab" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
       <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
@@ -4715,10 +4716,6 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
-      if (isRookieWithProspectData) {
-        overviewHTML += `<hr class="pm-section-divider"><div>${pdColHTML}</div>`;
-      }
-
       if (hasChart) {
         overviewHTML += `
           <hr class="pm-section-divider">
@@ -4771,7 +4768,11 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
 
-      // ── Assemble 5 panels into modal body ─────────────────────────────────
+      // ── Build Prospect panel HTML ─────────────────────────────────────────
+      const prospectPanelHTML = isRookieWithProspectData ? pdColHTML
+        : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No prospect data available.</div></div>';
+
+      // ── Assemble panels into modal body ───────────────────────────────────
       modalBody.innerHTML = `
         <div class="pm-panel pm-panel-active" id="pm-panel-overview">${overviewHTML}</div>
         <div class="pm-panel" id="pm-panel-stats">
@@ -4781,6 +4782,7 @@ function openPlayerModal(playerId, playerName) {
           </div>
         </div>
         <div class="pm-panel" id="pm-panel-metrics">${metricsHTML}</div>
+        <div class="pm-panel" id="pm-panel-prospect">${prospectPanelHTML}</div>
         <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
         <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
       `;
@@ -4795,6 +4797,8 @@ function openPlayerModal(playerId, playerName) {
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
       if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
+      const tabProspect = document.getElementById('pmTabProspect');
+      if (tabProspect) tabProspect.style.display = isRookieWithProspectData ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
 
@@ -5492,7 +5496,7 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 20, 100), display: v.toFixed(2) });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
@@ -5529,7 +5533,7 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 20, 100), display: v.toFixed(2) });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
     }
     if (metrics.pass_block_rate != null) {
       const v = metrics.pass_block_rate;
