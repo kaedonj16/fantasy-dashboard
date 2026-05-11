@@ -9082,19 +9082,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
       .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
-      .pr-trend-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        font-weight: 700;
-        width: 18px;
-        height: 18px;
-        border-radius: 4px;
-        line-height: 1;
-        flex-shrink: 0;
-        vertical-align: middle;
-      }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -9495,17 +9482,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           else if (p.is_rookie) badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
           if (!p.is_rookie && prIsProspect(p.id)) badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
-
-          const _trend = prTrends[p.id];
-          const _trendIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗' };
-          if (_trend && _trendIcons[_trend.class]) {
-            const _tc = _trend.color || '#94a3b8';
-            const _ti = _trendIcons[_trend.class];
-            const _slopeTxt = _trend.slope_pct_month != null
-              ? ' ' + (_trend.slope_pct_month >= 0 ? '+' : '') + _trend.slope_pct_month.toFixed(1) + '%/mo'
-              : '';
-            badges += `<span class="pr-trend-badge" style="background:${_tc}18;border:1px solid ${_tc}40;color:${_tc};" title="${_trend.label}${_slopeTxt}">${_ti}</span>`;
-          }
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';

@@ -4619,6 +4619,12 @@ function openPlayerModal(playerId, playerName) {
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
       const ageNum = parseFloat(data.age);
       if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
+      if (vtClass && vtClass !== 'unknown' && vtIcon) {
+        const _slopeTxt = vt.slope_pct_month != null
+          ? ' ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
+          : '';
+        metaParts.push(`<span style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;" title="${vt.label} value${_slopeTxt}">${vtIcon} ${vt.label}</span>`);
+      }
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
       // Update headshot
@@ -4701,25 +4707,12 @@ function openPlayerModal(playerId, playerName) {
       const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      // ── Value trend classification badge ──────────────────────────────────
+      // ── Value trend classification (small meta pill) ──────────────────────
       const vt = data.value_trend || {};
       const vtClass = vt.class || 'unknown';
       const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
       const vtIcon = vtIcons[vtClass] || '';
-      const vtTrendBadge = (vtClass && vtClass !== 'unknown') ? `
-        <div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:${vt.color}12;border:1px solid ${vt.color}30;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:15px;font-weight:800;color:${vt.color};">${vtIcon}</span>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:${vt.color};">${vt.label} Value</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${vt.description || ''}</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Trend / Mo</div>
-            <div style="font-size:13px;font-weight:700;color:${(vt.slope_pct_month||0) >= 0 ? '#10b981' : '#ef4444'};">${(vt.slope_pct_month||0) >= 0 ? '+' : ''}${(vt.slope_pct_month||0).toFixed(1)}%</div>
-          </div>
-        </div>` : '';
+      const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
       let overviewHTML = `
@@ -4734,7 +4727,6 @@ function openPlayerModal(playerId, playerName) {
           </div>
           ${thirdValueCard}
         </div>
-        ${vtTrendBadge}
       `;
 
       if (hasChart) {
