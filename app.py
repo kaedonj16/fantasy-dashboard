@@ -873,8 +873,12 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
 _PLAYERS_INDEX_GLOBAL = None
+_RELEVANT_INDEX_GLOBAL = None
+_VALUE_TABLE_GLOBAL = None
 _players_global_lock = threading.Lock()
 _players_index_lock = threading.Lock()
+_relevant_index_lock = threading.Lock()
+_value_table_lock = threading.Lock()
 
 
 def get_players_global():
@@ -895,10 +899,41 @@ def get_players_index_global():
     return _PLAYERS_INDEX_GLOBAL
 
 
+def get_relevant_index_global():
+    global _RELEVANT_INDEX_GLOBAL
+    if _RELEVANT_INDEX_GLOBAL is None:
+        with _relevant_index_lock:
+            if _RELEVANT_INDEX_GLOBAL is None:
+                from utils.utils import load_relevant_index as _lri
+                _RELEVANT_INDEX_GLOBAL = _lri() or {}
+    return _RELEVANT_INDEX_GLOBAL
+
+
+def get_value_table_global():
+    global _VALUE_TABLE_GLOBAL
+    if _VALUE_TABLE_GLOBAL is None:
+        with _value_table_lock:
+            if _VALUE_TABLE_GLOBAL is None:
+                from utils.utils import load_model_value_table as _lmvt
+                _VALUE_TABLE_GLOBAL = _lmvt() or []
+    return _VALUE_TABLE_GLOBAL
+
+
+def _invalidate_value_table_cache() -> None:
+    """Clear the in-memory value table cache so the next request reloads from disk."""
+    global _VALUE_TABLE_GLOBAL
+    with _value_table_lock:
+        _VALUE_TABLE_GLOBAL = None
+
+
 def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
+    def _build_and_invalidate(s, w):
+        build_daily_data(s, w)
+        _invalidate_value_table_cache()
+
     thread = threading.Thread(
-        target=build_daily_data,
+        target=_build_and_invalidate,
         args=(season, week),
         daemon=True,
     )
@@ -12753,21 +12788,20 @@ def api_player_details(player_id: str):
                 "fumbles": -2.0
             }
 
-        players_index = load_relevant_index() or {}
+        players_index = get_relevant_index_global()
         player_meta = players_index.get(player_id, {})
 
         # Fall back to full players index if not found in relevant index
         if not player_meta:
-            players_index_full = load_players_index() or {}
-            player_meta = players_index_full.get(player_id, {})
+            player_meta = get_players_index_global().get(player_id, {})
 
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
         player_team = player_meta.get("team", "")
 
-        # Get value data
-        value_table = load_model_value_table() or []
+        # Get value data (in-memory cache, no disk read per request)
+        value_table = get_value_table_global()
         player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
 
         # Get FULL value history from database (not just 90 days)

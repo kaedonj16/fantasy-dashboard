@@ -19,18 +19,6 @@ CHANGELOG = [
     {
         "date": "2026-05-11",
         "tag": "feature",
-        "text": "Player Modal: Tabbed layout with Overview, Stats, Adv Metrics, Breakout, and Trades — each tab loads on demand so the modal opens significantly faster.",
-        "link": "/players"
-    },
-    {
-        "date": "2026-05-11",
-        "tag": "feature",
-        "text": "Prospect Tab: Rookie players who haven't played an NFL game yet get a dedicated Prospect tab in the player modal showing component scores, draft capital, and historical comparables.",
-        "link": "/prospects"
-    },
-    {
-        "date": "2026-05-11",
-        "tag": "feature",
         "text": "Trade Database: Search with multiple players on each side of a trade to find exact multi-player packages from real dynasty leagues.",
         "link": "/trade-database"
     },

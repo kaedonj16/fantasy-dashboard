@@ -6,6 +6,8 @@ from typing import Optional, Iterable
 from dashboard_services.db import get_conn
 
 _db_initialized = False
+_latest_snapshot_cache: dict = {}  # source -> (date_str, cached_at_ts)
+_SNAPSHOT_TTL = 300  # 5 minutes
 
 
 def init_value_history_db() -> None:
@@ -254,6 +256,10 @@ def record_model_value_snapshot(
 
 
 def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
+    import time
+    cached = _latest_snapshot_cache.get(source)
+    if cached and time.time() - cached[1] < _SNAPSHOT_TTL:
+        return cached[0]
     init_value_history_db()
     with get_conn() as conn:
         row = conn.execute(
@@ -264,7 +270,9 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
             """,
             (source,),
         ).fetchone()
-    return row["latest_date"] if row and row["latest_date"] else None
+    result = row["latest_date"] if row and row["latest_date"] else None
+    _latest_snapshot_cache[source] = (result, time.time())
+    return result
 
 
 def _history_col(league_type: str = "1qb", league_size: int = 10) -> str:
