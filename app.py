@@ -1218,7 +1218,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "credentials:'same-origin',headers:{'Content-Type':'application/json'},"
             "body:JSON.stringify({league_id:'" + _portal_league_id + "',return_url:window.location.href})}).then(r=>r.json()).then(d=>{if(d.url)window.location.href=d.url;else alert('Could not open billing portal.');});})()\""
             ">"
-            "  <img src='/static/images/star.png' class='settings-menu-icon' alt='Premium'>"
+            "  <img src='/static/images/star-solid.png' class='settings-menu-icon' alt='Premium'>"
             "  <span class='settings-menu-label'>Manage Subscription</span>"
             "</button>"
         ) if _is_premium_user else ""
