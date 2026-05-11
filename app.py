@@ -5240,16 +5240,15 @@ def build_activity_body(ctx: dict) -> str:
     players_values_raw = ctx.get("model_value_table") or []
     player_val_by_key: Dict[Tuple[str, str, str], float] = {}
     player_val_by_key_np: Dict[Tuple[str, str], float] = {}
+    player_val_by_id: Dict[str, float] = {}
     rank_label_by_name: Dict[str, str] = {}
+    rank_label_by_id: Dict[str, str] = {}
 
     if isinstance(players_values_raw, list):
         for row in players_values_raw:
             if not isinstance(row, dict):
                 continue
             raw_name = str(row.get("search_name") or "").strip()
-            if not raw_name:
-                continue
-            name_lower = raw_name.lower()
             pos = str(row.get("position") or row.get("pos") or "").strip().upper()
             team = str(row.get("team") or "").strip().upper()
             if not pos:
@@ -5259,27 +5258,37 @@ def build_activity_body(ctx: dict) -> str:
             except Exception:
                 val = 0.0
 
-            player_val_by_key[(name_lower, pos, team)] = val
-            player_val_by_key_np[(name_lower, pos)] = val
+            if raw_name:
+                name_lower = raw_name.lower()
+                player_val_by_key[(name_lower, pos, team)] = val
+                player_val_by_key_np[(name_lower, pos)] = val
+                lbl = row.get("pos_rank_label") or pos
+                rank_label_by_name[name_lower] = str(lbl)
 
-            lbl = row.get("pos_rank_label") or pos
-            rank_label_by_name[name_lower] = str(lbl)
+            pid_str = str(row.get("id") or "").strip()
+            if pid_str:
+                player_val_by_id[pid_str] = val
+                rank_label_by_id[pid_str] = str(row.get("pos_rank_label") or pos)
 
     def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip()
-        name_lower = name.lower()
         pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
             return 0.0, ""
 
+        # Prefer ID-based lookup (most reliable — no name normalization issues)
+        pid_str = str(p.get("pid") or p.get("id") or "").strip()
+        if pid_str and pid_str in player_val_by_id:
+            return player_val_by_id[pid_str], rank_label_by_id.get(pid_str, pos)
+
+        # Fall back to name-based lookup
+        name_lower = name.lower()
         val = float(
             player_val_by_key.get((name_lower, pos, team))
             or player_val_by_key_np.get((name_lower, pos), 0.0)
         )
-
-        rank_label = rank_label_by_name.get(name_lower, pos)
-        return val, rank_label
+        return val, rank_label_by_name.get(name_lower, pos)
 
     pick_values = load_pick_value_table() or {}
 
