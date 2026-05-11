@@ -49,8 +49,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer;
 }
 .wv-ss-player.wv-ss-start { border-color: #10b981; background: #10b98108; }
-.wv-ss-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; }
-.wv-ss-sit-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); }
+.wv-ss-player.wv-ss-bye { opacity: .55; }
+.wv-ss-left { flex: 1; min-width: 0; }
+.wv-ss-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; flex-shrink: 0; }
+.wv-ss-flex-badge  { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
+.wv-ss-sit-badge   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
+.wv-ss-bye-badge   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
+.wv-ss-opp  { color: var(--accent, #3b82f6); font-weight: 600; }
+.wv-ss-pts  { color: var(--text-muted); }
+.wv-ss-slot-count { font-size: 10px; font-weight: 500; color: var(--text-muted); }
 </style>
 """
 
@@ -116,7 +123,11 @@ function wvLoad() {{
   // Load start-sit options
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
-    .then(d => {{ wvStartSitData = d.positions || {{}}; wvRenderStartSit(); }})
+    .then(d => {{
+      wvStartSitData = d;
+      wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
+      wvRenderStartSit();
+    }})
     .catch(() => {{ document.getElementById('wvStartSit').innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Log in to see your lineup options</div>'; }});
 }}
 
@@ -142,19 +153,34 @@ function wvRenderWaivers() {{
 function wvRenderStartSit() {{
   const el = document.getElementById('wvStartSit');
   const positions = wvCurrentPos === 'ALL' ? ['QB','RB','WR','TE'] : [wvCurrentPos];
+  const reqs = wvStartSitData._lineup_requirements || {{}};
   const sections = positions.map(pos => {{
-    const players = wvStartSitData[pos] || [];
+    const players = (wvStartSitData.positions || {{}})[pos] || [];
     if (!players.length) return '';
-    const rows = players.slice(0, 4).map((p, i) => `
-      <div class="wv-ss-player ${{i === 0 ? 'wv-ss-start' : ''}}" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
-        <div>
-          <div class="wv-player-name">${{p.name}}</div>
-          <div class="wv-player-sub">${{[p.team, p.pos_rank_label].filter(Boolean).join(' · ')}}</div>
-        </div>
-        <span class="${{i === 0 ? 'wv-ss-start-badge' : 'wv-ss-sit-badge'}}">${{i === 0 ? 'START' : 'SIT'}}</span>
-      </div>
-    `).join('');
-    return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}}</div>${{rows}}</div>`;
+    const rows = players.slice(0, 6).map(p => {{
+      const isStart = p.start === true;
+      const isFlex  = p.flex_eligible === true;
+      const isBye   = p.on_bye === true;
+      const badge = isBye
+        ? '<span class="wv-ss-bye-badge">BYE</span>'
+        : isStart
+          ? '<span class="wv-ss-start-badge">START</span>'
+          : isFlex
+            ? '<span class="wv-ss-flex-badge">FLEX</span>'
+            : '<span class="wv-ss-sit-badge">SIT</span>';
+      const matchup = p.opponent ? `<span class="wv-ss-opp">${{p.opponent}}</span>` : '';
+      const pts = p.avg_pts > 0 ? `<span class="wv-ss-pts">${{p.avg_pts}} avg</span>` : '';
+      return `
+        <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}}" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
+          <div class="wv-ss-left">
+            <div class="wv-player-name">${{p.name}}</div>
+            <div class="wv-player-sub">${{[p.team, p.pos_rank_label, matchup, pts].filter(Boolean).join(' · ')}}</div>
+          </div>
+          ${{badge}}
+        </div>`;
+    }}).join('');
+    const slotCount = reqs[pos] || 1;
+    return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span class="wv-ss-slot-count">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
   }}).join('');
   el.innerHTML = sections || '<div style="color:var(--text-muted);text-align:center;padding:20px;">No roster data found</div>';
 }}

@@ -857,6 +857,32 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
       }}
+      /* ── Pagination (matches site-wide style) ── */
+      .ti-pagination {{
+        display: flex; justify-content: space-between; align-items: center;
+        margin: 20px 0; padding: 12px 0; border-top: 1px solid var(--border);
+      }}
+      .ti-pagination-info {{ font-size: 13px; color: var(--text-muted); }}
+      .ti-pagination-controls {{ display: flex; align-items: center; gap: 12px; }}
+      .ti-pagination-btn {{
+        padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+        background: var(--card); color: var(--text); cursor: pointer;
+        font-size: 12px; font-weight: 500; transition: all .15s;
+        display: flex; align-items: center; gap: 4px;
+      }}
+      .ti-pagination-btn:hover:not(:disabled) {{ background: var(--bg-alt); border-color: var(--accent, #3b82f6); }}
+      .ti-pagination-btn:disabled {{ opacity: .5; cursor: not-allowed; }}
+      .ti-page-numbers {{ display: flex; gap: 4px; }}
+      .ti-page-number {{
+        padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+        background: var(--card); color: var(--text); cursor: pointer;
+        font-size: 12px; font-weight: 500; min-width: 28px; text-align: center;
+      }}
+      .ti-page-number:hover {{ background: var(--bg-alt); }}
+      .ti-page-number.active {{
+        background: var(--accent, #3b82f6); color: #fff;
+        border-color: var(--accent, #3b82f6); font-weight: 700;
+      }}
     </style>
 
     <script>
@@ -866,15 +892,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       let paginationData = null;
       let leagueType = 'all';
       let loading = false;
-      let selectedA = null; // {{ id, name }}
-      let selectedB = null;
+      let selectedA = []; // [{{ id, name }}, ...]
+      let selectedB = [];
       let tdbAllPlayers = null;
       let tdbPlayersPromise = null;
 
       const listEl   = document.getElementById('tdbList');
       const statusEl = document.getElementById('tdbStatus');
 
-      // Pre-select from ?q= param (e.g. coming from player modal trade tab)
       const initQ = new URLSearchParams(window.location.search).get('q') || '';
 
       loadTDBPage(1);
@@ -884,10 +909,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         if (!tdbPlayersPromise) {{
           tdbPlayersPromise = fetch('/api/players')
             .then(r => r.json())
-            .then(data => {{
-              tdbAllPlayers = Array.isArray(data) ? data : (data.players || []);
-              return tdbAllPlayers;
-            }});
+            .then(data => {{ tdbAllPlayers = Array.isArray(data) ? data : (data.players || []); return tdbAllPlayers; }});
         }}
         return tdbPlayersPromise;
       }}
@@ -902,10 +924,25 @@ def page_trade_database(platform: str, season: int, league_id: str):
         return 0;
       }}
 
+      function renderTDBChips(side) {{
+        const arr      = side === 'A' ? selectedA : selectedB;
+        const chipArea = document.getElementById(side === 'A' ? 'tdbSideAChip' : 'tdbSideBChip');
+        chipArea.style.display = arr.length ? 'flex' : 'none';
+        chipArea.innerHTML = arr.map(p =>
+          `<div class="tdb-chip">${{p.name}}<button class="tdb-chip-x" onclick="removeTDBPlayer('${{side}}','${{p.id}}')">&#x2715;</button></div>`
+        ).join('');
+      }}
+
+      window.removeTDBPlayer = function(side, id) {{
+        if (side === 'A') selectedA = selectedA.filter(p => p.id !== id);
+        else              selectedB = selectedB.filter(p => p.id !== id);
+        renderTDBChips(side);
+        loadTDBPage(1);
+      }};
+
       function bindTDBSearch(side) {{
         const input    = document.getElementById(side === 'A' ? 'tdbSideASearch' : 'tdbSideBSearch');
         const drop     = document.getElementById(side === 'A' ? 'tdbSideADropdown' : 'tdbSideBDropdown');
-        const chipArea = document.getElementById(side === 'A' ? 'tdbSideAChip' : 'tdbSideBChip');
         if (!input) return;
 
         input.addEventListener('input', async function() {{
@@ -914,8 +951,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
           drop.style.display = 'none';
           if (!q) return;
 
+          const arr     = side === 'A' ? selectedA : selectedB;
           const players = await ensureTDBPlayers();
+          const already = new Set(arr.map(p => p.id));
           const matches = players
+            .filter(p => !already.has(String(p.player_id)))
             .map(p => ({{ p, score: tdbScore(p.name, q) }}))
             .filter(({{ score }}) => score > 0)
             .sort((a, b) => b.score - a.score || (b.p.value || 0) - (a.p.value || 0))
@@ -931,13 +971,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
             item.innerHTML = `<span class="tdb-di-name">${{p.name}}</span><span class="tdb-di-pos">${{pos}}</span>`;
             item.addEventListener('click', () => {{
               const sel = {{ id: String(p.player_id), name: p.name }};
-              if (side === 'A') selectedA = sel;
-              else              selectedB = sel;
+              if (side === 'A') selectedA.push(sel);
+              else              selectedB.push(sel);
               input.value = '';
-              input.style.display = 'none';
-              chipArea.innerHTML = `<div class="tdb-chip">${{p.name}}<button class="tdb-chip-x" onclick="clearTDBSide('${{side}}')">&#x2715;</button></div>`;
-              chipArea.style.display = 'flex';
               drop.style.display = 'none';
+              renderTDBChips(side);
               loadTDBPage(1);
             }});
             drop.appendChild(item);
@@ -950,18 +988,6 @@ def page_trade_database(platform: str, season: int, league_id: str):
         }});
       }}
 
-      window.clearTDBSide = function(side) {{
-        const input    = document.getElementById(side === 'A' ? 'tdbSideASearch' : 'tdbSideBSearch');
-        const chipArea = document.getElementById(side === 'A' ? 'tdbSideAChip' : 'tdbSideBChip');
-        if (side === 'A') selectedA = null;
-        else              selectedB = null;
-        chipArea.innerHTML = '';
-        chipArea.style.display = 'none';
-        input.style.display = '';
-        input.value = '';
-        loadTDBPage(1);
-      }};
-
       bindTDBSearch('A');
       bindTDBSearch('B');
 
@@ -971,14 +997,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
           const q = initQ.toLowerCase();
           const match = players.find(p => p.name && p.name.toLowerCase().includes(q));
           if (match) {{
-            const input    = document.getElementById('tdbSideASearch');
-            const chipArea = document.getElementById('tdbSideAChip');
-            selectedA = {{ id: String(match.player_id), name: match.name }};
-            if (input) input.style.display = 'none';
-            if (chipArea) {{
-              chipArea.innerHTML = `<div class="tdb-chip">${{match.name}}<button class="tdb-chip-x" onclick="clearTDBSide('A')">&#x2715;</button></div>`;
-              chipArea.style.display = 'flex';
-            }}
+            selectedA = [{{ id: String(match.player_id), name: match.name }}];
+            renderTDBChips('A');
             loadTDBPage(1);
           }}
         }});
@@ -997,10 +1017,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const apiPage = page - 1;
-        const params = new URLSearchParams({{ page: apiPage, limit: 20, league_type: leagueType, season: TDB_SEASON }});
-        if (selectedA) params.set('player_a', selectedA.id);
-        if (selectedB) params.set('player_b', selectedB.id);
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+        if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
+        if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params)
           .then(r => r.json())
           .then(data => {{
@@ -1010,13 +1029,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
             if (trades.length === 0) {{
               listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
               listEl.style.display = '';
-              statusEl.textContent = '';
               document.getElementById('tdbPagination').style.display = 'none';
               loading = false;
               return;
             }}
             paginationData = data.pagination;
-            statusEl.textContent = '';
             listEl.style.display = '';
             updateTDBPaginationControls();
             renderTDBTrades(trades);
@@ -1032,9 +1049,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
 
       function updateTDBPaginationControls() {{
         if (!paginationData) return;
-        const prevBtn       = document.getElementById('tdbPrevBtn');
-        const nextBtn       = document.getElementById('tdbNextBtn');
-        const pageNumbers   = document.getElementById('tdbPageNumbers');
+        const prevBtn        = document.getElementById('tdbPrevBtn');
+        const nextBtn        = document.getElementById('tdbNextBtn');
+        const pageNumbers    = document.getElementById('tdbPageNumbers');
         const paginationText = document.getElementById('tdbPaginationText');
         prevBtn.disabled = !paginationData.has_prev;
         nextBtn.disabled = !paginationData.has_next;
@@ -1047,16 +1064,18 @@ def page_trade_database(platform: str, season: int, league_id: str):
         let endPage   = Math.min(paginationData.total_pages, startPage + maxPages - 1);
         if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
         for (let i = startPage; i <= endPage; i++) {{
-          const pageBtn = document.createElement('button');
-          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
-          pageBtn.textContent = i;
-          pageBtn.onclick = () => loadTDBPage(i);
-          pageNumbers.appendChild(pageBtn);
+          const btn = document.createElement('button');
+          btn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
+          btn.textContent = i;
+          btn.onclick = () => loadTDBPage(i);
+          pageNumbers.appendChild(btn);
         }}
         document.getElementById('tdbPagination').style.display = 'flex';
       }}
 
       function renderTDBTrades(trades) {{
+        const matchIdsA = new Set(selectedA.map(p => p.id));
+        const matchIdsB = new Set(selectedB.map(p => p.id));
         listEl.innerHTML = '';
         trades.forEach(t => {{
           const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
@@ -1064,11 +1083,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
           const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
           const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
           function renderAsset(a) {{
-            const matchA  = selectedA && a.player_id && String(a.player_id) === selectedA.id;
-            const matchB  = selectedB && a.player_id && String(a.player_id) === selectedB.id;
-            const match   = matchA || matchB;
-            const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
-            const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
+            const pid   = a.player_id ? String(a.player_id) : '';
+            const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
+            const cls = 'tdb-asset' + (a.type === 'pick' ? ' tdb-pick' : '') + (match ? ' tdb-match' : '');
             const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
             return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
           }}

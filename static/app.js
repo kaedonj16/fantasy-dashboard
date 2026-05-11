@@ -4538,9 +4538,25 @@ function openPlayerModal(playerId, playerName) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
-  // Fetch player data
-  fetch(apiUrl)
-    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+  // Fetch player data (with 5-min localStorage cache to speed up re-opens)
+  const _cacheKey = 'pm_cache_' + apiUrl;
+  const _cacheTTL = 5 * 60 * 1000;
+  let _cachedRaw = null;
+  try {
+    const _entry = JSON.parse(localStorage.getItem(_cacheKey) || 'null');
+    if (_entry && Date.now() - _entry.ts < _cacheTTL) _cachedRaw = _entry.data;
+  } catch (_) {}
+
+  const _fetchPromise = _cachedRaw
+    ? Promise.resolve(_cachedRaw)
+    : fetch(apiUrl)
+        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(data => {
+          try { localStorage.setItem(_cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+          return data;
+        });
+
+  _fetchPromise
     .then(data => {
 
       const modalBody = document.getElementById('playerModalBody');
@@ -6143,6 +6159,8 @@ function openCompareSearch(player1Data) {
   if (!modal || !body) return;
 
   modal.classList.add('compare-mode');
+  const tabBar = document.getElementById('pmTabBar');
+  if (tabBar) tabBar.style.display = 'none';
 
   body.innerHTML = `
     <div class="compare-search-panel">

@@ -7624,79 +7624,189 @@ def api_start_sit_options():
     players_index = ctx.get("players_index") or {}
     model_value_table = load_model_value_table()
 
-    values_by_id: dict = {}
+    # League roster slot counts (how many starters per position)
+    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
+    # Fallback if not in ctx: derive from roster_positions
+    if not lineup_requirements:
+        roster_positions = ctx.get("roster_positions") or []
+        for slot in roster_positions:
+            s = str(slot).upper()
+            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
+                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
+
     rows_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
             continue
         pid = str(row.get("id") or "")
         if pid:
-            try:
-                values_by_id[pid] = float(row.get("value") or 0.0)
-            except Exception:
-                values_by_id[pid] = 0.0
             rows_by_id[pid] = row
 
-    # Bulk-fetch breakout scores for viewer's roster
-    roster_breakout: dict = {}
+    # ── Defense rankings from last 4 completed weeks of week_stats ────────────
+    # week_stats format: {team: {pos: {player_name: {rush_yds, rec_yds, ...}}}}
+    current_week = int(ctx.get("current_week") or 0)
+    def_rush_allowed: dict[str, list] = {}   # team -> [rush_yds_allowed, ...]
+    def_recv_allowed: dict[str, list] = {}   # team -> [recv_yds_allowed, ...]
     try:
-        _db_url = os.getenv("DATABASE_URL", "").strip()
-        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc2
-            if player_ids:
-                with _gc2() as _conn2:
-                    with _conn2.cursor() as _cur2:
-                        _cur2.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id,
-                                breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (player_ids,),
-                        )
-                        for _r2 in _cur2.fetchall():
-                            _r2 = dict(_r2)
-                            if _r2.get("breakout_opportunity_score") is not None:
-                                roster_breakout[_r2["player_id"]] = float(_r2["breakout_opportunity_score"])
+        from utils.utils import load_week_stats as _lws
+        schedule_dir = os.path.join("cache", "stats")
+        check_weeks = [w for w in range(max(1, current_week - 4), current_week) if w > 0]
+        for chk_week in check_weeks:
+            wstat = _lws(season, chk_week) or {}
+            for team, pos_data in wstat.items():
+                if not isinstance(pos_data, dict):
+                    continue
+                # Rush yards allowed = sum of all RB rush_yds gained against this team
+                rb_rush = sum(
+                    float(p.get("rush_yds") or p.get("rushing_yds") or 0)
+                    for p in (pos_data.get("RB") or {}).values()
+                    if isinstance(p, dict)
+                )
+                # Receiving yards allowed = WR + TE recv_yds gained against this team
+                wr_recv = sum(
+                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
+                    for p in (pos_data.get("WR") or {}).values()
+                    if isinstance(p, dict)
+                )
+                te_recv = sum(
+                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
+                    for p in (pos_data.get("TE") or {}).values()
+                    if isinstance(p, dict)
+                )
+                recv_allowed = wr_recv + te_recv
+                if rb_rush > 0:
+                    def_rush_allowed.setdefault(team, []).append(rb_rush)
+                if recv_allowed > 0:
+                    def_recv_allowed.setdefault(team, []).append(recv_allowed)
     except Exception:
         pass
 
+    def _avg(lst): return sum(lst) / len(lst) if lst else 0.0
+
+    # Rank teams: higher allowed yards = easier matchup for skill players
+    all_rush_avgs = {t: _avg(v) for t, v in def_rush_allowed.items()}
+    all_recv_avgs = {t: _avg(v) for t, v in def_recv_allowed.items()}
+
+    def _matchup_adj(opponent_team: str, pos: str) -> float:
+        """Return a multiplier 0.85-1.15 based on opponent defense rank."""
+        if not opponent_team:
+            return 1.0
+        if pos == "RB":
+            avgs = all_rush_avgs
+        elif pos in ("WR", "TE"):
+            avgs = all_recv_avgs
+        elif pos == "QB":
+            avgs = all_recv_avgs  # QB correlates with pass D
+        else:
+            return 1.0
+        if not avgs:
+            return 1.0
+        sorted_teams = sorted(avgs.keys(), key=lambda t: avgs[t])  # hardest → easiest
+        n = len(sorted_teams)
+        try:
+            rank = sorted_teams.index(opponent_team)  # 0=hardest
+        except ValueError:
+            return 1.0
+        # Map rank to [0.85, 1.15]
+        factor = 0.85 + 0.30 * (rank / max(n - 1, 1))
+        return factor
+
+    # ── Schedule: find each team's opponent this week ─────────────────────────
+    opponent_map: dict[str, str] = {}  # team_abbr -> opponent_abbr
+    opp_label_map: dict[str, str] = {}  # team_abbr -> "vs OPP" or "@OPP"
+    try:
+        from utils.utils import load_week_sched as _lsched
+        if current_week > 0:
+            sched = _lsched(season, current_week) or []
+            for game in sched:
+                home = str(game.get("home") or "").upper()
+                away = str(game.get("away") or "").upper()
+                if home and away:
+                    opponent_map[home] = away
+                    opponent_map[away] = home
+                    opp_label_map[home] = f"vs {away}"
+                    opp_label_map[away] = f"@ {home}"
+    except Exception:
+        pass
+
+    # ── Recent fantasy points: avg last 4 weeks from sleeper stats ────────────
+    recent_pts: dict[str, float] = {}
+    try:
+        import glob as _glob
+        from utils.utils import load_players_index as _lpi
+        _stat_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season}_week_*.json")
+        _week_files = sorted(_glob.glob(_stat_pattern))
+        _recent_files = _week_files[-4:] if len(_week_files) >= 4 else _week_files
+        _pts_by_player: dict[str, list] = {}
+        for _wf in _recent_files:
+            try:
+                with open(_wf) as _f:
+                    _wdata = json.load(_f)
+                for pid, stats in _wdata.items():
+                    if not isinstance(stats, dict):
+                        continue
+                    pts = float(stats.get("pts_half_ppr") or stats.get("pts_ppr") or 0)
+                    if pts > 0:
+                        _pts_by_player.setdefault(pid, []).append(pts)
+            except Exception:
+                continue
+        for pid, vals in _pts_by_player.items():
+            recent_pts[pid] = _avg(vals)
+    except Exception:
+        pass
+
+    # ── Build output grouped by position ──────────────────────────────────────
     positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
-        pos = str(
-            row.get("position") or row.get("pos")
-            or players_index.get(pid, {}).get("position") or ""
-        ).upper()
+        meta = players_index.get(pid) or {}
+        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
         if pos not in positions_out:
             continue
-        val = values_by_id.get(pid, 0.0)
-        bscore = roster_breakout.get(pid, 0.0)
-        player_name = (
-            row.get("name")
-            or players_index.get(pid, {}).get("name")
-            or f"Player {pid}"
-        )
+        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
+        team = (row.get("team") or meta.get("team") or "").upper()
+        opponent = opponent_map.get(team, "")
+        opp_label = opp_label_map.get(team, "BYE" if current_week > 0 else "")
+        on_bye = current_week > 0 and team not in opponent_map
+
+        avg_pts = recent_pts.get(pid, 0.0)
+        adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
+        score = avg_pts * adj if avg_pts > 0 else float(row.get("value") or 0) * 0.01
+
         positions_out[pos].append({
             "player_id": pid,
             "name": player_name,
-            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
-            "value": val,
-            "breakout_score": bscore,
+            "team": team,
+            "opponent": opp_label,
+            "on_bye": on_bye,
+            "avg_pts": round(avg_pts, 1),
+            "matchup_adj": round(adj, 2),
             "pos_rank_label": row.get("pos_rank_label") or "",
-            "_composite": val + bscore * 0.5,
+            "_score": score,
         })
 
-    # Sort each position by composite score descending, then strip internal key
-    for pos in positions_out:
-        positions_out[pos].sort(key=lambda x: x["_composite"], reverse=True)
-        for p in positions_out[pos]:
-            del p["_composite"]
+    # Sort by composite score, mark starters per league slot settings
+    flex_slots = (lineup_requirements.get("FLEX") or 0)
+    sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
 
-    return jsonify({"positions": positions_out})
+    for pos in positions_out:
+        positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
+        n_start = lineup_requirements.get(pos, 1)
+        # FLEX: eligible RBs/WRs/TEs beyond their base slots can fill FLEX
+        eligible_for_flex = pos in ("RB", "WR", "TE")
+        for i, p in enumerate(positions_out[pos]):
+            p["start"] = i < n_start and not p["on_bye"]
+            p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
+            del p["_score"]
+
+    # Attach league meta so the frontend knows slot counts
+    return jsonify({
+        "positions": positions_out,
+        "lineup_requirements": lineup_requirements,
+        "flex_slots": flex_slots,
+        "sflex_slots": sflex_slots,
+        "current_week": current_week,
+    })
 
 
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
@@ -14415,17 +14525,24 @@ def api_trade_database():
 
         players_map = load_players_index() or {}
 
-        # player_a/player_b IDs take priority over legacy text search
+        # player_a/player_b support comma-separated IDs (multi-player per side)
+        ids_a = [x.strip() for x in player_a.split(",") if x.strip()] if player_a else []
+        ids_b = [x.strip() for x in player_b.split(",") if x.strip()] if player_b else []
+
+        # Build combined search ID list and mode flags
+        # both_multi: True when players from both sides are specified
+        # all_ids: every ID that must appear somewhere in the trade
         match_ids: list[str] = []
-        both_ids: tuple = ()
+        both_multi: bool = False
         player_trade_counts: dict[str, int] = {}
 
-        if player_a and player_b:
-            both_ids = (player_a, player_b)
-        elif player_a:
-            match_ids = [player_a]
-        elif player_b:
-            match_ids = [player_b]
+        if ids_a and ids_b:
+            both_multi = True
+            match_ids = list(dict.fromkeys(ids_a + ids_b))  # ordered dedup
+        elif ids_a:
+            match_ids = ids_a
+        elif ids_b:
+            match_ids = ids_b
         elif q:
             match_ids = [
                 pid for pid, info in players_map.items()
@@ -14443,72 +14560,45 @@ def api_trade_database():
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
         with get_conn() as conn:
-            if both_ids:
-                # Find trades where BOTH players appear (any side)
-                base_count = [both_ids[0], both_ids[1], season] + ([sf_param] if sf_param is not None else [])
+            if match_ids:
+                # For both_multi, match_ids = ids_a + ids_b; we need ALL to appear.
+                # HAVING COUNT(DISTINCT player_id) = N enforces every ID is present.
+                n_required = len(match_ids)
+                base_p = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [n_required]
                 count_row = conn.execute(
                     f"""
-                    SELECT COUNT(DISTINCT t.id) AS n
-                    FROM trade_intel_trades t
-                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
-                        AND a1.player_id = %s AND a1.asset_type = 'player'
-                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
-                        AND a2.player_id = %s AND a2.asset_type = 'player'
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
+                    SELECT COUNT(*) AS n FROM (
+                      SELECT t.id
+                      FROM trade_intel_trades t
+                      JOIN trade_intel_assets a ON a.trade_id = t.id
+                          AND a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                      WHERE t.season = %s {sf_clause}
+                      GROUP BY t.id
+                      HAVING COUNT(DISTINCT a.player_id) = %s
+                    ) sub
                     """,
-                    base_count,
+                    base_p,
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
-                base_rows = [both_ids[0], both_ids[1], season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
+                base_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [n_required, limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
-                    SELECT DISTINCT
-                        t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
+                    SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
+                           l.scoring_type, l.is_superflex, l.num_teams
                     FROM trade_intel_trades t
-                    JOIN trade_intel_assets a1 ON a1.trade_id = t.id
-                        AND a1.player_id = %s AND a1.asset_type = 'player'
-                    JOIN trade_intel_assets a2 ON a2.trade_id = t.id
-                        AND a2.player_id = %s AND a2.asset_type = 'player'
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                        AND a.player_id = ANY(%s) AND a.asset_type = 'player'
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     WHERE t.season = %s {sf_clause}
+                    GROUP BY t.id, t.transaction_id, t.season, t.week, t.created_at,
+                             l.scoring_type, l.is_superflex, l.num_teams
+                    HAVING COUNT(DISTINCT a.player_id) = %s
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
                     base_rows,
-                ).fetchall()
-            elif match_ids:
-                base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
-                count_row = conn.execute(
-                    f"""
-                    SELECT COUNT(DISTINCT t.id) AS n
-                    FROM trade_intel_trades t
-                    JOIN trade_intel_assets a ON a.trade_id = t.id
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
-                    """,
-                    base_params_count,
-                ).fetchone()
-                total = int(count_row["n"]) if count_row else 0
-
-                base_params_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
-                trade_rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT
-                        t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
-                    FROM trade_intel_trades t
-                    JOIN trade_intel_assets a ON a.trade_id = t.id
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
-                    ORDER BY t.created_at DESC NULLS LAST
-                    LIMIT %s OFFSET %s
-                    """,
-                    base_params_rows,
                 ).fetchall()
             else:
                 base_params_count = [season] + ([sf_param] if sf_param is not None else [])
