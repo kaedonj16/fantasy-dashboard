@@ -4624,7 +4624,7 @@ function openPlayerModal(playerId, playerName) {
           ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
           : '';
         const _tipTxt = (vt.description || vt.label) + _slopeTxt;
-        metaParts.push(`<span class="pm-trend-pill" data-tooltip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
+        metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 

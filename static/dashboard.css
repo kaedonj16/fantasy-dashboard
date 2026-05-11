@@ -7618,7 +7618,7 @@ thead th {
   position: relative;
 }
 .pm-trend-pill::after {
-  content: attr(data-tooltip);
+  content: attr(data-trend-tip);
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
