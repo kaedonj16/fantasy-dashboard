@@ -7796,6 +7796,7 @@ def api_start_sit_options():
         eligible_for_flex = pos in ("RB", "WR", "TE")
         for i, p in enumerate(positions_out[pos]):
             p["start"] = i < n_start and not p["on_bye"]
+            p["flex_start"] = False
             p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
 
     # Second pass: promote top flex-eligible players into FLEX slots → mark start=True
@@ -7806,6 +7807,7 @@ def api_start_sit_options():
         )
         for p in all_flex[:flex_slots]:
             p["start"] = True
+            p["flex_start"] = True
 
     # SUPER_FLEX: best QB/RB/WR/TE beyond base starters fills sflex
     if sflex_slots:
@@ -7816,6 +7818,7 @@ def api_start_sit_options():
         )
         for p in sflex_cands[:sflex_slots]:
             p["start"] = True
+            p["flex_start"] = True
 
     # Clean up internal score key
     for pos in positions_out:

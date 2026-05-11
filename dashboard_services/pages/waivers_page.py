@@ -51,10 +51,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-player.wv-ss-start { border-color: #10b981; background: #10b98108; }
 .wv-ss-player.wv-ss-bye { opacity: .55; }
 .wv-ss-left { flex: 1; min-width: 0; }
-.wv-ss-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; flex-shrink: 0; }
-.wv-ss-flex-badge  { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
-.wv-ss-sit-badge   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
-.wv-ss-bye-badge   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
+.wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; flex-shrink: 0; }
+.wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; border: 1px solid #10b98140; flex-shrink: 0; }
+.wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
+.wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
+.wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
 .wv-ss-opp  { color: var(--accent, #3b82f6); font-weight: 600; }
 .wv-ss-pts  { color: var(--text-muted); }
 .wv-ss-slot-count { font-size: 10px; font-weight: 500; color: var(--text-muted); }
@@ -158,16 +159,19 @@ function wvRenderStartSit() {{
     const players = (wvStartSitData.positions || {{}})[pos] || [];
     if (!players.length) return '';
     const rows = players.slice(0, 6).map(p => {{
-      const isStart = p.start === true;
-      const isFlex  = p.flex_eligible === true;
-      const isBye   = p.on_bye === true;
+      const isStart     = p.start === true;
+      const isFlexStart = p.flex_start === true;
+      const isFlex      = p.flex_eligible === true && !isStart;
+      const isBye       = p.on_bye === true;
       const badge = isBye
         ? '<span class="wv-ss-bye-badge">BYE</span>'
-        : isStart
-          ? '<span class="wv-ss-start-badge">START</span>'
-          : isFlex
-            ? '<span class="wv-ss-flex-badge">FLEX</span>'
-            : '<span class="wv-ss-sit-badge">SIT</span>';
+        : isFlexStart
+          ? '<span class="wv-ss-flex-start-badge">FLEX</span>'
+          : isStart
+            ? '<span class="wv-ss-start-badge">START</span>'
+            : isFlex
+              ? '<span class="wv-ss-flex-badge">FLEX?</span>'
+              : '<span class="wv-ss-sit-badge">SIT</span>';
       const matchup = p.opponent ? `<span class="wv-ss-opp">${{p.opponent}}</span>` : '';
       const pts = p.avg_pts > 0 ? `<span class="wv-ss-pts">${{p.avg_pts}} avg</span>` : '';
       return `
