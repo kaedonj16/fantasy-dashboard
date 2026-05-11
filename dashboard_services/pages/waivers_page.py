@@ -59,6 +59,9 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-opp  { color: var(--accent, #3b82f6); font-weight: 600; }
 .wv-ss-pts  { color: var(--text-muted); }
 .wv-ss-slot-count { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+.wv-inj-out  { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #ef444420; color: #ef4444; margin-left: 4px; }
+.wv-inj-q    { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f59e0b20; color: #f59e0b; margin-left: 4px; }
+.wv-inj-d    { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f97316a0; color: #f97316; margin-left: 4px; }
 </style>
 """
 
@@ -172,12 +175,21 @@ function wvRenderStartSit() {{
             : isFlex
               ? '<span class="wv-ss-flex-badge">FLEX?</span>'
               : '<span class="wv-ss-sit-badge">SIT</span>';
+      const inj = (p.injury_status || '').toUpperCase();
+      const injBadge = !inj ? '' :
+        (inj === 'IR' || inj === 'OUT' || inj === 'PUP' || inj === 'SUSP')
+          ? `<span class="wv-inj-out">${{inj}}</span>`
+          : (inj === 'DOUBTFUL' || inj === 'D')
+            ? `<span class="wv-inj-d">D</span>`
+            : (inj === 'QUESTIONABLE' || inj === 'Q' || inj === 'GTD')
+              ? `<span class="wv-inj-q">Q</span>`
+              : `<span class="wv-inj-q">${{inj}}</span>`;
       const matchup = p.opponent ? `<span class="wv-ss-opp">${{p.opponent}}</span>` : '';
       const pts = p.avg_pts > 0 ? `<span class="wv-ss-pts">${{p.avg_pts}} avg</span>` : '';
       return `
         <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}}" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
           <div class="wv-ss-left">
-            <div class="wv-player-name">${{p.name}}</div>
+            <div class="wv-player-name">${{p.name}}${{injBadge}}</div>
             <div class="wv-player-sub">${{[p.team, p.pos_rank_label, matchup, pts].filter(Boolean).join(' · ')}}</div>
           </div>
           ${{badge}}

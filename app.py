@@ -7622,6 +7622,7 @@ def api_start_sit_options():
 
     player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
     players_index = ctx.get("players_index") or {}
+    players_full = ctx.get("players") or {}  # full Sleeper player data (has injury_status)
     model_value_table = load_model_value_table()
 
     # League roster slot counts (how many starters per position)
@@ -7773,6 +7774,12 @@ def api_start_sit_options():
         adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
         score = avg_pts * adj if avg_pts > 0 else float(row.get("value") or 0) * 0.01
 
+        # Injury status from full Sleeper player data
+        full_player = players_full.get(pid) or {}
+        raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
+        ACTIVE_STATUSES = {"", "active", "Active", "ACT"}
+        injury_status = None if raw_status in ACTIVE_STATUSES else raw_status
+
         positions_out[pos].append({
             "player_id": pid,
             "name": player_name,
@@ -7782,6 +7789,7 @@ def api_start_sit_options():
             "avg_pts": round(avg_pts, 1),
             "matchup_adj": round(adj, 2),
             "pos_rank_label": row.get("pos_rank_label") or "",
+            "injury_status": injury_status,
             "_score": score,
         })
 
