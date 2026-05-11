@@ -14,8 +14,6 @@ import os
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
-import stripe
-import stripe.error
 from flask import Blueprint, jsonify, request, session
 
 from dashboard_services.subscriptions import (
@@ -28,11 +26,19 @@ from dashboard_services.subscriptions import (
 billing_bp = Blueprint("billing", __name__)
 logger = logging.getLogger(__name__)
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-
 _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
 _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
 _STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
+
+
+def _stripe():
+    """Lazy-import stripe so missing package doesn't break the whole blueprint."""
+    import stripe as _s
+    import stripe.error  # noqa: F401
+    _s.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    return _s
+
+
 _STRIPE_PRICES = {
     "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
@@ -54,7 +60,7 @@ def _try_grant_from_stripe_success() -> None:
     if not checkout_session_id:
         return
     try:
-        cs = stripe.checkout.Session.retrieve(checkout_session_id)
+        cs = _stripe().checkout.Session.retrieve(checkout_session_id)
         if cs.status != "complete":
             return
 
@@ -78,7 +84,7 @@ def _try_grant_from_stripe_success() -> None:
             return
 
         try:
-            sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
+            sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
             expires_at = (
                 datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
                 if sub else datetime.now(timezone.utc) + timedelta(days=366)
@@ -329,7 +335,7 @@ def create_checkout_session():
         success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
 
     try:
-        checkout = stripe.checkout.Session.create(
+        checkout = _stripe().checkout.Session.create(
             mode="subscription",
             line_items=[{
                 "price_data": {
@@ -361,11 +367,11 @@ def stripe_webhook():
         return "", 400
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig, secret)
+        event = _stripe().Webhook.construct_event(payload, sig, secret)
     except ValueError as e:
         logger.error("[stripe] webhook bad payload: %s", e)
         return "", 400
-    except stripe.error.SignatureVerificationError as e:
+    except _stripe().error.SignatureVerificationError as e:
         logger.error("[stripe] webhook signature mismatch: %s", e)
         return "", 400
 
@@ -381,7 +387,7 @@ def stripe_webhook():
         cust_id   = s.customer
 
         try:
-            sub = stripe.Subscription.retrieve(sub_id)
+            sub = _stripe().Subscription.retrieve(sub_id)
             expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
@@ -411,7 +417,7 @@ def stripe_webhook():
         sub_id = s.subscription
         if sub_id:
             try:
-                sub        = stripe.Subscription.retrieve(sub_id)
+                sub        = _stripe().Subscription.retrieve(sub_id)
                 expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
                 from dashboard_services.db import get_conn
                 with get_conn() as conn:
@@ -480,7 +486,7 @@ def api_create_portal_session():
         if not return_url:
             return_url = request.host_url.rstrip("/") + "/pricing"
 
-        portal_session = stripe.billing_portal.Session.create(
+        portal_session = _stripe().billing_portal.Session.create(
             customer=customer_id,
             return_url=return_url,
         )
