@@ -7789,14 +7789,37 @@ def api_start_sit_options():
     flex_slots = (lineup_requirements.get("FLEX") or 0)
     sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
 
+    # First pass: mark base-position starters; collect flex candidates (keep _score)
     for pos in positions_out:
         positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
         n_start = lineup_requirements.get(pos, 1)
-        # FLEX: eligible RBs/WRs/TEs beyond their base slots can fill FLEX
         eligible_for_flex = pos in ("RB", "WR", "TE")
         for i, p in enumerate(positions_out[pos]):
             p["start"] = i < n_start and not p["on_bye"]
             p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
+
+    # Second pass: promote top flex-eligible players into FLEX slots → mark start=True
+    if flex_slots:
+        all_flex = sorted(
+            [p for pos in positions_out for p in positions_out[pos] if p["flex_eligible"]],
+            key=lambda x: x["_score"], reverse=True
+        )
+        for p in all_flex[:flex_slots]:
+            p["start"] = True
+
+    # SUPER_FLEX: best QB/RB/WR/TE beyond base starters fills sflex
+    if sflex_slots:
+        sflex_cands = sorted(
+            [p for pos in positions_out for p in positions_out[pos]
+             if not p["start"] and not p["on_bye"] and pos in ("QB", "RB", "WR", "TE")],
+            key=lambda x: x["_score"], reverse=True
+        )
+        for p in sflex_cands[:sflex_slots]:
+            p["start"] = True
+
+    # Clean up internal score key
+    for pos in positions_out:
+        for p in positions_out[pos]:
             del p["_score"]
 
     # Attach league meta so the frontend knows slot counts

@@ -5,8 +5,13 @@ from typing import Optional, Iterable
 
 from dashboard_services.db import get_conn
 
+_db_initialized = False
+
 
 def init_value_history_db() -> None:
+    global _db_initialized
+    if _db_initialized:
+        return
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -107,6 +112,7 @@ def init_value_history_db() -> None:
                 ON player_value_history (source, as_of_date DESC)
                 """
             )
+    _db_initialized = True
 
 
 def record_model_value_snapshot(

@@ -4698,7 +4698,7 @@ function openPlayerModal(playerId, playerName) {
       }
 
       // ── Advanced Metrics / Prospect Profile + Value History flags ──
-      const hasMetrics = hasGameLogs && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
@@ -4975,13 +4975,8 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // ── Pre-load advanced metrics into the hidden Metrics panel ───────────
-      if (hasMetrics) {
-        const path = window.location.pathname;
-        const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
-        const leagueIdForMetrics = match ? match[3] : null;
-        loadAdvancedMetrics(playerId, leagueIdForMetrics, null);
-      }
+      // Store whether this player has metrics so pmSwitchTab can lazy-load them
+      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
     })
     .catch(err => {
       console.error('Error loading player data:', err);
@@ -5008,6 +5003,15 @@ function pmSwitchTab(tab) {
   if (!pmTabBar) return;
   const playerId = pmTabBar.dataset.pmPlayerId;
   const season = pmTabBar.dataset.pmSeason;
+
+  // ── Lazy-load Adv Metrics tab ────────────────────────────────────────────
+  if (tab === 'metrics' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasMetrics) {
+    panel.dataset.loaded = '1';
+    const path = window.location.pathname;
+    const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+    const leagueIdForMetrics = match ? match[3] : null;
+    loadAdvancedMetrics(playerId, leagueIdForMetrics, null);
+  }
 
   // ── Lazy-load Breakout tab ───────────────────────────────────────────────
   if (tab === 'breakout' && panel && !panel.dataset.loaded) {
