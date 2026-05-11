@@ -4621,9 +4621,10 @@ function openPlayerModal(playerId, playerName) {
       if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
       if (vtClass && vtClass !== 'unknown' && vtIcon) {
         const _slopeTxt = vt.slope_pct_month != null
-          ? ' ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
+          ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
           : '';
-        metaParts.push(`<span style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;" title="${vt.label} value${_slopeTxt}">${vtIcon} ${vt.label}</span>`);
+        const _tipTxt = (vt.description || vt.label) + _slopeTxt;
+        metaParts.push(`<span data-tooltip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
