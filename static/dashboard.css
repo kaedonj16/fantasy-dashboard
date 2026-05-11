@@ -886,7 +886,7 @@ ul {
 
 /* Make PNG icons match theme colors */
 img[src*="gear.png"],
-img[src*="moon.png"], 
+img[src*="moon.png"],
 img[src*="refresh.png"],
 img[src*="bell.png"],
 img[src*="logout.png"],
@@ -894,9 +894,14 @@ img[src*="sun-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
+/* Star icon always gold (premium indicator) */
+img[src*="star-solid.png"] {
+  filter: brightness(0) saturate(100%) invert(72%) sepia(95%) saturate(600%) hue-rotate(5deg) brightness(105%) contrast(95%) !important;
+}
+
 /* Dark mode icon colors */
 html[data-theme="dark"] img[src*="gear.png"],
-html[data-theme="dark"] img[src*="moon.png"], 
+html[data-theme="dark"] img[src*="moon.png"],
 html[data-theme="dark"] img[src*="refresh.png"],
 html[data-theme="dark"] img[src*="bell.png"],
 html[data-theme="dark"] img[src*="logout.png"],
