@@ -5555,16 +5555,12 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%' });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
       const v = metrics.pff_rushing_grade;
       defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1) });
-    }
-    if (metrics.grades_pass_block != null) {
-      const v = metrics.grades_pass_block;
-      defs.push({ label: 'PFF Pass Block', fill: v, display: v.toFixed(1) });
     }
     if (metrics.breakaway_percentage != null) {
       const v = metrics.breakaway_percentage;
@@ -5578,7 +5574,7 @@ function buildAdvancedMetricsHTML(metricsData) {
       const v = metrics.elusive_rating;
       defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
     }
-    if (metrics.avoided_tackles != null) {
+    if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
       defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0) });
     }
@@ -5593,10 +5589,6 @@ function buildAdvancedMetricsHTML(metricsData) {
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
       defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
-    }
-    if (metrics.pass_block_rate != null) {
-      const v = metrics.pass_block_rate;
-      defs.push({ label: 'Pass Block %', fill: v, display: v.toFixed(1) + '%' });
     }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
@@ -6486,7 +6478,6 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     yards_after_catch_per_reception: 'YAC/Rec',
     avg_depth_of_target: 'aDOT',
     contested_catch_rate: 'Contested Catch %',
-    avoided_tackles: 'Avoided Tackles',
     drop_rate: 'Drop Rate',
     slot_rate: 'Slot Rate',
     wide_rate: 'Wide Rate',
@@ -6517,11 +6508,6 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     opportunity_share: 'Opportunity Share',
     red_zone_usage: 'Red Zone Usage',
     role_score: 'Role Score',
-    
-    // Blocking metrics
-    pass_block_rate: 'Pass Block Rate',
-    grades_pass_block: 'PFF Pass Block',
-    grades_offense: 'PFF Off Grade',
   };
   
   // Determine relevant metrics based on positions
