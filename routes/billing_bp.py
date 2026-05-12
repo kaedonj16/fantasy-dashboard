@@ -34,7 +34,6 @@ _STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
 def _stripe():
     """Lazy-import stripe so missing package doesn't break the whole blueprint."""
     import stripe as _s
-    import stripe.error  # noqa: F401
     _s.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
     return _s
 
@@ -371,7 +370,7 @@ def stripe_webhook():
     except ValueError as e:
         logger.error("[stripe] webhook bad payload: %s", e)
         return "", 400
-    except _stripe().error.SignatureVerificationError as e:
+    except _stripe().SignatureVerificationError as e:
         logger.error("[stripe] webhook signature mismatch: %s", e)
         return "", 400
 
