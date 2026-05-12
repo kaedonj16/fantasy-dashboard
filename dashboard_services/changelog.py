@@ -7,13 +7,13 @@ CHANGELOG = [
     {
         "date": "2026-05-11",
         "tag": "new",
-        "text": "Start/Sit Advisor: Weekly lineup recommendations on the Waivers page. Shows your starters, FLEX slot picks, and bench players ranked by projected points with opponent matchup adjustments. Injury status (OUT/Q/D) and bye week flags included.",
+        "text": "Start/Sit Advisor: Weekly lineup recommendations on the Waivers page. Shows your starters, FLEX slot picks, and bench players ranked by projected points with opponent matchup adjustments.",
         "link": "/waivers"
     },
     {
         "date": "2026-05-11",
         "tag": "new",
-        "text": "Waiver Wire: Ranked free agent targets on the Waivers page. Filter by position and see pickup signals (Breakout, Rising, Value) with dynasty value scores.",
+        "text": "Waiver Wire: Ranked free agent targets on the Waivers page. Filter by position and see pickup signals.",
         "link": "/waivers"
     },
     {

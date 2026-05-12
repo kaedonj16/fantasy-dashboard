@@ -49,7 +49,7 @@ async function getSubscriptionInfo(userId, leagueId) {
  *
  * @param {string} feature - Feature name ('breakout-candidates', 'advanced-metrics', 'ai-insights')
  */
-function showPaywall(feature) {
+window.showPaywall = function showPaywall(feature) {
   const featureNames = {
     'breakout-candidates': 'Breakout Engine',
     'advanced-metrics': 'Advanced Metrics',
@@ -143,7 +143,6 @@ async function initiatePurchase(type, btn) {
     window.location.pathname.split('/').filter(Boolean)[2] || '';
 
   // Build a destination that lands in the league dashboard after payment
-  const ctx = window.__brctx || {};
   const _platform = ctx.platform || 'sleeper';
   const _season   = ctx.season   || new Date().getFullYear();
   const returnUrl = leagueId

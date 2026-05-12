@@ -332,6 +332,7 @@ def page_pricing_guest():
 @billing_bp.route("/api/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     user_id = session.get("viewer_username")
+    logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401
 
@@ -339,12 +340,17 @@ def create_checkout_session():
     plan       = str(payload.get("plan") or "").strip()
     league_id  = str(payload.get("league_id") or "").strip()
     return_url = str(payload.get("return_url") or "").strip()
+    
+    logger.info("[checkout] Request payload: plan=%s, league_id=%s, return_url=%s", plan, league_id, return_url)
 
     if plan not in _STRIPE_PRICES:
+        logger.info("[checkout] Invalid plan: %s, available plans: %s", plan, list(_STRIPE_PRICES.keys()))
         return jsonify({"error": "Invalid plan"}), 400
 
     check_league = league_id if league_id else None
-    if has_premium_access(user_id, check_league, "sleeper"):
+    has_premium = has_premium_access(user_id, check_league, "sleeper")
+    logger.info("[checkout] User premium status for league %s: %s", check_league, has_premium)
+    if has_premium:
         return jsonify({"error": "You already have an active premium subscription."}), 400
 
     price_spec = _STRIPE_PRICES[plan]
