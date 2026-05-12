@@ -453,6 +453,49 @@ TOP_12_PPG_THRESHOLDS = {
 }
 
 # ==============================================================================
+# WR FALSE-POSITIVE REDUCTION - Thresholds
+# ==============================================================================
+
+# Contested-catch profile penalty: low catch rate + low yards per target
+# penalizes highly-drafted WRs who show poor separation proxies
+WR_FP_CATCH_RATE_THRESHOLD = 0.52   # Below this is a concern
+WR_FP_YPT_THRESHOLD = 7.0           # Below this compounds the concern
+WR_FP_MIN_TARGETS = 30              # Only apply to players with meaningful sample
+
+# Penalty applied to readiness score for contested-catch profiles
+WR_FP_PENALTY_R1 = -12   # Round 1 draft capital + poor efficiency = overrated
+WR_FP_PENALTY_R2 = -7    # Round 2
+WR_FP_PENALTY_OTHER = -3  # Other rounds
+
+# Day-2/3 breakout lift: skill-over-draft bonus for efficient players with modest draft capital
+WR_SKILL_LIFT_YPT_THRESHOLD = 9.0    # Elite yards per target
+WR_SKILL_LIFT_CATCH_THRESHOLD = 0.65  # Elite catch rate
+WR_SKILL_LIFT_MIN_TARGETS = 40        # Must have meaningful sample
+WR_SKILL_LIFT_R1 = 0                  # Round 1 picks already get full credit
+WR_SKILL_LIFT_R2 = 6                  # Round 2 outperforming draft slot
+WR_SKILL_LIFT_R3_R4 = 12             # Round 3-4 outperforming draft slot (Kupp archetype)
+WR_SKILL_LIFT_UDFA = 8               # UDFAs with elite efficiency
+
+RB_SKILL_LIFT_YPC_THRESHOLD = 4.8   # Elite yards per carry
+RB_SKILL_LIFT_MIN_CARRIES = 60       # Must have meaningful sample
+RB_SKILL_LIFT_R2 = 5
+RB_SKILL_LIFT_R3_R4 = 10
+
+# ==============================================================================
+# TE STABILIZATION - Thresholds
+# ==============================================================================
+
+# Higher minimum confidence for TE (smaller sample, higher variance position)
+TE_SAMPLE_MIN_CONFIDENCE = 0.50   # vs 0.35 default — more shrinkage toward mean
+TE_USAGE_MIN_CONFIDENCE = 0.50
+
+# TE-specific efficiency thresholds (routes run weight > raw totals)
+TE_ELITE_YPT = 8.5
+TE_GOOD_YPT = 7.0
+TE_ELITE_CATCH_RATE = 0.68
+TE_GOOD_CATCH_RATE = 0.60
+
+# ==============================================================================
 # POSITION-SPECIFIC CONFIGURATIONS
 # ==============================================================================
 

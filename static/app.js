@@ -21,6 +21,112 @@ document.documentElement.scrollTop = 0;
 document.body.scrollTop = 0;
 
 // Prevent scroll during page load
+// ── Page navigation progress bar ─────────────────────────────────────────────
+(function () {
+  var bar = null;
+  function getBar() {
+    if (!bar) bar = document.getElementById('page-load-bar');
+    return bar;
+  }
+  function startBar() {
+    var b = getBar(); if (!b) return;
+    b.className = '';
+    b.style.width = '0%';
+    b.style.opacity = '1';
+    requestAnimationFrame(function () { b.className = 'plb-active'; });
+  }
+  function finishBar() {
+    var b = getBar(); if (!b) return;
+    b.className = 'plb-done';
+    setTimeout(function () { b.className = ''; b.style.width = '0%'; }, 500);
+  }
+
+  // Show bar when a same-origin link is clicked (not anchor, not external, not new tab)
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href') || '';
+    if (link.target === '_blank' || href.startsWith('#') || href.startsWith('javascript:') ||
+        href.startsWith('mailto:') || (href.startsWith('http') && !href.startsWith(window.location.origin))) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    startBar();
+  }, true);
+
+  // Finish bar once the new page is interactive
+  window.addEventListener('pageshow', finishBar);
+  window.addEventListener('DOMContentLoaded', finishBar);
+})();
+
+// ── Login / subscribe gate ────────────────────────────────────────────────────
+/**
+ * Render a sign-in or subscribe prompt inside a container element.
+ * @param {string|Element} target  - element ID or DOM element
+ * @param {object} opts            - { title, description, feature }
+ */
+function showLoginGate(target, opts) {
+  const el = typeof target === 'string' ? document.getElementById(target) : target;
+  if (!el) return;
+  const ctx = window.__brctx || {};
+  const hasLeague = ctx.leagueId && ctx.leagueId !== 'None' && ctx.leagueId !== '';
+  opts = opts || {};
+
+  if (!ctx.is_logged_in) {
+    const signinBtn = hasLeague
+      ? `<button class="login-gate-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
+      : `<a class="login-gate-btn" href="/">Get Started</a>`;
+    el.innerHTML = `
+      <div class="login-gate">
+        <div class="login-gate-icon">🔐</div>
+        <div class="login-gate-title">${opts.title || 'Sign in to continue'}</div>
+        <div class="login-gate-desc">${opts.description || 'Enter your Sleeper username to see personalized data for your team.'}</div>
+        ${signinBtn}
+      </div>`;
+  } else if (!ctx.isPremium) {
+    const pricingUrl = hasLeague
+      ? `/${ctx.platform}/${ctx.season}/${ctx.leagueId}/pricing`
+      : '/pricing';
+    el.innerHTML = `
+      <div class="login-gate">
+        <div class="login-gate-icon">⭐</div>
+        <div class="login-gate-title">${opts.title || 'Premium Feature'}</div>
+        <div class="login-gate-desc">${opts.description || 'Subscribe to unlock this feature and get the full BR Fantasy experience.'}</div>
+        <a class="login-gate-btn" href="${pricingUrl}">Subscribe</a>
+        <a class="login-gate-btn-secondary" href="${pricingUrl}">View Plans</a>
+      </div>`;
+  }
+}
+
+// ── Data freshness chip ───────────────────────────────────────────────────────
+(function () {
+  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours — matches server CACHE_TTL
+  function initFreshness() {
+    var main = document.getElementById('page-root');
+    if (!main) return;
+    var ts = parseInt(main.dataset.cacheTs || '0', 10);
+    if (!ts) return;
+    var chip = document.getElementById('cache-freshness');
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.id = 'cache-freshness';
+      document.body.appendChild(chip);
+    }
+    function update() {
+      var diff = Date.now() - ts;
+      var mins = Math.floor(diff / 60000);
+      var label;
+      if (mins < 1) label = 'Data just updated';
+      else if (mins < 60) label = 'Data • ' + mins + 'm ago';
+      else label = 'Data • ' + Math.floor(mins / 60) + 'h ago';
+      chip.textContent = label;
+      chip.classList.add('cf-visible');
+      chip.classList.toggle('cf-stale', diff > STALE_MS);
+    }
+    update();
+    setInterval(update, 60000);
+  }
+  document.addEventListener('DOMContentLoaded', initFreshness);
+})();
+
 window.addEventListener('beforeunload', function() {
   window.scrollTo(0, 0);
 });
@@ -4309,8 +4415,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const season = document.getElementById('seasonInput')?.value;
     const leagueId = document.getElementById('leagueIdInput')?.value;
     const historySeason = document.getElementById('historySeasonInput')?.value;
+    const tourMode = !!document.getElementById('historyTourMode');
 
-    if (platform && season && leagueId && historySeason) {
+    if (!tourMode && platform && season && leagueId && historySeason) {
       // Load awards section
       const awardsContent = document.getElementById('historyAwardsContent');
       if (awardsContent) {
@@ -4446,11 +4553,18 @@ function openPlayerModal(playerId, playerName) {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <span id="playerModalBreakoutSlot"></span>
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;"><i class="fa-regular fa-star" aria-hidden="true"></i></button>
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
+    </div>
+    <div class="pm-tab-bar" id="pmTabBar" style="display:none">
+      <button class="pm-tab active" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
+      <button class="pm-tab" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
+      <button class="pm-tab" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
+      <button class="pm-tab" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
+      <button class="pm-tab" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
+      <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="player-modal-loading">
@@ -4464,9 +4578,25 @@ function openPlayerModal(playerId, playerName) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
-  // Fetch player data
-  fetch(apiUrl)
-    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+  // Fetch player data (with 5-min localStorage cache to speed up re-opens)
+  const _cacheKey = 'pm_cache_' + apiUrl;
+  const _cacheTTL = 5 * 60 * 1000;
+  let _cachedRaw = null;
+  try {
+    const _entry = JSON.parse(localStorage.getItem(_cacheKey) || 'null');
+    if (_entry && Date.now() - _entry.ts < _cacheTTL) _cachedRaw = _entry.data;
+  } catch (_) {}
+
+  const _fetchPromise = _cachedRaw
+    ? Promise.resolve(_cachedRaw)
+    : fetch(apiUrl)
+        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(data => {
+          try { localStorage.setItem(_cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+          return data;
+        });
+
+  _fetchPromise
     .then(data => {
 
       const modalBody = document.getElementById('playerModalBody');
@@ -4528,6 +4658,20 @@ function openPlayerModal(playerId, playerName) {
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
       const ageNum = parseFloat(data.age);
       if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
+      
+      // ── Value trend classification (small meta pill) ──────────────────────
+      const vt = data.value_trend || {};
+      const vtClass = vt.class || 'unknown';
+      const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
+      const vtIcon = vtIcons[vtClass] || '';
+      
+      if (vtClass && vtClass !== 'unknown' && vtIcon) {
+        const _slopeTxt = vt.slope_pct_month != null
+          ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
+          : '';
+        const _tipTxt = (vt.description || vt.label) + _slopeTxt;
+        metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
+      }
       document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
 
       // Update headshot
@@ -4536,36 +4680,8 @@ function openPlayerModal(playerId, playerName) {
         headshotEl.src = data.espnHeadshot;
       }
 
-      // Build modal body
-      let bodyHTML = '';
-
       // Extract player position
       const pos = data.position;
-
-      // Calculate breakout player status
-      const isBreakoutPlayer = !isElite(pid) && isBreakout(pid);
-
-      // Breakout button in header slot (shown when player has a breakout score)
-      if (isBreakoutPlayer) {
-        const slot = document.getElementById('playerModalBreakoutSlot');
-        if (slot) {
-          const bkHeaderBtn = document.createElement('button');
-          bkHeaderBtn.id = 'playerModalBreakoutBtn';
-          bkHeaderBtn.textContent = 'View Breakout Analysis';
-          bkHeaderBtn.style.cssText = `
-            background: rgba(16,185,129,0.1);
-            border: 1px solid rgba(16,185,129,0.3);
-            color: #10b981;
-            border-radius: 7px;
-            padding: 5px 10px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            white-space: nowrap;
-          `;
-          slot.appendChild(bkHeaderBtn);
-        }
-      }
 
       // ── Hero row ─────────────────────────────────────────────────────────
       const val1qb = data.stats?.value || 0;
@@ -4584,20 +4700,6 @@ function openPlayerModal(playerId, playerName) {
             <div class="pm-hero-label">Experience</div>
             <div class="pm-hero-val">${expLabel}</div>
           </div>`;
-
-      bodyHTML += `
-        <div class="pm-hero-row">
-          <div class="pm-hero-stat pm-hero-primary">
-            <div class="pm-hero-label">1QB Value</div>
-            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
-          </div>
-          <div class="pm-hero-stat">
-            <div class="pm-hero-label">SF Value</div>
-            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
-          </div>
-          ${thirdValueCard}
-        </div>
-      `;
 
       // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
       const pd = data.prospect_data;
@@ -4648,199 +4750,37 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
-      // ── Advanced Metrics / Prospect Profile + Value History (side by side) ──
-      const hasMetrics = hasGameLogs && !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      // ── Advanced Metrics / Prospect Profile + Value History flags ──
+      const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
-      if (hasMetrics || isRookieWithProspectData || hasChart) {
-        const gridClass = isRookieWithProspectData ? 'pm-metrics-chart-grid pm-metrics-chart-grid--prospect' : 'pm-metrics-chart-grid';
-        bodyHTML += `<hr class="pm-section-divider"><div class="${gridClass}">`;
+      const vtTrendBadge = '';
 
-        if (isRookieWithProspectData) {
-          bodyHTML += `<div>${pdColHTML}</div>`;
-        } else if (hasMetrics) {
-          bodyHTML += `
-            <div id="advancedMetricsSection">
-              <div class="pm-section-header">
-                <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
-              </div>
-              <div id="advMetricsPills"></div>
-              <div id="advancedMetricsContent">
-                <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
-                  <div class="loading-spinner" style="width:16px;height:16px;"></div>
-                  <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
-                </div>
-              </div>
-            </div>
-          `;
-        } else {
-          bodyHTML += `<div></div>`; // empty left cell so chart stays right
-        }
-
-        if (hasChart) {
-          bodyHTML += `
-            <div>
-              <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-              <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
-            </div>
-          `;
-        } else {
-          bodyHTML += `<div></div>`;
-        }
-
-        bodyHTML += `</div>`;
-      }
-
-      // ── Game Logs ─────────────────────────────────────────────────────────
-      if (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0) {
-        bodyHTML += `
-          <hr class="pm-section-divider">
-          <div class="player-modal-section">
-            <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
-        `;
-
-        // Sort years in descending order (most recent first)
-        const years = Object.keys(data.game_logs_by_year).sort((a, b) => b - a);
-
-        years.forEach((year, index) => {
-          const gameLogs = data.game_logs_by_year[year];
-          const isFirstYear = index === 0;
-
-          // Calculate season totals
-          let totalFantasyPts = 0;
-          let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
-          let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
-          let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
-          let totalFumLost = 0;
-
-          gameLogs.forEach(game => {
-            totalFantasyPts += game.fantasy_pts || 0;
-            const s = game.stats;
-            totalPassYd += s.pass_yd || 0;
-            totalPassTd += s.pass_td || 0;
-            totalPassInt += s.pass_int || 0;
-            totalRushAtt += s.rush_att || 0;
-            totalRushYd += s.rush_yd || 0;
-            totalRushTd += s.rush_td || 0;
-            totalRecTgt += s.rec_tgt || 0;
-            totalRec += s.rec || 0;
-            totalRecYd += s.rec_yd || 0;
-            totalRecTd += s.rec_td || 0;
-            totalFumLost += s.fum_lost || 0;
-          });
-
-          // Build season summary for header
-          const seasonSummaryParts = [];
-          seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
-          if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
-          if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
-          if (totalRec >
-           0) seasonSummaryParts.push(`${totalRec} rec`);
-          const seasonSummary = seasonSummaryParts.join(' • ');
-
-          bodyHTML += `
-            <div class="game-log-year-section">
-              <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
-                <div class="game-log-year-header-main">
-                  <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
-                  <span class="game-log-year-title">${year} Season</span>
-                </div>
-              </div>
-              <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
-                <table class="game-log-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Opp</th>
-                      <th>Pts</th>
-                      <th>Pass Yd</th>
-                      <th>Pass TD</th>
-                      <th>INT</th>
-                      <th>Rush Att</th>
-                      <th>Rush Yd</th>
-                      <th>Rush TD</th>
-                      <th>Tgt</th>
-                      <th>Rec</th>
-                      <th>Rec Yd</th>
-                      <th>Rec TD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-          `;
-
-          gameLogs.forEach(game => {
-            const stats = game.stats;
-
-            // Format date: 20240908 -> 9/8
-            let dateStr = game.date || '';
-            if (dateStr.length === 8) {
-              const month = parseInt(dateStr.substring(4, 6));
-              const day = parseInt(dateStr.substring(6, 8));
-              dateStr = `${month}/${day}`;
-            }
-
-            // Check if player has any stats at all
-            const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
-                               stats.rec != null || stats.rec_tgt != null;
-
-            const val = (v) => v != null && v > 0 ? v : '—';
-            const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
-
-            bodyHTML += `
-              <tr class="${rowClass}">
-                <td>${dateStr}</td>
-                <td class="game-log-table-opp">${game.opponent || '—'}</td>
-                <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
-                <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
-                <td>${val(stats.pass_td)}</td>
-                <td>${val(stats.pass_int)}</td>
-                <td>${val(stats.rush_att)}</td>
-                <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
-                <td>${val(stats.rush_td)}</td>
-                <td>${val(stats.rec_tgt)}</td>
-                <td>${val(stats.rec)}</td>
-                <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
-                <td>${val(stats.rec_td)}</td>
-              </tr>
-            `;
-          });
-
-          const valTotal = (v) => v != null && v > 0 ? v : '—';
-
-          // Add season totals row in table format (inside the table)
-          bodyHTML += `
-                  </tbody>
-                  <tfoot>
-                    <tr class="game-log-table-total">
-                      <td><strong>Total</strong></td>
-                      <td><strong>${gameLogs.length}G</strong></td>
-                      <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
-                      <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalPassTd)}</strong></td>
-                      <td><strong>${valTotal(totalPassInt)}</strong></td>
-                      <td><strong>${valTotal(totalRushAtt)}</strong></td>
-                      <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalRushTd)}</strong></td>
-                      <td><strong>${valTotal(totalRecTgt)}</strong></td>
-                      <td><strong>${valTotal(totalRec)}</strong></td>
-                      <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
-                      <td><strong>${valTotal(totalRecTd)}</strong></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          `;
-        });
-
-        bodyHTML += `
+      // ── Build Overview panel HTML ─────────────────────────────────────────
+      let overviewHTML = `
+        <div class="pm-hero-row">
+          <div class="pm-hero-stat pm-hero-primary">
+            <div class="pm-hero-label">1QB Value</div>
+            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
           </div>
+          <div class="pm-hero-stat">
+            <div class="pm-hero-label">SF Value</div>
+            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+          </div>
+          ${thirdValueCard}
+        </div>
+      `;
+
+      if (hasChart) {
+        overviewHTML += `
+          <hr class="pm-section-divider">
+          <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
+          <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
         `;
       }
 
-      // ── News placeholder (lazy-loaded after modal renders) ───────────────
       if (data.position && data.position !== 'PICK') {
-        bodyHTML += `
+        overviewHTML += `
           <hr class="pm-section-divider">
           <div class="pm-news-section" id="pmNewsSection">
             <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
@@ -4851,9 +4791,78 @@ function openPlayerModal(playerId, playerName) {
         `;
       }
 
-      document.getElementById('playerModalBody').innerHTML = bodyHTML || '<div class="player-modal-loading"><div>No data available</div></div>';
+      // ── Build Adv Metrics panel HTML ──────────────────────────────────────
+      const metricsHTML = hasMetrics ? `
+        <div id="advancedMetricsSection">
+          <div class="pm-section-header">
+            <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
+          </div>
+          <div id="advMetricsPills"></div>
+          <div id="advancedMetricsContent">
+            <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
+              <div class="loading-spinner" style="width:16px;height:16px;"></div>
+              <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
+            </div>
+          </div>
+        </div>
+      ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
 
-      // Lazy-load prospect comparables for rookies
+      // ── Build Breakout panel HTML (lazy-loaded) ───────────────────────────
+      const breakoutHTML = `
+        <div style="padding:32px 0;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading breakout analysis…</span>
+        </div>
+      `;
+
+      // ── Build Trades panel HTML (lazy-loaded) ─────────────────────────────
+      const tradesHTML = `
+        <div style="padding:32px 0;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <div class="loading-spinner" style="width:16px;height:16px;"></div>
+          <span style="font-size:13px;color:var(--text-muted);">Loading trade history…</span>
+        </div>
+      `;
+
+      // ── Build Prospect panel HTML ─────────────────────────────────────────
+      const prospectPanelHTML = isRookieWithProspectData ? pdColHTML
+        : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No prospect data available.</div></div>';
+
+      // ── Assemble panels into modal body ───────────────────────────────────
+      modalBody.innerHTML = `
+        <div class="pm-panel pm-panel-active" id="pm-panel-overview">${overviewHTML}</div>
+        <div class="pm-panel" id="pm-panel-stats">
+          <div class="player-modal-loading" style="padding:40px 0;">
+            <div class="loading-spinner"></div>
+            <div style="font-size:13px;margin-top:8px;color:var(--text-muted);">Loading stats…</div>
+          </div>
+        </div>
+        <div class="pm-panel" id="pm-panel-metrics">${metricsHTML}</div>
+        <div class="pm-panel" id="pm-panel-prospect">${prospectPanelHTML}</div>
+        <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
+        <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
+      `;
+
+      // ── Show tab bar and configure it ─────────────────────────────────────
+      const pmTabBar = document.getElementById('pmTabBar');
+      pmTabBar.style.display = '';
+      pmTabBar.dataset.pmPlayerId = playerId;
+      pmTabBar.dataset.pmSeason = season;
+      pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
+
+      // Show/hide conditional tabs
+      const tabMetrics = document.getElementById('pmTabMetrics');
+      if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
+      const tabProspect = document.getElementById('pmTabProspect');
+      if (tabProspect) tabProspect.style.display = isRookieWithProspectData ? '' : 'none';
+      const tabBreakout = document.getElementById('pmTabBreakout');
+      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
+
+      // Reset to Overview tab active state
+      document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
+      const overviewTabBtn = document.querySelector('.pm-tab[data-tab="overview"]');
+      if (overviewTabBtn) overviewTabBtn.classList.add('active');
+
+      // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
           .then(r => r.json())
@@ -4888,7 +4897,7 @@ function openPlayerModal(playerId, playerName) {
           });
       }
 
-      // Lazy-load news after modal is in the DOM
+      // ── Lazy-load news into Overview panel ────────────────────────────────
       if (data.position && data.position !== 'PICK') {
         fetch(`/api/player-news/${encodeURIComponent(playerId)}`)
           .then(r => r.json())
@@ -4918,24 +4927,13 @@ function openPlayerModal(playerId, playerName) {
           });
       }
 
-      // Wire up breakout header button
-      const bkBtn = document.getElementById('playerModalBreakoutBtn');
-      if (bkBtn) {
-        bkBtn.addEventListener('click', () => {
-          closePlayerModal();
-          openBreakoutModal(playerId, playerName);
-        });
-      }
-
-      // Wire up compare button
+      // ── Wire up compare button ────────────────────────────────────────────
       const cmpBtn = document.getElementById('playerModalCompareBtn');
       if (cmpBtn) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
-      // Watchlist functionality disabled
-
-      // Render value history chart if data exists
+      // ── Render value history chart in Overview panel ───────────────────────
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
@@ -4948,15 +4946,6 @@ function openPlayerModal(playerId, playerName) {
             // Use hardcoded month names to avoid locale/timezone issues
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
-          };
-          const formatMonthOnly = (dateStr) => {
-            if (!dateStr) return '';
-            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (!m) return '';
-            const [, year, month, day] = m;
-            // Use hardcoded month names to avoid locale/timezone issues
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            return monthNames[parseInt(month, 10) - 1];
           };
 
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
@@ -4986,12 +4975,12 @@ function openPlayerModal(playerId, playerName) {
             .getPropertyValue('--text-muted').trim() || '#6b7280';
 
           // Add empty space after the data to center the last point
-          const extendedX = [...xData, '', '', '', '']; // Add more empty categories
-          const extendedY = [...yValues, null, null, null, null]; // Add more null values
-          
+          const extendedX = [...xData, '', '', '', ''];
+          const extendedY = [...yValues, null, null, null, null];
+
           // Create hover text for actual data points only
           const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
-          
+
           const trace = {
             x: extendedX,
             y: extendedY,
@@ -5018,12 +5007,12 @@ function openPlayerModal(playerId, playerName) {
               showgrid: false,
               type: 'category',
               tickmode: 'array',
-              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3], // Include 4 empty positions
-              ticktext: [...ticktext, '', '', ''], // Empty labels for added space
+              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3],
+              ticktext: [...ticktext, '', '', ''],
               tickangle: 0,
               tickfont: { size: 11, color: mutedColor },
               fixedrange: true,
-              range: [-(xData.length * 0.3), xData.length + 2], // Center the most recent value
+              range: [-(xData.length * 0.3), xData.length + 2],
             },
             yaxis: {
               showgrid: true,
@@ -5041,14 +5030,8 @@ function openPlayerModal(playerId, playerName) {
         }
       }
 
-      // Fetch and render advanced metrics (bars go into #advancedMetricsContent)
-      const advancedSection = document.getElementById('advancedMetricsSection');
-      if (advancedSection) {
-        const path = window.location.pathname;
-        const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
-        const leagueId = match ? match[3] : null;
-        loadAdvancedMetrics(playerId, leagueId, null);
-      }
+      // Store whether this player has metrics so pmSwitchTab can lazy-load them
+      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
     })
     .catch(err => {
       console.error('Error loading player data:', err);
@@ -5060,6 +5043,396 @@ function openPlayerModal(playerId, playerName) {
         </div>
       `;
     });
+}
+
+// ── Player Modal Tab Switching (global) ──────────────────────────────────────
+function pmSwitchTab(tab) {
+  document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
+  document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('pm-panel-' + tab);
+  const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
+  if (panel) panel.classList.add('pm-panel-active');
+  if (btn) btn.classList.add('active');
+
+  const pmTabBar = document.getElementById('pmTabBar');
+  if (!pmTabBar) return;
+  const playerId = pmTabBar.dataset.pmPlayerId;
+  const season = pmTabBar.dataset.pmSeason;
+
+  // ── Lazy-load Adv Metrics tab ────────────────────────────────────────────
+  if (tab === 'metrics' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasMetrics) {
+    panel.dataset.loaded = '1';
+    const path = window.location.pathname;
+    const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+    const leagueIdForMetrics = match ? match[3] : null;
+    loadAdvancedMetrics(playerId, leagueIdForMetrics, null);
+  }
+
+  // ── Lazy-load Breakout tab ───────────────────────────────────────────────
+  if (tab === 'breakout' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const score = parseFloat(data.breakout_opportunity_score || 0);
+        let scoreColor = '#10b981';
+        if (score < 50) scoreColor = '#3b82f6';
+        if (score < 40) scoreColor = '#f59e0b';
+        if (score < 30) scoreColor = '#6b7280';
+        panel.innerHTML = _buildBkTabHTML(data, scoreColor);
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Breakout analysis not available.</div></div>';
+        }
+      });
+  }
+
+  // ── Lazy-load Stats tab ──────────────────────────────────────────────────
+  if (tab === 'stats' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    const pathParts2 = window.location.pathname.split('/').filter(p => p);
+    const _platform = pathParts2[0] || 'sleeper';
+    const _season   = pathParts2[1] || new Date().getFullYear();
+    const _leagueId = pathParts2[2] || null;
+    const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+    const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+    let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+    if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+    fetch(logsUrl)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const logsByYear = data.game_logs_by_year || {};
+        if (!Object.keys(logsByYear).length) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
+          return;
+        }
+        panel.innerHTML = _buildStatsHTML(logsByYear);
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load stats.</div></div>';
+        }
+      });
+  }
+
+  // ── Lazy-load Trades tab ─────────────────────────────────────────────────
+  if (tab === 'trades' && panel && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    const playerName = pmTabBar.dataset.pmPlayerName || '';
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const tdbPlatform = pathParts[0];
+    const tdbSeason   = pathParts[1];
+    const tdbLeague   = pathParts[2];
+    const tdbBase = (tdbPlatform && tdbSeason && tdbLeague && !['players','breakouts','prospects','trade-database','trade-intel'].includes(tdbPlatform))
+      ? `/${tdbPlatform}/${tdbSeason}/${tdbLeague}/trade-database`
+      : '/trade-database';
+    const tdbLink = playerName
+      ? `${tdbBase}?q=${encodeURIComponent(playerName)}`
+      : tdbBase;
+
+    fetch(`/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        const trades = data.trades || [];
+        const linkHTML = `<div style="text-align:center;padding:12px 0 2px;"><a href="${tdbLink}" style="font-size:12px;color:var(--accent,#3b82f6);font-weight:600;text-decoration:none;">Search all trades in Trade Database →</a></div>`;
+        if (!trades.length) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No recent trades found for this player.</div></div>' + linkHTML;
+          return;
+        }
+        panel.innerHTML = '<div style="padding:4px 0;">' + trades.map(t => {
+          const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
+          const sfBadge = t.league_type === 'sf' || t.league_type === 'superflex'
+            ? '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(139,92,246,.15);color:#8b5cf6;border:1px solid rgba(139,92,246,.3);">SF</span>'
+            : '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3);">1QB</span>';
+          const scoreBadge = t.fairness_score != null
+            ? `<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(0,0,0,.05);color:var(--text-muted);">${parseFloat(t.fairness_score).toFixed(0)}</span>`
+            : '';
+          const renderAssets = (assets) => {
+            if (!assets || !assets.length) return '<span style="font-size:12px;color:var(--text-muted);">—</span>';
+            return assets.map(a => {
+              const isPick = a.is_pick || (a.name || '').toLowerCase().includes('pick') || (a.name || '').toLowerCase().includes('round');
+              const isFocus = String(a.player_id || '') === String(playerId);
+              const cls = isPick ? 'pm-trade-asset pm-pick' : (isFocus ? 'pm-trade-asset pm-focus' : 'pm-trade-asset');
+              return `<div class="${cls}">${a.name || a.player_name || '?'}</div>`;
+            }).join('');
+          };
+          const sideA = renderAssets(t.side_a);
+          const sideB = renderAssets(t.side_b);
+          return `<div class="pm-trade-card">
+            <div class="pm-trade-head">
+              <span class="pm-trade-date">${dateStr}</span>
+              <div style="display:flex;gap:5px;">${sfBadge}${scoreBadge}</div>
+            </div>
+            <div class="pm-trade-body">
+              <div class="pm-trade-col">${sideA}</div>
+              <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
+              <div class="pm-trade-col">${sideB}</div>
+            </div>
+          </div>`;
+        }).join('') + '</div>' + linkHTML;
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load trade history.</div></div>';
+        }
+      });
+  }
+}
+
+// ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────
+function _buildBkTabHTML(data, scoreColor) {
+  const score = parseFloat(data.breakout_opportunity_score || 0);
+  const scoreStr = score.toFixed(1);
+  if (!scoreColor) {
+    scoreColor = '#10b981';
+    if (score < 50) scoreColor = '#3b82f6';
+    if (score < 40) scoreColor = '#f59e0b';
+    if (score < 30) scoreColor = '#6b7280';
+  }
+
+  const breakoutType = data.breakout_type || {};
+  const formattedPhase = data.phase
+    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : '—';
+
+  const reasons = (data.key_reasons || '').split('\n')
+    .filter(r => r.trim() && r.startsWith('•'))
+    .map(r => r.substring(1).trim());
+
+  const txnSummary    = data.vacated_usage_summary || '';
+  const addedCompSumm = data.added_competition_summary || '';
+
+  // ── Hero row ───────────────────────────────────────────────────────────────
+  let html = `
+    <div class="pm-hero-row">
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
+        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+      </div>
+      <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
+        <div class="pm-hero-label">Profile</div>
+        <div style="font-size:13px;font-weight:700;line-height:1.3;color:var(--text);margin:4px 0;">${breakoutType.profile_label || '—'}</div>
+      </div>
+      <div class="pm-hero-stat">
+        <div class="pm-hero-label">Phase</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
+      </div>
+    </div>
+  `;
+
+  // ── Component breakdown ────────────────────────────────────────────────────
+  const components = [
+    { label: 'Opportunity',     val: data.opportunity_opened_score,  color: '#10b981' },
+    { label: 'Competition',     val: data.competition_removed_score, color: '#3b82f6' },
+    { label: 'Team Env.',       val: data.team_environment_score,    color: null      },
+    { label: 'Readiness',       val: data.player_readiness_score,    color: '#8b5cf6' },
+    { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
+    { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280', suffix: '%' },
+  ];
+
+  html += `<div class='pm-two-column'><div class='pm-left-column'>`;
+  html += `<hr class="pm-section-divider">`;
+  html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
+  html += '<div class="pm-comp-list-bo">';
+  components.forEach(c => {
+    const v    = parseFloat(c.val || 0);
+    const fill = Math.min(100, Math.max(0, v));
+    const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
+    const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
+    html += `
+      <div class="pm-comp-row">
+        <span class="pm-comp-label">${c.label}</span>
+        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
+        <span class="pm-comp-val" style="color:${color};">${disp}</span>
+      </div>`;
+  });
+  html += '</div></div>';
+
+  // ── Key factors ────────────────────────────────────────────────────────────
+  if (reasons.length) {
+    html += `
+      <div class='pm-right-column'>
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+    `;
+    reasons.forEach(r => {
+      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
+        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+  html += '</div>';
+
+  // ── Context boxes ──────────────────────────────────────────────────────────
+  if (txnSummary && txnSummary !== 'No departures') {
+    html += `
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Vacated Opportunity</span></div>
+      <div class="pm-context-box">${txnSummary}</div>
+    `;
+  }
+  if (addedCompSumm && addedCompSumm !== 'No new competition added') {
+    html += `
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">Added Competition</span></div>
+      <div class="pm-context-box competition">${addedCompSumm}</div>
+    `;
+  }
+
+  return html;
+}
+
+// ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
+function _buildStatsHTML(game_logs_by_year) {
+  let statsHTML = '';
+  if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
+    statsHTML += `
+      <div class="player-modal-section">
+        <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+    `;
+
+    // Sort years in descending order (most recent first)
+    const years = Object.keys(game_logs_by_year).sort((a, b) => b - a);
+
+    years.forEach((year, index) => {
+      const gameLogs = game_logs_by_year[year];
+      const isFirstYear = index === 0;
+
+      // Calculate season totals
+      let totalFantasyPts = 0;
+      let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
+      let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
+      let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
+      let totalFumLost = 0;
+
+      gameLogs.forEach(game => {
+        totalFantasyPts += game.fantasy_pts || 0;
+        const s = game.stats;
+        totalPassYd += s.pass_yd || 0;
+        totalPassTd += s.pass_td || 0;
+        totalPassInt += s.pass_int || 0;
+        totalRushAtt += s.rush_att || 0;
+        totalRushYd += s.rush_yd || 0;
+        totalRushTd += s.rush_td || 0;
+        totalRecTgt += s.rec_tgt || 0;
+        totalRec += s.rec || 0;
+        totalRecYd += s.rec_yd || 0;
+        totalRecTd += s.rec_td || 0;
+        totalFumLost += s.fum_lost || 0;
+      });
+
+      // Build season summary for header
+      const seasonSummaryParts = [];
+      seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
+      if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
+      if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
+      if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
+      const seasonSummary = seasonSummaryParts.join(' • ');
+
+      statsHTML += `
+        <div class="game-log-year-section">
+          <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
+            <div class="game-log-year-header-main">
+              <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
+              <span class="game-log-year-title">${year} Season</span>
+            </div>
+          </div>
+          <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
+            <table class="game-log-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opp</th>
+                  <th>Pts</th>
+                  <th>Pass Yd</th>
+                  <th>Pass TD</th>
+                  <th>INT</th>
+                  <th>Rush Att</th>
+                  <th>Rush Yd</th>
+                  <th>Rush TD</th>
+                  <th>Tgt</th>
+                  <th>Rec</th>
+                  <th>Rec Yd</th>
+                  <th>Rec TD</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      gameLogs.forEach(game => {
+        const stats = game.stats;
+
+        // Format date: 20240908 -> 9/8
+        let dateStr = game.date || '';
+        if (dateStr.length === 8) {
+          const month = parseInt(dateStr.substring(4, 6));
+          const day = parseInt(dateStr.substring(6, 8));
+          dateStr = `${month}/${day}`;
+        }
+
+        // Check if player has any stats at all
+        const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
+                           stats.rec != null || stats.rec_tgt != null;
+
+        const val = (v) => v != null && v > 0 ? v : '—';
+        const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+
+        statsHTML += `
+          <tr class="${rowClass}">
+            <td>${dateStr}</td>
+            <td class="game-log-table-opp">${game.opponent || '—'}</td>
+            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+            <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
+            <td>${val(stats.pass_td)}</td>
+            <td>${val(stats.pass_int)}</td>
+            <td>${val(stats.rush_att)}</td>
+            <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
+            <td>${val(stats.rush_td)}</td>
+            <td>${val(stats.rec_tgt)}</td>
+            <td>${val(stats.rec)}</td>
+            <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
+            <td>${val(stats.rec_td)}</td>
+          </tr>
+        `;
+      });
+
+      const valTotal = (v) => v != null && v > 0 ? v : '—';
+
+      // Add season totals row in table format (inside the table)
+      statsHTML += `
+              </tbody>
+              <tfoot>
+                <tr class="game-log-table-total">
+                  <td><strong>Total</strong></td>
+                  <td><strong>${gameLogs.length}G</strong></td>
+                  <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
+                  <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalPassTd)}</strong></td>
+                  <td><strong>${valTotal(totalPassInt)}</strong></td>
+                  <td><strong>${valTotal(totalRushAtt)}</strong></td>
+                  <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRushTd)}</strong></td>
+                  <td><strong>${valTotal(totalRecTgt)}</strong></td>
+                  <td><strong>${valTotal(totalRec)}</strong></td>
+                  <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRecTd)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    });
+
+    statsHTML += `</div>`;
+  }
+  return statsHTML || '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
 }
 
 function getRoleGrade(roleScore) {
@@ -5170,9 +5543,19 @@ function buildAdvancedMetricsHTML(metricsData) {
       const ratio = metrics.td_rate / metrics.int_rate;
       defs.push({ label: 'TD/INT Ratio', fill: Math.min(ratio * 20, 100), display: ratio.toFixed(2) });
     }
+    if (metrics.pressure_to_sack_rate != null) {
+      const v = metrics.pressure_to_sack_rate;
+      // Lower is better: elite QBs sack <20% of pressures
+      const fill = Math.max(0, 100 - v);
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444' });
+    }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.rush_td_rate != null) {
+      const v = metrics.rush_td_rate;
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%' });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
@@ -5183,29 +5566,70 @@ function buildAdvancedMetricsHTML(metricsData) {
       const v = metrics.breakaway_percentage;
       defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%' });
     }
+    if (metrics.explosive_runs_10_plus != null) {
+      const v = metrics.explosive_runs_10_plus;
+      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0) });
+    }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
       defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
+      const v = metrics.avoided_tackles;
+      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0) });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
       defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
     }
+    if (metrics.yards_per_touch != null) {
+      const v = metrics.yards_per_touch;
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.rush_td_rate != null) {
+      const v = metrics.rush_td_rate;
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
+    }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
-      // Scale opportunity share differently: 25%+ is excellent (green), 15%+ is good (blue), 10%+ is average (yellow)
-      const fillPercent = Math.min(oppShare * 4, 100); // Scale up by 4x so 25% = 100%
+      const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
       defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
+    }
+    if (metrics.catch_rate != null) {
+      const pct = metrics.catch_rate * 100;
+      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
       defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
     }
+    if (metrics.catch_rate != null) {
+      const pct = metrics.catch_rate * 100;
+      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.drop_rate != null) {
+      const v = metrics.drop_rate;
+      // Lower is better; flip color: green = low drop rate
+      const fill = Math.max(0, 100 - v * 5);
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444' });
+    }
+    if (metrics.yards_per_target != null) {
+      const v = metrics.yards_per_target;
+      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.yards_per_reception != null) {
+      const v = metrics.yards_per_reception;
+      defs.push({ label: 'Yds/Reception', fill: Math.min(v / 18 * 100, 100), display: v.toFixed(1) });
+    }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
       defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.yards_after_catch != null) {
+      const v = metrics.yards_after_catch;
+      defs.push({ label: 'YAC (season)', fill: Math.min(v / 800 * 100, 100), display: Math.round(v).toString() });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
@@ -5219,19 +5643,44 @@ function buildAdvancedMetricsHTML(metricsData) {
       const pct = metrics.target_share * 100;
       defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
     }
-    if (metrics.catch_rate != null) {
-      const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+    if (metrics.target_quality_score != null) {
+      const v = metrics.target_quality_score;
+      defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
     }
-    if (metrics.yards_per_target != null) {
-      const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+    // Alignment rates (slot / wide / inline)
+    if (metrics.slot_rate != null) {
+      const v = metrics.slot_rate;
+      defs.push({ label: 'Slot Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
     }
+    if (metrics.wide_rate != null) {
+      const v = metrics.wide_rate;
+      defs.push({ label: 'Wide Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
+    }
+    if (position === 'TE' && metrics.inline_rate != null) {
+      const v = metrics.inline_rate;
+      defs.push({ label: 'Inline Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
+    }
+  }
+
+  if (metrics.target_quality_score != null && position === 'RB') {
+    const v = metrics.target_quality_score;
+    defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
     const v = metrics.red_zone_usage;
     defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1) });
+  }
+
+  if (metrics.usage_trend != null) {
+    const trend = metrics.usage_trend;
+    const icon = trend > 5 ? '<i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> ' : trend < -5 ? '<i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i> ' : '';
+    defs.push({
+      label: 'Usage Trend',
+      fill: Math.min(Math.max((trend + 50) / 100 * 100, 0), 100),
+      display: icon + (trend > 0 ? '+' : '') + trend.toFixed(1) + '%',
+      forceColor: trend > 5 ? '#10b981' : trend < -5 ? '#ef4444' : null,
+    });
   }
 
   if (metrics.efficiency_trend != null) {
@@ -5800,6 +6249,8 @@ function openCompareSearch(player1Data) {
   if (!modal || !body) return;
 
   modal.classList.add('compare-mode');
+  const tabBar = document.getElementById('pmTabBar');
+  if (tabBar) tabBar.style.display = 'none';
 
   body.innerHTML = `
     <div class="compare-search-panel">
@@ -6027,7 +6478,6 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     yards_after_catch_per_reception: 'YAC/Rec',
     avg_depth_of_target: 'aDOT',
     contested_catch_rate: 'Contested Catch %',
-    avoided_tackles: 'Avoided Tackles',
     drop_rate: 'Drop Rate',
     slot_rate: 'Slot Rate',
     wide_rate: 'Wide Rate',
@@ -6058,11 +6508,6 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     opportunity_share: 'Opportunity Share',
     red_zone_usage: 'Red Zone Usage',
     role_score: 'Role Score',
-    
-    // Blocking metrics
-    pass_block_rate: 'Pass Block Rate',
-    grades_pass_block: 'PFF Pass Block',
-    grades_offense: 'PFF Off Grade',
   };
   
   // Determine relevant metrics based on positions
@@ -7259,6 +7704,58 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ── New Subscriber Welcome Tour ───────────────────────────────────────────────
+(function () {
+  'use strict';
+  if (new URLSearchParams(window.location.search).get('new_subscriber') !== '1') return;
+  if (localStorage.getItem('br_sub_tour_done')) return;
+  localStorage.setItem('br_sub_tour_done', '1');
+
+  // Clean the URL so a refresh doesn't re-trigger it
+  const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]new_subscriber=1/, '').replace(/^\?$/, '');
+  history.replaceState(null, '', cleanUrl);
+
+  // Build league-aware links from path
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  const hasLeague = parts.length >= 3;
+  const base = hasLeague ? '/' + parts.slice(0, 3).join('/') : '';
+
+  const features = [
+    { icon: '📊', label: 'Trade Intelligence', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
+    { icon: '🔥', label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidate rankings', href: base + '/breakouts' },
+    { icon: '🤖', label: 'AI Insights', desc: 'Front office briefings and trade analysis personalized to your roster', href: base + '/dashboard' },
+    { icon: '📈', label: 'Roster Grades', desc: 'Letter grades, archetypes, and portfolio value trends', href: base + '/teams' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'subWelcomeTour';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 32px 28px;max-width:480px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,0.35);position:relative;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:40px;margin-bottom:12px;">🎉</div>
+        <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:var(--text);">Welcome to Premium!</h2>
+        <p style="margin:0;font-size:14px;color:var(--text-muted);line-height:1.5;">Here's what you've unlocked. Explore at your own pace or jump in now.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+        ${features.map(f => `
+          <a href="${f.href}" style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-alt);text-decoration:none;transition:background 0.12s;" onmouseover="this.style.background='var(--accent-soft)'" onmouseout="this.style.background='var(--bg-alt)'">
+            <span style="font-size:22px;width:32px;text-align:center;flex-shrink:0;">${f.icon}</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);">${f.label}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${f.desc}</div>
+            </div>
+            <span style="margin-left:auto;color:var(--text-muted);font-size:14px;">→</span>
+          </a>`).join('')}
+      </div>
+      <button onclick="document.getElementById('subWelcomeTour').remove()" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .12s;" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+        Let's go →
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+})();
+
 // ── New User Tour ──────────────────────────────────────────────────────────
 (function () {
   'use strict';
@@ -7297,18 +7794,18 @@ document.addEventListener('click', (e) => {
   const TOUR_STEPS = [
     {
       page: 'dashboard', selector: null,
-      title: 'Welcome!',
-      body: "Let's take a 30-second tour of your dynasty dashboard.",
+      title: 'Welcome to your dynasty hub!',
+      body: "Let's take a quick tour of the key features. Hit Next to get started.",
     },
     {
       page: 'dashboard', selector: '#settingsGearBtn',
       title: 'Settings & Leagues',
-      body: 'Switch leagues, toggle dark mode, or view the changelog here.',
+      body: 'Manage leagues, refresh your data, toggle dark mode, and view the changelog here.',
     },
     {
       page: 'dashboard', selector: '#settingsDropdown',
       title: 'Settings Menu',
-      body: 'Here you can refresh data, view notifications, switch leagues, and toggle dark mode.',
+      body: 'Switch between leagues, force a data refresh, or flip to dark mode — all in one place.',
       beforeShow: function () {
         var dd = document.getElementById('settingsDropdown');
         if (dd) dd.style.display = 'block';
@@ -7321,7 +7818,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: '#settingsChangelogBtn',
       title: "What's New",
-      body: 'The bell shows new features and updates. A red dot means something new dropped.',
+      body: 'The bell lights up when new features or data drop. Never miss an update.',
       beforeShow: function () {
         var dd = document.getElementById('settingsDropdown');
         if (dd) dd.style.display = 'block';
@@ -7334,112 +7831,48 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: '.nav-pills-container',
       title: 'Navigation',
-      body: 'Jump between Dashboard, Trade Calc, Teams, Activity, Players, and more.',
+      body: 'Jump to Trade Calc, Teams, Activity, Players, Breakouts, Prospects, and more from here.',
     },
     {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
-      body: 'Click any player to see their dynasty value, trend, and breakout score.',
+      body: 'Click any player to see their dynasty value history, trend, news, and breakout score.',
       action: 'openPlayerModal',
     },
     {
       page: 'dashboard', selector: '.team-clickable, .team-row',
       title: 'Team Cards',
-      body: 'Click any team to see their full roster and asset values.',
+      body: 'Click any team to pull up their full roster, positional grades, and asset values.',
       action: 'openTeamModal',
     },
     {
       page: 'dashboard', selector: 'a[href*="/weekly"]',
       title: 'Weekly Hub',
-      body: 'During the season, see live scores, matchup previews, and weekly recaps here.',
+      body: 'Live scores, matchup previews, and weekly projections during the season.',
       onlyIfPresent: false,
     },
     {
       page: 'history', selector: '.card',
       title: 'Season History',
-      body: 'Review past season awards, standings, and scoring trends for every year.',
+      body: 'Week-by-week recaps, season standings, power rankings, and scoring trends for every past year.',
       navigate: 'history',
-      beforeShow: function () {
-        // Create mock data for history page during tour
-        setTimeout(() => {
-          // Mock season awards
-          const awardsContainer = document.querySelector('.awards-container');
-          if (awardsContainer && !awardsContainer.querySelector('.tour-mock-data')) {
-            awardsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>2024 Season Awards</h4>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-trophy" aria-hidden="true"></i> Team Alpha</span>
-                  <span class="award-desc">League Champion</span>
-                </div>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-star" aria-hidden="true"></i> Player One</span>
-                  <span class="award-desc">MVP</span>
-                </div>
-                <div class="award-item">
-                  <span class="award-winner"><i class="fa-solid fa-rocket" aria-hidden="true"></i> Player Two</span>
-                  <span class="award-desc">Breakout Player</span>
-                </div>
-              </div>
-            `;
-          }
-
-          // Mock regular season standings
-          const standingsContainer = document.querySelector('.standings-container');
-          if (standingsContainer && !standingsContainer.querySelector('.tour-mock-data')) {
-            standingsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>2024 Regular Season Standings</h4>
-                <table class="standings-table">
-                  <thead>
-                    <tr><th>Team</th><th>W-L</th><th>PF</th><th>PA</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><td>Team Alpha</td><td>12-1</td><td>2,450</td><td>1,890</td></tr>
-                    <tr><td>Team Beta</td><td>10-3</td><td>2,320</td><td>1,950</td></tr>
-                    <tr><td>Team Gamma</td><td>8-5</td><td>2,180</td><td>2,010</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            `;
-          }
-
-          // Mock season trends
-          const trendsContainer = document.querySelector('.trends-container');
-          if (trendsContainer && !trendsContainer.querySelector('.tour-mock-data')) {
-            trendsContainer.innerHTML = `
-              <div class="tour-mock-data">
-                <h4>Season Scoring Trends</h4>
-                <div class="trend-chart">
-                  <div class="trend-item">
-                    <span class="trend-label">Avg Score:</span>
-                    <span class="trend-value">142.5 pts</span>
-                  </div>
-                  <div class="trend-item">
-                    <span class="trend-label">High Score:</span>
-                    <span class="trend-value">198.2 pts</span>
-                  </div>
-                  <div class="trend-item">
-                    <span class="trend-label">Low Score:</span>
-                    <span class="trend-value">89.7 pts</span>
-                  </div>
-                </div>
-              </div>
-            `;
-          }
-        }, 1000); // Wait for page to load
-      },
+    },
+    {
+      page: 'awards', selector: '.card',
+      title: 'All-Time Awards',
+      body: 'Career records, championship history, and fun awards like "most bench points left on the table."',
+      navigate: 'awards',
     },
     {
       page: 'graphs', selector: '.card',
       title: 'League Analytics',
-      body: 'Explore PF vs PA scatter plots, weekly score lines, and a head-to-head radar chart.',
+      body: 'PF vs PA scatter plots, weekly scoring lines, and head-to-head radar charts for every team.',
       navigate: 'graphs',
     },
     {
       page: 'dashboard', selector: null,
       title: "You're all set!",
-      body: 'Explore your dynasty empire. Good luck this season!',
+      body: "Explore your dynasty empire. Check out Trade Calc, Breakouts, and Prospects when you're ready.",
     },
   ];
 
@@ -7530,38 +7963,33 @@ document.addEventListener('click', (e) => {
           var pid   = playerEl.dataset.playerId;
           var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
-          
-          // Start checking immediately and frequently
+
           var attempts = 0;
-          var maxAttempts = 30; // More attempts
+          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('playerModal');
             if (modal) {
               var body = document.getElementById('playerModalBody');
-              // Check for modal being visible and having advanced metrics section
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasAdvancedMetrics = body && body.querySelector('#advancedMetricsSection');
-              
-              // Position spotlight when advanced metrics section is loaded
+
               if (isVisible && hasAdvancedMetrics) {
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
-                return; // Stop checking once positioned
+                return;
               }
-              
-              // If modal exists but advanced metrics not loaded yet, keep checking frequently
+
               if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
+                setTimeout(checkAndPosition, 100);
               } else {
-                // Fallback: position on modal even if advanced metrics didn't load
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
               }
             }
           }
-          setTimeout(checkAndPosition, 100); // Start checking after 100ms
-        }, 100); // Minimal delay before opening modal
+          setTimeout(checkAndPosition, 400);
+        }, 200);
       }
     } else if (step.action === 'openTeamModal') {
       var teamEl = document.querySelector('.team-clickable[data-roster-id]');
@@ -7570,29 +7998,25 @@ document.addEventListener('click', (e) => {
           var rid   = teamEl.dataset.rosterId;
           var tname = teamEl.dataset.teamName || '';
           if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
-          
-          // Start checking immediately and frequently for team weekly chart
+
           var attempts = 0;
-          var maxAttempts = 30;
+          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('teamModal');
             if (modal) {
               var body = document.getElementById('teamModalBody');
-              // Check for modal being visible and having team weekly chart
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasWeeklyChart = body && body.querySelector('#teamWeeklyChart');
-              
-              // Position spotlight when team weekly chart is loaded
+
               if (isVisible && hasWeeklyChart) {
-                positionOverlays(modal); 
+                positionOverlays(modal);
                 placeTooltip(modal);
-                return; // Stop checking once positioned
+                return;
               }
-              
-              // If modal exists but weekly chart not loaded yet, keep checking frequently
+
               if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 50); // Very frequent 50ms intervals
+                setTimeout(checkAndPosition, 100);
               } else {
                 // Fallback: position on modal even if weekly chart didn't load
                 positionOverlays(modal); 
@@ -7600,8 +8024,8 @@ document.addEventListener('click', (e) => {
               }
             }
           }
-          setTimeout(checkAndPosition, 100); // Start checking after 100ms
-        }, 100); // Minimal delay before opening modal
+          setTimeout(checkAndPosition, 400);
+        }, 200);
       }
     }
   }

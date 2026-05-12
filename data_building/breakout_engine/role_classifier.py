@@ -57,11 +57,6 @@ class RoleClassifier:
         proj_targets = projected_usage.get('projected_targets', 0)
         proj_snap_share = projected_usage.get('projected_snap_share', 0)
 
-        # Extract red zone usage if available
-        role_traj_details = component_details.get('role_trajectory', {})
-        # For now, we don't have projected RZ usage easily accessible
-        # This would need to be calculated separately
-
         # Base tier
         if proj_targets >= WR1_TARGETS and proj_snap_share >= WR1_SNAP_SHARE:
             base = f"{position}1"
@@ -72,14 +67,25 @@ class RoleClassifier:
         else:
             base = "Rotational"
 
-        # Add modifiers (placeholder - would need additional data)
         modifiers = []
 
-        # Check if high snap share = 3-down player
         if proj_snap_share >= THREE_DOWN_SNAP_THRESHOLD:
             modifiers.append("3-Down")
 
-        # TODO: Add red zone, slot, etc. when data available
+        # Red zone usage: pull from role_trajectory details or opportunity_opened
+        rz_usage = (
+            component_details.get('role_trajectory', {}).get('red_zone_usage')
+            or component_details.get('opportunity_opened', {}).get('red_zone_usage')
+        )
+        if rz_usage is None:
+            # Proxy: high-volume receivers near the goal line inferred from target count
+            # TDs-per-target > 0.12 suggests heavy red zone involvement
+            tds  = component_details.get('player_readiness', {}).get('receiving_tds', 0) or 0
+            rz_proxy = (tds / max(proj_targets, 1)) if proj_targets > 0 else 0
+            if rz_proxy >= 0.12:
+                rz_usage = RED_ZONE_USAGE_THRESHOLD + 0.01  # trigger the tag
+        if rz_usage and float(rz_usage) >= RED_ZONE_USAGE_THRESHOLD:
+            modifiers.append("Red Zone Target")
 
         if modifiers:
             return f"{base} + {', '.join(modifiers)}"

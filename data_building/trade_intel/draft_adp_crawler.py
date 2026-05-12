@@ -223,7 +223,7 @@ def compute_adp() -> int:
         return row["n"] if row else 0
 
 
-def _leagues_to_crawl(batch_size: int, crawl_mode: str = "new", recrawl_days: int = 30) -> list[dict]:
+def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: int = 2) -> list[dict]:
     """
     Return dynasty leagues based on crawl mode.
 

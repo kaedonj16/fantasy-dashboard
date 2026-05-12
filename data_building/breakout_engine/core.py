@@ -269,11 +269,26 @@ class BreakoutEngine:
         component_details['role_trajectory'] = details
 
         # 7. Confidence
+        # Estimate usage_variance from season-level data: high snap-share players in a
+        # consistent role have low variance; rotational/injured players have high variance.
+        games       = float(prev_usage.get('games') or 0)
+        snap_share  = float(prev_usage.get('snap_share') or 0)
+        if games < 4:
+            usage_variance = 0.75   # tiny sample → unreliable
+        elif snap_share >= 0.80:
+            usage_variance = 0.12   # bell-cow / true starter → very consistent
+        elif snap_share >= 0.60:
+            usage_variance = 0.28   # solid starter
+        elif snap_share >= 0.40:
+            usage_variance = 0.45   # rotational
+        else:
+            usage_variance = 0.65   # depth / injured → inconsistent
+
         data_quality_metrics = {
             'has_efficiency_data': bool(prev_usage.get('yards_per_target') or prev_usage.get('yards_per_carry')),
             'has_advanced_metrics': bool(prev_usage),
-            'has_usage_history': bool(prev_usage.get('games', 0) > 0),
-            'usage_variance': 0.5  # Placeholder - would need to calculate
+            'has_usage_history': games > 0,
+            'usage_variance': usage_variance,
         }
 
         score, details = calculate_confidence_score(
@@ -309,9 +324,29 @@ class BreakoutEngine:
         vacated_carries = opp_details.get('vacated_carries', 0)
         vacated_snap_share = opp_details.get('vacated_snap_share', 0)
 
-        # Calculate expected role changes (player gets estimated share of vacated opportunity)
-        # This is a simplification - could be more sophisticated based on depth chart position
-        opportunity_share = 0.3  # Placeholder - player gets ~30% of vacated opportunity
+        # Estimate the fraction of vacated opportunity this player will capture.
+        # Logic: higher current snap share → player is already the next man up.
+        # Position matters because RBs tend to capture more rushing opportunity than
+        # WRs/TEs capture receiving opportunity (pass-game reps spread across the unit).
+        prev_snap = float(prev_usage.get('snap_share') or 0) if prev_usage else 0.0
+        if position == 'QB':
+            opportunity_share = 0.90   # QBs absorb nearly all vacated pass attempts
+        elif position == 'RB':
+            if prev_snap >= 0.55:
+                opportunity_share = 0.48   # featured back, next in line
+            elif prev_snap >= 0.30:
+                opportunity_share = 0.32   # committee back
+            else:
+                opportunity_share = 0.18   # depth
+        elif position in ('WR', 'TE'):
+            if prev_snap >= 0.70:
+                opportunity_share = 0.40   # clear alpha / top TE
+            elif prev_snap >= 0.45:
+                opportunity_share = 0.27   # #2 receiver / flex TE
+            else:
+                opportunity_share = 0.16   # slot / depth
+        else:
+            opportunity_share = 0.25
 
         role_change = {
             'carries_delta': int(vacated_carries * opportunity_share),
