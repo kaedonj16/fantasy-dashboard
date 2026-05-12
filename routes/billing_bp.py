@@ -115,8 +115,21 @@ def _pricing_body() -> str:
     return_to = request.args.get("return_to", "").strip()
 
     if success:
+        # Build a proper destination from Stripe session metadata if return_to is missing
+        session_id = request.args.get("session_id", "").strip()
+        if not return_to and session_id:
+            try:
+                from datetime import datetime as _dt
+                cs   = _stripe().checkout.Session.retrieve(session_id)
+                meta = cs.metadata.to_dict() if cs.metadata else {}
+                league_id_meta = meta.get("league_id", "")
+                if league_id_meta:
+                    season = _dt.now().year
+                    return_to = f"/sleeper/{season}/{league_id_meta}/dashboard?new_subscriber=1"
+            except Exception:
+                pass
+
         safe_return = html.escape(return_to) if return_to else ""
-        # Embed user_id from session so the status check uses the right account
         viewer_user_id = _session.get("viewer_user_id") or _session.get("viewer_username") or ""
         return f"""
     <div class="card central" style="max-width:560px;text-align:center;">

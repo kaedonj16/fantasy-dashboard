@@ -142,6 +142,14 @@ async function initiatePurchase(type, btn) {
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] || '';
 
+  // Build a destination that lands in the league dashboard after payment
+  const ctx = window.__brctx || {};
+  const _platform = ctx.platform || 'sleeper';
+  const _season   = ctx.season   || new Date().getFullYear();
+  const returnUrl = leagueId
+    ? `/${_platform}/${_season}/${leagueId}/dashboard?new_subscriber=1`
+    : window.location.href;
+
   if (btn) {
     btn.disabled = true;
     btn.dataset.origText = btn.innerHTML;
@@ -155,7 +163,7 @@ async function initiatePurchase(type, btn) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: window.location.href }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
     });
     const data = await res.json();
     if (data.url) {
