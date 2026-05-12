@@ -7243,7 +7243,8 @@ async function fetchTeamDetails(rosterId) {
       throw new Error('League ID not found in URL');
     }
 
-    const response = await fetch(`/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+    const _tmLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+    const response = await fetch(`/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);

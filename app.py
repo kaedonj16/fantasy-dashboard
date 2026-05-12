@@ -6290,6 +6290,11 @@ def build_teams_body(ctx: dict) -> str:
         if isinstance(p, dict) and p.get("id") is not None
     }
 
+    # Detect SF league to use sf_value throughout
+    _rp_teams = ctx.get("roster_positions") or []
+    _is_sf_teams = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_teams)
+    _val_field = "sf_value" if _is_sf_teams else "value"
+
     CORE_POS = {"QB", "RB", "WR", "TE"}
     POS_ORDER = ["QB", "RB", "WR", "TE"]
 
@@ -6320,7 +6325,7 @@ def build_teams_body(ctx: dict) -> str:
     # sort each position bucket by value (high → low)
     for rid, pos_map in roster_pos_players.items():
         for pos, plist in pos_map.items():
-            plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
+            plist.sort(key=lambda x: float(x.get(_val_field) or x.get("value") or 0.0), reverse=True)
 
     # ----------------- Build per-team position value buckets (for strength table) -----------------
     team_meta: Dict[int, Dict] = {}  # name, avatar
@@ -6344,7 +6349,7 @@ def build_teams_body(ctx: dict) -> str:
                 continue
             pos = str(row.get("position") or row.get("pos") or "").upper()
             try:
-                val = float(row.get("value") or 0.0)
+                val = float(row.get(_val_field) or row.get("value") or 0.0)
             except Exception:
                 val = 0.0
             if val <= 0:
@@ -13493,6 +13498,7 @@ def api_team_details(roster_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = request.args.get("season")
+        _req_lt = request.args.get("league_type", "").strip().lower()
 
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
@@ -13507,6 +13513,11 @@ def api_team_details(roster_id: str):
         league = get_league(platform, league_id, season)
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
+
+        # Detect SF from league roster positions (fallback to query param)
+        _td_rp = (league or {}).get("roster_positions") or []
+        _td_is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _td_rp) or _req_lt == "sf"
+        _td_val_field = "sf_value" if _td_is_sf else "value"
 
         # Find the specific roster
         roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
@@ -13552,7 +13563,7 @@ def api_team_details(roster_id: str):
             player_meta = players_index.get(pid_str, {})
             value_row = values_by_id.get(pid_str, {})
 
-            value = value_row.get("value", 0) or 0
+            value = value_row.get(_td_val_field) or value_row.get("value") or 0
             total_value += float(value)
 
             position = player_meta.get("pos") or ""
