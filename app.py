@@ -13139,7 +13139,7 @@ def api_player_details(player_id: str):
                 _pos_str = player_meta.get("pos", "")
                 if _pos_str:
                     _all_ppg = sorted(
-                        [float(_pick_ppg(p.get("usage") or {}))
+                        [round(float(_pick_ppg(p.get("usage") or {})), 1)
                          for p in _ud
                          if p.get("position") == _pos_str
                          and int((p.get("usage") or {}).get("games") or 0) >= 4
