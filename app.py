@@ -1886,6 +1886,9 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         if isinstance(row, dict) and row.get("id") is not None:
             values_by_id[str(row["id"])] = row
 
+    _is_sf_dash = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+    _vf_dash = "sf_value" if _is_sf_dash else "value"
+
     standings = standings_map.get(str(viewer_roster_id), {}) or {}
 
     def pick_player_meta(pid: str) -> dict:
@@ -1904,7 +1907,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         team = mv.get("team") or pmeta.get("team") or ""
         age  = age_from_bday(pmeta.get("bDay")) or mv.get("age") or pmeta.get("age")
 
-        value = safe_float(mv.get("value"))
+        value = safe_float(mv.get(_vf_dash) or mv.get("value"))
         name = (
                 mv.get("name")
                 or pmeta.get("full_name")
@@ -3506,11 +3509,15 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     league_id_str     = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
     # ── dynasty value lookup ──────────────────────────────────────────────────
+    _rp_os_st = ctx.get("roster_positions") or []
+    _is_sf_os_st = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_os_st)
+    _vf_os_st = "sf_value" if _is_sf_os_st else "value"
+
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+                values_by_id[str(row["id"])] = float(row.get(_vf_os_st) or row.get("value") or 0)
             except Exception:
                 pass
 
@@ -3872,11 +3879,15 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
+    _rp_osd = ctx.get("roster_positions") or []
+    _is_sf_osd = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_osd)
+    _vf_osd = "sf_value" if _is_sf_osd else "value"
+
     values_by_id = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0.0)
+                values_by_id[str(row["id"])] = float(row.get(_vf_osd) or row.get("value") or 0.0)
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 

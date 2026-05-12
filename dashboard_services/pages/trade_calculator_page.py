@@ -132,7 +132,9 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
+    league_type_js = repr("sf" if is_superflex else "1qb")
     return f"""
+    <script>var _leagueType = {league_type_js}; var _leagueSize = {num_teams_val};</script>
     <div class="otc-layout">
       <main class="otc-main">
         <input type="hidden" id="leagueIdInput" value="{league_val}">
