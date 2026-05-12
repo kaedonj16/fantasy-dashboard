@@ -9754,6 +9754,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             _pr_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _pr_rp)
             _pr_lt = "sf" if _pr_sf else "1qb"
             _pr_sz = len(_pr_ctx.get("rosters") or []) or 10
+            _pr_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _pr_sz))
             body_html = body_html.replace(
                 "var prLeagueType   = '1qb';",
                 f"var prLeagueType   = '{_pr_lt}';",
@@ -9764,6 +9765,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 "fetch('/api/player-indicators?league_type=1qb&league_size=10'",
                 f"fetch('/api/player-indicators?league_type={_pr_lt}&league_size={_pr_sz}'",
             ).replace(
+                '<span class="active-setting-tag">10-Team</span>',
+                f'<span class="active-setting-tag">{_pr_sz}-Team</span>',
+            ).replace(
                 '<span class="active-setting-tag">1QB</span>',
                 f'<span class="active-setting-tag">{"SF" if _pr_sf else "1QB"}</span>',
             ).replace(
@@ -9772,6 +9776,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             ).replace(
                 '<button class="settings-toggle" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
                 f'<button class="settings-toggle{" active" if _pr_sf else ""}" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
+            ).replace(
+                '<button class="settings-toggle active" data-value="10" onclick="prSetSize(10)">10</button>',
+                '<button class="settings-toggle" data-value="10" onclick="prSetSize(10)">10</button>',
+            ).replace(
+                f'<button class="settings-toggle" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
+                f'<button class="settings-toggle active" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
             )
         except Exception:
             pass
@@ -9794,12 +9804,16 @@ def page_prospects(platform: str, season: int, league_id: str):
         _rk_badge = "SF" if _rk_sf else "1QB"
         _rk_1qb_cls = "settings-toggle" if _rk_sf else "settings-toggle active"
         _rk_sf_cls = "settings-toggle active" if _rk_sf else "settings-toggle"
+        _rk_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _rk_sz))
         body_html = body_html.replace(
             "var rkLeague    = '1qb';",
             f"var rkLeague    = '{_rk_lt}';",
         ).replace(
             "var rkSize      = 10;",
             f"var rkSize      = {_rk_sz};",
+        ).replace(
+            '<span class="active-setting-tag">10-Team</span>',
+            f'<span class="active-setting-tag">{_rk_sz}-Team</span>',
         ).replace(
             '<span class="active-setting-tag">1QB</span>',
             f'<span class="active-setting-tag">{_rk_badge}</span>',
@@ -9809,6 +9823,12 @@ def page_prospects(platform: str, season: int, league_id: str):
         ).replace(
             'class="settings-toggle" data-value="sf" onclick="rkSetLeague(\'sf\')',
             f'class="{_rk_sf_cls}" data-value="sf" onclick="rkSetLeague(\'sf\')',
+        ).replace(
+            '<button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>',
+            '<button class="settings-toggle" data-value="10" onclick="rkSetSize(10)">10</button>',
+        ).replace(
+            f'<button class="settings-toggle" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
+            f'<button class="settings-toggle active" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
         )
     except Exception:
         pass
