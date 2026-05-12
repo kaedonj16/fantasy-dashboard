@@ -571,7 +571,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             else if (trend <= -5) momentumHtml = '<span style="color:#ef4444;">▼</span> Falling';
           }}
           const player_json = JSON.stringify(p).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-          return `<div class="ti-card" data-player="${{player_json}}" onclick="openTITradesModal(JSON.parse(this.dataset.player))">
+          return `<div class="ti-card" data-player="${{player_json}}" onclick="openTIPlayerCard(${{p.player_id}}, '${{(p.name || '').replace(/'/g, "\\'")}}', ${{(p.is_rookie && p.is_rookie !== 'False') ? 'true' : 'false'}})">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{name}}</div>
@@ -695,6 +695,16 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             `Page ${{data.page}} of ${{data.total_pages}} · ${{data.total}} trades`;
         }}
       }}
+
+      window.openTIPlayerCard = function(playerId, playerName, isRookie) {{
+        if (isRookie) {{
+          // For rookies, we need to get the player data and open rookie modal
+          // For now, fall back to regular modal with trades tab
+          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
+        }} else {{
+          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
+        }}
+      }};
 
       window.loadTIPage = loadTIPage;
     }})();
