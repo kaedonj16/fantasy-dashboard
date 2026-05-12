@@ -40,55 +40,58 @@ class ExplainabilityEngine:
             Bullet-point string explanation
         """
         reasons = []
-        _opp_dep_name_used = None  # track name used in opportunity bullet
 
-        # 1. Opportunity opened (if score > threshold)
-        if component_scores.get('opportunity_opened', 0) > EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD:
-            details = component_details.get('opportunity_opened', {})
-            departed = details.get('departed_players', [])
-            vacated_targets = details.get('vacated_targets', 0)
-            vacated_carries = details.get('vacated_carries', 0)
+        # Collect opportunity_opened data
+        opp_fired = component_scores.get('opportunity_opened', 0) > EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD
+        opp_dep_name = ''
+        opp_change_type = 'departed'
+        opp_vacated_targets = 0
+        opp_vacated_carries = 0
+        if opp_fired:
+            _opp_d = component_details.get('opportunity_opened', {})
+            _deps = _opp_d.get('departed_players', [])
+            opp_vacated_targets = _opp_d.get('vacated_targets', 0)
+            opp_vacated_carries = _opp_d.get('vacated_carries', 0)
+            if _deps:
+                opp_dep_name = _deps[0].get('name', '')
+                opp_change_type = _deps[0].get('change_type', 'departed')
 
-            if departed and len(departed) > 0:
-                top_departure = departed[0]
-                departure_name = top_departure.get('name', '')
-                change_type = top_departure.get('change_type', 'departed')
+        # Collect competition_removed data
+        comp_fired = component_scores.get('competition_removed', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD
+        comp_dep_name = ''
+        if comp_fired:
+            _comp_d = component_details.get('competition_removed', {})
+            _cdeps = _comp_d.get('key_departures', [])
+            if _cdeps:
+                comp_dep_name = _cdeps[0].get('name', '')
 
-                # If departure name is missing, try to borrow it from competition_removed
-                if not departure_name:
-                    comp_deps = component_details.get('competition_removed', {}).get('key_departures', [])
-                    if comp_deps:
-                        departure_name = comp_deps[0].get('name', '')
+        # 1+2. Opportunity opened / competition removed — always combine when both fire.
+        # Use the competition_removed name as the display name because that player was
+        # the primary target-getter. Fall back to the opportunity_opened name if needed.
+        if opp_fired or comp_fired:
+            vacancy_text = []
+            if opp_vacated_targets > 0:
+                vacancy_text.append(f"{opp_vacated_targets} targets vacated")
+            if opp_vacated_carries > 0:
+                vacancy_text.append(f"{opp_vacated_carries} carries vacated")
 
-                vacancy_text = []
-                if vacated_targets > 0:
-                    vacancy_text.append(f"{vacated_targets} targets vacated")
-                if vacated_carries > 0:
-                    vacancy_text.append(f"{vacated_carries} carries vacated")
-
-                verb = self._departure_verb(change_type)
-                display_name = departure_name or 'Key player'
+            if opp_fired and comp_fired:
+                display_name = comp_dep_name or opp_dep_name or 'Key player'
+                verb = self._departure_verb(opp_change_type)
+                if vacancy_text:
+                    reasons.append(f"{display_name} {verb} ({', '.join(vacancy_text)})")
+                else:
+                    reasons.append(f"{display_name} departed")
+            elif opp_fired:
+                display_name = opp_dep_name or 'Key player'
+                verb = self._departure_verb(opp_change_type)
                 if vacancy_text:
                     reasons.append(f"{display_name} {verb} ({', '.join(vacancy_text)})")
                 else:
                     reasons.append(f"{display_name} {verb}")
-                _opp_dep_name_used = departure_name.lower() if departure_name else None
-
-        # 2. Competition removed (if score > threshold)
-        # Skip if the same player was already mentioned in the opportunity bullet above
-        if component_scores.get('competition_removed', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD:
-            details = component_details.get('competition_removed', {})
-            key_deps = details.get('key_departures', [])
-
-            if key_deps:
-                dep = key_deps[0]
-                dep_name = dep.get('name', '')
-                already_mentioned = (
-                    _opp_dep_name_used is not None and
-                    dep_name.lower() == _opp_dep_name_used
-                )
-                if not already_mentioned:
-                    reasons.append(f"Key competitor {dep_name} departed")
+            else:
+                # Only competition_removed fired — no vacancy numbers
+                reasons.append(f"Key competitor {comp_dep_name} departed")
 
         # 3. Player readiness (if score > threshold)
         if component_scores.get('player_readiness', 0) > EXPLAIN_PLAYER_READINESS_THRESHOLD:
