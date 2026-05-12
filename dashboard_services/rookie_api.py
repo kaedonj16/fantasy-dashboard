@@ -241,7 +241,11 @@ def rankings():
                     for sid in missing:
                         if sid in model:
                             adp[sid] = model[sid]
-                return {sid: d["avg_pick"] if isinstance(d, dict) else d for sid, d in adp.items()}
+                return {
+                    sid: float(d.get("avg_pick") or d.get("adp_rank") or 0)
+                    for sid, d in adp.items()
+                    if d.get("avg_pick") or d.get("adp_rank")
+                }
 
             sf_map  = _build_adp_map(True)
             qb1_map = _build_adp_map(False)
