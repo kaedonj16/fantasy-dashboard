@@ -9777,18 +9777,47 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
     </div>
 
+    <style>
+      .bk-pagination {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 0 4px;
+        border-top: 1px solid var(--border);
+        margin-top: 16px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }}
+      .bk-pagination-info {{ font-size: 13px; color: var(--text-muted); }}
+      .bk-pagination-controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+      .bk-pagination-btn {{
+        padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+        background: var(--card-bg); color: var(--text); font-size: 12px; font-weight: 500;
+        cursor: pointer; display: flex; align-items: center; gap: 4px;
+      }}
+      .bk-pagination-btn:hover:not(:disabled) {{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }}
+      .bk-pagination-btn:disabled {{ opacity: 0.45; cursor: not-allowed; }}
+      .bk-page-numbers {{ display: flex; gap: 4px; }}
+      .bk-page-num {{
+        padding: 4px 9px; border: 1px solid var(--border); border-radius: 4px;
+        background: var(--card-bg); color: var(--text); font-size: 12px; cursor: pointer; min-width: 28px; text-align: center;
+      }}
+      .bk-page-num:hover {{ background: var(--accent-soft); border-color: var(--accent); }}
+      .bk-page-num.active {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+    </style>
+
     <script>
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
+      const BK_PER_PAGE = 20;
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
+      let bkCurrentPage = 1;
 
-      // Fetch breakout candidates on page load (using new BreakoutEngine API)
       fetch('/api/breakout/candidates?season={season}&min_score=25')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
           document.getElementById('breakoutsLoading').style.display = 'none';
-
           if (breakoutCandidates.length === 0) {{
             document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
@@ -9802,128 +9831,135 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function filterBreakouts(position) {{
         currentFilter = position;
-
-        // Update active button
+        bkCurrentPage = 1;
         document.querySelectorAll('.breakout-filter-btn').forEach(btn => {{
           btn.classList.toggle('active', btn.getAttribute('data-position') === position);
         }});
-
         renderBreakouts();
+      }}
+
+      function bkGoPage(dir) {{
+        if (dir === 'prev') bkCurrentPage--;
+        else if (dir === 'next') bkCurrentPage++;
+        else bkCurrentPage = dir;
+        renderBreakouts();
+        window.scrollTo({{top: 0, behavior: 'smooth'}});
       }}
 
       function renderBreakouts() {{
         const container = document.getElementById('breakoutsContainer');
+        const empty = document.getElementById('breakoutsEmpty');
         const filtered = currentFilter === 'ALL'
           ? breakoutCandidates
           : breakoutCandidates.filter(c => c.position === currentFilter);
 
         if (filtered.length === 0) {{
-          document.getElementById('breakoutsEmpty').style.display = 'block';
+          empty.style.display = 'block';
           container.style.display = 'none';
           return;
         }}
-
-        document.getElementById('breakoutsEmpty').style.display = 'none';
+        empty.style.display = 'none';
         container.style.display = 'block';
 
         const FREE_LIMIT = 3;
-        const visible = BO_HAS_PREMIUM ? filtered : filtered.slice(0, FREE_LIMIT);
-        const locked = !BO_HAS_PREMIUM && filtered.length > FREE_LIMIT;
+
+        // Pagination math
+        const total = filtered.length;
+        const totalPages = Math.max(1, Math.ceil((BO_HAS_PREMIUM ? total : Math.min(total, FREE_LIMIT)) / BK_PER_PAGE));
+        if (bkCurrentPage > totalPages) bkCurrentPage = 1;
+        const offset = (bkCurrentPage - 1) * BK_PER_PAGE;
+        const pageItems = BO_HAS_PREMIUM
+          ? filtered.slice(offset, offset + BK_PER_PAGE)
+          : filtered.slice(0, FREE_LIMIT);
+        const showLock = !BO_HAS_PREMIUM && total > FREE_LIMIT;
 
         let html = '<div class="breakout-grid">';
-
-        visible.forEach(candidate => {{
+        pageItems.forEach(candidate => {{
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
           const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '-';
           const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
           const pid = candidate.player_id || '';
-
-          // Breakout type classification
           const breakoutType = candidate.breakout_type || {{}};
           const iconClass = breakoutType.icon_class || 'fa-chart-bar';
           const label = breakoutType.profile_label || 'Breakout Candidate';
           const driver = breakoutType.primary_driver || 'balanced';
-
-          // Component scores
           const oppScore = parseFloat(candidate.opportunity_opened_score || 0).toFixed(1);
           const readyScore = parseFloat(candidate.player_readiness_score || 0).toFixed(1);
           const confScore = parseFloat(candidate.confidence_score || 0).toFixed(1);
           const teamEnv = parseFloat(candidate.team_environment_score || 0).toFixed(1);
-
-          // Key reasons (from engine)
-          const reasons = candidate.key_reasons || '';
-          const reasonsList = reasons.split('\\n').filter(r => r.trim() && r.startsWith('•')).map(r => r.substring(1).trim());
-
-          // Score badge color based on score ranges
-          let scoreColor = '#10b981'; // green (50+)
-          if (score < 50) scoreColor = '#3b82f6'; // blue (40-49)
-          if (score < 40) scoreColor = '#f59e0b'; // amber (30-39)
-          if (score < 30) scoreColor = '#6b7280'; // gray (<30)
+          let scoreColor = '#10b981';
+          if (score < 50) scoreColor = '#3b82f6';
+          if (score < 40) scoreColor = '#f59e0b';
+          if (score < 30) scoreColor = '#6b7280';
 
           html += `
             <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + (name||'').replace(/'/g,"\\\\'") + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
-                  <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
+                  <div class="breakout-player-meta">${{age}} &bull; ${{team}} &bull; ${{pos}}</div>
                 </div>
-                <div class="breakout-score-badge" style="background: ${{scoreColor}};">
-                  ${{score}}
-                </div>
+                <div class="breakout-score-badge" style="background: ${{scoreColor}};">${{score}}</div>
               </div>
-
               <div class="breakout-card-body">
-                <!-- Breakout Type Badge -->
-                <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
+                <div class="breakout-type-badge" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card-bg);border-radius:6px;margin-bottom:12px;border:1px solid var(--border-color);">
                   <i class="fa-solid ${{iconClass}}" style="font-size:18px;width:20px;text-align:center;"></i>
-                  <span style="font-weight: 500; flex: 1;">${{label}}</span>
-                  <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
+                  <span style="font-weight:500;flex:1;">${{label}}</span>
+                  <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;">${{driver}} driven</span>
                 </div>
-
-                <!-- Component Scores -->
                 <div class="breakout-section">
                   <div class="breakout-section-title">Component Breakdown</div>
-                  <div class="breakout-components" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
-                    ${{driver === 'opportunity' || driver === 'balanced' ? `
-                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <div style="color: var(--text-muted); margin-bottom: 2px;">Opportunity</div>
-                        <div style="font-weight: 600; font-size: 14px; color: #10b981;">${{oppScore}}</div>
-                      </div>
-                    ` : ''}}
-                    ${{driver === 'readiness' || driver === 'balanced' ? `
-                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <div style="color: var(--text-muted); margin-bottom: 2px;">Talent/Readiness</div>
-                        <div style="font-weight: 600; font-size: 14px; color: #3b82f6;">${{readyScore}}</div>
-                      </div>
-                    ` : ''}}
-                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                      <div style="color: var(--text-muted); margin-bottom: 2px;">Team Environment</div>
-                      <div style="font-weight: 600; font-size: 14px;">${{teamEnv}}</div>
-                    </div>
-                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                      <div style="color: var(--text-muted); margin-bottom: 2px;">Confidence</div>
-                      <div style="font-weight: 600; font-size: 14px;">${{confScore}}%</div>
-                    </div>
+                  <div class="breakout-components" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px;">
+                    ${{driver === 'opportunity' || driver === 'balanced' ? `<div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Opportunity</div><div style="font-weight:600;font-size:14px;color:#10b981;">${{oppScore}}</div></div>` : ''}}
+                    ${{driver === 'readiness' || driver === 'balanced' ? `<div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Talent/Readiness</div><div style="font-weight:600;font-size:14px;color:#3b82f6;">${{readyScore}}</div></div>` : ''}}
+                    <div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Team Environment</div><div style="font-weight:600;font-size:14px;">${{teamEnv}}</div></div>
+                    <div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Confidence</div><div style="font-weight:600;font-size:14px;">${{confScore}}%</div></div>
                   </div>
                 </div>
               </div>
-            </div>
-          `;
+            </div>`;
         }});
 
-        if (locked) {{
+        if (showLock) {{
           html += `
             <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
               <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-              <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
+              <div style="font-weight:700;font-size:15px;">${{total - FREE_LIMIT}} more candidates locked</div>
               <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
               <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-            </div>
-          `;
+            </div>`;
         }}
         html += '</div>';
+
+        // Pagination controls (premium only, when there's more than one page)
+        if (BO_HAS_PREMIUM && totalPages > 1) {{
+          const start = offset + 1;
+          const end = Math.min(offset + BK_PER_PAGE, total);
+          let pageNums = '';
+          const maxShow = 5;
+          let startP = Math.max(1, bkCurrentPage - Math.floor(maxShow / 2));
+          let endP = Math.min(totalPages, startP + maxShow - 1);
+          if (endP - startP < maxShow - 1) startP = Math.max(1, endP - maxShow + 1);
+          for (let i = startP; i <= endP; i++) {{
+            pageNums += `<button class="bk-page-num${{i === bkCurrentPage ? ' active' : ''}}" onclick="bkGoPage(${{i}})">${{i}}</button>`;
+          }}
+          html += `
+            <div class="bk-pagination">
+              <span class="bk-pagination-info">Showing ${{start}}&ndash;${{end}} of ${{total}} candidates</span>
+              <div class="bk-pagination-controls">
+                <button class="bk-pagination-btn" onclick="bkGoPage('prev')" ${{bkCurrentPage <= 1 ? 'disabled' : ''}}>
+                  <i class="fa-solid fa-chevron-left"></i> Prev
+                </button>
+                <div class="bk-page-numbers">${{pageNums}}</div>
+                <button class="bk-pagination-btn" onclick="bkGoPage('next')" ${{bkCurrentPage >= totalPages ? 'disabled' : ''}}>
+                  Next <i class="fa-solid fa-chevron-right"></i>
+                </button>
+              </div>
+            </div>`;
+        }}
+
         container.innerHTML = html;
       }}
     </script>
@@ -12305,6 +12341,25 @@ def api_player_indicators():
         except Exception as _pe:
             print(f"[player-indicators] prospects skipped: {_pe}")
 
+        # Supplement breakouts with anyone who has a score in breakout_opportunity_scores
+        # (same min_score=25 as the breakout engine page), so the modal tab appears for
+        # every player visible on that page regardless of how indicators were built.
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as _conn:
+                _bk_rows = _conn.execute(
+                    """
+                    SELECT DISTINCT player_id
+                    FROM breakout_opportunity_scores
+                    WHERE season = %s AND breakout_opportunity_score >= 25
+                    """,
+                    (current_season,),
+                ).fetchall()
+            _db_bk_ids = {str(r["player_id"]) for r in _bk_rows}
+            breakouts = list(dict.fromkeys(breakouts + list(_db_bk_ids)))
+        except Exception as _bke:
+            print(f"[player-indicators] breakout DB supplement skipped: {_bke}")
+
         return jsonify({
             "rookies": rookies,
             "breakouts": breakouts,
@@ -13047,6 +13102,58 @@ def api_player_details(player_id: str):
         else:
             _years_exp = player_meta.get("years_exp")
 
+        # Compute PPG and positional scoring rank from usage cache
+        _ppg = None
+        _ppg_rank = None
+        _ppg_games = None
+        _ppg_season_used = None
+        try:
+            import os as _os, json as _json2
+            _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
+            def _pick_ppg(u):
+                if _ppr_val >= 1.0:
+                    return u.get("ppr_ppg")
+                if _ppr_val <= 0:
+                    return u.get("std_scoring_ppg") or u.get("std_ppg")
+                return u.get("half_ppr_ppg")
+
+            for _ppg_s in [season, season - 1]:
+                _up = _os.path.join("cache", "player_history", f"usage_rows_{_ppg_s}.json")
+                if not _os.path.exists(_up):
+                    continue
+                _ud = _json2.load(open(_up))
+                _pe = next((p for p in _ud if str(p.get("id")) == str(player_id)), None)
+                if not _pe:
+                    continue
+                _pu = _pe.get("usage") or {}
+                _pg = int(_pu.get("games") or 0)
+                if _pg < 4:
+                    continue
+                _ppg = _pick_ppg(_pu)
+                if _ppg is None:
+                    continue
+                _ppg = round(float(_ppg), 1)
+                _ppg_games = _pg
+                _ppg_season_used = _ppg_s
+                # Scoring rank within position (min 4 games)
+                _pos_str = player_meta.get("pos", "")
+                if _pos_str:
+                    _all_ppg = sorted(
+                        [round(float(_pick_ppg(p.get("usage") or {})), 1)
+                         for p in _ud
+                         if p.get("position") == _pos_str
+                         and int((p.get("usage") or {}).get("games") or 0) >= 4
+                         and _pick_ppg(p.get("usage") or {}) is not None],
+                        reverse=True,
+                    )
+                    try:
+                        _ppg_rank = _all_ppg.index(_ppg) + 1
+                    except ValueError:
+                        _ppg_rank = None
+                break
+        except Exception:
+            pass
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -13063,6 +13170,10 @@ def api_player_details(player_id: str):
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "years_exp": _years_exp,
+                "ppg": _ppg,
+                "ppg_rank": _ppg_rank,
+                "ppg_season": _ppg_season_used,
+                "ppg_games": _ppg_games,
             },
             "value_history": value_history,
             "value_trend": value_trend,

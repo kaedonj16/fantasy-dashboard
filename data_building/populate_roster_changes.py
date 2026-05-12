@@ -324,6 +324,67 @@ def manual_add_roster_change(
     print(f"[manual_add]   Stats: {usage_stats.get('targets', 0)} targets, {usage_stats.get('carries', 0)} carries")
 
 
+def _fetch_draft_picks_from_db(season: int) -> List[Dict]:
+    """
+    Build draft pick list from the rookie pipeline DB.
+
+    Priority order per player:
+    1. actual_round / actual_pick (set after the real NFL draft)
+    2. projected_round / projected_pick (mock draft consensus pre-draft)
+
+    Falls back to players_index.json for any rookies not in the pipeline
+    (players with draft_year == season and exp <= 1).
+    """
+    from dashboard_services.db import get_conn
+    from utils.utils import load_players_index
+
+    picks: List[Dict] = []
+
+    # Pull from rookie_prospects joined to consensus/actual draft data
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT rp.player_id, rp.name, rp.position,
+                       rp.actual_nfl_team AS team,
+                       rp.sleeper_id,
+                       rp.actual_round  AS round_num,
+                       rp.actual_pick   AS pick_num
+                FROM rookie_prospects rp
+                WHERE rp.draft_class_year = %s
+                  AND rp.actual_round IS NOT NULL
+                  AND rp.actual_nfl_team IS NOT NULL
+                ORDER BY rp.actual_pick NULLS LAST
+                """,
+                (season,),
+            ).fetchall()
+
+        for r in rows:
+            round_num = r.get("round_num")
+            pick_num  = r.get("pick_num")
+            if not round_num or not pick_num:
+                continue
+            sid  = str(r.get("sleeper_id") or r.get("player_id") or "")
+            name = r.get("name") or ""
+            team = (r.get("team") or "").upper()
+            pos  = (r.get("position") or "").upper()
+            if not (name and team and pos):
+                continue
+            picks.append({
+                "player_id":   sid or r.get("player_id"),
+                "player_name": name,
+                "position":    pos,
+                "team":        team,
+                "round":       int(round_num),
+                "pick":        int(pick_num),
+            })
+        print(f"[populate_draft_picks] Loaded {len(picks)} picks from rookie_prospects DB")
+    except Exception as e:
+        print(f"[populate_draft_picks] DB query failed: {e}")
+
+    return picks
+
+
 def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
     """
     Import NFL draft picks as roster changes.
@@ -336,7 +397,8 @@ def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
     Args:
         season: Season year
         draft_data: Optional list of draft pick dictionaries.
-                   If None, will attempt to fetch from Sleeper API.
+                   If None, fetches automatically from the rookie pipeline DB
+                   (actual picks first, then projected picks) and players_index.json.
                    Each dict should have:
                    - player_id
                    - player_name
@@ -368,11 +430,11 @@ def populate_draft_picks(season: int, draft_data: Optional[List[Dict]] = None):
     print(f"{'=' * 60}\n")
 
     if draft_data is None:
-        # TODO: Fetch from Sleeper API or other source
-        # For now, this would need to be called manually with draft data
-        print("[populate_draft_picks] WARNING: No draft data provided.")
-        print("[populate_draft_picks] Please call with draft_data parameter containing draft pick info.")
-        return
+        draft_data = _fetch_draft_picks_from_db(season)
+        if not draft_data:
+            print("[populate_draft_picks] WARNING: No draft data found in DB or players_index.")
+            print("[populate_draft_picks] Run the rookie pipeline first, or pass draft_data manually.")
+            return
 
     players_index = load_players_index() or {}
     draft_count = 0

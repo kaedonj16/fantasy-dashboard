@@ -4694,7 +4694,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const _draftYrVal = data.draft_year ? String(data.draft_year) : '';
       const thirdValueCard = data.stats?.pos_rank
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Pos Rank</div>
+            <div class="pm-hero-label">Dynasty</div>
             <div class="pm-hero-val">${posRankLabel || data.stats.pos_rank}</div>
           </div>`
         : `<div class="pm-hero-stat" style="position:relative;">
@@ -4712,6 +4712,19 @@ function openPlayerModal(playerId, playerName, opts) {
                 style="padding:3px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:12px;">Save</button>
             </div>
           </div>`;
+
+      const ppgVal  = data.stats?.ppg;
+      const ppgRank = data.stats?.ppg_rank;
+      const ppgSeason = data.stats?.ppg_season;
+      const ppgCard = ppgVal != null
+        ? `<div class="pm-hero-stat">
+            <div class="pm-hero-label">Scoring</div>
+            <div class="pm-hero-val" style="font-size:20px;">${ppgVal}</div>
+            <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-top:2px;letter-spacing:.04em;">
+              ${ppgRank ? `${pos}${ppgRank} · ` : ''}PPG${ppgSeason ? ` · ${ppgSeason}` : ''}
+            </div>
+          </div>`
+        : '';
 
       // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
@@ -4821,8 +4834,9 @@ function openPlayerModal(playerId, playerName, opts) {
       const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
+      const heroGridStyle = ppgCard ? 'style="grid-template-columns:1fr 1fr 1fr 1fr;"' : '';
       let overviewHTML = `
-        <div class="pm-hero-row">
+        <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
@@ -4832,6 +4846,7 @@ function openPlayerModal(playerId, playerName, opts) {
             <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
           </div>
           ${thirdValueCard}
+          ${ppgCard}
         </div>
       `;
 
