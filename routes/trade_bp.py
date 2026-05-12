@@ -37,10 +37,13 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
         has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+        _rp = ctx.get("roster_positions") or []
+        _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                            scoring_format=scoring_format,
                                            viewer_roster_id=viewer_roster_id,
-                                           has_premium=has_premium)
+                                           has_premium=has_premium,
+                                           is_superflex=_is_sf)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
