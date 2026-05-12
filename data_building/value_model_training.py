@@ -848,7 +848,7 @@ def train_trade_value_model(
     for col in numeric_cols:
         df_model[col] = pd.to_numeric(df_model[col], errors="coerce")
 
-    # Drop columns that are entirely null — the median imputer can't handle them
+    # Drop columns that are entirely null - the median imputer can't handle them
     # and emits a UserWarning. They carry no signal anyway.
     numeric_cols = [c for c in numeric_cols if df_model[c].notna().any()]
 
@@ -1176,7 +1176,7 @@ def rewrite_value_table_with_model() -> Path:
             else:
                 print("[DEBUG] KTC rows present but no valid ktc_value_1qb entries")
         else:
-            print("[DEBUG] KTC CSV not found — skipping KTC blend")
+            print("[DEBUG] KTC CSV not found - skipping KTC blend")
     except Exception as _ktc_err:
         print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
 
@@ -1244,7 +1244,7 @@ def rewrite_value_table_with_model() -> Path:
     DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
     DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
 
-    # NOTE: dp_df_full intentionally kept from the load above — it is used below
+    # NOTE: dp_df_full intentionally kept from the load above - it is used below
     # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
     try:
         dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
@@ -1331,7 +1331,7 @@ def rewrite_value_table_with_model() -> Path:
         # Gather all three value sources on the same 0-999.9 scale:
         #   FC (vendor), DP (vendor, non-TEs only), internal engine.
         # Outlier rule: if any source deviates >15% from the avg of the other two,
-        # use the mean of all three — which pulls the outlier toward the centre and
+        # use the mean of all three - which pulls the outlier toward the centre and
         # prevents any single inflated/stale value from dominating.
         # When all three agree (no outlier) the mean is the final value too.
         player_position = str(player.get("position") or "").upper()
@@ -1360,7 +1360,7 @@ def rewrite_value_table_with_model() -> Path:
         eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
 
         # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
-        # DP and FC are dropped (renormalized) when missing — they may simply not cover a player.
+        # DP and FC are dropped (renormalized) when missing - they may simply not cover a player.
         # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
         # If a player IS in the engine table with 0 production, that zero is included in the blend
         # so FC hype can't inflate them past what their usage actually supports.
@@ -1391,7 +1391,7 @@ def rewrite_value_table_with_model() -> Path:
             # Fallback to ML model for SF (same as 1QB for now)
             sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
 
-        # Non-QB players are not less valuable in SF — QBs go up, everyone else stays the same.
+        # Non-QB players are not less valuable in SF - QBs go up, everyone else stays the same.
         # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
         position = player.get("position")
         if position != "QB":
@@ -1515,7 +1515,7 @@ def rewrite_value_table_with_model() -> Path:
             "rank_change_7d": None,
             "pos_rank_change_7d": None,
         }
-        # Draft picks are not scarcity-sensitive to league size — same value in all sizes
+        # Draft picks are not scarcity-sensitive to league size - same value in all sizes
         for n in LEAGUE_SIZES:
             if n != 10:
                 pick_asset[f"value_{n}"] = float(val)

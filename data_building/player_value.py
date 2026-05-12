@@ -383,7 +383,7 @@ def _youth_opportunity_boost(pos: str, age: Optional[float], hist: dict, usage: 
     # Only compute a trend when there is a prior-year baseline to compare against.
     # For a rookie, ppg_trend_1yr = PPG - 0 which inflates the trend_factor.
     if seasons < 2:
-        trend_factor = 0.5  # neutral — no meaningful year-over-year comparison yet
+        trend_factor = 0.5  # neutral - no meaningful year-over-year comparison yet
     else:
         trend_tgt = _safe_float(hist.get("target_share_trend_1yr"), 0.0)
         trend_ppg = _safe_float(hist.get("ppg_trend_1yr"), 0.0)
@@ -419,7 +419,7 @@ def _trend_score(hist: dict, pos: str) -> float:
     if pos == "QB":
         # Attenuate trend penalty when the most recent season was injury-shortened.
         # A 13-game season (e.g. Lamar 2025) should not be treated the same as
-        # a full-season decline — it's likely a one-time dip, not a trajectory.
+        # a full-season decline - it's likely a one-time dip, not a trajectory.
         games_last_yr = _safe_float(hist.get("games_last_year"), 17.0)
         if games_last_yr < 14.0 and ppg_trend_1yr < 0:
             ppg_trend_1yr = ppg_trend_1yr * max(0.30, games_last_yr / 17.0)
@@ -457,10 +457,10 @@ def _risk_penalty(
     if games_last_3yr > 0 and seasons_played >= 2:
         chronic_rate = _clip(games_last_3yr / 51.0)  # 17 games * 3 seasons = 51
         if chronic_rate < 0.70:
-            # Pattern of missing games across seasons — treat as chronic
+            # Pattern of missing games across seasons - treat as chronic
             injury_risk = max(base_injury_risk, 0.35)
         elif chronic_rate > 0.88 and base_injury_risk < 0.20:
-            # Good multi-year history and only a minor current injury — likely one-time
+            # Good multi-year history and only a minor current injury - likely one-time
             injury_risk = base_injury_risk * 0.65
         else:
             injury_risk = base_injury_risk
@@ -614,7 +614,7 @@ def _apply_qb_market_compression(
         youth_upside = (per_pid.get(pid, {}) or {}).get("youth_upside", 0.0)
 
         # Adjust compression based on league type.
-        # Rushing is a meaningful signal in all formats — mobile QBs get explicit
+        # Rushing is a meaningful signal in all formats - mobile QBs get explicit
         # credit because rushing production and rushing floor are dynasty differentiators.
         if league_type == "1QB":
             # Very aggressive compression to dramatically lower QB values
@@ -685,7 +685,7 @@ def _apply_te_market_compression(
                 + 0.01 * (ceiling ** 0.95)  # Same as before
         )
 
-        # Young TEs with high upside get less compression — their dynasty value
+        # Young TEs with high upside get less compression - their dynasty value
         # is driven by future potential that the current-season scarcity model
         # doesn't fully capture (Bowers-type profile).
         if per_pid is not None:
@@ -923,7 +923,7 @@ def build_value_table_for_usage(
         rush_yds_pg = _safe_float(usage.get("avg_rush_yards"))
         rush_tds_pg = _safe_float(usage.get("avg_rush_tds"))
 
-        # Offseason fallback: current-season rush stats are None — use the 3-year
+        # Offseason fallback: current-season rush stats are None - use the 3-year
         # weighted historical average so mobile QBs retain their rushing signal.
         if rush_yds_pg is None or rush_yds_pg == 0.0:
             h_rush = hist_rush_map.get(pid, {})
@@ -1095,7 +1095,7 @@ def build_value_table_for_usage(
             # Yards-only profile for consistency with the compression formula.
             rush_profile = _clip(rush_yds_pg / 50.0, 0.0, 1.0)
 
-            # Apply a base-score penalty for limited rushers — pocket passers
+            # Apply a base-score penalty for limited rushers - pocket passers
             # are worth less in dynasty because their floor is lower.
             if rush_yds_pg < 10:
                 base *= 0.84
@@ -1237,7 +1237,7 @@ def build_value_table_for_usage(
     ELITE_BOOST_SCALE = 0.035
 
     # Pass 1: compute raw combined scores without clipping.
-    # elite_bonus can push top players above 1.0, which is intentional —
+    # elite_bonus can push top players above 1.0, which is intentional -
     # we want the relative ordering preserved before normalizing.
     raw_combined: Dict[str, float] = {}
     for pid, v in final_scores.items():

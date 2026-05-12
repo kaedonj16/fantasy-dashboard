@@ -21,8 +21,33 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   border: 1px solid var(--border); background: var(--card); color: var(--text-muted); cursor: pointer;
 }
 .wv-pos-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Mobile tab bar */
+.wv-tab-bar {
+  display: none;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+  background: var(--card);
+}
+.wv-tab-btn {
+  flex: 1; padding: 10px 0; font-size: 13px; font-weight: 700;
+  border: none; background: none; color: var(--text-muted); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.wv-tab-btn.active { background: var(--accent); color: #fff; }
+.wv-tab-btn:first-child { border-right: 1px solid var(--border); }
+
+@media(max-width: 768px) {
+  .wv-tab-bar { display: flex; }
+  .wv-layout { grid-template-columns: 1fr; }
+  .wv-section { display: none; }
+  .wv-section.wv-tab-active { display: block; }
+}
+
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-@media(max-width: 768px) { .wv-layout { grid-template-columns: 1fr; } }
+@media(min-width: 769px) { .wv-section { display: block !important; } }
 .wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
 .wv-player-row {
@@ -80,10 +105,16 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
   </div>
 
-  <!-- Two-column layout -->
+  <!-- Mobile tab bar (hidden on desktop via CSS) -->
+  <div class="wv-tab-bar">
+    <button class="wv-tab-btn active" id="wvTabWaivers" onclick="wvSetTab('waivers')">Waiver Wire</button>
+    <button class="wv-tab-btn" id="wvTabStartSit" onclick="wvSetTab('startsit')">Start/Sit</button>
+  </div>
+
+  <!-- Two-column layout (tabs on mobile) -->
   <div class="wv-layout">
     <!-- Left: Waiver Wire -->
-    <div class="wv-section">
+    <div class="wv-section wv-tab-active" id="wvSectionWaivers">
       <div class="wv-section-title">Waiver Wire</div>
       <div id="wvWaiverList">
         <div class="wv-loading"><div class="loading-spinner"></div></div>
@@ -91,7 +122,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
 
     <!-- Right: Start/Sit -->
-    <div class="wv-section">
+    <div class="wv-section" id="wvSectionStartSit">
       <div class="wv-section-title">Start/Sit Advisor</div>
       <div id="wvStartSit">
         <div class="wv-loading"><div class="loading-spinner"></div></div>
@@ -109,6 +140,14 @@ const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
 let wvStartSitData = {{}};
+
+function wvSetTab(tab) {{
+  const isWaivers = tab === 'waivers';
+  document.getElementById('wvSectionWaivers').classList.toggle('wv-tab-active', isWaivers);
+  document.getElementById('wvSectionStartSit').classList.toggle('wv-tab-active', !isWaivers);
+  document.getElementById('wvTabWaivers').classList.toggle('active', isWaivers);
+  document.getElementById('wvTabStartSit').classList.toggle('active', !isWaivers);
+}}
 
 function wvSetPos(pos) {{
   wvCurrentPos = pos;

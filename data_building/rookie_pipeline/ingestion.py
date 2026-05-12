@@ -27,7 +27,7 @@ What it does NOT provide:
 Age, combine data, and stats come from the seed dataset and are preserved
 for any player matched by name between Sportradar and the seed.
 
-Normalization contract — every player dict returned by this module has:
+Normalization contract - every player dict returned by this module has:
     player_id, name, position, school, age, height_inches, weight_lbs,
     draft_class_year, early_declare, transfer_history,
     seasons: [ { season, games_played, rush/rec/pass stats, team, conference,
@@ -120,43 +120,43 @@ def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
         except requests.Timeout as exc:
             last_error = f"Timeout after 20s"
             wait = 2 ** attempt
-            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: TIMEOUT — retrying in {wait}s")
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: TIMEOUT - retrying in {wait}s")
             time.sleep(wait)
         except requests.HTTPError as exc:
             last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
             if exc.response.status_code == 401:
-                print(f"[sportradar] {path} FAILED: Authentication error (401) — check SPORTRADAR_API_KEY")
+                print(f"[sportradar] {path} FAILED: Authentication error (401) - check SPORTRADAR_API_KEY")
                 return None
             elif exc.response.status_code == 403:
-                print(f"[sportradar] {path} FAILED: Forbidden (403) — check API key permissions or access level (current: {SPORTRADAR_ACCESS})")
+                print(f"[sportradar] {path} FAILED: Forbidden (403) - check API key permissions or access level (current: {SPORTRADAR_ACCESS})")
                 return None
             elif exc.response.status_code == 404:
-                print(f"[sportradar] {path} FAILED: Not found (404) — invalid path or year")
+                print(f"[sportradar] {path} FAILED: Not found (404) - invalid path or year")
                 return None
             elif exc.response.status_code == 429:
                 wait = 2 ** attempt
-                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) — retrying in {wait}s")
+                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) - retrying in {wait}s")
                 time.sleep(wait)
             else:
                 wait = 2 ** attempt
-                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} — retrying in {wait}s")
+                print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} - retrying in {wait}s")
                 time.sleep(wait)
         except requests.RequestException as exc:
             last_error = f"Request failed: {type(exc).__name__}: {exc}"
             wait = 2 ** attempt
-            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} — retrying in {wait}s")
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} - retrying in {wait}s")
             time.sleep(wait)
         except Exception as exc:
             last_error = f"Unexpected error: {type(exc).__name__}: {exc}"
-            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: UNEXPECTED ERROR — {last_error}")
+            print(f"[sportradar] {path} attempt {attempt + 1}/{retries}: UNEXPECTED ERROR - {last_error}")
             return None
     
-    print(f"[sportradar] {path} FAILED after {retries} attempts — Last error: {last_error}")
+    print(f"[sportradar] {path} FAILED after {retries} attempts - Last error: {last_error}")
     return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary source 1 — NFLVerse combine.csv  (no auth required)
+# Supplementary source 1 - NFLVerse combine.csv  (no auth required)
 # Provides: forty_yard, vertical_inches, broad_jump_in, bench_reps,
 #           three_cone, short_shuttle, height, weight, school
 # URL: https://github.com/nflverse/nflverse-data/releases/download/combine/combine.csv
@@ -181,16 +181,16 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
         resp.raise_for_status()
         print(f"[nflverse] Downloaded {len(resp.text)} bytes")
     except requests.Timeout:
-        print("[nflverse] FAILED: Download timeout after 30s — NFLVerse may be slow or unreachable")
+        print("[nflverse] FAILED: Download timeout after 30s - NFLVerse may be slow or unreachable")
         return {}
     except requests.HTTPError as exc:
-        print(f"[nflverse] FAILED: HTTP {exc.response.status_code} ({exc.response.reason}) — URL may have changed or GitHub rate limit")
+        print(f"[nflverse] FAILED: HTTP {exc.response.status_code} ({exc.response.reason}) - URL may have changed or GitHub rate limit")
         return {}
     except requests.RequestException as exc:
-        print(f"[nflverse] FAILED: Network error — {type(exc).__name__}: {exc}")
+        print(f"[nflverse] FAILED: Network error - {type(exc).__name__}: {exc}")
         return {}
     except Exception as exc:
-        print(f"[nflverse] FAILED: Unexpected error — {type(exc).__name__}: {exc}")
+        print(f"[nflverse] FAILED: Unexpected error - {type(exc).__name__}: {exc}")
         return {}
 
     results: Dict[str, Dict[str, Any]] = {}
@@ -254,10 +254,10 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 parse_errors += 1
                 continue
     except csv.Error as exc:
-        print(f"[nflverse] FAILED: CSV parsing error at row {total_rows} — {exc}")
+        print(f"[nflverse] FAILED: CSV parsing error at row {total_rows} - {exc}")
         return results  # Return what we have so far
     except Exception as exc:
-        print(f"[nflverse] FAILED: Unexpected error during CSV processing — {type(exc).__name__}: {exc}")
+        print(f"[nflverse] FAILED: Unexpected error during CSV processing - {type(exc).__name__}: {exc}")
         return results
 
     print(f"[nflverse] Loaded combine data for {len(results)} prospects for {draft_year} ({total_rows} total rows, {parse_errors} parse errors)")
@@ -424,7 +424,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary source 2 — CFBD college stats  (requires CFBD_API_KEY)
+# Supplementary source 2 - CFBD college stats  (requires CFBD_API_KEY)
 # Provides: per-season receiving/rushing/passing stats, games_played,
 #           team, conference, market share, dominator rating
 # ─────────────────────────────────────────────────────────────────────────────
@@ -667,7 +667,7 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     """
     Fetch exact games played per player per season via CFBD /games/players endpoint.
 
-    The endpoint requires `year` + `week` — it does NOT accept a season-level query
+    The endpoint requires `year` + `week` - it does NOT accept a season-level query
     with just `year` + `seasonType`.  We loop weeks 1-17 and aggregate unique game
     IDs per player, giving an exact games-played count rather than the default 12.
 
@@ -678,7 +678,7 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     Empty weeks (bye weeks, season end) are skipped automatically.
     """
     if not CFBD_KEY:
-        print("[cfbd_gp] No CFBD_API_KEY — skipping games-played lookup")
+        print("[cfbd_gp] No CFBD_API_KEY - skipping games-played lookup")
         return {}
 
     years   = [draft_year - 1, draft_year - 2, draft_year - 3]
@@ -763,7 +763,7 @@ def fetch_cfbd_college_stats(
     """
 
     if not CFBD_KEY:
-        print("[cfbd] No CFBD_API_KEY set — skipping college stats")
+        print("[cfbd] No CFBD_API_KEY set - skipping college stats")
         return {}
 
     years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
@@ -789,10 +789,10 @@ def fetch_cfbd_college_stats(
                     s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
                 team_stats[yr] = teams
             except Exception as exc:
-                print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
+                print(f"[cfbd] ERROR processing team stats for {yr} - {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}
 
-        # Games-played lookup — skipped by default to conserve rate-limit budget.
+        # Games-played lookup - skipped by default to conserve rate-limit budget.
         # It adds 51 API calls per draft class (17 weeks × 3 years) but only
         # improves per-game rate accuracy; total yards/TDs/dominator_rating are
         # unaffected.  Pass fetch_games_played=True to enable.
@@ -808,7 +808,7 @@ def fetch_cfbd_college_stats(
         else:
             print("[cfbd] Skipping games-played lookup (saves 51 API calls; per-game rates default to 12 games)")
 
-        # Player season stats — indexed by name and by player ID
+        # Player season stats - indexed by name and by player ID
         print("[cfbd] Fetching player season stats")
         by_name: Dict[int, Dict[str, List]] = {}   # {yr: {name_lower: [rows]}}
         by_id:   Dict[int, Dict[int, List]] = {}   # {yr: {player_id: [rows]}}
@@ -833,7 +833,7 @@ def fetch_cfbd_college_stats(
                 by_id[yr]   = bi
                 print(f"[cfbd] Loaded player stats for {yr}: {len(bn)} players")
             except Exception as exc:
-                print(f"[cfbd] ERROR loading player stats for {yr} — {type(exc).__name__}: {exc}")
+                print(f"[cfbd] ERROR loading player stats for {yr} - {type(exc).__name__}: {exc}")
                 by_name[yr] = {}
                 by_id[yr] = {}
 
@@ -869,7 +869,7 @@ def fetch_cfbd_college_stats(
                         season_dict["position_group_size"] = dr_info.get("position_group_size")
                         seasons.append(season_dict)
                     except Exception as exc:
-                        print(f"[cfbd] ERROR building season for '{name}' year {yr} — {type(exc).__name__}: {exc}")
+                        print(f"[cfbd] ERROR building season for '{name}' year {yr} - {type(exc).__name__}: {exc}")
                 if seasons:
                     seasons.sort(key=lambda s: s["season"])
                     
@@ -883,18 +883,18 @@ def fetch_cfbd_college_stats(
                     
                     result[final_name] = seasons
             except Exception as exc:
-                print(f"[cfbd] ERROR processing player '{name}' — {type(exc).__name__}: {exc}")
+                print(f"[cfbd] ERROR processing player '{name}' - {type(exc).__name__}: {exc}")
 
         print(f"[cfbd] COMPLETE: Loaded stats for {len(result)} players (draft class {draft_year})")
         return result
         
     except Exception as exc:
-        print(f"[cfbd] FAILED: Unexpected error fetching college stats for {draft_year} — {type(exc).__name__}: {exc}")
+        print(f"[cfbd] FAILED: Unexpected error fetching college stats for {draft_year} - {type(exc).__name__}: {exc}")
         return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary source 3 — ESPN athlete search  (no auth required)
+# Supplementary source 3 - ESPN athlete search  (no auth required)
 # Provides: dateOfBirth → exact age at draft
 #
 # Endpoint: https://site.api.espn.com/apis/common/v3/search
@@ -970,7 +970,7 @@ def _age_at_date(dob_str: str, ref_year: int, ref_month: int = 4, ref_day: int =
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Age fallback — estimation from Sportradar experience field
+# Age fallback - estimation from Sportradar experience field
 # Used only when ESPN lookup fails.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1026,15 +1026,15 @@ def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
     Convert a single Sportradar Draft API prospect object to our normalized format.
 
     Actual Sportradar fields (Draft API v1):
-        name, first_name, last_name — player name
-        position                    — e.g. "WR", "RB"
-        height                      — integer, total inches
-        weight                      — integer, pounds
-        team_name                   — college team name string
-        conference                  — object: {name, alias}
-        experience                  — "SR" / "JR" / "SO" / "FR"
-        birth_place                 — city/state string e.g. "Suwanee, GA, USA"
-        top_prospect                — boolean
+        name, first_name, last_name - player name
+        position                    - e.g. "WR", "RB"
+        height                      - integer, total inches
+        weight                      - integer, pounds
+        team_name                   - college team name string
+        conference                  - object: {name, alias}
+        experience                  - "SR" / "JR" / "SO" / "FR"
+        birth_place                 - city/state string e.g. "Suwanee, GA, USA"
+        top_prospect                - boolean
 
     NOT present: age/DOB, combine measurements, college stats.
     Those come from the seed dataset when a name match is found.
@@ -1059,7 +1059,7 @@ def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
         conf_obj = raw.get("conference") or {}
         conference = conf_obj.get("name") if isinstance(conf_obj, dict) else conf_obj
 
-        # birth_place is "City, ST, USA" — no DOB available from this endpoint
+        # birth_place is "City, ST, USA" - no DOB available from this endpoint
         birth_place = raw.get("birth_place") or ""
         state = None
         if birth_place:
@@ -1085,12 +1085,12 @@ def _parse_sportradar_prospect(raw: Dict, draft_year: int) -> Optional[Dict]:
             "seasons":          [],     # filled from CFBD stats or seed
             "athleticism":      {},     # filled from NFLVerse combine or seed
             "source":           "sportradar",
-            # Internal fields used during merge — stripped before normalization
+            # Internal fields used during merge - stripped before normalization
             "_conference":      conference,
             "_experience":      experience,  # SR/JR/SO/FR for age estimation
         }
     except Exception as exc:
-        print(f"[sportradar] ERROR parsing prospect: {raw.get('name', 'UNKNOWN')} — {type(exc).__name__}: {exc}")
+        print(f"[sportradar] ERROR parsing prospect: {raw.get('name', 'UNKNOWN')} - {type(exc).__name__}: {exc}")
         return None
 
 
@@ -1108,22 +1108,22 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
     print(f"[sportradar] Access level: {SPORTRADAR_ACCESS}")
     
     if not SPORTRADAR_KEY:
-        print("[sportradar] FAILED: No SPORTRADAR_API_KEY set — cannot fetch prospects")
+        print("[sportradar] FAILED: No SPORTRADAR_API_KEY set - cannot fetch prospects")
         return []
 
     try:
         data = _sportradar_get(f"{draft_year}/prospects.json")
     except Exception as exc:
-        print(f"[sportradar] FAILED: Unexpected error fetching prospects for {draft_year} — {type(exc).__name__}: {exc}")
+        print(f"[sportradar] FAILED: Unexpected error fetching prospects for {draft_year} - {type(exc).__name__}: {exc}")
         return []
         
     if not data:
-        print(f"[sportradar] FAILED: No data returned for {draft_year} — API may be down or key invalid")
+        print(f"[sportradar] FAILED: No data returned for {draft_year} - API may be down or key invalid")
         return []
 
     raw_list = data.get("prospects") or (data if isinstance(data, list) else [])
     if not raw_list:
-        print(f"[sportradar] FAILED: Empty prospects list for {draft_year} — response format may have changed")
+        print(f"[sportradar] FAILED: Empty prospects list for {draft_year} - response format may have changed")
         print(f"[sportradar] Response keys: {list(data.keys()) if isinstance(data, dict) else 'N/A (not dict)'}")
         return []
 
@@ -1140,7 +1140,7 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
             else:
                 filtered_count += 1
         except Exception as exc:
-            print(f"[sportradar] ERROR parsing prospect at index {i} — {type(exc).__name__}: {exc}")
+            print(f"[sportradar] ERROR parsing prospect at index {i} - {type(exc).__name__}: {exc}")
             parse_errors += 1
         
         if (i + 1) % 100 == 0:
@@ -1305,13 +1305,13 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     try:
         seed = get_seed_prospects(draft_year) or []
     except Exception as exc:
-        print(f"[ingestion] ERROR loading seed prospects — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR loading seed prospects - {type(exc).__name__}: {exc}")
         seed = []
     print(f"[ingestion] Loaded {len(seed)} seed prospects")
 
-    # ── No Sportradar key — use seed only ────────────────────────────────────
+    # ── No Sportradar key - use seed only ────────────────────────────────────
     if not SPORTRADAR_KEY:
-        print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set — returning seed data only ({len(seed)} prospects)")
+        print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set - returning seed data only ({len(seed)} prospects)")
         return [normalize_prospect(p) for p in seed]
 
     # ── Fetch from all live sources ───────────────────────────────────────────
@@ -1319,17 +1319,17 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     try:
         sr_prospects = fetch_sportradar_prospects(draft_year)
     except Exception as exc:
-        print(f"[ingestion] ERROR fetching Sportradar prospects — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR fetching Sportradar prospects - {type(exc).__name__}: {exc}")
         print(f"[ingestion] Falling back to seed data ({len(seed)} prospects)")
         return [normalize_prospect(p) for p in seed]
     
     if not sr_prospects:
-        print(f"[ingestion] FAILED: Sportradar returned no data for {draft_year} — using seed ({len(seed)} prospects)")
+        print(f"[ingestion] FAILED: Sportradar returned no data for {draft_year} - using seed ({len(seed)} prospects)")
         return [normalize_prospect(p) for p in seed]
     
     print(f"[ingestion] Sportradar returned {len(sr_prospects)} prospects")
 
-    # ESPN age lookup — use the robust scraper (search + athlete API + HTML fallback)
+    # ESPN age lookup - use the robust scraper (search + athlete API + HTML fallback)
     print(f"[ingestion] Starting ESPN age lookup for {len(sr_prospects)} prospects")
     try:
         from .espn_scraper import fetch_espn_ages_robust
@@ -1339,7 +1339,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
             prospects_meta=sr_prospects,   # provides school + position for disambiguation
         )
     except Exception as exc:
-        print(f"[ingestion] ERROR in ESPN age lookup — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR in ESPN age lookup - {type(exc).__name__}: {exc}")
         espn_ages = {}
     print(f"[ingestion] ESPN ages resolved for {len(espn_ages)} prospects")
 
@@ -1347,7 +1347,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     try:
         combine_data = fetch_nflverse_combine(draft_year)
     except Exception as exc:
-        print(f"[ingestion] ERROR fetching NFLverse combine data — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR fetching NFLverse combine data - {type(exc).__name__}: {exc}")
         combine_data = {}
     print(f"[ingestion] NFLverse combine data loaded for {len(combine_data)} prospects")
     
@@ -1355,14 +1355,14 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     try:
         cfbd_stats = fetch_cfbd_college_stats(draft_year)
     except Exception as exc:
-        print(f"[ingestion] ERROR fetching CFBD stats — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR fetching CFBD stats - {type(exc).__name__}: {exc}")
         cfbd_stats = {}
     print(f"[ingestion] CFBD stats loaded for {len(cfbd_stats)} prospects")
 
     try:
         seed_by_name = {p["name"].lower(): p for p in seed}
     except Exception as exc:
-        print(f"[ingestion] ERROR building seed lookup — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR building seed lookup - {type(exc).__name__}: {exc}")
         seed_by_name = {}
     
     print(f"[ingestion] Starting enrichment of {len(sr_prospects)} Sportradar prospects")
@@ -1400,7 +1400,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
                     _estimate_age(sr.get("_experience"), draft_year)
                 )
             except Exception as exc:
-                print(f"[ingestion] ERROR calculating age for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                print(f"[ingestion] ERROR calculating age for '{sr['name']}' - {type(exc).__name__}: {exc}")
                 p["age"] = None
 
             # ── Athleticism / combine ─────────────────────────────────────────────
@@ -1410,7 +1410,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
                 # NFLVerse is authoritative for combine; seed fills any remaining gaps
                 p["athleticism"] = {**seed_ath, **nflv_ath}
             except Exception as exc:
-                print(f"[ingestion] ERROR merging athleticism for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                print(f"[ingestion] ERROR merging athleticism for '{sr['name']}' - {type(exc).__name__}: {exc}")
                 p["athleticism"] = {}
 
             # ── College stats ─────────────────────────────────────────────────────
@@ -1420,17 +1420,17 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
                 elif seed_p and seed_p.get("seasons"):
                     p["seasons"] = seed_p["seasons"]
                 elif sr.get("_conference"):
-                    # New player with no stats — inject conference so competition score works
+                    # New player with no stats - inject conference so competition score works
                     p["seasons"] = [{"season": draft_year - 1, "conference": sr["_conference"]}]
                 else:
                     p["seasons"] = []
             except Exception as exc:
-                print(f"[ingestion] ERROR setting seasons for '{sr['name']}' — {type(exc).__name__}: {exc}")
+                print(f"[ingestion] ERROR setting seasons for '{sr['name']}' - {type(exc).__name__}: {exc}")
                 p["seasons"] = []
 
             enriched.append(p)
         except Exception as exc:
-            print(f"[ingestion] ERROR enriching prospect '{sr.get('name', 'UNKNOWN')}' (index {i}) — {type(exc).__name__}: {exc}")
+            print(f"[ingestion] ERROR enriching prospect '{sr.get('name', 'UNKNOWN')}' (index {i}) - {type(exc).__name__}: {exc}")
             enrichment_errors += 1
         
         if len(enriched) % 50 == 0:
@@ -1441,9 +1441,9 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         sr_names  = {p["name"].lower() for p in sr_prospects}
         seed_only = [p for p in seed if p["name"].lower() not in sr_names]
         if seed_only:
-            print(f"[ingestion] {len(seed_only)} seed prospects not in Sportradar — appending")
+            print(f"[ingestion] {len(seed_only)} seed prospects not in Sportradar - appending")
     except Exception as exc:
-        print(f"[ingestion] ERROR processing seed-only prospects — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR processing seed-only prospects - {type(exc).__name__}: {exc}")
         seed_only = []
 
     final = enriched + seed_only
@@ -1455,6 +1455,6 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     try:
         return [normalize_prospect(p) for p in final]
     except Exception as exc:
-        print(f"[ingestion] ERROR normalizing prospects — {type(exc).__name__}: {exc}")
+        print(f"[ingestion] ERROR normalizing prospects - {type(exc).__name__}: {exc}")
         # Return unnormalized data as fallback
         return final

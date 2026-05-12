@@ -19,29 +19,29 @@ def render_awards_section(awards: dict) -> str:
 
     if awards.get("highest_single_week"):
         t, w, p = awards["highest_single_week"]
-        rows.append(acard("Highest Single Week", f"{t} — Week {w}: <strong>{p:.1f} points</strong>"))
+        rows.append(acard("Highest Single Week", f"{t} - Week {w}: <strong>{p:.1f} points</strong>"))
 
     if awards.get("lowest_single_week"):
         t, w, p = awards["lowest_single_week"]
-        rows.append(acard("Lowest Single Week", f"{t} — Week {w}: <strong>{p:.1f} points</strong>"))
+        rows.append(acard("Lowest Single Week", f"{t} - Week {w}: <strong>{p:.1f} points</strong>"))
 
     if awards.get("longest_win_streak"):
         t, L = awards["longest_win_streak"]
-        rows.append(acard("Longest Win Streak", f"{t} — <strong>{L} games</strong>"))
+        rows.append(acard("Longest Win Streak", f"{t} - <strong>{L} games</strong>"))
 
     if awards.get("longest_loss_streak"):
         t, L = awards["longest_loss_streak"]
-        rows.append(acard("Longest Losing Streak", f"{t} — <strong>{L} games</strong>"))
+        rows.append(acard("Longest Losing Streak", f"{t} - <strong>{L} games</strong>"))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
-        rows.append(acard("Most Consistent", f"{t} — σ <strong>{sd:.2f}</strong> over {n} games"))
+        rows.append(acard("Most Consistent", f"{t} - σ <strong>{sd:.2f}</strong> over {n} games"))
 
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
         clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
         rows.append(acard("Highest Points By a Player",
-                          f"<span{clickable_attrs}>{n}</span> — Week {w}: <strong>{pts} points</strong>"))
+                          f"<span{clickable_attrs}>{n}</span> - Week {w}: <strong>{pts} points</strong>"))
 
     return f"""
     <div class="card awards-card" data-section="awards">
@@ -158,7 +158,7 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
     d["longest_win_streak"] = max(win_streaks, key=lambda x: x[1]) if win_streaks else None
     d["longest_loss_streak"] = max(loss_streaks, key=lambda x: x[1]) if loss_streaks else None
 
-    # Consistency (std dev of points) — require at least 4 games to be fair
+    # Consistency (std dev of points) - require at least 4 games to be fair
     cons = []
     for t, g in df_weekly.groupby("owner"):
         pts = g["points"].astype(float)

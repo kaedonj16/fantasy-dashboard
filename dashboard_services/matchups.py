@@ -845,7 +845,7 @@ def render_matchup_slide(
         img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
 
         if not proj_mode:
-            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
+            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">
@@ -884,7 +884,7 @@ def render_matchup_slide(
         img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
 
         if not proj_mode:
-            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "—"
+            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">

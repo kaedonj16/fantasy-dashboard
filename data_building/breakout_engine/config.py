@@ -486,7 +486,7 @@ RB_SKILL_LIFT_R3_R4 = 10
 # ==============================================================================
 
 # Higher minimum confidence for TE (smaller sample, higher variance position)
-TE_SAMPLE_MIN_CONFIDENCE = 0.50   # vs 0.35 default — more shrinkage toward mean
+TE_SAMPLE_MIN_CONFIDENCE = 0.50   # vs 0.35 default - more shrinkage toward mean
 TE_USAGE_MIN_CONFIDENCE = 0.50
 
 # TE-specific efficiency thresholds (routes run weight > raw totals)

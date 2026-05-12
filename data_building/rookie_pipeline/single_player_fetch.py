@@ -50,7 +50,7 @@ def fetch_cfbd_stats_for_player(
         fetch_games_played: If True, fetch exact games-played counts
     """
     if not CFBD_KEY:
-        print("[cfbd] No CFBD_API_KEY set — cannot fetch stats")
+        print("[cfbd] No CFBD_API_KEY set - cannot fetch stats")
         return {}
 
     years = [draft_year - 1, draft_year - 2, draft_year - 3]
@@ -78,7 +78,7 @@ def fetch_cfbd_stats_for_player(
                     s["pass_rate"] = round(pa / total, 3) if total > 0 else 0.5
                 team_stats[yr] = teams
             except Exception as exc:
-                print(f"[cfbd] ERROR processing team stats for {yr} — {type(exc).__name__}: {exc}")
+                print(f"[cfbd] ERROR processing team stats for {yr} - {type(exc).__name__}: {exc}")
                 team_stats[yr] = {}
 
         # Games-played lookup for this specific player
@@ -152,7 +152,7 @@ def fetch_cfbd_stats_for_player(
                     print(f"[cfbd] No stats found for '{player_name}' in {yr}")
                     
             except Exception as exc:
-                print(f"[cfbd] ERROR loading player stats for {yr} — {type(exc).__name__}: {exc}")
+                print(f"[cfbd] ERROR loading player stats for {yr} - {type(exc).__name__}: {exc}")
 
         if seasons:
             seasons.sort(key=lambda s: s["season"])
@@ -163,7 +163,7 @@ def fetch_cfbd_stats_for_player(
         return result
         
     except Exception as exc:
-        print(f"[cfbd] FAILED: Unexpected error fetching stats for '{player_name}' — {type(exc).__name__}: {exc}")
+        print(f"[cfbd] FAILED: Unexpected error fetching stats for '{player_name}' - {type(exc).__name__}: {exc}")
         return {}
 
 

@@ -130,7 +130,7 @@ class ProspectSeasonStatsSource(RookieSource):
         "route_target_rate": ("route_target_rate", 0.85),
     }
 
-    # QB-only metrics — skipped automatically for non-QB positions in fetch_player_season_metrics
+    # QB-only metrics - skipped automatically for non-QB positions in fetch_player_season_metrics
     _QB_ONLY_METRICS = frozenset({"adjusted_comp_pct", "twp_rate"})
 
     # Inline calculations where we need more than one field
@@ -392,7 +392,7 @@ class SportradarNCAAFBSource(RookieSource):
     Real college stats from the Sportradar NCAAFB API.
 
     Provides routes_run, yprr, tprr, and snap_counts computed from real
-    target counts — significantly more accurate than the CFBD-based proxies
+    target counts - significantly more accurate than the CFBD-based proxies
     that must estimate routes from receptions.
 
     Requires a SportradarNCAAIndex built by build_sportradar_ncaa_index().

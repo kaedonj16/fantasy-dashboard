@@ -250,7 +250,7 @@ def _build_full_season_stats(
 
 
 def _team_stats_lookup(team_stats: pd.DataFrame, team_name: str) -> dict:
-    if team_stats is None or team_stats.empty or not team_name or team_name == "—":
+    if team_stats is None or team_stats.empty or not team_name or team_name == "-":
         return {}
 
     df = team_stats.copy()
@@ -289,7 +289,7 @@ def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
         winners_bracket = []
 
     if not winners_bracket:
-        return "—", "—"
+        return "-", "-"
 
     # Only consider completed matchups
     completed = [
@@ -297,7 +297,7 @@ def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
         if m.get("w") is not None and m.get("l") is not None
     ]
     if not completed:
-        return "—", "—"
+        return "-", "-"
 
     # Best case: Sleeper marks the championship game with p == 1
     championship = next(
@@ -418,7 +418,7 @@ def sort_team_stats(team_stats: pd.DataFrame) -> pd.DataFrame:
 
 def _team_name_from_roster_id(roster_map: Dict[str, str], roster_id: Any) -> str:
     if roster_id is None:
-        return "—"
+        return "-"
     return (
             roster_map.get(str(roster_id))
             or roster_map.get(roster_id)
@@ -438,7 +438,7 @@ def _title_game_names(ctx: dict) -> tuple[str, str]:
         winners_bracket = []
 
     if not winners_bracket:
-        return "—", "—"
+        return "-", "-"
 
     # Prefer latest round / latest matchup
     finalists = sorted(
@@ -456,7 +456,7 @@ def _title_game_names(ctx: dict) -> tuple[str, str]:
                 _team_name_from_roster_id(roster_map, loser_id),
             )
 
-    return "—", "—"
+    return "-", "-"
 
 
 def _filtered_season_df(df_weekly: pd.DataFrame) -> pd.DataFrame:
@@ -497,23 +497,23 @@ def _build_summary(history_ctx: dict) -> dict:
 
     summary = {
         "champion": champion,
-        "champion_record": _record_str(pd.Series(champion_stats)) if champion_stats else "—",
+        "champion_record": _record_str(pd.Series(champion_stats)) if champion_stats else "-",
         "runner_up": runner_up,
-        "runner_up_record": _record_str(pd.Series(runner_up_stats)) if runner_up_stats else "—",
-        "top_scorer_team": "—",
+        "runner_up_record": _record_str(pd.Series(runner_up_stats)) if runner_up_stats else "-",
+        "top_scorer_team": "-",
         "top_scorer_value": 0.0,
         "top_scorer_avg": 0.0,
-        "best_defense_team": "—",
+        "best_defense_team": "-",
         "best_defense_value": 0.0,
-        "highest_week_team": "—",
+        "highest_week_team": "-",
         "highest_week_value": 0.0,
-        "lowest_week_team": "—",
+        "lowest_week_team": "-",
         "lowest_week_value": 0.0,
-        "closest_matchup": "—",
+        "closest_matchup": "-",
         "closest_margin": 0.0,
-        "biggest_blowout": "—",
+        "biggest_blowout": "-",
         "biggest_blowout_margin": 0.0,
-        "unluckiest_team": "—",
+        "unluckiest_team": "-",
         "unluckiest_delta": 0,
     }
 
@@ -554,10 +554,10 @@ def _build_summary(history_ctx: dict) -> dict:
         hi = df_weekly.loc[df_weekly["points"].idxmax()]
         lo = df_weekly.loc[df_weekly["points"].idxmin()]
 
-        summary["highest_week_team"] = str(hi.get("owner", "—"))
+        summary["highest_week_team"] = str(hi.get("owner", "-"))
         summary["highest_week_value"] = _safe_float(hi.get("points"))
 
-        summary["lowest_week_team"] = str(lo.get("owner", "—"))
+        summary["lowest_week_team"] = str(lo.get("owner", "-"))
         summary["lowest_week_value"] = _safe_float(lo.get("points"))
 
     if not df_weekly.empty and {"week", "matchup_id", "owner", "points"}.issubset(df_weekly.columns):
@@ -600,15 +600,15 @@ def _build_recap_line(summary: dict, season: int) -> str:
     unlucky = summary["unluckiest_team"]
 
     parts = []
-    if champ != "—" and runner != "—":
+    if champ != "-" and runner != "-":
         parts.append(f"{champ} won the {season} title over {runner}.")
-    elif champ != "—":
+    elif champ != "-":
         parts.append(f"{champ} finished as the {season} champion.")
 
-    if scoring_leader != "—":
+    if scoring_leader != "-":
         parts.append(f"{scoring_leader} led the league in total points.")
 
-    if unlucky != "—" and summary["unluckiest_delta"] > 0:
+    if unlucky != "-" and summary["unluckiest_delta"] > 0:
         parts.append(
             f"{unlucky} was the rough-luck team, finishing {summary['unluckiest_delta']} spots below its PF rank."
         )
@@ -684,7 +684,7 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
             f"""
             <tr>
               <td>{_safe_int(row.get('Rank'))}</td>
-              <td>{row.get('owner', '—')}</td>
+              <td>{row.get('owner', '-')}</td>
               <td>{_record_str(row)}</td>
               <td>{_safe_float(row.get('PF')):.1f}</td>
               <td>{_safe_float(row.get('PA')):.1f}</td>

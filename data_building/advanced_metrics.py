@@ -98,7 +98,7 @@ def init_advanced_metrics_db():
                 ON player_advanced_metrics (season, as_of_date DESC);
         """)
 
-        # Add rookie evaluation columns (safe migration — all nullable)
+        # Add rookie evaluation columns (safe migration - all nullable)
         _add_rookie_eval_columns(conn)
 
 

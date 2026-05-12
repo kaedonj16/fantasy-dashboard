@@ -638,7 +638,7 @@ def _print_class_table(
     top_n: int = TOP_N_PER_CLASS,
 ) -> None:
     print(f"\n{'=' * 110}")
-    print(f"  {draft_year} DRAFT CLASS — Top {top_n} by Model Score  ({seasons_note})")
+    print(f"  {draft_year} DRAFT CLASS - Top {top_n} by Model Score  ({seasons_note})")
     print(f"{'=' * 110}")
     header = (
         f"{'Rnk':>3}  {'Player':<25} {'Pos':>3}  {'Pick':>4}  "
@@ -813,7 +813,7 @@ def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
     Only players who have at least one season of NFL data (ppr_peak > 0) are counted.
     """
     print(f"\n{'=' * 105}")
-    print("  BENCHMARK HIT RATES  —  college threshold  →  top-6 (QB/TE) or top-12 (WR/RB) fantasy season")
+    print("  BENCHMARK HIT RATES  -  college threshold  →  top-6 (QB/TE) or top-12 (WR/RB) fantasy season")
     print("  Approximate PPR-peak thresholds: QB ≥325 pts  |  WR ≥175 pts  |  RB ≥175 pts  |  TE ≥110 pts")
     print("  'N meet' = players with that stat + NFL data  |  'Hit%' = % who peaked above threshold")
     print("  'vs base' = hit-rate delta vs. all players at that position  |  col_ features require CFBD data")
@@ -869,7 +869,7 @@ def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
 
         for lbl, n_meet, n_hit, rate, delta in results:
             if rate is None:
-                print(f"  {lbl:<26}  {'<3':>6}  {'—':>5}  {'—':>5}  {'—':>8}")
+                print(f"  {lbl:<26}  {'<3':>6}  {'-':>5}  {'-':>5}  {'-':>8}")
                 continue
             delta_str = f"{delta:+.1f}%"
             bar_filled = min(int(rate / 5), 20)
@@ -879,7 +879,7 @@ def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
 
         # Print baseline row at the bottom
         base_bar = "█" * min(int(base_rate / 5), 20) + "░" * (20 - min(int(base_rate / 5), 20))
-        print(f"  {'(All — baseline)':<26}  {len(with_data):>6}  {base_hits:>5}  {base_rate:>4.0f}%  {'baseline':>8}  {base_bar}")
+        print(f"  {'(All - baseline)':<26}  {len(with_data):>6}  {base_hits:>5}  {base_rate:>4.0f}%  {'baseline':>8}  {base_bar}")
 
 
 def _print_summary(all_rows: List[Dict]) -> None:
@@ -1037,7 +1037,7 @@ def _print_summary(all_rows: List[Dict]) -> None:
     if has_ppr:
         # Use PPR per season (avg) for cross-year comparisons.
         # Cumulative unfairly favours older classes that simply have more seasons
-        # of data — a 2021 player at 250/season looks worse than a 2021 player at
+        # of data - a 2021 player at 250/season looks worse than a 2021 player at
         # 200/season with 4 years banked.  Per-season average is position-neutral
         # and class-neutral.
         for r in has_ppr:
@@ -1110,7 +1110,7 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
     (i.e. top-3 per position for top_n=10, rounded up).  Raw cross-position
     score comparison is misleading without CFBD data because draft capital
     alone drives 30% of the score and WRs are systematically drafted earlier
-    than RBs/TEs — making busts like Jalen Reagor look better than any RB
+    than RBs/TEs - making busts like Jalen Reagor look better than any RB
     in the class purely on pick number.
 
     Uses PPR-per-season average for fair cross-year comparison.
@@ -1164,7 +1164,7 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
     )
     if cfbd_pct < 30:
         print(
-            f"  ⚠  Only {cfbd_pct:.0f}% of players have CFBD college stats — scores are draft capital + "
+            f"  ⚠  Only {cfbd_pct:.0f}% of players have CFBD college stats - scores are draft capital + "
             f"athleticism only."
         )
         print(
@@ -1179,7 +1179,7 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
 
     for i, r in enumerate(balanced_sorted, 1):
         ar = actual_rank_overall.get(r["name"], 999)
-        y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+        y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     -"
         print(
             f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
             f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
@@ -1214,7 +1214,7 @@ def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
 
         for i, r in enumerate(by_model_pos[:top_n], 1):
             ar = actual_rank_pos.get(r["name"], 999)
-            y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     —"
+            y2 = f"{r['ppr_y2']:>6.0f}" if r.get("ppr_y2", 0) > 0 else "     -"
             print(
                 f"  {i:>2}.  {r['draft_year']:>4}  {r['name']:<24} {r['position']:>3}  "
                 f"#{r['draft_pick']:>3}  {r['model_score']:>5.1f}  "
@@ -1273,7 +1273,7 @@ def save_grades_to_db(all_rows: List[Dict[str, Any]]) -> Tuple[int, int]:
     try:
         from dashboard_services.db import get_conn
     except ImportError:
-        print("[backtest] WARNING: dashboard_services.db not available — skipping DB save")
+        print("[backtest] WARNING: dashboard_services.db not available - skipping DB save")
         return 0, 0
 
     def _slug(name: str) -> str:

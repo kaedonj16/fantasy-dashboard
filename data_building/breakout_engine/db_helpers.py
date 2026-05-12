@@ -576,7 +576,7 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
 
     Returns:
         List of player dicts with keys: player_id, player_name, position,
-        team, age, years_exp — compatible with the breakout engine.
+        team, age, years_exp - compatible with the breakout engine.
     """
     # Load players_index for name resolution
     players_index = {}
@@ -586,7 +586,7 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
             with open(players_index_path, 'r') as f:
                 players_index = json.load(f)
     except (json.JSONDecodeError, IOError):
-        pass  # Non-fatal — names will remain NULL
+        pass  # Non-fatal - names will remain NULL
 
     query = """
         SELECT
@@ -693,7 +693,7 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
             with open(players_index_path, 'r') as f:
                 players_index = json.load(f)
     except (json.JSONDecodeError, IOError):
-        pass  # Non-fatal — fall back to usage-cache age
+        pass  # Non-fatal - fall back to usage-cache age
 
     try:
         with open(cache_path, 'r') as f:
@@ -879,7 +879,7 @@ def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
             """, (season,)).fetchall()
 
     except Exception as e:
-        print(f"[db_helpers] DB unavailable — competition signals will be 0 for all players: {e}")
+        print(f"[db_helpers] DB unavailable - competition signals will be 0 for all players: {e}")
         return _empty
 
     # Build lookup indices: (team, position) → data
@@ -941,7 +941,7 @@ def load_all_team_stats(season: int) -> Dict[str, Dict]:
 
     teams_index = load_teams_index() or {}
 
-    # NFL league averages — used as fallback when cached values are zero/missing
+    # NFL league averages - used as fallback when cached values are zero/missing
     NFL_AVG_PASS_ATT_PG = 33.5
     NFL_AVG_RUSH_ATT_PG = 25.5
     NFL_AVG_PASS_YDS_PG = 228.0
@@ -982,7 +982,7 @@ def load_all_team_stats(season: int) -> Dict[str, Dict]:
             estimated_fg_pts = 1.2 * 3.0  # ~1.2 FGs/game × 3 pts
             points_pg = estimated_td_pts + estimated_fg_pts
 
-        # Non-derivable fields — use stored value or NFL average
+        # Non-derivable fields - use stored value or NFL average
         red_zone_trips_pg = data.get('red_zone_trips_pg') or NFL_AVG_RED_ZONE_TRIPS_PG
         sacks_allowed_pg = data.get('sacks_allowed_pg') or NFL_AVG_SACKS_ALLOWED_PG
 

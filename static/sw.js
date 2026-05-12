@@ -1,4 +1,4 @@
-// BR Fantasy Dashboard — Service Worker
+// BR Fantasy Dashboard - Service Worker
 // Caches static assets and the player index for offline/fast repeat loads.
 
 const CACHE_NAME = 'br-fantasy-v1';

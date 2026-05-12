@@ -26,9 +26,9 @@ def _slug(name: str) -> str:
 #
 # The same pick number means something very different by position.
 #
-# An RB drafted at #8 (Bijan Robinson 2023) is historically extraordinary —
+# An RB drafted at #8 (Bijan Robinson 2023) is historically extraordinary -
 # RBs almost never go top-10 in the modern era.  A QB drafted at #8 is
-# unremarkable — a top-10 QB happens every year.
+# unremarkable - a top-10 QB happens every year.
 #
 # Each entry is (elite_pick, good_pick, avg_pick, late_pick) representing
 # the pick thresholds that anchor the scoring curve:
@@ -174,7 +174,7 @@ def build_mock_draft_consensus_from_scraped(
             # High variance = low confidence; 0 variance = 100, ±10-pick stdev = ~50
             confidence = round(max(50.0, 100.0 - stdev * 5.0), 1)
         else:
-            confidence = 60.0  # single mock — moderate confidence
+            confidence = 60.0  # single mock - moderate confidence
 
         projected_round = ((projected_pick - 1) // 32) + 1
         draft_capital = pick_to_draft_capital_score(projected_pick, bucket["position"])

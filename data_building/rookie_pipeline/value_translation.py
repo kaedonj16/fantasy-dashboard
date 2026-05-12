@@ -59,7 +59,7 @@ _CURVE: List[Tuple[float, float]] = [
 
 
 def _smoothstep(edge0: float, edge1: float, x: float) -> float:
-    """Hermite interpolation — produces an S-curve between 0 and 1."""
+    """Hermite interpolation - produces an S-curve between 0 and 1."""
     t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0) if edge1 > edge0 else 0.0))
     return t * t * (3.0 - 2.0 * t)
 
@@ -68,7 +68,7 @@ def _piecewise_value(score: float) -> float:
     """Interpolate prospect_score → dynasty value using the calibrated curve.
 
     For scores ≥ 85 (elite tier) a smoothstep replaces linear interpolation
-    so the value curve has a natural S-shape rather than a straight ramp —
+    so the value curve has a natural S-shape rather than a straight ramp -
     matching real dynasty market behaviour where elite prospects command
     exponentially higher prices up to ~95, then gains compress near 100.
     """
@@ -159,12 +159,12 @@ def assign_tier(prospect_score: float) -> Tuple[int, str]:
     (elite stats + top-10 draft capital) typically score 88–96.
 
     Tiers:
-        1 — Elite Prospect      (≥ 82)   Bijan/Chase/JLove tier; top-8 skill pick + elite stats
-        2 — Top Prospect        (68–81)  solid round-1; QBs; early top-20 picks
-        3 — Day-2 Upside        (55–67)  round-2 picks; strong developmental floor
-        4 — Developmental       (44–54)  round-3/4; high variance, low floor
-        5 — Deep Flier          (33–43)  day-3 / UDFA with one standout trait
-        6 — Low Priority        (< 33)   minimal dynasty value
+        1 - Elite Prospect      (≥ 82)   Bijan/Chase/JLove tier; top-8 skill pick + elite stats
+        2 - Top Prospect        (68–81)  solid round-1; QBs; early top-20 picks
+        3 - Day-2 Upside        (55–67)  round-2 picks; strong developmental floor
+        4 - Developmental       (44–54)  round-3/4; high variance, low floor
+        5 - Deep Flier          (33–43)  day-3 / UDFA with one standout trait
+        6 - Low Priority        (< 33)   minimal dynasty value
     """
     if prospect_score >= 85:
         return 1, "Elite Prospect"

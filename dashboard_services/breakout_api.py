@@ -174,7 +174,7 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             # Too old to be a dynasty breakout
             if qb_age > 31:
                 continue
-            # Already an established veteran starter — not a breakout
+            # Already an established veteran starter - not a breakout
             # usage_baseline_score == 20 means 450+ attempts last season
             if qb_age >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
                 continue

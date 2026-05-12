@@ -2,7 +2,7 @@
 """
 Sync data from a local Postgres database to the production database.
 
-Only ADDS rows that prod doesn't have yet — never overwrites existing prod data.
+Only ADDS rows that prod doesn't have yet - never overwrites existing prod data.
 Tables with foreign-key dependencies are synced in the correct order.
 
 Usage:
@@ -62,12 +62,12 @@ set_json_dumps(lambda v: json.dumps(v, default=_json_default))
 # ---------------------------------------------------------------------------
 # Table configuration
 # Each entry is a dict with:
-#   table        : str   — table name
-#   conflict_cols: list  — columns for ON CONFLICT (...) — use UNIQUE constraint cols
+#   table        : str   - table name
+#   conflict_cols: list  - columns for ON CONFLICT (...) - use UNIQUE constraint cols
 #                          for tables whose PK is a SERIAL id
-#   conflict_expr: str   — literal SQL expression for the conflict target when
+#   conflict_expr: str   - literal SQL expression for the conflict target when
 #                          an expression index is involved (overrides conflict_cols)
-#   skip_cols    : list  — columns to exclude from INSERT (e.g. SERIAL "id")
+#   skip_cols    : list  - columns to exclude from INSERT (e.g. SERIAL "id")
 #
 # Order matters: parent tables before their FK-dependent children.
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ TABLE_CONFIG = [
         "conflict_cols": ["player_id", "draft_type", "season", "is_superflex", "num_teams"],
         "skip_cols": [],
     },
-    # Rookie tables — migrate in FK order (active_class and prospects first)
+    # Rookie tables - migrate in FK order (active_class and prospects first)
     {
         "table": "rookie_active_class",
         "conflict_cols": ["draft_class_year"],
@@ -293,7 +293,7 @@ def _migrate_assets(
     trade_intel_trades.id is a BIGSERIAL that auto-increments independently on
     local and prod, so we can't copy trade_id values directly.  Instead we:
       1. Build a map  transaction_id → prod trade id  (after trades are synced).
-      2. Find prod trade ids that already have assets (skip those — assumed complete).
+      2. Find prod trade ids that already have assets (skip those - assumed complete).
       3. For each local asset whose trade is new to prod, insert it using the
          prod-assigned trade id.
     """
@@ -319,7 +319,7 @@ def _migrate_assets(
         for row in prod_conn.execute("SELECT id, transaction_id FROM trade_intel_trades").fetchall()
     }
 
-    # prod trade ids that already have assets — skip these entirely
+    # prod trade ids that already have assets - skip these entirely
     prod_trades_with_assets: set[int] = {
         row["trade_id"]
         for row in prod_conn.execute("SELECT DISTINCT trade_id FROM trade_intel_assets").fetchall()
@@ -452,7 +452,7 @@ def main() -> int:
     print("Local DB -> Prod DB Sync  (add-only, never overwrites prod data)")
     print("=" * 60)
     if args.dry_run:
-        print("DRY RUN — no writes to prod DB")
+        print("DRY RUN - no writes to prod DB")
     else:
         print(f"Syncing {len(tables_to_run)} table(s) to prod DB.")
         confirm = input("Proceed? [y/N] ").strip().lower()
@@ -480,7 +480,7 @@ def main() -> int:
                         local_conn, prod_conn, cfg, dry_run=args.dry_run
                     )
                 if n_read == 0:
-                    print(f"  {table:<42} (skipped — table empty or not found)")
+                    print(f"  {table:<42} (skipped - table empty or not found)")
                 elif args.dry_run:
                     print(f"  {table:<42} {n_read} rows")
                 else:
@@ -498,9 +498,9 @@ def main() -> int:
     print()
     print("=" * 60)
     if args.dry_run:
-        print(f"Dry run complete — {total_read} rows across {len(tables_to_run)} table(s).")
+        print(f"Dry run complete - {total_read} rows across {len(tables_to_run)} table(s).")
     else:
-        print(f"Done — {total_read} rows read, {total_upserted} inserted (skipped existing).")
+        print(f"Done - {total_read} rows read, {total_upserted} inserted (skipped existing).")
 
     if errors:
         print(f"\n{len(errors)} table(s) had errors:")

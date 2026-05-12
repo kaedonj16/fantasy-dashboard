@@ -169,7 +169,7 @@ def run_rookie_evaluation_pipeline(
         # already in the player's source_data.  Covers two cases:
         #   1. Prospect was added from mock draft → seasons: []
         #   2. Prospect has a 2026 placeholder row but no actual college seasons
-        # Only inject past seasons — the draft year itself has no college data yet.
+        # Only inject past seasons - the draft year itself has no college data yet.
         existing_years = {int(s.get("season")) for s in p.get("seasons", []) if s.get("season")}
         sr_seasons = sportradar_index.get_all_seasons(name)
         missing = {yr: rec for yr, rec in sr_seasons.items() if yr < year and yr not in existing_years}

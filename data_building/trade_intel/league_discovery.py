@@ -2,7 +2,7 @@
 League discovery for Trade Intelligence Engine.
 
 Strategy (no Sleeper search API exists):
-1. Seed from Sleeper trending players endpoint — each trending entry includes
+1. Seed from Sleeper trending players endpoint - each trending entry includes
    league_ids that recently touched the player.
 2. From each discovered league, pull rosters -> owner user_ids -> fetch their
    leagues -> expand the frontier.
@@ -44,7 +44,7 @@ SESSION.mount("http://", adapter)
 SESSION.mount("https://", adapter)
 SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
 
-_REQUEST_DELAY = 0.1   # seconds between Sleeper calls — stay well under rate limits
+_REQUEST_DELAY = 0.1   # seconds between Sleeper calls - stay well under rate limits
 _MAX_LEAGUES = 5_000   # target ceiling per crawl run
 
 
@@ -53,7 +53,7 @@ def _get(path: str, params: dict | None = None) -> list | dict | None:
     try:
         resp = SESSION.get(url, params=params, timeout=10)
         if resp.status_code == 429:
-            logger.warning("[discovery] Rate limited — sleeping 60s")
+            logger.warning("[discovery] Rate limited - sleeping 60s")
             time.sleep(60)
             resp = SESSION.get(url, params=params, timeout=10)
         resp.raise_for_status()
@@ -74,7 +74,7 @@ def _seed_league_ids(season: int) -> Set[str]:
     """
     Seed the discovery frontier from leagues already in the DB.
 
-    Sleeper's trending endpoint only returns {player_id, count} — it does NOT
+    Sleeper's trending endpoint only returns {player_id, count} - it does NOT
     embed league IDs, so we can't use it for seeding.  Instead we BFS-expand
     from whatever leagues are already stored (populated by manual inserts or
     previous discovery runs).  On a completely fresh DB the frontier will be
@@ -100,7 +100,7 @@ def _seed_league_ids(season: int) -> Set[str]:
 
 def _user_leagues(user_id: str, season: int) -> List[str]:
     ids: List[str] = []
-    for yr in {season, season + 1}:  # also check next year — offseason leagues created early
+    for yr in {season, season + 1}:  # also check next year - offseason leagues created early
         data = _get(f"/user/{user_id}/leagues/nfl/{yr}")
         if data:
             ids.extend(str(lg["league_id"]) for lg in data if lg.get("league_id"))
@@ -330,7 +330,7 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
 def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int] = None) -> int:
     """
     Seed dynasty leagues for a single Sleeper user_id into trade_intel_leagues,
-    and record the user in trade_intel_users.  Safe to call on every login —
+    and record the user in trade_intel_users.  Safe to call on every login -
     ON CONFLICT DO NOTHING means repeat visits are a no-op.
 
     Returns the number of new dynasty leagues inserted.
@@ -612,7 +612,7 @@ def backfill_superflex(batch_size: int = 500) -> int:
         time.sleep(_REQUEST_DELAY)
         meta = _league_meta(league_id)
         if meta is None:
-            # Can't reach league — mark False so we don't keep retrying
+            # Can't reach league - mark False so we don't keep retrying
             is_sf = False
         else:
             is_sf = _is_superflex(meta)

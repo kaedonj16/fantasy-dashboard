@@ -98,7 +98,7 @@ function showLoginGate(target, opts) {
 
 // ── Data freshness chip ───────────────────────────────────────────────────────
 (function () {
-  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours — matches server CACHE_TTL
+  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours - matches server CACHE_TTL
   function initFreshness() {
     var main = document.getElementById('page-root');
     if (!main) return;
@@ -383,7 +383,7 @@ function initCardTabs(root = document) {
 }
 
 // ---------------------------------------------------------------------------
-// Playoff Odds — lazy-loaded on first tab click
+// Playoff Odds - lazy-loaded on first tab click
 // ---------------------------------------------------------------------------
 
 function initPlayoffOdds(root = document) {
@@ -460,7 +460,7 @@ function _renderPlayoffOdds(data) {
       ? `<td class="po-bye">${
           is_complete
             ? (t.bye_pct === 100 ? '✓' : '')
-            : (t.bye_pct > 0 ? t.bye_pct.toFixed(0) + '%' : '—')
+            : (t.bye_pct > 0 ? t.bye_pct.toFixed(0) + '%' : '-')
         }</td>`
       : '';
 
@@ -1011,7 +1011,7 @@ window.initTradePage = function initTradePage(root = document) {
     const row = document.createElement("div");
     row.className = "otc-value-row";
 
-    // Make row clickable — use only onclick, not data-player-id, to avoid double-fire
+    // Make row clickable - use only onclick, not data-player-id, to avoid double-fire
     // from the global delegated handler in initGlobalPlayerModals
     if (p.id) {
       row.style.cursor = "pointer";
@@ -1036,7 +1036,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const rankWrap = document.createElement("div");
     rankWrap.className = "otc-value-rank";
-    rankWrap.textContent = overallRank ? "#" + overallRank : "—";
+    rankWrap.textContent = overallRank ? "#" + overallRank : "-";
 
     const mainWrap = document.createElement("div");
     mainWrap.className = "otc-value-main";
@@ -1704,7 +1704,7 @@ window.initTradePage = function initTradePage(root = document) {
       nameEl.className = "otc-chip-name player-clickable";
       nameEl.textContent = p.name || "Unknown";
 
-      // Make player name clickable — route prospects to prospect modal
+      // Make player name clickable - route prospects to prospect modal
       if (p.id) {
         nameEl.style.cursor = 'pointer';
         nameEl.onclick = (e) => {
@@ -2030,7 +2030,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // fetchSimilarTrades — real trades from the DB involving these players
+  // fetchSimilarTrades - real trades from the DB involving these players
   // ------------------------------------------------------------
   async function fetchSimilarTrades() {
     const section = root.querySelector("#similarTradesSection");
@@ -2080,12 +2080,12 @@ window.initTradePage = function initTradePage(root = document) {
           return `<div class="stl-asset${key}${pick}">${a.name}${pos}</div>`;
         }
 
-        const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
-        const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">—</div>';
+        const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">-</div>';
+        const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">-</div>';
 
         return `<div class="stl-card">
           <div class="stl-card-head">
-            <span class="stl-date">${t.date || "—"}</span>
+            <span class="stl-date">${t.date || "-"}</span>
             <div class="stl-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>
           </div>
           <div class="stl-card-body">
@@ -2102,7 +2102,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // fetchTradeIntel — loads real market data for players in the trade
+  // fetchTradeIntel - loads real market data for players in the trade
   // ------------------------------------------------------------
   async function fetchTradeIntel() {
     const intelPanel = root.querySelector("#tradeIntelPanel");
@@ -2149,8 +2149,8 @@ window.initTradePage = function initTradePage(root = document) {
       const deltaStr = delta != null
         ? `<span style="color:${delta >= 0 ? "#10b981" : "#ef4444"};font-weight:600;">${delta >= 0 ? "+" : ""}${delta}</span>`
         : "";
-      const marketVal = r.market_value ? `<span style="color:#e2e8f0;">${Math.round(r.market_value)}</span>` : "—";
-      const modelVal = r.model_value ? `<span style="color:#94a3b8;">${Math.round(r.model_value)}</span>` : "—";
+      const marketVal = r.market_value ? `<span style="color:#e2e8f0;">${Math.round(r.market_value)}</span>` : "-";
+      const modelVal = r.model_value ? `<span style="color:#94a3b8;">${Math.round(r.model_value)}</span>` : "-";
 
       const bsr = r.buy_sell_ratio;
       const bsrLabel = bsr != null
@@ -2180,7 +2180,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // loadTradeTargets — surfaces players to pursue based on positional rank gaps
+  // loadTradeTargets - surfaces players to pursue based on positional rank gaps
   // ------------------------------------------------------------
   async function loadTradeTargets() {
     const body = root.querySelector("#tradeTargetsBody");
@@ -2266,7 +2266,7 @@ window.initTradePage = function initTradePage(root = document) {
           body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">No player data available.</div>';
           return;
         }
-        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Your roster is balanced — top available at each position:</div>`;
+        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Your roster is balanced - top available at each position:</div>`;
         allKeys.forEach(pos => {
           const players = allGrouped[pos] || [];
           if (!players.length) return;
@@ -2279,7 +2279,7 @@ window.initTradePage = function initTradePage(root = document) {
           const players = grouped[pos] || [];
           if (!players.length) return;
           const col = posColor[pos] || "var(--text-muted)";
-          html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} — need</div>`;
+          html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${col};padding:4px 0 2px;">${pos} - need</div>`;
           players.forEach(t => { html += renderPlayerRow(t, pos); });
         });
       }
@@ -2429,7 +2429,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       if (!data.packages.length) {
-        html += `<span style="color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</span>`;
+        html += `<span style="color:var(--text-muted);">No fair packages found - your roster may not have matching value yet.</span>`;
       } else {
         data.packages.forEach(pkg => { html += renderPkg(pkg); });
       }
@@ -2485,7 +2485,7 @@ window.initTradePage = function initTradePage(root = document) {
   };
 
   // ------------------------------------------------------------
-  // analyzeTrade — owns ALL loading/result/empty state transitions
+  // analyzeTrade - owns ALL loading/result/empty state transitions
   // Never call tradeAiBody.innerHTML directly from outside this fn
   // ------------------------------------------------------------
   async function analyzeTrade() {
@@ -2506,7 +2506,7 @@ window.initTradePage = function initTradePage(root = document) {
     const sideAPickIds = state.sideAPicks.map(p => String(p.id));
     const sideBPickIds = state.sideBPicks.map(p => String(p.id));
 
-    // Nothing on either side — show empty state and bail
+    // Nothing on either side - show empty state and bail
     if (
       sideAIds.length === 0 &&
       sideBIds.length === 0 &&
@@ -2564,7 +2564,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (emptyState) emptyState.style.display = "none";
       if (resultState) {
         resultState.style.display = "block";
-        // Write into resultState only — never clobber tradeAiBody directly
+        // Write into resultState only - never clobber tradeAiBody directly
         // so that sibling state nodes (loading/empty) survive intact
         if (data.analysis_html) {
           resultState.innerHTML = data.analysis_html;
@@ -2631,13 +2631,13 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
-  // Fuzzy player name matching — returns a score (higher = better match).
+  // Fuzzy player name matching - returns a score (higher = better match).
   // Handles: exact substring, word-start matches, and single-transposition typos.
   function fuzzyNameScore(name, query) {
     if (!name || !query) return 0;
     const n = name.toLowerCase();
     const q = query.toLowerCase();
-    // Exact substring — highest priority
+    // Exact substring - highest priority
     if (n.includes(q)) return 100 + (100 - n.indexOf(q));
     // Check search_name field alias passed in via player object handled by caller
     // Word-start matching: "jax sm" matches "Jaxon Smith-Njigba"
@@ -2834,7 +2834,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // Button handlers — lean; analyzeTrade() owns all state logic
+  // Button handlers - lean; analyzeTrade() owns all state logic
   // ------------------------------------------------------------
 
   function bindClearTradeButton() {
@@ -3059,7 +3059,7 @@ window.initTradePage = function initTradePage(root = document) {
           body: JSON.stringify({ roster_id: selectedRosterId }),
         }).then(res => {
           if (res.ok) {
-            // Team changed — reset to empty state so user re-triggers analysis
+            // Team changed - reset to empty state so user re-triggers analysis
             const loadingState = root.querySelector("#aiLoadingState");
             const emptyState = root.querySelector("#aiEmptyState");
             const resultState = root.querySelector("#aiAnalysisResult");
@@ -3265,7 +3265,7 @@ window.initTradePage = function initTradePage(root = document) {
     syncEmptyState("B");
     recomputeTrade();
 
-    // Targets tab loads lazily when opened — no eager fetch needed
+    // Targets tab loads lazily when opened - no eager fetch needed
   });
 };
 
@@ -4033,7 +4033,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isDropdownOpen) {
       dropdown.style.display = "block";
 
-      // Mark as seen — hide dots on both bell and gear
+      // Mark as seen - hide dots on both bell and gear
       if (changelogData && changelogData.length > 0) {
         const latestDate = changelogData[0].date;
         localStorage.setItem("changelog_last_seen", latestDate);
@@ -4257,7 +4257,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close menu when clicking a nav link
     navPillsContainer.querySelectorAll('.nav-pill').forEach(pill => {
       pill.addEventListener('click', function() {
-        if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger — keep hamburger open
+        if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger - keep hamburger open
         navPillsContainer.classList.remove('nav-open');
         navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
       });
@@ -4689,7 +4689,7 @@ function openPlayerModal(playerId, playerName) {
       const posRankLabel = data.stats?.pos_rank_label || (data.stats?.pos_rank ? `${pos}${data.stats.pos_rank}` : '');
       const expLabel = data.stats?.years_exp === 0 ? 'Rookie'
         : data.stats?.years_exp != null ? `${data.stats.years_exp} yr${data.stats.years_exp !== 1 ? 's' : ''}`
-        : '—';
+        : '-';
 
       const thirdValueCard = data.stats?.pos_rank
         ? `<div class="pm-hero-stat">
@@ -4761,11 +4761,11 @@ function openPlayerModal(playerId, playerName) {
         <div class="pm-hero-row">
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
-            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+            <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
           </div>
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
-            <div class="pm-hero-val">${valsf > 0 ? valsf : '—'}</div>
+            <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
           </div>
           ${thirdValueCard}
         </div>
@@ -5144,7 +5144,7 @@ function pmSwitchTab(tab) {
           return;
         }
         panel.innerHTML = '<div style="padding:4px 0;">' + trades.map(t => {
-          const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
+          const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '-';
           const sfBadge = t.league_type === 'sf' || t.league_type === 'superflex'
             ? '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(139,92,246,.15);color:#8b5cf6;border:1px solid rgba(139,92,246,.3);">SF</span>'
             : '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3);">1QB</span>';
@@ -5152,7 +5152,7 @@ function pmSwitchTab(tab) {
             ? `<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(0,0,0,.05);color:var(--text-muted);">${parseFloat(t.fairness_score).toFixed(0)}</span>`
             : '';
           const renderAssets = (assets) => {
-            if (!assets || !assets.length) return '<span style="font-size:12px;color:var(--text-muted);">—</span>';
+            if (!assets || !assets.length) return '<span style="font-size:12px;color:var(--text-muted);">-</span>';
             return assets.map(a => {
               const isPick = a.is_pick || (a.name || '').toLowerCase().includes('pick') || (a.name || '').toLowerCase().includes('round');
               const isFocus = String(a.player_id || '') === String(playerId);
@@ -5197,7 +5197,7 @@ function _buildBkTabHTML(data, scoreColor) {
   const breakoutType = data.breakout_type || {};
   const formattedPhase = data.phase
     ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    : '—';
+    : '-';
 
   const reasons = (data.key_reasons || '').split('\n')
     .filter(r => r.trim() && r.startsWith('•'))
@@ -5215,7 +5215,7 @@ function _buildBkTabHTML(data, scoreColor) {
       </div>
       <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
         <div class="pm-hero-label">Profile</div>
-        <div style="font-size:13px;font-weight:700;line-height:1.3;color:var(--text);margin:4px 0;">${breakoutType.profile_label || '—'}</div>
+        <div style="font-size:13px;font-weight:700;line-height:1.3;color:var(--text);margin:4px 0;">${breakoutType.profile_label || '-'}</div>
       </div>
       <div class="pm-hero-stat">
         <div class="pm-hero-label">Phase</div>
@@ -5380,29 +5380,29 @@ function _buildStatsHTML(game_logs_by_year) {
         const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
                            stats.rec != null || stats.rec_tgt != null;
 
-        const val = (v) => v != null && v > 0 ? v : '—';
+        const val = (v) => v != null && v > 0 ? v : '-';
         const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
 
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
-            <td class="game-log-table-opp">${game.opponent || '—'}</td>
-            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '—') : '<span style="color:#9ca3af;">DNP</span>'}</td>
-            <td>${val(stats.pass_yd) !== '—' ? Math.round(stats.pass_yd) : '—'}</td>
+            <td class="game-log-table-opp">${game.opponent || '-'}</td>
+            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+            <td>${val(stats.pass_yd) !== '-' ? Math.round(stats.pass_yd) : '-'}</td>
             <td>${val(stats.pass_td)}</td>
             <td>${val(stats.pass_int)}</td>
             <td>${val(stats.rush_att)}</td>
-            <td>${val(stats.rush_yd) !== '—' ? Math.round(stats.rush_yd) : '—'}</td>
+            <td>${val(stats.rush_yd) !== '-' ? Math.round(stats.rush_yd) : '-'}</td>
             <td>${val(stats.rush_td)}</td>
             <td>${val(stats.rec_tgt)}</td>
             <td>${val(stats.rec)}</td>
-            <td>${val(stats.rec_yd) !== '—' ? Math.round(stats.rec_yd) : '—'}</td>
+            <td>${val(stats.rec_yd) !== '-' ? Math.round(stats.rec_yd) : '-'}</td>
             <td>${val(stats.rec_td)}</td>
           </tr>
         `;
       });
 
-      const valTotal = (v) => v != null && v > 0 ? v : '—';
+      const valTotal = (v) => v != null && v > 0 ? v : '-';
 
       // Add season totals row in table format (inside the table)
       statsHTML += `
@@ -5412,15 +5412,15 @@ function _buildStatsHTML(game_logs_by_year) {
                   <td><strong>Total</strong></td>
                   <td><strong>${gameLogs.length}G</strong></td>
                   <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
-                  <td><strong>${valTotal(totalPassYd) !== '—' ? Math.round(totalPassYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalPassYd) !== '-' ? Math.round(totalPassYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalPassTd)}</strong></td>
                   <td><strong>${valTotal(totalPassInt)}</strong></td>
                   <td><strong>${valTotal(totalRushAtt)}</strong></td>
-                  <td><strong>${valTotal(totalRushYd) !== '—' ? Math.round(totalRushYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRushYd) !== '-' ? Math.round(totalRushYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalRushTd)}</strong></td>
                   <td><strong>${valTotal(totalRecTgt)}</strong></td>
                   <td><strong>${valTotal(totalRec)}</strong></td>
-                  <td><strong>${valTotal(totalRecYd) !== '—' ? Math.round(totalRecYd) : '—'}</strong></td>
+                  <td><strong>${valTotal(totalRecYd) !== '-' ? Math.round(totalRecYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalRecTd)}</strong></td>
                 </tr>
               </tfoot>
@@ -6008,7 +6008,7 @@ if (typeof rkCloseModal === 'undefined') {
   }
 }
 
-// Global prospect modal — used when rkOpenModal (rookies page only) is not defined
+// Global prospect modal - used when rkOpenModal (rookies page only) is not defined
 function openProspectModal(playerId, playerName) {
   // Use the existing rkModal from the rankings page, or create it if it doesn't exist
   var modal   = document.getElementById('rkModal');
@@ -6044,7 +6044,7 @@ function openProspectModal(playerId, playerName) {
       var valsf  = parseFloat(r.rookie_sf_value||0);
       var score  = parseFloat(r.prospect_score||0);
       var conf   = parseFloat(r.confidence_score||0);
-      var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
+      var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
       var tier   = r.tier || '?';
       var tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
       var tierColor  = tierColors[tier] || '#9ca3af';
@@ -6053,12 +6053,12 @@ function openProspectModal(playerId, playerName) {
 
       // Measurables
       var ht = r.height_inches;
-      var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
-      var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '—';
-      var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '—';
-      var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '—';
+      var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '-';
+      var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '-';
+      var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '-';
+      var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '-';
 
-      // Draft info — single consolidated line
+      // Draft info - single consolidated line
       var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
       var draftStr = draftCapLabel
         ? draftCapLabel + (r.num_mocks_used ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
@@ -6125,12 +6125,12 @@ function openProspectModal(playerId, playerName) {
             '</div>' +
             '<div class="rk-hero-stat">' +
               '<div class="rk-hero-label">1QB Value</div>' +
-              '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div>' +
+              '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '-') + '</div>' +
               '<div class="rk-hero-sub">10-team</div>' +
             '</div>' +
             '<div class="rk-hero-stat">' +
               '<div class="rk-hero-label">SF Value</div>' +
-              '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div>' +
+              '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '-') + '</div>' +
               '<div class="rk-hero-sub">10-team</div>' +
             '</div>' +
           '</div>' +
@@ -6293,7 +6293,7 @@ function openCompareSearch(player1Data) {
           <div class="compare-result-name">${p.name}</div>
           <div class="compare-result-meta">${p.position || ''} · ${p.team || ''}</div>
         </div>
-        <div class="compare-result-value">${p.value || '—'}</div>
+        <div class="compare-result-value">${p.value || '-'}</div>
       </div>
     `).join('');
 
@@ -6373,7 +6373,7 @@ function _buildComparePPGRow(p1, p2) {
 
   function cell(val, label) {
     return `<div class="compare-pts-cell">
-      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-val">${val !== null ? val : '-'}</div>
       <div class="compare-pts-label">${label}</div>
     </div>`;
   }
@@ -6402,16 +6402,16 @@ function _buildComparePPGRow(p1, p2) {
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
-  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '—');
+  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '-');
   return `
     <div class="compare-hero-row">
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
-        <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
       </div>
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
-        <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '—'}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
       </div>
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Pos Rank</div>
@@ -7274,7 +7274,7 @@ function _renderBkModalContent(data, playerId) {
   const driver = breakoutType.primary_driver || 'balanced';
   const formattedPhase = data.phase
     ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    : '—';
+    : '-';
 
   // Header: name + meta with dots
   const nameEl = document.getElementById('bkModalName');
@@ -7282,7 +7282,7 @@ function _renderBkModalContent(data, playerId) {
   const metaParts = [];
   if (pos)  metaParts.push(`<span style="font-weight:600;color:var(--text);">${pos}</span>`);
   if (team) metaParts.push(`<span>${team}</span>`);
-  if (formattedPhase !== '—') metaParts.push(`<span>${formattedPhase}</span>`);
+  if (formattedPhase !== '-') metaParts.push(`<span>${formattedPhase}</span>`);
   document.getElementById('bkModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 4px;">·</span>');
 
   // Update headshot
@@ -7489,9 +7489,9 @@ function renderTeamDetails(data) {
             ${badges}
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.team || '—'}</td>
-          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—'}</td>
-          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—'}</td>
+          <td>${player.team || '-'}</td>
+          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
+          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
         </tr>
       `;
     });
@@ -7805,7 +7805,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: '#settingsDropdown',
       title: 'Settings Menu',
-      body: 'Switch between leagues, force a data refresh, or flip to dark mode — all in one place.',
+      body: 'Switch between leagues, force a data refresh, or flip to dark mode - all in one place.',
       beforeShow: function () {
         var dd = document.getElementById('settingsDropdown');
         if (dd) dd.style.display = 'block';
@@ -7888,7 +7888,7 @@ document.addEventListener('click', (e) => {
     const resumeAt   = params.get('tour');
 
     if (resumeAt !== null) {
-      // Came here via a tour navigation — clean the URL then resume
+      // Came here via a tour navigation - clean the URL then resume
       history.replaceState(null, '', window.location.pathname);
       const idx = parseInt(resumeAt, 10);
       if (!isNaN(idx)) {
@@ -8036,7 +8036,7 @@ document.addEventListener('click', (e) => {
     const PAD = 8;
 
     if (!target) {
-      // Full-screen dim — all coverage via top piece, rest zeroed
+      // Full-screen dim - all coverage via top piece, rest zeroed
       overlays.forEach(function (p) {
         if (p.dataset.side === 'top') {
           Object.assign(p.style, { top: '0', left: '0', width: vw + 'px', height: vh + 'px' });
@@ -8209,7 +8209,7 @@ function showPickModal(el) {
       '</div>' +
       currentVal +
       '<div style="margin-top:12px">' +
-        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">' + roundName + ' — Value by tier</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">' + roundName + ' - Value by tier</div>' +
         tiersHtml +
       '</div>' +
       (tiersHtml ? '' : '<p style="color:var(--text-muted);font-size:13px">No value data available for this pick.</p>') +

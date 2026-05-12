@@ -118,7 +118,7 @@ def fetch_season_snap_counts(
 
         name_col = next((c for c in ("pfr_player_name", "player_name", "player") if c in df.columns), None)
         if name_col is None:
-            print("[snap_counts] snap data has no recognisable name column — skipping")
+            print("[snap_counts] snap data has no recognisable name column - skipping")
             return {}
 
         result: Dict[str, Dict] = {}
@@ -138,7 +138,7 @@ def fetch_season_snap_counts(
         return result
 
     except Exception as e:
-        print(f"[snap_counts] nfl_data_py unavailable ({e}) — using usage-based estimation")
+        print(f"[snap_counts] nfl_data_py unavailable ({e}) - using usage-based estimation")
         return {}
 
 

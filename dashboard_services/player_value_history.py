@@ -522,7 +522,7 @@ def load_calibration_overrides() -> dict[str, dict]:
             result[str(r["player_id"])] = d
         return result
     except Exception:
-        # Fallback: new size columns may not exist yet — return only the 10-team values
+        # Fallback: new size columns may not exist yet - return only the 10-team values
         try:
             with get_conn() as conn:
                 rows = conn.execute(

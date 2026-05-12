@@ -2,13 +2,13 @@
 Monte Carlo playoff odds simulator.
 
 Three modes:
-  preseason / offseason  — no game data yet; project team strength from
+  preseason / offseason  - no game data yet; project team strength from
                            each team's current roster player values, then
                            simulate the full regular season.
-  in-season              — fetch remaining schedule from the API and simulate
+  in-season              - fetch remaining schedule from the API and simulate
                            from the current standings using each team's
                            historical scoring distribution (avg ± std).
-  complete               — season is over; return 100 / 0 based on actual
+  complete               - season is over; return 100 / 0 based on actual
                            final standings (no simulation needed).
 
 All simulation paths are vectorised across n_sims with NumPy so 10 000 runs
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
-_BASE_STD     = 20.0   # preseason std dev — no per-team variance data yet
+_BASE_STD     = 20.0   # preseason std dev - no per-team variance data yet
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
 
 # Conservative defaults for players with no prior-season stats (rookies, etc.)

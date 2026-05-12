@@ -729,7 +729,7 @@ def main() -> Dict[str, Any]:
     # Primary: pull dynasty-relevant players from player_values (top 600 by rank).
     # This respects calibrated dynasty value rather than a hard age cutoff, so
     # a 27-year-old WR2 who just inherited a starting role is included while a
-    # fringe backup is not — regardless of their age.
+    # fringe backup is not - regardless of their age.
     db_players = get_all_players_with_opportunity(season, min_value_rank=600)
 
     if db_players:
@@ -738,7 +738,7 @@ def main() -> Dict[str, Any]:
     else:
         # Fallback: build from players_index if DB is unavailable or empty.
         # Keeps the original age < 26 filter since we have no value signal here.
-        print("[main] DB candidate pool unavailable — falling back to players_index (age < 26)")
+        print("[main] DB candidate pool unavailable - falling back to players_index (age < 26)")
         all_players = []
         for player_id, player_data in players_index.items():
             pos = player_data.get("pos")

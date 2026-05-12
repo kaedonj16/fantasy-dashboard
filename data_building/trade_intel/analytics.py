@@ -4,16 +4,16 @@ Analytics computation for Trade Intelligence Engine.
 Reads raw trade assets from the DB, joins against the model value table,
 and computes time-aware market values:
 
-  weighted_market_value  — decay-weighted median (primary signal for calibration)
-  market_value_14d/30d/90d — unweighted window medians (for trend math)
-  market_trend           — 14d minus 90d (directional momentum signal)
-  trade_count_14d        — freshness indicator
+  weighted_market_value  - decay-weighted median (primary signal for calibration)
+  market_value_14d/30d/90d - unweighted window medians (for trend math)
+  market_trend           - 14d minus 90d (directional momentum signal)
+  trade_count_14d        - freshness indicator
 
 Decay schedule (how much each trade counts toward weighted_market_value):
-  ≤14 days ago  → 1.0   (full weight — this is current market)
+  ≤14 days ago  → 1.0   (full weight - this is current market)
   15–30 days    → 0.6   (still relevant but fading)
   31–60 days    → 0.25  (background signal)
-  61+ days      → 0.08  (mostly noise — player situations change)
+  61+ days      → 0.08  (mostly noise - player situations change)
 
 League-size bucketing: trades are tagged with the originating league's
 num_teams and split into four size buckets (8, 10, 12, 14) so the UI
@@ -102,7 +102,7 @@ def _load_model_values(season: int) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
-# Trade data loading — joins league metadata to get num_teams
+# Trade data loading - joins league metadata to get num_teams
 # ---------------------------------------------------------------------------
 
 def _load_trades(season: int) -> list[dict]:
@@ -181,7 +181,7 @@ def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str
 
 
 # ---------------------------------------------------------------------------
-# Stat aggregation — time-aware, league-size bucketed
+# Stat aggregation - time-aware, league-size bucketed
 # ---------------------------------------------------------------------------
 
 _SIZE_BUCKETS = ("8", "10", "12", "14")
@@ -250,7 +250,7 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
             # Scale each player's received value by their proportional share of
             # the package they're in. Without this, every player on a side gets
-            # the full other-side value — a fringe player packaged with a star
+            # the full other-side value - a fringe player packaged with a star
             # would appear to be worth hundreds of points, and multi-player
             # trades produce received values > 999.9.
             player_val_1qb = values.get(pid, {}).get("value_1qb", 0)
@@ -306,7 +306,7 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
         def _avg(lst):
             return round(sum(lst) / len(lst), 2) if lst else None
 
-        # All-leagues primary market value — decay-weighted median
+        # All-leagues primary market value - decay-weighted median
         wm_1qb = _weighted_median(s["recv_weighted_1qb"])
         wm_sf  = _weighted_median(s["recv_weighted_sf"])
 
@@ -341,7 +341,7 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             "trade_count_7d":          s["trade_count_7d"],
             "trade_count_14d":         s["trade_count_14d"],
             "trade_count_30d":         s["trade_count_30d"],
-            # Legacy flat market value — equals all-leagues weighted median
+            # Legacy flat market value - equals all-leagues weighted median
             "market_value_1qb":        wm_1qb,
             "market_value_sf":         wm_sf,
             # All-leagues time-aware fields
@@ -555,7 +555,7 @@ def _most_recent_trade_season() -> int | None:
 
 def run_analytics(season: int | None = None) -> dict:
     if season is None:
-        # Prefer the season we actually have trade data for — during offseason
+        # Prefer the season we actually have trade data for - during offseason
         # Sleeper reports the upcoming season (e.g. 2026) but trades are stored
         # under the completed season (e.g. 2025).
         season = _most_recent_trade_season()
@@ -579,7 +579,7 @@ def run_analytics(season: int | None = None) -> dict:
     logger.info("[analytics] %d trades loaded", len(trades))
 
     if not trades:
-        logger.warning("[analytics] No trades found — skipping.")
+        logger.warning("[analytics] No trades found - skipping.")
         return {"player_stats": 0, "packages": 0}
 
     # Log size distribution for observability

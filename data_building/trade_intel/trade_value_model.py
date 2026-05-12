@@ -24,7 +24,7 @@ Closed-form normal equations:
 
 Properties
 ----------
-• Picks are first-class unknowns — their values are derived from the same
+• Picks are first-class unknowns - their values are derived from the same
   trade market that prices players, not from external tables.
 • External pick table (FantasyCalc / DynastyProcess blend) serves as the
   regularization prior for picks, anchoring the solution when data is thin.
@@ -272,7 +272,7 @@ def _decay_weight(days_ago: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Normal equations — picks and players as joint unknowns
+# Normal equations - picks and players as joint unknowns
 # ---------------------------------------------------------------------------
 
 def _build_normal_equations(
@@ -282,7 +282,7 @@ def _build_normal_equations(
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full matrix.
-    Both players and pick buckets are unknowns — b_t = 0 for every trade.
+    Both players and pick buckets are unknowns - b_t = 0 for every trade.
 
     Returns (AtWA, AtWb, n_constraints).
     """
@@ -445,7 +445,7 @@ def run_trade_value_model(
     league_type=2 (dynasty): writes calibrated_value_{size} / calibrated_sf_value_{size}
                               + pick values to JSON (size=10 only).
     league_type=1 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
-    league_size: 8, 10 (default), 12, or 14 — filters trades by league num_teams.
+    league_size: 8, 10 (default), 12, or 14 - filters trades by league num_teams.
 
     lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
     """
@@ -473,7 +473,7 @@ def run_trade_value_model(
         ext_pick_values = {}
 
     if not trades_1qb and not trades_sf:
-        logger.warning("[trade_value_model] No trade data — nothing to solve.")
+        logger.warning("[trade_value_model] No trade data - nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
     if not trades_1qb:
@@ -482,10 +482,10 @@ def run_trade_value_model(
         trades_sf = trades_1qb
 
     if not player_prior:
-        logger.warning("[trade_value_model] No prior data — nothing to solve.")
+        logger.warning("[trade_value_model] No prior data - nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
-    # Collect all pick bucket keys seen in trades (iterate separately — avoids list copy)
+    # Collect all pick bucket keys seen in trades (iterate separately - avoids list copy)
     pick_keys_seen: set[str] = set()
     for trade in trades_1qb:
         for a in trade["assets"]:
@@ -513,7 +513,7 @@ def run_trade_value_model(
 
     # Build prior vectors: player priors then pick priors
     def _pick_prior(key: str, fmt: str) -> float:
-        # key format: "pick_{year}_{rd}_{bucket}" — strip prefix for lookup
+        # key format: "pick_{year}_{rd}_{bucket}" - strip prefix for lookup
         lookup = key[len("pick_"):]  # e.g. "2026_1_early"
         val = ext_pick_values.get(lookup) or ext_pick_values.get(lookup.rsplit("_", 1)[0])
         return float(val) if val else 50.0  # 50-point floor if no external prior
@@ -540,7 +540,7 @@ def run_trade_value_model(
     del trades_sf
     M = M_1qb
 
-    logger.info("[trade_value_model] %d trade constraints — solving...", M)
+    logger.info("[trade_value_model] %d trade constraints - solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     del AtWA_1qb, AtWb_1qb
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
@@ -609,11 +609,11 @@ def run_trade_value_model(
 
     if league_type == 1:
         n = _write_redraft_values(out_rows, league_size)
-        logger.info("[trade_value_model] Done — %d redraft player values updated (%d-team).", n, league_size)
+        logger.info("[trade_value_model] Done - %d redraft player values updated (%d-team).", n, league_size)
         return {"written": n, "trades_used": M, "players": n_pl, "season": season,
                 "mode": mode, "league_size": league_size}
 
-    # --- Pick output (dynasty 10-team only — picks are size-invariant) ---
+    # --- Pick output (dynasty 10-team only - picks are size-invariant) ---
     n = _write_calibrated(out_rows, league_size)
 
     if league_size == 10:
@@ -630,7 +630,7 @@ def run_trade_value_model(
                         pick_vals_1qb[k], ext_pick_values.get(k, 0))
 
         _write_pick_values(pick_vals_1qb, pick_vals_sf)
-        logger.info("[trade_value_model] Done — %d players + %d pick buckets updated.", n, len(pick_keys))
+        logger.info("[trade_value_model] Done - %d players + %d pick buckets updated.", n, len(pick_keys))
         return {
             "written":      n,
             "trades_used":  M,
@@ -641,7 +641,7 @@ def run_trade_value_model(
             "league_size":  league_size,
         }
 
-    logger.info("[trade_value_model] Done — %d dynasty player values updated (%d-team).", n, league_size)
+    logger.info("[trade_value_model] Done - %d dynasty player values updated (%d-team).", n, league_size)
     return {"written": n, "trades_used": M, "players": n_pl, "season": season,
             "mode": mode, "league_size": league_size}
 

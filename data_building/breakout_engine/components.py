@@ -768,7 +768,7 @@ def calculate_team_environment_score(
     else:
         team_stats = get_team_stats(team, season) or {}
 
-    # NFL league averages — used as floor when cached stats are missing/zero.
+    # NFL league averages - used as floor when cached stats are missing/zero.
     # Zero values indicate absent enrichment (not a genuinely zero-offense team)
     # so we substitute league averages rather than produce artificially low scores.
     _NFL_PASS_ATT_PG = 33.5
@@ -888,7 +888,7 @@ def calculate_team_environment_score(
                     coaching_bonus += OC_PASS_HEAVY_RB_PENALTY
                     coaching_note = "new_oc_pass_heavy"
         elif new_oc:
-            # OC changed but prior scheme unknown — small uncertainty penalty
+            # OC changed but prior scheme unknown - small uncertainty penalty
             coaching_bonus += HC_CHANGE_UNCERTAINTY_PENALTY
             coaching_note = "new_oc_unknown_scheme"
 
@@ -1101,7 +1101,7 @@ def calculate_player_readiness_score(
             cr_score = 0
 
         raw_efficiency_score = ypt_score + cr_score
-        # Higher min_confidence shrinks TE scores toward mean — stabilizes outliers
+        # Higher min_confidence shrinks TE scores toward mean - stabilizes outliers
         sample_multiplier = _sample_confidence(
             prev_targets, full_confidence=50, min_confidence=TE_SAMPLE_MIN_CONFIDENCE
         )

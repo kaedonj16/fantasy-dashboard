@@ -121,7 +121,7 @@ def _run_year(draft_year: int, dry_run: bool = False) -> int:
                 db_player_id = seeded_by_norm[candidates[0]]
 
         if not db_player_id:
-            # Not in our seeded set — skip (we only score what we seeded)
+            # Not in our seeded set - skip (we only score what we seeded)
             continue
 
         score = float(sc.get("prospect_score") or 0)
@@ -210,7 +210,7 @@ def main() -> None:
         total += n
 
     action = "would update" if args.dry_run else "updated"
-    print(f"\n[populate] Done — {action} {total} rows across {len(args.years)} classes.")
+    print(f"\n[populate] Done - {action} {total} rows across {len(args.years)} classes.")
 
 
 if __name__ == "__main__":

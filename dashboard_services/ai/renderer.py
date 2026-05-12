@@ -359,7 +359,7 @@ def get_trade_ai_analysis(
         verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
         fallback = {
             "verdict": verdict,
-            "summary": f"AI analysis {reason}. Market delta: {market_delta:.1f} — verdict based on value differential only.",
+            "summary": f"AI analysis {reason}. Market delta: {market_delta:.1f} - verdict based on value differential only.",
             "helps": ["Market value calculation is based on current dynasty rankings."],
             "risks": [f"AI is {reason}; this is a data-only estimate without roster context."],
             "counter": "Try again shortly for a full AI-powered front-office recommendation.",
@@ -510,7 +510,7 @@ def get_power_rankings_html(ctx: dict) -> str:
         return html_out
 
     try:
-        # Trim context for AI — only send what's needed
+        # Trim context for AI - only send what's needed
         ai_input = {
             "season": rankings_ctx.get("season"),
             "week": rankings_ctx.get("week"),
@@ -700,11 +700,11 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         send_names = html.escape(", ".join(t["name"] for t in sends[:2]))
         if is_pkg and len(sends) >= 2:
             title = f"Package Deal: {pname}"
-            reasoning = f"Package {send_names} to acquire {target_names} — converts surplus depth into an elite upgrade."
+            reasoning = f"Package {send_names} to acquire {target_names} - converts surplus depth into an elite upgrade."
         else:
             title = f"Target: {pname}"
-            send_part = f" — offer {send_names}" if send_names else ""
-            reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} — target {target_names}{send_part}."
+            send_part = f" - offer {send_names}" if send_names else ""
+            reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} - target {target_names}{send_part}."
         partner_rows += f"""
         <div class="suggestion-card">
           <div class="suggestion-title">{html.escape(title)}</div>

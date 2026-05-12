@@ -275,7 +275,7 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
                 <p>
                   It's a custom fantasy football dashboard that pulls in your Sleeper league
                   data and turns it into power rankings, weekly summaries, matchup previews,
-                  graphs, and more—all in one place.
+                  graphs, and more-all in one place.
                 </p>
               </details>
 
@@ -323,7 +323,7 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
               <details class="faq-item">
                 <summary>Is there a premium or ad-free mode?</summary>
                 <p>
-                  Yes — league and personal subscriptions are available. See the Pricing page
+                  Yes - league and personal subscriptions are available. See the Pricing page
                   for details on what's included.
                 </p>
               </details>
@@ -342,7 +342,7 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">Issues & Feedback</div>
 
               <details class="faq-item">
-                <summary>The numbers look wrong—what should I do?</summary>
+                <summary>The numbers look wrong-what should I do?</summary>
                 <p>
                   First, hit the refresh button on the nav to clear cached data for your
                   league. If something still looks off, send a message via the Contact
@@ -398,7 +398,7 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
             </div>
 
             <div class="highlight-box">
-              Feedback helps shape future features — thanks for helping improve BR Fantasy.
+              Feedback helps shape future features - thanks for helping improve BR Fantasy.
             </div>
 
           </div>

@@ -124,7 +124,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           Loading trade data...
         </div>
         <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
-          No data for this filter yet — analytics need to run to populate this view.
+          No data for this filter yet - analytics need to run to populate this view.
         </div>
         <div id="tiGrid" class="ti-grid" style="display:none;"></div>
 
@@ -521,8 +521,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           const cnt7   = p.trade_count_7d  || 0;
           const cnt30  = p.trade_count_30d || 0;
           const cntAll = p.trade_count_all || 0;
-          const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
-          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
+          const market = p.market_value != null ? p.market_value.toFixed(1) : '-';
+          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '-';
           const delta  = p.value_delta;
           const trend  = p.market_trend;
           let chipBg, chipColor, chipText;
@@ -530,14 +530,14 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             chipBg = '#3b82f620'; chipColor = '#3b82f6'; chipText = cntAll + ' trades';
           }} else if (currentTab === 'buylows') {{
             chipBg = '#10b98120'; chipColor = '#10b981';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '-';
           }} else {{
             chipBg = '#f59e0b20'; chipColor = '#f59e0b';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '-';
           }}
           const deltaHtml = delta != null
             ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
-            : '<span style="color:var(--text-muted)">—</span>';
+            : '<span style="color:var(--text-muted)">-</span>';
           let momentumHtml = '';
           if (trend != null) {{
             if (trend >= 5) momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
@@ -1089,13 +1089,13 @@ def page_trade_database(platform: str, season: int, league_id: str):
             const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
             return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
           }}
-          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
-          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
+          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
           const card = document.createElement('div');
           card.className = 'tdb-card';
           card.innerHTML = `
             <div class="tdb-card-head">
-              <span class="tdb-card-date">${{t.date || '—'}}</span>
+              <span class="tdb-card-date">${{t.date || '-'}}</span>
               <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
             </div>
             <div class="tdb-card-body">

@@ -52,7 +52,7 @@ _NFLVERSE_COMBINE = (
     "combine/combine.csv"
 )
 
-# CFBD API — reuse the helper from ingestion.py
+# CFBD API - reuse the helper from ingestion.py
 try:
     from .ingestion import _cfbd_get
 except ImportError:
@@ -295,7 +295,7 @@ def _build_features_from_db(
     if not rows:
         return {}
 
-    # Group by player name — use the latest season's advanced metrics, accumulate totals
+    # Group by player name - use the latest season's advanced metrics, accumulate totals
     player_seasons: Dict[str, List[Any]] = {}
     for row in rows:
         name = str(row["name"] or "").strip().lower()
@@ -357,7 +357,7 @@ def _build_features_from_db(
         if latest.get("team_pass_rate") is not None:
             feat["team_pass_rate"] = _safe_float(latest["team_pass_rate"])
 
-        # Advanced metrics (migration 014 — may be NULL for older classes)
+        # Advanced metrics (migration 014 - may be NULL for older classes)
         for k, fk in [
             ("yards_after_catch_per_reception", "yac_per_rec"),
             ("avg_depth_of_target",             "avg_depth_of_target"),
@@ -401,7 +401,7 @@ def _build_college_features(
     db_features = _build_features_from_db(draft_years)
 
     if _cfbd_get is None:
-        log.warning("[calibration] _cfbd_get unavailable — CFBD features will be empty")
+        log.warning("[calibration] _cfbd_get unavailable - CFBD features will be empty")
         return db_features
 
     try:
@@ -667,7 +667,7 @@ REFINED_POSITION_WEIGHTS = {
 _FEATURE_TO_COMPONENT = {
     # Draft
     "draft_capital_score":          "draft_capital",
-    # Production — volume
+    # Production - volume
     "rec_yds":                      "production",
     "rec_yds_pg":                   "production",
     "rush_yds":                     "production",
@@ -679,7 +679,7 @@ _FEATURE_TO_COMPONENT = {
     "rush_tds":                     "production",
     "pass_tds":                     "production",
     "all_yds_pg":                   "production",
-    # Production — share / dominator
+    # Production - share / dominator
     "dominator_rating":             "production",
     "market_share_yards":           "production",
     "pass_share":                   "production",
@@ -802,7 +802,7 @@ def run_calibration(
     # Step 1: NFL outcomes
     outcomes = _build_nfl_outcomes(draft_years, nfl_data_years)
     if not outcomes:
-        log.warning("[calibration] No NFL outcome data — calibration cannot proceed")
+        log.warning("[calibration] No NFL outcome data - calibration cannot proceed")
         return {"error": "No NFL data available", "correlations": {}, "weight_recommendations": {}}
 
     # Step 2: College features

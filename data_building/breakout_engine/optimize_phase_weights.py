@@ -6,7 +6,7 @@ from historical breakout outcomes using gradient-based optimization.
 
 Strategy:
   1. Run the backtest to collect (component_scores, is_breakout) pairs per phase.
-  2. Treat the weighted sum as a logistic regression without an intercept —
+  2. Treat the weighted sum as a logistic regression without an intercept -
      each phase gets its own weight vector that maps 7 component scores → breakout probability.
   3. Optimize weights via scipy.optimize.minimize (L-BFGS-B) maximizing log-likelihood.
   4. Post-process: normalize weights to sum to 1 and enforce positivity (except penalty component).

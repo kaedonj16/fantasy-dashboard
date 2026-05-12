@@ -364,7 +364,7 @@ class BreakoutEngine:
                 'catch_rate': prev_usage.get('catch_rate')
             }
 
-        # Get projection — uses LLM selectively for top candidates (score >= 70)
+        # Get projection - uses LLM selectively for top candidates (score >= 70)
         projection = project_player_stats(
             player_info={
                 'position': position,

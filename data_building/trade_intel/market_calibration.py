@@ -1,5 +1,5 @@
 """
-Market Calibration Layer — Trade Intelligence Engine.
+Market Calibration Layer - Trade Intelligence Engine.
 
 Takes raw model values and time-aware market values from real trades,
 then writes calibrated_value_1qb / calibrated_value_sf back to player_values.
@@ -9,12 +9,12 @@ Design principles:
 • Model is the prior; market is evidence. We never fully override the model.
 
 • Blend weight is driven by TWO factors:
-    1. Trade volume  — more trades = more confidence in the market signal
-    2. Trend signal  — if the market has moved sharply in the last 14 days
+    1. Trade volume  - more trades = more confidence in the market signal
+    2. Trend signal  - if the market has moved sharply in the last 14 days
                        relative to the 90-day baseline, lean harder on recent
                        data. The market already knows something the model doesn't.
 
-• Recency of data matters for blend weight too — if all trades are old
+• Recency of data matters for blend weight too - if all trades are old
   (trade_count_14d is low relative to trade_count), we reduce the weight.
 
 • Rookies/prospects have no direct trade data yet. We compute a calibration
@@ -96,7 +96,7 @@ def _load_market_values(season: int) -> dict[str, dict]:
             ).fetchone()
             if fallback:
                 logger.info(
-                    "[calibration] No data for season %d — falling back to season %d",
+                    "[calibration] No data for season %d - falling back to season %d",
                     season, fallback["season"]
                 )
                 rows = conn.execute(
@@ -133,7 +133,7 @@ def _load_market_values(season: int) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
-# Blend weight — volume + recency + trend
+# Blend weight - volume + recency + trend
 # ---------------------------------------------------------------------------
 
 def _blend_weight(market: dict) -> float:
@@ -152,11 +152,11 @@ def _blend_weight(market: dict) -> float:
     # Base weight from volume
     base = min(MAX_BLEND, math.sqrt(trade_count / 50) * MAX_BLEND)
 
-    # Trend boost — market has repriced recently; lean into it
+    # Trend boost - market has repriced recently; lean into it
     if abs(trend_1qb) >= TREND_BOOST_THRESHOLD:
         base = min(MAX_BLEND, base + TREND_BOOST_AMOUNT)
 
-    # Staleness penalty — if hardly any trades in last 14 days, data is stale
+    # Staleness penalty - if hardly any trades in last 14 days, data is stale
     recency_ratio = trade_count_14d / trade_count if trade_count else 0
     if recency_ratio < STALENESS_PENALTY_THRESHOLD and trade_count >= 20:
         base *= 0.6  # reduce confidence in old data
@@ -180,7 +180,7 @@ def _build_tier_ratios(
     For each (position, value_tier), compute the median market/model ratio
     from established veterans with enough trade data.
     The ratio captures how much the market over/under-values players
-    at each tier vs the raw model — applied to rookies to anchor their price.
+    at each tier vs the raw model - applied to rookies to anchor their price.
     Uses the time-decay weighted market value so the ratio reflects
     current market prices, not season-long averages.
     """
@@ -205,7 +205,7 @@ def _build_tier_ratios(
         tier  = _value_tier(model_val)
         ratio = market["market_1qb"] / model_val
 
-        # Outlier guard — ratios outside 0.4–2.5x are probably bad data
+        # Outlier guard - ratios outside 0.4–2.5x are probably bad data
         if 0.4 <= ratio <= 2.5:
             bucket_ratios[(pos, tier)].append(ratio)
 
@@ -273,7 +273,7 @@ def _calibrate_one(
             "calibration_source":   "direct",
         }
 
-    # ── Case 2: Rookie/prospect — tier anchor ──────────────────────────────
+    # ── Case 2: Rookie/prospect - tier anchor ──────────────────────────────
     if is_rookie and model_1qb > 0:
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
@@ -284,7 +284,7 @@ def _calibrate_one(
                 "calibration_source":   "tier_anchor",
             }
 
-    # ── Case 3: No market data — pass through unchanged ───────────────────
+    # ── Case 3: No market data - pass through unchanged ───────────────────
     return {
         "calibrated_value_1qb": round(model_1qb, 2),
         "calibrated_value_sf":  round(model_sf,  2),

@@ -62,7 +62,7 @@ def show_top10(year: int, positions: list[str], top_n: int = 10) -> None:
             by_pos[pos].append(row)
 
     print(f"\n{'═' * 92}")
-    print(f"  {year} Rookie Draft Class — Top {top_n} per Position  (dynasty 1QB PPR)")
+    print(f"  {year} Rookie Draft Class - Top {top_n} per Position  (dynasty 1QB PPR)")
     print(f"{'═' * 92}")
 
     for pos in positions:
@@ -82,7 +82,7 @@ def show_top10(year: int, positions: list[str], top_n: int = 10) -> None:
         for p in players:
             name   = (p["name"]   or "")[:24]
             school = (p["school"] or "")[:18]
-            age    = f"{p['age']:.1f}" if p.get("age") else "  —"
+            age    = f"{p['age']:.1f}" if p.get("age") else "  -"
             score  = p["prospect_score"] or 0
             tier   = TIER_LABEL.get(p.get("tier") or 0, "")
             dval   = p.get("rookie_value") or 0
@@ -95,7 +95,7 @@ def show_top10(year: int, positions: list[str], top_n: int = 10) -> None:
             elif rd:
                 pick_str = f"Rd {rd}"
             else:
-                pick_str = "—"
+                pick_str = "-"
 
             prod = p.get("production_score") or 0
             eff  = p.get("efficiency_score") or 0

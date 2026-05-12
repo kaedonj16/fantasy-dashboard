@@ -8,7 +8,7 @@ Routes:
     /api/player-value-history/<player_id>
 
 Extracted from app.py to reduce monolith size.
-Dependencies: dashboard_services.*, data_building.*, utils.* only — no app.py internals.
+Dependencies: dashboard_services.*, data_building.*, utils.* only - no app.py internals.
 """
 from __future__ import annotations
 

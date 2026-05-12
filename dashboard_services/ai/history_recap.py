@@ -583,15 +583,15 @@ def _fallback_league_summary(history_ctx: dict, season: int) -> str:
     unlucky = summary.get("unluckiest_team", "Unknown")
 
     parts = []
-    if champ != "—" and runner != "—":
+    if champ != "-" and runner != "-":
         parts.append(f"{champ} won the {season} title over {runner}.")
-    elif champ != "—":
+    elif champ != "-":
         parts.append(f"{champ} finished as the {season} champion.")
 
-    if scoring_leader != "—":
+    if scoring_leader != "-":
         parts.append(f"{scoring_leader} led the league in total points.")
 
-    if unlucky != "—" and summary.get("unluckiest_delta", 0) > 0:
+    if unlucky != "-" and summary.get("unluckiest_delta", 0) > 0:
         parts.append(
             f"{unlucky} was the rough-luck team, finishing {summary['unluckiest_delta']} spots below its PF rank."
         )

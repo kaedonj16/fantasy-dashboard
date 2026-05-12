@@ -87,22 +87,22 @@ def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
                 return resp.json()
             if resp.status_code == 429:
                 wait = 2 ** (attempt + 1) * 2
-                print(f"[sr_ncaa] rate limited — sleeping {wait}s")
+                print(f"[sr_ncaa] rate limited - sleeping {wait}s")
                 time.sleep(wait)
                 continue
             if resp.status_code in (401, 403):
                 print(
-                    f"[sr_ncaa] HTTP {resp.status_code} for {path} — "
+                    f"[sr_ncaa] HTTP {resp.status_code} for {path} - "
                     f"NCAAFB product may not be enabled for this API key "
                     f"(key prefix: {api_key[:8]}..., access={access}). "
                     f"The NFL Draft and NCAAFB APIs are separate Sportradar products."
                 )
                 return None
-            print(f"[sr_ncaa] HTTP {resp.status_code} for {path} — body: {resp.text[:200]}")
+            print(f"[sr_ncaa] HTTP {resp.status_code} for {path} - body: {resp.text[:200]}")
             return None
         except requests.exceptions.Timeout:
             wait = 2 ** attempt
-            print(f"[sr_ncaa] timeout attempt {attempt+1}/{retries} — retry in {wait}s")
+            print(f"[sr_ncaa] timeout attempt {attempt+1}/{retries} - retry in {wait}s")
             time.sleep(wait)
         except Exception as exc:
             print(f"[sr_ncaa] error {path}: {exc}")
@@ -113,7 +113,7 @@ def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 1 — Team hierarchy
+# Step 1 - Team hierarchy
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_teams() -> List[Dict]:
@@ -171,7 +171,7 @@ def _fetch_teams() -> List[Dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 2 — Team rosters → name → player_id index
+# Step 2 - Team rosters → name → player_id index
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_team_roster(team_id: str) -> List[Dict]:
@@ -243,7 +243,7 @@ def build_roster_index() -> Dict[str, str]:
                 index[alt] = pid
 
         if (i + 1) % 25 == 0:
-            print(f"[sr_ncaa] Roster scan {i+1}/{len(teams)} — {len(index)} players indexed")
+            print(f"[sr_ncaa] Roster scan {i+1}/{len(teams)} - {len(index)} players indexed")
 
     print(f"[sr_ncaa] Roster index complete: {len(index)} players")
     _cache_write("roster_index", index)
@@ -267,7 +267,7 @@ def lookup_player_id(name: str, index: Dict[str, str]) -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 3 — Player profile
+# Step 3 - Player profile
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_player_profile(player_id: str) -> Optional[Dict]:
@@ -568,7 +568,7 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
 
     roster_index = build_roster_index()
     if not roster_index:
-        print("[sr_ncaa] Roster index empty — Sportradar NCAAFB unavailable")
+        print("[sr_ncaa] Roster index empty - Sportradar NCAAFB unavailable")
         return _build_index_from_cache(names)
 
     data: Dict[str, Dict[int, Dict[str, Any]]] = {}

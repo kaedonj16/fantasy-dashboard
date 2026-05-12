@@ -129,8 +129,8 @@ class PhaseDetector:
         This prevents scores being structurally capped at ~45 when the
         roster-changes DB table hasn't been populated.
 
-        competition_added_penalty = 0 means no new competition was added — a
-        neutral/positive outcome — so it IS kept in the denominator.
+        competition_added_penalty = 0 means no new competition was added - a
+        neutral/positive outcome - so it IS kept in the denominator.
 
         Args:
             component_scores: Dictionary of component name -> score (0-100)
@@ -146,7 +146,7 @@ class PhaseDetector:
         # (exclude from both numerator and denominator) so they don't drag down
         # the renormalized score. Note that competition_added_penalty ranges from
         # -38 to 0 (it is a pure penalty, never positive), so a value of 0 is
-        # ambiguous — it could mean "no data" or "no new competition added".
+        # ambiguous - it could mean "no data" or "no new competition added".
         # When combined with opportunity_opened=0 and competition_removed=0, all
         # three are almost certainly absent rather than genuinely zero.
         opp_opened = component_scores.get('opportunity_opened', 0.0)

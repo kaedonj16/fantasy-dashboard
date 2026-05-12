@@ -222,12 +222,12 @@ def build_graphs_body(ctx: dict) -> str:
           </div>
           <div class="card-body">
             <ul class="ticker-list">
-              <li><span class="mini-label">PF</span> — Points For</li>
-              <li><span class="mini-label">PA</span> — Points Against</li>
-              <li><span class="mini-label">MAX</span> — Best weekly score</li>
-              <li><span class="mini-label">MIN</span> — Worst weekly score</li>
-              <li><span class="mini-label">AVG</span> — Average weekly score</li>
-              <li><span class="mini-label">STD</span> — Volatility of scores</li>
+              <li><span class="mini-label">PF</span> - Points For</li>
+              <li><span class="mini-label">PA</span> - Points Against</li>
+              <li><span class="mini-label">MAX</span> - Best weekly score</li>
+              <li><span class="mini-label">MIN</span> - Worst weekly score</li>
+              <li><span class="mini-label">AVG</span> - Average weekly score</li>
+              <li><span class="mini-label">STD</span> - Volatility of scores</li>
             </ul>
           </div>
         </div>
@@ -517,9 +517,9 @@ def build_career_graphs_body(career_ctx: dict) -> str:
           <div class="card-header"><h3>Metrics Key</h3></div>
           <div class="card-body">
             <ul class="ticker-list">
-              <li><span class="mini-label">PF</span> — Career points for</li>
-              <li><span class="mini-label">PA</span> — Career points against</li>
-              <li><span class="mini-label">W-L</span> — Career record</li>
+              <li><span class="mini-label">PF</span> - Career points for</li>
+              <li><span class="mini-label">PA</span> - Career points against</li>
+              <li><span class="mini-label">W-L</span> - Career record</li>
             </ul>
           </div>
         </div>"""

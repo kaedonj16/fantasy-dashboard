@@ -6,7 +6,7 @@ Fetches full-season stats from Sleeper's API (weeks 1-18), calculates
 efficiency metrics for all active skill-position players, and saves them
 to the player_advanced_metrics table tagged with the correct season year.
 
-Safe to re-run — saves use ON CONFLICT DO UPDATE (upsert).
+Safe to re-run - saves use ON CONFLICT DO UPDATE (upsert).
 
 Usage:
     python scripts/backfill_advanced_metrics.py              # 2022, 2023, 2024, 2025

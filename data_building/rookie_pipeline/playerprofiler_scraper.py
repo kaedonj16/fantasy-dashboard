@@ -2,7 +2,7 @@
 PlayerProfiler age / DOB scraper.
 
 Uses Playwright (headless Chromium) because the site is a Next.js SPA behind
-Cloudflare — plain HTTP fetches return 403.  DOB is extracted from the
+Cloudflare - plain HTTP fetches return 403.  DOB is extracted from the
 `<script id="__NEXT_DATA__">` JSON block that Next.js always embeds, with
 text-pattern regex as a fallback.
 
@@ -146,7 +146,7 @@ def _extract_age_from_pp_html(html: str) -> Optional[float]:
     Extract numeric age from a PlayerProfiler page.
 
     Strategy order:
-      1. __NEXT_DATA__ JSON — known path keys, then deep search
+      1. __NEXT_DATA__ JSON - known path keys, then deep search
       2. Any <script> tag with an age JSON key and numeric value
       3. Visible page text pattern ("Age: 21.34", "Age 21.3")
     """
@@ -226,16 +226,16 @@ def fetch_playerprofiler_ages(
         delay:          seconds between page loads (default 0.5)
 
     Returns:
-        {name_lower: age_float}  — same contract as fetch_espn_ages_robust
+        {name_lower: age_float}  - same contract as fetch_espn_ages_robust
     """
     # ── Connectivity probe ────────────────────────────────────────────────────
     print("[pp] Probing PlayerProfiler (Travis Hunter test)…")
     test_html = _fetch_pp_html(_pp_slug("Travis Hunter"))
     if test_html is None:
-        print("[pp] WARNING: PlayerProfiler unreachable (Playwright failed or not installed) — skipping")
+        print("[pp] WARNING: PlayerProfiler unreachable (Playwright failed or not installed) - skipping")
         return {}
     test_age = _extract_age_from_pp_html(test_html)
-    print(f"[pp] Connectivity OK — probe age={test_age!r}")
+    print(f"[pp] Connectivity OK - probe age={test_age!r}")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     result: Dict[str, float] = {}
@@ -259,12 +259,12 @@ def fetch_playerprofiler_ages(
                     no_age += 1
 
         except Exception as exc:
-            print(f"[pp] {name}: ERROR — {type(exc).__name__}: {exc}")
+            print(f"[pp] {name}: ERROR - {type(exc).__name__}: {exc}")
             errors += 1
 
         if (i + 1) % 20 == 0:
             print(
-                f"[pp] Progress {i + 1}/{total} — "
+                f"[pp] Progress {i + 1}/{total} - "
                 f"{found} with age, {no_age} no age found, {errors} errors"
             )
 

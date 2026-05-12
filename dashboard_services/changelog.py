@@ -25,13 +25,13 @@ CHANGELOG = [
     {
         "date": "2026-05-02",
         "tag": "new",
-        "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick — ADP value, positional need, and best player available. View by team (accordion) or by round with prev/next pagination. ADP sourced from real drafts in similar leagues when available.",
+        "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick - ADP value, positional need, and best player available. View by team (accordion) or by round with prev/next pagination. ADP sourced from real drafts in similar leagues when available.",
         "link": "/teams"
     },
     {
         "date": "2026-04-29",
         "tag": "new",
-        "text": "League Superlatives: 10 all-time awards on the Awards page — Barely Breathing (most wins by <5 pts), Consistency King, Main Character, Bench Warmer MVP, Waiver Wire Demon, Playoff Riser, plus The Bridesmaid, Most Dominant, The Punching Bag, and Boom or Bust.",
+        "text": "League Superlatives: 10 all-time awards on the Awards page - Barely Breathing (most wins by <5 pts), Consistency King, Main Character, Bench Warmer MVP, Waiver Wire Demon, Playoff Riser, plus The Bridesmaid, Most Dominant, The Punching Bag, and Boom or Bust.",
         "link": "/awards"
     },
     {
@@ -79,7 +79,7 @@ CHANGELOG = [
     {
         "date": "2026-04-18",
         "tag": "new",
-        "text": "Trade Targets: Trade Calculator sidebar shows position-gap-based trade targets for your roster—identifies what you need most and which players to target by owner.",
+        "text": "Trade Targets: Trade Calculator sidebar shows position-gap-based trade targets for your roster-identifies what you need most and which players to target by owner.",
         "link": "/trade"
     },
     {
@@ -91,13 +91,13 @@ CHANGELOG = [
     {
         "date": "2026-04-18",
         "tag": "new",
-        "text": "Roster Intel: Team analytics now includes a Roster Intel tab with per-player signals — Core, Sell High, Buy Window, Breakout Hold, and Cut recommendations based on value trends and age curves.",
+        "text": "Roster Intel: Team analytics now includes a Roster Intel tab with per-player signals - Core, Sell High, Buy Window, Breakout Hold, and Cut recommendations based on value trends and age curves.",
         "link": "/teams"
     },
     {
         "date": "2026-04-18",
         "tag": "new",
-        "text": "Waiver Wire Targets: Offseason waiver recommendations ranked by pickup score — combines value, 7-day trend, breakout signals, and age-prime windows to surface the best available adds.",
+        "text": "Waiver Wire Targets: Offseason waiver recommendations ranked by pickup score - combines value, 7-day trend, breakout signals, and age-prime windows to surface the best available adds.",
         "link": "/trade"
     },
     {
