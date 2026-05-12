@@ -7523,6 +7523,10 @@ def api_waiver_candidates():
     players_index = ctx.get("players_index") or {}
     model_value_table = load_model_value_table()
 
+    _rp_wv = ctx.get("roster_positions") or []
+    _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
+    _vf_wv = "sf_value" if _is_sf_wv else "value"
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7534,7 +7538,7 @@ def api_waiver_candidates():
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
         try:
-            val = float(row.get("value") or 0.0)
+            val = float(row.get(_vf_wv) or row.get("value") or 0.0)
         except Exception:
             val = 0.0
         if val <= 0:
@@ -7696,6 +7700,10 @@ def api_start_sit_options():
             if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
                 lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
 
+    _rp_ss = ctx.get("roster_positions") or []
+    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
+    _vf_ss = "sf_value" if _is_sf_ss else "value"
+
     rows_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7833,7 +7841,7 @@ def api_start_sit_options():
 
         avg_pts = recent_pts.get(pid, 0.0)
         adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
-        score = avg_pts * adj if avg_pts > 0 else float(row.get("value") or 0) * 0.01
+        score = avg_pts * adj if avg_pts > 0 else float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
 
         # Injury status from full Sleeper player data
         full_player = players_full.get(pid) or {}
@@ -9739,7 +9747,25 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
-    if platform:
+    if platform and league_id:
+        try:
+            _pr_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _pr_rp = _pr_ctx.get("roster_positions") or []
+            _pr_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _pr_rp)
+            _pr_lt = "sf" if _pr_sf else "1qb"
+            _pr_sz = len(_pr_ctx.get("rosters") or []) or 10
+            body_html = body_html.replace(
+                "var prLeagueType   = '1qb';",
+                f"var prLeagueType   = '{_pr_lt}';",
+            ).replace(
+                "var prLeagueSize   = 10;",
+                f"var prLeagueSize   = {_pr_sz};",
+            ).replace(
+                "fetch('/api/player-indicators?league_type=1qb&league_size=10'",
+                f"fetch('/api/player-indicators?league_type={_pr_lt}&league_size={_pr_sz}'",
+            )
+        except Exception:
+            pass
         return render_page("Player Rankings", league_id, "players", body_html, platform, season)
 
     return render_page("Player Rankings", None, "players", body_html)
@@ -9750,6 +9776,21 @@ def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page - active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
     body_html = build_prospects_body()
+    try:
+        _rk_ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _rk_rp = _rk_ctx.get("roster_positions") or []
+        _rk_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rk_rp)
+        _rk_lt = "sf" if _rk_sf else "1qb"
+        _rk_sz = len(_rk_ctx.get("rosters") or []) or 10
+        body_html = body_html.replace(
+            "var rkLeague    = '1qb';",
+            f"var rkLeague    = '{_rk_lt}';",
+        ).replace(
+            "var rkSize      = 10;",
+            f"var rkSize      = {_rk_sz};",
+        )
+    except Exception:
+        pass
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
