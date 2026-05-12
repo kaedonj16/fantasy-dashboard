@@ -150,16 +150,13 @@ def rankings():
         # Overlay dynasty rookie ADP - same fallback chain as draft-grades tab:
         # DB real draft data -> FantasyCalc -> model fallback
         try:
+            import re as _re
             from dashboard_services.adp_service import (
                 fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
             )
             result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
 
             def _build_adp_map(is_sf: bool) -> Dict[str, float]:
-                # Rookie class year (e.g. 2026) is one ahead of the Sleeper league
-                # season stored in draft_adp (e.g. 2025). Query both so we get data
-                # regardless of which side of the Sleeper season boundary we are on.
-                # year-1 is loaded first; year overwrites where both have data.
                 adp: dict = {}
                 for _s in (year - 1, year):
                     for pid, entry in fetch_league_adp_from_db(is_sf=is_sf, season=_s, draft_type='rookie').items():
@@ -181,6 +178,40 @@ def rankings():
             sf_map  = _build_adp_map(True)
             qb1_map = _build_adp_map(False)
 
+            # Build a sleeper_id -> normalised name lookup from players_index.json
+            # so we can fall back to name matching for prospects missing sleeper_id.
+            def _norm(n: str) -> str:
+                n = n.lower()
+                n = _re.sub(r"['\.\-]", "", n)
+                n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                return _re.sub(r"\s+", " ", n).strip()
+
+            _sid_to_norm: Dict[str, str] = {}
+            try:
+                import json as _json
+                from utils.paths import CACHE_DIR as _CACHE_DIR
+                _pi_path = _CACHE_DIR / "players_index.json"
+                if _pi_path.exists():
+                    _pi = _json.loads(_pi_path.read_text())
+                    for _sid, _pdata in _pi.items():
+                        _pn = _pdata.get("name", "")
+                        if _pn:
+                            _sid_to_norm[str(_sid)] = _norm(_pn)
+            except Exception:
+                pass
+
+            # name -> avg_pick for all players in the ADP maps
+            sf_by_name: Dict[str, float] = {}
+            qb1_by_name: Dict[str, float] = {}
+            for _sid, _val in sf_map.items():
+                _nm = _sid_to_norm.get(_sid)
+                if _nm:
+                    sf_by_name[_nm] = _val
+            for _sid, _val in qb1_map.items():
+                _nm = _sid_to_norm.get(_sid)
+                if _nm:
+                    qb1_by_name[_nm] = _val
+
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
                 if sid:
@@ -188,6 +219,14 @@ def rankings():
                         d["sf_avg_pick"] = sf_map[sid]
                     if sid in qb1_map:
                         d["avg_pick"] = qb1_map[sid]
+                else:
+                    # Name-based fallback for prospects without a linked sleeper_id
+                    pname = _norm(d.get("name") or "")
+                    if pname:
+                        if pname in sf_by_name:
+                            d["sf_avg_pick"] = sf_by_name[pname]
+                        if pname in qb1_by_name:
+                            d["avg_pick"] = qb1_by_name[pname]
         except Exception:
             pass
 

@@ -896,9 +896,9 @@ def build_prospects_body() -> str:
         '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '-') + '</span>';
 
       row.addEventListener('click', function() {
-        var pid = r.sleeper_id || r.player_id || r.id || '';
-        if (pid) {
-          openPlayerModal(pid, r.name || '', {tab: 'prospect'});
+        var sid = r.sleeper_id ? String(r.sleeper_id) : '';
+        if (sid) {
+          openPlayerModal(sid, r.name || '', {tab: 'prospect'});
         } else {
           rkOpenModal(r);
         }
