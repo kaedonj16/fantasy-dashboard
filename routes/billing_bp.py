@@ -108,6 +108,7 @@ def _try_grant_from_stripe_success() -> None:
 
 
 def _pricing_body() -> str:
+    from flask import session as _session
     plan      = request.args.get("plan", "")
     success   = request.args.get("success") == "1"
     canceled  = request.args.get("canceled") == "1"
@@ -115,6 +116,8 @@ def _pricing_body() -> str:
 
     if success:
         safe_return = html.escape(return_to) if return_to else ""
+        # Embed user_id from session so the status check uses the right account
+        viewer_user_id = _session.get("viewer_user_id") or _session.get("viewer_username") or ""
         return f"""
     <div class="card central" style="max-width:560px;text-align:center;">
       <div class="card-body" style="padding:48px 32px;">
@@ -123,16 +126,17 @@ def _pricing_body() -> str:
         </div>
         <h2 id="sub-heading" style="margin:0 0 10px;font-size:24px;">Payment confirmed!</h2>
         <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
-          Your premium access is activating&nbsp;&mdash; just a moment&hellip;
+          Activating your premium access&hellip;
         </p>
-        <div id="sub-spinner" style="margin:0 auto 24px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
-        {'<a id="sub-return" href="' + safe_return + '" style="display:none;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>' if return_to else ''}
+        <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
+        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue →</a>
       </div>
     </div>
     <script>
     (function() {{
       var returnTo = {json.dumps(return_to)};
-      var attempts = 0, maxAttempts = 20;
+      var userId   = {json.dumps(viewer_user_id)};
+      var attempts = 0, maxAttempts = 8;
 
       var leagueId = '';
       try {{
@@ -141,7 +145,15 @@ def _pricing_body() -> str:
           if (parts.length >= 3) leagueId = parts[2];
         }}
       }} catch(e) {{}}
-      var statusUrl = '/api/subscription-status' + (leagueId ? '?league_id=' + encodeURIComponent(leagueId) : '');
+
+      var params = [];
+      if (userId)   params.push('user_id='   + encodeURIComponent(userId));
+      if (leagueId) params.push('league_id=' + encodeURIComponent(leagueId));
+      var statusUrl = '/api/subscription-status' + (params.length ? '?' + params.join('&') : '');
+
+      function redirect() {{
+        window.location.href = returnTo || '/pricing';
+      }}
 
       function activate() {{
         attempts++;
@@ -150,28 +162,27 @@ def _pricing_body() -> str:
           .then(function(d) {{
             if (d.has_premium) {{
               document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent = 'Premium is active on your account!';
-              if (returnTo) {{
-                setTimeout(function() {{ window.location.href = returnTo; }}, 1200);
-              }} else {{
-                document.getElementById('sub-heading').textContent = 'You\\'re all set!';
-              }}
+              document.getElementById('sub-msg').textContent = 'Premium is active — taking you there now!';
+              setTimeout(redirect, 800);
             }} else if (attempts < maxAttempts) {{
-              setTimeout(activate, 2000);
+              setTimeout(activate, 1000);
             }} else {{
+              // Grant may be on its way via webhook — redirect anyway
               document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent =
-                'Your access is being set up. If it isn\\'t active in a minute, try refreshing the page.';
+              document.getElementById('sub-msg').textContent = 'Access granted! If features take a moment to appear, try refreshing.';
               var btn = document.getElementById('sub-return');
               if (btn) btn.style.display = 'inline-block';
+              setTimeout(redirect, 2000);
             }}
           }})
           .catch(function() {{
-            if (attempts < maxAttempts) setTimeout(activate, 2000);
+            if (attempts < maxAttempts) setTimeout(activate, 1000);
+            else setTimeout(redirect, 1000);
           }});
       }}
 
-      setTimeout(activate, 1500);
+      // Start quickly — grant was applied server-side before page rendered
+      setTimeout(activate, 400);
     }})();
     </script>
     """
