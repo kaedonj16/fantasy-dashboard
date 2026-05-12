@@ -4027,7 +4027,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
-            val = float(row.get("value") or 0.0)
+            val = float(row.get(_vf_osd) or row.get("value") or 0.0)
         except Exception:
             val = 0.0
         if val <= 0:
@@ -6495,7 +6495,7 @@ def build_teams_body(ctx: dict) -> str:
             age_txt = f"{age:.1f} yrs" if age is not None else ""
 
             try:
-                val = float(p.get("value") or 0.0)
+                val = float(p.get(_val_field) or p.get("value") or 0.0)
             except Exception:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
@@ -9763,6 +9763,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             ).replace(
                 "fetch('/api/player-indicators?league_type=1qb&league_size=10'",
                 f"fetch('/api/player-indicators?league_type={_pr_lt}&league_size={_pr_sz}'",
+            ).replace(
+                '<span class="active-setting-tag">1QB</span>',
+                f'<span class="active-setting-tag">{"SF" if _pr_sf else "1QB"}</span>',
+            ).replace(
+                '<button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
+                f'<button class="settings-toggle{"" if _pr_sf else " active"}" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
+            ).replace(
+                '<button class="settings-toggle" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
+                f'<button class="settings-toggle{" active" if _pr_sf else ""}" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
             )
         except Exception:
             pass
@@ -9782,12 +9791,24 @@ def page_prospects(platform: str, season: int, league_id: str):
         _rk_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rk_rp)
         _rk_lt = "sf" if _rk_sf else "1qb"
         _rk_sz = len(_rk_ctx.get("rosters") or []) or 10
+        _rk_badge = "SF" if _rk_sf else "1QB"
+        _rk_1qb_cls = "settings-toggle" if _rk_sf else "settings-toggle active"
+        _rk_sf_cls = "settings-toggle active" if _rk_sf else "settings-toggle"
         body_html = body_html.replace(
             "var rkLeague    = '1qb';",
             f"var rkLeague    = '{_rk_lt}';",
         ).replace(
             "var rkSize      = 10;",
             f"var rkSize      = {_rk_sz};",
+        ).replace(
+            '<span class="active-setting-tag">1QB</span>',
+            f'<span class="active-setting-tag">{_rk_badge}</span>',
+        ).replace(
+            'class="settings-toggle active" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
+            f'class="{_rk_1qb_cls}" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
+        ).replace(
+            'class="settings-toggle" data-value="sf" onclick="rkSetLeague(\'sf\')',
+            f'class="{_rk_sf_cls}" data-value="sf" onclick="rkSetLeague(\'sf\')',
         )
     except Exception:
         pass

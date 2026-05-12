@@ -60,7 +60,19 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
     user_id = session.get("viewer_username")
     has_premium = has_premium_access(user_id, league_id, platform)
+    try:
+        from app import get_league_ctx_from_cache
+        _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _ti_rp = _ti_ctx.get("roster_positions") or []
+        _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
+        _ti_lt = "sf" if _ti_sf else "1qb"
+        _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
+    except Exception:
+        _ti_sf = False
+        _ti_lt = "1qb"
+        _ti_sz = 10
     body_html = f"""
+    <script>var _leagueType = '{_ti_lt}'; var _leagueSize = {_ti_sz};</script>
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
@@ -82,6 +94,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
             <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
             <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
+          </div>
+          <div class="ti-lf-bar" style="margin:0;" id="tiLeagueTypeBar">
+            <button class="ti-lf-btn {'active' if not _ti_sf else ''}" data-lf="1qb" onclick="switchTILeagueType('1qb')">1QB</button>
+            <button class="ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
           </div>
         </div>
 
@@ -423,6 +439,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     (function() {{
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
+      let TI_LEAGUE_TYPE = '{_ti_lt}';
       let currentPage = 1;
       let paginationData = null;
       let currentTab = 'trending';
@@ -444,7 +461,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         document.getElementById('tiLoading').style.display = '';
         document.getElementById('tiGrid').style.display = 'none';
         document.getElementById('tiPagination').style.display = 'none';
-        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page)
+        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page + '&league_type=' + TI_LEAGUE_TYPE)
           .then(r => r.json())
           .then(data => {{
             if (data.error) throw new Error(data.error);
@@ -496,6 +513,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         currentPos = pos;
         document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
         loadTIPage(currentPage);
+      }};
+
+      window.switchTILeagueType = function(lt) {{
+        TI_LEAGUE_TYPE = lt;
+        document.querySelectorAll('#tiLeagueTypeBar .ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === lt));
+        loadTIPage(1);
       }};
 
       function renderTI(players = null) {{
@@ -604,7 +627,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           rkOpenModal(p);
         }} else {{
           const name = (p.name || '').replace(/'/g, "\\'");
-          openPlayerModal(p.player_id, name);
+          openPlayerModal(p.player_id, name, {{ tab: 'trades' }});
         }}
       }};
 
