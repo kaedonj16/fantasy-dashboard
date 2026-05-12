@@ -895,7 +895,14 @@ def build_prospects_body() -> str:
           score.toFixed(2) + '</span></span>' +
         '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '-') + '</span>';
 
-      row.addEventListener('click', function() { rkOpenModal(r); });
+      row.addEventListener('click', function() {
+        var pid = r.sleeper_id || r.player_id || r.id || '';
+        if (pid) {
+          openPlayerModal(pid, r.name || '', {tab: 'prospect'});
+        } else {
+          rkOpenModal(r);
+        }
+      });
       list.appendChild(row);
     });
 

@@ -4507,7 +4507,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 // Player Modal
-function openPlayerModal(playerId, playerName) {
+function openPlayerModal(playerId, playerName, opts) {
 
   // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
   const pathParts = window.location.pathname.split('/').filter(p => p);
@@ -4730,11 +4730,20 @@ function openPlayerModal(playerId, playerName) {
           </div>`;
         }).join('');
 
+        const pdAdp1qb = pd.adp_rank != null ? parseFloat(pd.adp_rank).toFixed(1) : null;
+        const pdAdpSf  = pd.sf_adp_rank != null ? parseFloat(pd.sf_adp_rank).toFixed(1) : null;
+        const pdAdpHtml = (pdAdp1qb || pdAdpSf) ? `
+          <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+            ${pdAdp1qb ? `<span style="font-size:12px;color:var(--text-muted);">1QB ADP: <strong style="color:var(--text);">${pdAdp1qb}</strong></span>` : ''}
+            ${pdAdpSf  ? `<span style="font-size:12px;color:var(--text-muted);">SF ADP: <strong style="color:var(--text);">${pdAdpSf}</strong></span>` : ''}
+          </div>` : '';
+
         pdColHTML = `
           <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
             <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
             <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
           </div>
+          ${pdAdpHtml}
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
             <span style="font-size:11px;color:var(--text-muted);">Score: <strong style="color:var(--accent);">${pdScore.toFixed(1)}</strong> · Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
@@ -4857,10 +4866,17 @@ function openPlayerModal(playerId, playerName) {
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
 
-      // Reset to Overview tab active state
+      // Switch to requested tab, or Overview by default
+      const _initialTab = (opts && opts.tab) || 'overview';
       document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
-      const overviewTabBtn = document.querySelector('.pm-tab[data-tab="overview"]');
-      if (overviewTabBtn) overviewTabBtn.classList.add('active');
+      const _initTabBtn = document.querySelector(`.pm-tab[data-tab="${_initialTab}"]`);
+      if (_initTabBtn && _initTabBtn.style.display !== 'none') {
+        _initTabBtn.classList.add('active');
+        pmSwitchTab(_initialTab);
+      } else {
+        const overviewTabBtn = document.querySelector('.pm-tab[data-tab="overview"]');
+        if (overviewTabBtn) overviewTabBtn.classList.add('active');
+      }
 
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {

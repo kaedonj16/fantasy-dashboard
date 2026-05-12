@@ -147,13 +147,32 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP using the same source as the draft-grades tab.
+        # Overlay dynasty rookie ADP - same fallback chain as draft-grades tab:
+        # DB real draft data -> FantasyCalc -> model fallback
         try:
-            from dashboard_services.adp_service import fetch_league_adp_from_db
-            _sf_adp  = fetch_league_adp_from_db(is_sf=True,  season=year, draft_type='rookie')
-            _qb1_adp = fetch_league_adp_from_db(is_sf=False, season=year, draft_type='rookie')
-            sf_map:  Dict[str, float] = {sid: d["avg_pick"] for sid, d in _sf_adp.items()}
-            qb1_map: Dict[str, float] = {sid: d["avg_pick"] for sid, d in _qb1_adp.items()}
+            from dashboard_services.adp_service import (
+                fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
+            )
+            result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
+
+            def _build_adp_map(is_sf: bool) -> Dict[str, float]:
+                adp = dict(fetch_league_adp_from_db(is_sf=is_sf, season=year, draft_type='rookie'))
+                missing = result_sids - set(adp.keys())
+                if missing:
+                    fc = fetch_fc_rookie_adp(is_sf=is_sf, season=year)
+                    for sid in missing:
+                        if sid in fc:
+                            adp[sid] = fc[sid]
+                missing = result_sids - set(adp.keys())
+                if missing:
+                    model = build_model_adp_fallback(is_sf=is_sf, season=year)
+                    for sid in missing:
+                        if sid in model:
+                            adp[sid] = model[sid]
+                return {sid: d["avg_pick"] if isinstance(d, dict) else d for sid, d in adp.items()}
+
+            sf_map  = _build_adp_map(True)
+            qb1_map = _build_adp_map(False)
 
             for d in result:
                 sid = str(d.get("sleeper_id") or "")

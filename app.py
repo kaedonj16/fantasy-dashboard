@@ -9863,7 +9863,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + (name||'').replace(/'/g,"\\\\'") + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
@@ -12971,6 +12971,32 @@ def api_player_details(player_id: str):
                     }
             except Exception as pe:
                 print(f"[api_player_details] prospect lookup error: {pe}")
+
+        # Overlay ADP onto prospect_data using same fallback chain as draft-grades
+        if prospect_data is not None:
+            try:
+                from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc
+                from dashboard_services.adp_service import (
+                    fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
+                )
+                _pid_str = str(player_id)
+                _adp_year = _garc()
+                for _is_sf in (False, True):
+                    _key = "sf_adp_rank" if _is_sf else "adp_rank"
+                    _adp_map = fetch_league_adp_from_db(is_sf=_is_sf, season=_adp_year, draft_type='rookie')
+                    if _pid_str not in _adp_map:
+                        _fc = fetch_fc_rookie_adp(is_sf=_is_sf, season=_adp_year)
+                        if _pid_str in _fc:
+                            _adp_map = _fc
+                        else:
+                            _model = build_model_adp_fallback(is_sf=_is_sf, season=_adp_year)
+                            if _pid_str in _model:
+                                _adp_map = _model
+                    if _pid_str in _adp_map:
+                        _entry = _adp_map[_pid_str]
+                        prospect_data[_key] = _entry["avg_pick"] if isinstance(_entry, dict) else float(_entry)
+            except Exception:
+                pass
 
         response = {
             "player_id": player_id,
