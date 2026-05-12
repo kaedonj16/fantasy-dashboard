@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional
 # Active class detection
 # ─────────────────────────────────────────────────────────────────────────────
 
+_active_class_cache: dict = {}  # {date_str: year}
+
 def get_active_rookie_class(today: Optional[date] = None) -> int:
     """
     Return the draft class year that should currently be displayed.
@@ -39,6 +41,10 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
     """
     if today is None:
         today = date.today()
+
+    _key = today.isoformat()
+    if _key in _active_class_cache:
+        return _active_class_cache[_key]
 
     # Try DB first
     try:
@@ -75,9 +81,12 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
                         season_end = None
                 
                 if season_end is None or today <= season_end:
+                    _active_class_cache[_key] = year
                     return year
             # All classes have ended → return latest + 1
-            return int(rows[-1]['draft_class_year']) + 1
+            _result = int(rows[-1]['draft_class_year']) + 1
+            _active_class_cache[_key] = _result
+            return _result
     except Exception as exc:
         print(f"[pipeline] DB unavailable for active class lookup: {exc}")
 
@@ -86,7 +95,9 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
     # Jan 1–11: still watching prior year's class in the playoffs → show year-1
     # Jan 12 onward: prior class is done; next class is upcoming → show year
     if today.month == 1 and today.day <= 11:
+        _active_class_cache[_key] = today.year - 1
         return today.year - 1
+    _active_class_cache[_key] = today.year
     return today.year
 
 

@@ -9,6 +9,10 @@ _db_initialized = False
 _latest_snapshot_cache: dict = {}  # source -> (date_str, cached_at_ts)
 _SNAPSHOT_TTL = 300  # 5 minutes
 
+# Per-player history cache: (player_id, days, source, league_type, league_size) -> (result, cached_at_ts)
+_player_history_cache: dict = {}
+_PLAYER_HISTORY_TTL = 600  # 10 minutes — history only updates daily
+
 
 def init_value_history_db() -> None:
     global _db_initialized
@@ -292,6 +296,12 @@ def get_player_value_history(
         league_type: str = "1qb",
         league_size: int = 10,
 ) -> list[dict]:
+    import time as _time
+    _cache_key = (str(player_id), days, source, league_type, league_size)
+    _cached = _player_history_cache.get(_cache_key)
+    if _cached and _time.time() - _cached[1] < _PLAYER_HISTORY_TTL:
+        return _cached[0]
+
     init_value_history_db()
 
     latest_date = get_latest_snapshot_date(source=source)
@@ -307,6 +317,7 @@ def get_player_value_history(
     cutoff = (latest_date_obj - timedelta(days=max(days, 1) - 1)).isoformat()
     col = _history_col(league_type, league_size)
 
+    _cal_col = "calibrated_value_1qb" if league_type == "1qb" else "calibrated_value_sf"
     with get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -326,19 +337,16 @@ def get_player_value_history(
             """,
             (source, str(player_id), cutoff),
         ).fetchall()
+        _cal_row = conn.execute(
+            f"SELECT {_cal_col} AS cal FROM player_values WHERE player_id = %s",
+            (str(player_id),),
+        ).fetchone()
 
     # Scale historical values to the calibrated scale so the graph matches the
     # current modal value. Use the latest history row's raw value as the
     # denominator so the final graph point scales to exactly the calibrated value.
     _cal_scale = 1.0
     try:
-        _cal_col = "calibrated_value_1qb" if league_type == "1qb" else "calibrated_value_sf"
-        with get_conn() as _sc:
-            _cal_row = _sc.execute(
-                f"SELECT {_cal_col} AS cal FROM player_values WHERE player_id = %s",
-                (str(player_id),),
-            ).fetchone()
-        # Use the last history row's raw value as denominator so final point = calibrated
         _last_raw = float(rows[-1]["value"]) if rows else 0.0
         if _cal_row and _cal_row["cal"] and _last_raw > 0:
             _cal_scale = float(_cal_row["cal"]) / _last_raw
@@ -364,6 +372,7 @@ def get_player_value_history(
         )
         prev_val = val
 
+    _player_history_cache[_cache_key] = (out, _time.time())
     return out
 
 
