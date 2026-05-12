@@ -12862,6 +12862,35 @@ def api_player_details(player_id: str):
         if not player_meta:
             player_meta = get_players_index_global().get(player_id, {})
 
+        # Final fallback: internal prospect ID (ROOKIE_YEAR_NAME) - build meta from rookie cache
+        _prospect_meta_row = None
+        if not player_meta and str(player_id).startswith("ROOKIE_"):
+            try:
+                from dashboard_services.rookie_api import _cache as _rk_meta_cache
+                from data_building.rookie_pipeline.pipeline import (
+                    get_active_rookie_class as _garc_meta,
+                    get_rookie_rankings_from_db as _grr_meta,
+                )
+                _yr = _garc_meta()
+                for _cy in [_yr, _yr - 1]:
+                    if _cy not in _rk_meta_cache:
+                        _rk_meta_cache[_cy] = _grr_meta(_cy)
+                    _prospect_meta_row = next(
+                        (r for r in _rk_meta_cache.get(_cy, []) if r.get("player_id") == str(player_id)),
+                        None,
+                    )
+                    if _prospect_meta_row:
+                        break
+                if _prospect_meta_row:
+                    player_meta = {
+                        "name": _prospect_meta_row.get("name", ""),
+                        "pos":  _prospect_meta_row.get("position", ""),
+                        "team": _prospect_meta_row.get("team") or "",
+                        "espnHeadshot": _prospect_meta_row.get("headshot_url") or "",
+                    }
+            except Exception:
+                pass
+
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
@@ -12905,7 +12934,17 @@ def api_player_details(player_id: str):
                     if found_row:
                         break
 
-                # Fallback: match by name from players_index when sleeper_id not yet linked
+                # Fallback 2: direct player_id match (internal ROOKIE_YEAR_NAME IDs)
+                if not found_row:
+                    for check_year in [active_year, active_year - 1]:
+                        for r in _rookie_cache.get(check_year, []):
+                            if r.get("player_id") == str(player_id):
+                                found_row = r
+                                break
+                        if found_row:
+                            break
+
+                # Fallback 3: name match via players_index for Sleeper IDs not yet linked
                 if not found_row:
                     def _norm_name(n):
                         n = n.lower()
@@ -12922,7 +12961,6 @@ def api_player_details(player_id: str):
                             for r in _rookie_cache.get(check_year, []):
                                 if _norm_name(r.get("name", "")) == norm_target:
                                     found_row = r
-                                    # Cache the link so future calls use sleeper_id
                                     r["sleeper_id"] = str(player_id)
                                     break
                             if found_row:
