@@ -162,6 +162,7 @@ async function initiatePurchase(type, btn) {
       window.location.href = data.url;
     } else {
       if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
+      if (_handleAlreadySubscribed(data, leagueId)) return;
       alert(data.error || 'Could not start checkout. Make sure you are logged in.');
     }
   } catch (e) {
@@ -214,6 +215,25 @@ async function protectFeature(featureName, userId, leagueId, callbackIfPremium) 
  * Self-contained "enter username → subscribe" modal for guest pages
  * that don't have the nav signin modal in the DOM.
  */
+function _handleAlreadySubscribed(data, leagueId) {
+  if (!data.error || !data.error.toLowerCase().includes('already have')) return false;
+
+  // They're already subscribed — mark premium and redirect to their league or refresh
+  if (window.__brctx) window.__brctx.isPremium = true;
+
+  const ctx = window.__brctx || {};
+  const platform = ctx.platform || 'sleeper';
+  const season   = ctx.season   || new Date().getFullYear();
+  const lid      = leagueId || ctx.leagueId || '';
+
+  const dest = lid
+    ? `/${platform}/${season}/${lid}/dashboard`
+    : window.location.pathname;
+
+  window.location.href = dest;
+  return true;
+}
+
 function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
@@ -350,6 +370,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
       window.location.href = data.url;
     } else {
       if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
+      if (_handleAlreadySubscribed(data, leagueId)) return;
       alert(data.error || 'Could not start checkout.');
     }
   } catch (e) {
