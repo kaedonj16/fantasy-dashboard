@@ -339,9 +339,8 @@ def _fetch_draft_picks_from_db(season: int) -> List[Dict]:
     from utils.utils import load_players_index
 
     picks: List[Dict] = []
-    seen_sids: set = set()
 
-    # ── Pull from rookie_prospects joined to consensus / actuals ─────────────
+    # Pull from rookie_prospects joined to consensus/actual draft data
     try:
         with get_conn() as conn:
             rows = conn.execute(
@@ -379,39 +378,9 @@ def _fetch_draft_picks_from_db(season: int) -> List[Dict]:
                 "round":       int(round_num),
                 "pick":        int(pick_num),
             })
-            if sid:
-                seen_sids.add(sid)
         print(f"[populate_draft_picks] Loaded {len(picks)} picks from rookie_prospects DB")
     except Exception as e:
         print(f"[populate_draft_picks] DB query failed: {e}")
-
-    # ── Supplement with players_index.json rookies not yet in the pipeline ───
-    try:
-        pi = load_players_index() or {}
-        for sid, pdata in pi.items():
-            if str(sid) in seen_sids:
-                continue
-            if pdata.get("draft_year") != season:
-                continue
-            exp = pdata.get("exp")
-            if exp is not None and int(exp) > 2:
-                continue
-            pos  = (pdata.get("pos") or "").upper()
-            team = (pdata.get("team") or "").upper()
-            name = pdata.get("name") or ""
-            if not (pos and team and name and pos in ("QB", "RB", "WR", "TE")):
-                continue
-            picks.append({
-                "player_id":   str(sid),
-                "player_name": name,
-                "position":    pos,
-                "team":        team,
-                "round":       7,   # unknown round — use worst-case for penalty scoring
-                "pick":        250,
-            })
-        print(f"[populate_draft_picks] Total picks after players_index supplement: {len(picks)}")
-    except Exception as e:
-        print(f"[populate_draft_picks] players_index supplement failed: {e}")
 
     return picks
 
