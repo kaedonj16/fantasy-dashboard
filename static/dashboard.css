@@ -6016,7 +6016,9 @@ thead th {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  align-self: stretch;
+  align-self: flex-start;
+  max-height: 420px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
