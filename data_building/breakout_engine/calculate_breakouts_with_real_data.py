@@ -748,7 +748,11 @@ def main() -> Dict[str, Any]:
                 age = age_from_bday(player_data.get("bDay"))
 
                 if age is not None and age < 26:
-                    years_exp = max(0, int(age - 22.5))
+                    _draft_yr = player_data.get("draft_year")
+                    if _draft_yr:
+                        years_exp = max(0, season - int(_draft_yr))
+                    else:
+                        years_exp = max(0, int(age - 22.5))
                     all_players.append({
                         "player_id": player_id,
                         "player_name": player_data.get("name", "Unknown"),

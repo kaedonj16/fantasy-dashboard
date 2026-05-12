@@ -609,12 +609,15 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
                 cur.execute(query, {"min_rank": min_value_rank})
                 players = [dict(row) for row in cur.fetchall()]
                 
-                # Enrich with player names from players_index
+                # Enrich with player names and draft_year-based years_exp from players_index
                 for player in players:
                     player_id = str(player.get('player_id', ''))
                     if player_id and players_index:
                         player_data = players_index.get(player_id, {})
                         player['player_name'] = player_data.get('name', 'unknown')
+                        draft_year = player_data.get('draft_year')
+                        if draft_year:
+                            player['years_exp'] = max(0, season - int(draft_year))
                     else:
                         player['player_name'] = 'unknown'
                 
@@ -744,9 +747,13 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
             age_from_bday = _compute_age_at_season_start(bday_str, season) if bday_str else None
             age = age_from_bday if age_from_bday is not None else player.get('age')
 
-            # years_exp: not stored directly; estimate from age assuming ~22.5 as typical entry age
-            # Adjusted to 22.5 to better align with actual NFL entry age (most enter at 22-23)
-            years_exp = max(0, round(age - 22.5)) if age is not None else 0
+            # Prefer draft_year from players_index for accurate years_exp;
+            # fall back to age estimate only when draft_year is unavailable.
+            _draft_year = idx_entry.get('draft_year')
+            if _draft_year:
+                years_exp = max(0, season - int(_draft_year))
+            else:
+                years_exp = max(0, round(age - 22.5)) if age is not None else 0
 
             usage_by_id[player_id] = {
                 # Identity
