@@ -71,7 +71,7 @@ def _parse(article: dict) -> dict:
 
     return {
         "headline":    headline,
-        "description": description[:160] + ("…" if len(description) > 160 else ""),
+        "description": description[:220] + ("…" if len(description) > 220 else ""),
         "published":   published,
         "age":         _age_label(published) if published else "",
         "url":         url,

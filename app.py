@@ -11096,8 +11096,11 @@ def api_refresh_page():
             num_teams = ctx.get("total_rosters") or None
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            _rp_trade = ctx.get("roster_positions") or []
+            _is_sf_trade = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_trade)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                                    scoring_format=scoring_format)
+                                                    scoring_format=scoring_format,
+                                                    is_superflex=_is_sf_trade)
 
         else:
             body_html = ""

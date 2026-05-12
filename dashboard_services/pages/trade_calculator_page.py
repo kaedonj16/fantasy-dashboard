@@ -15,6 +15,7 @@ def build_trade_calculator_body(
         scoring_format: Optional[str] = None,
         viewer_roster_id: Optional[str] = None,
         has_premium: bool = False,
+        is_superflex: bool = False,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -96,11 +97,12 @@ def build_trade_calculator_body(
     has_premium_str = 'true' if has_premium else 'false'
 
     # League type toggle: checkbox with 1QB and SF labels
+    sf_checked = ' checked' if is_superflex else ''
     league_type_block = f"""
               <div class="otc-ctrl-group" id="leagueTypeControl">
                 <span class="otc-toggle-label">1QB</span>
                 <label class="otc-pill-switch">
-                  <input type="checkbox" id="leagueTypeToggle">
+                  <input type="checkbox" id="leagueTypeToggle"{sf_checked}>
                   <span class="otc-pill-track"></span>
                 </label>
                 <span class="otc-toggle-label">SF</span>
