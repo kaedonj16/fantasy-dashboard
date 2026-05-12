@@ -218,6 +218,8 @@ function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
+  const needsLeague = planType === 'league' || planType === 'combo';
+
   const modal = document.createElement('div');
   modal.id = '_identifyModal';
   modal.className = 'signin-modal-overlay';
@@ -225,19 +227,36 @@ function _showIdentifyModal(planType, triggerBtn) {
   modal.innerHTML = `
     <div class="signin-modal-box">
       <h3 class="signin-modal-title">Sign in to subscribe</h3>
-      <p class="signin-modal-sub">Enter your Sleeper username to identify your account, then we'll take you to checkout.</p>
+      <p class="signin-modal-sub" id="_identifySub">Enter your Sleeper username to continue.</p>
       <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" autocomplete="username" autofocus>
+      <div id="_identifyLeagueWrap" style="display:none;margin-bottom:16px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Select League</label>
+        <select class="signin-modal-input" id="_identifyLeague" style="margin-bottom:0;cursor:pointer;"></select>
+      </div>
       <div id="_identifyError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
       <div class="signin-modal-actions">
-        <button class="signin-modal-submit" id="_identifySubmit">Continue to Checkout</button>
+        <button class="signin-modal-submit" id="_identifySubmit">Continue</button>
         <button class="signin-modal-cancel" onclick="document.getElementById('_identifyModal').remove()">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
 
-  const input = document.getElementById('_identifyInput');
-  const submitBtn = document.getElementById('_identifySubmit');
-  const errorEl = document.getElementById('_identifyError');
+  const input = modal.querySelector('#_identifyInput');
+  const submitBtn = modal.querySelector('#_identifySubmit');
+  const errorEl = modal.querySelector('#_identifyError');
+  const leagueWrap = modal.querySelector('#_identifyLeagueWrap');
+  const leagueSel = modal.querySelector('#_identifyLeague');
+  const subText = modal.querySelector('#_identifySub');
+
+  let identified = false;
+
+  async function doStep() {
+    if (!identified) {
+      await doIdentify();
+    } else {
+      doCheckout();
+    }
+  }
 
   async function doIdentify() {
     const username = (input.value || '').trim();
@@ -258,22 +277,74 @@ function _showIdentifyModal(planType, triggerBtn) {
         errorEl.textContent = data.error || 'Could not verify username.';
         errorEl.style.display = 'block';
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Continue to Checkout';
+        submitBtn.textContent = 'Continue';
         return;
       }
-      // Identified — update context and proceed to checkout
+
       if (window.__brctx) window.__brctx.is_logged_in = true;
-      modal.remove();
-      initiatePurchase(planType, triggerBtn);
+      identified = true;
+
+      if (needsLeague && data.leagues && data.leagues.length > 0) {
+        // Show league picker
+        input.disabled = true;
+        subText.textContent = 'Choose which league to subscribe for.';
+        leagueSel.innerHTML = data.leagues
+          .map(lg => `<option value="${lg.league_id}">${lg.name}</option>`)
+          .join('');
+        leagueWrap.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue to Checkout';
+        leagueSel.focus();
+      } else {
+        // No league needed (personal plan) or no leagues found — go straight to checkout
+        modal.remove();
+        initiatePurchase(planType, triggerBtn);
+      }
     } catch (e) {
       errorEl.textContent = 'Network error. Please try again.';
       errorEl.style.display = 'block';
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Continue to Checkout';
+      submitBtn.textContent = 'Continue';
     }
   }
 
-  submitBtn.addEventListener('click', doIdentify);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') doIdentify(); });
+  function doCheckout() {
+    const leagueId = leagueSel.value || '';
+    if (window.__brctx) window.__brctx.leagueId = leagueId;
+    modal.remove();
+    // Pass the selected leagueId directly into the checkout payload
+    _initiatePurchaseWithLeague(planType, triggerBtn, leagueId);
+  }
+
+  submitBtn.addEventListener('click', doStep);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doStep(); });
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function _initiatePurchaseWithLeague(type, btn, leagueId) {
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.origText = btn.innerHTML;
+    btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px;justify-content:center;">' +
+      '<span style="width:16px;height:16px;border:2px solid currentColor;border-top-color:transparent;' +
+      'border-radius:50%;display:inline-block;animation:paywall-spin .7s linear infinite;flex-shrink:0;"></span>' +
+      'Redirecting…</span>';
+  }
+  try {
+    const res = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: window.location.href }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
+      alert(data.error || 'Could not start checkout.');
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
+    alert('Checkout unavailable. Please try again.');
+  }
 }

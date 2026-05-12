@@ -22,10 +22,13 @@ logger = logging.getLogger(__name__)
 @auth_bp.route("/api/identify", methods=["POST"])
 def api_identify():
     """Set viewer session from a Sleeper username alone — no league needed.
-    Used by the subscribe flow so guests can log in without a league context.
-    Returns JSON {ok: true, username, user_id} or {error: str}.
+    Returns JSON {ok, username, user_id, leagues:[{league_id, name, season}]}.
     """
-    from dashboard_services.api import get_sleeper_user_by_username as get_sleeper_user
+    from dashboard_services.api import (
+        get_sleeper_user_by_username as get_sleeper_user,
+        get_sleeper_user_leagues,
+    )
+    from datetime import datetime as _dt
     data = request.get_json(force=True) or {}
     username = str(data.get("username") or "").strip()
     if not username:
@@ -36,9 +39,28 @@ def api_identify():
         return jsonify({"error": "Could not reach Sleeper. Try again."}), 503
     if not user:
         return jsonify({"error": "Username not found on Sleeper"}), 404
+
     session["viewer_username"] = user.get("username") or username
     session["viewer_user_id"] = str(user.get("user_id") or "")
-    return jsonify({"ok": True, "username": session["viewer_username"], "user_id": session["viewer_user_id"]})
+
+    # Fetch this user's leagues so the UI can offer a league picker
+    leagues = []
+    try:
+        current_season = _dt.now().year
+        raw = get_sleeper_user_leagues(session["viewer_user_id"], current_season)
+        leagues = [
+            {"league_id": str(lg.get("league_id", "")), "name": lg.get("name", "Unknown League"), "season": current_season}
+            for lg in raw if lg.get("league_id")
+        ]
+    except Exception:
+        pass  # leagues list is optional; checkout can still proceed
+
+    return jsonify({
+        "ok": True,
+        "username": session["viewer_username"],
+        "user_id": session["viewer_user_id"],
+        "leagues": leagues,
+    })
 
 
 # ── Health probe ──────────────────────────────────────────────────────────────
