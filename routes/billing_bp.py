@@ -479,8 +479,12 @@ def api_create_portal_session():
     try:
         sub_info    = get_subscription_info(user_id, league_id, platform)
         customer_id = sub_info.get("stripe_customer_id")
+        # Fall back to user-only lookup (personal plan) if league lookup has no customer
+        if not customer_id and league_id:
+            user_sub    = get_subscription_info(user_id, None, platform)
+            customer_id = user_sub.get("stripe_customer_id")
         if not customer_id:
-            return jsonify({"error": "No active subscription found"}), 404
+            return jsonify({"error": "No Stripe customer found for your account. Contact support if you believe this is an error."}), 404
 
         return_url = request.json.get("return_url") if request.is_json else request.form.get("return_url")
         if not return_url:
