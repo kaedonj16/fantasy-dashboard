@@ -1250,13 +1250,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _portal_league_id = league_id or ''
         manage_sub_html = (
             "<button type='button' class='settings-menu-item' id='manageSubBtn' "
-            "        onclick=\"(function(){var b=this;b.disabled=true;b.style.opacity='.6';"
+            "        onclick=\"(function(b){b.disabled=true;b.style.opacity='.6';"
             "fetch('/api/create-portal-session',{method:'POST',"
             "credentials:'same-origin',headers:{'Content-Type':'application/json'},"
             "body:JSON.stringify({league_id:'" + _portal_league_id + "',return_url:window.location.href})})"
             ".then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
             ".then(function(d){if(d.url){window.location.href=d.url;}else{b.disabled=false;b.style.opacity='';alert(d.error||'Could not open billing portal.');}})"
-            ".catch(function(e){b.disabled=false;b.style.opacity='';alert(e&&e.error?e.error:'Could not open billing portal: '+JSON.stringify(e));});})()\""
+            ".catch(function(e){b.disabled=false;b.style.opacity='';alert(e&&e.error?e.error:'Could not open billing portal: '+JSON.stringify(e));});})(this)\""
             ">"
             "  <img src='/static/images/star-solid.png' class='settings-menu-icon' alt='Premium'>"
             "  <span class='settings-menu-label'>Manage Subscription</span>"
