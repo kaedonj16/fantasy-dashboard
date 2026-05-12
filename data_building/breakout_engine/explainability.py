@@ -40,6 +40,7 @@ class ExplainabilityEngine:
             Bullet-point string explanation
         """
         reasons = []
+        _opp_dep_name_used = None  # track name used in opportunity bullet
 
         # 1. Opportunity opened (if score > threshold)
         if component_scores.get('opportunity_opened', 0) > EXPLAIN_OPPORTUNITY_OPENED_THRESHOLD:
@@ -50,8 +51,14 @@ class ExplainabilityEngine:
 
             if departed and len(departed) > 0:
                 top_departure = departed[0]
-                departure_name = top_departure.get('name', 'key player')
+                departure_name = top_departure.get('name', '')
                 change_type = top_departure.get('change_type', 'departed')
+
+                # If departure name is missing, try to borrow it from competition_removed
+                if not departure_name:
+                    comp_deps = component_details.get('competition_removed', {}).get('key_departures', [])
+                    if comp_deps:
+                        departure_name = comp_deps[0].get('name', '')
 
                 vacancy_text = []
                 if vacated_targets > 0:
@@ -60,19 +67,28 @@ class ExplainabilityEngine:
                     vacancy_text.append(f"{vacated_carries} carries vacated")
 
                 verb = self._departure_verb(change_type)
+                display_name = departure_name or 'Key player'
                 if vacancy_text:
-                    reasons.append(f"{departure_name} {verb} ({', '.join(vacancy_text)})")
+                    reasons.append(f"{display_name} {verb} ({', '.join(vacancy_text)})")
                 else:
-                    reasons.append(f"{departure_name} {verb}")
+                    reasons.append(f"{display_name} {verb}")
+                _opp_dep_name_used = departure_name.lower() if departure_name else None
 
         # 2. Competition removed (if score > threshold)
+        # Skip if the same player was already mentioned in the opportunity bullet above
         if component_scores.get('competition_removed', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD:
             details = component_details.get('competition_removed', {})
             key_deps = details.get('key_departures', [])
 
             if key_deps:
                 dep = key_deps[0]
-                reasons.append(f"Key competitor {dep.get('name')} departed")
+                dep_name = dep.get('name', '')
+                already_mentioned = (
+                    _opp_dep_name_used is not None and
+                    dep_name.lower() == _opp_dep_name_used
+                )
+                if not already_mentioned:
+                    reasons.append(f"Key competitor {dep_name} departed")
 
         # 3. Player readiness (if score > threshold)
         if component_scores.get('player_readiness', 0) > EXPLAIN_PLAYER_READINESS_THRESHOLD:
