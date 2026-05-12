@@ -35,11 +35,11 @@ def render_weekly_highlight_ticker(high: dict, week: int) -> str:
     items = []
     tt = high.get("top_team")
     if tt:
-        items.append(item("Highest Scoring Team", f"{tt[0]} — {tt[1]}"))
+        items.append(item("Highest Scoring Team", f"{tt[0]} - {tt[1]}"))
 
     lt = high.get("low_team")
     if lt:
-        items.append(item("Lowest Scoring Team", f"{lt[0]} — {lt[1]}"))
+        items.append(item("Lowest Scoring Team", f"{lt[0]} - {lt[1]}"))
 
     cl = high.get("closest")
     if cl:

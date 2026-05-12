@@ -8,7 +8,7 @@ models/ml_prospect_models.pkl.
 
 Usage
 -----
-    # Train on default years (2016-2023 — enough NFL data for all classes)
+    # Train on default years (2016-2023 - enough NFL data for all classes)
     python scripts/train_ml_model.py
 
     # Train on specific years
@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from sklearn.metrics import mean_absolute_error
 
-# Backtest data-loading utilities (reuse — no need to rewrite)
+# Backtest data-loading utilities (reuse - no need to rewrite)
 from scripts.backtest_prospect_model import (
     _load_draft_class,
     _load_combine_athleticism,
@@ -56,7 +56,7 @@ DEFAULT_TRAIN_YEARS = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 def build_training_rows(draft_years: List[int]) -> List[Dict[str, Any]]:
     """
     For each draft year, load the full data (CFBD + combine + NFL outcomes)
-    and return a list of training rows — one per draftee with NFL data.
+    and return a list of training rows - one per draftee with NFL data.
 
     Each row contains:
         position, ppr_avg, seasons_avail,
@@ -234,7 +234,7 @@ def main() -> None:
             model = scorer.models[pos]
             if not model.trained:
                 continue
-            print(f"\n  Feature importance — {pos}:")
+            print(f"\n  Feature importance - {pos}:")
             for name, imp in model.feature_importance():
                 bar = "█" * int(imp * 200)
                 print(f"    {name:<22} {imp:.4f}  {bar}")

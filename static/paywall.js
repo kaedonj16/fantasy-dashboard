@@ -225,7 +225,7 @@ async function protectFeature(featureName, userId, leagueId, callbackIfPremium) 
 function _handleAlreadySubscribed(data, leagueId) {
   if (!data.error || !data.error.toLowerCase().includes('already have')) return false;
 
-  // They're already subscribed — mark premium and redirect to their league or refresh
+  // They're already subscribed - mark premium and redirect to their league or refresh
   if (window.__brctx) window.__brctx.isPremium = true;
 
   const ctx = window.__brctx || {};
@@ -323,7 +323,7 @@ function _showIdentifyModal(planType, triggerBtn) {
         submitBtn.textContent = 'Continue to Checkout';
         leagueSel.focus();
       } else {
-        // No league needed (personal plan) or no leagues found — go straight to checkout
+        // No league needed (personal plan) or no leagues found - go straight to checkout
         modal.remove();
         initiatePurchase(planType, triggerBtn);
       }

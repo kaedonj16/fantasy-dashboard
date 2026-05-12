@@ -62,7 +62,7 @@ def build_usage_map_for_season(
     print(f"[build_usage] Fetching PFR snap counts for {season}...")
     snap_counts_map = fetch_season_snap_counts(season, weeks)
 
-    # Load once — reused for both the accumulation loop and snap merging below
+    # Load once - reused for both the accumulation loop and snap merging below
     players_index = load_players_index() or {}
 
     accum: Dict[str, Dict[str, float]] = {}
@@ -260,7 +260,7 @@ def build_usage_map_for_season(
 
     # ---- Merge PFR snap count data ----
     # Match players by name + team since PFR doesn't have Sleeper IDs
-    # players_index already loaded above — no need to reload
+    # players_index already loaded above - no need to reload
     print(f"[build_usage] Merging PFR snap counts for {len(snap_counts_map)} players...")
     snap_matches = 0
 

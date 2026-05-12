@@ -80,7 +80,7 @@ def _scrape_round_with_retry(
     
     for attempt in range(1, max_retries + 1):
         timeout = base_timeout * attempt  # Increase timeout on each retry
-        print(f"[mock_scraper] Round {round_num} — Attempt {attempt}/{max_retries} (timeout: {timeout}ms)")
+        print(f"[mock_scraper] Round {round_num} - Attempt {attempt}/{max_retries} (timeout: {timeout}ms)")
         
         try:
             with sync_playwright() as p:
@@ -112,7 +112,7 @@ def _scrape_round_with_retry(
             table = soup.find('table', class_='mock-table')
             
             if not table:
-                print(f"[mock_scraper] Round {round_num} — No mock-table found in HTML")
+                print(f"[mock_scraper] Round {round_num} - No mock-table found in HTML")
                 if attempt < max_retries:
                     wait_time = 2 ** attempt
                     print(f"[mock_scraper] Retrying in {wait_time}s...")
@@ -121,7 +121,7 @@ def _scrape_round_with_retry(
                 return []
             
             rows = table.find_all('tr')[1:]  # Skip header row
-            print(f"[mock_scraper] Round {round_num} — Found {len(rows)} rows")
+            print(f"[mock_scraper] Round {round_num} - Found {len(rows)} rows")
             
             for idx, row in enumerate(rows, 1):
                 try:
@@ -151,42 +151,42 @@ def _scrape_round_with_retry(
                     })
 
                 except Exception as e:
-                    print(f"[mock_scraper] Row {idx}: Parse error — {e}")
+                    print(f"[mock_scraper] Row {idx}: Parse error - {e}")
                     continue
             
-            # Success — return picks
-            print(f"[mock_scraper] Round {round_num} — SUCCESS: {len(picks)} picks extracted")
+            # Success - return picks
+            print(f"[mock_scraper] Round {round_num} - SUCCESS: {len(picks)} picks extracted")
             return picks
             
         except PlaywrightTimeout as exc:
             last_error = exc
-            print(f"[mock_scraper] Round {round_num} — TIMEOUT after {timeout}ms: {exc}")
+            print(f"[mock_scraper] Round {round_num} - TIMEOUT after {timeout}ms: {exc}")
             if attempt < max_retries:
                 wait_time = 2 ** attempt
                 print(f"[mock_scraper] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                print(f"[mock_scraper] Round {round_num} — All retries exhausted, giving up")
+                print(f"[mock_scraper] Round {round_num} - All retries exhausted, giving up")
                 
         except PlaywrightError as exc:
             last_error = exc
-            print(f"[mock_scraper] Round {round_num} — Playwright error: {exc}")
+            print(f"[mock_scraper] Round {round_num} - Playwright error: {exc}")
             if attempt < max_retries:
                 wait_time = 2 ** attempt
                 print(f"[mock_scraper] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                print(f"[mock_scraper] Round {round_num} — All retries exhausted, giving up")
+                print(f"[mock_scraper] Round {round_num} - All retries exhausted, giving up")
                 
         except Exception as exc:
             last_error = exc
-            print(f"[mock_scraper] Round {round_num} — Unexpected error ({type(exc).__name__}): {exc}")
+            print(f"[mock_scraper] Round {round_num} - Unexpected error ({type(exc).__name__}): {exc}")
             if attempt < max_retries:
                 wait_time = 2 ** attempt
                 print(f"[mock_scraper] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                print(f"[mock_scraper] Round {round_num} — All retries exhausted, giving up")
+                print(f"[mock_scraper] Round {round_num} - All retries exhausted, giving up")
     
     return []
 
@@ -231,7 +231,7 @@ def scrape_consensus_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
     if total == 0:
         print("[mock_scraper] FAILED: No picks extracted from any round")
     elif round_results[2] == 0:
-        print(f"[mock_scraper] PARTIAL: Round 2 failed to load — {round_results[1] + round_results[3]} total picks from R1/R3")
+        print(f"[mock_scraper] PARTIAL: Round 2 failed to load - {round_results[1] + round_results[3]} total picks from R1/R3")
     
     return all_picks
 
@@ -385,7 +385,7 @@ def scrape_individual_mocks(draft_year: int, limit: int = 10) -> List[Dict[str, 
 
     The hub page (CBS_HUB_URL) contains six MockDraft-column sections, each
     with a complete mock from a different analyst. We load the page once and
-    parse all sections — no need to navigate to individual analyst pages.
+    parse all sections - no need to navigate to individual analyst pages.
     """
     print(f"[mock_scraper] CBS: loading hub page {CBS_HUB_URL}")
     max_retries = 3
@@ -428,15 +428,15 @@ def scrape_individual_mocks(draft_year: int, limit: int = 10) -> List[Dict[str, 
                 print(f"[mock_scraper] CBS: {len(picks)} total skill-position picks from hub")
                 return picks
 
-            print(f"[mock_scraper] CBS attempt {attempt}: 0 picks parsed — retrying")
+            print(f"[mock_scraper] CBS attempt {attempt}: 0 picks parsed - retrying")
             time.sleep(2 ** attempt)
 
         except PlaywrightTimeout as exc:
-            print(f"[mock_scraper] CBS attempt {attempt}: timeout — {exc}")
+            print(f"[mock_scraper] CBS attempt {attempt}: timeout - {exc}")
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
         except PlaywrightError as exc:
-            print(f"[mock_scraper] CBS attempt {attempt}: Playwright error — {exc}")
+            print(f"[mock_scraper] CBS attempt {attempt}: Playwright error - {exc}")
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
         except Exception as exc:
@@ -444,5 +444,5 @@ def scrape_individual_mocks(draft_year: int, limit: int = 10) -> List[Dict[str, 
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
 
-    print("[mock_scraper] CBS: all retries exhausted — returning empty list")
+    print("[mock_scraper] CBS: all retries exhausted - returning empty list")
     return []

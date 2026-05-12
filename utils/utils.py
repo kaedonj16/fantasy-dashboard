@@ -280,7 +280,7 @@ def load_model_value_table(apply_calibration: bool = True):
         except Exception as e:
             print(f"[load_model_value_table] Failed to load from player_value_history: {e}")
 
-    # Zero out players absent from FantasyCalc — FC omission signals no dynasty value.
+    # Zero out players absent from FantasyCalc - FC omission signals no dynasty value.
     # (Handles pre-built JSON that pre-dates the training-script fix.)
     if result:
         try:
@@ -528,10 +528,10 @@ def get_or_refresh_projection_path(season: int, week: int) -> str:
                 file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
                 if file_date == today:
-                    # Good — today's data exists
+                    # Good - today's data exists
                     return file
                 else:
-                    # Old — remove it
+                    # Old - remove it
                     os.remove(file)
             except Exception:
                 # If parsing fails, just delete it

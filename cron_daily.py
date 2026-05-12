@@ -14,7 +14,7 @@ from utils.paths import DATA_DIR
 
 
 # ---------------------------------------------------------------------------
-# Freshness guards — skip expensive steps that already ran today
+# Freshness guards - skip expensive steps that already ran today
 # ---------------------------------------------------------------------------
 
 def _today() -> date:
@@ -84,7 +84,7 @@ def _wls_fresh() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Subprocess runner — each step gets a fresh process so memory fully releases
+# Subprocess runner - each step gets a fresh process so memory fully releases
 # ---------------------------------------------------------------------------
 
 def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
@@ -208,7 +208,7 @@ from dotenv import load_dotenv; load_dotenv()
 from datetime import date
 today = date.today()
 if today.month in (1, 2) or (today.month == 3 and today.day < 15):
-    print("[cron] Breakout skipped — playoff/early offseason period")
+    print("[cron] Breakout skipped - playoff/early offseason period")
 else:
     from data_building.breakout_engine.calculate_breakouts_with_real_data import main as run_breakouts
     result = run_breakouts()
@@ -226,7 +226,7 @@ from dotenv import load_dotenv; load_dotenv()
 from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
 from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
 year = get_active_rookie_class()
-print(f"[cron] Weekly rookie refresh — {{year}} draft class")
+print(f"[cron] Weekly rookie refresh - {{year}} draft class")
 eval_result = run_rookie_evaluation_pipeline(year)
 print(f"[cron] Eval: {{eval_result.get('profile_count', 0)}} profiles")
 result = run_rookie_pipeline(year)
@@ -234,7 +234,7 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
 """, "build_weekly_rookie_data")
     else:
         reason = "paused" if ROOKIE_PIPELINE_PAUSED else f"weekday={today_weekday}, season_type={season_type!r}"
-        print(f"[cron] Rookie weekly run skipped — {reason}")
+        print(f"[cron] Rookie weekly run skipped - {reason}")
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
@@ -279,7 +279,7 @@ print(f"[cron] Draft ADP: {result}")
 """, "draft_adp_crawl")
 
     # ------------------------------------------------------------------ #
-    # Step 9: WLS calibration — one subprocess per combo so numpy        #
+    # Step 9: WLS calibration - one subprocess per combo so numpy        #
     # matrices and trade data are fully released between runs.            #
     # ------------------------------------------------------------------ #
     if _wls_fresh():

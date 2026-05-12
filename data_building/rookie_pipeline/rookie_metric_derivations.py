@@ -161,9 +161,9 @@ def derive_yprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
 
     Formula: yprr ≈ receiving_yards / derive_routes_run_proxy(stats, position)
     Routes are estimated from targets when available, or receptions as a fallback
-    (see derive_routes_run_proxy). Compound proxy — uncertainty compounds.
+    (see derive_routes_run_proxy). Compound proxy - uncertainty compounds.
     Requires: receiving_yards, and same constraints as derive_routes_run_proxy.
-    Confidence: 0.35 targets-path / 0.28 receptions-path — directional only.
+    Confidence: 0.35 targets-path / 0.28 receptions-path - directional only.
     """
     routes = derive_routes_run_proxy(stats, position)
     if routes is None or routes <= 0:
@@ -184,7 +184,7 @@ def derive_tprr_proxy(stats: Dict[str, Any], position: str) -> Optional[float]:
     For WR/TE/RB. The result should be close to the position baseline used to
     derive routes_run_proxy, so this mainly validates internal consistency and
     catches outlier targets shares.
-    Confidence: 0.35 — compound proxy.
+    Confidence: 0.35 - compound proxy.
     """
     routes = derive_routes_run_proxy(stats, position)
     if routes is None or routes <= 0:
@@ -210,7 +210,7 @@ def derive_yac_per_att_proxy(stats: Dict[str, Any]) -> Optional[float]:
     Calibration: elite YAC≈3.5–4.5 corresponds to YPC≈7–9, baseline YAC≈1.5
     corresponds to YPC≈4.8.
     Requires: yds_per_carry, rush_attempts ≥ 20.
-    Confidence: 0.40 — systematic proxy; treats all YPC gains as equally contact-driven.
+    Confidence: 0.40 - systematic proxy; treats all YPC gains as equally contact-driven.
     """
     ypc = _get_num(stats, "yds_per_carry")
     attempts = _get_num(stats, "rush_attempts")
@@ -230,7 +230,7 @@ def derive_mtf_per_att_proxy(stats: Dict[str, Any]) -> Optional[float]:
 
     Formula: max(0, min(0.30, (ypc - 3.0) / 12))
     Requires: yds_per_carry, rush_attempts ≥ 20.
-    Confidence: 0.30 — very rough; use only as relative ordinal proxy.
+    Confidence: 0.30 - very rough; use only as relative ordinal proxy.
     """
     ypc = _get_num(stats, "yds_per_carry")
     attempts = _get_num(stats, "rush_attempts")
@@ -255,7 +255,7 @@ def derive_adjusted_comp_pct_proxy(stats: Dict[str, Any]) -> Optional[float]:
 
     Where td_int_ratio = 2.0 is treated as average (no adjustment).
     Requires: completion_pct, pass_attempts ≥ 50.
-    Confidence: 0.60 — raw completion_pct is reliable; multiplier adds minor signal.
+    Confidence: 0.60 - raw completion_pct is reliable; multiplier adds minor signal.
     """
     comp_pct = _get_num(stats, "completion_pct")
     pass_att = _get_num(stats, "pass_attempts")
@@ -282,7 +282,7 @@ def derive_twp_rate_proxy(stats: Dict[str, Any]) -> Optional[float]:
 
     Formula: (interceptions / pass_attempts) * 100
     Requires: interceptions, pass_attempts ≥ 50.
-    Confidence: 0.65 — direct measurable stat, not PFF-adjusted but strongly correlated.
+    Confidence: 0.65 - direct measurable stat, not PFF-adjusted but strongly correlated.
     """
     interceptions = _get_num(stats, "interceptions")
     pass_att = _get_num(stats, "pass_attempts")

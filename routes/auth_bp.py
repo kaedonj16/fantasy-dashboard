@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @auth_bp.route("/api/identify", methods=["POST"])
 def api_identify():
-    """Set viewer session from a Sleeper username alone — no league needed.
+    """Set viewer session from a Sleeper username alone - no league needed.
     Returns JSON {ok, username, user_id, leagues:[{league_id, name, season}]}.
     """
     from dashboard_services.api import (

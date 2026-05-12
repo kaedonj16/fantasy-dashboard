@@ -4263,7 +4263,7 @@ thead th {
   border-radius: 999px;
 }
 
-/* Champion card — gold treatment */
+/* Champion card - gold treatment */
 .history-card.is-champion {
   background: linear-gradient(135deg, rgba(251,191,36,0.13) 0%, var(--card) 55%);
   border-color: rgba(245,158,11,0.45);
@@ -4280,7 +4280,7 @@ thead th {
   color: var(--text);
 }
 
-/* Runner-up card — silver treatment */
+/* Runner-up card - silver treatment */
 .history-card.is-runner-up {
   background: linear-gradient(135deg, rgba(148,163,184,0.11) 0%, var(--card) 55%);
   border-color: rgba(148,163,184,0.4);
@@ -5749,7 +5749,7 @@ thead th {
   background: #7dd3fc;
 }
 
-/* dismiss button — must override .home-card button { width: 100% } */
+/* dismiss button - must override .home-card button { width: 100% } */
 .saved-viewer-cta .saved-viewer-dismiss {
   width: auto !important;
   padding: 0 4px !important;
@@ -7613,7 +7613,7 @@ thead th {
   margin-bottom: -1px;
 }
 
-/* Trend pill tooltip — appears below, styled to match modal */
+/* Trend pill tooltip - appears below, styled to match modal */
 .pm-trend-pill {
   position: relative;
 }
@@ -7717,7 +7717,7 @@ img, svg, canvas {
 
 }
 
-/* Shared mobile sidebar toggle styles — active at both breakpoints */
+/* Shared mobile sidebar toggle styles - active at both breakpoints */
 @media (max-width: 1200px) {
   .otc-layout .otc-side {
     order: -1;
@@ -10225,7 +10225,7 @@ img, svg, canvas {
 }
 
 /* ============================================
-   PLAYER RANKINGS PAGE — MOBILE
+   PLAYER RANKINGS PAGE - MOBILE
    ============================================ */
 @media (max-width: 768px) {
   #prControls {
@@ -12269,7 +12269,7 @@ img, svg, canvas {
   /* Full-width modal */
   .player-modal.compare-mode {
     max-width: 100%;
-    margin-top: 0;        /* override bottom-sheet margin — center vertically instead */
+    margin-top: 0;        /* override bottom-sheet margin - center vertically instead */
     border-radius: 16px;  /* restore all-corner rounding when centered */
     max-height: 92vh;
   }
@@ -12520,7 +12520,7 @@ img, svg, canvas {
 .analytics-bar-val.analytics-bar-pos { color: var(--color-green, #22c55e); }
 .analytics-bar-val.analytics-bar-neg { color: var(--color-red,   #ef4444); }
 
-/* ── Draft tab — accordion ──────────────────────────────────────────────── */
+/* ── Draft tab - accordion ──────────────────────────────────────────────── */
 
 .draft-adp-banner {
   font-size: 11px;
@@ -12620,7 +12620,7 @@ img, svg, canvas {
   gap: 8px;
 }
 
-/* Grade colour buckets — light */
+/* Grade colour buckets - light */
 .dg-Aplus { background: #dcfce7; color: #15803d; }
 .dg-A     { background: #bbf7d0; color: #166534; }
 .dg-B     { background: #dbeafe; color: #1d4ed8; }
@@ -12628,7 +12628,7 @@ img, svg, canvas {
 .dg-D     { background: #fee2e2; color: #b91c1c; }
 .dg-F     { background: #fecaca; color: #991b1b; }
 
-/* Grade colour buckets — dark */
+/* Grade colour buckets - dark */
 [data-theme="dark"] .dg-Aplus { background: #14532d; color: #4ade80; }
 [data-theme="dark"] .dg-A     { background: #166534; color: #86efac; }
 [data-theme="dark"] .dg-B     { background: #1e3a5f; color: #93c5fd; }
@@ -13024,7 +13024,7 @@ img, svg, canvas {
 :root[data-theme="dark"] .btm-vsavg-badge.btm-pos { background: rgba(34,197,94,0.15); color: #4ade80; }
 :root[data-theme="dark"] .btm-vsavg-badge.btm-neg { background: rgba(239,68,68,0.12); color: #f87171; }
 
-/* Teams sidebar sticky positioning — desktop only */
+/* Teams sidebar sticky positioning - desktop only */
 @media (min-width: 1181px) {
   .teams-sidebar {
     position: sticky;
@@ -13684,7 +13684,7 @@ img, svg, canvas {
   color: var(--muted, #6b7280);
 }
 
-/* Awards records grid — auto-fit for variable card count */
+/* Awards records grid - auto-fit for variable card count */
 .awards-records-grid {
   grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) !important;
   gap: 10px !important;
@@ -13697,7 +13697,7 @@ img, svg, canvas {
   margin-bottom: 2px;
 }
 
-/* League Superlatives grid — auto columns, exactly 2 rows */
+/* League Superlatives grid - auto columns, exactly 2 rows */
 .fun-awards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -13759,7 +13759,7 @@ img, svg, canvas {
   font-weight: 600;
 }
 
-/* Championship history — most recent row highlight */
+/* Championship history - most recent row highlight */
 .history-table tbody tr.champ-recent td {
   background: linear-gradient(90deg, rgba(245,158,11,0.07) 0%, var(--card) 100%);
   font-weight: 600;

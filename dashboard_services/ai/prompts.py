@@ -21,11 +21,11 @@ def build_gm_memo_prompt(team_ctx: dict) -> str:
     return f"""
 Write a personalized dynasty GM memo for this team.
 
-Return a JSON object with these fields — each must be a single sentence or short phrase, NOT a list:
+Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
 - team_identity: one-line team identity
 - outlook: one paragraph on the team's current situation
-- strength: the single biggest strength of this roster (one sentence only — do NOT include weakness or next move here)
-- weakness: the single biggest weakness of this roster (one sentence only — do NOT include strength or next move here)
+- strength: the single biggest strength of this roster (one sentence only - do NOT include weakness or next move here)
+- weakness: the single biggest weakness of this roster (one sentence only - do NOT include strength or next move here)
 - next_move: the single best next move this team should make (one sentence only)
 - trade_posture: one short paragraph on trade posture
 - verdict: one of BUY / HOLD / SELL VETERANS / REBUILD AGGRESSIVELY
@@ -140,10 +140,10 @@ def generate_trade_ai_result(payload: dict) -> dict:
     - If two assets have explicit values and one is clearly higher, never conclude the lower-valued asset is worth more.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    SECTION 2: VALUE HIERARCHY — READ THIS FIRST
+    SECTION 2: VALUE HIERARCHY - READ THIS FIRST
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Evaluation priority (strict order):
-      1. Market value delta (ALWAYS most important — dominates all other factors)
+      1. Market value delta (ALWAYS most important - dominates all other factors)
       2. Elite asset acquisition / consolidation premium
       3. Picks and asset liquidity
       4. Roster fit and positional balance
@@ -162,7 +162,7 @@ def generate_trade_ai_result(payload: dict) -> dict:
     - delta <= -150: Severe loss. Decline immediately.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    SECTION 4: PICK SLOT VALUATION — CURRENT YEAR ROOKIE DRAFT
+    SECTION 4: PICK SLOT VALUATION - CURRENT YEAR ROOKIE DRAFT
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Current-year rookie picks have KNOWN values tied to their exact slot. Use slot position as primary signal, NOT just the round label.
 
@@ -225,14 +225,14 @@ def generate_trade_ai_result(payload: dict) -> dict:
 
     Counter field:
       - Include ONLY if verdict is COUNTER or DECLINE.
-      - Must be specific and actionable — name the exact asset to add/remove to make the deal fair.
+      - Must be specific and actionable - name the exact asset to add/remove to make the deal fair.
       - Should reflect what the other team would realistically accept.
       - NEVER suggest a straight 1-for-1 swap of assets with a large value gap. If the JSON shows
         Asset A is worth significantly more than Asset B, do not counter with "swap A for B straight up."
-        That is not a counter — it is a different trade entirely and likely unfair in the other direction.
+        That is not a counter - it is a different trade entirely and likely unfair in the other direction.
       - Counters must close the gap incrementally, not flip the imbalance.
       - If the viewer is SENDING the more valuable asset (e.g., 1.01), a valid counter asks the
-        other team to ADD value — not to simply swap the elite asset for a lesser one.
+        other team to ADD value - not to simply swap the elite asset for a lesser one.
       - Sanity check: after applying the counter, both sides should be within the -30 to +49 delta
         range. If your suggested counter would create a new large imbalance in the opposite direction,
         revise it.
@@ -242,7 +242,7 @@ def generate_trade_ai_result(payload: dict) -> dict:
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Framing philosophy:
       - Lead with PLAYERS and PRODUCTION, not raw numbers.
-      - Think and write like a beat reporter covering a real NFL front office move —
+      - Think and write like a beat reporter covering a real NFL front office move -
         explain WHY an asset matters, not just what it scores.
       - Numbers (market values, deltas) are supporting evidence, not the headline.
       - Never open the analysis with a value delta or a numeric score. Open with
@@ -252,17 +252,17 @@ def generate_trade_ai_result(payload: dict) -> dict:
       1. What are the key assets changing hands, and what do they represent in dynasty?
          (e.g., "Nico Collins is a proven WR1 in his prime with three straight 1,000-yard seasons")
       2. What is the production/age/trajectory story for each side?
-         (e.g., "1.01 projects as Jeremiyah Love — a high-ceiling RB prospect with 1–2 year development timeline")
+         (e.g., "1.01 projects as Jeremiyah Love - a high-ceiling RB prospect with 1–2 year development timeline")
       3. What does this mean for the viewer's roster and competitive window?
       4. Only THEN introduce value delta as confirmation of the player-based read.
-         (e.g., "The market reflects this gap — you're sending ~240 more in value than you're receiving")
+         (e.g., "The market reflects this gap - you're sending ~240 more in value than you're receiving")
       5. Verdict and counter (if applicable) framed in player terms.
          (e.g., "To make this fair, ask them to include their 1.03 or a young starter-caliber WR")
     
     Language rules:
       - Avoid leading sentences like "This is a severe market-value loss of X points."
       - Avoid bullet points that are purely numeric (e.g., "752.0 sent vs 513.4 received").
-      - Use player names, positions, and roles constantly — "proven WR1," "top rookie prospect,"
+      - Use player names, positions, and roles constantly - "proven WR1," "top rookie prospect,"
         "depth piece," "aging asset," not "high-value pl
     """.strip()
 
@@ -332,7 +332,7 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
 
     system_prompt = """
 You are a sharp dynasty fantasy football analyst writing weekly power rankings.
-Write like a beat reporter — vivid, specific, grounded in the data provided.
+Write like a beat reporter - vivid, specific, grounded in the data provided.
 For each team, write one punchy sentence (max 30 words) explaining their ranking.
 Use team direction (contender/rebuild/retool/balanced) and top assets to frame the narrative.
 Assign momentum: rising (improving trajectory), falling (declining), or steady (holding).
@@ -421,7 +421,7 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
     system_prompt = """
 You are a dynasty fantasy football GM assistant generating proactive trade ideas.
 
-CRITICAL RULES — follow exactly:
+CRITICAL RULES - follow exactly:
 1. For player-for-player trades (from top_partners): use targets_they_have for you_get and
    targets_viewer_sends for you_give. Never invent players. Skip any partner with an empty list.
    - For package trades (is_package_trade=true): the viewer is packaging 2+ surplus players
@@ -431,7 +431,7 @@ CRITICAL RULES — follow exactly:
    For you_give, format each pick from picks_you_offer using season + round + slot:
    e.g. "2026 1st Round Pick 1.01 (proj. Jeremiyah Love, RB)" if slot and proj_name are present,
    or "2026 1st Round Pick" if not. Put these pick label strings in you_give.
-3. Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) as given — do NOT override them.
+3. Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) as given - do NOT override them.
 4. trade_type must be:
    - up_tier: viewer receives more value (acquiring a better player via picks or surplus)
    - down_tier: viewer gives more value than they receive

@@ -44,7 +44,7 @@ SESSION.mount("https://", adapter)
 SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
 
 _WEEKS_PER_SEASON = 18
-# No artificial sleep — rely on 429 retry. Aggressive but polite per Sleeper docs.
+# No artificial sleep - rely on 429 retry. Aggressive but polite per Sleeper docs.
 _RATE_LIMIT_BACKOFF = 60   # seconds to wait on 429
 
 
@@ -53,7 +53,7 @@ def _get(path: str) -> list | dict | None:
     try:
         resp = SESSION.get(url, timeout=10)
         if resp.status_code == 429:
-            logger.warning("[crawler] Rate limited — sleeping %ds", _RATE_LIMIT_BACKOFF)
+            logger.warning("[crawler] Rate limited - sleeping %ds", _RATE_LIMIT_BACKOFF)
             time.sleep(_RATE_LIMIT_BACKOFF)
             resp = SESSION.get(url, timeout=10)
         resp.raise_for_status()
@@ -374,7 +374,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     """
     Crawl one batch of leagues in parallel.
 
-    workers: concurrent leagues (default 20 — safe for I/O-bound HTTP workload)
+    workers: concurrent leagues (default 20 - safe for I/O-bound HTTP workload)
     Each league internally fetches its weeks in parallel (up to 8 concurrent week requests).
     
     crawl_mode: 'new' (uncrawled leagues), 'existing' (re-crawl), 'both' (mixed)
@@ -389,7 +389,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     mark_batch: list[tuple[int, str]] = []
 
     # For existing-mode re-crawls, always start from week 1 so we pick up the
-    # full season — including any weeks whose start_week would otherwise exceed
+    # full season - including any weeks whose start_week would otherwise exceed
     # current_week (common in the offseason when last_crawled_week == 18).
     start_week_override = 1 if crawl_mode == "existing" else None
 

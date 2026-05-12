@@ -197,7 +197,7 @@ def fetch_ratings(year: int) -> Dict[str, float]:
             _CACHE[year] = ratings
             return ratings
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Sagarin disk cache corrupt for %d (%s) — re-fetching", year, exc)
+            logger.warning("Sagarin disk cache corrupt for %d (%s) - re-fetching", year, exc)
 
     url = _url_for_year(year)
     logger.info("Fetching Sagarin ratings for %d from %s", year, url)
@@ -206,7 +206,7 @@ def fetch_ratings(year: int) -> Dict[str, float]:
 
     ratings = _parse_ratings(resp.text)
     if not ratings:
-        logger.warning("Sagarin parse returned 0 teams for year %d — check HTML format", year)
+        logger.warning("Sagarin parse returned 0 teams for year %d - check HTML format", year)
 
     try:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)

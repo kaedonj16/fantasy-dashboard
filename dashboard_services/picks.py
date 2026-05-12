@@ -453,7 +453,7 @@ def load_pick_value_table(
             if all_vals and f"{current_year}_{rnd_num}" not in final:
                 final[f"{current_year}_{rnd_num}"] = round(sum(all_vals) / len(all_vals), 1)
 
-    # Overlay WLS-derived pick values when available — trade-market estimates
+    # Overlay WLS-derived pick values when available - trade-market estimates
     # take priority over external CSV sources for buckets that have enough data.
     wls_path = DATA_DIR / "pick_values_wls_latest.json"
     if wls_path.exists():

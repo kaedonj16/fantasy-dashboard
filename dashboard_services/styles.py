@@ -837,7 +837,7 @@ logoCss = """
           50% { box-shadow: 0 0 18px rgba(56,189,248,.5), 0 0 36px rgba(147,197,253,.35), inset 0 0 14px rgba(147,197,253,.4); }
         }
 
-      /* —— Matchup cards —— */
+      /* -- Matchup cards -- */
       .mu-wrap{display:grid; gap:14px}
     
       .mu-card{
@@ -2301,7 +2301,7 @@ TRADE_HTML = """
             const meta = [];
             if (p.position) meta.push(p.position);
             if (p.team) meta.push(p.team);
-            item.textContent = p.name + (meta.length ? " — " + meta.join(" · ") : "");
+            item.textContent = p.name + (meta.length ? " - " + meta.join(" · ") : "");
             item.onclick = () => {
               const selected = side === "A" ? sideASelected : sideBSelected;
               if (!selected.find(x => x.id === p.id)) {
@@ -2403,7 +2403,7 @@ TRADE_HTML = """
         (sideA.breakdown || []).forEach(item => {
           const li = document.createElement("li");
           const label = item.type === "pick" ? "Pick " + item.id : "Player " + item.id;
-          li.textContent = label + " — " + fmt(item.value);
+          li.textContent = label + " - " + fmt(item.value);
           sideAAssetsEl.appendChild(li);
         });
 
@@ -2411,7 +2411,7 @@ TRADE_HTML = """
         (sideB.breakdown || []).forEach(item => {
           const li = document.createElement("li");
           const label = item.type === "pick" ? "Pick " + item.id : "Player " + item.id;
-          li.textContent = label + " — " + fmt(item.value);
+          li.textContent = label + " - " + fmt(item.value);
           sideBAssetsEl.appendChild(li);
         });
 

@@ -331,7 +331,7 @@ def _compute_win_window(direction: str, young: bool, score: float, rank_score: f
         return "Full Rebuild"
     if direction == "retool":
         return "Retooling"
-    # "balanced" — rank dominance overrides the conservative label
+    # "balanced" - rank dominance overrides the conservative label
     if rank_score >= 80:
         return "Win-Now Window" if young else "Aging Contender"
     above_avg = rank_score >= 55
@@ -360,11 +360,11 @@ def calculate_roster_grade(
     Score a dynasty roster across five dimensions and return a letter grade.
 
     Dimensions:
-      Age Score (25%)  — based on avg age of top-8 players by value
-      Depth Score (20%) — positions with 2+ starters above 300 value
-      Capital Score (20%) — weighted pick capital (1st = 100, 2nd = 40, 3rd = 10)
-      Elite Core (15%) — count players above 700 value
-      Rank Score (20%) — positional rankings relative to rest of league
+      Age Score (25%)  - based on avg age of top-8 players by value
+      Depth Score (20%) - positions with 2+ starters above 300 value
+      Capital Score (20%) - weighted pick capital (1st = 100, 2nd = 40, 3rd = 10)
+      Elite Core (15%) - count players above 700 value
+      Rank Score (20%) - positional rankings relative to rest of league
 
     Returns dict with score (0-100), grade (A+ ... D), win_window label, breakdown.
     """
@@ -386,7 +386,7 @@ def calculate_roster_grade(
     else:
         age_score = 22
 
-    # Depth Score — positions with 2+ players worth >300
+    # Depth Score - positions with 2+ players worth >300
     pos_counts: dict[str, int] = {}
     for p in players:
         if _safe_float(p.get("value")) >= 350:
@@ -396,7 +396,7 @@ def calculate_roster_grade(
     deep_positions = sum(1 for cnt in pos_counts.values() if cnt >= 2)
     depth_score = min(deep_positions * 25, 100)
 
-    # Capital Score — future picks weighted
+    # Capital Score - future picks weighted
     capital = 0
     for pk in future_picks:
         display = str(pk.get("display") or pk.get("id") or "")
@@ -414,11 +414,11 @@ def calculate_roster_grade(
             capital += 10
     capital_score = min(int(capital / 3), 100)
 
-    # Elite Core Score — players above 700 (top-tier on 0-999 scale)
+    # Elite Core Score - players above 700 (top-tier on 0-999 scale)
     elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 700)
     elite_score = min(elite_count * 33, 100)
 
-    # Rank Score — positional rankings vs rest of league (1=best → 100, last → 0)
+    # Rank Score - positional rankings vs rest of league (1=best → 100, last → 0)
     if position_ranks and num_teams > 1:
         ranks = [v for v in position_ranks.values() if v is not None]
         if ranks:
@@ -1033,7 +1033,7 @@ def build_trade_suggestions_context(
     partners.sort(key=lambda x: x["match_score"], reverse=True)
 
     # Pick-for-player suggestions: viewer offers a pick instead of a player.
-    # Don't require partner_surplus — any team with a good player at a needed
+    # Don't require partner_surplus - any team with a good player at a needed
     # position could be a pick trade target.
     pick_trade_partners = []
     if viewer_needs:

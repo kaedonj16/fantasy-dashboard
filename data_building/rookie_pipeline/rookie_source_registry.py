@@ -12,7 +12,7 @@ from data_building.rookie_pipeline.rookie_sources import (
 
 def build_rookie_source_registry(sportradar_index=None) -> List[RookieSource]:
     """
-    Ordered source registry — highest-priority first.
+    Ordered source registry - highest-priority first.
 
     1. SportradarNCAAFBSource  – real targets from Sportradar NCAAFB API
        (skipped automatically when no index is provided / no API key set)

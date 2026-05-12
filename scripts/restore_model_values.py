@@ -71,7 +71,7 @@ def restore_model_values(json_path: Path | None = None) -> dict:
 
         conn.commit()
 
-    print(f"[restore] Done — {updated} players restored, {skipped} skipped.")
+    print(f"[restore] Done - {updated} players restored, {skipped} skipped.")
     return {"updated": updated, "skipped": skipped, "source": path.name}
 
 

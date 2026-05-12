@@ -327,7 +327,7 @@ def get_drafts(league_id: str) -> List[dict]:
 @ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
     if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN — skipping getNFLGamesForWeek w%s s%s", week, season)
+        logger.warning("[Tank01] Circuit OPEN - skipping getNFLGamesForWeek w%s s%s", week, season)
         return []
     url = f"{BASE}/getNFLGamesForWeek"
     params = {"week": week, "seasonType": season_type, "season": season}
@@ -339,18 +339,18 @@ def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg")
         return data.get("body") or data
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
-            logger.warning("[Tank01] Rate limited — getNFLGamesForWeek w%s s%s", week, season)
+            logger.warning("[Tank01] Rate limited - getNFLGamesForWeek w%s s%s", week, season)
             _tank01_breaker.record_failure()
             return []
-        logger.error("[Tank01] HTTP %s — getNFLGamesForWeek w%s s%s", e.response.status_code, week, season)
+        logger.error("[Tank01] HTTP %s - getNFLGamesForWeek w%s s%s", e.response.status_code, week, season)
         _tank01_breaker.record_failure()
         raise
     except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error — getNFLGamesForWeek w%s s%s: %s", week, season, e)
+        logger.error("[Tank01] Request error - getNFLGamesForWeek w%s s%s: %s", week, season, e)
         _tank01_breaker.record_failure()
         return []
     except Exception as e:
-        logger.exception("[Tank01] Unexpected error — getNFLGamesForWeek w%s s%s", week, season)
+        logger.exception("[Tank01] Unexpected error - getNFLGamesForWeek w%s s%s", week, season)
         _tank01_breaker.record_failure()
         return []
 
@@ -415,7 +415,7 @@ def get_tank01_player_gamelogs(
         querystring["season"] = str(season)
 
     if _tank01_breaker.is_open():
-        raise Tank01Error("Tank01 circuit breaker OPEN — skipping request")
+        raise Tank01Error("Tank01 circuit breaker OPEN - skipping request")
 
     try:
         resp = SESSION.get(url, headers=TANK01_HEADERS, params=querystring, timeout=20)
@@ -460,7 +460,7 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     params = {"gameDate": game_date, "topPerformers": "true"}
 
     if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN — skipping getNFLScoresOnly %s", game_date)
+        logger.warning("[Tank01] Circuit OPEN - skipping getNFLScoresOnly %s", game_date)
         return {}
     try:
         resp = SESSION.get(url, headers=TANK01_HEADERS, params=params, timeout=20)
@@ -471,16 +471,16 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
     except requests.exceptions.HTTPError as e:
         _tank01_breaker.record_failure()
         if e.response.status_code == 429:
-            logger.warning("[Tank01] Rate limited — getNFLScoresOnly %s", game_date)
+            logger.warning("[Tank01] Rate limited - getNFLScoresOnly %s", game_date)
             return {}
-        logger.error("[Tank01] HTTP %s — getNFLScoresOnly %s", e.response.status_code, game_date)
+        logger.error("[Tank01] HTTP %s - getNFLScoresOnly %s", e.response.status_code, game_date)
         raise
     except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error — getNFLScoresOnly %s: %s", game_date, e)
+        logger.error("[Tank01] Request error - getNFLScoresOnly %s: %s", game_date, e)
         _tank01_breaker.record_failure()
         return {}
     except Exception as e:
-        logger.exception("[Tank01] Unexpected error — getNFLScoresOnly %s", game_date)
+        logger.exception("[Tank01] Unexpected error - getNFLScoresOnly %s", game_date)
         _tank01_breaker.record_failure()
         return {}
 
@@ -496,7 +496,7 @@ def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None
     params = {"gameID": game_id}
 
     if _tank01_breaker.is_open():
-        logger.warning("[Tank01] Circuit OPEN — skipping getNFLBoxScore %s", game_id)
+        logger.warning("[Tank01] Circuit OPEN - skipping getNFLBoxScore %s", game_id)
         return {}
     try:
         url = f"{BASE}/getNFLBoxScore"
@@ -510,16 +510,16 @@ def fetch_tank_boxscore(game_id: str, session: Optional[requests.Session] = None
     except requests.exceptions.HTTPError as e:
         _tank01_breaker.record_failure()
         if e.response.status_code == 429:
-            logger.warning("[Tank01] Rate limited — getNFLBoxScore %s", game_id)
+            logger.warning("[Tank01] Rate limited - getNFLBoxScore %s", game_id)
             return {}
-        logger.error("[Tank01] HTTP %s — getNFLBoxScore %s", e.response.status_code, game_id)
+        logger.error("[Tank01] HTTP %s - getNFLBoxScore %s", e.response.status_code, game_id)
         raise
     except requests.exceptions.RequestException as e:
-        logger.error("[Tank01] Request error — getNFLBoxScore %s: %s", game_id, e)
+        logger.error("[Tank01] Request error - getNFLBoxScore %s: %s", game_id, e)
         _tank01_breaker.record_failure()
         return {}
     except Exception as e:
-        logger.exception("[Tank01] Unexpected error — getNFLBoxScore %s", game_id)
+        logger.exception("[Tank01] Unexpected error - getNFLBoxScore %s", game_id)
         _tank01_breaker.record_failure()
         return {}
 

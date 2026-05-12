@@ -541,7 +541,7 @@ def upsert_mock_entries(draft_year: int, conn) -> int:
 
     Scrapes individual mocks from CBS Sports and other sources, then upserts to DB.
     Only inserts entries whose player_id already exists in rookie_prospects
-    (FK constraint) — players not yet persisted are silently skipped.
+    (FK constraint) - players not yet persisted are silently skipped.
     """
     from .mock_draft_consensus import get_seed_mocks
     from .mock_draft_scraper import scrape_individual_mocks
@@ -670,7 +670,7 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
             pass
 
     # Fallback: NFL Draft starts late April and lasts ~2 days (rounds 1-7)
-    # April 26 is a safe cutoff — the draft is over by then in any recent year.
+    # April 26 is a safe cutoff - the draft is over by then in any recent year.
     typical_draft_end = date(draft_year, 4, 26)
     return today >= typical_draft_end
 
@@ -755,7 +755,7 @@ def upsert_actual_draft_picks(picks: List[Dict[str, Any]], draft_year: int, conn
             norm = _norm(pick["player_name"])
             pid  = existing.get(norm)
             if not pid:
-                continue   # not a tracked prospect — skip (undrafted / other class)
+                continue   # not a tracked prospect - skip (undrafted / other class)
 
             cur.execute(
                 """
@@ -910,7 +910,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
             dc_score = pick_to_draft_capital_score(pick, position)
 
             # Overlay on top of mock entry (or create new entry if player
-            # wasn't in any mock — e.g. undrafted players won't appear here)
+            # wasn't in any mock - e.g. undrafted players won't appear here)
             existing = consensus_map.get(pid, {})
             consensus_map[pid] = {
                 "player_name":                  ap["name"],
@@ -918,7 +918,7 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
                 "school":                       existing.get("school", ""),
                 "projected_round":              rnd,
                 "projected_pick":               pick,
-                "projected_pick_low":           pick,   # exact — no range
+                "projected_pick_low":           pick,   # exact - no range
                 "projected_pick_high":          pick,
                 "projected_draft_capital_score": dc_score,
                 "num_mocks_used":               existing.get("num_mocks_used", 0),
@@ -1205,7 +1205,7 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public API — in-memory path (no DB required)
+# Public API - in-memory path (no DB required)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _norm_name(name: str) -> str:
@@ -1330,7 +1330,7 @@ def _filter_active_nfl_players(prospects: List[Dict], draft_year: int) -> List[D
     Name comparison strips generational suffixes (Jr./Sr./II/III) and
     punctuation so 'Harold Fannin Jr.' matches 'Harold Fannin Jr'.
 
-    Failures are non-fatal — the full list is returned unchanged.
+    Failures are non-fatal - the full list is returned unchanged.
     """
     # For now, disable filtering completely to allow seed data through
     # The seed data should be curated to only include relevant prospects
@@ -1500,7 +1500,7 @@ def run_rookie_pipeline_inmemory(
 ) -> Dict[str, Any]:
     """
     Run the full pipeline without writing to the database.
-    Returns a dict with prospects, scores, consensus, values — ready for the
+    Returns a dict with prospects, scores, consensus, values - ready for the
     page to consume directly or for the DB path to persist.
     """
     from .ingestion          import load_prospects_for_year
@@ -1575,7 +1575,7 @@ def _score_from_db(
         existing_prospects = load_prospects_from_db(draft_year, conn)
 
     if not existing_prospects:
-        print(f"[pipeline] No prospects in DB for {draft_year} — cannot score. "
+        print(f"[pipeline] No prospects in DB for {draft_year} - cannot score. "
               "Run evaluation pipeline and ensure prospects are seeded first.")
         return {}
 
@@ -1628,7 +1628,7 @@ def _score_from_db(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public API — full DB path
+# Public API - full DB path
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_rookie_pipeline_staged(
@@ -1659,7 +1659,7 @@ def run_rookie_pipeline_staged(
         draft_year = get_active_rookie_class()
 
     if not _db_available():
-        print("[pipeline] DATABASE_URL not configured — cannot run staged pipeline")
+        print("[pipeline] DATABASE_URL not configured - cannot run staged pipeline")
         return {}
 
     print("[pipeline] ====== STAGE 1: Fetch Prospects + Bio Data ======")
@@ -1699,7 +1699,7 @@ def run_rookie_pipeline_staged(
             print("[pipeline] No prospects from Sportradar or mock data, cannot continue")
             return {}
         if _has_sr_key:
-            print("[pipeline] No prospects from Sportradar — falling back to DB-only scoring")
+            print("[pipeline] No prospects from Sportradar - falling back to DB-only scoring")
 
         # Persist mock-created prospects so Stage 4 can link their picks (FK constraint).
         # Without this upsert, all 194 scraped mock entries are skipped because the
@@ -1714,7 +1714,7 @@ def run_rookie_pipeline_staged(
         except Exception as exc:
             print(f"[pipeline] Failed to save mock prospects to DB (non-fatal): {exc}")
 
-        # Fall back: score from the DB — now includes the newly inserted prospects
+        # Fall back: score from the DB - now includes the newly inserted prospects
         return _score_from_db(
             draft_year,
             get_conn,
@@ -1726,7 +1726,7 @@ def run_rookie_pipeline_staged(
     # Deduplicate prospects with name variations (e.g., "K.C. Concepcion" == "KC Concepcion")
     sr_prospects = _deduplicate_prospects(sr_prospects)
 
-    # Estimate ages from experience (SR/JR/SO/FR) — rough fallback when ESPN fails
+    # Estimate ages from experience (SR/JR/SO/FR) - rough fallback when ESPN fails
     from .ingestion import _estimate_age
     for p in sr_prospects:
         experience = p.get("_experience")
@@ -1736,7 +1736,7 @@ def run_rookie_pipeline_staged(
     ages_from_exp = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Estimated ages for {ages_from_exp}/{len(sr_prospects)} prospects from experience")
 
-    # Age lookup — ESPN first, PlayerProfiler fallback.
+    # Age lookup - ESPN first, PlayerProfiler fallback.
     # Only fetches for prospects that don't already have an age in the DB.
     print("[pipeline] ====== STAGE 1b: Age Lookup (ESPN → PlayerProfiler) ======")
 
@@ -1776,7 +1776,7 @@ def run_rookie_pipeline_staged(
                     _resolved += 1
             print(f"[pipeline] Resolved {_resolved}/{len(_missing)} missing ages")
         except Exception as exc:
-            print(f"[pipeline] Age lookup failed — {type(exc).__name__}: {exc} (continuing without ages)")
+            print(f"[pipeline] Age lookup failed - {type(exc).__name__}: {exc} (continuing without ages)")
 
     ages_total = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Total prospects with age set: {ages_total}/{len(sr_prospects)}")
@@ -1892,12 +1892,12 @@ def run_rookie_pipeline_staged(
     n_consensus = 0     # Initialize to avoid UnboundLocalError when draft is complete
 
     if not draft_done:
-        # 4a — CBS Sports: individual analyst mocks
+        # 4a - CBS Sports: individual analyst mocks
         individual_mocks = scrape_individual_mocks(draft_year)
         print(f"[pipeline] Scraped {len(individual_mocks)} CBS individual mock entries")
         all_mock_picks.extend(individual_mocks)
 
-        # 4b — FantasyPros: consensus mock (counts as one analyst "source")
+        # 4b - FantasyPros: consensus mock (counts as one analyst "source")
         fantasypros_picks = scrape_consensus_mock_draft(draft_year)
         print(f"[pipeline] Scraped {len(fantasypros_picks)} FantasyPros consensus picks")
         for pick in fantasypros_picks:
@@ -1911,7 +1911,7 @@ def run_rookie_pipeline_staged(
 
         print(f"[pipeline] STAGE 4 COMPLETE: Saved {n_mock_entries} mock entries to rookie_mock_draft_entries")
     else:
-        print(f"[pipeline] Draft complete for {draft_year} — skipping mock draft scraping")
+        print(f"[pipeline] Draft complete for {draft_year} - skipping mock draft scraping")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 4b: Actual Draft Results (post-draft only) ======")
@@ -1920,7 +1920,7 @@ def run_rookie_pipeline_staged(
         draft_done = is_draft_complete(draft_year, conn)
 
     if draft_done:
-        print(f"[pipeline] Draft complete — fetching actual {draft_year} picks from nflverse")
+        print(f"[pipeline] Draft complete - fetching actual {draft_year} picks from nflverse")
         actual_picks = fetch_nflverse_draft_picks(draft_year)
         if actual_picks:
             with get_conn() as conn:
@@ -1929,7 +1929,7 @@ def run_rookie_pipeline_staged(
         else:
             print("[pipeline] STAGE 4b: No actual picks fetched (nflverse data not yet available)")
     else:
-        print(f"[pipeline] Draft not yet complete for {draft_year} — skipping actual pick fetch")
+        print(f"[pipeline] Draft not yet complete for {draft_year} - skipping actual pick fetch")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 5: Build Mock Draft Consensus ======")
@@ -1950,7 +1950,7 @@ def run_rookie_pipeline_staged(
 
         print(f"[pipeline] STAGE 5 COMPLETE: Saved {n_consensus} consensus records to rookie_mock_draft_consensus")
     else:
-        print(f"[pipeline] Draft complete for {draft_year} — skipping mock consensus building (will use actual picks)")
+        print(f"[pipeline] Draft complete for {draft_year} - skipping mock consensus building (will use actual picks)")
         # When draft is complete, we still need to build consensus from actual picks
         with get_conn() as conn:
             consensus_map = build_consensus_from_db_entries(draft_year, conn)
@@ -2024,7 +2024,7 @@ def run_rookie_pipeline(
 def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False) -> List[Dict[str, Any]]:
     """
     Fetch persisted rankings from the database.  Returns an empty list if no
-    data exists for the requested year — does not auto-run the pipeline.
+    data exists for the requested year - does not auto-run the pipeline.
 
     Priority: Model values table > rookie_rankings table > calculated values
 

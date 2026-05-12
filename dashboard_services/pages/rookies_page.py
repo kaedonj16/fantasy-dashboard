@@ -16,7 +16,7 @@ def build_prospects_body() -> str:
       <div>
         <h2 id="rookiesTitle">Prospect Rankings</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          Dynasty prospect rankings — production, athleticism, and draft capital combined
+          Dynasty prospect rankings - production, athleticism, and draft capital combined
         </div>
       </div>
     </div>
@@ -572,14 +572,14 @@ def build_prospects_body() -> str:
 
   /* Mobile */
   @media (max-width: 768px) {
-    /* Show: rank | name | pos | sort-col | value — hide age and score */
+    /* Show: rank | name | pos | sort-col | value - hide age and score */
     .rk-grid-row { grid-template-columns: 34px 1fr 46px 54px 54px !important; }
     .rk-score, #rkHeader span:nth-child(6) { display: none; }
     .rk-age,   #rkHeader span:nth-child(4) { display: none; }
     .rk-row { padding: 8px 10px; }
   }
   @media (max-width: 480px) {
-    /* Show: rank | name | sort-col | value — hide pos */
+    /* Show: rank | name | sort-col | value - hide pos */
     .rk-grid-row { grid-template-columns: 30px 1fr 52px 52px !important; }
     .rk-pos,  #rkHeader span:nth-child(3) { display: none; }
   }
@@ -650,7 +650,7 @@ def build_prospects_body() -> str:
 </style>
 
 <script>
-  var rkAllPlayers = [];   // full unfiltered list — never replaced after load
+  var rkAllPlayers = [];   // full unfiltered list - never replaced after load
   var rkLeague    = '1qb';
   var rkSize      = 10;
   var rkPosFilters = new Set();
@@ -769,7 +769,7 @@ def build_prospects_body() -> str:
 
   function rkAdpField(r) {
     var v = rkLeague === 'sf' ? r.sf_adp_rank : r.adp_rank;
-    return v != null ? parseFloat(v).toFixed(2) : '—';
+    return v != null ? parseFloat(v).toFixed(2) : '-';
   }
   function rkAdpSort(a, b) {
     var af = rkLeague === 'sf' ? a.sf_adp_rank : a.adp_rank;
@@ -780,9 +780,9 @@ def build_prospects_body() -> str:
   // Map sort key → { header label, cell value function }
   var RK_SORT_META = {
     rank:  { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
-    value: { label: 'Value', cell: function(r) { var v = rkGetValue(r); return v > 0 ? v.toFixed(1) : '—'; } },
-    score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '—'; } },
-    age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '—'; } },
+    value: { label: 'Value', cell: function(r) { var v = rkGetValue(r); return v > 0 ? v.toFixed(1) : '-'; } },
+    score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '-'; } },
+    age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '-'; } },
     adp:   { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
   };
 
@@ -864,7 +864,7 @@ def build_prospects_body() -> str:
 
       var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
-      var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
+      var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
       var sortColDisplay = rkSortMeta.cell(r);
       var posRk = r.position || '';
       if (r.position_rank) posRk += r.position_rank;
@@ -893,7 +893,7 @@ def build_prospects_body() -> str:
         '<span class="rk-score"><span class="rk-score-bar">' +
           '<span class="rk-score-dot" style="background:' + scoreColor + ';"></span>' +
           score.toFixed(2) + '</span></span>' +
-        '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '—') + '</span>';
+        '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '-') + '</span>';
 
       row.addEventListener('click', function() { rkOpenModal(r); });
       list.appendChild(row);
@@ -912,7 +912,7 @@ def build_prospects_body() -> str:
     var valsf  = parseFloat(r.sf_value || r.rookie_sf_value || 0);
     var score  = parseFloat(r.prospect_score||0);
     var conf   = parseFloat(r.confidence_score||0);
-    var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '—';
+    var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
     var tier   = r.tier || '?';
     var tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
     var tierColor  = tierColors[tier] || '#9ca3af';
@@ -921,12 +921,12 @@ def build_prospects_body() -> str:
 
     // Measurables
     var ht = r.height_inches;
-    var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '—';
-    var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '—';
-    var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '—';
-    var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '—';
+    var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '-';
+    var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '-';
+    var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '-';
+    var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '-';
 
-    // Draft info — single consolidated line
+    // Draft info - single consolidated line
     var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
     var draftStr = draftCapLabel
       ? draftCapLabel + (r.num_mocks_used && !rkDraftComplete ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
@@ -992,12 +992,12 @@ def build_prospects_body() -> str:
           '</div>' +
           '<div class="rk-hero-stat">' +
             '<div class="rk-hero-label">1QB Value</div>' +
-            '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '—') + '</div>' +
+            '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '-') + '</div>' +
             '<div class="rk-hero-sub">10-team</div>' +
           '</div>' +
           '<div class="rk-hero-stat">' +
             '<div class="rk-hero-label">SF Value</div>' +
-            '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '—') + '</div>' +
+            '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '-') + '</div>' +
             '<div class="rk-hero-sub">10-team</div>' +
           '</div>' +
         '</div>' +

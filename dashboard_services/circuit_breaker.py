@@ -16,9 +16,9 @@ Usage:
         raise
 
 States:
-  CLOSED  — normal operation; failures are counted
-  OPEN    — failing fast; no requests sent until reset_timeout seconds pass
-  HALF    — one probe request allowed; closes on success, reopens on failure
+  CLOSED  - normal operation; failures are counted
+  OPEN    - failing fast; no requests sent until reset_timeout seconds pass
+  HALF    - one probe request allowed; closes on success, reopens on failure
 """
 
 from __future__ import annotations

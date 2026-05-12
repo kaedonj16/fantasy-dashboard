@@ -56,11 +56,11 @@ def fetch_ktc_values(is_dynasty: bool = True) -> Optional[List[dict]]:
             return None
         ct = resp.headers.get("Content-Type", "")
         if "json" not in ct:
-            print(f"[KTC] Unexpected Content-Type: {ct} — skipping")
+            print(f"[KTC] Unexpected Content-Type: {ct} - skipping")
             return None
         data = resp.json()
         if not isinstance(data, list) or not data:
-            print("[KTC] Response is not a non-empty list — skipping")
+            print("[KTC] Response is not a non-empty list - skipping")
             return None
         return data
     except Exception as e:
@@ -358,6 +358,6 @@ def scrape_all_vendor_values(
         write_ktc_to_csv(ktc_data, out_csv=Path(path_ktc_values()))
         print(f"[external_values] KTC: {len(ktc_data)} players saved.")
     else:
-        print("[external_values] KTC unavailable — continuing without it.")
+        print("[external_values] KTC unavailable - continuing without it.")
 
     print("[external_values] Done.")

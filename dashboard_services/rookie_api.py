@@ -25,7 +25,7 @@ rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 # Invalidated on refresh or on first hit per process.
 _cache: Dict[Any, List[Dict[str, Any]]] = {}
 
-# FantasyCalc ADP fallback — keyed by ("sf"|"1qb", YYYY-MM-DD), lives for the day.
+# FantasyCalc ADP fallback - keyed by ("sf"|"1qb", YYYY-MM-DD), lives for the day.
 _FC_ADP_CACHE: Dict[tuple, list] = {}
 
 
@@ -371,7 +371,7 @@ def add_prospects():
             updated = next((r for r in current if r["player_id"] == prospect["player_id"]), row)
             scored_rows.append(_row_to_dict(updated))
 
-            # Persist to DB (best-effort — non-fatal if DB is unavailable)
+            # Persist to DB (best-effort - non-fatal if DB is unavailable)
             try:
                 from data_building.rookie_pipeline.pipeline import upsert_prospects, upsert_rankings
                 from dashboard_services.db import get_conn

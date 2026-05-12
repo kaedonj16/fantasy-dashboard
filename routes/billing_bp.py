@@ -175,12 +175,12 @@ def _pricing_body() -> str:
           .then(function(d) {{
             if (d.has_premium) {{
               document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent = 'Premium is active — taking you there now!';
+              document.getElementById('sub-msg').textContent = 'Premium is active - taking you there now!';
               setTimeout(redirect, 800);
             }} else if (attempts < maxAttempts) {{
               setTimeout(activate, 1000);
             }} else {{
-              // Grant may be on its way via webhook — redirect anyway
+              // Grant may be on its way via webhook - redirect anyway
               document.getElementById('sub-spinner').style.display = 'none';
               document.getElementById('sub-msg').textContent = 'Access granted! If features take a moment to appear, try refreshing.';
               var btn = document.getElementById('sub-return');
@@ -194,7 +194,7 @@ def _pricing_body() -> str:
           }});
       }}
 
-      // Start quickly — grant was applied server-side before page rendered
+      // Start quickly - grant was applied server-side before page rendered
       setTimeout(activate, 400);
     }})();
     </script>
@@ -392,7 +392,7 @@ def stripe_webhook():
     secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
     if not secret:
-        logger.error("[stripe] STRIPE_WEBHOOK_SECRET not set — webhook will always fail signature check")
+        logger.error("[stripe] STRIPE_WEBHOOK_SECRET not set - webhook will always fail signature check")
         return "", 400
 
     try:

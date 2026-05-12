@@ -34,7 +34,7 @@ def _norm(name: str) -> str:
 
 def _run_snapshot(year: int) -> int:
     """
-    Programmatic entry point — runs the snapshot for `year` and returns the
+    Programmatic entry point - runs the snapshot for `year` and returns the
     number of rows written.  Raises on DB errors.
     """
     from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
@@ -337,7 +337,7 @@ def main() -> None:
             skipped += 1
 
     action = "would write" if args.dry_run else "wrote"
-    print(f"\n[snapshot] Done — {action} {written} rows for {year} draft class" +
+    print(f"\n[snapshot] Done - {action} {written} rows for {year} draft class" +
           (f" ({skipped} failed)" if skipped else "") + ".")
 
 

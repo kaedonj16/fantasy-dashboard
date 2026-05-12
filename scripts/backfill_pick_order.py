@@ -6,15 +6,15 @@ but NOT the slot. The slot comes from the draft's slot_to_roster_id mapping,
 fetched via /draft/{draft_id}.
 
 Three stages:
-  Stage 1 — populate pick_roster_id for existing rows by re-fetching the
+  Stage 1 - populate pick_roster_id for existing rows by re-fetching the
              original Sleeper transactions (matched by league_id + week).
              Parallelized: fetches up to --workers (league, week) pairs at once.
 
-  Stage 2 — for each league with known pick_roster_id, fetch the Sleeper
+  Stage 2 - for each league with known pick_roster_id, fetch the Sleeper
              draft details to get slot_to_roster_id, then write pick_slot
              and pick_order (early/mid/late). Parallelized per league.
 
-  Stage 3 — for leagues whose draft order isn't set yet (future picks),
+  Stage 3 - for leagues whose draft order isn't set yet (future picks),
              fall back to estimating early/mid/late from current roster
              standings (wins/points). Parallelized per league.
 
@@ -104,7 +104,7 @@ def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
         detail = _get(f"{SLEEPER_BASE}/draft/{draft_id}")
         if not detail:
             continue
-        # slot_to_roster_id: {slot_str: roster_id} — invert to roster_id→slot
+        # slot_to_roster_id: {slot_str: roster_id} - invert to roster_id→slot
         slot_to_roster = detail.get("slot_to_roster_id") or {}
         if slot_to_roster:
             result[season] = {
@@ -117,7 +117,7 @@ def _build_league_draft_orders(league_id: str) -> dict[str, dict[str, int]]:
 
 
 # ---------------------------------------------------------------------------
-# Stage 1: populate pick_roster_id — parallelized by (league_id, week)
+# Stage 1: populate pick_roster_id - parallelized by (league_id, week)
 # ---------------------------------------------------------------------------
 
 def _fetch_group(
@@ -169,7 +169,7 @@ def stage1(dry_run: bool = False, workers: int = 20) -> None:
         ).fetchall()
 
         if not rows:
-            print("Stage 1: nothing to do — all picks already have pick_roster_id.")
+            print("Stage 1: nothing to do - all picks already have pick_roster_id.")
             return
 
         print(f"Stage 1: {len(rows)} trades with picks missing roster_id")
@@ -193,7 +193,7 @@ def stage1(dry_run: bool = False, workers: int = 20) -> None:
             ).fetchall():
                 asset_map[ar["trade_id"]].append(ar["id"])
 
-    # Group by (league_id, week) — one API call per group covers all trades that week
+    # Group by (league_id, week) - one API call per group covers all trades that week
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
         groups[(r["league_id"], r["week"])].append(r)
@@ -232,7 +232,7 @@ def stage1(dry_run: bool = False, workers: int = 20) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: populate pick_slot + pick_order — parallelized per league
+# Stage 2: populate pick_slot + pick_order - parallelized per league
 # ---------------------------------------------------------------------------
 
 def stage2(dry_run: bool = False, workers: int = 20) -> None:
@@ -260,7 +260,7 @@ def stage2(dry_run: bool = False, workers: int = 20) -> None:
         return
 
     league_ids = {r["league_id"] for r in rows}
-    print(f"Stage 2: {len(rows)} picks across {len(league_ids)} leagues — fetching draft orders in parallel")
+    print(f"Stage 2: {len(rows)} picks across {len(league_ids)} leagues - fetching draft orders in parallel")
 
     league_orders: dict[str, dict[str, dict[str, int]]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -300,7 +300,7 @@ def stage2(dry_run: bool = False, workers: int = 20) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 3: fallback — estimate early/mid/late from standings, parallelized
+# Stage 3: fallback - estimate early/mid/late from standings, parallelized
 # ---------------------------------------------------------------------------
 
 def _fetch_standings(league_id: str) -> tuple[str, list[str]]:
@@ -342,7 +342,7 @@ def stage3(dry_run: bool = False, workers: int = 20) -> None:
         return
 
     league_ids = {r["league_id"] for r in rows}
-    print(f"Stage 3: {len(rows)} picks across {len(league_ids)} leagues — fetching standings in parallel")
+    print(f"Stage 3: {len(rows)} picks across {len(league_ids)} leagues - fetching standings in parallel")
 
     standings: dict[str, list[str]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:

@@ -80,7 +80,7 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 
 @lru_cache(maxsize=16)
 def _league_cached(season: int, league_id: str) -> League:
-    # Credentials are optional — public leagues work without them;
+    # Credentials are optional - public leagues work without them;
     # private leagues require ESPN_S2 + ESPN_SWID in the environment.
     espn_s2 = (os.getenv("ESPN_S2") or "").strip() or None
     swid = _normalize_swid(os.getenv("ESPN_SWID", "")) or None

@@ -14,7 +14,7 @@ Usage
     # Stronger smoothing (lower alpha = more weight on history)
     python -m data_building.smooth_value_history --alpha 0.35
 
-    # Dry run — prints stats without writing to DB
+    # Dry run - prints stats without writing to DB
     python -m data_building.smooth_value_history --dry-run
 
     # Only smooth history from a specific date onwards (e.g. the day you
@@ -133,7 +133,7 @@ def smooth_value_history(
 
     logger.info("[smooth] Loaded %d history rows across all players.", len(rows))
 
-    # Group by player — walk each player's timeline and apply EMA
+    # Group by player - walk each player's timeline and apply EMA
     by_player: dict[str, list] = defaultdict(list)
     for r in rows:
         by_player[r["player_id"]].append(r)
@@ -149,7 +149,7 @@ def smooth_value_history(
             d       = r["as_of_date"]
 
             if prev_smoothed is None:
-                # First known snapshot — keep as-is; becomes the EMA seed
+                # First known snapshot - keep as-is; becomes the EMA seed
                 smoothed = raw_val
             else:
                 smoothed = alpha * raw_val + (1.0 - alpha) * prev_smoothed
@@ -165,7 +165,7 @@ def smooth_value_history(
     logger.info("[smooth] %d rows will be updated.", len(updates))
 
     if dry_run:
-        logger.info("[smooth] Dry run — no changes written.")
+        logger.info("[smooth] Dry run - no changes written.")
         return {"rows_read": len(rows), "rows_updated": 0, "dry_run": True, "would_update": len(updates)}
 
     # Write back in batches with connection recovery

@@ -11,7 +11,7 @@ _SNAPSHOT_TTL = 300  # 5 minutes
 
 # Per-player history cache: (player_id, days, source, league_type, league_size) -> (result, cached_at_ts)
 _player_history_cache: dict = {}
-_PLAYER_HISTORY_TTL = 600  # 10 minutes — history only updates daily
+_PLAYER_HISTORY_TTL = 600  # 10 minutes - history only updates daily
 
 
 def init_value_history_db() -> None:
@@ -398,7 +398,7 @@ def get_top_movers(
         min_baseline_value: Percentage (0-100). old_value must be >= this % of new_value.
             E.g. 10 filters out players who went from ~0 to a real value (just-drafted
             rookies), while keeping established players with genuine movement.
-            Scale-independent — works regardless of how history rows were written.
+            Scale-independent - works regardless of how history rows were written.
     """
     init_value_history_db()
 
@@ -605,7 +605,7 @@ def classify_value_trend(value_history: list[dict]) -> dict:
     """
     if not value_history or len(value_history) < 8:
         return {
-            "class": "unknown", "label": "—",
+            "class": "unknown", "label": "-",
             "description": "Not enough history to classify",
             "color": "#9ca3af",
             "slope_pct_month": 0.0, "volatility_pct": 0.0,
@@ -618,7 +618,7 @@ def classify_value_trend(value_history: list[dict]) -> dict:
     mean_val = sum(values) / len(values)
     if mean_val < 1:
         return {
-            "class": "unknown", "label": "—",
+            "class": "unknown", "label": "-",
             "description": "Insufficient value data",
             "color": "#9ca3af",
             "slope_pct_month": 0.0, "volatility_pct": 0.0,
@@ -661,34 +661,34 @@ def classify_value_trend(value_history: list[dict]) -> dict:
     if volatility_pct > VOLATILE_THRESH:
         cls   = "volatile"
         label = "Volatile"
-        desc  = "Value swings sharply — high uncertainty in trades"
+        desc  = "Value swings sharply - high uncertainty in trades"
         color = "#f59e0b"
     elif slope_pct_month > TREND_THRESH:
         if recent_slope_pct >= -WEAK_THRESH:
             cls   = "rising"
             label = "Rising"
-            desc  = "Sustained upward trend — buy window may be closing"
+            desc  = "Sustained upward trend - buy window may be closing"
             color = "#10b981"
         else:
             cls   = "peaked"
             label = "Peaked"
-            desc  = "Reached peak value; momentum reversing — sell-high candidate"
+            desc  = "Reached peak value; momentum reversing - sell-high candidate"
             color = "#8b5cf6"
     elif slope_pct_month < -TREND_THRESH:
         if recent_slope_pct >= WEAK_THRESH:
             cls   = "recovering"
             label = "Recovering"
-            desc  = "Was declining but showing recent upward momentum — buy-low candidate"
+            desc  = "Was declining but showing recent upward momentum - buy-low candidate"
             color = "#06b6d4"
         else:
             cls   = "declining"
             label = "Declining"
-            desc  = "Consistent downward trend — sell or monitor closely"
+            desc  = "Consistent downward trend - sell or monitor closely"
             color = "#ef4444"
     else:
         cls   = "stable"
         label = "Stable"
-        desc  = "Steady value — low trade volatility, reliable hold"
+        desc  = "Steady value - low trade volatility, reliable hold"
         color = "#3b82f6"
 
     return {

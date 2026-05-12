@@ -27,7 +27,7 @@ def project_player_stats(
 
     Uses the fast mathematical fallback by default. For high-confidence
     breakout candidates (breakout_score >= use_llm_threshold), the Claude API
-    is called for a richer, context-aware projection — but only when an
+    is called for a richer, context-aware projection - but only when an
     ANTHROPIC_API_KEY is available and the anthropic package is installed.
 
     This keeps bulk scoring fast while investing LLM compute only where

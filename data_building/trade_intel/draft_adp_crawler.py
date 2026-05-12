@@ -9,7 +9,7 @@ upsert so callers always get up-to-date numbers.
 Classification:
   - startup  : drafts with rounds >= 10  (full keeper/dynasty startup)
   - rookie   : drafts with rounds 1-5    (annual rookie-only draft)
-  Drafts with 6-9 rounds are skipped — they're ambiguous.
+  Drafts with 6-9 rounds are skipped - they're ambiguous.
 
 Idempotent: draft_adp_drafts.draft_id is a PRIMARY KEY, so re-running never
 double-counts picks.  Leagues are stamped with last_draft_adp_crawled_at so
@@ -53,7 +53,7 @@ def _get(path: str) -> list | dict | None:
     try:
         resp = _SESSION.get(url, timeout=10)
         if resp.status_code == 429:
-            logger.warning("[draft_adp] Rate limited — sleeping %ds", _RATE_LIMIT_BACKOFF)
+            logger.warning("[draft_adp] Rate limited - sleeping %ds", _RATE_LIMIT_BACKOFF)
             time.sleep(_RATE_LIMIT_BACKOFF)
             resp = _SESSION.get(url, timeout=10)
         resp.raise_for_status()
@@ -338,7 +338,7 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10, crawl_mode: s
     if crawled_ids:
         _mark_leagues_crawled(crawled_ids)
 
-    print(f"[draft_adp] {total_new_picks} new picks stored — recomputing ADP...")
+    print(f"[draft_adp] {total_new_picks} new picks stored - recomputing ADP...")
     adp_count = compute_adp()
     print(f"[draft_adp] Done. {adp_count} ADP entries across all segments.")
 

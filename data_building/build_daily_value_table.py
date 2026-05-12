@@ -102,7 +102,7 @@ def build_daily_model_values():
 def record_calibrated_history_snapshot() -> int:
     """
     Write today's player_value_history snapshot using COALESCE(calibrated, raw)
-    values from player_values — the same values shown on the rankings page.
+    values from player_values - the same values shown on the rankings page.
 
     Call this AFTER run_trade_value_model() has written calibrated_value_1qb.
     Uses ON CONFLICT UPDATE so it overwrites any raw-model entry already written
@@ -178,7 +178,7 @@ def record_calibrated_history_snapshot() -> int:
             ).fetchall()
 
     if not rows:
-        print("[record_calibrated_history_snapshot] No rows in player_values — skipping")
+        print("[record_calibrated_history_snapshot] No rows in player_values - skipping")
         return 0
 
     written = 0

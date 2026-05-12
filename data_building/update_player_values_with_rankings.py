@@ -119,7 +119,7 @@ def update_player_values_with_rankings() -> int:
     Returns:
         Number of players updated
     """
-    # Load raw model values only — must NOT use calibrated values here or
+    # Load raw model values only - must NOT use calibrated values here or
     # they would be written back into player_values.value_1qb, corrupting
     # the model prior that calibration depends on.
     value_table = load_model_value_table(apply_calibration=False)

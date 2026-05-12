@@ -371,7 +371,7 @@ def calc_benchmark_boost(
         else:
             boosts["elite_profile_boost"] = 0.0  # No bonus for average WRs
     elif pos == "TE":
-        # TEs use the same tier thresholds as RB/WR — the prior requirement of ≥6 markers
+        # TEs use the same tier thresholds as RB/WR - the prior requirement of ≥6 markers
         # was effectively unreachable (requires 75% of all boost categories to fire at once).
         if elite_count >= 4:
             boosts["elite_profile_boost"] = 0.04  # +4% bonus for elite TE profile
@@ -466,7 +466,7 @@ def calc_benchmark_boost(
     
     # Position-agnostic cap by profile.
     # The benchmark boost is a small absolute-scale nudge for prospects who clear
-    # multiple elite criteria — it is not meant to inflate scores class-relatively.
+    # multiple elite criteria - it is not meant to inflate scores class-relatively.
     # Keeping the cap tight ensures the weighted component sum drives the grade.
     total_boost = min(total_boost, 0.05 if profile == "aggressive" else 0.03)
     

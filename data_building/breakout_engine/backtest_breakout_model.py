@@ -31,7 +31,7 @@ from datetime import date
 from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# Optional heavy deps — only needed if running full eval
+# Optional heavy deps - only needed if running full eval
 # ---------------------------------------------------------------------------
 try:
     import numpy as np
@@ -618,7 +618,7 @@ def _build_candidate_player_list(
 
     A breakout candidate must NOT have been an established top-N starter
     at their position the prior year.  Players already ranked within the
-    top-N are excluded by default — they have already broken out.
+    top-N are excluded by default - they have already broken out.
 
     The usage_cache is expected to contain the flat format produced by
     load_all_player_usage() which includes a 'prior_position_rank' field
