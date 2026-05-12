@@ -345,16 +345,16 @@ def _fetch_draft_picks_from_db(season: int) -> List[Dict]:
         with get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT rp.player_id, rp.name, rp.position, rp.team,
+                SELECT rp.player_id, rp.name, rp.position,
+                       rp.actual_nfl_team AS team,
                        rp.sleeper_id,
-                       COALESCE(rp.actual_round,     rmc.projected_round) AS round_num,
-                       COALESCE(rp.actual_pick,      rmc.projected_pick)  AS pick_num
+                       rp.actual_round  AS round_num,
+                       rp.actual_pick   AS pick_num
                 FROM rookie_prospects rp
-                LEFT JOIN rookie_mock_draft_consensus rmc ON rp.player_id = rmc.player_id
                 WHERE rp.draft_class_year = %s
-                  AND (rp.actual_round IS NOT NULL
-                       OR rmc.projected_round IS NOT NULL)
-                ORDER BY pick_num NULLS LAST
+                  AND rp.actual_round IS NOT NULL
+                  AND rp.actual_nfl_team IS NOT NULL
+                ORDER BY rp.actual_pick NULLS LAST
                 """,
                 (season,),
             ).fetchall()
