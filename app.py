@@ -13002,6 +13002,13 @@ def api_player_details(player_id: str):
             except Exception:
                 pass
 
+        # Compute years_exp from draft_year if available (more accurate than age formula)
+        _draft_year_meta = player_meta.get("draft_year")
+        if _draft_year_meta:
+            _years_exp = max(0, season - int(_draft_year_meta))
+        else:
+            _years_exp = player_meta.get("years_exp")
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -13011,12 +13018,13 @@ def api_player_details(player_id: str):
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
+            "draft_year": _draft_year_meta,
             "stats": {
                 "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
-                "years_exp": player_meta.get("years_exp"),
+                "years_exp": _years_exp,
             },
             "value_history": value_history,
             "value_trend": value_trend,
@@ -13030,6 +13038,40 @@ def api_player_details(player_id: str):
         logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/player-index/update", methods=["POST"])
+def api_player_index_update():
+    """Update metadata fields (e.g. draft_year) on a players_index entry."""
+    global _PLAYERS_INDEX_GLOBAL
+    try:
+        body = request.get_json() or {}
+        player_id = str(body.get("player_id", "")).strip()
+        if not player_id:
+            return jsonify({"error": "player_id required"}), 400
+
+        # Only allow safe metadata fields to be written
+        ALLOWED_FIELDS = {"draft_year", "years_exp"}
+        updates = {k: v for k, v in body.items() if k in ALLOWED_FIELDS}
+        if not updates:
+            return jsonify({"error": "No valid fields provided"}), 400
+
+        from utils.utils import load_players_index, save_players_index
+        pi = load_players_index() or {}
+        if player_id not in pi:
+            return jsonify({"error": "Player not found in index"}), 404
+
+        pi[player_id].update(updates)
+        save_players_index(pi)
+
+        # Reset in-memory cache so next request picks up the change
+        with _players_index_lock:
+            _PLAYERS_INDEX_GLOBAL = pi
+
+        return jsonify({"ok": True, "player_id": player_id, "updated": updates})
+    except Exception as e:
+        logger.exception("[api_player_index_update] Error")
         return jsonify({"error": str(e)}), 500
 
 

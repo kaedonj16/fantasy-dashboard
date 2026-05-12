@@ -177,7 +177,11 @@ def calculate_and_store_breakout_scores(season: int, week: int, nfl_state: dict)
             age = age_from_bday(player_data.get("bDay"))
 
             if age is not None and age < 26:
-                years_exp = max(0, int(age - 21.5))
+                _draft_yr = player_data.get("draft_year")
+                if _draft_yr:
+                    years_exp = max(0, season - int(_draft_yr))
+                else:
+                    years_exp = max(0, int(age - 21.5))
 
                 all_players.append({
                     "player_id": player_id,

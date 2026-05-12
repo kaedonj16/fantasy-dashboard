@@ -4691,27 +4691,77 @@ function openPlayerModal(playerId, playerName, opts) {
         : data.stats?.years_exp != null ? `${data.stats.years_exp} yr${data.stats.years_exp !== 1 ? 's' : ''}`
         : '-';
 
+      const _draftYrVal = data.draft_year ? String(data.draft_year) : '';
       const thirdValueCard = data.stats?.pos_rank
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Pos Rank</div>
             <div class="pm-hero-val">${posRankLabel || data.stats.pos_rank}</div>
           </div>`
-        : `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Experience</div>
-            <div class="pm-hero-val">${expLabel}</div>
+        : `<div class="pm-hero-stat" style="position:relative;">
+            <div class="pm-hero-label" style="display:flex;align-items:center;gap:4px;">
+              Experience
+              <button onclick="pmEditDraftYear('${pid}')" title="Set draft year"
+                style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:var(--text-muted);font-size:11px;opacity:.55;" aria-label="Edit draft year">✏</button>
+            </div>
+            <div class="pm-hero-val" id="pmExpLabel">${expLabel}</div>
+            <div id="pmDraftYrEdit" style="display:none;margin-top:6px;gap:4px;align-items:center;flex-wrap:wrap;">
+              <input id="pmDraftYrInput" type="number" min="2000" max="2030" value="${_draftYrVal}"
+                placeholder="e.g. 2024"
+                style="width:72px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);color:var(--text);"/>
+              <button onclick="pmSaveDraftYear('${pid}')"
+                style="padding:3px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:12px;">Save</button>
+            </div>
           </div>`;
 
-      // ── Prospect Profile (no-stat rookies with linked prospect data) ───────
+      // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
-      const isRookieWithProspectData = !hasGameLogs && pd && pd.prospect_score != null;
+      const hasProspectData = pd && pd.prospect_score != null;
+      const isRookieWithProspectData = !hasGameLogs && hasProspectData;
       let pdColHTML = '';
-      if (isRookieWithProspectData) {
-        const pdScore = parseFloat(pd.prospect_score || 0);
+      if (hasProspectData) {
         const pdConf  = parseFloat(pd.confidence_score || 0);
-        const pdTier  = pd.tier || '?';
-        const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
-        const tierColor  = tierColors[pdTier] || '#9ca3af';
 
+        // Draft info + ADP row
+        const pdAdp1qb = pd.avg_pick != null ? parseFloat(pd.avg_pick).toFixed(1) : null;
+        const pdAdpSf  = pd.sf_avg_pick != null ? parseFloat(pd.sf_avg_pick).toFixed(1) : null;
+        const pdDraftCap = pd.draft_capital_label || (pd.projected_pick ? `Pick #${pd.projected_pick}` : null);
+        const pdDraftRow = `
+          <div style="display:flex;justify-content:space-between;align-items:center;
+                      border:1px solid var(--border);border-radius:10px;padding:13px 16px;
+                      margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;align-items:baseline;gap:8px;">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Draft</span>
+              <span style="font-size:15px;font-weight:700;color:var(--text);">${pdDraftCap || 'TBD'}</span>
+              ${pd.num_mocks_used ? `<span style="font-size:11px;color:var(--text-muted);">(${pd.num_mocks_used} mocks)</span>` : ''}
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;">
+              ${pdAdp1qb ? `<span style="font-size:12px;color:var(--text-muted);">1QB ADP: <strong style="color:var(--text);font-size:13px;">${pdAdp1qb}</strong></span>` : ''}
+              ${pdAdpSf  ? `<span style="font-size:12px;color:var(--text-muted);">SF ADP: <strong style="color:var(--text);font-size:13px;">${pdAdpSf}</strong></span>` : ''}
+            </div>
+          </div>`;
+
+        // Measurables row
+        const pdHt = pd.height_inches;
+        const pdHeightStr = pdHt ? `${Math.floor(pdHt/12)}'${pdHt%12}"` : '-';
+        const pdWeightStr = pd.weight_lbs ? `${pd.weight_lbs} lbs` : '-';
+        const pdFortyStr  = pd.forty_yard  ? `${pd.forty_yard}s`  : '-';
+        const pdRasStr    = pd.ras_score   ? `${parseFloat(pd.ras_score).toFixed(1)}` : '-';
+        const pdMeasurables = [
+          {label:'Height',  val: pdHeightStr},
+          {label:'Weight',  val: pdWeightStr},
+          {label:'40 Dash', val: pdFortyStr},
+          {label:'RAS',     val: pdRasStr},
+        ];
+        const pdMeasRow = `
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+            ${pdMeasurables.map(m => `
+              <div style="border:1px solid var(--border);border-radius:10px;padding:11px 8px;text-align:center;">
+                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">${m.label}</div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">${m.val}</div>
+              </div>`).join('')}
+          </div>`;
+
+        // Component scores
         const pdComponents = [
           {label:'Production',  val: pd.production_score,              color:'#10b981'},
           {label:'Efficiency',  val: pd.efficiency_score,              color:'#3b82f6'},
@@ -4723,35 +4773,37 @@ function openPlayerModal(playerId, playerName, opts) {
         ];
         const pdCompsHtml = pdComponents.map(c => {
           const v = parseFloat(c.val || 0);
-          return `<div class="rk-comp-row">
-            <div class="rk-comp-label">${c.label}</div>
-            <div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:${Math.round(v)}%;background:${c.color};"></div></div>
-            <div class="rk-comp-val" style="color:${c.color};">${v.toFixed(0)}</div>
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
+            <div style="width:88px;flex-shrink:0;font-size:13px;color:var(--text);">${c.label}</div>
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${Math.round(v)}%;background:${c.color};border-radius:3px;transition:width .3s;"></div>
+            </div>
+            <div style="width:28px;text-align:right;font-size:13px;font-weight:700;color:${c.color};">${v.toFixed(0)}</div>
           </div>`;
         }).join('');
 
-        const pdAdp1qb = pd.avg_pick != null ? parseFloat(pd.avg_pick).toFixed(1) : null;
-        const pdAdpSf  = pd.sf_avg_pick != null ? parseFloat(pd.sf_avg_pick).toFixed(1) : null;
-        const pdAdpHtml = (pdAdp1qb || pdAdpSf) ? `
-          <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
-            ${pdAdp1qb ? `<span style="font-size:12px;color:var(--text-muted);">1QB ADP: <strong style="color:var(--text);">${pdAdp1qb}</strong></span>` : ''}
-            ${pdAdpSf  ? `<span style="font-size:12px;color:var(--text-muted);">SF ADP: <strong style="color:var(--text);">${pdAdpSf}</strong></span>` : ''}
+        // Scouting notes
+        const pdReasons = (pd.key_reasons || '').split('\n').filter(l => l.trim());
+        const pdScoutingHtml = pdReasons.length ? `
+          <div style="margin-top:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Scouting Notes</div>
+            <ul style="margin:0;padding:0;list-style:none;">
+              ${pdReasons.map(r => `<li style="font-size:13px;color:var(--text-muted);padding:3px 0 3px 14px;position:relative;line-height:1.5;"><span style="position:absolute;left:0;color:var(--accent);">·</span>${r}</li>`).join('')}
+            </ul>
           </div>` : '';
 
         pdColHTML = `
-          <div class="pm-section-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <span class="pm-section-label">Prospect Profile <span style="font-size:11px;font-weight:500;opacity:.6;">${pd.draft_class_year || ''} Draft</span></span>
-            <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${tierColor}22;color:${tierColor};border:1px solid ${tierColor}44;">Tier ${pdTier}</span>
+          ${pdDraftRow}
+          ${pdMeasRow}
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Component Scores</span>
+            <span style="font-size:12px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
           </div>
-          ${pdAdpHtml}
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Component Scores</span>
-            <span style="font-size:11px;color:var(--text-muted);">Score: <strong style="color:var(--accent);">${pdScore.toFixed(1)}</strong> · Confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
-          </div>
-          <div class="rk-comp-list">${pdCompsHtml}</div>
-          <div id="pmProspectComparables" style="margin-top:4px;">
+          ${pdCompsHtml}
+          ${pdScoutingHtml}
+          <div id="pmProspectComparables" style="margin-top:20px;">
             <div class="rk-section-divider"></div>
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Historical Comparables</div>
             <div id="pmComparablesBody" style="font-size:13px;color:var(--text-muted);">
               <div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>
             </div>
@@ -4760,7 +4812,7 @@ function openPlayerModal(playerId, playerName, opts) {
       }
 
       // ── Advanced Metrics / Prospect Profile + Value History flags ──
-      const hasMetrics = !isRookieWithProspectData && pos && pos !== 'K' && pos !== 'DEF';
+      const hasMetrics = !hasProspectData && pos && pos !== 'K' && pos !== 'DEF';
       const hasChart   = data.value_history && data.value_history.length > 0;
 
       const vtTrendBadge = '';
@@ -4862,7 +4914,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const tabMetrics = document.getElementById('pmTabMetrics');
       if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
       const tabProspect = document.getElementById('pmTabProspect');
-      if (tabProspect) tabProspect.style.display = isRookieWithProspectData ? '' : 'none';
+      if (tabProspect) tabProspect.style.display = hasProspectData ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
 
@@ -5059,6 +5111,40 @@ function openPlayerModal(playerId, playerName, opts) {
         </div>
       `;
     });
+}
+
+// ── Draft Year Edit (player modal) ───────────────────────────────────────────
+function pmEditDraftYear(playerId) {
+  const editEl = document.getElementById('pmDraftYrEdit');
+  if (!editEl) return;
+  const showing = editEl.style.display && editEl.style.display !== 'none';
+  editEl.style.display = showing ? 'none' : 'flex';
+}
+
+function pmSaveDraftYear(playerId) {
+  const input = document.getElementById('pmDraftYrInput');
+  if (!input) return;
+  const val = parseInt(input.value, 10);
+  if (!val || val < 2000 || val > 2030) { input.style.borderColor = '#ef4444'; return; }
+  input.style.borderColor = '';
+  fetch('/api/player-index/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({player_id: playerId, draft_year: val}),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const currentYear = new Date().getFullYear();
+        const yrs = Math.max(0, currentYear - val);
+        const label = yrs === 0 ? 'Rookie' : `${yrs} yr${yrs !== 1 ? 's' : ''}`;
+        const expEl = document.getElementById('pmExpLabel');
+        if (expEl) expEl.textContent = label;
+        const editEl = document.getElementById('pmDraftYrEdit');
+        if (editEl) editEl.style.display = 'none';
+      }
+    })
+    .catch(() => {});
 }
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
