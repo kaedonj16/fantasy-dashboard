@@ -1886,6 +1886,9 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         if isinstance(row, dict) and row.get("id") is not None:
             values_by_id[str(row["id"])] = row
 
+    _is_sf_dash = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+    _vf_dash = "sf_value" if _is_sf_dash else "value"
+
     standings = standings_map.get(str(viewer_roster_id), {}) or {}
 
     def pick_player_meta(pid: str) -> dict:
@@ -1904,7 +1907,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         team = mv.get("team") or pmeta.get("team") or ""
         age  = age_from_bday(pmeta.get("bDay")) or mv.get("age") or pmeta.get("age")
 
-        value = safe_float(mv.get("value"))
+        value = safe_float(mv.get(_vf_dash) or mv.get("value"))
         name = (
                 mv.get("name")
                 or pmeta.get("full_name")
@@ -3506,11 +3509,15 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     league_id_str     = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
     # ── dynasty value lookup ──────────────────────────────────────────────────
+    _rp_os_st = ctx.get("roster_positions") or []
+    _is_sf_os_st = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_os_st)
+    _vf_os_st = "sf_value" if _is_sf_os_st else "value"
+
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+                values_by_id[str(row["id"])] = float(row.get(_vf_os_st) or row.get("value") or 0)
             except Exception:
                 pass
 
@@ -3872,11 +3879,15 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
+    _rp_osd = ctx.get("roster_positions") or []
+    _is_sf_osd = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_osd)
+    _vf_osd = "sf_value" if _is_sf_osd else "value"
+
     values_by_id = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0.0)
+                values_by_id[str(row["id"])] = float(row.get(_vf_osd) or row.get("value") or 0.0)
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
@@ -4016,7 +4027,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
-            val = float(row.get("value") or 0.0)
+            val = float(row.get(_vf_osd) or row.get("value") or 0.0)
         except Exception:
             val = 0.0
         if val <= 0:
@@ -6290,6 +6301,11 @@ def build_teams_body(ctx: dict) -> str:
         if isinstance(p, dict) and p.get("id") is not None
     }
 
+    # Detect SF league to use sf_value throughout
+    _rp_teams = ctx.get("roster_positions") or []
+    _is_sf_teams = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_teams)
+    _val_field = "sf_value" if _is_sf_teams else "value"
+
     CORE_POS = {"QB", "RB", "WR", "TE"}
     POS_ORDER = ["QB", "RB", "WR", "TE"]
 
@@ -6320,7 +6336,7 @@ def build_teams_body(ctx: dict) -> str:
     # sort each position bucket by value (high → low)
     for rid, pos_map in roster_pos_players.items():
         for pos, plist in pos_map.items():
-            plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
+            plist.sort(key=lambda x: float(x.get(_val_field) or x.get("value") or 0.0), reverse=True)
 
     # ----------------- Build per-team position value buckets (for strength table) -----------------
     team_meta: Dict[int, Dict] = {}  # name, avatar
@@ -6344,7 +6360,7 @@ def build_teams_body(ctx: dict) -> str:
                 continue
             pos = str(row.get("position") or row.get("pos") or "").upper()
             try:
-                val = float(row.get("value") or 0.0)
+                val = float(row.get(_val_field) or row.get("value") or 0.0)
             except Exception:
                 val = 0.0
             if val <= 0:
@@ -6479,7 +6495,7 @@ def build_teams_body(ctx: dict) -> str:
             age_txt = f"{age:.1f} yrs" if age is not None else ""
 
             try:
-                val = float(p.get("value") or 0.0)
+                val = float(p.get(_val_field) or p.get("value") or 0.0)
             except Exception:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
@@ -7507,6 +7523,10 @@ def api_waiver_candidates():
     players_index = ctx.get("players_index") or {}
     model_value_table = load_model_value_table()
 
+    _rp_wv = ctx.get("roster_positions") or []
+    _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
+    _vf_wv = "sf_value" if _is_sf_wv else "value"
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7518,7 +7538,7 @@ def api_waiver_candidates():
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
         try:
-            val = float(row.get("value") or 0.0)
+            val = float(row.get(_vf_wv) or row.get("value") or 0.0)
         except Exception:
             val = 0.0
         if val <= 0:
@@ -7680,6 +7700,10 @@ def api_start_sit_options():
             if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
                 lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
 
+    _rp_ss = ctx.get("roster_positions") or []
+    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
+    _vf_ss = "sf_value" if _is_sf_ss else "value"
+
     rows_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7817,7 +7841,7 @@ def api_start_sit_options():
 
         avg_pts = recent_pts.get(pid, 0.0)
         adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
-        score = avg_pts * adj if avg_pts > 0 else float(row.get("value") or 0) * 0.01
+        score = avg_pts * adj if avg_pts > 0 else float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
 
         # Injury status from full Sleeper player data
         full_player = players_full.get(pid) or {}
@@ -9723,7 +9747,44 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
-    if platform:
+    if platform and league_id:
+        try:
+            _pr_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _pr_rp = _pr_ctx.get("roster_positions") or []
+            _pr_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _pr_rp)
+            _pr_lt = "sf" if _pr_sf else "1qb"
+            _pr_sz = len(_pr_ctx.get("rosters") or []) or 10
+            _pr_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _pr_sz))
+            body_html = body_html.replace(
+                "var prLeagueType   = '1qb';",
+                f"var prLeagueType   = '{_pr_lt}';",
+            ).replace(
+                "var prLeagueSize   = 10;",
+                f"var prLeagueSize   = {_pr_sz};",
+            ).replace(
+                "fetch('/api/player-indicators?league_type=1qb&league_size=10'",
+                f"fetch('/api/player-indicators?league_type={_pr_lt}&league_size={_pr_sz}'",
+            ).replace(
+                '<span class="active-setting-tag">10-Team</span>',
+                f'<span class="active-setting-tag">{_pr_sz}-Team</span>',
+            ).replace(
+                '<span class="active-setting-tag">1QB</span>',
+                f'<span class="active-setting-tag">{"SF" if _pr_sf else "1QB"}</span>',
+            ).replace(
+                '<button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
+                f'<button class="settings-toggle{"" if _pr_sf else " active"}" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
+            ).replace(
+                '<button class="settings-toggle" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
+                f'<button class="settings-toggle{" active" if _pr_sf else ""}" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
+            ).replace(
+                '<button class="settings-toggle active" data-value="10" onclick="prSetSize(10)">10</button>',
+                '<button class="settings-toggle" data-value="10" onclick="prSetSize(10)">10</button>',
+            ).replace(
+                f'<button class="settings-toggle" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
+                f'<button class="settings-toggle active" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
+            )
+        except Exception:
+            pass
         return render_page("Player Rankings", league_id, "players", body_html, platform, season)
 
     return render_page("Player Rankings", None, "players", body_html)
@@ -9734,6 +9795,43 @@ def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page - active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
     body_html = build_prospects_body()
+    try:
+        _rk_ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _rk_rp = _rk_ctx.get("roster_positions") or []
+        _rk_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rk_rp)
+        _rk_lt = "sf" if _rk_sf else "1qb"
+        _rk_sz = len(_rk_ctx.get("rosters") or []) or 10
+        _rk_badge = "SF" if _rk_sf else "1QB"
+        _rk_1qb_cls = "settings-toggle" if _rk_sf else "settings-toggle active"
+        _rk_sf_cls = "settings-toggle active" if _rk_sf else "settings-toggle"
+        _rk_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _rk_sz))
+        body_html = body_html.replace(
+            "var rkLeague    = '1qb';",
+            f"var rkLeague    = '{_rk_lt}';",
+        ).replace(
+            "var rkSize      = 10;",
+            f"var rkSize      = {_rk_sz};",
+        ).replace(
+            '<span class="active-setting-tag">10-Team</span>',
+            f'<span class="active-setting-tag">{_rk_sz}-Team</span>',
+        ).replace(
+            '<span class="active-setting-tag">1QB</span>',
+            f'<span class="active-setting-tag">{_rk_badge}</span>',
+        ).replace(
+            'class="settings-toggle active" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
+            f'class="{_rk_1qb_cls}" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
+        ).replace(
+            'class="settings-toggle" data-value="sf" onclick="rkSetLeague(\'sf\')',
+            f'class="{_rk_sf_cls}" data-value="sf" onclick="rkSetLeague(\'sf\')',
+        ).replace(
+            '<button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>',
+            '<button class="settings-toggle" data-value="10" onclick="rkSetSize(10)">10</button>',
+        ).replace(
+            f'<button class="settings-toggle" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
+            f'<button class="settings-toggle active" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
+        )
+    except Exception:
+        pass
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
@@ -11096,8 +11194,11 @@ def api_refresh_page():
             num_teams = ctx.get("total_rosters") or None
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            _rp_trade = ctx.get("roster_positions") or []
+            _is_sf_trade = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_trade)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                                    scoring_format=scoring_format)
+                                                    scoring_format=scoring_format,
+                                                    is_superflex=_is_sf_trade)
 
         else:
             body_html = ""
@@ -13490,6 +13591,7 @@ def api_team_details(roster_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = request.args.get("season")
+        _req_lt = request.args.get("league_type", "").strip().lower()
 
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
@@ -13504,6 +13606,11 @@ def api_team_details(roster_id: str):
         league = get_league(platform, league_id, season)
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
+
+        # Detect SF from league roster positions (fallback to query param)
+        _td_rp = (league or {}).get("roster_positions") or []
+        _td_is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _td_rp) or _req_lt == "sf"
+        _td_val_field = "sf_value" if _td_is_sf else "value"
 
         # Find the specific roster
         roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
@@ -13549,7 +13656,7 @@ def api_team_details(roster_id: str):
             player_meta = players_index.get(pid_str, {})
             value_row = values_by_id.get(pid_str, {})
 
-            value = value_row.get("value", 0) or 0
+            value = value_row.get(_td_val_field) or value_row.get("value") or 0
             total_value += float(value)
 
             position = player_meta.get("pos") or ""

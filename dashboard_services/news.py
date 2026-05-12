@@ -14,8 +14,8 @@ from typing import Optional
 import requests
 
 _CACHE: dict = {}
-_TTL = 1800  # 30 min
-_GENERAL_TTL = 900  # 15 min for bulk headline cache
+_TTL = 900   # 15 min
+_GENERAL_TTL = 600  # 10 min for bulk headline cache
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fantasy-dashboard/1.0)"}
 _TIMEOUT = 6
 
@@ -71,7 +71,7 @@ def _parse(article: dict) -> dict:
 
     return {
         "headline":    headline,
-        "description": description[:160] + ("…" if len(description) > 160 else ""),
+        "description": description[:220] + ("…" if len(description) > 220 else ""),
         "published":   published,
         "age":         _age_label(published) if published else "",
         "url":         url,
@@ -87,7 +87,7 @@ def _fetch_athlete_news(espn_id: str) -> list:
     try:
         url = (
             f"https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-            f"/athletes/{espn_id}/news?limit=5"
+            f"/athletes/{espn_id}/news?limit=15"
         )
         r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
         if not r.ok:
@@ -107,7 +107,7 @@ def _fetch_general_news() -> list:
         return _CACHE[key][1]
     try:
         r = requests.get(
-            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=80",
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=150",
             headers=_HEADERS,
             timeout=_TIMEOUT,
         )
