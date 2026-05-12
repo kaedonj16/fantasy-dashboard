@@ -440,6 +440,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
       let TI_LEAGUE_TYPE = '{_ti_lt}';
+      const TI_LEAGUE_SIZE = {_ti_sz};
       let currentPage = 1;
       let paginationData = null;
       let currentTab = 'trending';
@@ -461,7 +462,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         document.getElementById('tiLoading').style.display = '';
         document.getElementById('tiGrid').style.display = 'none';
         document.getElementById('tiPagination').style.display = 'none';
-        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page + '&league_type=' + TI_LEAGUE_TYPE)
+        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page + '&league_type=' + TI_LEAGUE_TYPE + '&league_size=' + TI_LEAGUE_SIZE)
           .then(r => r.json())
           .then(data => {{
             if (data.error) throw new Error(data.error);
