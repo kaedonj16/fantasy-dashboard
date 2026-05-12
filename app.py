@@ -12982,8 +12982,7 @@ def api_player_details(player_id: str):
                 _pid_str = str(player_id)
                 _adp_year = _garc()
                 for _is_sf in (False, True):
-                    _key = "sf_adp_rank" if _is_sf else "adp_rank"
-                    _adp_map = fetch_league_adp_from_db(is_sf=_is_sf, season=_adp_year, draft_type='rookie')
+                    _adp_map = fetch_league_adp_from_db(is_sf=_is_sf, season=_adp_year, draft_type='rookie', min_samples=1)
                     if _pid_str not in _adp_map:
                         _fc = fetch_fc_rookie_adp(is_sf=_is_sf, season=_adp_year)
                         if _pid_str in _fc:
@@ -12994,7 +12993,8 @@ def api_player_details(player_id: str):
                                 _adp_map = _model
                     if _pid_str in _adp_map:
                         _entry = _adp_map[_pid_str]
-                        prospect_data[_key] = _entry["avg_pick"] if isinstance(_entry, dict) else float(_entry)
+                        _val = _entry["avg_pick"] if isinstance(_entry, dict) else float(_entry)
+                        prospect_data["sf_avg_pick" if _is_sf else "avg_pick"] = _val
             except Exception:
                 pass
 

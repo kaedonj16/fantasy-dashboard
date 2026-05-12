@@ -4730,8 +4730,8 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>`;
         }).join('');
 
-        const pdAdp1qb = pd.adp_rank != null ? parseFloat(pd.adp_rank).toFixed(1) : null;
-        const pdAdpSf  = pd.sf_adp_rank != null ? parseFloat(pd.sf_adp_rank).toFixed(1) : null;
+        const pdAdp1qb = pd.avg_pick != null ? parseFloat(pd.avg_pick).toFixed(1) : null;
+        const pdAdpSf  = pd.sf_avg_pick != null ? parseFloat(pd.sf_avg_pick).toFixed(1) : null;
         const pdAdpHtml = (pdAdp1qb || pdAdpSf) ? `
           <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
             ${pdAdp1qb ? `<span style="font-size:12px;color:var(--text-muted);">1QB ADP: <strong style="color:var(--text);">${pdAdp1qb}</strong></span>` : ''}

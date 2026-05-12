@@ -156,7 +156,8 @@ def rankings():
             result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
 
             def _build_adp_map(is_sf: bool) -> Dict[str, float]:
-                adp = dict(fetch_league_adp_from_db(is_sf=is_sf, season=year, draft_type='rookie'))
+                # min_samples=1: include any player with real draft data
+                adp = dict(fetch_league_adp_from_db(is_sf=is_sf, season=year, draft_type='rookie', min_samples=1))
                 missing = result_sids - set(adp.keys())
                 if missing:
                     fc = fetch_fc_rookie_adp(is_sf=is_sf, season=year)
@@ -178,9 +179,9 @@ def rankings():
                 sid = str(d.get("sleeper_id") or "")
                 if sid:
                     if sid in sf_map:
-                        d["sf_adp_rank"] = sf_map[sid]
+                        d["sf_avg_pick"] = sf_map[sid]
                     if sid in qb1_map:
-                        d["adp_rank"] = qb1_map[sid]
+                        d["avg_pick"] = qb1_map[sid]
         except Exception:
             pass
 

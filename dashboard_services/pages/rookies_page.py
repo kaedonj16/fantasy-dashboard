@@ -768,12 +768,12 @@ def build_prospects_body() -> str:
   }
 
   function rkAdpField(r) {
-    var v = rkLeague === 'sf' ? r.sf_adp_rank : r.adp_rank;
-    return v != null ? parseFloat(v).toFixed(2) : '-';
+    var v = rkLeague === 'sf' ? r.sf_avg_pick : r.avg_pick;
+    return v != null ? parseFloat(v).toFixed(1) : '-';
   }
   function rkAdpSort(a, b) {
-    var af = rkLeague === 'sf' ? a.sf_adp_rank : a.adp_rank;
-    var bf = rkLeague === 'sf' ? b.sf_adp_rank : b.adp_rank;
+    var af = rkLeague === 'sf' ? a.sf_avg_pick : a.avg_pick;
+    var bf = rkLeague === 'sf' ? b.sf_avg_pick : b.avg_pick;
     return (af != null ? af : 999) - (bf != null ? bf : 999);
   }
 
