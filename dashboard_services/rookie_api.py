@@ -156,8 +156,14 @@ def rankings():
             result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
 
             def _build_adp_map(is_sf: bool) -> Dict[str, float]:
-                # min_samples=1: include any player with real draft data
-                adp = dict(fetch_league_adp_from_db(is_sf=is_sf, season=year, draft_type='rookie', min_samples=1))
+                # Rookie class year (e.g. 2026) is one ahead of the Sleeper league
+                # season stored in draft_adp (e.g. 2025). Query both so we get data
+                # regardless of which side of the Sleeper season boundary we are on.
+                # year-1 is loaded first; year overwrites where both have data.
+                adp: dict = {}
+                for _s in (year - 1, year):
+                    for pid, entry in fetch_league_adp_from_db(is_sf=is_sf, season=_s, draft_type='rookie').items():
+                        adp[pid] = entry  # later season (year) wins on conflict
                 missing = result_sids - set(adp.keys())
                 if missing:
                     fc = fetch_fc_rookie_adp(is_sf=is_sf, season=year)

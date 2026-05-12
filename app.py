@@ -12982,7 +12982,11 @@ def api_player_details(player_id: str):
                 _pid_str = str(player_id)
                 _adp_year = _garc()
                 for _is_sf in (False, True):
-                    _adp_map = fetch_league_adp_from_db(is_sf=_is_sf, season=_adp_year, draft_type='rookie', min_samples=1)
+                    # Try both class year and Sleeper league season (offset by 1)
+                    _adp_map = {}
+                    for _s in (_adp_year - 1, _adp_year):
+                        _rows = fetch_league_adp_from_db(is_sf=_is_sf, season=_s, draft_type='rookie')
+                        _adp_map.update(_rows)  # later year wins on conflict
                     if _pid_str not in _adp_map:
                         _fc = fetch_fc_rookie_adp(is_sf=_is_sf, season=_adp_year)
                         if _pid_str in _fc:
