@@ -53,14 +53,17 @@ def add_new_players_from_tank01():
             continue
             
         # Add new player with all available fields
+        import datetime as _dt_mod
+        _current_nfl_season = _dt_mod.datetime.now().year
+
         tank_id = str(p.get("playerID") or p.get("playerId") or p.get("id") or "")
         name = p.get("espnName", p.get("fullName", p.get("name", "")))
         team = p.get("team", p.get("proTeam", ""))
         bDay = p.get("bDay")
         position = p.get("position", p.get("pos", ""))
         espn_id = tank_id  # Tank01 playerID is often the same as ESPN ID
-        
-        new_players[sleeper_id] = {
+
+        entry = {
             "name": name or "",
             "team": team or "",
             "tankId": tank_id,
@@ -68,6 +71,19 @@ def add_new_players_from_tank01():
             "espnID": espn_id,
             "pos": position,
         }
+
+        # Derive draft_year from exp field (exp=1 means 1st NFL season)
+        raw_exp = p.get("exp") or p.get("espnYrsPro")
+        if raw_exp is not None:
+            try:
+                exp_int = int(raw_exp)
+                if exp_int > 0:
+                    entry["exp"] = exp_int
+                    entry["draft_year"] = _current_nfl_season - exp_int + 1
+            except (TypeError, ValueError):
+                pass
+
+        new_players[sleeper_id] = entry
         updated_players.append(f"{name} ({team})")
     
     # Merge new players with existing

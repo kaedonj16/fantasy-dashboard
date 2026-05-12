@@ -4716,6 +4716,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
       const hasProspectData = pd && pd.prospect_score != null;
+      // isRookieWithProspectData controls the ROOKIE badge and no-stats overview layout
       const isRookieWithProspectData = !hasGameLogs && hasProspectData;
       let pdColHTML = '';
       if (hasProspectData) {
@@ -4782,8 +4783,10 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>`;
         }).join('');
 
-        // Scouting notes
-        const pdReasons = (pd.key_reasons || '').split('\n').filter(l => l.trim());
+        // Scouting notes (strip leading bullet chars stored in key_reasons)
+        const pdReasons = (pd.key_reasons || '').split('\n')
+          .map(l => l.replace(/^[•·\-\*]\s*/, '').trim())
+          .filter(l => l);
         const pdScoutingHtml = pdReasons.length ? `
           <div style="margin-top:20px;">
             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Scouting Notes</div>
@@ -4914,7 +4917,11 @@ function openPlayerModal(playerId, playerName, opts) {
       const tabMetrics = document.getElementById('pmTabMetrics');
       if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
       const tabProspect = document.getElementById('pmTabProspect');
-      if (tabProspect) tabProspect.style.display = hasProspectData ? '' : 'none';
+      // Prospect tab: only for players with no NFL game logs drafted in the current season
+      const _currentNFLYear = new Date().getFullYear();
+      const _isCurrentYearProspect = hasProspectData && !hasGameLogs
+        && String(pd.draft_class_year) === String(_currentNFLYear);
+      if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
 
