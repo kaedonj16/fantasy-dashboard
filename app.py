@@ -13102,6 +13102,58 @@ def api_player_details(player_id: str):
         else:
             _years_exp = player_meta.get("years_exp")
 
+        # Compute PPG and positional scoring rank from usage cache
+        _ppg = None
+        _ppg_rank = None
+        _ppg_games = None
+        _ppg_season_used = None
+        try:
+            import os as _os, json as _json2
+            _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
+            def _pick_ppg(u):
+                if _ppr_val >= 1.0:
+                    return u.get("ppr_ppg")
+                if _ppr_val <= 0:
+                    return u.get("std_scoring_ppg") or u.get("std_ppg")
+                return u.get("half_ppr_ppg")
+
+            for _ppg_s in [season, season - 1]:
+                _up = _os.path.join("cache", "player_history", f"usage_rows_{_ppg_s}.json")
+                if not _os.path.exists(_up):
+                    continue
+                _ud = _json2.load(open(_up))
+                _pe = next((p for p in _ud if str(p.get("id")) == str(player_id)), None)
+                if not _pe:
+                    continue
+                _pu = _pe.get("usage") or {}
+                _pg = int(_pu.get("games") or 0)
+                if _pg < 4:
+                    continue
+                _ppg = _pick_ppg(_pu)
+                if _ppg is None:
+                    continue
+                _ppg = round(float(_ppg), 1)
+                _ppg_games = _pg
+                _ppg_season_used = _ppg_s
+                # Scoring rank within position (min 4 games)
+                _pos_str = player_meta.get("pos", "")
+                if _pos_str:
+                    _all_ppg = sorted(
+                        [float(_pick_ppg(p.get("usage") or {}))
+                         for p in _ud
+                         if p.get("position") == _pos_str
+                         and int((p.get("usage") or {}).get("games") or 0) >= 4
+                         and _pick_ppg(p.get("usage") or {}) is not None],
+                        reverse=True,
+                    )
+                    try:
+                        _ppg_rank = _all_ppg.index(_ppg) + 1
+                    except ValueError:
+                        _ppg_rank = None
+                break
+        except Exception:
+            pass
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -13118,6 +13170,10 @@ def api_player_details(player_id: str):
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "years_exp": _years_exp,
+                "ppg": _ppg,
+                "ppg_rank": _ppg_rank,
+                "ppg_season": _ppg_season_used,
+                "ppg_games": _ppg_games,
             },
             "value_history": value_history,
             "value_trend": value_trend,
