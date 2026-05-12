@@ -7716,6 +7716,58 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ── New Subscriber Welcome Tour ───────────────────────────────────────────────
+(function () {
+  'use strict';
+  if (new URLSearchParams(window.location.search).get('new_subscriber') !== '1') return;
+  if (localStorage.getItem('br_sub_tour_done')) return;
+  localStorage.setItem('br_sub_tour_done', '1');
+
+  // Clean the URL so a refresh doesn't re-trigger it
+  const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]new_subscriber=1/, '').replace(/^\?$/, '');
+  history.replaceState(null, '', cleanUrl);
+
+  // Build league-aware links from path
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  const hasLeague = parts.length >= 3;
+  const base = hasLeague ? '/' + parts.slice(0, 3).join('/') : '';
+
+  const features = [
+    { icon: '📊', label: 'Trade Intelligence', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
+    { icon: '🔥', label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidate rankings', href: base + '/breakouts' },
+    { icon: '🤖', label: 'AI Insights', desc: 'Front office briefings and trade analysis personalized to your roster', href: base + '/dashboard' },
+    { icon: '📈', label: 'Roster Grades', desc: 'Letter grades, archetypes, and portfolio value trends', href: base + '/teams' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'subWelcomeTour';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 32px 28px;max-width:480px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,0.35);position:relative;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:40px;margin-bottom:12px;">🎉</div>
+        <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:var(--text);">Welcome to Premium!</h2>
+        <p style="margin:0;font-size:14px;color:var(--text-muted);line-height:1.5;">Here's what you've unlocked. Explore at your own pace or jump in now.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+        ${features.map(f => `
+          <a href="${f.href}" style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-alt);text-decoration:none;transition:background 0.12s;" onmouseover="this.style.background='var(--accent-soft)'" onmouseout="this.style.background='var(--bg-alt)'">
+            <span style="font-size:22px;width:32px;text-align:center;flex-shrink:0;">${f.icon}</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);">${f.label}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${f.desc}</div>
+            </div>
+            <span style="margin-left:auto;color:var(--text-muted);font-size:14px;">→</span>
+          </a>`).join('')}
+      </div>
+      <button onclick="document.getElementById('subWelcomeTour').remove()" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .12s;" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+        Let's go →
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+})();
+
 // ── New User Tour ──────────────────────────────────────────────────────────
 (function () {
   'use strict';

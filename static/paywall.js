@@ -322,6 +322,15 @@ function _showIdentifyModal(planType, triggerBtn) {
 }
 
 async function _initiatePurchaseWithLeague(type, btn, leagueId) {
+  // Build a post-checkout destination: league dashboard if we have a league,
+  // otherwise the current page. Append ?new_subscriber=1 to trigger the welcome tour.
+  const ctx = window.__brctx || {};
+  const platform = ctx.platform || 'sleeper';
+  const season   = ctx.season   || new Date().getFullYear();
+  const returnUrl = leagueId
+    ? `/${platform}/${season}/${leagueId}/dashboard?new_subscriber=1`
+    : (window.location.pathname + '?new_subscriber=1');
+
   if (btn) {
     btn.disabled = true;
     btn.dataset.origText = btn.innerHTML;
@@ -334,7 +343,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: window.location.href }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
     });
     const data = await res.json();
     if (data.url) {
