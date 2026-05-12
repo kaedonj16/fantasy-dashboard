@@ -9863,7 +9863,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + (name||'').replace(/'/g,"\\\\'") + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
@@ -12862,6 +12862,35 @@ def api_player_details(player_id: str):
         if not player_meta:
             player_meta = get_players_index_global().get(player_id, {})
 
+        # Final fallback: internal prospect ID (ROOKIE_YEAR_NAME) - build meta from rookie cache
+        _prospect_meta_row = None
+        if not player_meta and str(player_id).startswith("ROOKIE_"):
+            try:
+                from dashboard_services.rookie_api import _cache as _rk_meta_cache
+                from data_building.rookie_pipeline.pipeline import (
+                    get_active_rookie_class as _garc_meta,
+                    get_rookie_rankings_from_db as _grr_meta,
+                )
+                _yr = _garc_meta()
+                for _cy in [_yr, _yr - 1]:
+                    if _cy not in _rk_meta_cache:
+                        _rk_meta_cache[_cy] = _grr_meta(_cy)
+                    _prospect_meta_row = next(
+                        (r for r in _rk_meta_cache.get(_cy, []) if r.get("player_id") == str(player_id)),
+                        None,
+                    )
+                    if _prospect_meta_row:
+                        break
+                if _prospect_meta_row:
+                    player_meta = {
+                        "name": _prospect_meta_row.get("name", ""),
+                        "pos":  _prospect_meta_row.get("position", ""),
+                        "team": _prospect_meta_row.get("team") or "",
+                        "espnHeadshot": _prospect_meta_row.get("headshot_url") or "",
+                    }
+            except Exception:
+                pass
+
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
@@ -12905,7 +12934,17 @@ def api_player_details(player_id: str):
                     if found_row:
                         break
 
-                # Fallback: match by name from players_index when sleeper_id not yet linked
+                # Fallback 2: direct player_id match (internal ROOKIE_YEAR_NAME IDs)
+                if not found_row:
+                    for check_year in [active_year, active_year - 1]:
+                        for r in _rookie_cache.get(check_year, []):
+                            if r.get("player_id") == str(player_id):
+                                found_row = r
+                                break
+                        if found_row:
+                            break
+
+                # Fallback 3: name match via players_index for Sleeper IDs not yet linked
                 if not found_row:
                     def _norm_name(n):
                         n = n.lower()
@@ -12922,7 +12961,6 @@ def api_player_details(player_id: str):
                             for r in _rookie_cache.get(check_year, []):
                                 if _norm_name(r.get("name", "")) == norm_target:
                                     found_row = r
-                                    # Cache the link so future calls use sleeper_id
                                     r["sleeper_id"] = str(player_id)
                                     break
                             if found_row:
@@ -12972,6 +13010,43 @@ def api_player_details(player_id: str):
             except Exception as pe:
                 print(f"[api_player_details] prospect lookup error: {pe}")
 
+        # Overlay ADP onto prospect_data using same fallback chain as draft-grades
+        if prospect_data is not None:
+            try:
+                from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc
+                from dashboard_services.adp_service import (
+                    fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
+                )
+                _pid_str = str(player_id)
+                _adp_year = _garc()
+                for _is_sf in (False, True):
+                    # Try both class year and Sleeper league season (offset by 1)
+                    _adp_map = {}
+                    for _s in (_adp_year - 1, _adp_year):
+                        _rows = fetch_league_adp_from_db(is_sf=_is_sf, season=_s, draft_type='rookie')
+                        _adp_map.update(_rows)  # later year wins on conflict
+                    if _pid_str not in _adp_map:
+                        _fc = fetch_fc_rookie_adp(is_sf=_is_sf, season=_adp_year)
+                        if _pid_str in _fc:
+                            _adp_map = _fc
+                        else:
+                            _model = build_model_adp_fallback(is_sf=_is_sf, season=_adp_year)
+                            if _pid_str in _model:
+                                _adp_map = _model
+                    if _pid_str in _adp_map:
+                        _entry = _adp_map[_pid_str]
+                        _val = _entry["avg_pick"] if isinstance(_entry, dict) else float(_entry)
+                        prospect_data["sf_avg_pick" if _is_sf else "avg_pick"] = _val
+            except Exception:
+                pass
+
+        # Compute years_exp from draft_year if available (more accurate than age formula)
+        _draft_year_meta = player_meta.get("draft_year")
+        if _draft_year_meta:
+            _years_exp = max(0, season - int(_draft_year_meta))
+        else:
+            _years_exp = player_meta.get("years_exp")
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -12981,12 +13056,13 @@ def api_player_details(player_id: str):
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
+            "draft_year": _draft_year_meta,
             "stats": {
                 "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
-                "years_exp": player_meta.get("years_exp"),
+                "years_exp": _years_exp,
             },
             "value_history": value_history,
             "value_trend": value_trend,
@@ -13000,6 +13076,40 @@ def api_player_details(player_id: str):
         logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/player-index/update", methods=["POST"])
+def api_player_index_update():
+    """Update metadata fields (e.g. draft_year) on a players_index entry."""
+    global _PLAYERS_INDEX_GLOBAL
+    try:
+        body = request.get_json() or {}
+        player_id = str(body.get("player_id", "")).strip()
+        if not player_id:
+            return jsonify({"error": "player_id required"}), 400
+
+        # Only allow safe metadata fields to be written
+        ALLOWED_FIELDS = {"draft_year", "years_exp"}
+        updates = {k: v for k, v in body.items() if k in ALLOWED_FIELDS}
+        if not updates:
+            return jsonify({"error": "No valid fields provided"}), 400
+
+        from utils.utils import load_players_index, save_players_index
+        pi = load_players_index() or {}
+        if player_id not in pi:
+            return jsonify({"error": "Player not found in index"}), 404
+
+        pi[player_id].update(updates)
+        save_players_index(pi)
+
+        # Reset in-memory cache so next request picks up the change
+        with _players_index_lock:
+            _PLAYERS_INDEX_GLOBAL = pi
+
+        return jsonify({"ok": True, "player_id": player_id, "updated": updates})
+    except Exception as e:
+        logger.exception("[api_player_index_update] Error")
         return jsonify({"error": str(e)}), 500
 
 

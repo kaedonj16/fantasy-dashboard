@@ -72,8 +72,76 @@ def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
     cache_key = (draft_year, draft_done)
     if cache_key not in _cache:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-        _cache[cache_key] = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+        rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+        _cache[cache_key] = rows
+        # Auto-link unlinked prospects in the background so future requests
+        # can use sleeper_id directly without falling back to name matching.
+        _auto_link_unlinked(rows)
     return _cache[cache_key]
+
+
+def _auto_link_unlinked(rows: List[Dict[str, Any]]) -> None:
+    """
+    For every prospect row missing sleeper_id, attempt a name-based match
+    against players_index.json.  Persists successful matches to the DB and
+    updates the in-memory row in place so the current request also benefits.
+    Runs silently - any failure is a no-op.
+    """
+    unlinked = [r for r in rows if not r.get("sleeper_id")]
+    if not unlinked:
+        return
+
+    try:
+        import json as _json, re as _re
+        from utils.paths import CACHE_DIR as _CD
+        _pi_path = _CD / "players_index.json"
+        if not _pi_path.exists():
+            return
+        _pi = _json.loads(_pi_path.read_text())
+
+        def _norm(n: str) -> str:
+            n = n.lower()
+            n = _re.sub(r"['\.\-]", "", n)
+            n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+            return _re.sub(r"\s+", " ", n).strip()
+
+        # Build norm_name -> sleeper_id map from players_index
+        _name_to_sid: Dict[str, str] = {}
+        for _sid, _pdata in _pi.items():
+            _pn = _pdata.get("name", "")
+            if _pn:
+                _name_to_sid[_norm(_pn)] = _sid
+
+        links: Dict[str, str] = {}  # prospect player_id -> sleeper_id
+        for row in unlinked:
+            prospect_name = row.get("name", "")
+            if not prospect_name:
+                continue
+            sid = _name_to_sid.get(_norm(prospect_name))
+            if sid:
+                row["sleeper_id"] = sid
+                links[row["player_id"]] = sid
+
+        if not links:
+            return
+
+        # Persist links to DB (best-effort)
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                for pid, sid in links.items():
+                    conn.execute(
+                        "UPDATE rookie_prospects SET sleeper_id = %s, updated_at = NOW() "
+                        "WHERE player_id = %s AND sleeper_id IS NULL",
+                        (sid, pid),
+                    )
+                conn.commit()
+            log.info("[rookie_api] Auto-linked %d unlinked prospects", len(links))
+        except Exception as db_exc:
+            log.debug("[rookie_api] Auto-link DB persist skipped: %s", db_exc)
+
+    except Exception as exc:
+        log.debug("[rookie_api] _auto_link_unlinked error: %s", exc)
 
 
 def _safe_float(v, default=None):
@@ -147,21 +215,90 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP using the same source as the draft-grades tab.
+        # Overlay dynasty rookie ADP - same fallback chain as draft-grades tab:
+        # DB real draft data -> FantasyCalc -> model fallback
         try:
-            from dashboard_services.adp_service import fetch_league_adp_from_db
-            _sf_adp  = fetch_league_adp_from_db(is_sf=True,  season=year, draft_type='rookie')
-            _qb1_adp = fetch_league_adp_from_db(is_sf=False, season=year, draft_type='rookie')
-            sf_map:  Dict[str, float] = {sid: d["avg_pick"] for sid, d in _sf_adp.items()}
-            qb1_map: Dict[str, float] = {sid: d["avg_pick"] for sid, d in _qb1_adp.items()}
+            import re as _re
+            from dashboard_services.adp_service import (
+                fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
+            )
+            result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
+
+            def _build_adp_map(is_sf: bool) -> Dict[str, float]:
+                adp: dict = {}
+                for _s in (year - 1, year):
+                    for pid, entry in fetch_league_adp_from_db(is_sf=is_sf, season=_s, draft_type='rookie').items():
+                        adp[pid] = entry  # later season (year) wins on conflict
+                missing = result_sids - set(adp.keys())
+                if missing:
+                    fc = fetch_fc_rookie_adp(is_sf=is_sf, season=year)
+                    for sid in missing:
+                        if sid in fc:
+                            adp[sid] = fc[sid]
+                missing = result_sids - set(adp.keys())
+                if missing:
+                    model = build_model_adp_fallback(is_sf=is_sf, season=year)
+                    for sid in missing:
+                        if sid in model:
+                            adp[sid] = model[sid]
+                return {
+                    sid: float(d.get("avg_pick") or d.get("adp_rank") or 0)
+                    for sid, d in adp.items()
+                    if d.get("avg_pick") or d.get("adp_rank")
+                }
+
+            sf_map  = _build_adp_map(True)
+            qb1_map = _build_adp_map(False)
+
+            # Build a sleeper_id -> normalised name lookup from players_index.json
+            # so we can fall back to name matching for prospects missing sleeper_id.
+            def _norm(n: str) -> str:
+                n = n.lower()
+                n = _re.sub(r"['\.\-]", "", n)
+                n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                return _re.sub(r"\s+", " ", n).strip()
+
+            _sid_to_norm: Dict[str, str] = {}
+            try:
+                import json as _json
+                from utils.paths import CACHE_DIR as _CACHE_DIR
+                _pi_path = _CACHE_DIR / "players_index.json"
+                if _pi_path.exists():
+                    _pi = _json.loads(_pi_path.read_text())
+                    for _sid, _pdata in _pi.items():
+                        _pn = _pdata.get("name", "")
+                        if _pn:
+                            _sid_to_norm[str(_sid)] = _norm(_pn)
+            except Exception:
+                pass
+
+            # name -> avg_pick for all players in the ADP maps
+            sf_by_name: Dict[str, float] = {}
+            qb1_by_name: Dict[str, float] = {}
+            for _sid, _val in sf_map.items():
+                _nm = _sid_to_norm.get(_sid)
+                if _nm:
+                    sf_by_name[_nm] = _val
+            for _sid, _val in qb1_map.items():
+                _nm = _sid_to_norm.get(_sid)
+                if _nm:
+                    qb1_by_name[_nm] = _val
 
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
                 if sid:
                     if sid in sf_map:
-                        d["sf_adp_rank"] = sf_map[sid]
+                        d["sf_avg_pick"] = sf_map[sid]
                     if sid in qb1_map:
-                        d["adp_rank"] = qb1_map[sid]
+                        d["avg_pick"] = qb1_map[sid]
+                else:
+                    # Name-based fallback for prospects without a linked sleeper_id
+                    pname = _norm(d.get("name") or "")
+                    if pname:
+                        if pname in sf_by_name:
+                            d["sf_avg_pick"] = sf_by_name[pname]
+                        if pname in qb1_by_name:
+                            d["avg_pick"] = qb1_by_name[pname]
         except Exception:
             pass
 

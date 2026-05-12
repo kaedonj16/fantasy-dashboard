@@ -462,6 +462,9 @@ def cache_tank01_sleeper_index(
     # Tank01 returns players under "body" (adjust if needed)
     players = data.get("body") or data.get("players") or []
 
+    from datetime import datetime as _dt
+    _current_nfl_season = _dt.now().year
+
     idx: Dict[str, dict] = {}
     for p in players:
         # Try multiple key variants Tank01 may use
@@ -479,11 +482,25 @@ def cache_tank01_sleeper_index(
         name = p.get("espnName", p.get("fullName", p.get("name", "")))
         team = p.get("team", p.get("proTeam", ""))
 
-        idx[sleeper] = {
+        # Derive draft_year from NFL experience (exp field from Tank01)
+        # exp=1 means playing their 1st NFL season, exp=2 means 2nd year, etc.
+        # draft_year = upcoming_season - exp + 1
+        raw_exp = p.get("exp") or p.get("espnYrsPro")
+        entry: dict = {
             "name": name or "",
             "team": team or "",
             "tankId": tank_id,
         }
+        if raw_exp is not None:
+            try:
+                exp_int = int(raw_exp)
+                if exp_int > 0:
+                    entry["exp"] = exp_int
+                    entry["draft_year"] = _current_nfl_season - exp_int + 1
+            except (TypeError, ValueError):
+                pass
+
+        idx[sleeper] = entry
 
     write_json(str(cache_path), idx)
     return idx
