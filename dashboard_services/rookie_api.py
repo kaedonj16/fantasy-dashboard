@@ -72,8 +72,76 @@ def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
     cache_key = (draft_year, draft_done)
     if cache_key not in _cache:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-        _cache[cache_key] = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+        rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=draft_done)
+        _cache[cache_key] = rows
+        # Auto-link unlinked prospects in the background so future requests
+        # can use sleeper_id directly without falling back to name matching.
+        _auto_link_unlinked(rows)
     return _cache[cache_key]
+
+
+def _auto_link_unlinked(rows: List[Dict[str, Any]]) -> None:
+    """
+    For every prospect row missing sleeper_id, attempt a name-based match
+    against players_index.json.  Persists successful matches to the DB and
+    updates the in-memory row in place so the current request also benefits.
+    Runs silently - any failure is a no-op.
+    """
+    unlinked = [r for r in rows if not r.get("sleeper_id")]
+    if not unlinked:
+        return
+
+    try:
+        import json as _json, re as _re
+        from utils.paths import CACHE_DIR as _CD
+        _pi_path = _CD / "players_index.json"
+        if not _pi_path.exists():
+            return
+        _pi = _json.loads(_pi_path.read_text())
+
+        def _norm(n: str) -> str:
+            n = n.lower()
+            n = _re.sub(r"['\.\-]", "", n)
+            n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+            return _re.sub(r"\s+", " ", n).strip()
+
+        # Build norm_name -> sleeper_id map from players_index
+        _name_to_sid: Dict[str, str] = {}
+        for _sid, _pdata in _pi.items():
+            _pn = _pdata.get("name", "")
+            if _pn:
+                _name_to_sid[_norm(_pn)] = _sid
+
+        links: Dict[str, str] = {}  # prospect player_id -> sleeper_id
+        for row in unlinked:
+            prospect_name = row.get("name", "")
+            if not prospect_name:
+                continue
+            sid = _name_to_sid.get(_norm(prospect_name))
+            if sid:
+                row["sleeper_id"] = sid
+                links[row["player_id"]] = sid
+
+        if not links:
+            return
+
+        # Persist links to DB (best-effort)
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                for pid, sid in links.items():
+                    conn.execute(
+                        "UPDATE rookie_prospects SET sleeper_id = %s, updated_at = NOW() "
+                        "WHERE player_id = %s AND sleeper_id IS NULL",
+                        (sid, pid),
+                    )
+                conn.commit()
+            log.info("[rookie_api] Auto-linked %d unlinked prospects", len(links))
+        except Exception as db_exc:
+            log.debug("[rookie_api] Auto-link DB persist skipped: %s", db_exc)
+
+    except Exception as exc:
+        log.debug("[rookie_api] _auto_link_unlinked error: %s", exc)
 
 
 def _safe_float(v, default=None):
