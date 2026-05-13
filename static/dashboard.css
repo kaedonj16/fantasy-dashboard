@@ -10967,6 +10967,10 @@ img, svg, canvas {
 @media (max-width: 600px) {
   .pm-hero-row { grid-template-columns: 1fr 1fr !important; }
   .pm-hero-primary { grid-column: 1 / -1; }
+  .pm-hero-label { font-size: 8px; letter-spacing: 0.02em; }
+  .pm-hero-val { font-size: 20px; }
+  .pm-hero-sub { font-size: 10px; }
+  .pm-hero-stat { padding: 10px 8px; }
   .pm-comp-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
 }
 
@@ -11426,18 +11430,29 @@ tr.team-clickable {
   }
 
   .player-modal-header {
-    padding: 12px 14px;
+    padding: 10px 12px;
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .player-modal-title-section {
     gap: 8px;
+    align-items: flex-start;
   }
 
   /* Shrink headshot so buttons stay on screen */
   .player-modal-headshot {
-    width: 80px;
-    height: 68px;
+    width: 60px;
+    height: 52px;
   }
 
   .player-modal-name {
-    font-size: 17px;
+    font-size: 15px;
+    margin-bottom: 3px;
+  }
+
+  .player-modal-meta {
+    font-size: 12px;
   }
 
   /* Compact the compare button so the × is always visible */
@@ -11445,6 +11460,15 @@ tr.team-clickable {
     font-size: 11px;
     padding: 4px 8px;
     white-space: nowrap;
+  }
+
+  /* Header action buttons stay together */
+  .player-modal-header > div:last-child {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    align-items: flex-start;
+    padding-top: 2px;
   }
 
   .player-modal-body {

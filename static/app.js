@@ -4735,7 +4735,7 @@ function openPlayerModal(playerId, playerName, opts) {
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Total Pts${seasonLabel}</div>
+            <div class="pm-hero-label">Total${seasonLabel}</div>
             <div class="pm-hero-val">${totalPts}</div>
             <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
           </div>`
@@ -6569,7 +6569,7 @@ function _buildCompareHeroHTML(p) {
       </div>` : '';
   const totalCard = total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
-        <div class="pm-hero-label">Total Pts${season}</div>
+        <div class="pm-hero-label">Total${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
         <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
       </div>` : '';
