@@ -11456,8 +11456,8 @@ tr.team-clickable {
 
   /* Headshot: tall enough to span header, aligned to top */
   .player-modal-headshot {
-    width: 76px;
-    height: 90px;
+    width: 90px;
+    height: 101px;
     border-radius: 8px;
     object-fit: cover;
     object-position: top;
