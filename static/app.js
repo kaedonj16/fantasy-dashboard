@@ -6602,7 +6602,7 @@ function _buildComparePlayerHeader(p) {
   const _pAge = parseFloat(p.age);
   if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
   const _ownerLine = p.fantasy_team
-    ? `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${p.fantasy_team}${p.fantasy_team_owner ? ` · <span style="opacity:.65;">@${p.fantasy_team_owner}</span>` : ''}</div>`
+    ? `<div class="compare-owner-line">${p.fantasy_team}${p.fantasy_team_owner ? ` · <span style="opacity:.65;">@${p.fantasy_team_owner}</span>` : ''}</div>`
     : '';
   return `
     <div class="compare-player-header">

@@ -10431,8 +10431,8 @@ img, svg, canvas {
 .player-modal-meta {
   font-size: 14px;
   color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: column !important;
   align-items: flex-start;
   gap: 2px;
 }
@@ -11954,7 +11954,6 @@ tr.team-clickable {
 }
 .compare-player-header:last-child {
   flex-direction: row-reverse;
-  text-align: right;
 }
 .compare-player-header:last-child .compare-player-meta {
   justify-content: flex-end;
@@ -11969,7 +11968,26 @@ tr.team-clickable {
   flex-shrink: 0;
 }
 .compare-player-headshot[src=""] { display: none; }
-.compare-player-header-info { min-width: 0; }
+.compare-player-header-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.compare-player-header:last-child .compare-player-header-info {
+  align-items: flex-end;
+}
+.compare-owner-line {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 3px;
+  opacity: .9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .compare-player-name {
   font-size: 17px;
   font-weight: 700;
