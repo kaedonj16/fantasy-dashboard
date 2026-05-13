@@ -192,6 +192,7 @@ def _static_hash(filename: str) -> str:
         return "0"
 
 _APP_JS_V = _static_hash("app.js")
+_CSS_V = _static_hash("dashboard.css")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 
 
@@ -562,7 +563,7 @@ BASE_HTML = """
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
-    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
     <link rel="stylesheet" href="/static/paywall.css">
@@ -1506,6 +1507,7 @@ def render_page(
         contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
+        css_v=_CSS_V,
         paywall_js_v=_PAYWALL_JS_V,
         is_logged_in_js="true" if user_id else "false",
         is_premium_js="true" if is_premium else "false",
