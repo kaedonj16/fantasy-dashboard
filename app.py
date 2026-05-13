@@ -1221,14 +1221,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-    nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
-    nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
-    nav_pills.append(nav_pill("Waivers", "page_waivers", "waivers"))
+    nav_pills.append(nav_pill_dropdown("Teams", [
+        ("Standings", "page_standings", "standings", False, False),
+        ("Teams",     "page_teams",     "teams",     False, False),
+        ("Activity",  "page_activity",  "activity",  False, False),
+        ("Waivers",   "page_waivers",   "waivers",   False, False),
+    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
@@ -2999,8 +3001,15 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             pass
 
-    _dash_name_to_rid = {v: k for k, v in (ctx.get("roster_map") or {}).items()}
-    standings_html = render_standings(team_stats, 5, name_to_rid=_dash_name_to_rid)
+    _dfw = ctx.get("df_weekly")
+    if _dfw is not None and not _dfw.empty and "roster_id" in _dfw.columns and "owner" in _dfw.columns:
+        _dash_rid_map = (_dfw[["owner", "roster_id"]]
+                         .drop_duplicates("owner")
+                         .set_index("owner")["roster_id"]
+                         .astype(str).to_dict())
+    else:
+        _dash_rid_map = {v: k for k, v in (ctx.get("roster_map") or {}).items()}
+    standings_html = render_standings(team_stats, 5, name_to_rid=_dash_rid_map)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3713,7 +3722,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         table_rows_html += (
             f"<tr>"
             f"<td class='num'>{i}</td>"
-            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='team'>"
+            f"<span class='team-clickable' style='cursor:pointer;' "
+            f"data-roster-id='{row['rid']}' data-team-name='{row['name']}'>"
+            f"{img} {row['name']}</span></td>"
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"<td class='num'>{picks_label}</td>"
@@ -3767,9 +3779,17 @@ def build_standings_body(ctx: dict) -> str:
     df_weekly = ctx["df_weekly"]
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
-    _name_to_rid = {v: k for k, v in roster_map.items()}
 
-    standings_html = render_standings(team_stats, num_teams, name_to_rid=_name_to_rid)
+    # Build owner→roster_id map directly from df_weekly (most reliable)
+    if df_weekly is not None and not df_weekly.empty and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns:
+        _rid_map = (df_weekly[["owner", "roster_id"]]
+                    .drop_duplicates("owner")
+                    .set_index("owner")["roster_id"]
+                    .astype(str).to_dict())
+    else:
+        _rid_map = {v: k for k, v in roster_map.items()}
+
+    standings_html = render_standings(team_stats, num_teams, name_to_rid=_rid_map)
 
     if (
             df_weekly is not None
