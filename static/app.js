@@ -4713,15 +4713,17 @@ function openPlayerModal(playerId, playerName, opts) {
             </div>
           </div>`;
 
-      const ppgVal  = data.stats?.ppg;
-      const ppgRank = data.stats?.ppg_rank;
-      const ppgSeason = data.stats?.ppg_season;
+      const ppgVal       = data.stats?.ppg;
+      const ppgRank      = data.stats?.ppg_rank;
+      const ppgSeason    = data.stats?.ppg_season;
+      const totalPts     = data.stats?.total_pts;
+      const totalPtsRank = data.stats?.total_pts_rank;
       const ppgCard = ppgVal != null
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Scoring</div>
-            <div class="pm-hero-val" style="font-size:20px;">${ppgVal}</div>
+            <div class="pm-hero-label">Scoring${ppgSeason ? ` · ${ppgSeason}` : ''}</div>
+            <div class="pm-hero-val" style="font-size:17px;letter-spacing:-.01em;">${ppgVal}${totalPts != null ? ` | ${totalPts}` : ''}</div>
             <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-top:2px;letter-spacing:.04em;">
-              ${ppgRank ? `${pos}${ppgRank} · ` : ''}PPG${ppgSeason ? ` · ${ppgSeason}` : ''}
+              PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'}${totalPts != null ? ` | TOTAL · ${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}` : ''}
             </div>
           </div>`
         : '';
@@ -6495,27 +6497,31 @@ function _buildComparePPGRow(p1, p2) {
 
   const season = s1.season || s2.season || '';
 
-  function cell(val, label) {
-    return `<div class="compare-pts-cell">
-      <div class="compare-pts-val">${val !== null ? val : '-'}</div>
-      <div class="compare-pts-label">${label}</div>
-    </div>`;
+  function scoringBlock(s, p) {
+    const pos = p.position || '';
+    const ppgRank = p.stats?.ppg_rank;
+    const totalRank = p.stats?.total_pts_rank;
+    const ppgLabel = `PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'}`;
+    const totalLabel = `TOTAL · ${totalRank ? `${pos}${totalRank}` : '-'}`;
+    return `
+      <div class="compare-pts-cell" style="flex:1;">
+        <div class="compare-pts-val">${s.ppg !== null ? s.ppg : '-'}${s.total !== null ? ` | ${s.total}` : ''}</div>
+        <div class="compare-pts-label">${ppgLabel} | ${totalLabel}</div>
+      </div>`;
   }
 
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
         <div class="compare-pts-stats">
-          ${cell(s1.ppg, 'PPG')}
-          ${cell(s1.total, 'Total Pts')}
+          ${scoringBlock(s1, p1)}
         </div>
         ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
         <div class="compare-pts-stats">
-          ${cell(s2.ppg, 'PPG')}
-          ${cell(s2.total, 'Total Pts')}
+          ${scoringBlock(s2, p2)}
         </div>
         ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
       </div>
