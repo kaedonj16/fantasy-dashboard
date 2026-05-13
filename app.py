@@ -9554,7 +9554,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const _useValueRank = sortBy === 'rank' || sortBy === 'value';
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' :
+            (_useValueRank ? (rankMap.get(String(p.id)) || (idx + 1)) : (idx + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
