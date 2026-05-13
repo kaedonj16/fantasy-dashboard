@@ -4725,13 +4725,19 @@ function openPlayerModal(playerId, playerName, opts) {
       const ppgSeason    = data.stats?.ppg_season;
       const totalPts     = data.stats?.total_pts;
       const totalPtsRank = data.stats?.total_pts_rank;
+      const seasonLabel  = ppgSeason ? ` · ${ppgSeason}` : '';
       const ppgCard = ppgVal != null
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Scoring${ppgSeason ? ` · ${ppgSeason}` : ''}</div>
-            <div class="pm-hero-val" style="font-size:17px;letter-spacing:-.01em;">${ppgVal}${totalPts != null ? ` | ${totalPts}` : ''}</div>
-            <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-top:2px;letter-spacing:.04em;">
-              PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'}${totalPts != null ? ` | TOTAL · ${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}` : ''}
-            </div>
+            <div class="pm-hero-label">PPG${seasonLabel}</div>
+            <div class="pm-hero-val">${ppgVal}</div>
+            <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+          </div>`
+        : '';
+      const totalCard = totalPts != null
+        ? `<div class="pm-hero-stat">
+            <div class="pm-hero-label">Total Pts${seasonLabel}</div>
+            <div class="pm-hero-val">${totalPts}</div>
+            <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
           </div>`
         : '';
 
@@ -4843,7 +4849,8 @@ function openPlayerModal(playerId, playerName, opts) {
       const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
-      const heroGridStyle = ppgCard ? 'style="grid-template-columns:1fr 1fr 1fr 1fr;"' : '';
+      const _heroCardCount = 3 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
+      const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
       let overviewHTML = `
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
@@ -4856,6 +4863,7 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
           ${thirdValueCard}
           ${ppgCard}
+          ${totalCard}
         </div>
       `;
 
@@ -6547,8 +6555,27 @@ function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
   const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '-');
+  const pos    = p.position || '';
+  const ppg    = p.stats?.ppg;
+  const ppgRank = p.stats?.ppg_rank;
+  const total  = p.stats?.total_pts;
+  const totalRank = p.stats?.total_pts_rank;
+  const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
+  const ppgCard = ppg != null ? `
+      <div class="pm-hero-stat" style="padding:10px 10px;">
+        <div class="pm-hero-label">PPG${season}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
+        <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+      </div>` : '';
+  const totalCard = total != null ? `
+      <div class="pm-hero-stat" style="padding:10px 10px;">
+        <div class="pm-hero-label">Total Pts${season}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${total}</div>
+        <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
+      </div>` : '';
+  const cardCount = 3 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
   return `
-    <div class="compare-hero-row">
+    <div class="compare-hero-row" style="grid-template-columns:repeat(${cardCount},1fr);">
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
@@ -6561,6 +6588,8 @@ function _buildCompareHeroHTML(p) {
         <div class="pm-hero-label">Pos Rank</div>
         <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
       </div>
+      ${ppgCard}
+      ${totalCard}
     </div>
   `;
 }
@@ -6863,15 +6892,12 @@ function openComparisonView(p1, p2) {
   }
 
   // Build the comparison body
-  const ppgRowHTML = _buildComparePPGRow(p1, p2);
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2)}</div>
       </div>
-
-      ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}
 
       <hr class="pm-section-divider">
 
