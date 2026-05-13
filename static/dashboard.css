@@ -10965,7 +10965,7 @@ img, svg, canvas {
   .pm-metrics-chart-grid--prospect { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-  .pm-hero-row { grid-template-columns: 1fr 1fr; }
+  .pm-hero-row { grid-template-columns: 1fr 1fr !important; }
   .pm-hero-primary { grid-column: 1 / -1; }
   .pm-comp-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
 }
