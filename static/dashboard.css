@@ -11432,25 +11432,32 @@ tr.team-clickable {
 
   .player-modal-header {
     position: relative;
-    padding: 12px 12px 14px;
+    padding: 10px 12px 14px;
     gap: 10px;
-    align-items: flex-start;
+    align-items: flex-end; /* headshot and title align to bottom of header */
     flex-wrap: nowrap;
   }
 
   .player-modal-title-section {
-    gap: 10px;
+    gap: 6px;
     align-items: flex-start;
     flex: 1;
     min-width: 0;
-    padding-right: 140px; /* room for Compare + × buttons */
+    padding-right: 35px;
   }
 
-  /* Good-sized headshot, no cramping */
+  /* Push name/meta below the absolutely-positioned buttons */
+  .player-modal-title-text {
+    padding-top: 40px;
+  }
+
+  /* Good-sized headshot */
   .player-modal-headshot {
     width: 76px;
-    height: 64px;
+    height: 76px;
     border-radius: 8px;
+    object-fit: cover;
+    object-position: top;
   }
 
   .player-modal-name {
@@ -11464,7 +11471,7 @@ tr.team-clickable {
     gap: 1px;
   }
 
-  /* Float the action buttons to top-right, out of flow */
+  /* Buttons pinned to top-right, above the name */
   .player-modal-header > div:last-child {
     position: absolute;
     top: 10px;
