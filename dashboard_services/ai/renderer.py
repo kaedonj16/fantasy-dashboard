@@ -570,7 +570,7 @@ def _render_power_rankings_html_from_data(
           <div class="pr-rank">#{rank}</div>
           <div class="pr-body">
             <div class="pr-team-line">
-              <span class="pr-team-name">{team_name}</span>
+              <span class="pr-team-name team-clickable" data-roster-id="{rid}" data-team-name="{team_name}">{team_name}</span>
               <span class="pr-record">{wins}-{losses}</span>
               <span class="pr-pf">{pf:.1f} PF</span>
               <span class="pr-momentum {momentum_class}">{momentum_icon}</span>

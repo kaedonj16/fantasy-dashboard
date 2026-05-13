@@ -468,7 +468,8 @@ function _renderPlayoffOdds(data) {
       ? ''
       : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
 
-    return `<tr>
+    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
+    return `<tr class="team-clickable"${_ridAttr}>
       <td class="po-team">${t.team_name}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
@@ -4672,7 +4673,13 @@ function openPlayerModal(playerId, playerName, opts) {
         const _tipTxt = (vt.description || vt.label) + _slopeTxt;
         metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
-      document.getElementById('playerModalMeta').innerHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
+      const metaEl = document.getElementById('playerModalMeta');
+      let metaHTML = metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>');
+      if (data.fantasy_team) {
+        const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${data.fantasy_team_owner}</span>` : '';
+        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${data.fantasy_team}${_ownerStr}</div>`;
+      }
+      metaEl.innerHTML = metaHTML;
 
       // Update headshot
       const headshotEl = document.getElementById('playerModalHeadshot');
@@ -6565,12 +6572,16 @@ function _buildComparePlayerHeader(p) {
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
   const _pAge = parseFloat(p.age);
   if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
+  const _ownerLine = p.fantasy_team
+    ? `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${p.fantasy_team}${p.fantasy_team_owner ? ` · <span style="opacity:.65;">@${p.fantasy_team_owner}</span>` : ''}</div>`
+    : '';
   return `
     <div class="compare-player-header">
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
       <div class="compare-player-header-info">
         <div class="compare-player-name">${p.name}</div>
         <div class="compare-player-meta">${metaParts.join(sep)}</div>
+        ${_ownerLine}
       </div>
     </div>
   `;
@@ -6856,8 +6867,8 @@ function openComparisonView(p1, p2) {
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
-        <div class="compare-hero-player" id="compareHero1">${_buildCompareHeroHTML(p1)}</div>
-        <div class="compare-hero-player" id="compareHero2">${_buildCompareHeroHTML(p2)}</div>
+        <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
+        <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2)}</div>
       </div>
 
       ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}

@@ -9571,7 +9571,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
-          if (rankChange != null && rankChange !== 0) {
+          if (_useValueRank && rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
@@ -13412,6 +13412,29 @@ def api_player_details(player_id: str):
         except Exception:
             pass
 
+        # Look up which fantasy team owns this player (requires league context)
+        _fantasy_team = None
+        _fantasy_team_owner = None
+        if league_id:
+            try:
+                from dashboard_services.platform_api import get_users, get_rosters
+                _rosters_pm = get_rosters(platform, league_id, season) or []
+                _users_pm   = get_users(platform, league_id, season) or []
+                _rmap_pm    = _build_roster_map(_users_pm, _rosters_pm)
+                _user_by_id = {str(u.get("user_id")): u for u in _users_pm}
+                for _r in _rosters_pm:
+                    if str(player_id) in [str(p) for p in (_r.get("players") or [])]:
+                        _fantasy_team = _rmap_pm.get(str(_r.get("roster_id")))
+                        _owner = _user_by_id.get(str(_r.get("owner_id") or ""))
+                        if _owner:
+                            _fantasy_team_owner = (
+                                _owner.get("display_name")
+                                or _owner.get("username")
+                            )
+                        break
+            except Exception:
+                pass
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -13422,6 +13445,8 @@ def api_player_details(player_id: str):
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "draft_year": _draft_year_meta,
+            "fantasy_team": _fantasy_team,
+            "fantasy_team_owner": _fantasy_team_owner,
             "stats": {
                 "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
