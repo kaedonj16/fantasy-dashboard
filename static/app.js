@@ -7577,6 +7577,7 @@ function renderTeamDetails(data) {
     `;
 
     data.roster.forEach(player => {
+      const isUnknown = !player.name || player.name === 'Unknown';
       // Determine badges with position-aware thresholds
       let badges = '';
       const value = player.value || 0;
@@ -7608,13 +7609,14 @@ function renderTeamDetails(data) {
       }
 
       rosterHTML += `
-        <tr style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}">
+        <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
           <td>
-            <strong class="player-clickable">${player.name}</strong>
-            ${badges}
+            ${isUnknown
+              ? `<span style="color:var(--text-muted);">${player.name || 'Unknown'}</span>`
+              : `<strong class="player-clickable">${player.name}</strong>${badges}`}
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.position === 'DEF' ? (player.team_city || player.team || '-') : (player.team || '-')}</td>
+          <td>${player.team || '-'}</td>
           <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
           <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
         </tr>

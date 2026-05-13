@@ -1459,17 +1459,21 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     pos_badge = f"<span class='pos-badge {pos}'>{pos}</span>" if pos else ""
                     nfl = p.get("nfl")
                     pos = p.get("pos")
+                    nfl_html = f"<span class='meta'>{nfl}</span>" if nfl and nfl != "FA" else ""
 
-                    # Make player name clickable
+                    # Make player name clickable; unknown/DEF players are not clickable
                     pid = p.get("pid", "")
                     player_name = p['name']
+                    is_unknown = not player_name or player_name in ("Unknown", "0", "Empty")
                     if pos == "DEF" and nfl:
                         city = _team_city(nfl)
                         player_name = player_name.replace(nfl, city) if nfl in player_name else city
-                        nfl_html = ""
+                        clickable_attrs = " class='pname'"
+                    elif is_unknown or pid == "0":
+                        player_name = player_name or "Unknown"
+                        clickable_attrs = " class='pname' style='color:var(--text-muted);'"
                     else:
-                        nfl_html = f"<span class='meta'>{nfl}</span>" if nfl and nfl != "FA" else ""
-                    clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid != "0" else " class='pname'"
+                        clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'"
 
                     out.append(
                         f"<div class='{row_cls}'>"
