@@ -12353,15 +12353,19 @@ tr.team-clickable {
   #compareHero1::before { content: attr(data-name); }
   #compareHero2::before { content: attr(data-name); }
 
-  /* Hero row: 3 equal cards across full width looks good now */
+  /* Hero row: force 3-col wrap, smaller fonts */
   .compare-hero-row {
-    gap: 8px;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px;
   }
   .compare-hero-row .pm-hero-val {
-    font-size: 22px !important;
+    font-size: 18px !important;
   }
   .compare-hero-row .pm-hero-label {
     font-size: 9px;
+  }
+  .compare-hero-row .pm-hero-sub {
+    font-size: 10px;
   }
 
   /* PPG / scoring row: tighten font */
