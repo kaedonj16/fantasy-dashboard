@@ -2887,7 +2887,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings(team_stats, length, name_to_rid: dict | None = None) -> str:
+def render_standings(team_stats, length, name_to_rid: Optional[dict] = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">

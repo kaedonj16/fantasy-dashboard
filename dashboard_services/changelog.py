@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-13",
+        "tag": "new",
+        "text": "Playoff Odds: See your chances of making the playoffs, earning a first-round bye, and winning the championship based on your roster and schedule on the Teams page.",
+        "link": "/teams"
+    },
+    {
         "date": "2026-05-11",
         "tag": "new",
         "text": "Start/Sit Advisor: Weekly lineup recommendations on the Waivers page. Shows your starters, FLEX slot picks, and bench players ranked by projected points with opponent matchup adjustments.",
@@ -25,7 +31,7 @@ CHANGELOG = [
     {
         "date": "2026-05-02",
         "tag": "new",
-        "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick - ADP value, positional need, and best player available. View by team (accordion) or by round with prev/next pagination. ADP sourced from real drafts in similar leagues when available.",
+        "text": "Draft Grades: New draft tab on the Teams page grades every rookie draft pick - ADP value, positional need, and best player available. View by team or by round. ADP sourced from real drafts in similar leagues when available.",
         "link": "/teams"
     },
     {

@@ -4863,7 +4863,7 @@ function openPlayerModal(playerId, playerName, opts) {
           <hr class="pm-section-divider">
           <div class="pm-news-section" id="pmNewsSection">
             <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
-            <div id="pmNewsBody" style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--text-muted);">
+            <div id="pmNewsBody" style="padding:8px 0;font-size:13px;color:var(--text-muted);max-height:300px;overflow-y:auto;">
               <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
             </div>
           </div>
