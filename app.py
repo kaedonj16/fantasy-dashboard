@@ -360,6 +360,25 @@ def get_team_full_name(abbreviation: str) -> str:
     return team_names.get(abbreviation.upper(), abbreviation)
 
 
+NFL_CITY_MAP: dict[str, str] = {
+    "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
+    "CAR": "Carolina", "CHI": "Chicago", "CIN": "Cincinnati", "CLE": "Cleveland",
+    "DAL": "Dallas", "DEN": "Denver", "DET": "Detroit", "GB": "Green Bay",
+    "HOU": "Houston", "IND": "Indianapolis", "JAX": "Jacksonville",
+    "KC": "Kansas City", "LAC": "LA Chargers", "LAR": "LA Rams",
+    "LV": "Las Vegas", "MIA": "Miami", "MIN": "Minnesota",
+    "NE": "New England", "NO": "New Orleans", "NYG": "NY Giants", "NYJ": "NY Jets",
+    "PHI": "Philadelphia", "PIT": "Pittsburgh", "SEA": "Seattle",
+    "SF": "San Francisco", "TB": "Tampa Bay", "TEN": "Tennessee",
+    "WAS": "Washington", "WSH": "Washington",
+}
+
+
+def get_team_city(abbreviation: str) -> str:
+    """Return city/short name for an NFL team abbreviation."""
+    return NFL_CITY_MAP.get((abbreviation or "").upper(), abbreviation)
+
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -1202,14 +1221,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-    nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
-    nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
-    nav_pills.append(nav_pill("Waivers", "page_waivers", "waivers"))
+    nav_pills.append(nav_pill_dropdown("Teams", [
+        ("Standings", "page_standings", "standings", False, False),
+        ("Teams",     "page_teams",     "teams",     False, False),
+        ("Activity",  "page_activity",  "activity",  False, False),
+        ("Waivers",   "page_waivers",   "waivers",   False, False),
+    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
@@ -2866,7 +2887,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings(team_stats, length) -> str:
+def render_standings(team_stats, length, name_to_rid: Optional[dict] = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -2902,10 +2923,18 @@ def render_standings(team_stats, length) -> str:
             if avatar else ""
         )
 
+        rid = (name_to_rid or {}).get(row['owner'])
+        if rid:
+            owner_cell = (f"<span class='team-clickable' style='cursor:pointer;' "
+                          f"data-roster-id='{rid}' data-team-name='{row['owner']}'>"
+                          f"{img} {row['owner']}</span>")
+        else:
+            owner_cell = f"{img} {row['owner']}"
+
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{img} {row['owner']}</td>
+              <td class="team">{owner_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -2972,7 +3001,15 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             pass
 
-    standings_html = render_standings(team_stats, 5)
+    _dfw = ctx.get("df_weekly")
+    if _dfw is not None and not _dfw.empty and "roster_id" in _dfw.columns and "owner" in _dfw.columns:
+        _dash_rid_map = (_dfw[["owner", "roster_id"]]
+                         .drop_duplicates("owner")
+                         .set_index("owner")["roster_id"]
+                         .astype(str).to_dict())
+    else:
+        _dash_rid_map = {v: k for k, v in (ctx.get("roster_map") or {}).items()}
+    standings_html = render_standings(team_stats, 5, name_to_rid=_dash_rid_map)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3685,7 +3722,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         table_rows_html += (
             f"<tr>"
             f"<td class='num'>{i}</td>"
-            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='team'>"
+            f"<span class='team-clickable' style='cursor:pointer;' "
+            f"data-roster-id='{row['rid']}' data-team-name='{row['name']}'>"
+            f"{img} {row['name']}</span></td>"
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"<td class='num'>{picks_label}</td>"
@@ -3740,7 +3780,16 @@ def build_standings_body(ctx: dict) -> str:
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
-    standings_html = render_standings(team_stats, num_teams)
+    # Build owner→roster_id map directly from df_weekly (most reliable)
+    if df_weekly is not None and not df_weekly.empty and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns:
+        _rid_map = (df_weekly[["owner", "roster_id"]]
+                    .drop_duplicates("owner")
+                    .set_index("owner")["roster_id"]
+                    .astype(str).to_dict())
+    else:
+        _rid_map = {v: k for k, v in roster_map.items()}
+
+    standings_html = render_standings(team_stats, num_teams, name_to_rid=_rid_map)
 
     if (
             df_weekly is not None
@@ -13669,11 +13718,10 @@ def api_team_details(roster_id: str):
             player_name = player_meta.get("name", "Unknown")
             player_team = player_meta.get("team")
 
-            # If player_id is a team abbreviation and no metadata found, treat as defense
-            if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
-                # This is likely a defense player with team ID
-                full_team_name = get_team_full_name(pid_str)
-                player_name = f"{full_team_name} Defense"
+            # If player_id is a team abbreviation, treat as defense
+            if pid_str.isalpha() and 2 <= len(pid_str) <= 3 and (not position or player_name == "Unknown"):
+                city = get_team_city(pid_str)
+                player_name = f"{city} Defense"
                 position = "DEF"
                 player_team = pid_str
 
@@ -13693,6 +13741,7 @@ def api_team_details(roster_id: str):
                 "name": player_name,
                 "position": position,
                 "team": player_team,
+                "team_city": get_team_city(player_team) if player_team else None,
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,

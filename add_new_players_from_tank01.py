@@ -59,6 +59,9 @@ def add_new_players_from_tank01():
         tank_id = str(p.get("playerID") or p.get("playerId") or p.get("id") or "")
         name = p.get("espnName", p.get("fullName", p.get("name", "")))
         team = p.get("team", p.get("proTeam", ""))
+        # Normalize WSH to WAS for consistency
+        if team == "WSH":
+            team = "WAS"
         bDay = p.get("bDay")
         position = p.get("position", p.get("pos", ""))
         espn_id = tank_id  # Tank01 playerID is often the same as ESPN ID

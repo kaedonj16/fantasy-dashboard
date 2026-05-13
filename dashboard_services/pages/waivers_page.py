@@ -41,7 +41,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
 @media(max-width: 768px) {
   .wv-tab-bar { display: flex; }
-  .wv-layout { grid-template-columns: 1fr; }
+  .wv-layout { grid-template-columns: 1fr !important; }
   .wv-section { display: none; }
   .wv-section.wv-tab-active { display: block; }
 }

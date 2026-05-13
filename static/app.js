@@ -4863,7 +4863,7 @@ function openPlayerModal(playerId, playerName, opts) {
           <hr class="pm-section-divider">
           <div class="pm-news-section" id="pmNewsSection">
             <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
-            <div id="pmNewsBody" style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--text-muted);">
+            <div id="pmNewsBody" style="padding:8px 0;font-size:13px;color:var(--text-muted);max-height:300px;overflow-y:auto;">
               <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
             </div>
           </div>
@@ -7577,6 +7577,7 @@ function renderTeamDetails(data) {
     `;
 
     data.roster.forEach(player => {
+      const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
       // Determine badges with position-aware thresholds
       let badges = '';
       const value = player.value || 0;
@@ -7608,10 +7609,11 @@ function renderTeamDetails(data) {
       }
 
       rosterHTML += `
-        <tr style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}">
+        <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
           <td>
-            <strong class="player-clickable">${player.name}</strong>
-            ${badges}
+            ${isUnknown
+              ? `<span style="color:var(--text-muted);">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
+              : `<strong class="player-clickable">${player.name}</strong>${badges}`}
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
           <td>${player.team || '-'}</td>

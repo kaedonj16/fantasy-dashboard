@@ -75,7 +75,7 @@
   },
   "3258": {
     "name": "Nick Vannett",
-    "team": "MIN",
+    "team": "LAR",
     "tankId": "2576399",
     "byeWeek": 6,
     "pos": "TE",
@@ -109,7 +109,7 @@
   },
   "13166": {
     "name": "Kisean Johnson",
-    "team": "CLE",
+    "team": "GB",
     "tankId": "4693881",
     "byeWeek": 9,
     "pos": "WR",
@@ -118,7 +118,7 @@
   },
   "9998": {
     "name": "Hendon Hooker",
-    "team": "CAR",
+    "team": "TEN",
     "tankId": "4240858",
     "byeWeek": 14,
     "pos": "QB",
@@ -230,7 +230,7 @@
   },
   "5128": {
     "name": "Logan Woodside",
-    "team": "PIT",
+    "team": "ARI",
     "tankId": "3042749",
     "byeWeek": 5,
     "pos": "QB",
@@ -306,7 +306,7 @@
   },
   "8523": {
     "name": "Nick Muse",
-    "team": "ARI",
+    "team": "NYJ",
     "tankId": "4249624",
     "byeWeek": 8,
     "pos": "TE",
@@ -817,7 +817,7 @@
   },
   "6146": {
     "name": "Kaden Smith",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4044452",
     "byeWeek": 12,
     "pos": "TE",
@@ -1012,7 +1012,7 @@
   },
   "7609": {
     "name": "Demetric Felton",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4035826",
     "byeWeek": 12,
     "pos": "RB",
@@ -1341,7 +1341,7 @@
   },
   "3664": {
     "name": "J.D. McKissic",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2572861",
     "byeWeek": 12,
     "pos": "RB",
@@ -1384,7 +1384,7 @@
   },
   "7087": {
     "name": "Jonathan Ward",
-    "team": "NE",
+    "team": "BAL",
     "tankId": "4039274",
     "byeWeek": 14,
     "pos": "RB",
@@ -1522,7 +1522,7 @@
   },
   "2359": {
     "name": "Ameer Abdullah",
-    "team": "IND",
+    "team": "JAX",
     "tankId": "2576336",
     "byeWeek": 11,
     "pos": "RB",
@@ -1666,7 +1666,7 @@
   },
   "8250": {
     "name": "Tay Martin",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4245144",
     "byeWeek": 12,
     "pos": "WR",
@@ -1952,7 +1952,7 @@
   },
   "8207": {
     "name": "Tyler Goodson",
-    "team": "IND",
+    "team": "ATL",
     "tankId": "4429676",
     "byeWeek": 11,
     "pos": "RB",
@@ -2413,7 +2413,7 @@
   },
   "3269": {
     "name": "Chris Moore",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2576581",
     "byeWeek": 12,
     "pos": "WR",
@@ -2425,7 +2425,7 @@
   },
   "2410": {
     "name": "Jamison Crowder",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2576716",
     "byeWeek": 12,
     "pos": "WR",
@@ -2516,7 +2516,7 @@
   },
   "11158": {
     "name": "Jalen Sample",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4608294",
     "byeWeek": 12,
     "pos": "WR",
@@ -2984,7 +2984,7 @@
   },
   "6960": {
     "name": "Tyler Johnson",
-    "team": "NYJ",
+    "team": "DAL",
     "tankId": "2310331",
     "byeWeek": 9,
     "pos": "WR",
@@ -3034,7 +3034,7 @@
   },
   "2471": {
     "name": "Michael Burton",
-    "team": "DEN",
+    "team": "CLE",
     "tankId": "2515270",
     "byeWeek": 12,
     "pos": "FB",
@@ -3099,7 +3099,7 @@
   },
   "8583": {
     "name": "Stone Smartt",
-    "team": "NYJ",
+    "team": "PHI",
     "tankId": "4250764",
     "byeWeek": 9,
     "pos": "TE",
@@ -3258,7 +3258,7 @@
   },
   "6659": {
     "name": "Craig Reynolds",
-    "team": "DET",
+    "team": "NE",
     "tankId": "4421446",
     "byeWeek": 8,
     "pos": "RB",
@@ -3983,7 +3983,7 @@
   },
   "9220": {
     "name": "Evan Hull",
-    "team": "NO",
+    "team": "HOU",
     "tankId": "4569609",
     "byeWeek": 11,
     "pos": "RB",
@@ -4288,7 +4288,7 @@
   },
   "13119": {
     "name": "Collin Schlee",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4428439",
     "byeWeek": 12,
     "pos": "QB",
@@ -4387,7 +4387,7 @@
   },
   "5872": {
     "name": "Deebo Samuel",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3126486",
     "byeWeek": 12,
     "pos": "WR",
@@ -4429,7 +4429,7 @@
   },
   "7943": {
     "name": "Zach Davidson",
-    "team": "BUF",
+    "team": "NYG",
     "tankId": "4746079",
     "byeWeek": 7,
     "pos": "TE",
@@ -4566,7 +4566,7 @@
   },
   "8154": {
     "name": "Brian Robinson Jr.",
-    "team": "SF",
+    "team": "ATL",
     "tankId": "4241474",
     "byeWeek": 14,
     "pos": "RB",
@@ -4773,7 +4773,7 @@
   },
   "6144": {
     "name": "Trayveon Williams",
-    "team": "LAC",
+    "team": "CLE",
     "tankId": "4035222",
     "byeWeek": 12,
     "pos": "RB",
@@ -5216,7 +5216,7 @@
   },
   "1689": {
     "name": "Adam Thielen",
-    "team": "MIN",
+    "team": "PIT",
     "tankId": "16460",
     "byeWeek": 6,
     "pos": "WR",
@@ -5459,7 +5459,7 @@
   },
   "11159": {
     "name": "Zion Bowens",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4613067",
     "byeWeek": 12,
     "pos": "WR",
@@ -5523,7 +5523,7 @@
   },
   "12772": {
     "name": "Courtney Jackson",
-    "team": "NYG",
+    "team": "TEN",
     "tankId": "4565172",
     "byeWeek": 8,
     "pos": "WR",
@@ -5534,7 +5534,7 @@
   },
   "3423": {
     "name": "Robbie Chosen",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2574808",
     "byeWeek": 12,
     "pos": "WR",
@@ -5730,7 +5730,7 @@
   },
   "5038": {
     "name": "Michael Gallup",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4036348",
     "byeWeek": 12,
     "pos": "WR",
@@ -6141,7 +6141,7 @@
   },
   "6012": {
     "name": "Travis Homer",
-    "team": "CHI",
+    "team": "PIT",
     "tankId": "4037457",
     "byeWeek": 5,
     "pos": "RB",
@@ -6401,7 +6401,7 @@
   },
   "4854": {
     "name": "River Cracraft",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3052056",
     "byeWeek": 12,
     "pos": "WR",
@@ -6816,7 +6816,7 @@
   },
   "6279": {
     "name": "Brandon Dillon",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4411192",
     "byeWeek": 12,
     "pos": "TE",
@@ -6925,7 +6925,7 @@
   },
   "6037": {
     "name": "Brett Rypien",
-    "team": "IND",
+    "team": "MIN",
     "tankId": "3722362",
     "byeWeek": 11,
     "pos": "QB",
@@ -6936,7 +6936,7 @@
   },
   "4198": {
     "name": "Jamal Agnew",
-    "team": "ATL",
+    "team": "WAS",
     "tankId": "3061612",
     "byeWeek": 5,
     "pos": "WR",
@@ -7123,7 +7123,7 @@
   },
   "1339": {
     "name": "Zach Ertz",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "15835",
     "byeWeek": 12,
     "pos": "TE",
@@ -7166,7 +7166,7 @@
   },
   "6402": {
     "name": "Steven Sims",
-    "team": "SEA",
+    "team": "ARI",
     "tankId": "3917960",
     "byeWeek": 8,
     "pos": "WR",
@@ -7177,7 +7177,7 @@
   },
   "1916": {
     "name": "Martavis Bryant",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "16886",
     "byeWeek": 12,
     "pos": "WR",
@@ -7210,7 +7210,7 @@
   },
   "6154": {
     "name": "David Sills V",
-    "team": "ATL",
+    "team": "TB",
     "tankId": "3871102",
     "byeWeek": 5,
     "pos": "WR",
@@ -7343,7 +7343,7 @@
   },
   "5046": {
     "name": "Royce Freeman",
-    "team": "CHI",
+    "team": "LAC",
     "tankId": "3122672",
     "byeWeek": 5,
     "pos": "RB",
@@ -7530,7 +7530,7 @@
   },
   "7607": {
     "name": "Michael Carter",
-    "team": "ARI",
+    "team": "TEN",
     "tankId": "4240657",
     "byeWeek": 8,
     "pos": "RB",
@@ -7606,7 +7606,7 @@
   },
   "7595": {
     "name": "Tylan Wallace",
-    "team": "BAL",
+    "team": "CLE",
     "tankId": "4241424",
     "byeWeek": 7,
     "pos": "WR",
@@ -7700,7 +7700,7 @@
   },
   "7596": {
     "name": "Elijah Moore",
-    "team": "BUF",
+    "team": "PHI",
     "tankId": "4372414",
     "byeWeek": 7,
     "pos": "WR",
@@ -7796,7 +7796,7 @@
   },
   "8206": {
     "name": "Skylar Thompson",
-    "team": "PIT",
+    "team": "BAL",
     "tankId": "4036419",
     "byeWeek": 5,
     "pos": "QB",
@@ -7915,7 +7915,7 @@
   },
   "4226": {
     "name": "Alex Armah",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4212884",
     "byeWeek": 12,
     "pos": "RB",
@@ -8060,7 +8060,7 @@
   },
   "7531": {
     "name": "Feleipe Franks",
-    "team": "ATL",
+    "team": "CAR",
     "tankId": "4034948",
     "byeWeek": 5,
     "pos": "TE",
@@ -8104,7 +8104,7 @@
   },
   "8041": {
     "name": "Shane Zylstra",
-    "team": "DET",
+    "team": "BUF",
     "tankId": "4608362",
     "byeWeek": 8,
     "pos": "TE",
@@ -8446,7 +8446,7 @@
   },
   "3312": {
     "name": "Jonathan Williams",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2980077",
     "byeWeek": 12,
     "pos": "RB",
@@ -8455,7 +8455,7 @@
   },
   "7066": {
     "name": "K.J. Osborn",
-    "team": "WSH",
+    "team": "TEN",
     "tankId": "3916566",
     "byeWeek": 12,
     "pos": "WR",
@@ -8478,7 +8478,7 @@
   },
   "8255": {
     "name": "Raheem Blackshear",
-    "team": "PIT",
+    "team": "NYJ",
     "tankId": "4259308",
     "byeWeek": 5,
     "pos": "RB",
@@ -8540,7 +8540,7 @@
   },
   "1166": {
     "name": "Kirk Cousins",
-    "team": "ATL",
+    "team": "LV",
     "tankId": "14880",
     "byeWeek": 5,
     "pos": "QB",
@@ -8593,7 +8593,7 @@
   },
   "4033": {
     "name": "David Njoku",
-    "team": "CLE",
+    "team": "LAC",
     "tankId": "3123076",
     "byeWeek": 9,
     "pos": "TE",
@@ -8702,7 +8702,7 @@
   },
   "2197": {
     "name": "Brandin Cooks",
-    "team": "NO",
+    "team": "BUF",
     "tankId": "16731",
     "byeWeek": 11,
     "pos": "WR",
@@ -9226,7 +9226,7 @@
   },
   "7065": {
     "name": "Eli Wolf",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3915400",
     "byeWeek": 12,
     "pos": "TE",
@@ -9265,7 +9265,7 @@
   },
   "7216": {
     "name": "Giovanni Ricci",
-    "team": "MIN",
+    "team": "DET",
     "tankId": "3916749",
     "byeWeek": 6,
     "pos": "TE",
@@ -9614,7 +9614,7 @@
   },
   "5347": {
     "name": "Nyheim Hines",
-    "team": "LAC",
+    "team": "NO",
     "tankId": "3916430",
     "byeWeek": 12,
     "pos": "RB",
@@ -9700,7 +9700,7 @@
   },
   "11947": {
     "name": "Austin Jones",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4569330",
     "byeWeek": 12,
     "pos": "RB",
@@ -9937,7 +9937,7 @@
   },
   "4435": {
     "name": "Anthony Firkser",
-    "team": "KC",
+    "team": "DET",
     "tankId": "3049698",
     "byeWeek": 10,
     "pos": "TE",
@@ -10031,7 +10031,7 @@
   },
   "5285": {
     "name": "Ross Dwelley",
-    "team": "DET",
+    "team": "CAR",
     "tankId": "3120303",
     "byeWeek": 8,
     "pos": "TE",
@@ -10416,7 +10416,7 @@
   },
   "12981": {
     "name": "Gee Scott Jr.",
-    "team": "NE",
+    "team": "WAS",
     "tankId": "4429115",
     "byeWeek": 14,
     "pos": "TE",
@@ -11037,7 +11037,7 @@
   },
   "5199": {
     "name": "Byron Pringle",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4036416",
     "byeWeek": 12,
     "pos": "WR",
@@ -11300,7 +11300,7 @@
   },
   "9486": {
     "name": "Dontayvion Wicks",
-    "team": "GB",
+    "team": "PHI",
     "tankId": "4428850",
     "byeWeek": 5,
     "pos": "WR",
@@ -11837,7 +11837,7 @@
   },
   "3357": {
     "name": "Brandon Allen",
-    "team": "TEN",
+    "team": "NYG",
     "tankId": "2574511",
     "byeWeek": 10,
     "pos": "QB",
@@ -12022,7 +12022,7 @@
   },
   "5970": {
     "name": "Greg Dortch",
-    "team": "ARI",
+    "team": "DET",
     "tankId": "4037235",
     "byeWeek": 8,
     "pos": "WR",
@@ -12139,7 +12139,7 @@
   },
   "7944": {
     "name": "Michael Strachan",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4589245",
     "byeWeek": 12,
     "pos": "WR",
@@ -12182,7 +12182,7 @@
   },
   "6850": {
     "name": "Harrison Bryant",
-    "team": "HOU",
+    "team": "SEA",
     "tankId": "4040774",
     "byeWeek": 6,
     "pos": "TE",
@@ -12232,7 +12232,7 @@
   },
   "6380": {
     "name": "Davion Davis",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3933568",
     "byeWeek": 12,
     "pos": "WR",
@@ -12351,7 +12351,7 @@
   },
   "6753": {
     "name": "Derrick Gore",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3925346",
     "byeWeek": 12,
     "pos": "RB",
@@ -12464,7 +12464,7 @@
   },
   "7352": {
     "name": "Matt Cole",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4041703",
     "byeWeek": 12,
     "pos": "WR",
@@ -12484,7 +12484,7 @@
   },
   "3568": {
     "name": "Marken Michel",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2591718",
     "byeWeek": 12,
     "pos": "WR",
@@ -12537,7 +12537,7 @@
   },
   "4663": {
     "name": "Austin Ekeler",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3068267",
     "byeWeek": 12,
     "pos": "RB",
@@ -12680,7 +12680,7 @@
   },
   "5000": {
     "name": "Chase Edmonds",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3119195",
     "byeWeek": 12,
     "pos": "RB",
@@ -12737,7 +12737,7 @@
   },
   "13162": {
     "name": "Maximilian Mang",
-    "team": "IND",
+    "team": "NYG",
     "tankId": "4608691",
     "byeWeek": 11,
     "pos": "TE",
@@ -12920,7 +12920,7 @@
   },
   "11605": {
     "name": "Jaheim Bell",
-    "team": "PHI",
+    "team": "PIT",
     "tankId": "4429262",
     "byeWeek": 9,
     "pos": "TE",
@@ -13037,7 +13037,7 @@
   },
   "6290": {
     "name": "Scotty Miller",
-    "team": "PIT",
+    "team": "CHI",
     "tankId": "3914397",
     "byeWeek": 5,
     "pos": "WR",
@@ -13049,7 +13049,7 @@
   },
   "11163": {
     "name": "Tim DeMorat",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4367790",
     "byeWeek": 12,
     "pos": "QB",
@@ -13103,7 +13103,7 @@
   },
   "5903": {
     "name": "Will Grier",
-    "team": "DAL",
+    "team": "CAR",
     "tankId": "3115252",
     "byeWeek": 10,
     "pos": "QB",
@@ -13201,7 +13201,7 @@
   },
   "11070": {
     "name": "Kazmeir Allen",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4367180",
     "byeWeek": 12,
     "pos": "RB",
@@ -13296,7 +13296,7 @@
   },
   "5154": {
     "name": "Trent Sherfield Sr.",
-    "team": "DEN",
+    "team": "BUF",
     "tankId": "3122168",
     "byeWeek": 12,
     "pos": "WR",
@@ -13349,7 +13349,7 @@
   },
   "8178": {
     "name": "Braylon Sanders",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4259908",
     "byeWeek": 12,
     "pos": "WR",
@@ -13718,7 +13718,7 @@
   },
   "5094": {
     "name": "Tyler Conklin",
-    "team": "LAC",
+    "team": "DET",
     "tankId": "3915486",
     "byeWeek": 12,
     "pos": "TE",
@@ -13847,7 +13847,7 @@
   },
   "4491": {
     "name": "Marcus Kemp",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3046399",
     "byeWeek": 12,
     "pos": "WR",
@@ -14012,7 +14012,7 @@
   },
   "6040": {
     "name": "Tyree Jackson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3916564",
     "byeWeek": 12,
     "pos": "TE",
@@ -14392,7 +14392,7 @@
   },
   "7143": {
     "name": "Ben DiNucci",
-    "team": "ATL",
+    "team": "DEN",
     "tankId": "3895785",
     "byeWeek": 5,
     "pos": "QB",
@@ -14532,7 +14532,7 @@
   },
   "2549": {
     "name": "Trevor Siemian",
-    "team": "TEN",
+    "team": "ATL",
     "tankId": "2511109",
     "byeWeek": 10,
     "pos": "QB",
@@ -14649,7 +14649,7 @@
   },
   "827": {
     "name": "Tyrod Taylor",
-    "team": "NYJ",
+    "team": "GB",
     "tankId": "14163",
     "byeWeek": 9,
     "pos": "QB",
@@ -14778,7 +14778,7 @@
   },
   "8061": {
     "name": "Jake Hausmann",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4040617",
     "byeWeek": 12,
     "pos": "TE",
@@ -14897,7 +14897,7 @@
   },
   "4234": {
     "name": "Noah Brown",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3121409",
     "byeWeek": 12,
     "pos": "WR",
@@ -14929,7 +14929,7 @@
   },
   "8129": {
     "name": "Dameon Pierce",
-    "team": "HOU",
+    "team": "PHI",
     "tankId": "4360238",
     "byeWeek": 6,
     "pos": "RB",
@@ -15134,7 +15134,7 @@
   },
   "5974": {
     "name": "Trace McSorley",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3116172",
     "byeWeek": 12,
     "pos": "QB",
@@ -15310,7 +15310,7 @@
   },
   "11808": {
     "name": "Jha'Quan Jackson",
-    "team": "TEN",
+    "team": "NO",
     "tankId": "4427575",
     "byeWeek": 10,
     "pos": "WR",
@@ -15365,7 +15365,7 @@
   },
   "5086": {
     "name": "Marquez Valdes-Scantling",
-    "team": "PIT",
+    "team": "DAL",
     "tankId": "3051738",
     "byeWeek": 5,
     "pos": "WR",
@@ -16597,7 +16597,7 @@
   },
   "7049": {
     "name": "Jauan Jennings",
-    "team": "SF",
+    "team": "MIN",
     "tankId": "3886598",
     "byeWeek": 14,
     "pos": "WR",
@@ -16643,7 +16643,7 @@
   },
   "8756": {
     "name": "Brandon Johnson",
-    "team": "TB",
+    "team": "PIT",
     "tankId": "4035198",
     "byeWeek": 9,
     "pos": "WR",
@@ -16917,7 +16917,7 @@
   },
   "3362": {
     "name": "Jeff Driskel",
-    "team": "LV",
+    "team": "WAS",
     "tankId": "2574630",
     "byeWeek": 8,
     "pos": "QB",
@@ -17108,7 +17108,7 @@
   },
   "11645": {
     "name": "Javon Baker",
-    "team": "PHI",
+    "team": "SF",
     "tankId": "4692022",
     "byeWeek": 9,
     "pos": "WR",
@@ -17191,7 +17191,7 @@
   },
   "7538": {
     "name": "Zach Wilson",
-    "team": "MIA",
+    "team": "NO",
     "tankId": "4361259",
     "byeWeek": 12,
     "pos": "QB",
@@ -17220,7 +17220,7 @@
   },
   "7605": {
     "name": "Kyle Trask",
-    "team": "TB",
+    "team": "ATL",
     "tankId": "4034946",
     "byeWeek": 9,
     "pos": "QB",
@@ -17634,7 +17634,7 @@
   },
   "5162": {
     "name": "Reggie Bonnafon",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3116642",
     "byeWeek": 12,
     "pos": "RB",
@@ -17896,7 +17896,7 @@
   },
   "11273": {
     "name": "Ben VanSumeren",
-    "team": "PHI",
+    "team": "BUF",
     "tankId": "4372070",
     "byeWeek": 9,
     "pos": "FB",
@@ -18484,7 +18484,7 @@
   },
   "5230": {
     "name": "Michael Badgley",
-    "team": "IND",
+    "team": "BUF",
     "tankId": "3123052",
     "byeWeek": 11,
     "pos": "PK",
@@ -18939,7 +18939,7 @@
   },
   "6268": {
     "name": "Matthew Wright",
-    "team": "HOU",
+    "team": "BUF",
     "tankId": "3128444",
     "byeWeek": 6,
     "pos": "PK",
@@ -19381,7 +19381,7 @@
   },
   "13176": {
     "name": "Ale Kaho",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361090",
     "bDay": "4/7/2000",
     "espnID": "4361090",
@@ -19631,7 +19631,7 @@
   },
   "8022": {
     "name": "Drew Himmelman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3908605",
     "bDay": "9/19/1996",
     "espnID": "3908605",
@@ -20003,7 +20003,7 @@
   },
   "12846": {
     "name": "Fentrell Cypress II",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4429488",
     "bDay": "6/5/2001",
     "espnID": "4429488",
@@ -20203,7 +20203,7 @@
   },
   "6900": {
     "name": "Jonathan Greenard",
-    "team": "MIN",
+    "team": "PHI",
     "tankId": "3916409",
     "bDay": "5/25/1997",
     "espnID": "3916409",
@@ -20213,7 +20213,7 @@
   },
   "11699": {
     "name": "Jer'Zhan Newton",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4430560",
     "bDay": "8/31/2002",
     "espnID": "4430560",
@@ -20395,7 +20395,7 @@
   },
   "2472": {
     "name": "David Mayo",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2972400",
     "bDay": "8/18/1993",
     "espnID": "2972400",
@@ -20937,7 +20937,7 @@
   },
   "4954": {
     "name": "Colby Wadman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3050015",
     "bDay": "4/19/1995",
     "espnID": "3050015",
@@ -20963,7 +20963,7 @@
   },
   "6848": {
     "name": "Anfernee Jennings",
-    "team": "NE",
+    "team": "NO",
     "tankId": "3925350",
     "bDay": "9/1/1997",
     "espnID": "3925350",
@@ -20973,7 +20973,7 @@
   },
   "2112": {
     "name": "Charles Leno Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "16848",
     "bDay": "10/9/1991",
     "espnID": "16848",
@@ -21053,7 +21053,7 @@
   },
   "6947": {
     "name": "K'Von Wallace",
-    "team": "HOU",
+    "team": "BAL",
     "tankId": "4035463",
     "bDay": "7/25/1997",
     "espnID": "4035463",
@@ -21213,7 +21213,7 @@
   },
   "7731": {
     "name": "Jay Tufele",
-    "team": "NYJ",
+    "team": "DET",
     "tankId": "4259647",
     "bDay": "7/25/1999",
     "espnID": "4259647",
@@ -21441,7 +21441,7 @@
   },
   "10889": {
     "name": "Tyree Wilson",
-    "team": "LV",
+    "team": "NO",
     "tankId": "4372533",
     "bDay": "5/20/2000",
     "espnID": "4372533",
@@ -21479,7 +21479,7 @@
   },
   "2308": {
     "name": "Dante Fowler Jr.",
-    "team": "DAL",
+    "team": "SEA",
     "tankId": "2980100",
     "bDay": "8/3/1994",
     "espnID": "2980100",
@@ -21499,7 +21499,7 @@
   },
   "6907": {
     "name": "Nick Harris",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4039016",
     "bDay": "11/13/1998",
     "espnID": "4039016",
@@ -21949,7 +21949,7 @@
   },
   "5671": {
     "name": "Joshua Kalu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3116105",
     "bDay": "8/28/1995",
     "espnID": "3116105",
@@ -22213,7 +22213,7 @@
   },
   "10938": {
     "name": "DJ Johnson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4240623",
     "bDay": "10/21/1998",
     "espnID": "4240623",
@@ -22251,7 +22251,7 @@
   },
   "5580": {
     "name": "Frankie Luvu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3127273",
     "bDay": "9/19/1996",
     "espnID": "3127273",
@@ -22301,7 +22301,7 @@
   },
   "8584": {
     "name": "Skyler Thomas",
-    "team": "LAC",
+    "team": "CHI",
     "tankId": "4055190",
     "bDay": "4/8/1998",
     "espnID": "4055190",
@@ -22431,7 +22431,7 @@
   },
   "12844": {
     "name": "Ricky Barber",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4428343",
     "bDay": "5/7/2001",
     "espnID": "4428343",
@@ -23093,7 +23093,7 @@
   },
   "11816": {
     "name": "Javontae Jean-Baptiste",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361357",
     "bDay": "5/16/2000",
     "espnID": "4361357",
@@ -23139,7 +23139,7 @@
   },
   "8392": {
     "name": "Nick Cross",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4426403",
     "bDay": "9/10/2001",
     "espnID": "4426403",
@@ -23205,7 +23205,7 @@
   },
   "4192": {
     "name": "Corn Elder",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3051929",
     "bDay": "10/9/1994",
     "espnID": "3051929",
@@ -23343,7 +23343,7 @@
   },
   "2344": {
     "name": "Eddie Goldman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2969924",
     "bDay": "1/6/1994",
     "espnID": "2969924",
@@ -23441,7 +23441,7 @@
   },
   "10990": {
     "name": "Darius Rush",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4362858",
     "bDay": "2/22/2000",
     "espnID": "4362858",
@@ -23487,7 +23487,7 @@
   },
   "3322": {
     "name": "DJ Reader",
-    "team": "DET",
+    "team": "NYG",
     "tankId": "2977670",
     "bDay": "7/1/1994",
     "espnID": "2977670",
@@ -23569,7 +23569,7 @@
   },
   "7259": {
     "name": "Bobby Price",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4030779",
     "bDay": "4/25/1998",
     "espnID": "4030779",
@@ -23731,7 +23731,7 @@
   },
   "13375": {
     "name": "Sonny Styles",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5081807",
     "bDay": "11/24/2004",
     "espnID": "5081807",
@@ -23979,7 +23979,7 @@
   },
   "8378": {
     "name": "DaMarcus Fields",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4043137",
     "bDay": "3/11/1998",
     "espnID": "4043137",
@@ -24077,7 +24077,7 @@
   },
   "12842": {
     "name": "Timothy McKay",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4568320",
     "bDay": "1/15/2002",
     "espnID": "4568320",
@@ -24357,7 +24357,7 @@
   },
   "6627": {
     "name": "Shy Tuttle",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3886601",
     "bDay": "10/20/1995",
     "espnID": "3886601",
@@ -24395,7 +24395,7 @@
   },
   "12845": {
     "name": "Car'lin Vigers",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4917486",
     "bDay": "8/16/2000",
     "espnID": "4917486",
@@ -24727,7 +24727,7 @@
   },
   "5365": {
     "name": "Troy Apke",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3116152",
     "bDay": "4/11/1995",
     "espnID": "3116152",
@@ -25015,7 +25015,7 @@
   },
   "3221": {
     "name": "Nick Martin",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2579850",
     "bDay": "4/29/1993",
     "espnID": "2579850",
@@ -25077,7 +25077,7 @@
   },
   "3159": {
     "name": "Laremy Tunsil",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3051890",
     "bDay": "8/2/1994",
     "espnID": "3051890",
@@ -25289,7 +25289,7 @@
   },
   "5983": {
     "name": "Sheldrick Redwine",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3917852",
     "bDay": "11/6/1996",
     "espnID": "3917852",
@@ -25475,7 +25475,7 @@
   },
   "3246": {
     "name": "Daryl Worley",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3042436",
     "bDay": "2/22/1995",
     "espnID": "3042436",
@@ -25781,7 +25781,7 @@
   },
   "5178": {
     "name": "Sean Chandler",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3138733",
     "bDay": "4/27/1996",
     "espnID": "3138733",
@@ -26785,7 +26785,7 @@
   },
   "5963": {
     "name": "Nate Herbig",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4044438",
     "bDay": "7/10/1998",
     "espnID": "4044438",
@@ -27221,7 +27221,7 @@
   },
   "7014": {
     "name": "Joe Bachie",
-    "team": "TEN",
+    "team": "DET",
     "tankId": "4036507",
     "bDay": "2/26/1998",
     "espnID": "4036507",
@@ -27349,7 +27349,7 @@
   },
   "11258": {
     "name": "Jalen Harris",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4259370",
     "bDay": "2/26/1999",
     "espnID": "4259370",
@@ -27691,7 +27691,7 @@
   },
   "5920": {
     "name": "Will Harris",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3915297",
     "bDay": "12/19/1995",
     "espnID": "3915297",
@@ -28227,7 +28227,7 @@
   },
   "10924": {
     "name": "Zacch Pickens",
-    "team": "KC",
+    "team": "NYG",
     "tankId": "4426332",
     "bDay": "3/6/2000",
     "espnID": "4426332",
@@ -28443,7 +28443,7 @@
   },
   "4086": {
     "name": "DeMarcus Walker",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3045377",
     "bDay": "9/30/1994",
     "espnID": "3045377",
@@ -28807,7 +28807,7 @@
   },
   "8023": {
     "name": "Nolan Laufenberg",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4360730",
     "bDay": "3/25/1999",
     "espnID": "4360730",
@@ -28937,7 +28937,7 @@
   },
   "8020": {
     "name": "Curtis Robinson",
-    "team": "SF",
+    "team": "DAL",
     "tankId": "4044448",
     "bDay": "6/2/1998",
     "espnID": "4044448",
@@ -29143,7 +29143,7 @@
   },
   "2395": {
     "name": "Carl Davis Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2511690",
     "bDay": "3/2/1992",
     "espnID": "2511690",
@@ -29227,7 +29227,7 @@
   },
   "5191": {
     "name": "Taylor Stallworth",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3126489",
     "bDay": "8/18/1995",
     "espnID": "3126489",
@@ -29313,7 +29313,7 @@
   },
   "4213": {
     "name": "Nate Gerry",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3040475",
     "bDay": "2/23/1995",
     "espnID": "3040475",
@@ -29499,7 +29499,7 @@
   },
   "6958": {
     "name": "Mike Danna",
-    "team": "KC",
+    "team": "BUF",
     "tankId": "3915487",
     "bDay": "12/4/1997",
     "espnID": "3915487",
@@ -29557,7 +29557,7 @@
   },
   "7474": {
     "name": "Keandre Jones",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4040621",
     "bDay": "9/24/1997",
     "espnID": "4040621",
@@ -30149,7 +30149,7 @@
   },
   "11162": {
     "name": "DJ Stirgus",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4700654",
     "bDay": "9/8/2000",
     "espnID": "4700654",
@@ -30321,7 +30321,7 @@
   },
   "5934": {
     "name": "Charles Omenihu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3929865",
     "bDay": "8/20/1997",
     "espnID": "3929865",
@@ -30595,7 +30595,7 @@
   },
   "7652": {
     "name": "Sam Cosmi",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4262199",
     "bDay": "2/16/1999",
     "espnID": "4262199",
@@ -30761,7 +30761,7 @@
   },
   "2859": {
     "name": "Justin Hamilton",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2574009",
     "bDay": "7/27/1993",
     "espnID": "2574009",
@@ -30915,7 +30915,7 @@
   },
   "4059": {
     "name": "Marshon Lattimore",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3121421",
     "bDay": "5/19/1996",
     "espnID": "3121421",
@@ -31351,7 +31351,7 @@
   },
   "8490": {
     "name": "Curtis Brooks",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4037474",
     "bDay": "2/6/1998",
     "espnID": "4037474",
@@ -31479,7 +31479,7 @@
   },
   "7973": {
     "name": "Foster Sarell",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4242555",
     "bDay": "8/28/1998",
     "espnID": "4242555",
@@ -31659,7 +31659,7 @@
   },
   "815": {
     "name": "Nick Bellore",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "14471",
     "bDay": "5/12/1989",
     "espnID": "14471",
@@ -31759,7 +31759,7 @@
   },
   "4288": {
     "name": "Chase Roullier",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2976182",
     "bDay": "8/23/1993",
     "espnID": "2976182",
@@ -32133,7 +32133,7 @@
   },
   "7778": {
     "name": "Camaron Cheeseman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4046543",
     "bDay": "4/26/1998",
     "espnID": "4046543",
@@ -32255,7 +32255,7 @@
   },
   "8390": {
     "name": "Martin Emerson Jr.",
-    "team": "CLE",
+    "team": "NO",
     "tankId": "4429568",
     "bDay": "9/27/2000",
     "espnID": "4429568",
@@ -32327,7 +32327,7 @@
   },
   "6800": {
     "name": "K'Lavon Chaisson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4242205",
     "bDay": "7/25/1999",
     "espnID": "4242205",
@@ -32465,7 +32465,7 @@
   },
   "871": {
     "name": "Von Miller",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "13976",
     "bDay": "3/26/1989",
     "espnID": "13976",
@@ -32651,7 +32651,7 @@
   },
   "3838": {
     "name": "Antonio Hamilton Sr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3056354",
     "bDay": "1/24/1993",
     "espnID": "3056354",
@@ -32677,7 +32677,7 @@
   },
   "5503": {
     "name": "J.C. Hassenauer",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3126353",
     "bDay": "9/1/1994",
     "espnID": "3126353",
@@ -33587,7 +33587,7 @@
   },
   "5626": {
     "name": "Bunmi Rotimi",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3060151",
     "bDay": "7/16/1995",
     "espnID": "3060151",
@@ -33653,7 +33653,7 @@
   },
   "7493": {
     "name": "De'Jon Harris",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4035577",
     "bDay": "11/1/1997",
     "espnID": "4035577",
@@ -33855,7 +33855,7 @@
   },
   "12930": {
     "name": "Tyler Cooper",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4429456",
     "bDay": "4/20/2001",
     "espnID": "4429456",
@@ -34001,7 +34001,7 @@
   },
   "3022": {
     "name": "De'Vante Bausby",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2613234",
     "bDay": "1/15/1993",
     "espnID": "2613234",
@@ -34415,7 +34415,7 @@
   },
   "5792": {
     "name": "Jeremy Reaves",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3125248",
     "bDay": "8/29/1996",
     "espnID": "3125248",
@@ -35059,7 +35059,7 @@
   },
   "3374": {
     "name": "Kevon Seymour",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2971603",
     "bDay": "11/30/1993",
     "espnID": "2971603",
@@ -35087,7 +35087,7 @@
   },
   "12253": {
     "name": "Bo Bauer",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361321",
     "bDay": "12/11/1999",
     "espnID": "4361321",
@@ -35113,7 +35113,7 @@
   },
   "3786": {
     "name": "George Fant",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2583951",
     "bDay": "7/19/1992",
     "espnID": "2583951",
@@ -35443,7 +35443,7 @@
   },
   "11062": {
     "name": "Ali Gaye",
-    "team": "TEN",
+    "team": "HOU",
     "tankId": "4243321",
     "bDay": "11/29/1998",
     "espnID": "4243321",
@@ -35655,7 +35655,7 @@
   },
   "4124": {
     "name": "Ahkello Witherspoon",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3122630",
     "bDay": "3/21/1995",
     "espnID": "3122630",
@@ -35675,7 +35675,7 @@
   },
   "5333": {
     "name": "Jalyn Holmes",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3121414",
     "bDay": "1/25/1996",
     "espnID": "3121414",
@@ -35705,7 +35705,7 @@
   },
   "12595": {
     "name": "Trey Amos",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4574689",
     "bDay": "3/3/2002",
     "espnID": "4574689",
@@ -35807,7 +35807,7 @@
   },
   "12843": {
     "name": "Trey Rucker",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4567046",
     "bDay": "1/12/2001",
     "espnID": "4567046",
@@ -36007,7 +36007,7 @@
   },
   "2796": {
     "name": "Efe Obada",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3734467",
     "bDay": "4/13/1992",
     "espnID": "3734467",
@@ -36325,7 +36325,7 @@
   },
   "7028": {
     "name": "Alex Taylor",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4384564",
     "bDay": "4/29/1997",
     "espnID": "4384564",
@@ -36469,7 +36469,7 @@
   },
   "11778": {
     "name": "Jordan Magee",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4568617",
     "bDay": "3/24/2001",
     "espnID": "4568617",
@@ -36609,7 +36609,7 @@
   },
   "11084": {
     "name": "Andre Carter II",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4577333",
     "bDay": "3/28/2000",
     "espnID": "4577333",
@@ -36967,7 +36967,7 @@
   },
   "8473": {
     "name": "Eric Johnson II",
-    "team": "IND",
+    "team": "MIN",
     "tankId": "4050971",
     "bDay": "7/16/1998",
     "espnID": "4050971",
@@ -37055,7 +37055,7 @@
   },
   "8262": {
     "name": "D.J. Davidson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4242899",
     "bDay": "9/19/1997",
     "espnID": "4242899",
@@ -37269,7 +37269,7 @@
   },
   "7000": {
     "name": "Chapelle Russell",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3923413",
     "bDay": "1/20/1997",
     "espnID": "3923413",
@@ -37287,7 +37287,7 @@
   },
   "8593": {
     "name": "Drew White",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4258603",
     "bDay": "9/15/1998",
     "espnID": "4258603",
@@ -37549,7 +37549,7 @@
   },
   "4976": {
     "name": "Daron Payne",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3925354",
     "bDay": "5/27/1997",
     "espnID": "3925354",
@@ -37597,7 +37597,7 @@
   },
   "6896": {
     "name": "Amik Robertson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4239694",
     "bDay": "7/6/1998",
     "espnID": "4239694",
@@ -37617,7 +37617,7 @@
   },
   "11934": {
     "name": "Tyler Owens",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4572460",
     "bDay": "5/12/2001",
     "espnID": "4572460",
@@ -37935,7 +37935,7 @@
   },
   "11507": {
     "name": "D'Angelo Mandell",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4373640",
     "bDay": "12/27/1998",
     "espnID": "4373640",
@@ -38131,7 +38131,7 @@
   },
   "6883": {
     "name": "Lucas Niang",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4038552",
     "bDay": "8/19/1998",
     "espnID": "4038552",
@@ -38261,7 +38261,7 @@
   },
   "125": {
     "name": "Calais Campbell",
-    "team": "ARI",
+    "team": "BAL",
     "tankId": "11284",
     "bDay": "9/1/1986",
     "espnID": "11284",
@@ -38281,7 +38281,7 @@
   },
   "2192": {
     "name": "Andrew Norwell",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "17388",
     "bDay": "10/25/1991",
     "espnID": "17388",
@@ -38495,7 +38495,7 @@
   },
   "7957": {
     "name": "Jon Rhattigan",
-    "team": "LV",
+    "team": "CHI",
     "tankId": "4258485",
     "bDay": "2/2/1999",
     "espnID": "4258485",
@@ -38607,7 +38607,7 @@
   },
   "12558": {
     "name": "Josh Conerly Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4685326",
     "bDay": "11/5/2003",
     "espnID": "4685326",
@@ -38775,7 +38775,7 @@
   },
   "11016": {
     "name": "Malaesala Aumavae-Laulu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4569301",
     "bDay": "5/25/1999",
     "espnID": "4569301",
@@ -39031,7 +39031,7 @@
   },
   "6292": {
     "name": "Nick Allegretti",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3115922",
     "bDay": "4/21/1996",
     "espnID": "3115922",
@@ -39083,7 +39083,7 @@
   },
   "8362": {
     "name": "Leo Chenal",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4426901",
     "bDay": "10/26/2000",
     "espnID": "4426901",
@@ -39237,7 +39237,7 @@
   },
   "8586": {
     "name": "Ferrod Gardner",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3924316",
     "bDay": "3/26/1997",
     "espnID": "3924316",
@@ -39337,7 +39337,7 @@
   },
   "12684": {
     "name": "Kain Medrano",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4427984",
     "bDay": "2/16/2001",
     "espnID": "4427984",
@@ -39439,7 +39439,7 @@
   },
   "8522": {
     "name": "Chris Paul",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4244615",
     "bDay": "11/19/1998",
     "espnID": "4244615",
@@ -39777,7 +39777,7 @@
   },
   "12075": {
     "name": "Anim Dankwah",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4579564",
     "bDay": "10/19/2000",
     "espnID": "4579564",
@@ -40097,7 +40097,7 @@
   },
   "6733": {
     "name": "DeJuan Neal",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3957473",
     "bDay": "8/5/1996",
     "espnID": "3957473",
@@ -40381,7 +40381,7 @@
   },
   "6792": {
     "name": "Javon Kinlaw",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4259491",
     "bDay": "10/3/1997",
     "espnID": "4259491",
@@ -40391,7 +40391,7 @@
   },
   "12847": {
     "name": "Robert McDaniel",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4574814",
     "bDay": "10/18/2000",
     "espnID": "4574814",
@@ -40649,7 +40649,7 @@
   },
   "2033": {
     "name": "Shelby Harris",
-    "team": "CLE",
+    "team": "NYG",
     "tankId": "16837",
     "bDay": "8/11/1991",
     "espnID": "16837",
@@ -40743,7 +40743,7 @@
   },
   "6948": {
     "name": "Leki Fotu",
-    "team": "HOU",
+    "team": "NYG",
     "tankId": "4035666",
     "bDay": "8/23/1998",
     "espnID": "4035666",
@@ -40861,7 +40861,7 @@
   },
   "7456": {
     "name": "Benning Potoa'e",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3886826",
     "bDay": "9/17/1996",
     "espnID": "3886826",
@@ -41765,7 +41765,7 @@
   },
   "11936": {
     "name": "Norell Pollard",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4430326",
     "bDay": "2/18/2000",
     "espnID": "4430326",
@@ -41903,7 +41903,7 @@
   },
   "8918": {
     "name": "Alex Akingbulu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4035835",
     "bDay": "12/28/1997",
     "espnID": "4035835",
@@ -42123,7 +42123,7 @@
   },
   "11702": {
     "name": "Brandon Coleman",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4685030",
     "bDay": "10/12/2000",
     "espnID": "4685030",
@@ -42335,7 +42335,7 @@
   },
   "2343": {
     "name": "Preston Smith",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2577446",
     "bDay": "11/17/1992",
     "espnID": "2577446",
@@ -42635,7 +42635,7 @@
   },
   "1844": {
     "name": "Tyler Ott",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "17378",
     "bDay": "2/28/1992",
     "espnID": "17378",
@@ -42859,7 +42859,7 @@
   },
   "11161": {
     "name": "Kendall Smith",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4240538",
     "bDay": "1/3/1999",
     "espnID": "4240538",
@@ -43005,7 +43005,7 @@
   },
   "10993": {
     "name": "Tre Hawkins III",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4686553",
     "bDay": "8/1/2000",
     "espnID": "4686553",
@@ -43107,7 +43107,7 @@
   },
   "4860": {
     "name": "Jon Toth",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2971093",
     "bDay": "2/11/1994",
     "espnID": "2971093",
@@ -43115,7 +43115,7 @@
   },
   "8612": {
     "name": "Qwuantrezz Knight",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4036219",
     "bDay": "10/10/1997",
     "espnID": "4036219",
@@ -43539,7 +43539,7 @@
   },
   "12255": {
     "name": "Swayze Bozeman",
-    "team": "NYG",
+    "team": "CIN",
     "tankId": "4570546",
     "bDay": "11/2/1998",
     "espnID": "4570546",
@@ -43607,7 +43607,7 @@
   },
   "5330": {
     "name": "Dorance Armstrong",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3928979",
     "bDay": "6/10/1997",
     "espnID": "3928979",
@@ -43939,7 +43939,7 @@
   },
   "1233": {
     "name": "Bobby Wagner",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "14979",
     "bDay": "6/27/1990",
     "espnID": "14979",
@@ -44351,7 +44351,7 @@
   },
   "11676": {
     "name": "Mike Sainristil",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4428414",
     "bDay": "10/3/2000",
     "espnID": "4428414",
@@ -44521,7 +44521,7 @@
   },
   "7477": {
     "name": "Tyler Clark",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4035001",
     "bDay": "7/25/1998",
     "espnID": "4035001",
@@ -44695,7 +44695,7 @@
   },
   "8587": {
     "name": "Josh Drayden",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4035858",
     "bDay": "4/10/1998",
     "espnID": "4035858",
@@ -44945,7 +44945,7 @@
   },
   "12319": {
     "name": "Elijah Chatman",
-    "team": "NYG",
+    "team": "CLE",
     "tankId": "4429392",
     "bDay": "12/5/2000",
     "espnID": "4429392",
@@ -45079,7 +45079,7 @@
   },
   "8590": {
     "name": "Jacub Panasiuk",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4241971",
     "bDay": "6/14/1999",
     "espnID": "4241971",
@@ -45647,7 +45647,7 @@
   },
   "8591": {
     "name": "Tre Walker",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4367415",
     "bDay": "6/19/2000",
     "espnID": "4367415",
@@ -45733,7 +45733,7 @@
   },
   "6572": {
     "name": "Aaron Monteiro",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3915304",
     "bDay": "3/25/1997",
     "espnID": "3915304",
@@ -46127,7 +46127,7 @@
   },
   "7169": {
     "name": "Jace Whittaker",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3821572",
     "bDay": "7/16/1995",
     "espnID": "3821572",
@@ -46207,7 +46207,7 @@
   },
   "4959": {
     "name": "Scott Daly",
-    "team": "CHI",
+    "team": "TB",
     "tankId": "2980138",
     "bDay": "2/7/1994",
     "espnID": "2980138",
@@ -46217,7 +46217,7 @@
   },
   "1507": {
     "name": "Jon Bostic",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "15827",
     "bDay": "5/5/1991",
     "espnID": "15827",
@@ -46369,7 +46369,7 @@
   },
   "11937": {
     "name": "David Nwaogwugwu",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4379387",
     "bDay": "10/15/2000",
     "espnID": "4379387",
@@ -46619,7 +46619,7 @@
   },
   "11069": {
     "name": "Xavier Henderson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4360849",
     "bDay": "7/12/1999",
     "espnID": "4360849",
@@ -46627,7 +46627,7 @@
   },
   "5388": {
     "name": "Danny Johnson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3141066",
     "bDay": "11/17/1995",
     "espnID": "3141066",
@@ -46699,7 +46699,7 @@
   },
   "7730": {
     "name": "Darren Hall",
-    "team": "ARI",
+    "team": "ATL",
     "tankId": "4261606",
     "bDay": "5/2/2000",
     "espnID": "4261606",
@@ -46833,7 +46833,7 @@
   },
   "12790": {
     "name": "John Bullock",
-    "team": "IND",
+    "team": "TB",
     "tankId": "4569563",
     "bDay": "4/22/2001",
     "espnID": "4569563",
@@ -46993,7 +46993,7 @@
   },
   "3265": {
     "name": "Sheldon Day",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2976194",
     "bDay": "7/1/1994",
     "espnID": "2976194",
@@ -47315,7 +47315,7 @@
   },
   "4693": {
     "name": "Andrew Wylie",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3042702",
     "bDay": "8/19/1994",
     "espnID": "3042702",
@@ -47519,7 +47519,7 @@
   },
   "7626": {
     "name": "Odafe Oweh",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4361422",
     "bDay": "12/15/1998",
     "espnID": "4361422",
@@ -47621,7 +47621,7 @@
   },
   "8394": {
     "name": "Percy Butler",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4363097",
     "bDay": "5/29/2000",
     "espnID": "4363097",
@@ -47651,7 +47651,7 @@
   },
   "11797": {
     "name": "Patrick McMorris",
-    "team": "NYG",
+    "team": "SF",
     "tankId": "4430158",
     "bDay": "10/18/2001",
     "espnID": "4430158",
@@ -47833,7 +47833,7 @@
   },
   "4174": {
     "name": "Deatrich Wise Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2980080",
     "bDay": "7/26/1994",
     "espnID": "2980080",
@@ -48023,7 +48023,7 @@
   },
   "1826": {
     "name": "Tyler Larsen",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "17196",
     "bDay": "7/8/1991",
     "espnID": "17196",
@@ -48031,7 +48031,7 @@
   },
   "1506": {
     "name": "Tress Way",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "16166",
     "bDay": "4/18/1990",
     "espnID": "16166",
@@ -49513,7 +49513,7 @@
   },
   "10903": {
     "name": "Quan Martin",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4360378",
     "bDay": "4/17/2000",
     "espnID": "4360378",
@@ -49531,7 +49531,7 @@
   },
   "7402": {
     "name": "Julian Good-Jones",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3917949",
     "bDay": "3/2/1997",
     "espnID": "3917949",
@@ -49567,7 +49567,7 @@
   },
   "6925": {
     "name": "Essang Bassey",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4037216",
     "bDay": "8/12/1998",
     "espnID": "4037216",
@@ -49775,7 +49775,7 @@
   },
   "5366": {
     "name": "Tim Settle",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3929956",
     "bDay": "7/11/1997",
     "espnID": "3929956",
@@ -49829,7 +49829,7 @@
   },
   "4567": {
     "name": "Channing Stribling",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3045202",
     "bDay": "11/21/1994",
     "espnID": "3045202",
@@ -49883,7 +49883,7 @@
   },
   "8351": {
     "name": "Drake Jackson",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4569511",
     "bDay": "4/12/2001",
     "espnID": "4569511",
@@ -50073,7 +50073,7 @@
   },
   "4099": {
     "name": "Duke Riley",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3042725",
     "bDay": "8/9/1994",
     "espnID": "3042725",
@@ -50191,7 +50191,7 @@
   },
   "3282": {
     "name": "Willie Beavers",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "2587711",
     "bDay": "10/9/1993",
     "espnID": "2587711",
@@ -50405,7 +50405,7 @@
   },
   "5423": {
     "name": "Trent Scott",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "3123303",
     "bDay": "1/25/1994",
     "espnID": "3123303",
@@ -50793,7 +50793,7 @@
   },
   "11017": {
     "name": "Dee Winters",
-    "team": "SF",
+    "team": "DAL",
     "tankId": "4428914",
     "bDay": "10/17/2000",
     "espnID": "4428914",
@@ -50857,7 +50857,7 @@
   },
   "12550": {
     "name": "T.J. Maguranyanga",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5278092",
     "bDay": "12/22/2002",
     "espnID": "5278092",
@@ -50867,7 +50867,7 @@
   },
   "7046": {
     "name": "J.R. Reed",
-    "team": "DET",
+    "team": "BUF",
     "tankId": "3917012",
     "bDay": "3/11/1996",
     "espnID": "3917012",
@@ -51429,7 +51429,7 @@
   },
   "13536": {
     "name": "Matt Gulbin",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4683463",
     "bDay": "10/27/2002",
     "espnID": "4683463",
@@ -51477,7 +51477,7 @@
   },
   "13418": {
     "name": "Robert Henry Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5151317",
     "bDay": null,
     "espnID": "5151317",
@@ -52277,7 +52277,7 @@
   },
   "13557": {
     "name": "Athan Kaliakmanis",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4432722",
     "bDay": "8/20/2003",
     "espnID": "4432722",
@@ -52517,7 +52517,7 @@
   },
   "13405": {
     "name": "Kaytron Allen",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "4685246",
     "bDay": "1/8/2003",
     "espnID": "4685246",
@@ -52581,7 +52581,7 @@
   },
   "13301": {
     "name": "Antonio Williams",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5081432",
     "bDay": "7/14/2004",
     "espnID": "5081432",
@@ -52829,7 +52829,7 @@
   },
   "13366": {
     "name": "Joshua Josephs",
-    "team": "WSH",
+    "team": "WAS",
     "tankId": "5081392",
     "bDay": "12/8/2003",
     "espnID": "5081392",
@@ -52984,5 +52984,3101 @@
     "pos": "DL",
     "exp": 4,
     "draft_year": 2023
+  },
+  "13783": {
+    "name": "Raylen Sharpe",
+    "team": "IND",
+    "tankId": "4872957",
+    "bDay": null,
+    "espnID": "4872957",
+    "pos": "WR"
+  },
+  "13793": {
+    "name": "Xavier Nwankpa",
+    "team": "KC",
+    "tankId": "4685491",
+    "bDay": "12/8/2003",
+    "espnID": "4685491",
+    "pos": "S"
+  },
+  "13658": {
+    "name": "Brady Boyd",
+    "team": "JAX",
+    "tankId": "4594319",
+    "bDay": null,
+    "espnID": "4594319",
+    "pos": "WR"
+  },
+  "13591": {
+    "name": "Deontae Lawson",
+    "team": "PHI",
+    "tankId": "4432725",
+    "bDay": "2/11/2003",
+    "espnID": "4432725",
+    "pos": "LB"
+  },
+  "13639": {
+    "name": "Alex Wollschlaeger",
+    "team": "NO",
+    "tankId": "4433930",
+    "bDay": null,
+    "espnID": "4433930",
+    "pos": "OT"
+  },
+  "13665": {
+    "name": "Jack Bouwmeester",
+    "team": "SF",
+    "tankId": "4426752",
+    "bDay": null,
+    "espnID": "4426752",
+    "pos": "P"
+  },
+  "13645": {
+    "name": "Michael Wortham",
+    "team": "JAX",
+    "tankId": "5152117",
+    "bDay": "6/27/2002",
+    "espnID": "5152117",
+    "pos": "WR"
+  },
+  "13625": {
+    "name": "Keli Lawson",
+    "team": "MIN",
+    "tankId": "4684084",
+    "bDay": null,
+    "espnID": "4684084",
+    "pos": "LB"
+  },
+  "13823": {
+    "name": "Kapena Gushiken",
+    "team": "PHI",
+    "tankId": "5153072",
+    "bDay": "8/15/2002",
+    "espnID": "5153072",
+    "pos": "S"
+  },
+  "13248": {
+    "name": "Christian Johnstone",
+    "team": "PHI",
+    "tankId": "4429932",
+    "bDay": null,
+    "espnID": "4429932",
+    "pos": "LS"
+  },
+  "13943": {
+    "name": "Squirrel White",
+    "team": "CHI",
+    "tankId": "5081368",
+    "bDay": null,
+    "espnID": "5081368",
+    "pos": "WR"
+  },
+  "12024": {
+    "name": "Sunny Anderson",
+    "team": "SEA",
+    "tankId": "4370989",
+    "bDay": "7/28/2000",
+    "espnID": "4370989",
+    "pos": "LB"
+  },
+  "13671": {
+    "name": "Damonic Williams",
+    "team": "ARI",
+    "tankId": "4685582",
+    "bDay": "9/4/2004",
+    "espnID": "4685582",
+    "pos": "DT"
+  },
+  "13724": {
+    "name": "Daylan Carnell",
+    "team": "PIT",
+    "tankId": "4433967",
+    "bDay": "11/16/2002",
+    "espnID": "4433967",
+    "pos": "LB"
+  },
+  "13755": {
+    "name": "Shiyazh Pete",
+    "team": "DAL",
+    "tankId": "4880106",
+    "bDay": null,
+    "espnID": "4880106",
+    "pos": "OT"
+  },
+  "13946": {
+    "name": "Jamal Haynes",
+    "team": "CIN",
+    "tankId": "4611995",
+    "bDay": "10/5/2002",
+    "espnID": "4611995",
+    "pos": "RB"
+  },
+  "13959": {
+    "name": "Ayden Garnes",
+    "team": "TB",
+    "tankId": "4890885",
+    "bDay": null,
+    "espnID": "4890885",
+    "pos": "CB"
+  },
+  "13929": {
+    "name": "Sahmir Hagans",
+    "team": "IND",
+    "tankId": "4612246",
+    "bDay": null,
+    "espnID": "4612246",
+    "pos": "WR"
+  },
+  "13792": {
+    "name": "Josh Thompson",
+    "team": "KC",
+    "tankId": "4682692",
+    "bDay": "1/1/2004",
+    "espnID": "4682692",
+    "pos": "G"
+  },
+  "13077": {
+    "name": "Ozzie Hutchinson",
+    "team": "BAL",
+    "tankId": "4578080",
+    "bDay": "9/16/2001",
+    "espnID": "4578080",
+    "pos": "OT"
+  },
+  "13595": {
+    "name": "Cash Jones",
+    "team": "ATL",
+    "tankId": "4881826",
+    "bDay": "4/5/2002",
+    "espnID": "4881826",
+    "pos": "RB"
+  },
+  "13860": {
+    "name": "Sabastian Harsh",
+    "team": "HOU",
+    "tankId": "4699802",
+    "bDay": "1/1/2005",
+    "espnID": "4699802",
+    "pos": "DE"
+  },
+  "13979": {
+    "name": "Isaiah Smith",
+    "team": "CAR",
+    "tankId": "4816330",
+    "bDay": null,
+    "espnID": "4816330",
+    "pos": "LB"
+  },
+  "13944": {
+    "name": "Mason Murphy",
+    "team": "CHI",
+    "tankId": "4682479",
+    "bDay": null,
+    "espnID": "4682479",
+    "pos": "OT"
+  },
+  "13620": {
+    "name": "Brett Thorson",
+    "team": "MIN",
+    "tankId": "4799994",
+    "bDay": "1/6/2000",
+    "espnID": "4799994",
+    "pos": "P"
+  },
+  "13750": {
+    "name": "T.J. Harden",
+    "team": "CLE",
+    "tankId": "5086027",
+    "bDay": "4/23/2004",
+    "espnID": "5086027",
+    "pos": "RB"
+  },
+  "13092": {
+    "name": "Steven Losoya",
+    "team": "CAR",
+    "tankId": "4427829",
+    "bDay": "5/25/2001",
+    "espnID": "4427829",
+    "pos": "G"
+  },
+  "13761": {
+    "name": "Jeffrey M'ba",
+    "team": "WAS",
+    "tankId": "5081056",
+    "bDay": "4/9/1999",
+    "espnID": "5081056",
+    "pos": "DT"
+  },
+  "13018": {
+    "name": "Jarrod Hufford",
+    "team": "LV",
+    "tankId": "4429871",
+    "bDay": "4/9/2001",
+    "espnID": "4429871",
+    "pos": "C"
+  },
+  "13722": {
+    "name": "Isaiah Nwokobia",
+    "team": "CIN",
+    "tankId": "4597253",
+    "bDay": null,
+    "espnID": "4597253",
+    "pos": "S"
+  },
+  "13818": {
+    "name": "Romello Brinson",
+    "team": "MIA",
+    "tankId": "4431197",
+    "bDay": "1/23/2002",
+    "espnID": "4431197",
+    "pos": "WR"
+  },
+  "13739": {
+    "name": "Erick Hunter",
+    "team": "DET",
+    "tankId": "4890074",
+    "bDay": "2/26/2003",
+    "espnID": "4890074",
+    "pos": "LB"
+  },
+  "13734": {
+    "name": "Trevonte Sylvester",
+    "team": "BAL",
+    "tankId": "4433908",
+    "bDay": null,
+    "espnID": "4433908",
+    "pos": "OT"
+  },
+  "13854": {
+    "name": "Malik Spencer",
+    "team": "WAS",
+    "tankId": "4782664",
+    "bDay": "1/1/2005",
+    "espnID": "4782664",
+    "pos": "S"
+  },
+  "13328": {
+    "name": "Anthony Hankerson",
+    "team": "MIA",
+    "tankId": "4685385",
+    "bDay": null,
+    "espnID": "4685385",
+    "pos": "RB"
+  },
+  "13865": {
+    "name": "Dasan McCullough",
+    "team": "DEN",
+    "tankId": "4685439",
+    "bDay": null,
+    "espnID": "4685439",
+    "pos": "LB"
+  },
+  "13763": {
+    "name": "Javin Wright",
+    "team": "TB",
+    "tankId": "4428941",
+    "bDay": "1/1/2005",
+    "espnID": "4428941",
+    "pos": "LB"
+  },
+  "13935": {
+    "name": "Kahlil Saunders",
+    "team": "MIA",
+    "tankId": "4599150",
+    "bDay": null,
+    "espnID": "4599150",
+    "pos": "DT"
+  },
+  "13437": {
+    "name": "Noah Whittington",
+    "team": "HOU",
+    "tankId": "4432631",
+    "bDay": null,
+    "espnID": "4432631",
+    "pos": "RB"
+  },
+  "13977": {
+    "name": "DeVonta Smith",
+    "team": "CAR",
+    "tankId": "4594449",
+    "bDay": null,
+    "espnID": "4594449",
+    "pos": "CB"
+  },
+  "13746": {
+    "name": "Bernard Gooden",
+    "team": "CLE",
+    "tankId": "4684524",
+    "bDay": null,
+    "espnID": "4684524",
+    "pos": "DT"
+  },
+  "13953": {
+    "name": "Nate Evans",
+    "team": "CLE",
+    "tankId": "4600389",
+    "bDay": null,
+    "espnID": "4600389",
+    "pos": "CB"
+  },
+  "13425": {
+    "name": "Jalon Daniels",
+    "team": "TB",
+    "tankId": "4596472",
+    "bDay": "10/29/2002",
+    "espnID": "4596472",
+    "pos": "QB"
+  },
+  "13973": {
+    "name": "Keelan Marion",
+    "team": "ATL",
+    "tankId": "4604004",
+    "bDay": null,
+    "espnID": "4604004",
+    "pos": "WR"
+  },
+  "13786": {
+    "name": "Austin Brown",
+    "team": "IND",
+    "tankId": "4827042",
+    "bDay": "10/25/2003",
+    "espnID": "4827042",
+    "pos": "S"
+  },
+  "13801": {
+    "name": "Isaiah Jatta",
+    "team": "LV",
+    "tankId": "5157075",
+    "bDay": null,
+    "espnID": "5157075",
+    "pos": "OT"
+  },
+  "13939": {
+    "name": "Gabriel Benyard",
+    "team": "BUF",
+    "tankId": "4876752",
+    "bDay": null,
+    "espnID": "4876752",
+    "pos": "WR"
+  },
+  "13686": {
+    "name": "Aidan Hubbard",
+    "team": "SEA",
+    "tankId": "4603089",
+    "bDay": "3/15/2003",
+    "espnID": "4603089",
+    "pos": "DE"
+  },
+  "13655": {
+    "name": "Jalen Stroman",
+    "team": "SF",
+    "tankId": "4683155",
+    "bDay": "5/22/2003",
+    "espnID": "4683155",
+    "pos": "S"
+  },
+  "13646": {
+    "name": "Jimto Obidegwu",
+    "team": "JAX",
+    "tankId": "4684970",
+    "bDay": null,
+    "espnID": "4684970",
+    "pos": "OT"
+  },
+  "13123": {
+    "name": "Parker Clements",
+    "team": "LV",
+    "tankId": "4431023",
+    "bDay": "11/21/2001",
+    "espnID": "4431023",
+    "pos": "OT"
+  },
+  "13689": {
+    "name": "Devean Deal",
+    "team": "SEA",
+    "tankId": "4689265",
+    "bDay": null,
+    "espnID": "4689265",
+    "pos": "LB"
+  },
+  "12870": {
+    "name": "Tedi Kushi",
+    "team": "MIA",
+    "tankId": "4577950",
+    "bDay": "9/20/2001",
+    "espnID": "4577950",
+    "pos": "OT"
+  },
+  "13602": {
+    "name": "Jack Strand",
+    "team": "ATL",
+    "tankId": "5344782",
+    "bDay": "6/23/2004",
+    "espnID": "5344782",
+    "pos": "QB"
+  },
+  "13758": {
+    "name": "Sidney Fugar",
+    "team": "DAL",
+    "tankId": "4878943",
+    "bDay": "7/23/2002",
+    "espnID": "4878943",
+    "pos": "OT"
+  },
+  "13634": {
+    "name": "Jerry Wilson",
+    "team": "LAC",
+    "tankId": "4837203",
+    "bDay": null,
+    "espnID": "4837203",
+    "pos": "CB"
+  },
+  "13873": {
+    "name": "Sam Scott",
+    "team": "NYJ",
+    "tankId": "4700138",
+    "bDay": null,
+    "espnID": "4700138",
+    "pos": "RB"
+  },
+  "13747": {
+    "name": "Khordae Sydnor",
+    "team": "CLE",
+    "tankId": "4683129",
+    "bDay": "8/24/2003",
+    "espnID": "4683129",
+    "pos": "DT"
+  },
+  "13913": {
+    "name": "Patrick Gurd",
+    "team": "LV",
+    "tankId": "4693208",
+    "bDay": null,
+    "espnID": "4693208",
+    "pos": "TE"
+  },
+  "13548": {
+    "name": "Gabriel Rubio",
+    "team": "PIT",
+    "tankId": "4431533",
+    "bDay": "7/9/2003",
+    "espnID": "4431533",
+    "pos": "DE"
+  },
+  "13410": {
+    "name": "Chase Roberts",
+    "team": "LV",
+    "tankId": "4714388",
+    "bDay": "1/21/2001",
+    "espnID": "4714388",
+    "pos": "WR"
+  },
+  "13775": {
+    "name": "TJ Quinn",
+    "team": "GB",
+    "tankId": "4684030",
+    "bDay": "1/1/2005",
+    "espnID": "4684030",
+    "pos": "LB"
+  },
+  "13886": {
+    "name": "Jalen Logan-Redding",
+    "team": "LAR",
+    "tankId": "4431230",
+    "bDay": null,
+    "espnID": "4431230",
+    "pos": "DT"
+  },
+  "13740": {
+    "name": "Aamaris Brown",
+    "team": "DET",
+    "tankId": "4565445",
+    "bDay": "8/26/2002",
+    "espnID": "4565445",
+    "pos": "CB"
+  },
+  "13811": {
+    "name": "Drey Norwood",
+    "team": "LAR",
+    "tankId": "4431581",
+    "bDay": "1/1/2005",
+    "espnID": "4431581",
+    "pos": "CB"
+  },
+  "13821": {
+    "name": "Rocco Underwood",
+    "team": "PHI",
+    "tankId": "4686566",
+    "bDay": null,
+    "espnID": "4686566",
+    "pos": "LS"
+  },
+  "13715": {
+    "name": "Beau Gardner",
+    "team": "CHI",
+    "tankId": "4696723",
+    "bDay": null,
+    "espnID": "4696723",
+    "pos": "LS"
+  },
+  "13356": {
+    "name": "Trebor Pena",
+    "team": "JAX",
+    "tankId": "4575862",
+    "bDay": "2/21/2002",
+    "espnID": "4575862",
+    "pos": "WR"
+  },
+  "13607": {
+    "name": "Lander Barton",
+    "team": "LAC",
+    "tankId": "4685272",
+    "bDay": "12/30/2003",
+    "espnID": "4685272",
+    "pos": "LB"
+  },
+  "13947": {
+    "name": "Christian Jones",
+    "team": "CIN",
+    "tankId": "4686368",
+    "bDay": null,
+    "espnID": "4686368",
+    "pos": "OT"
+  },
+  "13348": {
+    "name": "J'Mari Taylor",
+    "team": "JAX",
+    "tankId": "4713118",
+    "bDay": "2/6/2002",
+    "espnID": "4713118",
+    "pos": "RB"
+  },
+  "13878": {
+    "name": "Ka'ena Decambra",
+    "team": "ARI",
+    "tankId": "4875802",
+    "bDay": null,
+    "espnID": "4875802",
+    "pos": "G"
+  },
+  "13985": {
+    "name": "William Wright",
+    "team": "DEN",
+    "tankId": "4692661",
+    "bDay": "1/1/2005",
+    "espnID": "4692661",
+    "pos": "CB"
+  },
+  "13325": {
+    "name": "Jordan Hudson",
+    "team": "DAL",
+    "tankId": "4685409",
+    "bDay": "11/22/2003",
+    "espnID": "4685409",
+    "pos": "WR"
+  },
+  "13784": {
+    "name": "Cameron Ball",
+    "team": "IND",
+    "tankId": "4691878",
+    "bDay": "2/19/2003",
+    "espnID": "4691878",
+    "pos": "DT"
+  },
+  "13683": {
+    "name": "Aamil Wagner",
+    "team": "TEN",
+    "tankId": "4685564",
+    "bDay": "10/7/2003",
+    "espnID": "4685564",
+    "pos": "OT"
+  },
+  "13879": {
+    "name": "Jameson Geers",
+    "team": "ARI",
+    "tankId": "4588298",
+    "bDay": null,
+    "espnID": "4588298",
+    "pos": "TE"
+  },
+  "13232": {
+    "name": "Elijah Ellis",
+    "team": "LAC",
+    "tankId": "4427142",
+    "bDay": null,
+    "espnID": "4427142",
+    "pos": "OT"
+  },
+  "13690": {
+    "name": "Uso Seumalo",
+    "team": "SEA",
+    "tankId": "5081916",
+    "bDay": "5/17/2002",
+    "espnID": "5081916",
+    "pos": "DT"
+  },
+  "13695": {
+    "name": "Mark Langston",
+    "team": "BUF",
+    "tankId": "4696109",
+    "bDay": null,
+    "espnID": "4696109",
+    "pos": "LS"
+  },
+  "13152": {
+    "name": "Justin Lockhart",
+    "team": "KC",
+    "tankId": "4427819",
+    "bDay": null,
+    "espnID": "4427819",
+    "pos": "WR"
+  },
+  "13969": {
+    "name": "Jy Gilmore",
+    "team": "TB",
+    "tankId": "4695007",
+    "bDay": null,
+    "espnID": "4695007",
+    "pos": "CB"
+  },
+  "13635": {
+    "name": "Avery Smith",
+    "team": "LAC",
+    "tankId": "5082331",
+    "bDay": null,
+    "espnID": "5082331",
+    "pos": "CB"
+  },
+  "13626": {
+    "name": "Arden Walker",
+    "team": "MIN",
+    "tankId": "4592569",
+    "bDay": null,
+    "espnID": "4592569",
+    "pos": "LB"
+  },
+  "13611": {
+    "name": "Marcus Allen",
+    "team": "MIN",
+    "tankId": "5081412",
+    "bDay": "4/27/2004",
+    "espnID": "5081412",
+    "pos": "CB"
+  },
+  "13810": {
+    "name": "Rohan Jones",
+    "team": "LAR",
+    "tankId": "5083509",
+    "bDay": "1/1/2005",
+    "espnID": "5083509",
+    "pos": "TE"
+  },
+  "13673": {
+    "name": "Trent Battle",
+    "team": "ATL",
+    "tankId": "4602783",
+    "bDay": null,
+    "espnID": "4602783",
+    "pos": "RB"
+  },
+  "13759": {
+    "name": "D.J. Withers",
+    "team": "DAL",
+    "tankId": "4682915",
+    "bDay": null,
+    "espnID": "4682915",
+    "pos": "DT"
+  },
+  "14020": {
+    "name": "Dean Patterson",
+    "team": "TB",
+    "tankId": "4875613",
+    "bDay": null,
+    "espnID": "4875613",
+    "pos": "WR"
+  },
+  "13954": {
+    "name": "Izavion Miller",
+    "team": "CLE",
+    "tankId": "5150290",
+    "bDay": null,
+    "espnID": "5150290",
+    "pos": "OT"
+  },
+  "13948": {
+    "name": "Liam Brown",
+    "team": "CIN",
+    "tankId": "4876200",
+    "bDay": null,
+    "espnID": "4876200",
+    "pos": "G"
+  },
+  "13955": {
+    "name": "Josiah Green",
+    "team": "TB",
+    "tankId": "4878213",
+    "bDay": null,
+    "espnID": "4878213",
+    "pos": "DT"
+  },
+  "13898": {
+    "name": "Corey Rucker",
+    "team": "LV",
+    "tankId": "4433901",
+    "bDay": "6/9/2002",
+    "espnID": "4433901",
+    "pos": "WR"
+  },
+  "13859": {
+    "name": "Jalen Walthall",
+    "team": "HOU",
+    "tankId": "4875788",
+    "bDay": "10/14/2002",
+    "espnID": "4875788",
+    "pos": "WR"
+  },
+  "13609": {
+    "name": "Tristan Leigh",
+    "team": "MIN",
+    "tankId": "4431443",
+    "bDay": "4/28/2003",
+    "espnID": "4431443",
+    "pos": "OT"
+  },
+  "13776": {
+    "name": "Hank Beatty",
+    "team": "TEN",
+    "tankId": "4814930",
+    "bDay": "9/20/2003",
+    "espnID": "4814930",
+    "pos": "WR"
+  },
+  "13660": {
+    "name": "T.J. Bollers",
+    "team": "JAX",
+    "tankId": "4431162",
+    "bDay": null,
+    "espnID": "4431162",
+    "pos": "DE"
+  },
+  "13642": {
+    "name": "Keeshawn Silver",
+    "team": "NO",
+    "tankId": "4432764",
+    "bDay": null,
+    "espnID": "4432764",
+    "pos": "DT"
+  },
+  "13326": {
+    "name": "DT Sheffield",
+    "team": "NYJ",
+    "tankId": "5153056",
+    "bDay": "2/25/2001",
+    "espnID": "5153056",
+    "pos": "WR"
+  },
+  "13679": {
+    "name": "Jalen McMurray",
+    "team": "TEN",
+    "tankId": "4683455",
+    "bDay": "1/7/2003",
+    "espnID": "4683455",
+    "pos": "CB"
+  },
+  "13769": {
+    "name": "Collin Wright",
+    "team": "HOU",
+    "tankId": "4833376",
+    "bDay": "12/13/2003",
+    "espnID": "4833376",
+    "pos": "CB"
+  },
+  "13799": {
+    "name": "Tyler Duzansky",
+    "team": "LV",
+    "tankId": "4880472",
+    "bDay": null,
+    "espnID": "4880472",
+    "pos": "LS"
+  },
+  "13889": {
+    "name": "Levi Wentz",
+    "team": "SEA",
+    "tankId": "4613132",
+    "bDay": null,
+    "espnID": "4613132",
+    "pos": "WR"
+  },
+  "13907": {
+    "name": "Dillon Wade",
+    "team": "GB",
+    "tankId": "4581189",
+    "bDay": "5/23/2002",
+    "espnID": "4581189",
+    "pos": "G"
+  },
+  "13857": {
+    "name": "Bryce Phillips",
+    "team": "KC",
+    "tankId": "5084574",
+    "bDay": "1/1/2005",
+    "espnID": "5084574",
+    "pos": "CB"
+  },
+  "12858": {
+    "name": "Kneeland Hibbett",
+    "team": "MIA",
+    "tankId": "4880041",
+    "bDay": null,
+    "espnID": "4880041",
+    "pos": "LS"
+  },
+  "13802": {
+    "name": "Jacob Clark",
+    "team": "LV",
+    "tankId": "4569535",
+    "bDay": "1/1/2005",
+    "espnID": "4569535",
+    "pos": "QB"
+  },
+  "13918": {
+    "name": "Kahlil Benson",
+    "team": "KC",
+    "tankId": "4566190",
+    "bDay": "8/20/2002",
+    "espnID": "4566190",
+    "pos": "OT"
+  },
+  "13822": {
+    "name": "Jaeden Roberts",
+    "team": "PHI",
+    "tankId": "4431529",
+    "bDay": "12/22/2002",
+    "espnID": "4431529",
+    "pos": "G"
+  },
+  "13706": {
+    "name": "Aaron Hall",
+    "team": "CAR",
+    "tankId": "4602967",
+    "bDay": "4/18/2003",
+    "espnID": "4602967",
+    "pos": "DT"
+  },
+  "13644": {
+    "name": "Mason Shipley",
+    "team": "NO",
+    "tankId": "4879682",
+    "bDay": null,
+    "espnID": "4879682",
+    "pos": "PK"
+  },
+  "13732": {
+    "name": "Aaron Graves",
+    "team": "BAL",
+    "tankId": "4685355",
+    "bDay": "7/14/2003",
+    "espnID": "4685355",
+    "pos": "DT"
+  },
+  "13431": {
+    "name": "Miles Kitselman",
+    "team": "DET",
+    "tankId": "5089453",
+    "bDay": "9/25/2002",
+    "espnID": "5089453",
+    "pos": "TE"
+  },
+  "13968": {
+    "name": "Drew Stevens",
+    "team": "WAS",
+    "tankId": "5081335",
+    "bDay": "12/9/2003",
+    "espnID": "5081335",
+    "pos": "PK"
+  },
+  "13099": {
+    "name": "Dartanyan Tinsley",
+    "team": "CLE",
+    "tankId": "4585283",
+    "bDay": "3/21/2001",
+    "espnID": "4585283",
+    "pos": "G"
+  },
+  "13694": {
+    "name": "Kani Walker",
+    "team": "BUF",
+    "tankId": "4682749",
+    "bDay": "1/1/2005",
+    "espnID": "4682749",
+    "pos": "CB"
+  },
+  "13393": {
+    "name": "Brent Austin",
+    "team": "DEN",
+    "tankId": "5082398",
+    "bDay": "12/19/2003",
+    "espnID": "5082398",
+    "pos": "CB"
+  },
+  "13350": {
+    "name": "Joe Fagnano",
+    "team": "BAL",
+    "tankId": "4429582",
+    "bDay": "3/31/2001",
+    "espnID": "4429582",
+    "pos": "QB"
+  },
+  "13741": {
+    "name": "Melvin Priestly",
+    "team": "DET",
+    "tankId": "4917235",
+    "bDay": null,
+    "espnID": "4917235",
+    "pos": "OT"
+  },
+  "13843": {
+    "name": "Theron Gaines",
+    "team": "BUF",
+    "tankId": "5084058",
+    "bDay": null,
+    "espnID": "5084058",
+    "pos": "LB"
+  },
+  "13661": {
+    "name": "Ethan Conner",
+    "team": "JAX",
+    "tankId": "5151528",
+    "bDay": null,
+    "espnID": "5151528",
+    "pos": "TE"
+  },
+  "13605": {
+    "name": "Noah Avinger",
+    "team": "LAC",
+    "tankId": "4432659",
+    "bDay": "9/28/2001",
+    "espnID": "4432659",
+    "pos": "S"
+  },
+  "13676": {
+    "name": "Deshawn McKnight",
+    "team": "TB",
+    "tankId": "4683248",
+    "bDay": null,
+    "espnID": "4683248",
+    "pos": "DT"
+  },
+  "13659": {
+    "name": "Garrett DiGiorgio",
+    "team": "JAX",
+    "tankId": "4684542",
+    "bDay": "4/3/2003",
+    "espnID": "4684542",
+    "pos": "OT"
+  },
+  "13737": {
+    "name": "Silas Walters",
+    "team": "BAL",
+    "tankId": "4880219",
+    "bDay": null,
+    "espnID": "4880219",
+    "pos": "S"
+  },
+  "13932": {
+    "name": "Jim Bonifas",
+    "team": "MIA",
+    "tankId": "4613269",
+    "bDay": null,
+    "espnID": "4613269",
+    "pos": "C"
+  },
+  "13927": {
+    "name": "Zxavian Harris",
+    "team": "NO",
+    "tankId": "4685365",
+    "bDay": "10/22/2003",
+    "espnID": "4685365",
+    "pos": "DT"
+  },
+  "13070": {
+    "name": "Kendall Bohler",
+    "team": "DEN",
+    "tankId": "4426735",
+    "bDay": null,
+    "espnID": "4426735",
+    "pos": "CB"
+  },
+  "13827": {
+    "name": "Tanner Arkin",
+    "team": "NE",
+    "tankId": "4683308",
+    "bDay": "7/7/2003",
+    "espnID": "4683308",
+    "pos": "TE"
+  },
+  "13902": {
+    "name": "Damon Payne",
+    "team": "KC",
+    "tankId": "4431503",
+    "bDay": null,
+    "espnID": "4431503",
+    "pos": "DT"
+  },
+  "13321": {
+    "name": "Dan Villari",
+    "team": "LAR",
+    "tankId": "4608858",
+    "bDay": "6/29/2002",
+    "espnID": "4608858",
+    "pos": "TE"
+  },
+  "13158": {
+    "name": "Sam Pitz",
+    "team": "BAL",
+    "tankId": "5278396",
+    "bDay": null,
+    "espnID": "5278396",
+    "pos": "TE"
+  },
+  "13815": {
+    "name": "Rene Konga",
+    "team": "MIA",
+    "tankId": "4698109",
+    "bDay": "11/14/2002",
+    "espnID": "4698109",
+    "pos": "DT"
+  },
+  "13628": {
+    "name": "Niles King",
+    "team": "LAC",
+    "tankId": "5302260",
+    "bDay": null,
+    "espnID": "5302260",
+    "pos": "LB"
+  },
+  "13924": {
+    "name": "Dominic Bailey",
+    "team": "HOU",
+    "tankId": "4686304",
+    "bDay": null,
+    "espnID": "4686304",
+    "pos": "DT"
+  },
+  "13624": {
+    "name": "Shaleak Knotts",
+    "team": "MIN",
+    "tankId": "4685416",
+    "bDay": null,
+    "espnID": "4685416",
+    "pos": "WR"
+  },
+  "13753": {
+    "name": "DeCarlos Nicholson",
+    "team": "CLE",
+    "tankId": "5081149",
+    "bDay": "11/16/2001",
+    "espnID": "5081149",
+    "pos": "CB"
+  },
+  "13744": {
+    "name": "Cam Ross",
+    "team": "DEN",
+    "tankId": "4569001",
+    "bDay": null,
+    "espnID": "4569001",
+    "pos": "WR"
+  },
+  "13745": {
+    "name": "Zion Washington",
+    "team": "CLE",
+    "tankId": "4709014",
+    "bDay": "1/1/2005",
+    "espnID": "4709014",
+    "pos": "S"
+  },
+  "13830": {
+    "name": "Kyle Dixon",
+    "team": "NE",
+    "tankId": "5011554",
+    "bDay": "1/1/2005",
+    "espnID": "5011554",
+    "pos": "WR"
+  },
+  "13984": {
+    "name": "Tyler Miller",
+    "team": "DEN",
+    "tankId": "4686442",
+    "bDay": null,
+    "espnID": "4686442",
+    "pos": "OT"
+  },
+  "13085": {
+    "name": "Kole Taylor",
+    "team": "CIN",
+    "tankId": "4433921",
+    "bDay": null,
+    "espnID": "4433921",
+    "pos": "TE"
+  },
+  "13327": {
+    "name": "Desmond Reid",
+    "team": "BUF",
+    "tankId": "5089535",
+    "bDay": "7/29/2004",
+    "espnID": "5089535",
+    "pos": "RB"
+  },
+  "13012": {
+    "name": "Trey Wedig",
+    "team": "ARI",
+    "tankId": "4430812",
+    "bDay": "1/10/2002",
+    "espnID": "4430812",
+    "pos": "OT"
+  },
+  "13641": {
+    "name": "Jeremiah McClendon",
+    "team": "NO",
+    "tankId": "4880841",
+    "bDay": null,
+    "espnID": "4880841",
+    "pos": "CB"
+  },
+  "13874": {
+    "name": "Mory Bamba",
+    "team": "NYJ",
+    "tankId": "5092196",
+    "bDay": null,
+    "espnID": "5092196",
+    "pos": "CB"
+  },
+  "13343": {
+    "name": "Vinny Anthony II",
+    "team": "ATL",
+    "tankId": "4869816",
+    "bDay": "6/27/2003",
+    "espnID": "4869816",
+    "pos": "WR"
+  },
+  "13893": {
+    "name": "Mani Powell",
+    "team": "TEN",
+    "tankId": "4833031",
+    "bDay": "1/1/2005",
+    "espnID": "4833031",
+    "pos": "LB"
+  },
+  "13613": {
+    "name": "Tyreek Chappell",
+    "team": "MIN",
+    "tankId": "4602676",
+    "bDay": "11/22/2002",
+    "espnID": "4602676",
+    "pos": "CB"
+  },
+  "13728": {
+    "name": "Nick Dawkins",
+    "team": "BAL",
+    "tankId": "4431060",
+    "bDay": "5/7/2002",
+    "espnID": "4431060",
+    "pos": "C"
+  },
+  "13895": {
+    "name": "Cian Slone",
+    "team": "LV",
+    "tankId": "5153665",
+    "bDay": "9/19/2002",
+    "espnID": "5153665",
+    "pos": "DE"
+  },
+  "13742": {
+    "name": "De'Shawn Rucker",
+    "team": "DET",
+    "tankId": "4682505",
+    "bDay": "12/22/2002",
+    "espnID": "4682505",
+    "pos": "CB"
+  },
+  "13964": {
+    "name": "Myles Montgomery",
+    "team": "NE",
+    "tankId": "4676889",
+    "bDay": null,
+    "espnID": "4676889",
+    "pos": "RB"
+  },
+  "13738": {
+    "name": "Colby Humphrey",
+    "team": "SF",
+    "tankId": "4697596",
+    "bDay": null,
+    "espnID": "4697596",
+    "pos": "CB"
+  },
+  "13965": {
+    "name": "Kenneth Harris",
+    "team": "NE",
+    "tankId": "4685970",
+    "bDay": null,
+    "espnID": "4685970",
+    "pos": "CB"
+  },
+  "13958": {
+    "name": "Aidan Laros",
+    "team": "TB",
+    "tankId": "4890264",
+    "bDay": null,
+    "espnID": "4890264",
+    "pos": "P"
+  },
+  "13921": {
+    "name": "Isiah King",
+    "team": "PHI",
+    "tankId": "4887451",
+    "bDay": null,
+    "espnID": "4887451",
+    "pos": "LB"
+  },
+  "13838": {
+    "name": "Will Ferrin",
+    "team": "NYJ",
+    "tankId": "4880198",
+    "bDay": null,
+    "espnID": "4880198",
+    "pos": "PK"
+  },
+  "13861": {
+    "name": "Daniel Sobkowicz",
+    "team": "HOU",
+    "tankId": "4878293",
+    "bDay": null,
+    "espnID": "4878293",
+    "pos": "WR"
+  },
+  "13749": {
+    "name": "Kole Wilson",
+    "team": "CLE",
+    "tankId": "5096863",
+    "bDay": null,
+    "espnID": "5096863",
+    "pos": "WR"
+  },
+  "13816": {
+    "name": "Mark Gronowski",
+    "team": "MIA",
+    "tankId": "4695400",
+    "bDay": "10/5/2001",
+    "espnID": "4695400",
+    "pos": "QB"
+  },
+  "13621": {
+    "name": "Dillon Bell",
+    "team": "MIN",
+    "tankId": "4712579",
+    "bDay": "11/6/2003",
+    "espnID": "4712579",
+    "pos": "WR"
+  },
+  "13339": {
+    "name": "Davon Booth",
+    "team": "CLE",
+    "tankId": "5153650",
+    "bDay": "1/23/2002",
+    "espnID": "5153650",
+    "pos": "RB"
+  },
+  "13419": {
+    "name": "Jaydn Ott",
+    "team": "KC",
+    "tankId": "4685489",
+    "bDay": "12/16/2002",
+    "espnID": "4685489",
+    "pos": "RB"
+  },
+  "13647": {
+    "name": "Ben Patterson",
+    "team": "JAX",
+    "tankId": "5346736",
+    "bDay": null,
+    "espnID": "5346736",
+    "pos": "WR"
+  },
+  "13971": {
+    "name": "Caden Fordham",
+    "team": "TB",
+    "tankId": "4683096",
+    "bDay": "1/1/2005",
+    "espnID": "4683096",
+    "pos": "LB"
+  },
+  "13705": {
+    "name": "Ty Pezza",
+    "team": "BAL",
+    "tankId": "5084402",
+    "bDay": null,
+    "espnID": "5084402",
+    "pos": "TE"
+  },
+  "13076": {
+    "name": "Diwun Black",
+    "team": "BAL",
+    "tankId": "4875185",
+    "bDay": null,
+    "espnID": "4875185",
+    "pos": "LB"
+  },
+  "13178": {
+    "name": "Virgil Lemons",
+    "team": "TEN",
+    "tankId": "5165784",
+    "bDay": null,
+    "espnID": "5165784",
+    "pos": "CB"
+  },
+  "13590": {
+    "name": "Isaiah World",
+    "team": "LAC",
+    "tankId": "5084965",
+    "bDay": "9/16/2003",
+    "espnID": "5084965",
+    "pos": "OT"
+  },
+  "13956": {
+    "name": "Wesley Brown",
+    "team": "TB",
+    "tankId": "5151554",
+    "bDay": null,
+    "espnID": "5151554",
+    "pos": "LS"
+  },
+  "13022": {
+    "name": "Sone Ntoh",
+    "team": "BAL",
+    "tankId": "4428143",
+    "bDay": null,
+    "espnID": "4428143",
+    "pos": "RB"
+  },
+  "13930": {
+    "name": "Jordon Vaughn",
+    "team": "IND",
+    "tankId": "4701592",
+    "bDay": null,
+    "espnID": "4701592",
+    "pos": "RB"
+  },
+  "13700": {
+    "name": "James Brockermeyer",
+    "team": "ATL",
+    "tankId": "4567783",
+    "bDay": "6/24/2002",
+    "espnID": "4567783",
+    "pos": "C"
+  },
+  "13331": {
+    "name": "Dae'Quan Wright",
+    "team": "PHI",
+    "tankId": "4838696",
+    "bDay": "9/21/2003",
+    "espnID": "4838696",
+    "pos": "TE"
+  },
+  "13917": {
+    "name": "Marlen Sewell",
+    "team": "KC",
+    "tankId": "4682641",
+    "bDay": null,
+    "espnID": "4682641",
+    "pos": "S"
+  },
+  "13808": {
+    "name": "Wesley Bailey",
+    "team": "LAR",
+    "tankId": "4430919",
+    "bDay": "1/1/2005",
+    "espnID": "4430919",
+    "pos": "LB"
+  },
+  "13736": {
+    "name": "Reid Williford",
+    "team": "BAL",
+    "tankId": "4880362",
+    "bDay": null,
+    "espnID": "4880362",
+    "pos": "LB"
+  },
+  "13358": {
+    "name": "Anthony Lucas",
+    "team": "DET",
+    "tankId": "4685442",
+    "bDay": "10/8/2004",
+    "espnID": "4685442",
+    "pos": "DE"
+  },
+  "13633": {
+    "name": "Rodney Shelley",
+    "team": "LAC",
+    "tankId": "4838693",
+    "bDay": null,
+    "espnID": "4838693",
+    "pos": "CB"
+  },
+  "13627": {
+    "name": "Devin Grant",
+    "team": "LAC",
+    "tankId": "4870141",
+    "bDay": null,
+    "espnID": "4870141",
+    "pos": "S"
+  },
+  "13614": {
+    "name": "Cam'Ron Stewart",
+    "team": "MIN",
+    "tankId": "4682643",
+    "bDay": null,
+    "espnID": "4682643",
+    "pos": "LB"
+  },
+  "13735": {
+    "name": "Dominic DeLuca",
+    "team": "BAL",
+    "tankId": "4875379",
+    "bDay": "1/1/2005",
+    "espnID": "4875379",
+    "pos": "LB"
+  },
+  "13963": {
+    "name": "Nick DeGennaro",
+    "team": "NE",
+    "tankId": "4692796",
+    "bDay": null,
+    "espnID": "4692796",
+    "pos": "WR"
+  },
+  "13657": {
+    "name": "Alex Bullock",
+    "team": "JAX",
+    "tankId": "4872477",
+    "bDay": "9/13/2002",
+    "espnID": "4872477",
+    "pos": "WR"
+  },
+  "12986": {
+    "name": "Wilfried Pene",
+    "team": "NE",
+    "tankId": "4608753",
+    "bDay": null,
+    "espnID": "4608753",
+    "pos": "DE"
+  },
+  "12985": {
+    "name": "Cole Birdow",
+    "team": "NE",
+    "tankId": "4426708",
+    "bDay": null,
+    "espnID": "4426708",
+    "pos": "OL"
+  },
+  "13814": {
+    "name": "Nick Andersen",
+    "team": "LAR",
+    "tankId": "4690182",
+    "bDay": null,
+    "espnID": "4690182",
+    "pos": "S"
+  },
+  "13430": {
+    "name": "RJ Maryland",
+    "team": "GB",
+    "tankId": "4702913",
+    "bDay": "7/9/2004",
+    "espnID": "4702913",
+    "pos": "WR"
+  },
+  "13640": {
+    "name": "Alan Herron",
+    "team": "NO",
+    "tankId": "5164879",
+    "bDay": "3/10/2003",
+    "espnID": "5164879",
+    "pos": "OT"
+  },
+  "13649": {
+    "name": "Devin Neal",
+    "team": "JAX",
+    "tankId": "4431292",
+    "bDay": "1/1/2005",
+    "espnID": "4431292",
+    "pos": "S"
+  },
+  "13663": {
+    "name": "Wesley Grimes",
+    "team": "SF",
+    "tankId": "4888723",
+    "bDay": "3/9/2004",
+    "espnID": "4888723",
+    "pos": "WR"
+  },
+  "13703": {
+    "name": "Kam Dewberry",
+    "team": "ATL",
+    "tankId": "4685332",
+    "bDay": null,
+    "espnID": "4685332",
+    "pos": "G"
+  },
+  "13788": {
+    "name": "Mitchell Melton",
+    "team": "IND",
+    "tankId": "4693205",
+    "bDay": "5/17/2002",
+    "espnID": "4693205",
+    "pos": "LB"
+  },
+  "13934": {
+    "name": "Rodney McGraw",
+    "team": "MIA",
+    "tankId": "4433974",
+    "bDay": null,
+    "espnID": "4433974",
+    "pos": "DE"
+  },
+  "13696": {
+    "name": "Ja'Mori Maclin",
+    "team": "BUF",
+    "tankId": "4430270",
+    "bDay": null,
+    "espnID": "4430270",
+    "pos": "WR"
+  },
+  "13940": {
+    "name": "Bruno Fina",
+    "team": "BUF",
+    "tankId": "4570706",
+    "bDay": null,
+    "espnID": "4570706",
+    "pos": "OT"
+  },
+  "13653": {
+    "name": "Preston Hodge",
+    "team": "JAX",
+    "tankId": "5081718",
+    "bDay": "9/18/2002",
+    "espnID": "5081718",
+    "pos": "CB"
+  },
+  "13794": {
+    "name": "DeShon Singleton",
+    "team": "KC",
+    "tankId": "5081093",
+    "bDay": "2/4/2003",
+    "espnID": "5081093",
+    "pos": "S"
+  },
+  "13890": {
+    "name": "Michael Briscoe",
+    "team": "SEA",
+    "tankId": "4688418",
+    "bDay": null,
+    "espnID": "4688418",
+    "pos": "WR"
+  },
+  "13596": {
+    "name": "Mikail Kamara",
+    "team": "SF",
+    "tankId": "4696051",
+    "bDay": "10/10/2001",
+    "espnID": "4696051",
+    "pos": "LB"
+  },
+  "13851": {
+    "name": "Jahquez Robinson",
+    "team": "BAL",
+    "tankId": "4433887",
+    "bDay": "6/20/2002",
+    "espnID": "4433887",
+    "pos": "S"
+  },
+  "13182": {
+    "name": "Tre'vonn Rybka",
+    "team": "MIA",
+    "tankId": "4432533",
+    "bDay": null,
+    "espnID": "4432533",
+    "pos": "DT"
+  },
+  "13310": {
+    "name": "Miller Moss",
+    "team": "CHI",
+    "tankId": "4431580",
+    "bDay": "3/19/2002",
+    "espnID": "4431580",
+    "pos": "QB"
+  },
+  "13726": {
+    "name": "Camden Brown",
+    "team": "DAL",
+    "tankId": "4808759",
+    "bDay": null,
+    "espnID": "4808759",
+    "pos": "WR"
+  },
+  "13093": {
+    "name": "Tuasivi Nomura",
+    "team": "CAR",
+    "tankId": "4428132",
+    "bDay": null,
+    "espnID": "4428132",
+    "pos": "LB"
+  },
+  "12786": {
+    "name": "Anthony Landphere",
+    "team": "TB",
+    "tankId": "4430022",
+    "bDay": null,
+    "espnID": "4430022",
+    "pos": "TE"
+  },
+  "13207": {
+    "name": "Mose Vavao",
+    "team": "IND",
+    "tankId": "4609783",
+    "bDay": "11/5/2001",
+    "espnID": "4609783",
+    "pos": "C"
+  },
+  "13914": {
+    "name": "Devyn Perkins",
+    "team": "LV",
+    "tankId": "4694588",
+    "bDay": null,
+    "espnID": "4694588",
+    "pos": "S"
+  },
+  "13752": {
+    "name": "Tyreak Sapp",
+    "team": "CLE",
+    "tankId": "4889957",
+    "bDay": "10/5/2002",
+    "espnID": "4889957",
+    "pos": "DE"
+  },
+  "13870": {
+    "name": "Quentin Moore",
+    "team": "WAS",
+    "tankId": "4875350",
+    "bDay": null,
+    "espnID": "4875350",
+    "pos": "TE"
+  },
+  "13730": {
+    "name": "Diego Pounds",
+    "team": "BAL",
+    "tankId": "4602984",
+    "bDay": "12/12/2002",
+    "espnID": "4602984",
+    "pos": "OT"
+  },
+  "13920": {
+    "name": "Jonathan Brady",
+    "team": "LV",
+    "tankId": "4832806",
+    "bDay": "1/1/2005",
+    "espnID": "4832806",
+    "pos": "WR"
+  },
+  "13648": {
+    "name": "Quindarius Dunnigan",
+    "team": "JAX",
+    "tankId": "4427117",
+    "bDay": null,
+    "espnID": "4427117",
+    "pos": "DE"
+  },
+  "13982": {
+    "name": "Gavin Ortega",
+    "team": "DEN",
+    "tankId": "5085625",
+    "bDay": "4/29/2004",
+    "espnID": "5085625",
+    "pos": "OT"
+  },
+  "13725": {
+    "name": "Dominic Richardson",
+    "team": "DAL",
+    "tankId": "4430689",
+    "bDay": "4/12/2001",
+    "espnID": "4430689",
+    "pos": "RB"
+  },
+  "12839": {
+    "name": "Corey Stewart",
+    "team": "LAC",
+    "tankId": "4606672",
+    "bDay": "7/22/2002",
+    "espnID": "4606672",
+    "pos": "OT"
+  },
+  "13852": {
+    "name": "Dontae McMillan",
+    "team": "BAL",
+    "tankId": "4427971",
+    "bDay": "8/4/2001",
+    "espnID": "4427971",
+    "pos": "RB"
+  },
+  "13789": {
+    "name": "Pete Nygra",
+    "team": "KC",
+    "tankId": "4682626",
+    "bDay": null,
+    "espnID": "4682626",
+    "pos": "OT"
+  },
+  "13589": {
+    "name": "Nadame Tucker",
+    "team": "LAC",
+    "tankId": "5081483",
+    "bDay": "6/21/2000",
+    "espnID": "5081483",
+    "pos": "LB"
+  },
+  "13312": {
+    "name": "Josh Kattus",
+    "team": "CIN",
+    "tankId": "4819215",
+    "bDay": null,
+    "espnID": "4819215",
+    "pos": "TE"
+  },
+  "13622": {
+    "name": "Monkell Goodwine",
+    "team": "MIN",
+    "tankId": "4431288",
+    "bDay": "4/1/2003",
+    "espnID": "4431288",
+    "pos": "DT"
+  },
+  "13817": {
+    "name": "Louis Moore",
+    "team": "MIA",
+    "tankId": "5081323",
+    "bDay": "1/29/2001",
+    "espnID": "5081323",
+    "pos": "S"
+  },
+  "13803": {
+    "name": "Tanner Wall",
+    "team": "LV",
+    "tankId": "4875435",
+    "bDay": "1/1/2005",
+    "espnID": "4875435",
+    "pos": "S"
+  },
+  "12807": {
+    "name": "Eddie Czaplicki",
+    "team": "KC",
+    "tankId": "4705853",
+    "bDay": null,
+    "espnID": "4705853",
+    "pos": "P"
+  },
+  "13599": {
+    "name": "Kyron Drones",
+    "team": "GB",
+    "tankId": "4678010",
+    "bDay": "7/24/2003",
+    "espnID": "4678010",
+    "pos": "QB"
+  },
+  "13316": {
+    "name": "Eric Rivers",
+    "team": "TB",
+    "tankId": "4713277",
+    "bDay": "9/17/2002",
+    "espnID": "4713277",
+    "pos": "WR"
+  },
+  "13848": {
+    "name": "Matthew McDoom",
+    "team": "BAL",
+    "tankId": "4685443",
+    "bDay": "6/15/2002",
+    "espnID": "4685443",
+    "pos": "CB"
+  },
+  "13598": {
+    "name": "Mason Reiger",
+    "team": "MIA",
+    "tankId": "4691903",
+    "bDay": "8/19/2002",
+    "espnID": "4691903",
+    "pos": "DE"
+  },
+  "13952": {
+    "name": "Garrison Grimes",
+    "team": "NYJ",
+    "tankId": "4879195",
+    "bDay": null,
+    "espnID": "4879195",
+    "pos": "LS"
+  },
+  "13831": {
+    "name": "Kevorian Barnes",
+    "team": "NYG",
+    "tankId": "4688595",
+    "bDay": null,
+    "espnID": "4688595",
+    "pos": "RB"
+  },
+  "13597": {
+    "name": "Matthew Caldwell",
+    "team": "LAR",
+    "tankId": "4877717",
+    "bDay": "1/1/2005",
+    "espnID": "4877717",
+    "pos": "QB"
+  },
+  "13836": {
+    "name": "Kendrick Blackshire",
+    "team": "NYJ",
+    "tankId": "4431500",
+    "bDay": null,
+    "espnID": "4431500",
+    "pos": "LB"
+  },
+  "13883": {
+    "name": "Payton Zdroik",
+    "team": "LAR",
+    "tankId": "5085164",
+    "bDay": null,
+    "espnID": "5085164",
+    "pos": "DT"
+  },
+  "13981": {
+    "name": "Kolbe Katsis",
+    "team": "DEN",
+    "tankId": "5225419",
+    "bDay": null,
+    "espnID": "5225419",
+    "pos": "WR"
+  },
+  "13980": {
+    "name": "Parker Petersen",
+    "team": "CAR",
+    "tankId": "4875848",
+    "bDay": null,
+    "espnID": "4875848",
+    "pos": "DT"
+  },
+  "13824": {
+    "name": "Joshua Weru",
+    "team": "PHI",
+    "tankId": "5344965",
+    "bDay": "1/1/2005",
+    "espnID": "5344965",
+    "pos": "DE"
+  },
+  "13975": {
+    "name": "Le'Meke Brockington",
+    "team": "ATL",
+    "tankId": "4596010",
+    "bDay": null,
+    "espnID": "4596010",
+    "pos": "WR"
+  },
+  "13905": {
+    "name": "Omari Evans",
+    "team": "KC",
+    "tankId": "4702908",
+    "bDay": "1/1/2005",
+    "espnID": "4702908",
+    "pos": "WR"
+  },
+  "13785": {
+    "name": "West Weeks",
+    "team": "IND",
+    "tankId": "4587724",
+    "bDay": "8/13/2002",
+    "espnID": "4587724",
+    "pos": "LB"
+  },
+  "13922": {
+    "name": "Sam Hagen",
+    "team": "HOU",
+    "tankId": "4879242",
+    "bDay": "8/24/2003",
+    "espnID": "4879242",
+    "pos": "G"
+  },
+  "13708": {
+    "name": "Kobe Prentice",
+    "team": "CAR",
+    "tankId": "4869965",
+    "bDay": "3/10/2004",
+    "espnID": "4869965",
+    "pos": "WR"
+  },
+  "13704": {
+    "name": "Riley Mahlman",
+    "team": "ATL",
+    "tankId": "4431448",
+    "bDay": "12/30/2002",
+    "espnID": "4431448",
+    "pos": "OT"
+  },
+  "13111": {
+    "name": "Leif Fautanu",
+    "team": "DET",
+    "tankId": "4427171",
+    "bDay": null,
+    "espnID": "4427171",
+    "pos": "C"
+  },
+  "12913": {
+    "name": "J.J. Jones",
+    "team": "JAX",
+    "tankId": "4596596",
+    "bDay": null,
+    "espnID": "4596596",
+    "pos": "WR"
+  },
+  "13707": {
+    "name": "Jaylon Guilbeau",
+    "team": "CAR",
+    "tankId": "4685375",
+    "bDay": "3/29/2004",
+    "espnID": "4685375",
+    "pos": "CB"
+  },
+  "13983": {
+    "name": "Ahmari Harvey",
+    "team": "DEN",
+    "tankId": "4432709",
+    "bDay": "3/23/2003",
+    "espnID": "4432709",
+    "pos": "CB"
+  },
+  "13718": {
+    "name": "Eric Gentry",
+    "team": "CIN",
+    "tankId": "4602656",
+    "bDay": "5/20/2003",
+    "espnID": "4602656",
+    "pos": "LB"
+  },
+  "13592": {
+    "name": "Chandler Morris",
+    "team": "TB",
+    "tankId": "4692530",
+    "bDay": "12/26/2000",
+    "espnID": "4692530",
+    "pos": "QB"
+  },
+  "13664": {
+    "name": "Bryson Eason",
+    "team": "SF",
+    "tankId": "4431561",
+    "bDay": "1/21/2002",
+    "espnID": "4431561",
+    "pos": "DT"
+  },
+  "13962": {
+    "name": "Cameron Dorner",
+    "team": "NE",
+    "tankId": "5295981",
+    "bDay": null,
+    "espnID": "5295981",
+    "pos": "WR"
+  },
+  "13845": {
+    "name": "Elijah Culp",
+    "team": "ARI",
+    "tankId": "4572261",
+    "bDay": "9/14/2002",
+    "espnID": "4572261",
+    "pos": "CB"
+  },
+  "13760": {
+    "name": "Jaden Bradley",
+    "team": "WAS",
+    "tankId": "4683111",
+    "bDay": null,
+    "espnID": "4683111",
+    "pos": "WR"
+  },
+  "13872": {
+    "name": "Jaxson Moi",
+    "team": "LAR",
+    "tankId": "4791223",
+    "bDay": null,
+    "espnID": "4791223",
+    "pos": "DT"
+  },
+  "13899": {
+    "name": "Amari McNeill",
+    "team": "KC",
+    "tankId": "4708859",
+    "bDay": null,
+    "espnID": "4708859",
+    "pos": "DT"
+  },
+  "13677": {
+    "name": "Noah Short",
+    "team": "TB",
+    "tankId": "5082142",
+    "bDay": "1/1/2005",
+    "espnID": "5082142",
+    "pos": "WR"
+  },
+  "13961": {
+    "name": "Henry Lutovsky",
+    "team": "TB",
+    "tankId": "4594329",
+    "bDay": null,
+    "espnID": "4594329",
+    "pos": "G"
+  },
+  "13882": {
+    "name": "Ryan Schernecke",
+    "team": "NYG",
+    "tankId": "5344428",
+    "bDay": null,
+    "espnID": "5344428",
+    "pos": "OT"
+  },
+  "13804": {
+    "name": "Kansei Matsuzawa",
+    "team": "LV",
+    "tankId": "5158921",
+    "bDay": null,
+    "espnID": "5158921",
+    "pos": "PK"
+  },
+  "13770": {
+    "name": "J. Michael Sturdivant",
+    "team": "GB",
+    "tankId": "4635009",
+    "bDay": "9/6/2002",
+    "espnID": "4635009",
+    "pos": "WR"
+  },
+  "13900": {
+    "name": "Cole Brevard",
+    "team": "KC",
+    "tankId": "4430818",
+    "bDay": null,
+    "espnID": "4430818",
+    "pos": "DT"
+  },
+  "13643": {
+    "name": "Michael Heldman",
+    "team": "NO",
+    "tankId": "4705926",
+    "bDay": "1/2/2003",
+    "espnID": "4705926",
+    "pos": "DE"
+  },
+  "13711": {
+    "name": "Jayden Loving",
+    "team": "CHI",
+    "tankId": "4877376",
+    "bDay": "4/8/2003",
+    "espnID": "4877376",
+    "pos": "DT"
+  },
+  "13949": {
+    "name": "Damon Bankston",
+    "team": "NYG",
+    "tankId": "4876378",
+    "bDay": null,
+    "espnID": "4876378",
+    "pos": "RB"
+  },
+  "13702": {
+    "name": "Malik Rutherford",
+    "team": "ATL",
+    "tankId": "4603746",
+    "bDay": null,
+    "espnID": "4603746",
+    "pos": "WR"
+  },
+  "13416": {
+    "name": "Roman Hemby",
+    "team": "LV",
+    "tankId": "4688835",
+    "bDay": "8/16/2002",
+    "espnID": "4688835",
+    "pos": "RB"
+  },
+  "13720": {
+    "name": "Ceyair Wright",
+    "team": "CIN",
+    "tankId": "4431619",
+    "bDay": "12/19/2002",
+    "espnID": "4431619",
+    "pos": "CB"
+  },
+  "13615": {
+    "name": "Delby Lemieux",
+    "team": "MIN",
+    "tankId": "5085519",
+    "bDay": "11/6/2003",
+    "espnID": "5085519",
+    "pos": "C"
+  },
+  "13616": {
+    "name": "Da'Veawn Armstead",
+    "team": "MIN",
+    "tankId": "4705513",
+    "bDay": null,
+    "espnID": "4705513",
+    "pos": "CB"
+  },
+  "13834": {
+    "name": "Cody Hardy",
+    "team": "NO",
+    "tankId": "5086529",
+    "bDay": null,
+    "espnID": "5086529",
+    "pos": "TE"
+  },
+  "13600": {
+    "name": "Tyren Montgomery",
+    "team": "TEN",
+    "tankId": "5103197",
+    "bDay": "7/3/2001",
+    "espnID": "5103197",
+    "pos": "WR"
+  },
+  "13976": {
+    "name": "Philip Florenzo",
+    "team": "ATL",
+    "tankId": "4890180",
+    "bDay": null,
+    "espnID": "4890180",
+    "pos": "LS"
+  },
+  "13877": {
+    "name": "Maximus Pulley",
+    "team": "PHI",
+    "tankId": "5082391",
+    "bDay": null,
+    "espnID": "5082391",
+    "pos": "S"
+  },
+  "13674": {
+    "name": "Chris Hilton Jr.",
+    "team": "WAS",
+    "tankId": "4431334",
+    "bDay": "10/11/2002",
+    "espnID": "4431334",
+    "pos": "WR"
+  },
+  "13832": {
+    "name": "Ben Mann",
+    "team": "NYG",
+    "tankId": "4883114",
+    "bDay": null,
+    "espnID": "4883114",
+    "pos": "LS"
+  },
+  "13820": {
+    "name": "Tucker Large",
+    "team": "PHI",
+    "tankId": "4878896",
+    "bDay": null,
+    "espnID": "4878896",
+    "pos": "S"
+  },
+  "13336": {
+    "name": "Dane Key",
+    "team": "DEN",
+    "tankId": "4685424",
+    "bDay": null,
+    "espnID": "4685424",
+    "pos": "WR"
+  },
+  "13896": {
+    "name": "Devin Lafayette",
+    "team": "LV",
+    "tankId": "4607937",
+    "bDay": null,
+    "espnID": "4607937",
+    "pos": "S"
+  },
+  "13806": {
+    "name": "Matt Lauter",
+    "team": "LV",
+    "tankId": "4687486",
+    "bDay": "1/1/2005",
+    "espnID": "4687486",
+    "pos": "TE"
+  },
+  "13937": {
+    "name": "Jackson Acker",
+    "team": "BUF",
+    "tankId": "4431152",
+    "bDay": null,
+    "espnID": "4431152",
+    "pos": "FB"
+  },
+  "13875": {
+    "name": "Sean Brown",
+    "team": "TEN",
+    "tankId": "4684139",
+    "bDay": null,
+    "espnID": "4684139",
+    "pos": "LB"
+  },
+  "13754": {
+    "name": "Langston Patterson",
+    "team": "DAL",
+    "tankId": "4557348",
+    "bDay": "1/1/2005",
+    "espnID": "4557348",
+    "pos": "LB"
+  },
+  "13102": {
+    "name": "Brent Matiscik",
+    "team": "CLE",
+    "tankId": "4574571",
+    "bDay": "4/17/2000",
+    "espnID": "4574571",
+    "pos": "LS"
+  },
+  "13712": {
+    "name": "Hayden Large",
+    "team": "CHI",
+    "tankId": "5150662",
+    "bDay": "3/27/2002",
+    "espnID": "5150662",
+    "pos": "TE"
+  },
+  "13885": {
+    "name": "JonDarius Morgan",
+    "team": "NE",
+    "tankId": "4684174",
+    "bDay": null,
+    "espnID": "4684174",
+    "pos": "OT"
+  },
+  "13915": {
+    "name": "Khalil Jacobs",
+    "team": "NE",
+    "tankId": "4912116",
+    "bDay": null,
+    "espnID": "4912116",
+    "pos": "LB"
+  },
+  "13183": {
+    "name": "Rush Reimer",
+    "team": "BUF",
+    "tankId": "4775214",
+    "bDay": "6/19/2002",
+    "espnID": "4775214",
+    "pos": "G"
+  },
+  "13318": {
+    "name": "Noah Thomas",
+    "team": "CIN",
+    "tankId": "4718457",
+    "bDay": "1/13/2004",
+    "espnID": "4718457",
+    "pos": "WR"
+  },
+  "13960": {
+    "name": "Ja'Qurious Conley",
+    "team": "TB",
+    "tankId": "4429137",
+    "bDay": null,
+    "espnID": "4429137",
+    "pos": "S"
+  },
+  "13606": {
+    "name": "Jahmeer Carter",
+    "team": "LAC",
+    "tankId": "4429371",
+    "bDay": null,
+    "espnID": "4429371",
+    "pos": "DT"
+  },
+  "13787": {
+    "name": "Tahj Chambers",
+    "team": "IND",
+    "tankId": "4692638",
+    "bDay": "1/1/2005",
+    "espnID": "4692638",
+    "pos": "LB"
+  },
+  "13894": {
+    "name": "Justin Pickett",
+    "team": "LV",
+    "tankId": "4688538",
+    "bDay": null,
+    "espnID": "4688538",
+    "pos": "G"
+  },
+  "13950": {
+    "name": "Xavier Hill",
+    "team": "NYJ",
+    "tankId": "4431133",
+    "bDay": null,
+    "espnID": "4431133",
+    "pos": "G"
+  },
+  "13631": {
+    "name": "Terry Webb",
+    "team": "LAC",
+    "tankId": "5152226",
+    "bDay": null,
+    "espnID": "5152226",
+    "pos": "DT"
+  },
+  "13855": {
+    "name": "Austin Blaske",
+    "team": "LAR",
+    "tankId": "4430949",
+    "bDay": null,
+    "espnID": "4430949",
+    "pos": "OT"
+  },
+  "13923": {
+    "name": "Josh Pitsenberger",
+    "team": "HOU",
+    "tankId": "5094042",
+    "bDay": null,
+    "espnID": "5094042",
+    "pos": "RB"
+  },
+  "13778": {
+    "name": "EJ Smith",
+    "team": "KC",
+    "tankId": "4430825",
+    "bDay": "5/15/2002",
+    "espnID": "4430825",
+    "pos": "RB"
+  },
+  "13623": {
+    "name": "Tomas Rimac",
+    "team": "MIN",
+    "tankId": "4683244",
+    "bDay": null,
+    "espnID": "4683244",
+    "pos": "G"
+  },
+  "13651": {
+    "name": "Jordan White",
+    "team": "JAX",
+    "tankId": "4691009",
+    "bDay": "9/26/2001",
+    "espnID": "4691009",
+    "pos": "C"
+  },
+  "13942": {
+    "name": "Jaren Kump",
+    "team": "CHI",
+    "tankId": "4608746",
+    "bDay": null,
+    "espnID": "4608746",
+    "pos": "C"
+  },
+  "13887": {
+    "name": "Nyzier Fourqurean",
+    "team": "LAR",
+    "tankId": "5160648",
+    "bDay": null,
+    "espnID": "5160648",
+    "pos": "CB"
+  },
+  "13723": {
+    "name": "Devan Boykin",
+    "team": "PIT",
+    "tankId": "4430961",
+    "bDay": "1/25/2002",
+    "espnID": "4430961",
+    "pos": "CB"
+  },
+  "13280": {
+    "name": "Chamon Metayer",
+    "team": "PIT",
+    "tankId": "4431461",
+    "bDay": "12/2/2002",
+    "espnID": "4431461",
+    "pos": "TE"
+  },
+  "13833": {
+    "name": "Dominic Zvada",
+    "team": "NYG",
+    "tankId": "5082424",
+    "bDay": "10/25/2003",
+    "espnID": "5082424",
+    "pos": "PK"
+  },
+  "13839": {
+    "name": "Chase Curtis",
+    "team": "NYJ",
+    "tankId": "4695223",
+    "bDay": "1/1/2005",
+    "espnID": "4695223",
+    "pos": "TE"
+  },
+  "13765": {
+    "name": "Stephen Hall",
+    "team": "HOU",
+    "tankId": "5153071",
+    "bDay": "1/1/2005",
+    "espnID": "5153071",
+    "pos": "CB"
+  },
+  "13891": {
+    "name": "Rasheed Miller",
+    "team": "TEN",
+    "tankId": "4568699",
+    "bDay": null,
+    "espnID": "4568699",
+    "pos": "OT"
+  },
+  "13277": {
+    "name": "CJ Donaldson",
+    "team": "NO",
+    "tankId": "5081999",
+    "bDay": "7/9/2004",
+    "espnID": "5081999",
+    "pos": "RB"
+  },
+  "13612": {
+    "name": "Scooby Williams",
+    "team": "MIN",
+    "tankId": "4875181",
+    "bDay": "1/27/2003",
+    "espnID": "4875181",
+    "pos": "LB"
+  },
+  "13652": {
+    "name": "Jalen Hunt",
+    "team": "JAX",
+    "tankId": "4577189",
+    "bDay": "8/23/2001",
+    "espnID": "4577189",
+    "pos": "DE"
+  },
+  "13771": {
+    "name": "Nyjalik Kelly",
+    "team": "GB",
+    "tankId": "4726151",
+    "bDay": "10/29/2004",
+    "espnID": "4726151",
+    "pos": "DE"
+  },
+  "13638": {
+    "name": "Jay'viar Suggs",
+    "team": "NO",
+    "tankId": "5213029",
+    "bDay": null,
+    "espnID": "5213029",
+    "pos": "DT"
+  },
+  "13721": {
+    "name": "Jack Dingle",
+    "team": "CIN",
+    "tankId": "4683128",
+    "bDay": "5/27/2003",
+    "espnID": "4683128",
+    "pos": "LB"
+  },
+  "13637": {
+    "name": "DaShawn Jones",
+    "team": "NO",
+    "tankId": "4683524",
+    "bDay": null,
+    "espnID": "4683524",
+    "pos": "CB"
+  },
+  "13880": {
+    "name": "Bryce Henderson",
+    "team": "LAR",
+    "tankId": "4695796",
+    "bDay": null,
+    "espnID": "4695796",
+    "pos": "OT"
+  },
+  "13678": {
+    "name": "Jack Pyburn",
+    "team": "TB",
+    "tankId": "4837252",
+    "bDay": "9/3/2003",
+    "espnID": "4837252",
+    "pos": "DE"
+  },
+  "13300": {
+    "name": "Le'Veon Moss",
+    "team": "MIA",
+    "tankId": "4685470",
+    "bDay": "11/15/2002",
+    "espnID": "4685470",
+    "pos": "RB"
+  },
+  "13798": {
+    "name": "Ethan Hurkett",
+    "team": "KC",
+    "tankId": "4429965",
+    "bDay": null,
+    "espnID": "4429965",
+    "pos": "DE"
+  },
+  "13138": {
+    "name": "Tommy McCormick",
+    "team": "NYG",
+    "tankId": "4698304",
+    "bDay": null,
+    "espnID": "4698304",
+    "pos": "S"
+  },
+  "13315": {
+    "name": "Dean Connors",
+    "team": "LAR",
+    "tankId": "5082269",
+    "bDay": "8/29/2003",
+    "espnID": "5082269",
+    "pos": "RB"
+  },
+  "13813": {
+    "name": "Laith Marjan",
+    "team": "PIT",
+    "tankId": "4710727",
+    "bDay": null,
+    "espnID": "4710727",
+    "pos": "PK"
+  },
+  "13936": {
+    "name": "Cade Denhoff",
+    "team": "BUF",
+    "tankId": "4567943",
+    "bDay": null,
+    "espnID": "4567943",
+    "pos": "DE"
+  },
+  "13916": {
+    "name": "Xavier Loyd",
+    "team": "KC",
+    "tankId": "4874510",
+    "bDay": null,
+    "espnID": "4874510",
+    "pos": "WR"
+  },
+  "13168": {
+    "name": "Jerrin Thompson",
+    "team": "TEN",
+    "tankId": "4430888",
+    "bDay": null,
+    "espnID": "4430888",
+    "pos": "S"
+  },
+  "13697": {
+    "name": "Da'Metrius Weatherspoon",
+    "team": "BUF",
+    "tankId": "4878824",
+    "bDay": null,
+    "espnID": "4878824",
+    "pos": "OT"
+  },
+  "13601": {
+    "name": "Logan Fano",
+    "team": "CLE",
+    "tankId": "5080699",
+    "bDay": "6/19/2002",
+    "espnID": "5080699",
+    "pos": "DE"
+  },
+  "13846": {
+    "name": "Jack Velling",
+    "team": "ATL",
+    "tankId": "4832827",
+    "bDay": null,
+    "espnID": "4832827",
+    "pos": "TE"
+  },
+  "13710": {
+    "name": "Gabriel Plascencia",
+    "team": "CHI",
+    "tankId": "5155087",
+    "bDay": null,
+    "espnID": "5155087",
+    "pos": "PK"
+  },
+  "13911": {
+    "name": "Kamar Missouri",
+    "team": "LV",
+    "tankId": "4698114",
+    "bDay": "3/8/2002",
+    "espnID": "4698114",
+    "pos": "OT"
+  },
+  "13825": {
+    "name": "Malik McClain",
+    "team": "NYJ",
+    "tankId": "4682509",
+    "bDay": "1/1/2005",
+    "espnID": "4682509",
+    "pos": "WR"
+  },
+  "13772": {
+    "name": "Eni Falayi",
+    "team": "GB",
+    "tankId": "4683571",
+    "bDay": null,
+    "espnID": "4683571",
+    "pos": "TE"
+  },
+  "13928": {
+    "name": "Geno VanDeMark",
+    "team": "IND",
+    "tankId": "4875981",
+    "bDay": null,
+    "espnID": "4875981",
+    "pos": "C"
+  },
+  "13617": {
+    "name": "Luke Wysong",
+    "team": "MIN",
+    "tankId": "4682761",
+    "bDay": "5/29/2003",
+    "espnID": "4682761",
+    "pos": "WR"
+  },
+  "13790": {
+    "name": "Zelmar Vedder",
+    "team": "KC",
+    "tankId": "5083530",
+    "bDay": null,
+    "espnID": "5083530",
+    "pos": "CB"
+  },
+  "13636": {
+    "name": "Jacob Spomer",
+    "team": "LAC",
+    "tankId": "5082312",
+    "bDay": null,
+    "espnID": "5082312",
+    "pos": "C"
+  },
+  "13002": {
+    "name": "Ben Dooley",
+    "team": "LAR",
+    "tankId": "4429538",
+    "bDay": "4/3/2001",
+    "espnID": "4429538",
+    "pos": "OT"
+  },
+  "13908": {
+    "name": "Dylan Barrett",
+    "team": "GB",
+    "tankId": "4429248",
+    "bDay": null,
+    "espnID": "4429248",
+    "pos": "G"
+  },
+  "13972": {
+    "name": "Brandon Frazier",
+    "team": "ATL",
+    "tankId": "4689090",
+    "bDay": null,
+    "espnID": "4689090",
+    "pos": "TE"
+  },
+  "13309": {
+    "name": "Aaron Anderson",
+    "team": "CLE",
+    "tankId": "4691138",
+    "bDay": "12/2/2002",
+    "espnID": "4691138",
+    "pos": "WR"
+  },
+  "13866": {
+    "name": "Luke Basso",
+    "team": "DEN",
+    "tankId": "4875296",
+    "bDay": null,
+    "espnID": "4875296",
+    "pos": "LS"
+  },
+  "13352": {
+    "name": "Lincoln Pare",
+    "team": "IND",
+    "tankId": "4608607",
+    "bDay": null,
+    "espnID": "4608607",
+    "pos": "RB"
+  },
+  "13774": {
+    "name": "Josh Gesky",
+    "team": "GB",
+    "tankId": "4687706",
+    "bDay": "12/31/2002",
+    "espnID": "4687706",
+    "pos": "G"
+  },
+  "13858": {
+    "name": "Caleb Offord",
+    "team": "LV",
+    "tankId": "4565558",
+    "bDay": null,
+    "espnID": "4565558",
+    "pos": "CB"
+  },
+  "13409": {
+    "name": "Donaven McCulley",
+    "team": "MIA",
+    "tankId": "4596347",
+    "bDay": "1/15/2003",
+    "espnID": "4596347",
+    "pos": "WR"
+  },
+  "13618": {
+    "name": "Jacob Thomas",
+    "team": "MIN",
+    "tankId": "5082397",
+    "bDay": null,
+    "espnID": "5082397",
+    "pos": "S"
+  },
+  "13844": {
+    "name": "Coleman Bennett",
+    "team": "CHI",
+    "tankId": "4694074",
+    "bDay": null,
+    "espnID": "4694074",
+    "pos": "RB"
+  },
+  "13909": {
+    "name": "Elijah Tau-Tolliver",
+    "team": "BAL",
+    "tankId": "4876311",
+    "bDay": null,
+    "espnID": "4876311",
+    "pos": "RB"
+  },
+  "13698": {
+    "name": "Max Tomczak",
+    "team": "BUF",
+    "tankId": "4878956",
+    "bDay": "1/1/2005",
+    "espnID": "4878956",
+    "pos": "WR"
+  },
+  "13828": {
+    "name": "Channing Canada",
+    "team": "NE",
+    "tankId": "4688779",
+    "bDay": "1/1/2005",
+    "espnID": "4688779",
+    "pos": "CB"
+  },
+  "13904": {
+    "name": "Jacob De Jesus",
+    "team": "KC",
+    "tankId": "5155179",
+    "bDay": null,
+    "espnID": "5155179",
+    "pos": "WR"
+  },
+  "13415": {
+    "name": "Haynes King",
+    "team": "CAR",
+    "tankId": "4428993",
+    "bDay": "1/9/2001",
+    "espnID": "4428993",
+    "pos": "QB"
+  },
+  "13693": {
+    "name": "Kody Huisman",
+    "team": "BUF",
+    "tankId": "4879270",
+    "bDay": null,
+    "espnID": "4879270",
+    "pos": "DT"
+  },
+  "13780": {
+    "name": "Terion Stewart",
+    "team": "KC",
+    "tankId": "4565318",
+    "bDay": "11/29/2001",
+    "espnID": "4565318",
+    "pos": "RB"
+  },
+  "13436": {
+    "name": "Kentrel Bullock",
+    "team": "CIN",
+    "tankId": "4430992",
+    "bDay": null,
+    "espnID": "4430992",
+    "pos": "RB"
+  },
+  "13791": {
+    "name": "Wesley Bissainthe",
+    "team": "KC",
+    "tankId": "4685275",
+    "bDay": "5/23/2004",
+    "espnID": "4685275",
+    "pos": "LB"
+  },
+  "13906": {
+    "name": "Jaden Nixon",
+    "team": "GB",
+    "tankId": "4683165",
+    "bDay": null,
+    "espnID": "4683165",
+    "pos": "RB"
+  },
+  "13881": {
+    "name": "Al'zillion Hamilton",
+    "team": "LAR",
+    "tankId": "4690606",
+    "bDay": "1/1/2005",
+    "espnID": "4690606",
+    "pos": "CB"
+  },
+  "13357": {
+    "name": "Lance Mason",
+    "team": "SEA",
+    "tankId": "5097854",
+    "bDay": "9/19/2003",
+    "espnID": "5097854",
+    "pos": "TE"
+  },
+  "13945": {
+    "name": "Nolan Rucci",
+    "team": "IND",
+    "tankId": "4431587",
+    "bDay": null,
+    "espnID": "4431587",
+    "pos": "OT"
+  },
+  "13709": {
+    "name": "Isaia Glass",
+    "team": "CAR",
+    "tankId": "4686358",
+    "bDay": null,
+    "espnID": "4686358",
+    "pos": "OT"
+  },
+  "13912": {
+    "name": "Niklas Henning",
+    "team": "LV",
+    "tankId": "5348412",
+    "bDay": null,
+    "espnID": "5348412",
+    "pos": "OT"
+  },
+  "13809": {
+    "name": "Nikhai Hill-Green",
+    "team": "LAR",
+    "tankId": "4432266",
+    "bDay": null,
+    "espnID": "4432266",
+    "pos": "LB"
+  },
+  "13903": {
+    "name": "D'Arco Perkins-McAllister",
+    "team": "KC",
+    "tankId": "4880312",
+    "bDay": null,
+    "espnID": "4880312",
+    "pos": "CB"
+  },
+  "13593": {
+    "name": "Taurean York",
+    "team": "DEN",
+    "tankId": "4917859",
+    "bDay": "6/21/2005",
+    "espnID": "4917859",
+    "pos": "LB"
+  },
+  "13884": {
+    "name": "Chad Lindberg",
+    "team": "LAR",
+    "tankId": "4429078",
+    "bDay": null,
+    "espnID": "4429078",
+    "pos": "OT"
+  },
+  "13714": {
+    "name": "Caden Barnett",
+    "team": "CHI",
+    "tankId": "4709983",
+    "bDay": "5/22/2003",
+    "espnID": "4709983",
+    "pos": "G"
+  },
+  "13713": {
+    "name": "KC Eziomume",
+    "team": "CHI",
+    "tankId": "4769880",
+    "bDay": null,
+    "espnID": "4769880",
+    "pos": "CB"
+  },
+  "13427": {
+    "name": "Diego Pavia",
+    "team": "BAL",
+    "tankId": "5084180",
+    "bDay": "2/16/2002",
+    "espnID": "5084180",
+    "pos": "QB"
+  },
+  "13762": {
+    "name": "Paul Rubelt",
+    "team": "TB",
+    "tankId": "4567896",
+    "bDay": null,
+    "espnID": "4567896",
+    "pos": "OT"
+  },
+  "13840": {
+    "name": "Cameron Robertson",
+    "team": "ARI",
+    "tankId": "4900789",
+    "bDay": null,
+    "espnID": "4900789",
+    "pos": "DE"
+  },
+  "13766": {
+    "name": "Jack Stonehouse",
+    "team": "HOU",
+    "tankId": "4874436",
+    "bDay": null,
+    "espnID": "4874436",
+    "pos": "P"
+  },
+  "13392": {
+    "name": "Jeff Caldwell",
+    "team": "KC",
+    "tankId": "4885466",
+    "bDay": "3/2/2003",
+    "espnID": "4885466",
+    "pos": "WR"
+  },
+  "13967": {
+    "name": "Jimmy Kibble",
+    "team": "NE",
+    "tankId": "4832914",
+    "bDay": null,
+    "espnID": "4832914",
+    "pos": "WR"
+  },
+  "13680": {
+    "name": "Bishop Fitzgerald",
+    "team": "TEN",
+    "tankId": "5151810",
+    "bDay": "7/14/2003",
+    "espnID": "5151810",
+    "pos": "S"
+  },
+  "13933": {
+    "name": "Kevin Cline",
+    "team": "MIA",
+    "tankId": "4431025",
+    "bDay": null,
+    "espnID": "4431025",
+    "pos": "OT"
+  },
+  "14031": {
+    "name": "Kyron Hudson",
+    "team": "CHI",
+    "tankId": "4432784",
+    "bDay": null,
+    "espnID": "4432784",
+    "pos": "WR"
+  },
+  "13733": {
+    "name": "Ethan Burke",
+    "team": "BAL",
+    "tankId": "4908867",
+    "bDay": "6/20/2003",
+    "espnID": "4908867",
+    "pos": "DE"
+  },
+  "12784": {
+    "name": "Jason Ivey",
+    "team": "CLE",
+    "tankId": "4882116",
+    "bDay": "6/15/2001",
+    "espnID": "4882116",
+    "pos": "OT"
+  },
+  "13826": {
+    "name": "Caullin Lacy",
+    "team": "NYJ",
+    "tankId": "4430185",
+    "bDay": "12/22/2001",
+    "espnID": "4430185",
+    "pos": "WR"
+  },
+  "13986": {
+    "name": "Parker Robertson",
+    "team": "DEN",
+    "tankId": "4892440",
+    "bDay": null,
+    "espnID": "4892440",
+    "pos": "S"
+  },
+  "13233": {
+    "name": "Joey Lombard",
+    "team": "KC",
+    "tankId": "4572650",
+    "bDay": "5/9/2001",
+    "espnID": "4572650",
+    "pos": "C"
+  },
+  "13029": {
+    "name": "James Burnip",
+    "team": "NO",
+    "tankId": "4880048",
+    "bDay": "2/20/2001",
+    "espnID": "4880048",
+    "pos": "P"
+  },
+  "14021": {
+    "name": "Kadarius Calloway",
+    "team": "TB",
+    "tankId": "5151965",
+    "bDay": null,
+    "espnID": "5151965",
+    "pos": "RB"
+  },
+  "13743": {
+    "name": "Joseph Manjack IV",
+    "team": "DEN",
+    "tankId": "4683227",
+    "bDay": null,
+    "espnID": "4683227",
+    "pos": "WR"
+  },
+  "13966": {
+    "name": "Jacob Rizy",
+    "team": "NE",
+    "tankId": "4695758",
+    "bDay": null,
+    "espnID": "4695758",
+    "pos": "OT"
+  },
+  "13748": {
+    "name": "Wes Pahl",
+    "team": "CLE",
+    "tankId": "4690083",
+    "bDay": null,
+    "espnID": "4690083",
+    "pos": "P"
+  },
+  "13941": {
+    "name": "Omari Kelly",
+    "team": "CHI",
+    "tankId": "4701951",
+    "bDay": null,
+    "espnID": "4701951",
+    "pos": "WR"
   }
 }

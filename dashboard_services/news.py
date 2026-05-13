@@ -150,8 +150,7 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
     matched = []
     for item in general:
         text = (item["headline"] + " " + item["description"]).lower()
-        # Require last name match; score higher if first name also matches
-        if last and last in text:
+        if last and first and last in text and first in text:
             matched.append(item)
         if len(matched) >= limit:
             break

@@ -19,6 +19,22 @@ from dashboard_services.platform_api import get_matchups, get_transactions as pl
 from dashboard_services.players import build_roster_display_maps
 from utils.utils import safe_owner_name
 
+_NFL_CITY: dict[str, str] = {
+    "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
+    "CAR": "Carolina", "CHI": "Chicago", "CIN": "Cincinnati", "CLE": "Cleveland",
+    "DAL": "Dallas", "DEN": "Denver", "DET": "Detroit", "GB": "Green Bay",
+    "HOU": "Houston", "IND": "Indianapolis", "JAX": "Jacksonville",
+    "KC": "Kansas City", "LAC": "LA Chargers", "LAR": "LA Rams",
+    "LV": "Las Vegas", "MIA": "Miami", "MIN": "Minnesota",
+    "NE": "New England", "NO": "New Orleans", "NYG": "NY Giants", "NYJ": "NY Jets",
+    "PHI": "Philadelphia", "PIT": "Pittsburgh", "SEA": "Seattle",
+    "SF": "San Francisco", "TB": "Tampa Bay", "TEN": "Tennessee",
+    "WAS": "Washington", "WSH": "Washington",
+}
+
+def _team_city(abbr: str) -> str:
+    return _NFL_CITY.get((abbr or "").upper(), abbr)
+
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
     if not high:
@@ -1442,12 +1458,22 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     pos = p.get("pos")
                     pos_badge = f"<span class='pos-badge {pos}'>{pos}</span>" if pos else ""
                     nfl = p.get("nfl")
-                    nfl_html = f"<span class='meta'>{nfl}</span>" if nfl else ""
+                    pos = p.get("pos")
+                    nfl_html = f"<span class='meta'>{nfl}</span>" if nfl and nfl != "FA" else ""
 
-                    # Make player name clickable
+                    # Make player name clickable; unknown/DEF players are not clickable
                     pid = p.get("pid", "")
                     player_name = p['name']
-                    clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid != "0" else " class='pname'"
+                    is_unknown = not player_name or player_name in ("Unknown", "0", "Empty") or str(player_name).isdigit()
+                    if pos == "DEF" and nfl:
+                        city = _team_city(nfl)
+                        player_name = player_name.replace(nfl, city) if nfl in player_name else city
+                        clickable_attrs = " class='pname'"
+                    elif is_unknown or pid == "0":
+                        player_name = f"Unknown {pos}" if pos and str(player_name).isdigit() else (player_name or "Unknown")
+                        clickable_attrs = " class='pname' style='color:var(--text-muted);'"
+                    else:
+                        clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'"
 
                     out.append(
                         f"<div class='{row_cls}'>"
