@@ -8806,6 +8806,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 <option value="value">Value</option>
                 <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
+                <option value="ppg">PPG</option>
+                <option value="total_pts">Total Pts</option>
               </select>
             </div>
           </div>
@@ -9399,12 +9401,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
       // Map sort key → { header label, cell value function }
       const PR_SORT_META = {
-        rank:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
-        value:    { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
-        age:      { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '-' },
-        pos_rank: { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
+        rank:      { label: 'Value',     cell: p => prFormatValue(prGetValue(p)) },
+        value:     { label: 'Value',     cell: p => prFormatValue(prGetValue(p)) },
+        age:       { label: 'Age',       cell: p => p.age != null ? Number(p.age).toFixed(1) : '-' },
+        pos_rank:  { label: 'Pos Rank',  cell: p => prLeagueType === 'sf'
           ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
           : (p.pos_rank_label || p.position) },
+        ppg:       { label: 'PPG',       cell: p => p.ppg != null ? Number(p.ppg).toFixed(1) : '-' },
+        total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? Number(p.total_pts).toFixed(1) : '-' },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -9413,9 +9417,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const sortBy = document.getElementById('prSort').value;
 
         // On mobile (≤768px) the Age column is hidden, so switch the sort column
-        // to show whatever is being sorted. On desktop all columns are visible.
+        // to show whatever is being sorted. On desktop all columns are visible,
+        // but for ppg/total_pts sorts always show the sort value in the sort column.
         const isMobile = window.innerWidth <= 768;
-        const sortMeta = isMobile ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
+        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts';
+        const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
         const sortHeaderEl = document.getElementById('prSortHeader');
         if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
         // Hide age col only on mobile when sort=age (shown in sort col instead)
@@ -9470,6 +9476,10 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
               const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
               return rA - rB;
+            } else if (sortBy === 'ppg') {
+              return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
+            } else if (sortBy === 'total_pts') {
+              return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
             } else {
               return prGetValue(b) - prGetValue(a);
             }
@@ -9512,7 +9522,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         list.innerHTML = '';
         let prevTier = null;
         pageSlice.forEach((p, i) => {
-          const _tier = (sortBy === 'value' || sortBy === 'rank') ? prGetTier(p) : null;
+          const _tier = (sortBy === 'value' || sortBy === 'rank') && p.position !== 'PICK' ? prGetTier(p) : null;
           if (_tier && _tier !== prevTier) {
             const tc = _PR_TIER_COLORS[_tier] || '#64748b';
             const tl = _PR_TIER_LABELS[_tier] || ('Tier ' + _tier);
@@ -9566,6 +9576,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '-' : sortMeta.cell(p);
+          let sortDisplayHTML;
+          if (p.position !== 'PICK' && sortBy === 'ppg' && p.ppg != null) {
+            const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
+            sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+              + `<span>${sortDisplay}</span>`
+              + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${pRank}</span>`
+              + `</span>`;
+          } else if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
+            const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '-';
+            sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+              + `<span>${sortDisplay}</span>`
+              + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tRank}</span>`
+              + `</span>`;
+          } else {
+            sortDisplayHTML = sortDisplay;
+          }
 
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '-') + '</span>' +
@@ -9574,7 +9600,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '-' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '-') + '</span>' +
-            '<span class="pr-value">' + sortDisplay + '</span>';
+            '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
           list.appendChild(row);
         });
@@ -9782,6 +9808,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               search_name:      p.search_name || '',
               is_rookie:        p.is_rookie === true,
               rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
+              ppg:              p.ppg != null ? Number(p.ppg) : null,
+              total_pts:        p.total_pts != null ? Number(p.total_pts) : null,
+              ppg_rank:         p.ppg_rank != null ? Number(p.ppg_rank) : null,
+              total_pts_rank:   p.total_pts_rank != null ? Number(p.total_pts_rank) : null,
+              ppg_season:       p.ppg_season || null,
             };
           })
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
@@ -12221,7 +12252,7 @@ def api_league_players():
     try:
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
-        
+
         # Enrich player data with birthday information
         for player in model_value_table:
             player_id = str(player.get("id") or "")
@@ -12230,6 +12261,65 @@ def api_league_players():
                 player["bDay"] = player_data.get("bDay")
     except Exception as e:
         print(f"[api/league-players] Could not add birthday data: {e}")
+
+    # Enrich with PPG and total points from usage cache (half-PPR, min 4 games)
+    try:
+        import os as _os_lp, json as _json_lp
+        _season_lp = date.today().year
+        _usage_data_lp = None
+        for _s in [_season_lp, _season_lp - 1]:
+            _up = _os_lp.path.join("cache", "player_history", f"usage_rows_{_s}.json")
+            if _os_lp.path.exists(_up):
+                with open(_up) as _f:
+                    _usage_data_lp = _json_lp.load(_f)
+                _usage_season_lp = _s
+                break
+        if _usage_data_lp:
+            _usage_map_lp = {str(p.get("id")): p for p in _usage_data_lp if p.get("id")}
+            # Build positional PPG and total_pts lists for ranking
+            _pos_ppg_lp: dict = {}
+            _pos_total_lp: dict = {}
+            for _p in _usage_data_lp:
+                _u = _p.get("usage") or {}
+                _g = int(_u.get("games") or 0)
+                if _g < 4:
+                    continue
+                _ppg_v = _u.get("half_ppr_ppg")
+                if _ppg_v is None:
+                    continue
+                _ppg_v = round(float(_ppg_v), 1)
+                _tot_v = round(_ppg_v * _g, 1)
+                _pos_lp = str(_p.get("position") or "")
+                _pos_ppg_lp.setdefault(_pos_lp, []).append(_ppg_v)
+                _pos_total_lp.setdefault(_pos_lp, []).append(_tot_v)
+            # Sort descending for rank lookup
+            _pos_ppg_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_ppg_lp.items()}
+            _pos_total_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_total_lp.items()}
+            for _player in model_value_table:
+                _pid = str(_player.get("id") or "")
+                _entry = _usage_map_lp.get(_pid)
+                if not _entry:
+                    continue
+                _u = _entry.get("usage") or {}
+                _g = int(_u.get("games") or 0)
+                if _g < 4:
+                    continue
+                _ppg_v = _u.get("half_ppr_ppg")
+                if _ppg_v is None:
+                    continue
+                _ppg_v = round(float(_ppg_v), 1)
+                _tot_v = round(_ppg_v * _g, 1)
+                _pos_lp = str(_entry.get("position") or "")
+                _ppg_sorted = _pos_ppg_sorted_lp.get(_pos_lp, [])
+                _tot_sorted = _pos_total_sorted_lp.get(_pos_lp, [])
+                _player["ppg"] = _ppg_v
+                _player["total_pts"] = _tot_v
+                _player["ppg_games"] = _g
+                _player["ppg_season"] = _usage_season_lp
+                _player["ppg_rank"] = (_ppg_sorted.index(_ppg_v) + 1) if _ppg_v in _ppg_sorted else None
+                _player["total_pts_rank"] = (_tot_sorted.index(_tot_v) + 1) if _tot_v in _tot_sorted else None
+    except Exception as _e_lp:
+        print(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
@@ -13257,6 +13347,8 @@ def api_player_details(player_id: str):
         _ppg_rank = None
         _ppg_games = None
         _ppg_season_used = None
+        _total_pts = None
+        _total_pts_rank = None
         try:
             import os as _os, json as _json2
             _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
@@ -13288,18 +13380,31 @@ def api_player_details(player_id: str):
                 # Scoring rank within position (min 4 games)
                 _pos_str = player_meta.get("pos", "")
                 if _pos_str:
+                    _pos_players = [
+                        p for p in _ud
+                        if p.get("position") == _pos_str
+                        and int((p.get("usage") or {}).get("games") or 0) >= 4
+                        and _pick_ppg(p.get("usage") or {}) is not None
+                    ]
                     _all_ppg = sorted(
-                        [round(float(_pick_ppg(p.get("usage") or {})), 1)
-                         for p in _ud
-                         if p.get("position") == _pos_str
-                         and int((p.get("usage") or {}).get("games") or 0) >= 4
-                         and _pick_ppg(p.get("usage") or {}) is not None],
+                        [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _pos_players],
                         reverse=True,
                     )
                     try:
                         _ppg_rank = _all_ppg.index(_ppg) + 1
                     except ValueError:
                         _ppg_rank = None
+                    # Total points rank
+                    _all_total = sorted(
+                        [round(float(_pick_ppg(p.get("usage") or {})) * int((p.get("usage") or {}).get("games") or 0), 1)
+                         for p in _pos_players],
+                        reverse=True,
+                    )
+                    _total_pts = round(_ppg * _ppg_games, 1) if _ppg and _ppg_games else None
+                    try:
+                        _total_pts_rank = _all_total.index(_total_pts) + 1 if _total_pts is not None else None
+                    except ValueError:
+                        _total_pts_rank = None
                 break
         except Exception:
             pass
@@ -13324,6 +13429,8 @@ def api_player_details(player_id: str):
                 "ppg_rank": _ppg_rank,
                 "ppg_season": _ppg_season_used,
                 "ppg_games": _ppg_games,
+                "total_pts": _total_pts if _ppg else None,
+                "total_pts_rank": _total_pts_rank if _ppg else None,
             },
             "value_history": value_history,
             "value_trend": value_trend,
