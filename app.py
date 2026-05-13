@@ -8746,21 +8746,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                        font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
 
-            <!-- Position filters -->
-            <div class="filter-positions">
-              <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
-              <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
-              <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
-              <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
-              <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
-              <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
-            </div>
+            <!-- Position filters + Settings on same row -->
+            <div class="filter-positions-row">
+              <div class="filter-positions">
+                <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+                <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+                <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+                <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+                <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+                <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+              </div>
 
-            <!-- Settings button -->
-            <div style="position:relative;">
-              <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
-                League️ Settings
-              </button>
+              <!-- Settings button -->
+              <div style="position:relative;flex-shrink:0;">
+                <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
+                  League️ Settings
+                </button>
 
               <!-- Settings panel (hidden by default) -->
               <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
@@ -8788,7 +8789,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   </div>
                 </div>
               </div>
-            </div>
+            </div> <!-- end filter-positions-row -->
           </div>
 
           <!-- Row 2: Secondary filters -->
@@ -8937,6 +8938,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .filter-row-primary {
         gap: 12px;
+      }
+      .filter-positions-row {
+        display: contents; /* transparent on desktop — children behave as direct flex items */
       }
       .filter-row-secondary {
         padding-top: 4px;
@@ -9136,6 +9140,56 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           padding: 6px 10px;
           min-width: 36px;
           justify-content: center;
+        }
+        /* Row 1: search full width, then pills + settings on same row */
+        .filter-row-primary {
+          flex-direction: column;
+          gap: 8px;
+        }
+        .filter-search {
+          min-width: 0;
+          width: 100%;
+        }
+        /* Pills and settings button share a row */
+        .filter-positions-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          gap: 8px;
+        }
+        .filter-positions {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+          gap: 4px;
+        }
+        .filter-positions::-webkit-scrollbar { display: none; }
+        .pos-pill {
+          padding: 5px 10px;
+          font-size: 11px;
+          flex-shrink: 0;
+        }
+        /* Row 2: tags left, sort right on same line */
+        .filter-row-secondary {
+          flex-wrap: nowrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .active-settings-indicator {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .active-settings-indicator::-webkit-scrollbar { display: none; }
+        .filter-sort {
+          flex-shrink: 0;
+        }
+        .filter-sort select {
+          font-size: 12px;
+          padding: 5px 8px;
         }
       }
       .pr-page-numbers {
