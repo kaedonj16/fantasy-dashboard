@@ -4674,7 +4674,7 @@ function openPlayerModal(playerId, playerName, opts) {
         metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
       const metaEl = document.getElementById('playerModalMeta');
-      let metaHTML = `<div>${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
+      let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
         const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${data.fantasy_team_owner}</span>` : '';
         metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${data.fantasy_team}${_ownerStr}</div>`;
@@ -4735,7 +4735,7 @@ function openPlayerModal(playerId, playerName, opts) {
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Total Pts${seasonLabel}</div>
+            <div class="pm-hero-label">Total${seasonLabel}</div>
             <div class="pm-hero-val">${totalPts}</div>
             <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
           </div>`
@@ -6569,7 +6569,7 @@ function _buildCompareHeroHTML(p) {
       </div>` : '';
   const totalCard = total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
-        <div class="pm-hero-label">Total Pts${season}</div>
+        <div class="pm-hero-label">Total${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
         <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
       </div>` : '';

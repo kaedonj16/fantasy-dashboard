@@ -10432,9 +10432,9 @@ img, svg, canvas {
   font-size: 14px;
   color: var(--text-muted);
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 @media (max-width: 768px) {
@@ -10967,6 +10967,10 @@ img, svg, canvas {
 @media (max-width: 600px) {
   .pm-hero-row { grid-template-columns: 1fr 1fr !important; }
   .pm-hero-primary { grid-column: 1 / -1; }
+  .pm-hero-label { font-size: 8px; letter-spacing: 0.02em; }
+  .pm-hero-val { font-size: 20px; }
+  .pm-hero-sub { font-size: 10px; }
+  .pm-hero-stat { padding: 10px 8px; }
   .pm-comp-row { grid-template-columns: 90px 1fr 40px; gap: 8px; }
 }
 
@@ -11426,24 +11430,53 @@ tr.team-clickable {
   }
 
   .player-modal-header {
-    padding: 12px 14px;
-    gap: 8px;
+    position: relative;
+    padding: 12px 12px 14px;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: nowrap;
   }
 
-  /* Shrink headshot so buttons stay on screen */
+  .player-modal-title-section {
+    gap: 10px;
+    align-items: flex-start;
+    flex: 1;
+    min-width: 0;
+    padding-right: 80px; /* room for absolute buttons */
+  }
+
+  /* Good-sized headshot, no cramping */
   .player-modal-headshot {
-    width: 80px;
-    height: 68px;
+    width: 76px;
+    height: 64px;
+    border-radius: 8px;
   }
 
   .player-modal-name {
     font-size: 17px;
+    line-height: 1.2;
+    margin-bottom: 4px;
   }
 
-  /* Compact the compare button so the × is always visible */
+  .player-modal-meta {
+    font-size: 12px;
+    gap: 1px;
+  }
+
+  /* Float the action buttons to top-right, out of flow */
+  .player-modal-header > div:last-child {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
   .player-modal-compare-btn {
     font-size: 11px;
-    padding: 4px 8px;
+    padding: 5px 9px;
     white-space: nowrap;
   }
 
@@ -12353,15 +12386,19 @@ tr.team-clickable {
   #compareHero1::before { content: attr(data-name); }
   #compareHero2::before { content: attr(data-name); }
 
-  /* Hero row: 3 equal cards across full width looks good now */
+  /* Hero row: force 3-col wrap, smaller fonts */
   .compare-hero-row {
-    gap: 8px;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px;
   }
   .compare-hero-row .pm-hero-val {
-    font-size: 22px !important;
+    font-size: 18px !important;
   }
   .compare-hero-row .pm-hero-label {
     font-size: 9px;
+  }
+  .compare-hero-row .pm-hero-sub {
+    font-size: 10px;
   }
 
   /* PPG / scoring row: tighten font */
