@@ -11442,7 +11442,7 @@ tr.team-clickable {
     align-items: flex-start;
     flex: 1;
     min-width: 0;
-    padding-right: 80px; /* room for absolute buttons */
+    padding-right: 140px; /* room for Compare + × buttons */
   }
 
   /* Good-sized headshot, no cramping */
@@ -12356,49 +12356,54 @@ tr.team-clickable {
     padding: 0 4px;
   }
 
-  /* Hero stats: stack players vertically so each gets full card width */
+  /* Two-column compare: P1 left, P2 right, cards stack vertically in each col */
   .compare-hero-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
     margin-top: 12px;
   }
-  .compare-hero-player:first-child {
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 12px;
-  }
+  .compare-hero-player:first-child,
   .compare-hero-player:last-child {
-    padding-left: 0;
-    padding-top: 0;
+    padding: 0;
+    border: none;
+    margin: 0;
   }
 
-  /* Add player name label above each hero block so you know whose stats are whose */
+  /* Player name label above each column */
   .compare-hero-player::before {
     display: block;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   #compareHero1::before { content: attr(data-name); }
   #compareHero2::before { content: attr(data-name); }
 
-  /* Hero row: force 3-col wrap, smaller fonts */
+  /* Each player's cards stack in a single column */
   .compare-hero-row {
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: 6px;
+    display: flex !important;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .compare-hero-row .pm-hero-stat {
+    padding: 8px 8px;
   }
   .compare-hero-row .pm-hero-val {
-    font-size: 18px !important;
+    font-size: 16px !important;
   }
   .compare-hero-row .pm-hero-label {
-    font-size: 9px;
+    font-size: 8px;
+    letter-spacing: 0.02em;
   }
   .compare-hero-row .pm-hero-sub {
-    font-size: 10px;
+    font-size: 9px;
   }
 
   /* PPG / scoring row: tighten font */
