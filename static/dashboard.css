@@ -11336,14 +11336,31 @@ img, svg, canvas {
   height: 280px;
 }
 
-/* Clickable team cards */
-.team-clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+/* Clickable team cards / names */
+.team-clickable {
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
 }
 
-.team-clickable {
-  transition: all 0.2s;
+/* Block-level clickable cards (os-snapshot-card etc.) get the lift */
+div.team-clickable:hover, article.team-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+/* Inline / span / text clickables just dim slightly */
+span.team-clickable:hover, h2.team-clickable:hover,
+.pr-team-name.team-clickable:hover, .po-team-name.team-clickable:hover {
+  opacity: 0.72;
+}
+
+/* Table row clickables get a row highlight */
+tr.team-clickable:hover td {
+  background: var(--accent-soft);
+}
+tr.team-clickable {
+  cursor: pointer;
 }
 
 /* Mobile responsive */

@@ -1194,6 +1194,7 @@ def playoff_bracket(
                 "label": roster_name.get(key, f"Roster {key}"),
                 "avatar": roster_avatar_map.get(roster_name.get(key, "")),
                 "kind": "team",
+                "roster_id": str(rid),
             }
 
         if isinstance(from_spec, dict) and from_spec:
@@ -1231,11 +1232,17 @@ def playoff_bracket(
         else:
             img = "<div class='team-avatar'></div>"
 
+        rid = slot.get("roster_id")
+        clickable_attrs = (
+            f" class='team-name team-clickable' data-roster-id='{rid}' data-team-name='{slot['label']}'"
+            if rid else " class='team-name'"
+        )
+
         return (
             f"<div class='{cls}'>"
             f"  <div class='team-main'>"
             f"    {img}"
-            f"    <div class='team-text'><div class='team-name'>{slot['label']}</div></div>"
+            f"    <div class='team-text'><div{clickable_attrs}>{slot['label']}</div></div>"
             f"  </div>"
             f"  <div class='team-score'>{score_text}</div>"
             f"</div>"

@@ -468,7 +468,8 @@ function _renderPlayoffOdds(data) {
       ? ''
       : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
 
-    return `<tr>
+    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
+    return `<tr class="team-clickable"${_ridAttr}>
       <td class="po-team">${t.team_name}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
