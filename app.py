@@ -13692,7 +13692,7 @@ def api_team_details(roster_id: str):
             # If player_id is a team abbreviation, treat as defense
             if pid_str.isalpha() and 2 <= len(pid_str) <= 3 and (not position or player_name == "Unknown"):
                 city = get_team_city(pid_str)
-                player_name = f"{city} Defense"
+                player_name = city
                 position = "DEF"
                 player_team = pid_str
 
