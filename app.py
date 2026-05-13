@@ -2885,7 +2885,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings(team_stats, length) -> str:
+def render_standings(team_stats, length, name_to_rid: dict | None = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -2921,10 +2921,18 @@ def render_standings(team_stats, length) -> str:
             if avatar else ""
         )
 
+        rid = (name_to_rid or {}).get(row['owner'])
+        if rid:
+            owner_cell = (f"<span class='team-clickable' style='cursor:pointer;' "
+                          f"data-roster-id='{rid}' data-team-name='{row['owner']}'>"
+                          f"{img} {row['owner']}</span>")
+        else:
+            owner_cell = f"{img} {row['owner']}"
+
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{img} {row['owner']}</td>
+              <td class="team">{owner_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -2991,7 +2999,8 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             pass
 
-    standings_html = render_standings(team_stats, 5)
+    _dash_name_to_rid = {v: k for k, v in (ctx.get("roster_map") or {}).items()}
+    standings_html = render_standings(team_stats, 5, name_to_rid=_dash_name_to_rid)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3758,8 +3767,9 @@ def build_standings_body(ctx: dict) -> str:
     df_weekly = ctx["df_weekly"]
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
+    _name_to_rid = {v: k for k, v in roster_map.items()}
 
-    standings_html = render_standings(team_stats, num_teams)
+    standings_html = render_standings(team_stats, num_teams, name_to_rid=_name_to_rid)
 
     if (
             df_weekly is not None
