@@ -11443,7 +11443,7 @@ tr.team-clickable {
     align-items: flex-start;
     flex: 1;
     min-width: 0;
-    padding-right: 140px; /* room for Compare + × buttons */
+    padding-right: 35px;
   }
 
   /* Good-sized headshot, no cramping */

@@ -6601,9 +6601,7 @@ function _buildComparePlayerHeader(p) {
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
   const _pAge = parseFloat(p.age);
   if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
-  const _ownerLine = p.fantasy_team
-    ? `<div class="compare-owner-line">${p.fantasy_team}${p.fantasy_team_owner ? ` · <span style="opacity:.65;">@${p.fantasy_team_owner}</span>` : ''}</div>`
-    : '';
+  const _ownerLine = ''; // omit fantasy team from compare header — too cluttered
   return `
     <div class="compare-player-header">
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
