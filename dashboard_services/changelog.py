@@ -6,6 +6,18 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-05-13",
+        "tag": "feature",
+        "text": "Player Scoring: Player modals now show PPG and season total points side by side (e.g. 24.5 | 416.5) with positional ranks for both — PPG · RB1 | TOTAL · RB2. Compare player view shows the same scoring breakdown for both players.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-05-13",
+        "tag": "feature",
+        "text": "Player Rankings: Sort by PPG or Total Points to quickly find the highest scorers. The sort column shows the value and positional rank so you can see where each player stands.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-05-13",
         "tag": "new",
         "text": "Playoff Odds: See your chances of making the playoffs, earning a first-round bye, and winning the championship based on your roster and schedule on the Teams page.",
         "link": "/teams"
