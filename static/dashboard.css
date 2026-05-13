@@ -11430,45 +11430,54 @@ tr.team-clickable {
   }
 
   .player-modal-header {
-    padding: 10px 12px;
-    gap: 6px;
+    position: relative;
+    padding: 12px 12px 14px;
+    gap: 10px;
     align-items: flex-start;
+    flex-wrap: nowrap;
   }
 
   .player-modal-title-section {
-    gap: 8px;
+    gap: 10px;
     align-items: flex-start;
+    flex: 1;
+    min-width: 0;
+    padding-right: 80px; /* room for absolute buttons */
   }
 
-  /* Shrink headshot so buttons stay on screen */
+  /* Good-sized headshot, no cramping */
   .player-modal-headshot {
-    width: 60px;
-    height: 52px;
+    width: 76px;
+    height: 64px;
+    border-radius: 8px;
   }
 
   .player-modal-name {
-    font-size: 15px;
-    margin-bottom: 3px;
+    font-size: 17px;
+    line-height: 1.2;
+    margin-bottom: 4px;
   }
 
   .player-modal-meta {
     font-size: 12px;
+    gap: 1px;
   }
 
-  /* Compact the compare button so the × is always visible */
+  /* Float the action buttons to top-right, out of flow */
+  .player-modal-header > div:last-child {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
   .player-modal-compare-btn {
     font-size: 11px;
-    padding: 4px 8px;
+    padding: 5px 9px;
     white-space: nowrap;
-  }
-
-  /* Header action buttons stay together */
-  .player-modal-header > div:last-child {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
-    align-items: flex-start;
-    padding-top: 2px;
   }
 
   .player-modal-body {
