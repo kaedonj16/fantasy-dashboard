@@ -360,6 +360,25 @@ def get_team_full_name(abbreviation: str) -> str:
     return team_names.get(abbreviation.upper(), abbreviation)
 
 
+NFL_CITY_MAP: dict[str, str] = {
+    "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
+    "CAR": "Carolina", "CHI": "Chicago", "CIN": "Cincinnati", "CLE": "Cleveland",
+    "DAL": "Dallas", "DEN": "Denver", "DET": "Detroit", "GB": "Green Bay",
+    "HOU": "Houston", "IND": "Indianapolis", "JAX": "Jacksonville",
+    "KC": "Kansas City", "LAC": "LA Chargers", "LAR": "LA Rams",
+    "LV": "Las Vegas", "MIA": "Miami", "MIN": "Minnesota",
+    "NE": "New England", "NO": "New Orleans", "NYG": "NY Giants", "NYJ": "NY Jets",
+    "PHI": "Philadelphia", "PIT": "Pittsburgh", "SEA": "Seattle",
+    "SF": "San Francisco", "TB": "Tampa Bay", "TEN": "Tennessee",
+    "WAS": "Washington", "WSH": "Washington",
+}
+
+
+def get_team_city(abbreviation: str) -> str:
+    """Return city/short name for an NFL team abbreviation."""
+    return NFL_CITY_MAP.get((abbreviation or "").upper(), abbreviation)
+
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -6500,8 +6519,9 @@ def build_teams_body(ctx: dict) -> str:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
 
-            # Build meta parts (rank, team, age)
-            meta_parts = [rank_label, p.get('team', '')]
+            # Build meta parts (rank, team city, age)
+            _team_city = get_team_city(p.get('team', '')) if p.get('team') else ''
+            meta_parts = [rank_label, _team_city]
             if age_txt:
                 meta_parts.append(age_txt)
             meta_str = " • ".join(filter(None, meta_parts))
@@ -13669,11 +13689,10 @@ def api_team_details(roster_id: str):
             player_name = player_meta.get("name", "Unknown")
             player_team = player_meta.get("team")
 
-            # If player_id is a team abbreviation and no metadata found, treat as defense
-            if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
-                # This is likely a defense player with team ID
-                full_team_name = get_team_full_name(pid_str)
-                player_name = f"{full_team_name} Defense"
+            # If player_id is a team abbreviation, treat as defense
+            if pid_str.isalpha() and 2 <= len(pid_str) <= 3 and (not position or player_name == "Unknown"):
+                city = get_team_city(pid_str)
+                player_name = f"{city} Defense"
                 position = "DEF"
                 player_team = pid_str
 
@@ -13693,6 +13712,7 @@ def api_team_details(roster_id: str):
                 "name": player_name,
                 "position": position,
                 "team": player_team,
+                "team_city": get_team_city(player_team) if player_team else None,
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,

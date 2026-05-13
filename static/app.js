@@ -7614,7 +7614,7 @@ function renderTeamDetails(data) {
             ${badges}
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.team || '-'}</td>
+          <td>${player.team_city || player.team || '-'}</td>
           <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
           <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
         </tr>
