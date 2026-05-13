@@ -11370,7 +11370,8 @@ tr.team-clickable {
 /* Mobile responsive */
 @media (max-width: 768px) {
   .team-modal {
-    max-height: 95vh;
+    max-height: 88dvh;
+    max-height: 88vh;
     border-radius: 16px 16px 0 0;
     margin: 0;
     margin-top: auto;
@@ -12343,7 +12344,8 @@ tr.team-clickable {
     max-width: 100%;
     margin-top: 0;        /* override bottom-sheet margin - center vertically instead */
     border-radius: 16px;  /* restore all-corner rounding when centered */
-    max-height: 92vh;
+    max-height: 88dvh;
+    max-height: 88vh;
   }
 
   /* Give dual header more breathing room by reducing overall header padding */
@@ -13920,11 +13922,22 @@ tr.team-clickable {
   .player-modal-overlay { padding: 0; align-items: flex-end; }
   .player-modal {
     border-radius: 16px 16px 0 0;
-    max-height: 92vh;
+    max-height: 88dvh;
+    max-height: 88vh; /* fallback */
   }
   .player-modal-header { padding-left: 16px; padding-right: 16px; }
-  .player-modal-headshot { width: 80px; height: 68px; }
-  .player-modal-name { font-size: 1.05rem; }
+}
+
+/* Team modal: bottom-sheet on mobile */
+@media (max-width: 480px) {
+  .team-modal-overlay { align-items: flex-end; padding: 0; }
+  .team-modal {
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+    width: 100%;
+    max-height: 88dvh;
+    max-height: 88vh;
+  }
 }
 
 /* PRO badge: smaller on mobile, never break nav layout */
