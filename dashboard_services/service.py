@@ -1464,13 +1464,13 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     # Make player name clickable; unknown/DEF players are not clickable
                     pid = p.get("pid", "")
                     player_name = p['name']
-                    is_unknown = not player_name or player_name in ("Unknown", "0", "Empty")
+                    is_unknown = not player_name or player_name in ("Unknown", "0", "Empty") or str(player_name).isdigit()
                     if pos == "DEF" and nfl:
                         city = _team_city(nfl)
                         player_name = player_name.replace(nfl, city) if nfl in player_name else city
                         clickable_attrs = " class='pname'"
                     elif is_unknown or pid == "0":
-                        player_name = player_name or "Unknown"
+                        player_name = f"Unknown {pos}" if pos and str(player_name).isdigit() else (player_name or "Unknown")
                         clickable_attrs = " class='pname' style='color:var(--text-muted);'"
                     else:
                         clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'"

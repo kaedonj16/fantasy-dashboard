@@ -7577,7 +7577,7 @@ function renderTeamDetails(data) {
     `;
 
     data.roster.forEach(player => {
-      const isUnknown = !player.name || player.name === 'Unknown';
+      const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
       // Determine badges with position-aware thresholds
       let badges = '';
       const value = player.value || 0;
@@ -7612,7 +7612,7 @@ function renderTeamDetails(data) {
         <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
           <td>
             ${isUnknown
-              ? `<span style="color:var(--text-muted);">${player.name || 'Unknown'}</span>`
+              ? `<span style="color:var(--text-muted);">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
               : `<strong class="player-clickable">${player.name}</strong>${badges}`}
           </td>
           <td><span class="pos-badge ${player.position}">${player.position}</span></td>
