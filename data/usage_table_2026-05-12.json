@@ -58,7 +58,7 @@
   {
     "id": "3258",
     "name": "Nick Vannett",
-    "team": "MIN",
+    "team": "LAR",
     "position": "TE",
     "age": 33.2,
     "usage": {}
@@ -82,7 +82,7 @@
   {
     "id": "13166",
     "name": "Kisean Johnson",
-    "team": "CLE",
+    "team": "GB",
     "position": "WR",
     "age": 24.3,
     "usage": {}
@@ -90,7 +90,7 @@
   {
     "id": "9998",
     "name": "Hendon Hooker",
-    "team": "CAR",
+    "team": "TEN",
     "position": "QB",
     "age": 28.3,
     "usage": {}
@@ -170,7 +170,7 @@
   {
     "id": "5128",
     "name": "Logan Woodside",
-    "team": "PIT",
+    "team": "ARI",
     "position": "QB",
     "age": 31.3,
     "usage": {}
@@ -226,7 +226,7 @@
   {
     "id": "8523",
     "name": "Nick Muse",
-    "team": "ARI",
+    "team": "NYJ",
     "position": "TE",
     "age": 27.5,
     "usage": {}
@@ -610,7 +610,7 @@
   {
     "id": "6146",
     "name": "Kaden Smith",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 29.0,
     "usage": {}
@@ -754,7 +754,7 @@
   {
     "id": "7609",
     "name": "Demetric Felton",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 27.8,
     "usage": {}
@@ -986,7 +986,7 @@
   {
     "id": "3664",
     "name": "J.D. McKissic",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 32.7,
     "usage": {}
@@ -1018,7 +1018,7 @@
   {
     "id": "7087",
     "name": "Jonathan Ward",
-    "team": "NE",
+    "team": "BAL",
     "position": "RB",
     "age": 28.6,
     "usage": {}
@@ -1122,7 +1122,7 @@
   {
     "id": "2359",
     "name": "Ameer Abdullah",
-    "team": "IND",
+    "team": "JAX",
     "position": "RB",
     "age": 32.9,
     "usage": {}
@@ -1226,7 +1226,7 @@
   {
     "id": "8250",
     "name": "Tay Martin",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 28.4,
     "usage": {}
@@ -1442,7 +1442,7 @@
   {
     "id": "8207",
     "name": "Tyler Goodson",
-    "team": "IND",
+    "team": "ATL",
     "position": "RB",
     "age": 25.5,
     "usage": {}
@@ -1802,7 +1802,7 @@
   {
     "id": "3269",
     "name": "Chris Moore",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 32.9,
     "usage": {}
@@ -1810,7 +1810,7 @@
   {
     "id": "2410",
     "name": "Jamison Crowder",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 32.9,
     "usage": {}
@@ -1882,7 +1882,7 @@
   {
     "id": "11158",
     "name": "Jalen Sample",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 27.1,
     "usage": {}
@@ -2242,7 +2242,7 @@
   {
     "id": "6960",
     "name": "Tyler Johnson",
-    "team": "NYJ",
+    "team": "DAL",
     "position": "WR",
     "age": 27.7,
     "usage": {}
@@ -2322,7 +2322,7 @@
   {
     "id": "8583",
     "name": "Stone Smartt",
-    "team": "NYJ",
+    "team": "PHI",
     "position": "TE",
     "age": 27.6,
     "usage": {}
@@ -2442,7 +2442,7 @@
   {
     "id": "6659",
     "name": "Craig Reynolds",
-    "team": "DET",
+    "team": "NE",
     "position": "RB",
     "age": 29.9,
     "usage": {}
@@ -2994,7 +2994,7 @@
   {
     "id": "9220",
     "name": "Evan Hull",
-    "team": "NO",
+    "team": "HOU",
     "position": "RB",
     "age": 25.5,
     "usage": {}
@@ -3210,7 +3210,7 @@
   {
     "id": "13119",
     "name": "Collin Schlee",
-    "team": "WSH",
+    "team": "WAS",
     "position": "QB",
     "age": 25.0,
     "usage": {}
@@ -3290,7 +3290,7 @@
   {
     "id": "5872",
     "name": "Deebo Samuel",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 30.3,
     "usage": {}
@@ -3322,7 +3322,7 @@
   {
     "id": "7943",
     "name": "Zach Davidson",
-    "team": "BUF",
+    "team": "NYG",
     "position": "TE",
     "age": 27.8,
     "usage": {}
@@ -3426,7 +3426,7 @@
   {
     "id": "8154",
     "name": "Brian Robinson Jr.",
-    "team": "SF",
+    "team": "ATL",
     "position": "RB",
     "age": 27.1,
     "usage": {}
@@ -3578,7 +3578,7 @@
   {
     "id": "6144",
     "name": "Trayveon Williams",
-    "team": "LAC",
+    "team": "CLE",
     "position": "RB",
     "age": 28.6,
     "usage": {}
@@ -3914,7 +3914,7 @@
   {
     "id": "1689",
     "name": "Adam Thielen",
-    "team": "MIN",
+    "team": "PIT",
     "position": "WR",
     "age": 35.7,
     "usage": {}
@@ -4090,7 +4090,7 @@
   {
     "id": "11159",
     "name": "Zion Bowens",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 26.7,
     "usage": {}
@@ -4138,7 +4138,7 @@
   {
     "id": "12772",
     "name": "Courtney Jackson",
-    "team": "NYG",
+    "team": "TEN",
     "position": "WR",
     "age": 25.2,
     "usage": {}
@@ -4146,7 +4146,7 @@
   {
     "id": "3423",
     "name": "Robbie Chosen",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 33.0,
     "usage": {}
@@ -4274,7 +4274,7 @@
   {
     "id": "5038",
     "name": "Michael Gallup",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 30.2,
     "usage": {}
@@ -4594,7 +4594,7 @@
   {
     "id": "6012",
     "name": "Travis Homer",
-    "team": "CHI",
+    "team": "PIT",
     "position": "RB",
     "age": 27.8,
     "usage": {}
@@ -4786,7 +4786,7 @@
   {
     "id": "4854",
     "name": "River Cracraft",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 31.5,
     "usage": {}
@@ -5098,7 +5098,7 @@
   {
     "id": "6279",
     "name": "Brandon Dillon",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 29.0,
     "usage": {}
@@ -5178,7 +5178,7 @@
   {
     "id": "6037",
     "name": "Brett Rypien",
-    "team": "IND",
+    "team": "MIN",
     "position": "QB",
     "age": 29.8,
     "usage": {}
@@ -5186,7 +5186,7 @@
   {
     "id": "4198",
     "name": "Jamal Agnew",
-    "team": "ATL",
+    "team": "WAS",
     "position": "WR",
     "age": 31.1,
     "usage": {}
@@ -5330,7 +5330,7 @@
   {
     "id": "1339",
     "name": "Zach Ertz",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 35.5,
     "usage": {}
@@ -5354,7 +5354,7 @@
   {
     "id": "6402",
     "name": "Steven Sims",
-    "team": "SEA",
+    "team": "ARI",
     "position": "WR",
     "age": 29.1,
     "usage": {}
@@ -5362,7 +5362,7 @@
   {
     "id": "1916",
     "name": "Martavis Bryant",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 34.4,
     "usage": {}
@@ -5386,7 +5386,7 @@
   {
     "id": "6154",
     "name": "David Sills V",
-    "team": "ATL",
+    "team": "TB",
     "position": "WR",
     "age": 30.0,
     "usage": {}
@@ -5490,7 +5490,7 @@
   {
     "id": "5046",
     "name": "Royce Freeman",
-    "team": "CHI",
+    "team": "LAC",
     "position": "RB",
     "age": 30.2,
     "usage": {}
@@ -5634,7 +5634,7 @@
   {
     "id": "7607",
     "name": "Michael Carter",
-    "team": "ARI",
+    "team": "TEN",
     "position": "RB",
     "age": 27.0,
     "usage": {}
@@ -5690,7 +5690,7 @@
   {
     "id": "7595",
     "name": "Tylan Wallace",
-    "team": "BAL",
+    "team": "CLE",
     "position": "WR",
     "age": 27.0,
     "usage": {}
@@ -5754,7 +5754,7 @@
   {
     "id": "7596",
     "name": "Elijah Moore",
-    "team": "BUF",
+    "team": "PHI",
     "position": "WR",
     "age": 26.1,
     "usage": {}
@@ -5826,7 +5826,7 @@
   {
     "id": "8206",
     "name": "Skylar Thompson",
-    "team": "PIT",
+    "team": "BAL",
     "position": "QB",
     "age": 28.9,
     "usage": {}
@@ -5914,7 +5914,7 @@
   {
     "id": "4226",
     "name": "Alex Armah",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 32.0,
     "usage": {}
@@ -6018,7 +6018,7 @@
   {
     "id": "7531",
     "name": "Feleipe Franks",
-    "team": "ATL",
+    "team": "CAR",
     "position": "TE",
     "age": 28.4,
     "usage": {}
@@ -6050,7 +6050,7 @@
   {
     "id": "8041",
     "name": "Shane Zylstra",
-    "team": "DET",
+    "team": "BUF",
     "position": "TE",
     "age": 29.5,
     "usage": {}
@@ -6306,7 +6306,7 @@
   {
     "id": "3312",
     "name": "Jonathan Williams",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 32.3,
     "usage": {}
@@ -6314,7 +6314,7 @@
   {
     "id": "7066",
     "name": "K.J. Osborn",
-    "team": "WSH",
+    "team": "TEN",
     "position": "WR",
     "age": 28.9,
     "usage": {}
@@ -6330,7 +6330,7 @@
   {
     "id": "8255",
     "name": "Raheem Blackshear",
-    "team": "PIT",
+    "team": "NYJ",
     "position": "RB",
     "age": 27.9,
     "usage": {}
@@ -6378,7 +6378,7 @@
   {
     "id": "1166",
     "name": "Kirk Cousins",
-    "team": "ATL",
+    "team": "LV",
     "position": "QB",
     "age": 37.7,
     "usage": {}
@@ -6410,7 +6410,7 @@
   {
     "id": "4033",
     "name": "David Njoku",
-    "team": "CLE",
+    "team": "LAC",
     "position": "TE",
     "age": 29.8,
     "usage": {}
@@ -6490,7 +6490,7 @@
   {
     "id": "2197",
     "name": "Brandin Cooks",
-    "team": "NO",
+    "team": "BUF",
     "position": "WR",
     "age": 32.6,
     "usage": {}
@@ -6890,7 +6890,7 @@
   {
     "id": "7065",
     "name": "Eli Wolf",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 29.2,
     "usage": {}
@@ -6922,7 +6922,7 @@
   {
     "id": "7216",
     "name": "Giovanni Ricci",
-    "team": "MIN",
+    "team": "DET",
     "position": "TE",
     "age": 29.6,
     "usage": {}
@@ -7186,7 +7186,7 @@
   {
     "id": "5347",
     "name": "Nyheim Hines",
-    "team": "LAC",
+    "team": "NO",
     "position": "RB",
     "age": 29.5,
     "usage": {}
@@ -7242,7 +7242,7 @@
   {
     "id": "11947",
     "name": "Austin Jones",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 25.3,
     "usage": {}
@@ -7418,7 +7418,7 @@
   {
     "id": "4435",
     "name": "Anthony Firkser",
-    "team": "KC",
+    "team": "DET",
     "position": "TE",
     "age": 31.2,
     "usage": {}
@@ -7490,7 +7490,7 @@
   {
     "id": "5285",
     "name": "Ross Dwelley",
-    "team": "DET",
+    "team": "CAR",
     "position": "TE",
     "age": 31.3,
     "usage": {}
@@ -7778,7 +7778,7 @@
   {
     "id": "12981",
     "name": "Gee Scott Jr.",
-    "team": "NE",
+    "team": "WAS",
     "position": "TE",
     "age": 25.4,
     "usage": {}
@@ -8242,7 +8242,7 @@
   {
     "id": "5199",
     "name": "Byron Pringle",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 32.5,
     "usage": {}
@@ -8442,7 +8442,7 @@
   {
     "id": "9486",
     "name": "Dontayvion Wicks",
-    "team": "GB",
+    "team": "PHI",
     "position": "WR",
     "age": 24.9,
     "usage": {}
@@ -8850,7 +8850,7 @@
   {
     "id": "3357",
     "name": "Brandon Allen",
-    "team": "TEN",
+    "team": "NYG",
     "position": "QB",
     "age": 33.7,
     "usage": {}
@@ -8994,7 +8994,7 @@
   {
     "id": "5970",
     "name": "Greg Dortch",
-    "team": "ARI",
+    "team": "DET",
     "position": "WR",
     "age": 28.0,
     "usage": {}
@@ -9082,7 +9082,7 @@
   {
     "id": "7944",
     "name": "Michael Strachan",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 28.7,
     "usage": {}
@@ -9114,7 +9114,7 @@
   {
     "id": "6850",
     "name": "Harrison Bryant",
-    "team": "HOU",
+    "team": "SEA",
     "position": "TE",
     "age": 28.1,
     "usage": {}
@@ -9138,7 +9138,7 @@
   {
     "id": "6380",
     "name": "Davion Davis",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 29.5,
     "usage": {}
@@ -9226,7 +9226,7 @@
   {
     "id": "6753",
     "name": "Derrick Gore",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 31.4,
     "usage": {}
@@ -9306,7 +9306,7 @@
   {
     "id": "7352",
     "name": "Matt Cole",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 29.5,
     "usage": {}
@@ -9322,7 +9322,7 @@
   {
     "id": "3568",
     "name": "Marken Michel",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 32.8,
     "usage": {}
@@ -9362,7 +9362,7 @@
   {
     "id": "4663",
     "name": "Austin Ekeler",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 31.0,
     "usage": {}
@@ -9466,7 +9466,7 @@
   {
     "id": "5000",
     "name": "Chase Edmonds",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 30.1,
     "usage": {}
@@ -9498,7 +9498,7 @@
   {
     "id": "13162",
     "name": "Maximilian Mang",
-    "team": "IND",
+    "team": "NYG",
     "position": "TE",
     "age": 26.2,
     "usage": {}
@@ -9618,7 +9618,7 @@
   {
     "id": "11605",
     "name": "Jaheim Bell",
-    "team": "PHI",
+    "team": "PIT",
     "position": "TE",
     "age": 24.9,
     "usage": {}
@@ -9706,7 +9706,7 @@
   {
     "id": "6290",
     "name": "Scotty Miller",
-    "team": "PIT",
+    "team": "CHI",
     "position": "WR",
     "age": 28.8,
     "usage": {}
@@ -9714,7 +9714,7 @@
   {
     "id": "11163",
     "name": "Tim DeMorat",
-    "team": "WSH",
+    "team": "WAS",
     "position": "QB",
     "age": 26.6,
     "usage": {}
@@ -9754,7 +9754,7 @@
   {
     "id": "5903",
     "name": "Will Grier",
-    "team": "DAL",
+    "team": "CAR",
     "position": "QB",
     "age": 31.1,
     "usage": {}
@@ -9826,7 +9826,7 @@
   {
     "id": "11070",
     "name": "Kazmeir Allen",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 26.2,
     "usage": {}
@@ -9898,7 +9898,7 @@
   {
     "id": "5154",
     "name": "Trent Sherfield Sr.",
-    "team": "DEN",
+    "team": "BUF",
     "position": "WR",
     "age": 30.2,
     "usage": {}
@@ -9938,7 +9938,7 @@
   {
     "id": "8178",
     "name": "Braylon Sanders",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 27.3,
     "usage": {}
@@ -10210,7 +10210,7 @@
   {
     "id": "5094",
     "name": "Tyler Conklin",
-    "team": "LAC",
+    "team": "DET",
     "position": "TE",
     "age": 30.8,
     "usage": {}
@@ -10306,7 +10306,7 @@
   {
     "id": "4491",
     "name": "Marcus Kemp",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 30.7,
     "usage": {}
@@ -10434,7 +10434,7 @@
   {
     "id": "6040",
     "name": "Tyree Jackson",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 28.5,
     "usage": {}
@@ -10722,7 +10722,7 @@
   {
     "id": "7143",
     "name": "Ben DiNucci",
-    "team": "ATL",
+    "team": "DEN",
     "position": "QB",
     "age": 29.5,
     "usage": {}
@@ -10834,7 +10834,7 @@
   {
     "id": "2549",
     "name": "Trevor Siemian",
-    "team": "TEN",
+    "team": "ATL",
     "position": "QB",
     "age": 34.4,
     "usage": {}
@@ -10930,7 +10930,7 @@
   {
     "id": "827",
     "name": "Tyrod Taylor",
-    "team": "NYJ",
+    "team": "GB",
     "position": "QB",
     "age": 36.8,
     "usage": {}
@@ -11026,7 +11026,7 @@
   {
     "id": "8061",
     "name": "Jake Hausmann",
-    "team": "WSH",
+    "team": "WAS",
     "position": "TE",
     "age": 28.7,
     "usage": {}
@@ -11114,7 +11114,7 @@
   {
     "id": "4234",
     "name": "Noah Brown",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 30.3,
     "usage": {}
@@ -11138,7 +11138,7 @@
   {
     "id": "8129",
     "name": "Dameon Pierce",
-    "team": "HOU",
+    "team": "PHI",
     "position": "RB",
     "age": 26.2,
     "usage": {}
@@ -11290,7 +11290,7 @@
   {
     "id": "5974",
     "name": "Trace McSorley",
-    "team": "WSH",
+    "team": "WAS",
     "position": "QB",
     "age": 30.7,
     "usage": {}
@@ -11426,7 +11426,7 @@
   {
     "id": "11808",
     "name": "Jha'Quan Jackson",
-    "team": "TEN",
+    "team": "NO",
     "position": "WR",
     "age": 26.0,
     "usage": {}
@@ -11466,7 +11466,7 @@
   {
     "id": "5086",
     "name": "Marquez Valdes-Scantling",
-    "team": "PIT",
+    "team": "DAL",
     "position": "WR",
     "age": 31.6,
     "usage": {}
@@ -12386,7 +12386,7 @@
   {
     "id": "7049",
     "name": "Jauan Jennings",
-    "team": "SF",
+    "team": "MIN",
     "position": "WR",
     "age": 28.8,
     "usage": {}
@@ -12418,7 +12418,7 @@
   {
     "id": "8756",
     "name": "Brandon Johnson",
-    "team": "TB",
+    "team": "PIT",
     "position": "WR",
     "age": 27.8,
     "usage": {}
@@ -12634,7 +12634,7 @@
   {
     "id": "3362",
     "name": "Jeff Driskel",
-    "team": "LV",
+    "team": "WAS",
     "position": "QB",
     "age": 33.1,
     "usage": {}
@@ -12778,7 +12778,7 @@
   {
     "id": "11645",
     "name": "Javon Baker",
-    "team": "PHI",
+    "team": "SF",
     "position": "WR",
     "age": 24.2,
     "usage": {}
@@ -12834,7 +12834,7 @@
   {
     "id": "7538",
     "name": "Zach Wilson",
-    "team": "MIA",
+    "team": "NO",
     "position": "QB",
     "age": 26.8,
     "usage": {}
@@ -12858,7 +12858,7 @@
   {
     "id": "7605",
     "name": "Kyle Trask",
-    "team": "TB",
+    "team": "ATL",
     "position": "QB",
     "age": 28.2,
     "usage": {}
@@ -13146,7 +13146,7 @@
   {
     "id": "5162",
     "name": "Reggie Bonnafon",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 30.4,
     "usage": {}
@@ -13874,7 +13874,7 @@
   {
     "id": "13418",
     "name": "Robert Henry Jr.",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": null,
     "usage": {}
@@ -14154,7 +14154,7 @@
   {
     "id": "13557",
     "name": "Athan Kaliakmanis",
-    "team": "WSH",
+    "team": "WAS",
     "position": "QB",
     "age": 22.7,
     "usage": {}
@@ -14258,7 +14258,7 @@
   {
     "id": "13405",
     "name": "Kaytron Allen",
-    "team": "WSH",
+    "team": "WAS",
     "position": "RB",
     "age": 23.3,
     "usage": {}
@@ -14282,7 +14282,7 @@
   {
     "id": "13301",
     "name": "Antonio Williams",
-    "team": "WSH",
+    "team": "WAS",
     "position": "WR",
     "age": 21.8,
     "usage": {}
