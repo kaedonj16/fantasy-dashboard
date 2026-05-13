@@ -11422,12 +11422,11 @@ tr.team-clickable {
 
 @media (max-width: 768px) {
   .player-modal {
-    max-height: 95vh;
-    border-radius: 16px 16px 0 0;
-    margin-top: auto;
-    max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
+    max-height: 88dvh;
+    max-height: 88vh;
+    border-radius: 16px;
+    margin: auto;
+    max-width: calc(100% - 24px);
   }
 
   .player-modal-header {
@@ -13930,12 +13929,7 @@ tr.team-clickable {
 
 /* Player modal: edge-to-edge on small phones */
 @media (max-width: 480px) {
-  .player-modal-overlay { padding: 0; align-items: flex-end; }
-  .player-modal {
-    border-radius: 16px 16px 0 0;
-    max-height: 88dvh;
-    max-height: 88vh; /* fallback */
-  }
+  .player-modal-overlay { padding: 16px; align-items: center; }
   .player-modal-header { padding-left: 16px; padding-right: 16px; }
 }
 
