@@ -6491,39 +6491,46 @@ function _computeSeasonStats(p) {
 }
 
 function _buildComparePPGRow(p1, p2) {
-  const s1 = _computeSeasonStats(p1);
-  const s2 = _computeSeasonStats(p2);
-  if (!s1.total && !s2.total) return '';
+  // game_logs_by_year is lazy-loaded and empty at compare time; use stats directly
+  const ppg1 = p1.stats?.ppg;
+  const ppg2 = p2.stats?.ppg;
+  if (ppg1 == null && ppg2 == null) return '';
 
-  const season = s1.season || s2.season || '';
+  const season = p1.stats?.ppg_season || p2.stats?.ppg_season || '';
 
-  function scoringBlock(s, p) {
+  function scoringBlock(p) {
     const pos = p.position || '';
+    const ppg = p.stats?.ppg;
+    const total = p.stats?.total_pts;
+    const games = p.stats?.ppg_games;
     const ppgRank = p.stats?.ppg_rank;
     const totalRank = p.stats?.total_pts_rank;
-    const ppgLabel = `PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'}`;
-    const totalLabel = `TOTAL · ${totalRank ? `${pos}${totalRank}` : '-'}`;
-    return `
-      <div class="compare-pts-cell" style="flex:1;">
-        <div class="compare-pts-val">${s.ppg !== null ? s.ppg : '-'}${s.total !== null ? ` | ${s.total}` : ''}</div>
-        <div class="compare-pts-label">${ppgLabel} | ${totalLabel}</div>
-      </div>`;
+    const valLine = ppg != null
+      ? `${ppg}${total != null ? ` | ${total}` : ''}`
+      : '-';
+    const rankLine = `PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'} | TOTAL · ${totalRank ? `${pos}${totalRank}` : '-'}`;
+    return {
+      cell: `<div class="compare-pts-cell">
+        <div class="compare-pts-val">${valLine}</div>
+        <div class="compare-pts-label">${rankLine}</div>
+      </div>`,
+      games,
+    };
   }
+
+  const b1 = scoringBlock(p1);
+  const b2 = scoringBlock(p2);
 
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
-        <div class="compare-pts-stats">
-          ${scoringBlock(s1, p1)}
-        </div>
-        ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
+        <div class="compare-pts-stats">${b1.cell}</div>
+        ${b1.games ? `<div class="compare-pts-meta">${season} · ${b1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
-        <div class="compare-pts-stats">
-          ${scoringBlock(s2, p2)}
-        </div>
-        ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
+        <div class="compare-pts-stats">${b2.cell}</div>
+        ${b2.games ? `<div class="compare-pts-meta">${season} · ${b2.games}g</div>` : ''}
       </div>
     </div>
   `;

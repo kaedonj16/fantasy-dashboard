@@ -12284,7 +12284,7 @@ def api_league_players():
                 _g = int(_u.get("games") or 0)
                 if _g < 4:
                     continue
-                _ppg_v = _u.get("half_ppr_ppg")
+                _ppg_v = _u.get("ppr_ppg")
                 if _ppg_v is None:
                     continue
                 _ppg_v = round(float(_ppg_v), 1)
@@ -12304,7 +12304,7 @@ def api_league_players():
                 _g = int(_u.get("games") or 0)
                 if _g < 4:
                     continue
-                _ppg_v = _u.get("half_ppr_ppg")
+                _ppg_v = _u.get("ppr_ppg")
                 if _ppg_v is None:
                     continue
                 _ppg_v = round(float(_ppg_v), 1)
@@ -13394,9 +13394,10 @@ def api_player_details(player_id: str):
                         _ppg_rank = _all_ppg.index(_ppg) + 1
                     except ValueError:
                         _ppg_rank = None
-                    # Total points rank
+                    # Total points rank — round ppg before multiplying so values
+                    # match _total_pts (which also uses already-rounded _ppg)
                     _all_total = sorted(
-                        [round(float(_pick_ppg(p.get("usage") or {})) * int((p.get("usage") or {}).get("games") or 0), 1)
+                        [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int((p.get("usage") or {}).get("games") or 0), 1)
                          for p in _pos_players],
                         reverse=True,
                     )
