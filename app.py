@@ -6519,9 +6519,8 @@ def build_teams_body(ctx: dict) -> str:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
 
-            # Build meta parts (rank, team city, age)
-            _team_city = get_team_city(p.get('team', '')) if p.get('team') else ''
-            meta_parts = [rank_label, _team_city]
+            # Build meta parts (rank, team, age)
+            meta_parts = [rank_label, p.get('team', '')]
             if age_txt:
                 meta_parts.append(age_txt)
             meta_str = " • ".join(filter(None, meta_parts))
@@ -13692,7 +13691,7 @@ def api_team_details(roster_id: str):
             # If player_id is a team abbreviation, treat as defense
             if pid_str.isalpha() and 2 <= len(pid_str) <= 3 and (not position or player_name == "Unknown"):
                 city = get_team_city(pid_str)
-                player_name = city
+                player_name = f"{city} Defense"
                 position = "DEF"
                 player_team = pid_str
 

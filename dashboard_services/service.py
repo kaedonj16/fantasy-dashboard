@@ -19,6 +19,22 @@ from dashboard_services.platform_api import get_matchups, get_transactions as pl
 from dashboard_services.players import build_roster_display_maps
 from utils.utils import safe_owner_name
 
+_NFL_CITY: dict[str, str] = {
+    "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
+    "CAR": "Carolina", "CHI": "Chicago", "CIN": "Cincinnati", "CLE": "Cleveland",
+    "DAL": "Dallas", "DEN": "Denver", "DET": "Detroit", "GB": "Green Bay",
+    "HOU": "Houston", "IND": "Indianapolis", "JAX": "Jacksonville",
+    "KC": "Kansas City", "LAC": "LA Chargers", "LAR": "LA Rams",
+    "LV": "Las Vegas", "MIA": "Miami", "MIN": "Minnesota",
+    "NE": "New England", "NO": "New Orleans", "NYG": "NY Giants", "NYJ": "NY Jets",
+    "PHI": "Philadelphia", "PIT": "Pittsburgh", "SEA": "Seattle",
+    "SF": "San Francisco", "TB": "Tampa Bay", "TEN": "Tennessee",
+    "WAS": "Washington", "WSH": "Washington",
+}
+
+def _team_city(abbr: str) -> str:
+    return _NFL_CITY.get((abbr or "").upper(), abbr)
+
 
 def render_weekly_highlight_ticker(high: dict, week: int) -> str:
     if not high:
@@ -1442,7 +1458,8 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                     pos = p.get("pos")
                     pos_badge = f"<span class='pos-badge {pos}'>{pos}</span>" if pos else ""
                     nfl = p.get("nfl")
-                    nfl_html = f"<span class='meta'>{nfl}</span>" if nfl else ""
+                    nfl_display = _team_city(nfl) if nfl and nfl != "FA" else nfl
+                    nfl_html = f"<span class='meta'>{nfl_display}</span>" if nfl_display else ""
 
                     # Make player name clickable
                     pid = p.get("pid", "")
