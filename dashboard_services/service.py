@@ -114,8 +114,8 @@ def matchup_cards_last_week(
         rid = str(r.get("roster_id"))
         settings = r.get("settings") or {}
         record_by_rid[rid] = (
-            settings.get("wins", 0),
-            settings.get("losses", 0),
+            settings.get("wins") or 0,
+            settings.get("losses") or 0,
         )
         owner_id = r.get("owner_id")
         avatar_by_rid[rid] = avatar_from_users(platform, users, owner_id)
@@ -432,10 +432,8 @@ def build_tables(
         win_pct = ((team_stats["Wins"] + 0.5 * ties) / team_stats["G"].replace(0, np.nan)).fillna(0.0)
 
     avg_pts = team_stats.get("AVG", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
-    cons_inv = -team_stats.get(
-        "STD",
-        pd.Series(team_stats["STD"].mean(), index=team_stats.index),
-    ).fillna(team_stats["STD"].mean())
+    _std_col = team_stats["STD"] if "STD" in team_stats.columns else pd.Series(0.0, index=team_stats.index)
+    cons_inv = -_std_col.fillna(_std_col.mean() if len(_std_col) else 0.0)
     ceiling = team_stats.get("MAX", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
     last3_series = team_stats["Last3"].fillna(0.0)
 

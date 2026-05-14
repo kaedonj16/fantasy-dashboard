@@ -3525,10 +3525,12 @@ def render_team_stats(team_stats, df_weekly) -> str:
         ]) + "</tr>")
 
     table_html = f"""
-        <table id="stats" class="standings-table">
-          <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
-          <tbody>{''.join(body_rows)}</tbody>
-        </table>
+        <div class="stats-scroll-wrap">
+          <table id="stats" class="standings-table">
+            <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
+            <tbody>{''.join(body_rows)}</tbody>
+          </table>
+        </div>
     """
     return table_html
 
@@ -12423,7 +12425,7 @@ def api_teams():
     season = int(request.args.get("season") or datetime.now().year)
 
     if not league_id:
-        return jsonify([])
+        return jsonify({"error": "league_id required"}), 400
 
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)

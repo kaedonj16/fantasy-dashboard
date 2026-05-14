@@ -2004,6 +2004,9 @@ button:hover {
   .standings-table tr {
     height: auto;
   }
+  .standings-table td.team {
+    width: 45%;
+  }
   /* Hide SOS columns on main standings */
   .standings-table[data-page="standings"] th:nth-child(n+7),
   .standings-table[data-page="standings"] td:nth-child(n+7) {
@@ -2026,6 +2029,9 @@ button:hover {
 @media (max-width: 480px) {
   .standings-table {
     font-size: 11px;
+  }
+  .standings-table td.team {
+    width: 50%;
   }
   /* Also hide PA on main standings */
   .standings-table[data-page="standings"] th:nth-child(5),
@@ -5581,6 +5587,11 @@ thead th {
 /* ============================================
    OTHER STYLES
    ============================================ */
+.stats-scroll-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 #stats {
   min-width: 720px;
 }

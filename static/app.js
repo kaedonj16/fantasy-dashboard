@@ -423,6 +423,16 @@ function initPlayoffOdds(root = document) {
   });
 }
 
+function _calcPlayoffByes(N) {
+  if (N < 2) return 0;
+  if (N % 2 === 0) {
+    const largest = 1 << (Math.floor(Math.log2(N)));
+    return N - largest;
+  }
+  const next = 1 << Math.ceil(Math.log2(N));
+  return next - N;
+}
+
 function _renderPlayoffOdds(data) {
   const { odds, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes } = data;
   if (!odds || !odds.length) return '<p class="po-error">No data available.</p>';
@@ -435,7 +445,7 @@ function _renderPlayoffOdds(data) {
   const weeksLeft = is_complete
     ? 0
     : Math.max(0, playoff_week_start - current_week - 1);
-  const nByes = playoff_byes != null ? playoff_byes : (playoff_teams === 6 ? 2 : 0);
+  const nByes = playoff_byes != null ? playoff_byes : _calcPlayoffByes(playoff_teams || 6);
   const subtitle = is_complete
     ? `Final standings · ${playoff_teams} playoff teams`
     : isProjected
@@ -2483,7 +2493,7 @@ window.initTradePage = function initTradePage(root = document) {
         try {
           const { pkg, target } = JSON.parse(decodeURIComponent(btn.dataset.payload));
           _loadPackageIntoCalc(target, pkg.send);
-        } catch {}
+        } catch (e) { console.error('[trade-calc] Invalid payload:', e); }
       }, { once: false });
 
       panel.innerHTML = html;
