@@ -1426,6 +1426,10 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
     width: 280px;
     right: -10px;
   }
+  .nav-search-icon {
+    width: 16px;
+    height: 16px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -8531,7 +8535,6 @@ img, svg, canvas {
     text-overflow: ellipsis;
   }
 
-  /* Allow meta to wrap and hide tier badge — tier is visible in dividers */
   .otc-chip-meta {
     font-size: 11px;
     white-space: normal;
@@ -8539,7 +8542,9 @@ img, svg, canvas {
   }
 
   .otc-tier-badge {
-    display: none !important;
+    font-size: 9px;
+    padding: 1px 4px;
+    vertical-align: middle;
   }
 
   .otc-chip-value {
@@ -9101,7 +9106,9 @@ img, svg, canvas {
   }
 
   .otc-tier-badge {
-    display: none !important;
+    font-size: 9px;
+    padding: 1px 4px;
+    vertical-align: middle;
   }
 
   .otc-chip-value {
