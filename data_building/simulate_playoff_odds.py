@@ -111,7 +111,7 @@ def simulate_playoff_odds(
 # Roster-value projection (preseason / offseason)
 # ---------------------------------------------------------------------------
 
-_LINEUP_EFFICIENCY = 0.92   # accounts for bye weeks, injuries, suboptimal starts
+_LINEUP_EFFICIENCY = 1.0    # position-aware selection already handles constraints
 _FLEX_POSITIONS    = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
 _FLEX_ELIGIBLE     = {"RB", "WR", "TE"}
 _SUPER_FLEX_POS    = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
