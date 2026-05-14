@@ -14595,12 +14595,13 @@ def api_playoff_odds():
         if cached and (_time.time() - cached["ts"]) < _PO_CACHE_TTL:
             return jsonify(cached["data"])
 
-        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        from data_building.simulate_playoff_odds import simulate_playoff_odds, _n_byes
         odds = simulate_playoff_odds(ctx, platform=platform)
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
         playoff_teams      = int(settings.get("playoff_teams") or 6)
+        playoff_byes       = _n_byes(playoff_teams)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
         payload = {
@@ -14609,6 +14610,7 @@ def api_playoff_odds():
             "current_week":        current_week,
             "playoff_week_start":  playoff_week_start,
             "playoff_teams":       playoff_teams,
+            "playoff_byes":        playoff_byes,
             "is_complete":         is_complete,
         }
         _PO_CACHE[cache_key] = {"ts": _time.time(), "data": payload}
