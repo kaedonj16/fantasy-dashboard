@@ -8937,24 +8937,40 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         justify-content: space-between;
       }
       .filter-row-primary {
-        gap: 12px;
+        flex-direction: column;
+        gap: 8px;
       }
       .filter-positions-row {
-        display: contents; /* transparent on desktop — children behave as direct flex items */
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-width: 0;
       }
       .filter-row-secondary {
-        padding-top: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: nowrap;
+        padding-top: 0;
       }
       .filter-search {
         position: relative;
-        flex: 1;
-        min-width: 200px;
+        width: 100%;
+        min-width: 0;
       }
       .filter-positions {
         display: flex;
-        gap: 3px;
-        flex-wrap: wrap;
+        gap: 4px;
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
       }
+      .filter-positions::-webkit-scrollbar { display: none; }
       .pos-pill {
         padding: 6px 12px;
         border-radius: 999px;
@@ -9045,8 +9061,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         display: flex;
         gap: 6px;
         align-items: center;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex: 1;
+        min-width: 0;
       }
+      .active-settings-indicator::-webkit-scrollbar { display: none; }
       .active-setting-tag {
         padding: 4px 10px;
         border-radius: 999px;
@@ -9133,64 +9154,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           gap: 8px;
           align-items: center;
         }
-        .pr-pagination-btn .pr-btn-label {
-          display: none;
-        }
+        .pr-pagination-btn .pr-btn-label { display: none; }
         .pr-pagination-btn {
           padding: 6px 10px;
           min-width: 36px;
           justify-content: center;
         }
-        /* Row 1: search full width, then pills + settings on same row */
-        .filter-row-primary {
-          flex-direction: column;
-          gap: 8px;
-        }
-        .filter-search {
-          min-width: 0;
-          width: 100%;
-        }
-        /* Pills and settings button share a row */
-        .filter-positions-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          width: 100%;
-          gap: 8px;
-        }
-        .filter-positions {
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-          gap: 4px;
-        }
-        .filter-positions::-webkit-scrollbar { display: none; }
-        .pos-pill {
-          padding: 5px 10px;
-          font-size: 11px;
-          flex-shrink: 0;
-        }
-        /* Row 2: tags left, sort right on same line */
-        .filter-row-secondary {
-          flex-wrap: nowrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-        }
-        .active-settings-indicator {
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          scrollbar-width: none;
-        }
-        .active-settings-indicator::-webkit-scrollbar { display: none; }
-        .filter-sort {
-          flex-shrink: 0;
-        }
-        .filter-sort select {
-          font-size: 12px;
-          padding: 5px 8px;
-        }
+        .pos-pill { padding: 5px 10px; font-size: 11px; }
+        .filter-sort select { font-size: 12px; padding: 5px 8px; }
       }
       .pr-page-numbers {
         display: flex;
