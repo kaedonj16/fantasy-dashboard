@@ -1246,6 +1246,7 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   align-items: center;
   justify-content: center;
   gap: 0;
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -1279,8 +1280,19 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
 }
 
 .nav-search-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   width: 20px;
   height: 20px;
+}
+
+.nav-search-wrapper:focus-within .nav-search-icon {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
   flex-shrink: 0;
 }
 
