@@ -87,6 +87,17 @@ def simulate_playoff_odds(
     if seed is None and league_id:
         seed = int(hashlib.md5(f"{league_id}:{season}".encode()).hexdigest(), 16) % (2 ** 32)
 
+    # Build division map from roster settings (Sleeper: roster.settings.division, 1-indexed)
+    # Only used if the league has divisions configured.
+    n_divisions = int((ctx.get("league_settings") or {}).get("divisions") or 0)
+    division_map: dict[int, int] = {}
+    if n_divisions >= 2:
+        for r in (ctx.get("rosters") or []):
+            rid = r.get("roster_id")
+            div = int((r.get("settings") or {}).get("division") or 1)
+            if rid is not None:
+                division_map[int(rid)] = div
+
     team_stats = ctx.get("team_stats")
     has_games  = team_stats is not None and not team_stats.empty
 
@@ -100,7 +111,7 @@ def simulate_playoff_odds(
             platform, league_id, season, remaining_weeks
         )
         if not matchups_by_week:
-            matchups_by_week = _round_robin_schedule(teams, remaining_weeks)
+            matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
         result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
         for r in result:
             r["is_projected"] = True
@@ -120,7 +131,7 @@ def simulate_playoff_odds(
         platform, league_id, season, remaining_weeks
     )
     if not matchups_by_week:
-        matchups_by_week = _round_robin_schedule(teams, remaining_weeks)
+        matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
 
     result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
     for r in result:
@@ -408,49 +419,122 @@ def _fetch_remaining_schedule(
     return result
 
 
+def _fallback_schedule(
+    teams: list[dict],
+    weeks: list[int],
+    division_map: dict[int, int],
+) -> dict[int, list[tuple[int, int]]]:
+    """Route to divisional or plain round-robin based on whether divisions exist."""
+    if division_map:
+        return _divisional_schedule(teams, weeks, division_map)
+    return _round_robin_schedule(teams, weeks)
+
+
 def _round_robin_schedule(
     teams: list[dict],
     weeks: list[int],
 ) -> dict[int, list[tuple[int, int]]]:
     """
-    Balanced round-robin schedule matching the pattern most fantasy platforms use.
-
-    Uses the standard circle/rotation method: fix one team, rotate the rest.
-    For N teams this produces N-1 unique rounds; weeks beyond that repeat the
-    cycle (same as Sleeper's default scheduling).
+    Balanced round-robin (circle method): fix one team, rotate the rest.
+    Produces N-1 unique rounds then cycles — matches Sleeper's default.
     """
     ids = [t["roster_id"] for t in teams]
     n   = len(ids)
     if n < 2:
         return {}
 
-    # Odd number of teams: add a bye slot so the algorithm stays balanced
-    has_bye = n % 2 == 1
-    if has_bye:
+    if n % 2 == 1:
         ids = ids + [None]
         n += 1
 
     fixed    = ids[0]
-    rotating = ids[1:]       # length n-1
+    rotating = ids[1:]
     n_rounds = n - 1
 
     schedule: dict[int, list[tuple[int, int]]] = {}
     for week_idx, week in enumerate(weeks):
         r   = week_idx % n_rounds
         rot = rotating[-r:] + rotating[:-r] if r else rotating[:]
-
         pairs: list[tuple[int, int]] = []
-        # First pair: fixed vs rot[0]
         if fixed is not None and rot[0] is not None:
             pairs.append((fixed, rot[0]))
-        # Remaining pairs: rot[j] vs rot[n-2-j]
         for j in range(1, n // 2):
             a, b = rot[j], rot[n - 2 - j]
             if a is not None and b is not None:
                 pairs.append((a, b))
-
         if pairs:
             schedule[week] = pairs
+    return schedule
+
+
+def _divisional_schedule(
+    teams: list[dict],
+    weeks: list[int],
+    division_map: dict[int, int],
+) -> dict[int, list[tuple[int, int]]]:
+    """
+    Divisional schedule: intra-division pairs appear twice, inter-division once.
+
+    Builds a pool of all desired matchups for the season, then greedily
+    packs them into weekly slots (each team plays once per week).
+    Mirrors the frequency weighting of Sleeper's divisional scheduling.
+    """
+    from collections import defaultdict as _dd
+    by_div: dict[int, list[int]] = _dd(list)
+    for t in teams:
+        div = division_map.get(t["roster_id"], 1)
+        by_div[div].append(t["roster_id"])
+
+    if len(by_div) < 2:
+        return _round_robin_schedule(teams, weeks)
+
+    divisions = list(by_div.values())
+    n_teams   = len(teams)
+    n_weeks   = len(weeks)
+    n_per_week = n_teams // 2
+
+    # Intra-division pairs (each appears twice in pool)
+    intra_pairs: list[tuple[int, int]] = []
+    for div_ids in divisions:
+        for i in range(len(div_ids)):
+            for j in range(i + 1, len(div_ids)):
+                intra_pairs.append((div_ids[i], div_ids[j]))
+
+    # Inter-division pairs (each appears once; cycle to fill remaining weeks)
+    inter_pairs: list[tuple[int, int]] = []
+    for d1 in range(len(divisions)):
+        for d2 in range(d1 + 1, len(divisions)):
+            for a in divisions[d1]:
+                for b in divisions[d2]:
+                    inter_pairs.append((a, b))
+
+    # Pool: intra × 2 first so intra games are scheduled early,
+    # then inter cycling to fill all weeks
+    pool = list(intra_pairs) * 2 + list(inter_pairs)
+    target = n_per_week * n_weeks
+    while len(pool) < target:
+        pool.extend(inter_pairs)
+    pool = pool[:target]  # trim excess (cycles already guaranteed coverage)
+
+    # Greedy weekly matching: each team appears at most once per round
+    schedule: dict[int, list[tuple[int, int]]] = {}
+    remaining = pool
+    for week in weeks:
+        round_pairs: list[tuple[int, int]] = []
+        used: set[int] = set()
+        leftover: list[tuple[int, int]] = []
+        for a, b in remaining:
+            if a not in used and b not in used:
+                round_pairs.append((a, b))
+                used.add(a)
+                used.add(b)
+            else:
+                leftover.append((a, b))
+        if round_pairs:
+            schedule[week] = round_pairs
+        remaining = leftover
+        if not remaining:
+            break
     return schedule
 
 
