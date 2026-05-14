@@ -197,7 +197,7 @@ def _position_aware_lineup(
     return total * _LINEUP_EFFICIENCY
 
 
-
+def _estimate_from_rosters(ctx: dict) -> list[dict]:
     """
     Build synthetic team scoring profiles from prior-season actual PPG.
 
