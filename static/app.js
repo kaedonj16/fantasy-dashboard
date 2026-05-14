@@ -4830,10 +4830,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
         const pdScore = parseFloat(pd.prospect_score || 0);
         const pdTier  = pd.tier;
-        const pdTierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
-        const pdTierColor  = pdTierColors[pdTier] || '#9ca3af';
-        const pdRankStr = pd.overall_rank ? `#${pd.overall_rank} Overall` : '';
-        const pdPosRankStr = pd.position_rank ? `${pos}${pd.position_rank}` : '';
+        const pdTierClass = pdTier ? `rk-tier-${pdTier}` : '';
 
         const pdHeroSection = `
           <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;margin-bottom:14px;">
@@ -4842,8 +4839,8 @@ function openPlayerModal(playerId, playerName, opts) {
               <div style="font-size:28px;font-weight:700;color:var(--accent);line-height:1;">${pdScore.toFixed(1)}</div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${pd.tier_label || ''}</div>
             </div>
-            <div style="background:${pdTier ? pdTierColor : 'var(--card-bg)'};border:1px solid ${pdTier ? pdTierColor : 'var(--border)'};border-radius:12px;padding:14px 12px;text-align:center;display:flex;align-items:center;justify-content:center;">
-              ${pdTier ? `<div style="font-size:22px;font-weight:700;color:#fff;">Tier ${pdTier}</div>` : '<div style="font-size:18px;font-weight:700;color:var(--text-muted);">-</div>'}
+            <div class="${pdTierClass}" style="border-radius:12px;padding:14px 12px;text-align:center;display:flex;align-items:center;justify-content:center;">
+              ${pdTier ? `<div style="font-size:22px;font-weight:700;">Tier ${pdTier}</div>` : '<div style="font-size:18px;font-weight:700;color:var(--text-muted);">-</div>'}
             </div>
             <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
               <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Rank</div>
