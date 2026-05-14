@@ -145,20 +145,31 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     else:
         ppg_key = "std_scoring_ppg"
 
-    # Load last season's per-player PPG and position from usage table
+    # Load per-player PPG from the same usage_rows cache the player modal uses.
+    # Try current year first, fall back to prior year (mirrors player modal logic).
     ppg_map: dict[str, dict] = {}   # player_id → {ppg, pos}
     try:
-        from utils.utils import load_usage_table
-        usage = load_usage_table() or []
-        for p in usage:
-            pid = str(p.get("id") or p.get("player_id") or "")
-            if not pid:
-                continue
-            ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
-            pos = str(p.get("position") or "").upper()
-            ppg_map[pid] = {"ppg": ppg, "pos": pos}
+        import os as _os, json as _json
+        from datetime import date as _date
+        _cache_dir = _os.path.join(_os.path.dirname(__file__), "..", "cache", "player_history")
+        _year = _date.today().year
+        _usage_data = None
+        for _y in [_year, _year - 1]:
+            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
+            if _os.path.exists(_path):
+                with open(_path) as _f:
+                    _usage_data = _json.load(_f)
+                break
+        if _usage_data:
+            for p in _usage_data:
+                pid = str(p.get("id") or "")
+                if not pid:
+                    continue
+                ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
+                pos = str(p.get("position") or "").upper()
+                ppg_map[pid] = {"ppg": ppg, "pos": pos}
     except Exception as exc:
-        logger.warning("[playoff_odds] Could not load usage table: %s", exc)
+        logger.warning("[playoff_odds] Could not load usage_rows cache: %s", exc)
 
     # Load player positions from DB as fallback for rookies not in usage table
     pos_map: dict[str, str] = {}
