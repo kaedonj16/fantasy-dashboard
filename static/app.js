@@ -4842,9 +4842,8 @@ function openPlayerModal(playerId, playerName, opts) {
               <div style="font-size:28px;font-weight:700;color:var(--accent);line-height:1;">${pdScore.toFixed(1)}</div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${pd.tier_label || ''}</div>
             </div>
-            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
-              <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Tier</div>
-              ${pdTier ? `<div style="display:inline-block;padding:4px 12px;border-radius:8px;font-size:18px;font-weight:700;background:${pdTierColor}22;color:${pdTierColor};border:1px solid ${pdTierColor}44;">T${pdTier}</div>` : '<div style="font-size:18px;font-weight:700;color:var(--text-muted);">-</div>'}
+            <div style="background:${pdTier ? pdTierColor : 'var(--card-bg)'};border:1px solid ${pdTier ? pdTierColor : 'var(--border)'};border-radius:12px;padding:14px 12px;text-align:center;display:flex;align-items:center;justify-content:center;">
+              ${pdTier ? `<div style="font-size:22px;font-weight:700;color:#fff;">Tier ${pdTier}</div>` : '<div style="font-size:18px;font-weight:700;color:var(--text-muted);">-</div>'}
             </div>
             <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
               <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Rank</div>
