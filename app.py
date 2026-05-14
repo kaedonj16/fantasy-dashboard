@@ -9180,7 +9180,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
         }
         .filter-positions {
-          justify-content: flex-start;
+          justify-content: space-evenly;
           gap: 5px;
         }
         .pos-pill {
