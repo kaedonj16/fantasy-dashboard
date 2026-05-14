@@ -1242,19 +1242,34 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 .nav-search-inner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 5px 10px 5px 10px;
-  transition: border-color 0.18s, box-shadow 0.18s, width 0.22s;
-  width: 200px;
+  gap: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  padding: 7px;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: width 0.22s ease, border-radius 0.22s ease, padding 0.22s ease,
+              background 0.18s, border-color 0.18s, box-shadow 0.18s, gap 0.22s;
+}
+
+.nav-search-inner:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
 }
 
 .nav-search-wrapper:focus-within .nav-search-inner {
+  width: 240px;
+  height: auto;
+  border-radius: 20px;
+  padding: 5px 10px;
+  gap: 6px;
+  background: var(--card);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-  width: 260px;
+  cursor: default;
 }
 
 .nav-search-icon {
@@ -1270,8 +1285,17 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   outline: none;
   color: var(--text);
   font-size: 13px;
-  width: 100%;
+  width: 0;
   min-width: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.nav-search-wrapper:focus-within .nav-search-input {
+  width: 100%;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .nav-search-input::placeholder {
@@ -1296,7 +1320,7 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: 320px;
+  width: 300px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1378,27 +1402,22 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 }
 
 @media (max-width: 768px) {
-  .nav-search-inner {
-    width: 36px;
-    padding: 5px 9px;
-    overflow: hidden;
-  }
   .nav-search-wrapper:focus-within .nav-search-inner {
-    width: 180px;
+    width: 200px;
   }
   .nav-search-dropdown {
     width: 280px;
-    right: -40px;
+    right: -10px;
   }
 }
 
 @media (max-width: 480px) {
   .nav-search-wrapper:focus-within .nav-search-inner {
-    width: 150px;
+    width: 170px;
   }
   .nav-search-dropdown {
     width: 260px;
-    right: -60px;
+    right: -20px;
   }
 }
 

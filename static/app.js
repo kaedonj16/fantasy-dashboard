@@ -8624,6 +8624,11 @@ function setupFunAwardsGrid() {
     closeDropdown();
   }
 
+  // Click anywhere on collapsed wrapper → expand and focus input
+  wrapper.querySelector('.nav-search-inner').addEventListener('click', () => {
+    if (document.activeElement !== input) input.focus();
+  });
+
   input.addEventListener('focus', () => { loadPlayers(); if (input.value.trim()) openDropdown(); });
 
   input.addEventListener('input', () => {
