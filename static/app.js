@@ -8054,6 +8054,11 @@ document.addEventListener('click', (e) => {
       body: 'Jump to Trade Calc, Teams, Activity, Players, Breakouts, Prospects, and more from here.',
     },
     {
+      page: 'dashboard', selector: '#navSearchWrapper',
+      title: 'Player Search',
+      body: 'Search any player from the nav bar — click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
+    },
+    {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
       body: 'Click any player to see their dynasty value history, trend, news, and breakout score.',

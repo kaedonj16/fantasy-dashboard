@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-14",
+        "tag": "new",
+        "text": "Player Search: Search any player from the nav bar. Click the magnifying glass (or press Ctrl+K), type a name, and click a result to open their full player modal.",
+        "link": "/players"
+    },
+    {
         "date": "2026-05-13",
         "tag": "feature",
         "text": "Player Scoring: Player modals now show PPG and season total points side by side (e.g. 24.5 | 416.5) with positional ranks for both — PPG · RB1 | TOTAL · RB2. Compare player view shows the same scoring breakdown for both players.",
