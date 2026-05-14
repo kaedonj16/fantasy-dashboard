@@ -2018,6 +2018,9 @@ button:hover {
   .po-proj { display: none; }
   .po-odds { min-width: 90px; }
   .po-team { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Playoff odds table: horizontal scroll on mobile */
+  .po-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .po-table { min-width: 420px; }
 }
 
 @media (max-width: 480px) {
