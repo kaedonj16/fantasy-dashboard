@@ -4830,7 +4830,9 @@ function openPlayerModal(playerId, playerName, opts) {
 
         const pdScore = parseFloat(pd.prospect_score || 0);
         const pdTier  = pd.tier;
-        const pdTierClass = pdTier ? `rk-tier-${pdTier}` : '';
+        const pdTierClass  = pdTier ? `rk-tier-${pdTier}` : '';
+        const pdRankStr    = pd.overall_rank ? `#${pd.overall_rank} Overall` : '';
+        const pdPosRankStr = pd.position_rank ? `${pos}${pd.position_rank}` : '';
 
         const pdHeroSection = `
           <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;margin-bottom:14px;">
