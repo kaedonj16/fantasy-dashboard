@@ -2014,8 +2014,8 @@ button:hover {
   #stats.standings-table td:nth-child(n+7) {
     display: none;
   }
-  /* Playoff odds: hide Proj W-L and Sim Avg, tighten bar column */
-  .po-proj, .po-sim-avg { display: none; }
+  /* Playoff odds: hide Proj W-L on mobile */
+  .po-proj { display: none; }
   .po-odds { min-width: 90px; }
   .po-team { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
@@ -5109,8 +5109,7 @@ thead th {
 .po-rec  { color: var(--text-muted); white-space: nowrap; }
 .po-odds { min-width: 120px; }
 .po-bye  { text-align: center; color: var(--text-muted); white-space: nowrap; }
-.po-proj     { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
-.po-sim-avg  { color: var(--text-muted); white-space: nowrap; font-size: 12px; text-align: right; }
+.po-proj { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
 .po-bar-wrap {
   background: var(--border);
   border-radius: 3px;

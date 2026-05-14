@@ -16,7 +16,9 @@ finish in under a second.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 from collections import defaultdict
 from typing import Optional
 
@@ -26,18 +28,32 @@ logger = logging.getLogger(__name__)
 
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
-_BASE_STD     = 20.0   # preseason std dev - no per-team variance data yet
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
 
 # Conservative defaults for players with no prior-season stats (rookies, etc.)
-# These are realistic first-year averages in a typical PPR league.
 _ROOKIE_PPG: dict[str, float] = {
-    "QB": 14.0,  # few rookies start; those who do land around here
-    "RB": 7.5,   # split backfields / limited role
-    "WR": 6.5,   # steep learning curve
-    "TE": 4.5,   # slowest position to develop
+    "QB": 14.0,
+    "RB": 7.5,
+    "WR": 6.5,
+    "TE": 4.5,
 }
-_ROOKIE_PPG_DEFAULT = 6.0  # catch-all for K, DEF, unknown
+_ROOKIE_PPG_DEFAULT = 6.0
+
+# Per-position weekly std dev model: std = multiplier * ppg + base
+# Derived from empirical PPR weekly score distributions.
+_POS_STD: dict[str, tuple[float, float]] = {
+    "QB":  (0.28, 3.0),
+    "RB":  (0.45, 2.0),
+    "WR":  (0.50, 2.0),
+    "TE":  (0.42, 1.5),
+    "K":   (0.00, 4.0),
+    "DEF": (0.00, 5.5),
+}
+_POS_STD_DEFAULT = (0.42, 2.0)
+
+_FLEX_POSITIONS = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
+_FLEX_ELIGIBLE  = {"RB", "WR", "TE"}
+_SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +82,11 @@ def simulate_playoff_odds(
     league_id          = str(ctx.get("league_id") or "")
     regular_season_end = playoff_week_start - 1
 
+    # Deterministic seed per league+season so odds don't drift on each reload.
+    # Caller-supplied seed overrides (useful for testing).
+    if seed is None and league_id:
+        seed = int(hashlib.md5(f"{league_id}:{season}".encode()).hexdigest(), 16) % (2 ** 32)
+
     team_stats = ctx.get("team_stats")
     has_games  = team_stats is not None and not team_stats.empty
 
@@ -79,7 +100,7 @@ def simulate_playoff_odds(
             platform, league_id, season, remaining_weeks
         )
         if not matchups_by_week:
-            matchups_by_week = _random_schedule(teams, remaining_weeks, seed)
+            matchups_by_week = _round_robin_schedule(teams, remaining_weeks)
         result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
         for r in result:
             r["is_projected"] = True
@@ -99,7 +120,7 @@ def simulate_playoff_odds(
         platform, league_id, season, remaining_weeks
     )
     if not matchups_by_week:
-        matchups_by_week = _random_schedule(teams, remaining_weeks, seed)
+        matchups_by_week = _round_robin_schedule(teams, remaining_weeks)
 
     result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
     for r in result:
@@ -111,11 +132,15 @@ def simulate_playoff_odds(
 # Roster-value projection (preseason / offseason)
 # ---------------------------------------------------------------------------
 
-_LINEUP_EFFICIENCY = 1.0    # position-aware selection already handles constraints
-_FLEX_POSITIONS    = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
-_FLEX_ELIGIBLE     = {"RB", "WR", "TE"}
-_SUPER_FLEX_POS    = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
-_SUPER_FLEX_ELIG   = {"QB", "RB", "WR", "TE"}
+def _player_std(pos: str, ppg: float) -> float:
+    m, b = _POS_STD.get(pos, _POS_STD_DEFAULT)
+    return m * ppg + b
+
+
+def _team_std_from_starters(starters: list[tuple[str, float]]) -> float:
+    """Estimate team weekly std dev from position-based player variance."""
+    variance = sum(_player_std(pos, ppg) ** 2 for pos, ppg in starters)
+    return max(math.sqrt(variance), _MIN_STD)
 
 
 def _position_aware_lineup(
@@ -123,19 +148,20 @@ def _position_aware_lineup(
     ppg_map: dict,
     pos_map: dict,
     roster_positions: list,
-) -> float:
+) -> tuple[float, list[tuple[str, float]]]:
     """
     Project weekly scoring using position-constrained optimal lineup.
 
     Fills fixed position slots (QB, RB, WR, TE, K, DEF) first, then fills
-    FLEX/SuperFlex slots with the best remaining eligible player.
-    Applies a small efficiency discount for bye weeks / injuries / suboptimal
-    starts so the result reflects expected avg rather than theoretical max.
+    FLEX/SuperFlex with the best remaining eligible player.
+
+    Returns (projected_avg, starters) where starters is a list of (pos, ppg)
+    for each starting slot — used to estimate per-team std dev.
     """
     # Tally starting slots by type
     fixed_slots: dict[str, int] = {}
-    flex_slots   = 0
-    sflex_slots  = 0
+    flex_slots  = 0
+    sflex_slots = 0
     for slot in roster_positions:
         s = str(slot).upper()
         if s in _BENCH_SLOTS:
@@ -153,7 +179,7 @@ def _position_aware_lineup(
         info = ppg_map.get(str(pid))
         if info:
             pos = info["pos"]
-            ppg = info["ppg"] if info["ppg"] > 0 else _ROOKIE_PPG.get(info["pos"], _ROOKIE_PPG_DEFAULT)
+            ppg = info["ppg"] if info["ppg"] > 0 else _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         else:
             pos = pos_map.get(str(pid), "")
             ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
@@ -163,38 +189,40 @@ def _position_aware_lineup(
         by_pos[pos].sort(reverse=True)
 
     used: dict[str, int] = {}
-    total = 0.0
+    starters: list[tuple[str, float]] = []
 
     # Fill fixed slots
     for slot_pos, count in fixed_slots.items():
         pool = by_pos.get(slot_pos, [])
         for _ in range(count):
             i = used.get(slot_pos, 0)
-            if i < len(pool):
-                total += pool[i]
-            used[slot_pos] = used.get(slot_pos, 0) + 1
+            ppg = pool[i] if i < len(pool) else 0.0
+            starters.append((slot_pos, ppg))
+            used[slot_pos] = i + 1
 
     # Fill FLEX (RB/WR/TE eligible)
     flex_pool = sorted(
-        (ppg for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]),
-        reverse=True,
+        [(pos, ppg) for pos in _FLEX_ELIGIBLE
+         for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
+        key=lambda x: x[1], reverse=True,
     )
     for i in range(flex_slots):
         if i < len(flex_pool):
-            total += flex_pool[i]
-            # mark one slot used for accounting (best-effort)
+            starters.append(flex_pool[i])
     remaining_after_flex = flex_pool[flex_slots:]
 
     # Fill SuperFlex (QB/RB/WR/TE eligible)
     sflex_pool = sorted(
-        list(by_pos.get("QB", [])[used.get("QB", 0):]) + remaining_after_flex,
-        reverse=True,
+        [(("QB", ppg)) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
+        + remaining_after_flex,
+        key=lambda x: x[1], reverse=True,
     )
     for i in range(sflex_slots):
         if i < len(sflex_pool):
-            total += sflex_pool[i]
+            starters.append(sflex_pool[i])
 
-    return total * _LINEUP_EFFICIENCY
+    total = sum(ppg for _, ppg in starters)
+    return total, starters
 
 
 def _estimate_from_rosters(ctx: dict) -> list[dict]:
@@ -205,10 +233,8 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     cache (same source as the player modal). Players with no prior-season stats
     fall back to a conservative position-based default.
 
-    Uses position-aware lineup selection so the projected avg reflects the
-    actual starting constraints (1 QB, 2 RB, etc.) rather than best-ball.
-    A small efficiency discount accounts for bye weeks, injuries, and
-    suboptimal lineup decisions.
+    Uses position-aware lineup selection and per-team std dev estimated from
+    the position composition of the starting lineup.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
@@ -227,8 +253,8 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
         ppg_key = "std_scoring_ppg"
 
     # Load per-player PPG from the same usage_rows cache the player modal uses.
-    # Try current year first, fall back to prior year (mirrors player modal logic).
-    ppg_map: dict[str, dict] = {}   # player_id → {ppg, pos}
+    # Try current year first, fall back to prior year.
+    ppg_map: dict[str, dict] = {}
     try:
         import os as _os, json as _json
         from datetime import date as _date
@@ -252,7 +278,7 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     except Exception as exc:
         logger.warning("[playoff_odds] Could not load usage_rows cache: %s", exc)
 
-    # Load player positions from DB as fallback for rookies not in usage table
+    # Load player positions from DB as fallback for rookies not in usage cache
     pos_map: dict[str, str] = {}
     try:
         from dashboard_services.db import get_conn
@@ -267,15 +293,15 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     if not ppg_map and not pos_map:
         return []
 
-    # Build projected avg for each roster using position-aware lineup selection
     teams: list[dict] = []
     for roster in rosters:
         rid  = roster.get("roster_id")
         pids = roster.get("players") or []
 
-        projected_avg = _position_aware_lineup(
+        projected_avg, starters = _position_aware_lineup(
             pids, ppg_map, pos_map, roster_positions
         )
+        projected_std = _team_std_from_starters(starters)
 
         name = (
             roster_map.get(str(rid))
@@ -290,7 +316,7 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
             "ties":      0,
             "pf":        0.0,
             "avg":       round(projected_avg, 1),
-            "std":       _BASE_STD,
+            "std":       round(projected_std, 1),
         })
     return teams
 
@@ -382,21 +408,50 @@ def _fetch_remaining_schedule(
     return result
 
 
-def _random_schedule(
+def _round_robin_schedule(
     teams: list[dict],
     weeks: list[int],
-    seed: Optional[int],
 ) -> dict[int, list[tuple[int, int]]]:
-    rng = np.random.default_rng(seed)
+    """
+    Balanced round-robin schedule matching the pattern most fantasy platforms use.
+
+    Uses the standard circle/rotation method: fix one team, rotate the rest.
+    For N teams this produces N-1 unique rounds; weeks beyond that repeat the
+    cycle (same as Sleeper's default scheduling).
+    """
     ids = [t["roster_id"] for t in teams]
-    return {
-        week: [
-            (sh[i], sh[i + 1])
-            for sh in [rng.permutation(ids).tolist()]
-            for i in range(0, len(sh) - 1, 2)
-        ]
-        for week in weeks
-    }
+    n   = len(ids)
+    if n < 2:
+        return {}
+
+    # Odd number of teams: add a bye slot so the algorithm stays balanced
+    has_bye = n % 2 == 1
+    if has_bye:
+        ids = ids + [None]
+        n += 1
+
+    fixed    = ids[0]
+    rotating = ids[1:]       # length n-1
+    n_rounds = n - 1
+
+    schedule: dict[int, list[tuple[int, int]]] = {}
+    for week_idx, week in enumerate(weeks):
+        r   = week_idx % n_rounds
+        rot = rotating[-r:] + rotating[:-r] if r else rotating[:]
+
+        pairs: list[tuple[int, int]] = []
+        # First pair: fixed vs rot[0]
+        if fixed is not None and rot[0] is not None:
+            pairs.append((fixed, rot[0]))
+        # Remaining pairs: rot[j] vs rot[n-2-j]
+        for j in range(1, n // 2):
+            a, b = rot[j], rot[n - 2 - j]
+            if a is not None and b is not None:
+                pairs.append((a, b))
+
+        if pairs:
+            schedule[week] = pairs
+    return schedule
 
 
 # ---------------------------------------------------------------------------
@@ -466,8 +521,6 @@ def _run_mc(
         "miss_pct":         round(100 - float(in_playoffs[i]), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
-        "sim_avg":          round(float(avgs[i]),         1),
-        "sim_std":          round(float(stds[i]),         1),
         "n_sims":           n_sims,
         "is_complete":      False,
     } for i, t in enumerate(teams)]
