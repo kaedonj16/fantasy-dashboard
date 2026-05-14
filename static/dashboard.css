@@ -1279,8 +1279,8 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
 }
 
 .nav-search-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
 }
 
