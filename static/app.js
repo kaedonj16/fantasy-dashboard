@@ -8519,3 +8519,169 @@ function setupFunAwardsGrid() {
   }
   window.addEventListener('resize', setup);
 })();
+
+// ── Nav-wide player search ────────────────────────────────────────────────────
+(function initNavSearch() {
+  function setup() {
+  const wrapper  = document.getElementById('navSearchWrapper');
+  const input    = document.getElementById('navPlayerSearch');
+  const dropdown = document.getElementById('navSearchDropdown');
+  const clearBtn = document.getElementById('navSearchClear');
+  if (!wrapper || !input || !dropdown) return;
+
+  const POS_COLORS = { QB: 'qb', RB: 'rb', WR: 'wr', TE: 'te', K: 'k', DEF: 'def' };
+  let _players = null;
+  let _loading = false;
+  let _debounce = null;
+  let _focusIdx = -1;
+
+  async function loadPlayers() {
+    if (_players !== null || _loading) return;
+    _loading = true;
+    try {
+      const res = await fetch('/api/league-players', { cache: 'default' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const raw = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
+      _players = raw
+        .filter(p => p && p.id && p.name && p.position !== 'PICK' && !String(p.id).startsWith('pick_'))
+        .map(p => ({
+          id:   String(p.id),
+          name: String(p.name || ''),
+          pos:  String(p.position || '').toUpperCase(),
+          team: String(p.team || p.nfl_team || ''),
+        }));
+    } catch (e) {
+      console.warn('[nav-search] Failed to load players:', e);
+      _players = [];
+    }
+    _loading = false;
+  }
+
+  function headshot(id) {
+    return `https://sleepercdn.com/content/nfl/players/thumb/${id}.jpg`;
+  }
+
+  function posColor(pos) {
+    return POS_COLORS[pos] || 'def';
+  }
+
+  function renderResults(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) { closeDropdown(); return; }
+    if (!_players) { dropdown.innerHTML = '<div class="nav-search-empty">Loading…</div>'; openDropdown(); return; }
+
+    const words = q.split(/\s+/);
+    const matches = _players
+      .filter(p => {
+        const n = p.name.toLowerCase();
+        return words.every(w => n.includes(w));
+      })
+      .slice(0, 8);
+
+    if (!matches.length) {
+      dropdown.innerHTML = '<div class="nav-search-empty">No players found</div>';
+      openDropdown();
+      return;
+    }
+
+    dropdown.innerHTML = matches.map((p, i) => `
+      <div class="nav-search-result" data-idx="${i}" data-player-id="${p.id}" data-player-name="${p.name.replace(/"/g, '&quot;')}">
+        <img class="nav-search-avatar" src="${headshot(p.id)}" alt="" loading="lazy"
+             onerror="this.style.visibility='hidden'" />
+        <div class="nav-search-info">
+          <div class="nav-search-name">${p.name}</div>
+          <div class="nav-search-meta">${p.team || '—'}</div>
+        </div>
+        <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
+      </div>
+    `).join('');
+
+    _focusIdx = -1;
+    openDropdown();
+  }
+
+  function openDropdown() { dropdown.classList.add('open'); }
+  function closeDropdown() { dropdown.classList.remove('open'); _focusIdx = -1; }
+
+  function setFocus(idx) {
+    const items = dropdown.querySelectorAll('.nav-search-result');
+    items.forEach(el => el.classList.remove('focused'));
+    if (idx >= 0 && idx < items.length) {
+      items[idx].classList.add('focused');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    }
+    _focusIdx = idx;
+  }
+
+  function selectCurrent() {
+    const items = dropdown.querySelectorAll('.nav-search-result');
+    const el = _focusIdx >= 0 ? items[_focusIdx] : items[0];
+    if (!el) return;
+    openPlayerModal(el.dataset.playerId, el.dataset.playerName);
+    input.value = '';
+    clearBtn.style.display = 'none';
+    closeDropdown();
+  }
+
+  input.addEventListener('focus', () => { loadPlayers(); if (input.value.trim()) openDropdown(); });
+
+  input.addEventListener('input', () => {
+    const val = input.value;
+    clearBtn.style.display = val ? 'block' : 'none';
+    clearTimeout(_debounce);
+    _debounce = setTimeout(() => renderResults(val), 120);
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = dropdown.querySelectorAll('.nav-search-result');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocus(Math.min(_focusIdx + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocus(Math.max(_focusIdx - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      selectCurrent();
+    } else if (e.key === 'Escape') {
+      closeDropdown();
+      input.blur();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    clearBtn.style.display = 'none';
+    closeDropdown();
+    input.focus();
+  });
+
+  dropdown.addEventListener('click', e => {
+    const row = e.target.closest('.nav-search-result');
+    if (!row) return;
+    openPlayerModal(row.dataset.playerId, row.dataset.playerName);
+    input.value = '';
+    clearBtn.style.display = 'none';
+    closeDropdown();
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrapper.contains(e.target)) closeDropdown();
+  });
+
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+})();

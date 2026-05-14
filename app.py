@@ -1144,8 +1144,24 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
+        player_search_html = (
+            "<div class='nav-search-wrapper' id='navSearchWrapper'>"
+            "  <div class='nav-search-inner'>"
+            "    <svg class='nav-search-icon' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+            "      <circle cx='8.5' cy='8.5' r='5.5' stroke='currentColor' stroke-width='1.7'/>"
+            "      <path d='M13.5 13.5L17 17' stroke='currentColor' stroke-width='1.7' stroke-linecap='round'/>"
+            "    </svg>"
+            "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
+            "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+            "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
+            "  </div>"
+            "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
+            "</div>"
+        )
+
         home_utility_bar = (
             "<div class='nav-utility-bar'>"
+            f"  {player_search_html}"
             f"  {changelog_bell}"
             f"  {settings_gear}"
             "</div>"
@@ -1346,9 +1362,25 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     watchlist_btn = ""  # disabled
 
+    player_search_html = (
+        "<div class='nav-search-wrapper' id='navSearchWrapper'>"
+        "  <div class='nav-search-inner'>"
+        "    <svg class='nav-search-icon' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+        "      <circle cx='8.5' cy='8.5' r='5.5' stroke='currentColor' stroke-width='1.7'/>"
+        "      <path d='M13.5 13.5L17 17' stroke='currentColor' stroke-width='1.7' stroke-linecap='round'/>"
+        "    </svg>"
+        "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
+        "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+        "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
+        "  </div>"
+        "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
+        "</div>"
+    )
+
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
         "<div class='nav-utility-bar'>"
+        f"  {player_search_html}"
         f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
