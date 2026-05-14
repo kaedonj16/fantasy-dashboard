@@ -481,8 +481,8 @@ def _round_robin_schedule(
         if fixed is not None and rot[0] is not None:
             pairs.append((fixed, rot[0]))
         for j in range(1, n // 2):
-            a, b = rot[j], rot[n - 2 - j]
-            if a is not None and b is not None:
+            a, b = rot[j], rot[n - 1 - j]
+            if a is not None and b is not None and a != b:
                 pairs.append((a, b))
         if pairs:
             schedule[week] = pairs
