@@ -387,6 +387,8 @@ def _run_mc(
         "miss_pct":         round(100 - float(in_playoffs[i]), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
+        "sim_avg":          round(float(avgs[i]),         1),
+        "sim_std":          round(float(stds[i]),         1),
         "n_sims":           n_sims,
         "is_complete":      False,
     } for i, t in enumerate(teams)]
