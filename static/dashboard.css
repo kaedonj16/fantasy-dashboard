@@ -8545,6 +8545,10 @@ img, svg, canvas {
     line-height: 1.4;
   }
 
+  .otc-chip-team {
+    display: none;
+  }
+
   .otc-tier-badge {
     font-size: 9px;
     padding: 1px 4px;
@@ -9107,6 +9111,10 @@ img, svg, canvas {
     font-size: 12px;
     white-space: normal;
     line-height: 1.4;
+  }
+
+  .otc-chip-team {
+    display: none;
   }
 
   .otc-tier-badge {
