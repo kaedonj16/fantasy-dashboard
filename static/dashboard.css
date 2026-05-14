@@ -8460,6 +8460,44 @@ img, svg, canvas {
   .otc-ai-empty-sub {
     font-size: 12px;
   }
+
+  /* Trade calc: tighten slot area and player chips */
+  .otc-slot {
+    padding: 10px 10px 12px;
+    min-height: 0;
+  }
+
+  .otc-chip {
+    padding: 7px 10px;
+    column-gap: 8px;
+  }
+
+  .otc-chip-name {
+    font-size: 13px;
+  }
+
+  .otc-chip-meta {
+    font-size: 12px;
+  }
+
+  .otc-chip-value {
+    font-size: 13px;
+  }
+
+  .otc-chip-remove {
+    font-size: 17px;
+  }
+
+  .otc-chip-delta {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+
+  .player-chip-list,
+  .otc-selected-list {
+    margin-top: 8px;
+    gap: 6px;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -8961,7 +8999,30 @@ img, svg, canvas {
     font-size: 15px;
   }
 
-  
+  .otc-slot {
+    padding: 12px 12px 14px;
+    min-height: 0;
+  }
+
+  .otc-chip {
+    padding: 8px 12px;
+    column-gap: 8px;
+  }
+
+  .otc-chip-meta {
+    font-size: 12px;
+  }
+
+  .otc-chip-value {
+    font-size: 13px;
+  }
+
+  .player-chip-list,
+  .otc-selected-list {
+    margin-top: 8px;
+    gap: 6px;
+  }
+
   .os-waiver-row {
     padding: 10px 12px;
   }
