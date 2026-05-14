@@ -1764,7 +1764,11 @@ window.initTradePage = function initTradePage(root = document) {
         metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
       }
 
-      metaEl.innerHTML = metaBits.join(" • ");
+      metaEl.innerHTML = metaBits.map((bit, i) => {
+        if (i === 0) return bit;
+        if (p.team && bit === p.team) return `<span class="otc-chip-team"> • ${bit}</span>`;
+        return ' • ' + bit;
+      }).join('');
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
