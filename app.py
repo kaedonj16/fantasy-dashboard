@@ -3666,41 +3666,112 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 return v
         return None
 
-    # Build a standard projected bracket for the configured playoff size
-    # Seeding: 1,2 get byes; R1 pairings are 3v(N), 4v(N-1), …
-    synthetic_bracket: list[dict] = []
-    match_id = 1
+    # Build a standard projected bracket for the configured playoff size.
+    # General algorithm works for any N where (N + n_byes) is a power of 2.
+    # Bye seeds receive first-round byes; R1 pairs outside seeds inward;
+    # subsequent rounds pair from opposite ends of the field (protects top seeds).
+    def _build_bracket(N: int) -> list[dict]:
+        try:
+            from data_building.simulate_playoff_odds import _n_byes as _nb
+            n_byes = _nb(N)
+        except Exception:
+            n_byes = 0
 
-    if playoff_teams == 6:
-        # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
-        synthetic_bracket = [
-            {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
-            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 4}},
-            {"m": 3, "r": 2, "t1": _rid(1), "t2": None,    "t1_from": None, "t2_from": {"w": 2}, "w": {"m": 5}},
-            {"m": 4, "r": 2, "t1": _rid(2), "t2": None,    "t1_from": None, "t2_from": {"w": 1}, "w": {"m": 5}},
-            {"m": 5, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}},
-        ]
-    elif playoff_teams == 4:
-        # R1 (Semis): 1v4, 2v3 → Finals
-        synthetic_bracket = [
-            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(4), "t1_from": None, "t2_from": None, "w": {"m": 3}},
-            {"m": 2, "r": 1, "t1": _rid(2), "t2": _rid(3), "t1_from": None, "t2_from": None, "w": {"m": 3}},
-            {"m": 3, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}},
-        ]
-    elif playoff_teams == 8:
-        # R1: 1v8, 4v5 (top half) + 2v7, 3v6 (bottom half) → Semis → Finals
-        synthetic_bracket = [
-            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(8), "t1_from": None, "t2_from": None, "w": {"m": 5}},
-            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 5}},
-            {"m": 3, "r": 1, "t1": _rid(2), "t2": _rid(7), "t1_from": None, "t2_from": None, "w": {"m": 6}},
-            {"m": 4, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 6}},
-            {"m": 5, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}, "w": {"m": 7}},
-            {"m": 6, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}, "w": {"m": 7}},
-            {"m": 7, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 5}, "t2_from": {"w": 6}},
-        ]
-    else:
-        # Generic: no bracket available
-        synthetic_bracket = []
+        import math as _math
+        # Verify this forms a clean single-elimination bracket
+        total_after_r1 = n_byes + (N - n_byes) // 2
+        if total_after_r1 < 2:
+            return []
+        # total_after_r1 must be a power of 2 for a clean bracket
+        if total_after_r1 & (total_after_r1 - 1) != 0:
+            return []
+
+        matches: list[dict] = []
+        mid = 0
+
+        def _next_mid() -> int:
+            nonlocal mid
+            mid += 1
+            return mid
+
+        # Round 1: pair from outside in among non-bye seeds
+        # Seeds n_byes+1 vs N, n_byes+2 vs N-1, ...
+        n_r1 = (N - n_byes) // 2
+        r1_match_ids: list[int] = []
+        for i in range(n_r1):
+            s_top = n_byes + 1 + i
+            s_bot = N - i
+            m = _next_mid()
+            r1_match_ids.append(m)
+            matches.append({
+                "m": m, "r": 1,
+                "t1": _rid(s_top), "t2": _rid(s_bot),
+                "t1_from": None, "t2_from": None,
+                "w": None,  # filled in below
+            })
+
+        # Build "field" for R2: bye seed slots + R1 winner slots (interleaved top-protectively)
+        # Field order: [seed1, seed2, ..., seed(n_byes), W(r1_0), W(r1_1), ...]
+        # Represented as ("seed", s) or ("match", m_id)
+        field: list[tuple] = [("seed", s + 1) for s in range(n_byes)]
+        field += [("match", m) for m in r1_match_ids]
+
+        # Process subsequent rounds: pair field[0] vs field[-1], field[1] vs field[-2], ...
+        # Continue until 1 match remains (the final)
+        round_num = 1
+        while len(field) > 1:
+            round_num += 1
+            new_field: list[tuple] = []
+            half = len(field) // 2
+            for i in range(half):
+                a = field[i]
+                b = field[len(field) - 1 - i]
+                m = _next_mid()
+                new_field.append(("match", m))
+
+                def _slot(slot: tuple):
+                    if slot[0] == "seed":
+                        return {"t1": _rid(slot[1]), "t1_from": None}
+                    else:
+                        return {"t1": None, "t1_from": {"w": slot[1]}}
+
+                def _slot2(slot: tuple):
+                    if slot[0] == "seed":
+                        return {"t2": _rid(slot[1]), "t2_from": None}
+                    else:
+                        return {"t2": None, "t2_from": {"w": slot[1]}}
+
+                ma = _slot(a)
+                mb = _slot2(b)
+                matches.append({
+                    "m": m, "r": round_num,
+                    "t1": ma["t1"], "t2": mb["t2"],
+                    "t1_from": ma["t1_from"], "t2_from": mb["t2_from"],
+                    "w": None,
+                })
+            field = new_field
+
+        # Back-fill "w" (advancement) references on all non-final matches
+        # For each match, find which later match has t1_from or t2_from pointing to it
+        match_by_id = {m["m"]: m for m in matches}
+        for m in matches:
+            for ref_key in ("t1_from", "t2_from"):
+                ref = m.get(ref_key)
+                if ref and isinstance(ref, dict) and "w" in ref:
+                    src_id = ref["w"]
+                    if src_id in match_by_id:
+                        src = match_by_id[src_id]
+                        if src.get("w") is None:
+                            src["w"] = {"m": m["m"]}
+
+        # Final match has no "w"
+        final = matches[-1]
+        if final.get("w") is None:
+            final.pop("w", None)
+
+        return matches
+
+    synthetic_bracket = _build_bracket(playoff_teams)
 
     power_playoffs_html = render_power_and_playoffs(
         synthetic_ts, roster_map, league_id_str, platform, season,
