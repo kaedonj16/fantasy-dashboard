@@ -1161,6 +1161,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"  {player_search_html}"
             f"  {changelog_bell}"
             f"  {settings_gear}"
+            "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+            "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+            "  </button>"
             "</div>"
         )
 
@@ -1180,7 +1183,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
-            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
             f"    {home_pills_container}"
             "  </div>"
             "  <div class='nav-right'>"
@@ -1378,6 +1380,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
+        "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+        "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+        "  </button>"
         "</div>"
     )
 
@@ -1417,7 +1422,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
-        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
         f"    {pills_container}"
         "  </div>"
         "  <div class='nav-right'>"
