@@ -13056,9 +13056,11 @@ def api_calculate_breakout_scores():
         }
     """
     try:
+        import json as _json
+        import os as _os
         from datetime import datetime
         from data_building.breakout_engine import BreakoutEngine
-        from utils.utils import load_players_index, load_usage_table
+        from utils.utils import load_players_index
 
         # Get season
         nfl_state = get_nfl_state() or {}
@@ -13078,19 +13080,26 @@ def api_calculate_breakout_scores():
         # Initialize engine
         engine = BreakoutEngine(season=season)
 
-        # Get all players from usage table or players_index
-        # This is a simplified version - in production you'd filter to relevant players
-        usage_table = load_usage_table() or []
+        # Load player PPG from usage_rows cache (same source as player modal).
+        # Try the requested season first, fall back to the prior year.
+        _cache_dir = _os.path.join(_os.path.dirname(__file__), "cache", "player_history")
+        _usage_data = None
+        for _y in [season, season - 1]:
+            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
+            if _os.path.exists(_path):
+                with open(_path) as _f:
+                    _usage_data = _json.load(_f)
+                break
+        usage_rows = _usage_data or []
         players_index = load_players_index() or {}
 
         # Build player list (top 600 by value/relevance)
         player_list = []
-        for player in usage_table[:600]:  # Limit to top 600
-            player_id = player.get('player_id') or player.get('id')
+        for player in usage_rows[:600]:
+            player_id = str(player.get('id') or player.get('player_id') or '')
             if not player_id:
                 continue
 
-            # Get additional metadata from players_index
             player_meta = players_index.get(player_id, {})
 
             player_list.append({
@@ -14552,6 +14561,13 @@ def api_schedule_strength():
         return jsonify({"error": "Internal error"}), 500
 
 
+# In-memory cache for playoff odds: key → {"ts": float, "data": dict}
+# Keyed by platform:league_id:season:current_week so stale entries are skipped
+# as the week advances. TTL of 5 minutes limits redundant MC simulations.
+_PO_CACHE: dict = {}
+_PO_CACHE_TTL = 5 * 60  # seconds
+
+
 @app.route("/api/playoff-odds")
 def api_playoff_odds():
     """
@@ -14563,6 +14579,8 @@ def api_playoff_odds():
 
     Query params: platform, league_id, season
     """
+    import time as _time
+
     platform  = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
     season_s  = (request.args.get("season") or "").strip()
@@ -14579,23 +14597,30 @@ def api_playoff_odds():
         if not ctx:
             return jsonify({"error": "league not found"}), 404
 
+        current_week = int(ctx.get("current_week") or 0)
+        cache_key    = f"{platform}:{league_id}:{season}:{current_week}"
+        cached       = _PO_CACHE.get(cache_key)
+        if cached and (_time.time() - cached["ts"]) < _PO_CACHE_TTL:
+            return jsonify(cached["data"])
+
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         odds = simulate_playoff_odds(ctx, platform=platform)
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
         playoff_teams      = int(settings.get("playoff_teams") or 6)
-        current_week       = int(ctx.get("current_week") or 0)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
-        return jsonify({
+        payload = {
             "odds":                odds,
             "season":              season,
             "current_week":        current_week,
             "playoff_week_start":  playoff_week_start,
             "playoff_teams":       playoff_teams,
             "is_complete":         is_complete,
-        })
+        }
+        _PO_CACHE[cache_key] = {"ts": _time.time(), "data": payload}
+        return jsonify(payload)
     except Exception as exc:
         logger.exception("[playoff-odds] %s", exc)
         return jsonify({"error": "Internal error"}), 500

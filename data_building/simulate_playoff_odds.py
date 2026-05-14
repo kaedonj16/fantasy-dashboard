@@ -559,8 +559,11 @@ def _run_mc(
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
 
-    n_byes          = 2 if playoff_teams >= 4 else 0
-    remaining_weeks = len(matchups_by_week)
+    n_byes = 2 if playoff_teams >= 4 else 0
+
+    # Count scheduled games per team — with odd-team leagues one team per round
+    # gets a bye, so they play fewer games than len(matchups_by_week).
+    games_per_team = np.zeros(n, dtype=np.float32)
 
     for week_pairs in matchups_by_week.values():
         for (rid_a, rid_b) in week_pairs:
@@ -568,6 +571,8 @@ def _run_mc(
             ib = idx.get(rid_b)
             if ia is None or ib is None:
                 continue
+            games_per_team[ia] += 1
+            games_per_team[ib] += 1
             sa = np.maximum(
                 rng.normal(avgs[ia], stds[ia], n_sims).astype(np.float32), 0
             )
@@ -591,7 +596,8 @@ def _run_mc(
     init_wins   = np.array([t["wins"]   for t in teams], dtype=np.float32)
     init_losses = np.array([t["losses"] for t in teams], dtype=np.float32)
     avg_wins    = wins.mean(axis=0)
-    avg_losses  = init_losses + remaining_weeks - (avg_wins - init_wins)
+    # Use per-team games scheduled so bye weeks don't inflate projected losses.
+    avg_losses  = init_losses + games_per_team - (avg_wins - init_wins)
 
     return [{
         "roster_id":        t["roster_id"],

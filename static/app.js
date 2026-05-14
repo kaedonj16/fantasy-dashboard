@@ -392,8 +392,11 @@ function initPlayoffOdds(root = document) {
       const panel = root.getElementById
         ? root.getElementById("playoffOddsPanel")
         : document.getElementById("playoffOddsPanel");
-      if (!panel || panel.dataset.loaded) return;
-      panel.dataset.loaded = "1";
+      const _poTTL = 5 * 60 * 1000; // 5 minutes
+      if (!panel) return;
+      const _poLoadedAt = parseInt(panel.dataset.loadedAt || '0', 10);
+      if (_poLoadedAt && Date.now() - _poLoadedAt < _poTTL) return;
+      panel.dataset.loadedAt = String(Date.now());
 
       const leagueId = btn.dataset.leagueId;
       const platform = btn.dataset.platform;
@@ -414,7 +417,7 @@ function initPlayoffOdds(root = document) {
         })
         .catch(() => {
           panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
-          delete panel.dataset.loaded;
+          delete panel.dataset.loadedAt;
         });
     });
   });
