@@ -161,6 +161,11 @@ def simulate_playoff_odds(
     if not matchups_by_week:
         matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
 
+    # Blend historical team avg with Sleeper's upcoming-week player projections.
+    # Using 30 % weekly projection + 70 % season average keeps the estimate
+    # stable while still reflecting injuries and matchups.
+    _blend_weekly_projections(teams, ctx, season, current_week + 1)
+
     result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
     for r in result:
         r["is_projected"] = False
@@ -266,39 +271,57 @@ def _position_aware_lineup(
 
 def _estimate_from_rosters(ctx: dict) -> list[dict]:
     """
-    Build synthetic team scoring profiles from prior-season actual PPG.
+    Build synthetic team scoring profiles for preseason simulation.
 
-    For each player on a roster, looks up their PPG from last season's usage
-    cache (same source as the player modal). Players with no prior-season stats
-    fall back to a conservative position-based default.
+    PPG source priority (highest accuracy first):
+      1. FantasyPros consensus season projections ÷ 17
+         (accounts for off-season moves, role changes, analyst consensus)
+      2. Prior-season usage_rows cache (same source as player modal)
+         (fallback when FP fetch fails or player is absent from FP)
+      3. Position-based rookie default (last resort)
 
     Uses position-aware lineup selection and per-team std dev estimated from
-    the position composition of the starting lineup.
+    the position composition of the projected starting lineup.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
     roster_positions = ctx.get("roster_positions") or []
+    season           = int(ctx.get("season") or 0)
 
     if not rosters:
         return []
 
-    # Detect scoring format from league settings
+    # Detect scoring format
     rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
     if rec_pts >= 1.0:
-        ppg_key = "ppr_ppg"
+        scoring  = "ppr"
+        ppg_key  = "ppr_ppg"
     elif rec_pts >= 0.5:
-        ppg_key = "half_ppr_ppg"
+        scoring  = "half_ppr"
+        ppg_key  = "half_ppr_ppg"
     else:
-        ppg_key = "std_scoring_ppg"
+        scoring  = "std"
+        ppg_key  = "std_scoring_ppg"
 
-    # Load per-player PPG from the same usage_rows cache the player modal uses.
-    # Try current year first, fall back to prior year.
+    # ── Source 1: FantasyPros season projections ──────────────────────────────
     ppg_map: dict[str, dict] = {}
+    try:
+        from data_building.fetch_projections import fetch_fp_season_projections
+        fp_data = fetch_fp_season_projections(season, scoring)
+        for pid, info in fp_data.items():
+            if info.get("ppg", 0) > 0:
+                ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
+        if ppg_map:
+            logger.info("[playoff_odds] Using FP projections: %d players", len(ppg_map))
+    except Exception as exc:
+        logger.warning("[playoff_odds] FP projections unavailable: %s", exc)
+
+    # ── Source 2: prior-season usage_rows (fills gaps / full fallback) ────────
     try:
         import os as _os, json as _json
         from datetime import date as _date
         _cache_dir = _os.path.join(_os.path.dirname(__file__), "..", "cache", "player_history")
-        _year = _date.today().year
+        _year = season or _date.today().year
         _usage_data = None
         for _y in [_year, _year - 1]:
             _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
@@ -309,8 +332,8 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
         if _usage_data:
             for p in _usage_data:
                 pid = str(p.get("id") or "")
-                if not pid:
-                    continue
+                if not pid or pid in ppg_map:
+                    continue  # already have a FP projection for this player
                 ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                 pos = str(p.get("position") or "").upper()
                 ppg_map[pid] = {"ppg": ppg, "pos": pos}
@@ -358,6 +381,87 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
             "std":       round(projected_std, 1),
         })
     return teams
+
+
+# ---------------------------------------------------------------------------
+# In-season weekly projection blend
+# ---------------------------------------------------------------------------
+
+def _blend_weekly_projections(
+    teams: list[dict],
+    ctx: dict,
+    season: int,
+    next_week: int,
+    blend: float = 0.30,
+) -> None:
+    """
+    Update each team's avg in-place by blending historical avg (1-blend) with
+    their projected optimal lineup for next_week (blend).
+
+    Requires ctx["rosters"] for player-roster mapping. Silently skips if
+    Sleeper projections are unavailable (network error, off-season, etc.).
+    """
+    if next_week < 1 or blend <= 0:
+        return
+
+    # Detect scoring format
+    rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+    scoring = "ppr" if rec_pts >= 1.0 else ("half_ppr" if rec_pts >= 0.5 else "std")
+
+    try:
+        from data_building.fetch_projections import fetch_sleeper_week_projections
+        proj_map = fetch_sleeper_week_projections(season, next_week, scoring)
+    except Exception as exc:
+        logger.warning("[playoff_odds] Sleeper weekly proj unavailable: %s", exc)
+        return
+
+    if not proj_map:
+        return
+
+    roster_positions = ctx.get("roster_positions") or []
+    # Build roster_id → player_ids lookup
+    rid_to_pids: dict[int, list] = {
+        int(r.get("roster_id")): list(r.get("players") or [])
+        for r in (ctx.get("rosters") or [])
+        if r.get("roster_id") is not None
+    }
+    # pos_map for position fallback
+    pos_map: dict[str, str] = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
+            ).fetchall()
+        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
+    except Exception:
+        pass
+
+    # Build ppg_map from weekly projections (proj already in pts, not ppg)
+    week_ppg: dict[str, dict] = {
+        pid: {"ppg": pts, "pos": pos_map.get(pid, "")}
+        for pid, pts in proj_map.items()
+        if pts > 0
+    }
+
+    updated = 0
+    for team in teams:
+        rid  = team["roster_id"]
+        pids = rid_to_pids.get(rid)
+        if not pids:
+            continue
+        proj_score, _ = _position_aware_lineup(pids, week_ppg, pos_map, roster_positions)
+        if proj_score <= 0:
+            continue
+        historical_avg  = team["avg"]
+        team["avg"]     = round(blend * proj_score + (1 - blend) * historical_avg, 1)
+        updated += 1
+
+    if updated:
+        logger.info(
+            "[playoff_odds] Blended weekly proj (%.0f%%) for %d teams (week %d)",
+            blend * 100, updated, next_week,
+        )
 
 
 # ---------------------------------------------------------------------------
