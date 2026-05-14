@@ -892,7 +892,8 @@ img[src*="moon.png"],
 img[src*="refresh.png"],
 img[src*="bell.png"],
 img[src*="logout.png"],
-img[src*="sun-solid.png"] {
+img[src*="sun-solid.png"],
+img[src*="magnifying-glass-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
@@ -907,7 +908,8 @@ html[data-theme="dark"] img[src*="moon.png"],
 html[data-theme="dark"] img[src*="refresh.png"],
 html[data-theme="dark"] img[src*="bell.png"],
 html[data-theme="dark"] img[src*="logout.png"],
-html[data-theme="dark"] img[src*="sun-solid.png"] {
+html[data-theme="dark"] img[src*="sun-solid.png"],
+html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
@@ -1242,26 +1244,56 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 .nav-search-inner {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 0;
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 5px 10px 5px 10px;
-  transition: border-color 0.18s, box-shadow 0.18s, width 0.22s;
-  width: 200px;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: width 0.22s ease, border-radius 0.22s ease, padding 0.22s ease,
+              background 0.18s, border-color 0.18s, box-shadow 0.18s, gap 0.22s,
+              transform 0.2s ease, justify-content 0s;
+}
+
+.nav-search-inner:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  transform: scale(1.05);
 }
 
 .nav-search-wrapper:focus-within .nav-search-inner {
+  width: 240px;
+  height: auto;
+  border-radius: 20px;
+  padding: 5px 10px;
+  gap: 6px;
+  justify-content: flex-start;
+  background: var(--card);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-  width: 260px;
+  cursor: default;
+  transform: none;
 }
 
 .nav-search-icon {
-  width: 15px;
-  height: 15px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+}
+
+.nav-search-wrapper:focus-within .nav-search-icon {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
   flex-shrink: 0;
-  color: var(--text-muted);
 }
 
 .nav-search-input {
@@ -1270,8 +1302,17 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   outline: none;
   color: var(--text);
   font-size: 13px;
-  width: 100%;
+  width: 0;
   min-width: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.nav-search-wrapper:focus-within .nav-search-input {
+  width: 100%;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .nav-search-input::placeholder {
@@ -1296,7 +1337,7 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: 320px;
+  width: 300px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1378,27 +1419,22 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
 }
 
 @media (max-width: 768px) {
-  .nav-search-inner {
-    width: 36px;
-    padding: 5px 9px;
-    overflow: hidden;
-  }
   .nav-search-wrapper:focus-within .nav-search-inner {
-    width: 180px;
+    width: 200px;
   }
   .nav-search-dropdown {
     width: 280px;
-    right: -40px;
+    right: -10px;
   }
 }
 
 @media (max-width: 480px) {
   .nav-search-wrapper:focus-within .nav-search-inner {
-    width: 150px;
+    width: 170px;
   }
   .nav-search-dropdown {
     width: 260px;
-    right: -60px;
+    right: -20px;
   }
 }
 
@@ -8460,6 +8496,80 @@ img, svg, canvas {
   .otc-ai-empty-sub {
     font-size: 12px;
   }
+
+  /* Trade calc: tighten slot area and player chips */
+  .otc-slot {
+    padding: 10px 10px 12px;
+    min-height: 0;
+  }
+
+  /* Restructure chip: name + [value ×] on top row, meta on bottom row */
+  .otc-chip {
+    padding: 7px 10px;
+    column-gap: 0;
+    row-gap: 2px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    align-items: start;
+  }
+
+  .otc-chip-main {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .otc-chip-value-wrap {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    gap: 4px;
+    padding-left: 8px;
+  }
+
+  .otc-chip-remove {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    font-size: 17px;
+    padding-left: 6px;
+  }
+
+  .otc-chip-name {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Allow meta to wrap and hide tier badge — tier is visible in dividers */
+  .otc-chip-meta {
+    font-size: 11px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .otc-tier-badge {
+    display: none !important;
+  }
+
+  .otc-chip-value {
+    font-size: 13px;
+  }
+
+  .otc-chip-delta {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+
+  .player-chip-list,
+  .otc-selected-list {
+    margin-top: 8px;
+    gap: 6px;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -8961,7 +9071,63 @@ img, svg, canvas {
     font-size: 15px;
   }
 
-  
+  .otc-slot {
+    padding: 12px 12px 14px;
+    min-height: 0;
+  }
+
+  .otc-chip {
+    padding: 8px 12px;
+    column-gap: 0;
+    row-gap: 2px;
+    grid-template-rows: auto auto;
+    align-items: start;
+  }
+
+  .otc-chip-main {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .otc-chip-value-wrap {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    padding-left: 10px;
+    gap: 5px;
+  }
+
+  .otc-chip-remove {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    padding-left: 6px;
+  }
+
+  .otc-chip-meta {
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .otc-tier-badge {
+    display: none !important;
+  }
+
+  .otc-chip-value {
+    font-size: 14px;
+  }
+
+  .player-chip-list,
+  .otc-selected-list {
+    margin-top: 8px;
+    gap: 6px;
+  }
+
   .os-waiver-row {
     padding: 10px 12px;
   }

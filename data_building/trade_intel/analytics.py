@@ -460,10 +460,7 @@ def _upsert_player_stats(stats: list[dict]) -> int:
         for sz in _SIZE_BUCKETS
     )
 
-    with get_conn() as conn:
-        for s in stats:
-            conn.execute(
-                f"""
+    sql = f"""
                 INSERT INTO trade_intel_player_stats (
                     player_id, season,
                     trade_count, trade_count_7d, trade_count_14d, trade_count_30d,
@@ -514,9 +511,9 @@ def _upsert_player_stats(stats: list[dict]) -> int:
                     buy_sell_ratio            = EXCLUDED.buy_sell_ratio,
                     updated_at                = NOW(),
                     {sz_update}
-                """,
-                s
-            )
+                """
+    with get_conn() as conn:
+        conn.executemany(sql, stats)
     return len(stats)
 
 
@@ -524,19 +521,18 @@ def _upsert_packages(packages: list[dict]) -> int:
     if not packages:
         return 0
     with get_conn() as conn:
-        for p in packages:
-            conn.execute(
-                """
-                INSERT INTO trade_intel_packages
-                    (anchor_player_id, package_key, season, occurrence_count, avg_value_diff, last_seen_at)
-                VALUES (%(anchor_player_id)s, %(package_key)s, %(season)s, %(occurrence_count)s, %(avg_value_diff)s, NOW())
-                ON CONFLICT (anchor_player_id, package_key, season) DO UPDATE SET
-                    occurrence_count = EXCLUDED.occurrence_count,
-                    avg_value_diff   = EXCLUDED.avg_value_diff,
-                    last_seen_at     = NOW()
-                """,
-                p
-            )
+        conn.executemany(
+            """
+            INSERT INTO trade_intel_packages
+                (anchor_player_id, package_key, season, occurrence_count, avg_value_diff, last_seen_at)
+            VALUES (%(anchor_player_id)s, %(package_key)s, %(season)s, %(occurrence_count)s, %(avg_value_diff)s, NOW())
+            ON CONFLICT (anchor_player_id, package_key, season) DO UPDATE SET
+                occurrence_count = EXCLUDED.occurrence_count,
+                avg_value_diff   = EXCLUDED.avg_value_diff,
+                last_seen_at     = NOW()
+            """,
+            packages,
+        )
     return len(packages)
 
 

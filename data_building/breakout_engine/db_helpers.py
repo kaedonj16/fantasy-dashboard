@@ -822,6 +822,60 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
         return {}
 
 
+def load_established_producer_ids(current_season: int, lookback: int = 5) -> set:
+    """
+    Return the set of player IDs who have already had a 'great' season —
+    defined as finishing in the top-N at their position by PPR PPG in any
+    historical season (relative to that season's field).
+
+    Args:
+        current_season: Season we're evaluating breakouts for.
+                        Scans cache files from (current_season - lookback)
+                        through (current_season - 1).
+        lookback: How many prior seasons to scan (default 5).
+
+    Returns:
+        Set of player_id strings considered already-established producers.
+    """
+    from .config import ESTABLISHED_PRODUCER_TOP_N, ESTABLISHED_PRODUCER_MIN_GAMES
+
+    established: set = set()
+
+    for yr in range(current_season - lookback, current_season):
+        cache_path = os.path.join("cache", "player_history", f"usage_rows_{yr}.json")
+        if not os.path.exists(cache_path):
+            continue
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+        by_pos: Dict[str, list] = {}
+        for player in data:
+            pid = str(player.get("id") or "")
+            if not pid or not pid.isdigit():
+                continue
+            pos = player.get("position", "")
+            if pos not in ESTABLISHED_PRODUCER_TOP_N:
+                continue
+            usage = player.get("usage") or {}
+            games = usage.get("games", 0) or 0
+            if games < ESTABLISHED_PRODUCER_MIN_GAMES:
+                continue
+            ppg = float(usage.get("ppr_ppg", 0) or 0)
+            by_pos.setdefault(pos, []).append((pid, ppg))
+
+        for pos, players in by_pos.items():
+            top_n = ESTABLISHED_PRODUCER_TOP_N[pos]
+            players.sort(key=lambda x: -x[1])
+            for pid, _ in players[:top_n]:
+                established.add(pid)
+
+    print(f"[db_helpers] Established producers: {len(established)} player IDs across {lookback} seasons")
+    return established
+
+
 def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
     """
     Load all breakout-related data in 3 batch queries instead of N+1 queries.

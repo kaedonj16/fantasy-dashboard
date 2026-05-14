@@ -1147,10 +1147,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         player_search_html = (
             "<div class='nav-search-wrapper' id='navSearchWrapper'>"
             "  <div class='nav-search-inner'>"
-            "    <svg class='nav-search-icon' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'>"
-            "      <circle cx='8.5' cy='8.5' r='5.5' stroke='currentColor' stroke-width='1.7'/>"
-            "      <path d='M13.5 13.5L17 17' stroke='currentColor' stroke-width='1.7' stroke-linecap='round'/>"
-            "    </svg>"
+            "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
             "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
             "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
             "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
@@ -1365,10 +1362,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     player_search_html = (
         "<div class='nav-search-wrapper' id='navSearchWrapper'>"
         "  <div class='nav-search-inner'>"
-        "    <svg class='nav-search-icon' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'>"
-        "      <circle cx='8.5' cy='8.5' r='5.5' stroke='currentColor' stroke-width='1.7'/>"
-        "      <path d='M13.5 13.5L17 17' stroke='currentColor' stroke-width='1.7' stroke-linecap='round'/>"
-        "    </svg>"
+        "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
         "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
         "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
         "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"

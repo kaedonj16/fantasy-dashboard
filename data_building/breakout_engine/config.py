@@ -452,6 +452,17 @@ TOP_12_PPG_THRESHOLDS = {
     'TE': 8.0     # ~TE12 level in PPR
 }
 
+# Already-established-producer disqualifier: if a player has EVER finished in
+# the top N at their position by PPR PPG (relative to that season's field),
+# they've already broken out and cannot be a breakout candidate.
+ESTABLISHED_PRODUCER_TOP_N = {
+    'QB': 12,
+    'RB': 15,
+    'WR': 20,
+    'TE': 8,
+}
+ESTABLISHED_PRODUCER_MIN_GAMES = 8  # Minimum games to count a season
+
 # ==============================================================================
 # WR FALSE-POSITIVE REDUCTION - Thresholds
 # ==============================================================================

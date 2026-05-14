@@ -23,6 +23,7 @@ from .config import MIN_BREAKOUT_SCORE
 from .db_helpers import (
     save_breakout_scores,
     load_all_player_usage,
+    load_established_producer_ids,
     batch_load_all_breakout_data,
     load_all_team_stats,
     get_all_players_with_opportunity
@@ -111,6 +112,7 @@ class BreakoutEngine:
         # This replaces N+1 queries with 3 batch queries (60x speedup)
         print(f"[BreakoutEngine] Loading batched data for season {season}...")
         self.usage_cache = load_all_player_usage(season - 1)
+        self.established_producers = load_established_producer_ids(season)
         self.db_cache = batch_load_all_breakout_data(season)
         self.team_stats_cache = load_all_team_stats(season)
 
@@ -189,6 +191,11 @@ class BreakoutEngine:
         position = player.get('position')
 
         if not all([player_id, team, position]):
+            return None
+
+        # Disqualify players who have already had a great season — defined as
+        # finishing top-N at their position by PPR PPG in any prior season.
+        if str(player_id) in self.established_producers:
             return None
 
         # Get player metadata
