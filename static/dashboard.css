@@ -8304,6 +8304,19 @@ img, svg, canvas {
     padding-right: 12px !important;
   }
 
+  /* Player rankings page: use minimal side padding for max content width */
+  #page-root:has([data-page="players"]) {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+  }
+  [data-page="players"] .card.central {
+    border-radius: 10px;
+  }
+  [data-page="players"] .overview-layout {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
   .card {
     padding: 14px;
     border-radius: 16px;
@@ -11421,13 +11434,13 @@ tr.team-clickable {
 }
 
 @media (max-width: 768px) {
+  .player-modal-overlay { padding: 16px 4px; }
   .player-modal {
-    max-height: 95vh;
-    border-radius: 16px 16px 0 0;
-    margin-top: auto;
-    max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
+    max-height: 88dvh;
+    max-height: 88vh;
+    border-radius: 16px;
+    margin: auto;
+    max-width: calc(100% - 8px);
   }
 
   .player-modal-header {
@@ -11456,8 +11469,8 @@ tr.team-clickable {
 
   /* Headshot: tall enough to span header, aligned to top */
   .player-modal-headshot {
-    width: 76px;
-    height: 90px;
+    width: 90px;
+    height: 101px;
     border-radius: 8px;
     object-fit: cover;
     object-position: top;
@@ -13930,12 +13943,7 @@ tr.team-clickable {
 
 /* Player modal: edge-to-edge on small phones */
 @media (max-width: 480px) {
-  .player-modal-overlay { padding: 0; align-items: flex-end; }
-  .player-modal {
-    border-radius: 16px 16px 0 0;
-    max-height: 88dvh;
-    max-height: 88vh; /* fallback */
-  }
+  .player-modal-overlay { padding: 16px 4px; align-items: center; }
   .player-modal-header { padding-left: 16px; padding-right: 16px; }
 }
 

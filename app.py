@@ -192,6 +192,7 @@ def _static_hash(filename: str) -> str:
         return "0"
 
 _APP_JS_V = _static_hash("app.js")
+_CSS_V = _static_hash("dashboard.css")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 
 
@@ -562,7 +563,7 @@ BASE_HTML = """
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
-    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
     <link rel="stylesheet" href="/static/paywall.css">
@@ -1506,6 +1507,7 @@ def render_page(
         contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
+        css_v=_CSS_V,
         paywall_js_v=_PAYWALL_JS_V,
         is_logged_in_js="true" if user_id else "false",
         is_premium_js="true" if is_premium else "false",
@@ -8728,9 +8730,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Controls -->
         <div class="filter-controls-container">
-          <!-- Row 1: Primary filters -->
-          <div class="filter-row filter-row-primary">
-            <!-- Search -->
+          <!-- Row 1: Search + pills (desktop: same flex row / mobile: stacked) -->
+          <div class="filter-row-primary">
             <div class="filter-search">
               <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
                 style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
@@ -8743,8 +8744,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
                        font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
-
-            <!-- Position filters -->
             <div class="filter-positions">
               <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
               <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
@@ -8753,14 +8752,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
               <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
             </div>
+          </div>
 
-            <!-- Settings button -->
-            <div style="position:relative;">
+          <!-- Row 2: Tags + Settings + Sort (desktop: same flex row / mobile: tags+settings then sort) -->
+          <div class="filter-row-secondary">
+            <div class="active-settings-indicator" id="prActiveSettings">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
+              <span class="active-setting-tag">Dynasty</span>
+            </div>
+            <div style="position:relative;flex-shrink:0;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
                 League️ Settings
               </button>
-
-              <!-- Settings panel (hidden by default) -->
               <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
                 <div class="settings-section">
                   <span class="settings-section-label">Scoring Type</span>
@@ -8787,16 +8791,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 </div>
               </div>
             </div>
-          </div>
-
-          <!-- Row 2: Secondary filters -->
-          <div class="filter-row filter-row-secondary">
-            <div id="prActiveSettings" class="active-settings-indicator">
-              <span class="active-setting-tag">10-Team</span>
-              <span class="active-setting-tag">1QB</span>
-              <span class="active-setting-tag">Dynasty</span>
-            </div>
-            <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
               <select id="prSort" onchange="prPage=1;prRender()"
@@ -8921,34 +8915,43 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .filter-controls-container {
         display: flex;
         flex-direction: column;
-        gap: 12px;
-        padding: 16px 0 14px;
+        gap: 10px;
+        padding: 14px 0 12px;
         border-bottom: 1px solid var(--border);
         margin-bottom: 12px;
       }
-      .filter-row {
+      .filter-row-primary {
         display: flex;
         align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: space-between;
-      }
-      .filter-row-primary {
         gap: 12px;
       }
       .filter-row-secondary {
-        padding-top: 4px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: space-between;
       }
       .filter-search {
         position: relative;
         flex: 1;
         min-width: 200px;
       }
+      .filter-row-tags {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
       .filter-positions {
         display: flex;
-        gap: 3px;
-        flex-wrap: wrap;
+        gap: 4px;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
       }
+      .filter-positions::-webkit-scrollbar { display: none; }
       .pos-pill {
         padding: 6px 12px;
         border-radius: 999px;
@@ -9039,8 +9042,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         display: flex;
         gap: 6px;
         align-items: center;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex: 1;
+        min-width: 0;
       }
+      .active-settings-indicator::-webkit-scrollbar { display: none; }
       .active-setting-tag {
         padding: 4px 10px;
         border-radius: 999px;
@@ -9127,14 +9135,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           gap: 8px;
           align-items: center;
         }
-        .pr-pagination-btn .pr-btn-label {
-          display: none;
-        }
+        .pr-pagination-btn .pr-btn-label { display: none; }
         .pr-pagination-btn {
           padding: 6px 10px;
           min-width: 36px;
           justify-content: center;
         }
+        .pos-pill { padding: 5px 10px; font-size: 11px; }
+        .filter-sort select { font-size: 12px; padding: 5px 8px; }
       }
       .pr-page-numbers {
         display: flex;
@@ -9164,12 +9172,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         .filter-row-primary {
           flex-direction: column;
           align-items: stretch;
+          gap: 8px;
         }
         .filter-search {
-          max-width: 100%;
+          flex: none;
+          min-width: 0;
+          width: 100%;
         }
         .filter-positions {
-          justify-content: flex-start;
+          justify-content: space-evenly;
           gap: 5px;
         }
         .pos-pill {
@@ -9180,15 +9191,17 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           white-space: nowrap;
         }
         .active-settings-indicator {
-          justify-content: center;
-          order: -1;
-          width: 100%;
+          flex: 1;
+          min-width: 0;
         }
         .filter-row-secondary {
           flex-wrap: wrap;
           gap: 8px;
+          justify-content: flex-start;
         }
-        .filter-sort,
+        .filter-sort {
+          flex: 1 1 100%;
+        }
         .filter-sort select {
           width: 100%;
         }

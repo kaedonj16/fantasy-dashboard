@@ -26,8 +26,8 @@ def build_prospects_body() -> str:
 
     <!-- Controls -->
     <div class="filter-controls-container">
-      <!-- Row 1: Search -->
-      <div class="filter-row">
+      <!-- Row 1 (desktop) / Rows 1-2 (mobile): Search + pills -->
+      <div class="filter-row-primary">
         <div class="filter-search">
           <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
             style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
@@ -40,7 +40,6 @@ def build_prospects_body() -> str:
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:16px;padding:2px;">&#x2715;</button>
         </div>
-        <div class="filter-row rk-pills-row">
         <div class="filter-positions">
           <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
           <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
@@ -48,7 +47,15 @@ def build_prospects_body() -> str:
           <button class="pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
           <button class="pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
         </div>
-        <div class="rk-settings-wrapper">
+      </div>
+
+      <!-- Row 2 (desktop) / Rows 3-4 (mobile): Tags + Settings + Sort -->
+      <div class="filter-row-secondary">
+        <div id="rkActiveSettings" class="active-settings-indicator">
+          <span class="active-setting-tag">10-Team</span>
+          <span class="active-setting-tag">1QB</span>
+        </div>
+        <div class="rk-settings-wrapper" style="position:relative;flex-shrink:0;">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
             League️ Settings
           </button>
@@ -71,16 +78,6 @@ def build_prospects_body() -> str:
             </div>
             <button class="settings-reset-btn" onclick="rkResetSettings()">Reset to defaults</button>
           </div>
-        </div>
-      </div>
-      </div>
-
-
-      <!-- Row 3: Sort + Active settings -->
-      <div class="filter-row filter-row-secondary">
-        <div id="rkActiveSettings" class="active-settings-indicator">
-          <span class="active-setting-tag">10-Team</span>
-          <span class="active-setting-tag">1QB</span>
         </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
@@ -168,32 +165,31 @@ def build_prospects_body() -> str:
     border-bottom: 1px solid var(--border);
     margin-bottom: 12px;
   }
-  .filter-row {
+  .filter-row-primary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .filter-row-secondary {
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-wrap: wrap;
     justify-content: space-between;
   }
   .filter-search {
     position: relative;
     flex: 1;
-    min-width: 0;
-  }
-  .rk-pills-row {
-    justify-content: space-between;
-    flex-wrap: nowrap;
-    gap: 12px;
-  }
-  .rk-settings-wrapper {
-    position: relative;
-    flex-shrink: 0;
+    min-width: 200px;
   }
   .filter-positions {
     display: flex;
     gap: 3px;
-    flex-wrap: wrap;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
+  .filter-positions::-webkit-scrollbar { display: none; }
   .pos-pill {
     padding: 6px 12px;
     border-radius: 999px;
@@ -326,32 +322,30 @@ def build_prospects_body() -> str:
 
   /* Mobile responsive */
   @media (max-width: 768px) {
-    .rk-pills-row {
-      flex-wrap: wrap;
-    }
-    .filter-row-secondary {
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-  }
-  @media (max-width: 600px) {
-    /* Stack search and pills on separate rows */
-    .filter-controls-container > .filter-row:first-child {
+    .filter-row-primary {
       flex-direction: column;
       align-items: stretch;
       gap: 8px;
     }
     .filter-search {
+      flex: none;
+      min-width: 0;
       width: 100%;
     }
-    .rk-pills-row {
-      width: 100%;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .filter-positions {
+    .active-settings-indicator {
       flex: 1;
       min-width: 0;
+    }
+    .filter-row-secondary {
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-start;
+    }
+    .filter-sort {
+      flex: 1 1 100%;
+    }
+    .filter-sort select {
+      width: 100%;
     }
   }
 
