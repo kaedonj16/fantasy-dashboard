@@ -4612,6 +4612,14 @@ thead th {
   padding: 18px;
 }
 
+/* Value Rankings card header — sits above the table on all screen sizes */
+.os-vr-header {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 14px 16px 4px;
+}
+
 .os-card, .os-card-soft, .os-hero-card {
   width: 100%;
   border: 1px solid var(--border);
