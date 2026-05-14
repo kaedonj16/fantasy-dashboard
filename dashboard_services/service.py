@@ -445,7 +445,9 @@ def build_tables(
     team_stats["Z_Consistency"] = _z(cons_inv)
     team_stats["Z_Ceiling"] = _z(ceiling)
 
-    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.2, 0.3, 0.15, 0.20, 0.15
+    # Weights: recency (Last3) promoted; raw Avg and Win% trimmed slightly
+    # so a hot team closing strong is rewarded over a stale season-long average.
+    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.15, 0.25, 0.25, 0.15, 0.20
     team_stats["Win%"] = win_pct
     team_stats["PowerScore"] = (
             W_WIN * team_stats["Z_WinPercentage"]
