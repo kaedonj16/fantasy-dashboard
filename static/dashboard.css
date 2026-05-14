@@ -8467,25 +8467,61 @@ img, svg, canvas {
     min-height: 0;
   }
 
+  /* Restructure chip: name + [value ×] on top row, meta on bottom row */
   .otc-chip {
     padding: 7px 10px;
-    column-gap: 8px;
+    column-gap: 0;
+    row-gap: 2px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    align-items: start;
+  }
+
+  .otc-chip-main {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .otc-chip-value-wrap {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    gap: 4px;
+    padding-left: 8px;
+  }
+
+  .otc-chip-remove {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    font-size: 17px;
+    padding-left: 6px;
   }
 
   .otc-chip-name {
     font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
+  /* Allow meta to wrap and hide tier badge — tier is visible in dividers */
   .otc-chip-meta {
-    font-size: 12px;
+    font-size: 11px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .otc-tier-badge {
+    display: none !important;
   }
 
   .otc-chip-value {
     font-size: 13px;
-  }
-
-  .otc-chip-remove {
-    font-size: 17px;
   }
 
   .otc-chip-delta {
@@ -9006,15 +9042,48 @@ img, svg, canvas {
 
   .otc-chip {
     padding: 8px 12px;
-    column-gap: 8px;
+    column-gap: 0;
+    row-gap: 2px;
+    grid-template-rows: auto auto;
+    align-items: start;
+  }
+
+  .otc-chip-main {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .otc-chip-value-wrap {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    padding-left: 10px;
+    gap: 5px;
+  }
+
+  .otc-chip-remove {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    padding-left: 6px;
   }
 
   .otc-chip-meta {
     font-size: 12px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .otc-tier-badge {
+    display: none !important;
   }
 
   .otc-chip-value {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .player-chip-list,
