@@ -111,17 +111,104 @@ def simulate_playoff_odds(
 # Roster-value projection (preseason / offseason)
 # ---------------------------------------------------------------------------
 
-def _estimate_from_rosters(ctx: dict) -> list[dict]:
+_LINEUP_EFFICIENCY = 0.92   # accounts for bye weeks, injuries, suboptimal starts
+_FLEX_POSITIONS    = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
+_FLEX_ELIGIBLE     = {"RB", "WR", "TE"}
+_SUPER_FLEX_POS    = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
+_SUPER_FLEX_ELIG   = {"QB", "RB", "WR", "TE"}
+
+
+def _position_aware_lineup(
+    pids: list,
+    ppg_map: dict,
+    pos_map: dict,
+    roster_positions: list,
+) -> float:
+    """
+    Project weekly scoring using position-constrained optimal lineup.
+
+    Fills fixed position slots (QB, RB, WR, TE, K, DEF) first, then fills
+    FLEX/SuperFlex slots with the best remaining eligible player.
+    Applies a small efficiency discount for bye weeks / injuries / suboptimal
+    starts so the result reflects expected avg rather than theoretical max.
+    """
+    # Tally starting slots by type
+    fixed_slots: dict[str, int] = {}
+    flex_slots   = 0
+    sflex_slots  = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in _BENCH_SLOTS:
+            continue
+        if s in _SUPER_FLEX_POS:
+            sflex_slots += 1
+        elif s in _FLEX_POSITIONS:
+            flex_slots += 1
+        else:
+            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+
+    # Resolve each player to (pos, ppg)
+    by_pos: dict[str, list[float]] = {}
+    for pid in pids:
+        info = ppg_map.get(str(pid))
+        if info:
+            pos = info["pos"]
+            ppg = info["ppg"] if info["ppg"] > 0 else _ROOKIE_PPG.get(info["pos"], _ROOKIE_PPG_DEFAULT)
+        else:
+            pos = pos_map.get(str(pid), "")
+            ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        if pos:
+            by_pos.setdefault(pos, []).append(ppg)
+    for pos in by_pos:
+        by_pos[pos].sort(reverse=True)
+
+    used: dict[str, int] = {}
+    total = 0.0
+
+    # Fill fixed slots
+    for slot_pos, count in fixed_slots.items():
+        pool = by_pos.get(slot_pos, [])
+        for _ in range(count):
+            i = used.get(slot_pos, 0)
+            if i < len(pool):
+                total += pool[i]
+            used[slot_pos] = used.get(slot_pos, 0) + 1
+
+    # Fill FLEX (RB/WR/TE eligible)
+    flex_pool = sorted(
+        (ppg for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]),
+        reverse=True,
+    )
+    for i in range(flex_slots):
+        if i < len(flex_pool):
+            total += flex_pool[i]
+            # mark one slot used for accounting (best-effort)
+    remaining_after_flex = flex_pool[flex_slots:]
+
+    # Fill SuperFlex (QB/RB/WR/TE eligible)
+    sflex_pool = sorted(
+        list(by_pos.get("QB", [])[used.get("QB", 0):]) + remaining_after_flex,
+        reverse=True,
+    )
+    for i in range(sflex_slots):
+        if i < len(sflex_pool):
+            total += sflex_pool[i]
+
+    return total * _LINEUP_EFFICIENCY
+
+
+
     """
     Build synthetic team scoring profiles from prior-season actual PPG.
 
     For each player on a roster, looks up their PPG from last season's usage
-    table.  Players with no prior-season stats (rookies, newly added players)
+    cache (same source as the player modal). Players with no prior-season stats
     fall back to a conservative position-based default.
 
-    The team's projected avg pts/game = sum of the top-N starters' PPG where
-    N = total starting slots in the league's lineup.  Std dev is set to a
-    realistic fixed value since we have no per-team variance data yet.
+    Uses position-aware lineup selection so the projected avg reflects the
+    actual starting constraints (1 QB, 2 RB, etc.) rather than best-ball.
+    A small efficiency discount accounts for bye weeks, injuries, and
+    suboptimal lineup decisions.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
@@ -129,12 +216,6 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
 
     if not rosters:
         return []
-
-    # Total starting slots (exclude bench/IR/TAXI)
-    total_starters = sum(
-        1 for p in roster_positions
-        if str(p).upper() not in _BENCH_SLOTS
-    ) or 9
 
     # Detect scoring format from league settings
     rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
@@ -186,28 +267,15 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     if not ppg_map and not pos_map:
         return []
 
-    # Build projected avg for each roster
+    # Build projected avg for each roster using position-aware lineup selection
     teams: list[dict] = []
     for roster in rosters:
         rid  = roster.get("roster_id")
         pids = roster.get("players") or []
 
-        player_ppgs: list[float] = []
-        for pid in pids:
-            info = ppg_map.get(str(pid))
-            if info and info["ppg"] > 0:
-                player_ppgs.append(info["ppg"])
-            else:
-                # Rookie or player with no prior-season data
-                pos = (
-                    (info or {}).get("pos")
-                    or pos_map.get(str(pid))
-                    or ""
-                )
-                player_ppgs.append(_ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT))
-
-        player_ppgs.sort(reverse=True)
-        projected_avg = sum(player_ppgs[:total_starters])
+        projected_avg = _position_aware_lineup(
+            pids, ppg_map, pos_map, roster_positions
+        )
 
         name = (
             roster_map.get(str(rid))
