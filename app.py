@@ -8730,40 +8730,41 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Controls -->
         <div class="filter-controls-container">
-          <!-- Row 1: Primary filters -->
-          <div class="filter-row filter-row-primary">
-            <!-- Search -->
-            <div class="filter-search">
-              <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
-                style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                       border:1px solid var(--border);background:var(--card-bg);
-                       color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                           color:var(--text-muted);font-size:13px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-              <button id="prSearchClear" onclick="prClearSearch()"
-                style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                       background:none;border:none;cursor:pointer;color:var(--text-muted);
-                       font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
+          <!-- Row 1: Search -->
+          <div class="filter-search">
+            <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
+              style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                     border:1px solid var(--border);background:var(--card-bg);
+                     color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
+                         color:var(--text-muted);font-size:13px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <button id="prSearchClear" onclick="prClearSearch()"
+              style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                     background:none;border:none;cursor:pointer;color:var(--text-muted);
+                     font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
+          </div>
+
+          <!-- Row 2: Position pills -->
+          <div class="filter-positions">
+            <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+            <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+            <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+            <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+            <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+            <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+          </div>
+
+          <!-- Row 3: Active setting tags + League Settings -->
+          <div class="filter-row-tags">
+            <div id="prActiveSettings" class="active-settings-indicator">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
+              <span class="active-setting-tag">Dynasty</span>
             </div>
-
-            <!-- Position filters + Settings on same row -->
-            <div class="filter-positions-row">
-              <div class="filter-positions">
-                <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
-                <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
-                <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
-                <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
-                <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
-                <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
-              </div>
-
-              <!-- Settings button -->
-              <div style="position:relative;flex-shrink:0;">
-                <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
-                  League️ Settings
-                </button>
-
-              <!-- Settings panel (hidden by default) -->
+            <div style="position:relative;flex-shrink:0;">
+              <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
+                League️ Settings
+              </button>
               <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
                 <div class="settings-section">
                   <span class="settings-section-label">Scoring Type</span>
@@ -8789,30 +8790,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   </div>
                 </div>
               </div>
-            </div> <!-- end filter-positions-row -->
+            </div>
           </div>
 
-          <!-- Row 2: Secondary filters -->
-          <div class="filter-row filter-row-secondary">
-            <div id="prActiveSettings" class="active-settings-indicator">
-              <span class="active-setting-tag">10-Team</span>
-              <span class="active-setting-tag">1QB</span>
-              <span class="active-setting-tag">Dynasty</span>
-            </div>
-            <!-- Sort dropdown -->
-            <div class="filter-sort">
-              <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prPage=1;prRender()"
-                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
-                <option value="rank">Overall Rank</option>
-                <option value="value">Value</option>
-                <option value="age">Age</option>
-                <option value="pos_rank">Pos Rank</option>
-                <option value="ppg">PPG</option>
-                <option value="total_pts">Total Pts</option>
-              </select>
-            </div>
+          <!-- Row 4: Sort -->
+          <div class="filter-sort">
+            <label class="filter-label">Sort by</label>
+            <select id="prSort" onchange="prPage=1;prRender()"
+              style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                     background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;">
+              <option value="rank">Overall Rank</option>
+              <option value="value">Value</option>
+              <option value="age">Age</option>
+              <option value="pos_rank">Pos Rank</option>
+              <option value="ppg">PPG</option>
+              <option value="total_pts">Total Pts</option>
+            </select>
           </div>
         </div>
 
@@ -8924,47 +8917,26 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .filter-controls-container {
         display: flex;
         flex-direction: column;
-        gap: 12px;
-        padding: 16px 0 14px;
+        gap: 10px;
+        padding: 14px 0 12px;
         border-bottom: 1px solid var(--border);
         margin-bottom: 12px;
-      }
-      .filter-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: space-between;
-      }
-      .filter-row-primary {
-        flex-direction: column;
-        gap: 8px;
-      }
-      .filter-positions-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
-        min-width: 0;
-      }
-      .filter-row-secondary {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: nowrap;
-        padding-top: 0;
       }
       .filter-search {
         position: relative;
         width: 100%;
         min-width: 0;
       }
+      .filter-row-tags {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
       .filter-positions {
         display: flex;
         gap: 4px;
-        flex: 1;
-        min-width: 0;
         overflow-x: auto;
         flex-wrap: nowrap;
         scrollbar-width: none;
