@@ -1233,6 +1233,175 @@ html[data-theme="dark"] img[src*="sun-solid.png"] {
   transform: scale(1.05);
 }
 
+/* ── Nav player search ─────────────────────────────────────────────────── */
+.nav-search-wrapper {
+  position: relative;
+  z-index: 200;
+}
+
+.nav-search-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 10px 5px 10px;
+  transition: border-color 0.18s, box-shadow 0.18s, width 0.22s;
+  width: 200px;
+}
+
+.nav-search-wrapper:focus-within .nav-search-inner {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  width: 260px;
+}
+
+.nav-search-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.nav-search-input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.nav-search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  display: none;
+  flex-shrink: 0;
+}
+
+.nav-search-clear:hover { color: var(--text); }
+
+.nav-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 320px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  overflow: hidden;
+  display: none;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.nav-search-dropdown.open { display: block; }
+
+.nav-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--grid);
+}
+
+.nav-search-result:last-child { border-bottom: none; }
+
+.nav-search-result:hover,
+.nav-search-result.focused {
+  background: var(--accent-soft);
+}
+
+.nav-search-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--grid);
+}
+
+.nav-search-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-search-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-search-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.nav-search-pos {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.nav-search-pos-qb  { background: #3b82f6; color: #fff; }
+.nav-search-pos-rb  { background: #22c55e; color: #fff; }
+.nav-search-pos-wr  { background: #f59e0b; color: #fff; }
+.nav-search-pos-te  { background: #8b5cf6; color: #fff; }
+.nav-search-pos-k   { background: #c92c68; color: #fff; }
+.nav-search-pos-def { background: #475569; color: #fff; }
+
+.nav-search-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .nav-search-inner {
+    width: 36px;
+    padding: 5px 9px;
+    overflow: hidden;
+  }
+  .nav-search-wrapper:focus-within .nav-search-inner {
+    width: 180px;
+  }
+  .nav-search-dropdown {
+    width: 280px;
+    right: -40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-search-wrapper:focus-within .nav-search-inner {
+    width: 150px;
+  }
+  .nav-search-dropdown {
+    width: 260px;
+    right: -60px;
+  }
+}
+
 .logout-btn {
   padding: 8px 16px;
   background: #dc2626;
@@ -2004,6 +2173,9 @@ button:hover {
   .standings-table tr {
     height: auto;
   }
+  .standings-table td.team {
+    width: 45%;
+  }
   /* Hide SOS columns on main standings */
   .standings-table[data-page="standings"] th:nth-child(n+7),
   .standings-table[data-page="standings"] td:nth-child(n+7) {
@@ -2026,6 +2198,9 @@ button:hover {
 @media (max-width: 480px) {
   .standings-table {
     font-size: 11px;
+  }
+  .standings-table td.team {
+    width: 50%;
   }
   /* Also hide PA on main standings */
   .standings-table[data-page="standings"] th:nth-child(5),
@@ -5581,6 +5756,11 @@ thead th {
 /* ============================================
    OTHER STYLES
    ============================================ */
+.stats-scroll-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 #stats {
   min-width: 720px;
 }

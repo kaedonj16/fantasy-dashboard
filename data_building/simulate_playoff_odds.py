@@ -291,8 +291,9 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
     if not rosters:
         return []
 
-    # Detect scoring format
-    rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+    # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
+    _ss = ctx.get("scoring_settings") or {}
+    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
     if rec_pts >= 1.0:
         scoring  = "ppr"
         ppg_key  = "ppr_ppg"
@@ -404,8 +405,9 @@ def _blend_weekly_projections(
     if next_week < 1 or blend <= 0:
         return
 
-    # Detect scoring format
-    rec_pts = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+    # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
+    _ss = ctx.get("scoring_settings") or {}
+    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
     scoring = "ppr" if rec_pts >= 1.0 else ("half_ppr" if rec_pts >= 0.5 else "std")
 
     try:
