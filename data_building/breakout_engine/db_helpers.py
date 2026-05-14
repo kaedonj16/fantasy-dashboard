@@ -822,26 +822,24 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
         return {}
 
 
-def load_peak_ppg_across_seasons(current_season: int, lookback: int = 5) -> Dict[str, float]:
+def load_established_producer_ids(current_season: int, lookback: int = 5) -> set:
     """
-    Return each player's highest single-season PPR PPG across all available
-    historical usage cache files.
-
-    A season only counts if the player appeared in at least
-    ESTABLISHED_PRODUCER_MIN_GAMES games (avoids tiny-sample flukes).
+    Return the set of player IDs who have already had a 'great' season —
+    defined as finishing in the top-N at their position by PPR PPG in any
+    historical season (relative to that season's field).
 
     Args:
-        current_season: The season we're evaluating breakouts FOR.
-                        Cache files from (current_season - lookback) through
-                        (current_season - 1) are scanned.
+        current_season: Season we're evaluating breakouts for.
+                        Scans cache files from (current_season - lookback)
+                        through (current_season - 1).
         lookback: How many prior seasons to scan (default 5).
 
     Returns:
-        {player_id_str: peak_ppr_ppg}
+        Set of player_id strings considered already-established producers.
     """
-    from .config import ESTABLISHED_PRODUCER_MIN_GAMES
+    from .config import ESTABLISHED_PRODUCER_TOP_N, ESTABLISHED_PRODUCER_MIN_GAMES
 
-    peak: Dict[str, float] = {}
+    established: set = set()
 
     for yr in range(current_season - lookback, current_season):
         cache_path = os.path.join("cache", "player_history", f"usage_rows_{yr}.json")
@@ -853,23 +851,29 @@ def load_peak_ppg_across_seasons(current_season: int, lookback: int = 5) -> Dict
         except (json.JSONDecodeError, IOError):
             continue
 
-        _valid_positions = {"QB", "RB", "WR", "TE"}
+        by_pos: Dict[str, list] = {}
         for player in data:
             pid = str(player.get("id") or "")
             if not pid or not pid.isdigit():
                 continue
-            if player.get("position") not in _valid_positions:
+            pos = player.get("position", "")
+            if pos not in ESTABLISHED_PRODUCER_TOP_N:
                 continue
             usage = player.get("usage") or {}
             games = usage.get("games", 0) or 0
             if games < ESTABLISHED_PRODUCER_MIN_GAMES:
                 continue
             ppg = float(usage.get("ppr_ppg", 0) or 0)
-            if ppg > peak.get(pid, 0.0):
-                peak[pid] = ppg
+            by_pos.setdefault(pos, []).append((pid, ppg))
 
-    print(f"[db_helpers] Peak PPG cache: {len(peak)} players across {lookback} seasons")
-    return peak
+        for pos, players in by_pos.items():
+            top_n = ESTABLISHED_PRODUCER_TOP_N[pos]
+            players.sort(key=lambda x: -x[1])
+            for pid, _ in players[:top_n]:
+                established.add(pid)
+
+    print(f"[db_helpers] Established producers: {len(established)} player IDs across {lookback} seasons")
+    return established
 
 
 def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:

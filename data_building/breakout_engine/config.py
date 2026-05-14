@@ -452,14 +452,14 @@ TOP_12_PPG_THRESHOLDS = {
     'TE': 8.0     # ~TE12 level in PPR
 }
 
-# Already-established-producer disqualifier: if a player has EVER posted this
-# PPG in a season with sufficient games played, they cannot be a breakout
-# candidate — they've already broken out.
-ESTABLISHED_PRODUCER_PPG_THRESHOLDS = {
-    'QB': 20.0,   # ~QB8 level
-    'RB': 15.0,   # ~RB8 level
-    'WR': 13.5,   # ~WR8 level (Garrett Wilson hit 14.8 in 2024)
-    'TE': 11.0,   # ~TE6 level
+# Already-established-producer disqualifier: if a player has EVER finished in
+# the top N at their position by PPR PPG (relative to that season's field),
+# they've already broken out and cannot be a breakout candidate.
+ESTABLISHED_PRODUCER_TOP_N = {
+    'QB': 12,
+    'RB': 15,
+    'WR': 20,
+    'TE': 8,
 }
 ESTABLISHED_PRODUCER_MIN_GAMES = 8  # Minimum games to count a season
 
