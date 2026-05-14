@@ -5090,7 +5090,7 @@ thead th {
   font-size: 13px;
 }
 .po-table th {
-  text-align: left;
+  text-align: center;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
