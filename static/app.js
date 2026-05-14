@@ -468,9 +468,7 @@ function _renderPlayoffOdds(data) {
       ? ''
       : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
 
-    const simAvgCell = isProjected && t.sim_avg != null
-      ? `<td class="po-sim-avg">${t.sim_avg.toFixed(1)}</td>`
-      : '';
+    const simAvgCell = '';
 
     const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
     return `<tr class="team-clickable"${_ridAttr}>
@@ -483,7 +481,7 @@ function _renderPlayoffOdds(data) {
 
   const byeHdr    = showBye ? '<th class="po-bye">Bye</th>' : '';
   const projHdr   = is_complete ? '' : '<th class="po-proj">Proj W-L</th>';
-  const simAvgHdr = isProjected ? '<th class="po-sim-avg" title="Projected avg pts/game used by the simulator (sum of top starters\' prior-season PPG)">Sim Avg</th>' : '';
+  const simAvgHdr = '';
 
   return `<div class="po-wrap">
     <p class="po-subtitle">${subtitle}</p>
