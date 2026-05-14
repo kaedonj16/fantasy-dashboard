@@ -8586,7 +8586,7 @@ function setupFunAwardsGrid() {
     }
 
     dropdown.innerHTML = matches.map((p, i) => `
-      <div class="nav-search-result" data-idx="${i}" data-player-id="${p.id}" data-player-name="${p.name.replace(/"/g, '&quot;')}">
+      <div class="nav-search-result" data-idx="${i}" data-ns-pid="${p.id}" data-ns-name="${p.name.replace(/"/g, '&quot;')}">
         <img class="nav-search-avatar" src="${headshot(p.id)}" alt="" loading="lazy"
              onerror="this.style.visibility='hidden'" />
         <div class="nav-search-info">
@@ -8618,7 +8618,7 @@ function setupFunAwardsGrid() {
     const items = dropdown.querySelectorAll('.nav-search-result');
     const el = _focusIdx >= 0 ? items[_focusIdx] : items[0];
     if (!el) return;
-    openPlayerModal(el.dataset.playerId, el.dataset.playerName);
+    openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
     input.value = '';
     clearBtn.style.display = 'none';
     closeDropdown();
@@ -8660,7 +8660,8 @@ function setupFunAwardsGrid() {
   dropdown.addEventListener('click', e => {
     const row = e.target.closest('.nav-search-result');
     if (!row) return;
-    openPlayerModal(row.dataset.playerId, row.dataset.playerName);
+    e.stopPropagation();
+    openPlayerModal(row.dataset.nsPid, row.dataset.nsName);
     input.value = '';
     clearBtn.style.display = 'none';
     closeDropdown();
