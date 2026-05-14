@@ -60,22 +60,28 @@ def _n_byes(playoff_teams: int) -> int:
     """
     Number of first-round byes implied by the bracket size.
 
-    A standard single-elimination bracket rounds up to the next power of two.
-    Teams that don't have a R1 opponent get a bye.
-      4  teams → 4 = 2^2 → 0 byes
-      6  teams → next power = 8 → 8 - 6 = 2 byes
-      8  teams → 8 = 2^3 → 0 byes
-      10 teams → next power = 16 → 16 - 10... but Sleeper uses 8-team quarter
-                 format, so treat as 8 slots → 10 - 8 = 2 byes
-      12 teams → 16... same logic: 12 - 8 = 4 byes
+    Even playoff sizes use a "half-bracket" model (Sleeper standard):
+      byes = playoff_teams - largest_power_of_2_≤_playoff_teams
+      4  → 0 byes  (4 = 2^2, full bracket)
+      6  → 2 byes  (6 - 4 = 2; top 2 skip R1)
+      8  → 0 byes  (8 = 2^3, full bracket)
+      10 → 2 byes  (10 - 8 = 2)
+      12 → 4 byes  (12 - 8 = 4)
 
-    The practical formula: byes = playoff_teams - (largest power-of-2 ≤ playoff_teams).
-    This matches every standard Sleeper bracket configuration.
+    Odd playoff sizes use a standard single-elimination bracket
+    (next power of 2 fills the empty slots with byes):
+      5  → 3 byes  (8 - 5 = 3; top 3 skip R1, teams 4 & 5 play)
+      7  → 1 bye   (8 - 7 = 1; top seed skips R1, teams 2-7 play)
     """
     if playoff_teams < 2:
         return 0
-    largest_pow2 = 1 << (playoff_teams.bit_length() - 1)
-    return playoff_teams - largest_pow2
+    if playoff_teams % 2 == 0:
+        largest_pow2 = 1 << (playoff_teams.bit_length() - 1)
+        return playoff_teams - largest_pow2
+    # Odd: next power of 2 ≥ playoff_teams
+    import math as _math
+    next_pow2 = 1 << _math.ceil(_math.log2(playoff_teams))
+    return next_pow2 - playoff_teams
 
 
 # ---------------------------------------------------------------------------
@@ -481,8 +487,8 @@ def _round_robin_schedule(
         if fixed is not None and rot[0] is not None:
             pairs.append((fixed, rot[0]))
         for j in range(1, n // 2):
-            a, b = rot[j], rot[n - 2 - j]
-            if a is not None and b is not None:
+            a, b = rot[j], rot[n - 1 - j]
+            if a is not None and b is not None and a != b:
                 pairs.append((a, b))
         if pairs:
             schedule[week] = pairs
