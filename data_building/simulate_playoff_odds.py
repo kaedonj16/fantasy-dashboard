@@ -56,6 +56,28 @@ _FLEX_ELIGIBLE  = {"RB", "WR", "TE"}
 _SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
 
 
+def _n_byes(playoff_teams: int) -> int:
+    """
+    Number of first-round byes implied by the bracket size.
+
+    A standard single-elimination bracket rounds up to the next power of two.
+    Teams that don't have a R1 opponent get a bye.
+      4  teams → 4 = 2^2 → 0 byes
+      6  teams → next power = 8 → 8 - 6 = 2 byes
+      8  teams → 8 = 2^3 → 0 byes
+      10 teams → next power = 16 → 16 - 10... but Sleeper uses 8-team quarter
+                 format, so treat as 8 slots → 10 - 8 = 2 byes
+      12 teams → 16... same logic: 12 - 8 = 4 byes
+
+    The practical formula: byes = playoff_teams - (largest power-of-2 ≤ playoff_teams).
+    This matches every standard Sleeper bracket configuration.
+    """
+    if playoff_teams < 2:
+        return 0
+    largest_pow2 = 1 << (playoff_teams.bit_length() - 1)
+    return playoff_teams - largest_pow2
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -360,7 +382,7 @@ def _build_teams(team_stats) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _actual_results(teams: list[dict], playoff_teams: int) -> list[dict]:
-    n_byes   = 2 if playoff_teams >= 4 else 0
+    n_byes   = _n_byes(playoff_teams)
     ranked   = sorted(teams, key=lambda t: (-t["wins"], -t["pf"]))
     made     = {t["roster_id"] for t in ranked[:playoff_teams]}
     bye_set  = {t["roster_id"] for t in ranked[:n_byes]}
@@ -559,7 +581,7 @@ def _run_mc(
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
 
-    n_byes = 2 if playoff_teams >= 4 else 0
+    n_byes = _n_byes(playoff_teams)
 
     # Count scheduled games per team — with odd-team leagues one team per round
     # gets a bye, so they play fewer games than len(matchups_by_week).

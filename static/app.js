@@ -424,7 +424,7 @@ function initPlayoffOdds(root = document) {
 }
 
 function _renderPlayoffOdds(data) {
-  const { odds, is_complete, current_week, playoff_week_start, playoff_teams } = data;
+  const { odds, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes } = data;
   if (!odds || !odds.length) return '<p class="po-error">No data available.</p>';
 
   const sorted = [...odds].sort((a, b) =>
@@ -435,13 +435,14 @@ function _renderPlayoffOdds(data) {
   const weeksLeft = is_complete
     ? 0
     : Math.max(0, playoff_week_start - current_week - 1);
+  const nByes = playoff_byes != null ? playoff_byes : (playoff_teams === 6 ? 2 : 0);
   const subtitle = is_complete
-    ? 'Final standings'
+    ? `Final standings · ${playoff_teams} playoff teams`
     : isProjected
-      ? `Preseason projection · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`
-      : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`;
+      ? `Preseason projection · ${playoff_teams} playoff teams · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`
+      : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${playoff_teams} playoff teams · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`;
 
-  const showBye = playoff_teams >= 4;
+  const showBye = nByes > 0;
 
   const rows = sorted.map(t => {
     const pct    = t.playoff_pct;
