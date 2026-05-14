@@ -19,10 +19,11 @@ from .components import (
     calculate_role_trajectory_score,
     calculate_confidence_score
 )
-from .config import MIN_BREAKOUT_SCORE
+from .config import MIN_BREAKOUT_SCORE, ESTABLISHED_PRODUCER_PPG_THRESHOLDS
 from .db_helpers import (
     save_breakout_scores,
     load_all_player_usage,
+    load_peak_ppg_across_seasons,
     batch_load_all_breakout_data,
     load_all_team_stats,
     get_all_players_with_opportunity
@@ -111,6 +112,7 @@ class BreakoutEngine:
         # This replaces N+1 queries with 3 batch queries (60x speedup)
         print(f"[BreakoutEngine] Loading batched data for season {season}...")
         self.usage_cache = load_all_player_usage(season - 1)
+        self.peak_ppg_cache = load_peak_ppg_across_seasons(season)
         self.db_cache = batch_load_all_breakout_data(season)
         self.team_stats_cache = load_all_team_stats(season)
 
@@ -190,6 +192,14 @@ class BreakoutEngine:
 
         if not all([player_id, team, position]):
             return None
+
+        # Disqualify players who have already had a "great" production season —
+        # they've already broken out and don't belong in the candidate pool.
+        _ppg_threshold = ESTABLISHED_PRODUCER_PPG_THRESHOLDS.get(position)
+        if _ppg_threshold is not None:
+            _peak_ppg = self.peak_ppg_cache.get(str(player_id), 0.0)
+            if _peak_ppg >= _ppg_threshold:
+                return None
 
         # Get player metadata
         player_metadata = {

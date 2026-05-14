@@ -822,6 +822,56 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
         return {}
 
 
+def load_peak_ppg_across_seasons(current_season: int, lookback: int = 5) -> Dict[str, float]:
+    """
+    Return each player's highest single-season PPR PPG across all available
+    historical usage cache files.
+
+    A season only counts if the player appeared in at least
+    ESTABLISHED_PRODUCER_MIN_GAMES games (avoids tiny-sample flukes).
+
+    Args:
+        current_season: The season we're evaluating breakouts FOR.
+                        Cache files from (current_season - lookback) through
+                        (current_season - 1) are scanned.
+        lookback: How many prior seasons to scan (default 5).
+
+    Returns:
+        {player_id_str: peak_ppr_ppg}
+    """
+    from .config import ESTABLISHED_PRODUCER_MIN_GAMES
+
+    peak: Dict[str, float] = {}
+
+    for yr in range(current_season - lookback, current_season):
+        cache_path = os.path.join("cache", "player_history", f"usage_rows_{yr}.json")
+        if not os.path.exists(cache_path):
+            continue
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+        _valid_positions = {"QB", "RB", "WR", "TE"}
+        for player in data:
+            pid = str(player.get("id") or "")
+            if not pid or not pid.isdigit():
+                continue
+            if player.get("position") not in _valid_positions:
+                continue
+            usage = player.get("usage") or {}
+            games = usage.get("games", 0) or 0
+            if games < ESTABLISHED_PRODUCER_MIN_GAMES:
+                continue
+            ppg = float(usage.get("ppr_ppg", 0) or 0)
+            if ppg > peak.get(pid, 0.0):
+                peak[pid] = ppg
+
+    print(f"[db_helpers] Peak PPG cache: {len(peak)} players across {lookback} seasons")
+    return peak
+
+
 def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
     """
     Load all breakout-related data in 3 batch queries instead of N+1 queries.
