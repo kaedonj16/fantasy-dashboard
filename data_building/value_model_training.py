@@ -1444,54 +1444,53 @@ def rewrite_value_table_with_model() -> Path:
 
     pick_values = load_pick_value_table() or {}
 
+    # Track which (year, round) pairs already have bucket entries so we can
+    # skip the redundant plain YYYY_R generic key for those pairs.
+    bucket_pairs: set[tuple[int, int]] = set()
+    for key in pick_values:
+        parts = key.split("_")
+        if len(parts) == 3 and not parts[2].isdigit():
+            try:
+                bucket_pairs.add((int(parts[0]), int(parts[1])))
+            except ValueError:
+                pass
+
     for key, val in pick_values.items():
         parts = key.split("_")
 
         name = None
 
-        # Exact slotted pick format: YYYY_R_PPPOS  ->  2026 1.01
-        # Example keys:
-        #   2026_1_01
-        #   2026_2_04
+        # Exact slotted pick format: YYYY_R_PP  ->  2026 1.01
         if len(parts) == 3 and parts[2].isdigit():
-            year_str, rnd_str, pick_str = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
-                pick_in_round = int(pick_str)
+                year, rnd, pick_in_round = int(parts[0]), int(parts[1]), int(parts[2])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
             name = f"{year} {rnd}.{pick_in_round:02d}"
 
-        # Bucketed future pick format: YYYY_R_bucket  ->  2027 1st (Early)
-        # Example keys:
-        #   2027_1_early
-        #   2027_2_mid
+        # Bucketed format: YYYY_R_bucket  ->  2027 1st (Early)
         elif len(parts) == 3:
-            year_str, rnd_str, bucket = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
+                year, rnd = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-            bucket_label = bucket.lower().capitalize()
-            name = f"{year} {rnd}{suffix} ({bucket_label})"
+            name = f"{year} {rnd}{suffix} ({parts[2].capitalize()})"
 
-        # Plain round-only format: YYYY_R  ->  2027 1st
+        # Plain round-only format: YYYY_R — skip if bucket entries exist for this pair
         elif len(parts) == 2:
-            year_str, rnd_str = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
+                year, rnd = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
+            if (year, rnd) in bucket_pairs:
+                continue  # bucket entries cover this; skip the generic duplicate
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix}"
 
