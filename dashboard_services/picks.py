@@ -451,21 +451,20 @@ def load_pick_value_table(
             if all_vals and f"{current_year}_{rnd_num}" not in final:
                 final[f"{current_year}_{rnd_num}"] = round(sum(all_vals) / len(all_vals), 1)
 
-    # WLS is authoritative for current-year picks (ample trade data).
-    # Future years (>current_year) fall back to FC/DP market consensus —
-    # there simply aren't enough 2027/2028-pick trades yet for WLS to
-    # produce reliable values for those buckets.
+    # WLS is the authoritative source for all pick values when available.
+    # FC/DP values above serve only as the WLS prior (via use_wls_overlay=False)
+    # and as a bootstrap fallback before the first WLS run.
     if use_wls_overlay:
         wls_path = DATA_DIR / "pick_values_wls_latest.json"
         if wls_path.exists():
             try:
                 import json
-                wls_1qb = json.loads(wls_path.read_text()).get("1qb", {})
-                # Apply WLS only for current-year picks; future years keep FC/DP
-                for key, val in wls_1qb.items():
-                    key_year = int(key.split("_")[0]) if key.split("_")[0].isdigit() else 0
-                    if val and val > 0 and key_year <= current_year:
-                        final[key] = float(val)
+                wls_final: Dict[str, float] = {}
+                for key, val in json.loads(wls_path.read_text()).get("1qb", {}).items():
+                    if val and val > 0:
+                        wls_final[key] = float(val)
+                if wls_final:
+                    return wls_final
             except Exception:
                 pass
 
