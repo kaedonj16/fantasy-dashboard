@@ -1490,7 +1490,7 @@ def rewrite_value_table_with_model() -> Path:
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix} ({parts[2].capitalize()})"
 
-        # Plain round-only format: YYYY_R — skip if bucket entries exist for this pair
+        # Plain round-only format: YYYY_R — skip if slot or bucket entries exist for this pair
         elif len(parts) == 2:
             try:
                 year, rnd = int(parts[0]), int(parts[1])
@@ -1498,8 +1498,8 @@ def rewrite_value_table_with_model() -> Path:
                 continue
             if rnd > 5:
                 continue
-            if (year, rnd) in bucket_pairs:
-                continue  # bucket entries cover this; skip the generic duplicate
+            if (year, rnd) in slot_pairs or (year, rnd) in bucket_pairs:
+                continue
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix}"
 
