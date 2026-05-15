@@ -3883,10 +3883,7 @@ thead th {
 }
 
 .otc-sugg-pkg-divider {
-  color: var(--text-muted);
-  font-size: 13px;
-  flex-shrink: 0;
-  padding: 0 2px;
+  display: none;
 }
 
 /* Right load button */
@@ -4001,21 +3998,23 @@ thead th {
 }
 
 .otc-sugg-target-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--row);
+  color: var(--text-muted);
   font-size: 11px;
-  font-weight: 600;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
-  opacity: 0.75;
-  transition: opacity 0.12s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
 }
 
 .otc-sugg-target-btn:hover {
-  opacity: 1;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Paywall/empty state for suggestions tab */
