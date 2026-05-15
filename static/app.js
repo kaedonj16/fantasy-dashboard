@@ -2451,8 +2451,24 @@ window.initTradePage = function initTradePage(root = document) {
       suggCurrentPlayerId = playerId;
 
       resultsMeta.style.display = "none";
-      resultsList.innerHTML = `<div class="otc-sugg-empty">
-        <div class="otc-sugg-empty-sub">Loading packages…</div></div>`;
+      resultsList.innerHTML = `<div class="otc-sugg-loading">
+        ${[1,2,3].map(() => `<div class="otc-sugg-skeleton">
+          <div class="otc-sugg-skeleton-line" style="height:12px;width:40%;margin-bottom:12px;"></div>
+          <div style="display:grid;grid-template-columns:1fr 28px 1fr;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;">
+            <div style="padding:10px 12px;">
+              <div class="otc-sugg-skeleton-line" style="height:10px;width:50%;margin-bottom:8px;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:14px;width:80%;margin-bottom:4px;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:14px;width:65%;"></div>
+            </div>
+            <div style="border-left:1px solid var(--border);border-right:1px solid var(--border);"></div>
+            <div style="padding:10px 12px;">
+              <div class="otc-sugg-skeleton-line" style="height:10px;width:50%;margin-bottom:8px;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:14px;width:70%;"></div>
+            </div>
+          </div>
+          <div class="otc-sugg-skeleton-line" style="height:34px;border-radius:10px;"></div>
+        </div>`).join("")}
+      </div>`;
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
@@ -2564,16 +2580,18 @@ window.initTradePage = function initTradePage(root = document) {
             <span class="otc-sugg-pkg-freq">traded ${pkg.frequency}×</span>
           </div>
           <div class="otc-sugg-pkg-sides">
-            <div>
+            <div class="otc-sugg-pkg-side">
               <div class="otc-sugg-pkg-side-label">You give</div>
-              ${pkg.assets.map(assetHtml).join("")}
+              <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
             </div>
-            <div class="otc-sugg-pkg-arrow">→</div>
-            <div>
+            <div class="otc-sugg-pkg-divider">→</div>
+            <div class="otc-sugg-pkg-side">
               <div class="otc-sugg-pkg-side-label">You get</div>
-              <div class="otc-sugg-pkg-asset">
-                <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                ${playerName}
+              <div class="otc-sugg-pkg-assets">
+                <div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                  ${playerName}
+                </div>
               </div>
             </div>
           </div>
