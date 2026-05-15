@@ -9282,7 +9282,7 @@ function setupFunAwardsGrid() {
       }
       listEl.innerHTML = drafted.map((p, i) => {
         const col    = POS_COLORS[p.position] || '#9ca3af';
-        const dAdp   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+        const dAdp   = p.avg_pick;
         const dTeam  = p.actual_nfl_team || p.school || '';
         const dMeta  = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
         return `<div class="da-row">
@@ -9319,7 +9319,7 @@ function setupFunAwardsGrid() {
       const needTxt  = NEED_LABEL[String(needLvl)] || '';
 
       // Recommendation row: add grade + ADP in meta
-      const adpRaw   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      const adpRaw   = p.avg_pick;
       const adpTxt   = adpRaw != null ? `ADP ${parseFloat(adpRaw).toFixed(1)}` : '';
       const gradeTxt = p.tier_label || '';
       const teamTxt  = p.actual_nfl_team || p.school || '';
