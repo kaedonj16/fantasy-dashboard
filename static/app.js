@@ -9238,11 +9238,22 @@ function setupFunAwardsGrid() {
     return topNeed >= 1 ? 1 : 2;
   }
 
+  function daToggleNeeds() {
+    const panel = document.getElementById('daNeedsPanel');
+    if (!panel) return;
+    const collapsed = panel.classList.toggle('da-needs-collapsed');
+    const chevron = panel.querySelector('.da-needs-chevron');
+    if (chevron) chevron.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+  }
+
   function renderNeeds() {
     const panel = document.getElementById('daNeedsPanel');
     if (!panel) return;
+    const collapsed = panel.classList.contains('da-needs-collapsed');
+    const chevron = `<span class="da-needs-chevron" style="margin-left:auto;font-size:12px;transition:transform 0.2s;${collapsed?'transform:rotate(-90deg)':''}">&#8964;</span>`;
+    const titleHtml = `<div class="da-needs-title" onclick="window._da.toggleNeeds()">My Roster Needs${chevron}</div>`;
     if (!Object.keys(daNeeds).length) {
-      panel.innerHTML = '<div class="da-needs-title">My Roster Needs</div><div style="font-size:12px;color:var(--text-muted);padding-top:8px;">Log in with your league to see personalized needs.</div>';
+      panel.innerHTML = titleHtml + '<div class="da-needs-body"><div style="font-size:12px;color:var(--text-muted);padding-top:8px;">Log in with your league to see personalized needs.</div></div>';
       return;
     }
     const rows = ['QB','RB','WR','TE'].map(pos => {
@@ -9259,7 +9270,7 @@ function setupFunAwardsGrid() {
         </div>
       </div>`;
     }).join('');
-    panel.innerHTML = `<div class="da-needs-title">My Roster Needs</div>${rows}`;
+    panel.innerHTML = `${titleHtml}<div class="da-needs-body">${rows}</div>`;
   }
 
   function updateDraftedBadge() {
@@ -9352,8 +9363,9 @@ function setupFunAwardsGrid() {
   }
 
   window._da = {
-    draft(id)   { daDrafted.add(String(id));    saveSession(); render(); },
-    undraft(id) { daDrafted.delete(String(id)); saveSession(); render(); },
+    draft(id)      { daDrafted.add(String(id));    saveSession(); render(); },
+    undraft(id)    { daDrafted.delete(String(id)); saveSession(); render(); },
+    toggleNeeds()  { daToggleNeeds(); },
   };
 
   window.daFilterPos = function (pos) {
@@ -9424,7 +9436,7 @@ function setupFunAwardsGrid() {
           const nd = await nr.json();
           if (nd.error) {
             const np = document.getElementById('daNeedsPanel');
-            if (np) np.innerHTML = '<div class="da-needs-title">Roster Needs</div><div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Log in with your league to see personalized needs.</div>';
+            if (np) np.innerHTML = '<div class="da-needs-title">My Roster Needs<span class="da-needs-chevron" style="margin-left:auto;font-size:12px;">&#8964;</span></div><div class="da-needs-body"><div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Log in with your league to see personalized needs.</div></div>';
           } else {
             daNeeds      = nd.needs || {};
             daLeagueType = nd.league_type || daLeagueType;
