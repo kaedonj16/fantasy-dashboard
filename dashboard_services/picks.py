@@ -451,18 +451,23 @@ def load_pick_value_table(
             if all_vals and f"{current_year}_{rnd_num}" not in final:
                 final[f"{current_year}_{rnd_num}"] = round(sum(all_vals) / len(all_vals), 1)
 
-    # Overlay WLS-derived pick values when requested.
-    # The WLS model itself must call with use_wls_overlay=False to avoid
-    # using its own previous output as its prior (circular dependency).
+    # When use_wls_overlay=True (default), return WLS values exclusively —
+    # the WLS is the authoritative source for all pick values.
+    # FC/DP values computed above are discarded and only serve as the prior
+    # inside the WLS model (which calls with use_wls_overlay=False).
+    # Fall back to FC/DP only when no WLS file exists yet (first-run bootstrap).
     if use_wls_overlay:
         wls_path = DATA_DIR / "pick_values_wls_latest.json"
         if wls_path.exists():
             try:
                 import json
                 wls = json.loads(wls_path.read_text())
+                wls_final: Dict[str, float] = {}
                 for key, val in wls.get("1qb", {}).items():
                     if val and val > 0:
-                        final[key] = float(val)
+                        wls_final[key] = float(val)
+                if wls_final:
+                    return wls_final
             except Exception:
                 pass
 
