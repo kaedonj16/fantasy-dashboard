@@ -12335,18 +12335,19 @@ def api_league_players():
     model_value_table = [p for p in model_value_table
                          if str(p.get("position") or "").upper() != "PICK"]
     try:
-        import json as _json_picks
-        from utils.paths import DATA_DIR as _DATA_DIR_picks
-        _picks_json = _DATA_DIR_picks / "model_values.json"
-        if not _picks_json.exists():
-            _candidates = sorted(_DATA_DIR_picks.glob("model_values_*.json"), reverse=True)
+        import json as _json_picks, glob as _glob_picks, os as _os_picks
+        _picks_path = _os_picks.path.join("data", "model_values.json")
+        if not _os_picks.path.exists(_picks_path):
+            _candidates = sorted(_glob_picks.glob("data/model_values_*.json"), reverse=True)
             if _candidates:
-                _picks_json = _candidates[0]
-        if _picks_json.exists():
-            _all_assets = _json_picks.loads(_picks_json.read_text())
+                _picks_path = _candidates[0]
+        if _os_picks.path.exists(_picks_path):
+            with open(_picks_path) as _f_picks:
+                _all_assets = _json_picks.load(_f_picks)
             _picks = [p for p in _all_assets
                       if str(p.get("position") or "").upper() == "PICK"]
             model_value_table.extend(_picks)
+            print(f"[api/league-players] Injected {len(_picks)} picks from {_picks_path}")
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
