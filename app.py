@@ -4041,7 +4041,6 @@ def build_standings_body(ctx: dict) -> str:
             <div class="tab-strip">
               <button class="tab-btn active" data-tab="standings">Standings</button>
               <button class="tab-btn" data-tab="details">Detailed Stats</button>
-              <button class="tab-btn" data-tab="shares">Value &amp; Production</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
                   {standings_html}
@@ -4052,9 +4051,6 @@ def build_standings_body(ctx: dict) -> str:
                     Default sort: Win% ↓ then PF ↓. Click headers to sort.
                   </div>
                 </div>
-                <div class="tab-panel" data-tab="shares">
-                  {share_html}
-                </div>
               </div>
             </div>
           </div>
@@ -4063,6 +4059,10 @@ def build_standings_body(ctx: dict) -> str:
       <div class="standings-col">
         {power_playoffs_html}
       </div>
+    </div>
+    <div class="card standings-shares-card">
+      <h3 class="standings-shares-title">Value &amp; Production Share</h3>
+      {share_html}
     </div>
     <aside class="overview-sidebar">
       {sidebar_html}

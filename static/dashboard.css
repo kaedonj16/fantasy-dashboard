@@ -7392,6 +7392,18 @@ thead th {
   flex: 0 0 280px;
 }
 
+.standings-shares-card {
+  margin-top: 20px;
+}
+.standings-shares-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
 .overview-sidebar, .overview-sidebar-left {
   display: flex;
   flex-direction: column;
