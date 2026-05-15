@@ -2452,21 +2452,23 @@ window.initTradePage = function initTradePage(root = document) {
 
       resultsMeta.style.display = "none";
       resultsList.innerHTML = `<div class="otc-sugg-loading">
-        ${[1,2,3].map(() => `<div class="otc-sugg-skeleton">
-          <div class="otc-sugg-skeleton-line" style="height:12px;width:40%;margin-bottom:12px;"></div>
-          <div style="display:grid;grid-template-columns:1fr 28px 1fr;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;">
-            <div style="padding:10px 12px;">
-              <div class="otc-sugg-skeleton-line" style="height:10px;width:50%;margin-bottom:8px;"></div>
-              <div class="otc-sugg-skeleton-line" style="height:14px;width:80%;margin-bottom:4px;"></div>
-              <div class="otc-sugg-skeleton-line" style="height:14px;width:65%;"></div>
+        ${[1,2,3,4,5].map((_, i) => `<div class="otc-sugg-skeleton" style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
+          <div style="flex-shrink:0;width:64px;">
+            <div class="otc-sugg-skeleton-line" style="height:18px;border-radius:5px;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+            <div class="otc-sugg-skeleton-line" style="height:10px;width:70%;animation-delay:${i*0.1+0.05}s;"></div>
+          </div>
+          <div style="flex:1;display:flex;align-items:center;gap:6px;">
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:45%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${70+i*5}%;animation-delay:${i*0.1+0.05}s;"></div>
             </div>
-            <div style="border-left:1px solid var(--border);border-right:1px solid var(--border);"></div>
-            <div style="padding:10px 12px;">
-              <div class="otc-sugg-skeleton-line" style="height:10px;width:50%;margin-bottom:8px;"></div>
-              <div class="otc-sugg-skeleton-line" style="height:14px;width:70%;"></div>
+            <div class="otc-sugg-skeleton-line" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;animation-delay:${i*0.1}s;"></div>
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:40%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${60+i*4}%;animation-delay:${i*0.1+0.05}s;"></div>
             </div>
           </div>
-          <div class="otc-sugg-skeleton-line" style="height:34px;border-radius:10px;"></div>
+          <div class="otc-sugg-skeleton-line" style="flex-shrink:0;width:64px;height:28px;border-radius:8px;animation-delay:${i*0.1}s;"></div>
         </div>`).join("")}
       </div>`;
 
@@ -2572,12 +2574,9 @@ window.initTradePage = function initTradePage(root = document) {
       const cardsHtml = slice.map((pkg) => {
         const vc = valueClass(pkg.value_label);
         return `<div class="otc-sugg-package">
-          <div class="otc-sugg-pkg-header">
-            <div class="otc-sugg-pkg-badges">
-              <span class="otc-sugg-pkg-size">${pkg.size_label}</span>
-              <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
-            </div>
-            <span class="otc-sugg-pkg-freq">traded ${pkg.frequency}×</span>
+          <div class="otc-sugg-pkg-meta">
+            <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
+            <span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>
           </div>
           <div class="otc-sugg-pkg-sides">
             <div class="otc-sugg-pkg-side">
@@ -2598,7 +2597,7 @@ window.initTradePage = function initTradePage(root = document) {
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}">
-            Load &amp; Analyze →
+            Analyze →
           </button>
         </div>`;
       }).join("");
@@ -2716,12 +2715,11 @@ window.initTradePage = function initTradePage(root = document) {
           const col      = posColor2[pos] || "var(--accent)";
           const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
           const safePid  = (t.player_id || "");
-          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;background:${col}20;color:${col};flex-shrink:0;">${pos}</span>
-            <span style="font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.name || ""}</span>
-            <button class="sugg-target-get-btn"
-              data-pid="${safePid}" data-name="${safeName}"
-              style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);cursor:pointer;white-space:nowrap;margin:0;">
+          return `<div class="otc-sugg-target-row">
+            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-name">${t.name || ""}</span>
+            <button class="sugg-target-get-btn otc-sugg-target-btn"
+              data-pid="${safePid}" data-name="${safeName}">
               Find packages →
             </button>
           </div>`;
