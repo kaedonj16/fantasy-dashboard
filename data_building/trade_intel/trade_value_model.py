@@ -128,11 +128,13 @@ def _col_names(league_type: int, league_size: int) -> tuple[str, str]:
 
 
 def _teams_filter(league_size: int) -> str:
-    """SQL fragment to filter trade_intel_leagues by num_teams. Empty = no filter (10-team)."""
+    """SQL fragment to filter trade_intel_leagues by num_teams."""
     if league_size == 8:
         return "AND l.num_teams BETWEEN 6 AND 9"
+    if league_size == 10:
+        return "AND l.num_teams BETWEEN 9 AND 11"
     if league_size == 12:
-        return "AND l.num_teams BETWEEN 10 AND 13"
+        return "AND l.num_teams BETWEEN 11 AND 13"
     if league_size == 14:
         return "AND l.num_teams >= 14"
     return ""

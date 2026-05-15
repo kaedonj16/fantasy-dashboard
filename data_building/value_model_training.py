@@ -1444,16 +1444,22 @@ def rewrite_value_table_with_model() -> Path:
 
     pick_values = load_pick_value_table() or {}
 
-    # Track which (year, round) pairs already have bucket entries so we can
-    # skip the redundant plain YYYY_R generic key for those pairs.
+    # Track which (year, round) pairs have slot entries (YYYY_R_NN where NN is numeric).
+    # For those pairs, skip bucket picks — slots are more precise.
+    # Also track bucket pairs to skip redundant plain YYYY_R generic keys.
+    slot_pairs: set[tuple[int, int]] = set()
     bucket_pairs: set[tuple[int, int]] = set()
     for key in pick_values:
         parts = key.split("_")
-        if len(parts) == 3 and not parts[2].isdigit():
+        if len(parts) == 3:
             try:
-                bucket_pairs.add((int(parts[0]), int(parts[1])))
+                yr, rnd = int(parts[0]), int(parts[1])
             except ValueError:
-                pass
+                continue
+            if parts[2].isdigit():
+                slot_pairs.add((yr, rnd))
+            else:
+                bucket_pairs.add((yr, rnd))
 
     for key, val in pick_values.items():
         parts = key.split("_")
@@ -1471,12 +1477,15 @@ def rewrite_value_table_with_model() -> Path:
             name = f"{year} {rnd}.{pick_in_round:02d}"
 
         # Bucketed format: YYYY_R_bucket  ->  2027 1st (Early)
+        # Skip if slot picks already exist for this year/round (slots are more precise)
         elif len(parts) == 3:
             try:
                 year, rnd = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
             if rnd > 5:
+                continue
+            if (year, rnd) in slot_pairs:
                 continue
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix} ({parts[2].capitalize()})"
