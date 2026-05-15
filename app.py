@@ -12329,56 +12329,24 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Strip any PICK entries that came from the DB (stale) and replace with fresh
-    # values from load_pick_value_table() so picks always reflect the latest WLS model.
+    # Strip any PICK entries that came from the DB (stale) and replace with picks
+    # from model_values.json, which is built nightly from WLS trade data and already
+    # has correct slot picks (2026 1.01) and bucket picks (2027 1st (Mid)).
     model_value_table = [p for p in model_value_table
                          if str(p.get("position") or "").upper() != "PICK"]
     try:
-        from utils.utils import normalize_name as _nn_lp
-        _pick_vals = load_pick_value_table() or {}
-        _ORD = {1: "st", 2: "nd", 3: "rd"}
-        for _pk, _pv in _pick_vals.items():
-            if not _pv or _pv <= 0:
-                continue
-            _parts = _pk.split("_")
-            if len(_parts) == 3:
-                try:
-                    _yr, _rnd = int(_parts[0]), int(_parts[1])
-                except ValueError:
-                    continue
-                if _rnd > 5:
-                    continue
-                _sfx = _ORD.get(_rnd, "th")
-                _bucket_map = {"early": "Early", "mid": "Mid", "late": "Late"}
-                _blabel = _bucket_map.get(_parts[2].lower())
-                if _blabel:
-                    _pname = f"{_yr} {_rnd}{_sfx} ({_blabel})"
-                else:
-                    try:
-                        _pname = f"{_yr} {_rnd}.{_parts[2].zfill(2)}"
-                    except Exception:
-                        continue
-            elif len(_parts) == 2:
-                # Generic YYYY_R keys are redundant when slots or buckets exist — skip
-                continue
-            else:
-                continue
-            model_value_table.append({
-                "id": _pk,
-                "name": _pname,
-                "team": "Pick",
-                "position": "PICK",
-                "age": None,
-                "value": round(float(_pv), 2),
-                "sf_value": round(float(_pv), 2),
-                "search_name": _nn_lp(_pname),
-                "pos_rank": None,
-                "pos_rank_label": None,
-                "sf_pos_rank": None,
-                "sf_pos_rank_label": None,
-                "rank_change_7d": None,
-                "pos_rank_change_7d": None,
-            })
+        import json as _json_picks
+        from utils.paths import DATA_DIR as _DATA_DIR_picks
+        _picks_json = _DATA_DIR_picks / "model_values.json"
+        if not _picks_json.exists():
+            _candidates = sorted(_DATA_DIR_picks.glob("model_values_*.json"), reverse=True)
+            if _candidates:
+                _picks_json = _candidates[0]
+        if _picks_json.exists():
+            _all_assets = _json_picks.loads(_picks_json.read_text())
+            _picks = [p for p in _all_assets
+                      if str(p.get("position") or "").upper() == "PICK"]
+            model_value_table.extend(_picks)
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 

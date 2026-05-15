@@ -489,37 +489,6 @@ def load_pick_value_table(
                             near_key = str(yr_near) + "_" + "_".join(parts[1:])
                             if near_key in wls_final:
                                 wls_final[key] = min(wls_final[key], wls_final[near_key])
-
-                    # Remove high-round keys (keeper league junk)
-                    wls_final = {k: v for k, v in wls_final.items()
-                                 if not (len(k.split("_")) >= 2
-                                         and k.split("_")[1].isdigit()
-                                         and int(k.split("_")[1]) > 5)}
-
-                    # Carry forward slot picks (YYYY_R_NN) from FC/DP since WLS
-                    # models only buckets, not individual slots.
-                    for _k, _v in final.items():
-                        if _k not in wls_final:
-                            _fp = _k.split("_")
-                            if len(_fp) == 3 and _fp[2].isdigit():
-                                wls_final[_k] = _v
-
-                    # Remove generic YYYY_R keys when bucket entries exist so the
-                    # same round doesn't appear twice in the display.
-                    _bucket_pairs: set = set()
-                    for _k in wls_final:
-                        _p = _k.split("_")
-                        if len(_p) == 3 and not _p[2].isdigit():
-                            try:
-                                _bucket_pairs.add((int(_p[0]), int(_p[1])))
-                            except ValueError:
-                                pass
-                    wls_final = {k: v for k, v in wls_final.items()
-                                 if not (len(k.split("_")) == 2
-                                         and k.split("_")[0].isdigit()
-                                         and k.split("_")[1].isdigit()
-                                         and (int(k.split("_")[0]), int(k.split("_")[1])) in _bucket_pairs)}
-
                     return wls_final
             except Exception:
                 pass
