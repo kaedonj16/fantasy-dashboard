@@ -2463,15 +2463,17 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
-      const leagueId  = root.querySelector("#leagueIdInput")?.value  || "";
-      const season    = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
-      const platform  = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
-      const leagueType = getLeagueType();
+      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
+      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const viewerRosterId = root.querySelector("#teamSelect")?.value      || "";
+      const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+      const leagueType     = getLeagueType();
 
       try {
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
-          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}&platform=${encodeURIComponent(platform)}`
+          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`
         );
 
         if (res.status === 403) {
@@ -2492,8 +2494,10 @@ window.initTradePage = function initTradePage(root = document) {
           return;
         }
 
-        resultsMeta.textContent =
-          `${data.total_packages} packages · ${data.total_trades} real trades · sorted by frequency`;
+        const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
+        resultsMeta.textContent = roosterFiltered
+          ? `${data.packages.length} packages from your roster · sorted by likelihood`
+          : `${data.packages.length} packages · sorted by likelihood`;
         resultsMeta.style.display = "block";
 
         renderPackages(data.packages, data.player_name, playerId, data.focus_value);
@@ -2504,8 +2508,26 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
-    // ── Render package cards ─────────────────────────────────────
+    // ── Render package cards (paginated, 5 per page) ────────────
+    const PAGE_SIZE = 5;
+    let _pkgPage = 0;
+    let _pkgAll  = [];
+    let _pkgPlayerId   = null;
+    let _pkgPlayerName = null;
+
     function renderPackages(packages, playerName, playerId, focusValue) {
+      _pkgAll        = packages;
+      _pkgPage       = 0;
+      _pkgPlayerId   = playerId;
+      _pkgPlayerName = playerName;
+      renderPackagePage();
+    }
+
+    function renderPackagePage() {
+      const packages   = _pkgAll;
+      const playerId   = _pkgPlayerId;
+      const playerName = _pkgPlayerName;
+
       function valueClass(label) {
         if (label === "Great deal") return "great";
         if (label === "Fair value") return "fair";
@@ -2527,7 +2549,11 @@ window.initTradePage = function initTradePage(root = document) {
       const focusPos    = focusPlayer?.position || "WR";
       const focusCol    = posColor(focusPos);
 
-      resultsList.innerHTML = packages.map((pkg) => {
+      const totalPages = Math.ceil(packages.length / PAGE_SIZE);
+      const page       = _pkgPage;
+      const slice      = packages.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+      const cardsHtml = slice.map((pkg) => {
         const vc = valueClass(pkg.value_label);
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-header">
@@ -2558,6 +2584,25 @@ window.initTradePage = function initTradePage(root = document) {
           </button>
         </div>`;
       }).join("");
+
+      const paginationHtml = totalPages > 1 ? `
+        <div class="otc-sugg-pagination">
+          <button class="otc-sugg-page-btn" data-dir="-1" ${page === 0 ? "disabled" : ""}>← Prev</button>
+          <span class="otc-sugg-page-label">${page + 1} / ${totalPages}</span>
+          <button class="otc-sugg-page-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next →</button>
+        </div>` : "";
+
+      resultsList.innerHTML = cardsHtml + paginationHtml;
+
+      resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const newPage = _pkgPage + parseInt(btn.dataset.dir);
+          if (newPage < 0 || newPage >= totalPages) return;
+          _pkgPage = newPage;
+          renderPackagePage();
+          resultsList.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      });
 
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
         btn.addEventListener("click", () => {

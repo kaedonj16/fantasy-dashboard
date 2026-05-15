@@ -3932,6 +3932,45 @@ thead th {
 }
 
 /* Paywall/empty state for suggestions tab */
+.otc-sugg-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.otc-sugg-page-btn {
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--row);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s;
+  margin: 0;
+}
+
+.otc-sugg-page-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.otc-sugg-page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.otc-sugg-page-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+
 .otc-sugg-empty {
   text-align: center;
   padding: 32px 16px;

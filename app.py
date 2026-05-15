@@ -15848,16 +15848,16 @@ def api_trade_intel_similar_trades():
 @app.route("/api/trade-intel/player-packages/<player_id>")
 def api_player_packages(player_id: str):
     """
-    Grouped trade packages for a single player, sorted by frequency.
-    Each package = the assets that appeared on the opposite side when
-    this player was traded in real dynasty leagues.
+    Grouped trade packages for a single player filtered to the viewer's roster,
+    sorted by likelihood of being accepted (value fairness × frequency).
     """
     try:
-        season      = int(request.args.get("season") or datetime.now().year)
-        league_type = (request.args.get("league_type") or "all").strip().lower()
-        league_id   = (request.args.get("league_id") or "").strip()
-        platform    = (request.args.get("platform") or "sleeper").strip()
-        limit       = min(int(request.args.get("limit") or 25), 50)
+        season           = int(request.args.get("season") or datetime.now().year)
+        league_type      = (request.args.get("league_type") or "all").strip().lower()
+        league_id        = (request.args.get("league_id") or "").strip()
+        platform         = (request.args.get("platform") or "sleeper").strip()
+        viewer_roster_id = (request.args.get("viewer_roster_id") or "").strip()
+        limit            = min(int(request.args.get("limit") or 100), 200)
 
         user_id = session.get("viewer_username")
         if not has_premium_access(user_id, league_id or None, platform):
@@ -15873,6 +15873,21 @@ def api_player_packages(player_id: str):
         players_map = load_players_index() or {}
         player_info = players_map.get(str(player_id)) or {}
         player_name = player_info.get("name") or str(player_id)
+
+        # Load viewer's roster player IDs for filtering
+        roster_player_ids: set = set()
+        if league_id and viewer_roster_id:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season)
+                rosters = ctx.get("rosters") or []
+                viewer_roster = next(
+                    (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+                    None,
+                )
+                if viewer_roster:
+                    roster_player_ids = {str(p) for p in (viewer_roster.get("players") or [])}
+            except Exception:
+                pass
 
         with get_conn() as conn:
             val_rows = conn.execute(
@@ -15984,10 +15999,25 @@ def api_player_packages(player_id: str):
             ))
             package_groups[canonical].append(other_side)
 
+        def acceptance_weight(ratio: float) -> float:
+            """Higher = more likely the target owner accepts."""
+            if ratio < 0.80:   return 0.15   # lowball, partner passes
+            if ratio < 0.92:   return 0.55   # under market
+            if ratio <= 1.12:  return 1.00   # fair sweet spot
+            if ratio <= 1.28:  return 0.70   # you're overpaying, still fine
+            return 0.35                       # way too much
+
         results = []
         for canonical, occurrences in package_groups.items():
             assets   = occurrences[0]
             freq     = len(occurrences)
+
+            # Filter: every player asset must be on the viewer's roster (if known)
+            if roster_player_ids:
+                if any(a["type"] == "player" and a["player_id"] not in roster_player_ids
+                       for a in assets):
+                    continue
+
             recv_val = sum(
                 a["value"] if a["type"] == "player" and a["value"] > 0
                 else pick_approx_value(a)
@@ -15999,16 +16029,20 @@ def api_player_packages(player_id: str):
                                "Slight overpay" if ratio >= 1.08 else
                                "Fair value"     if ratio >= 0.92 else
                                "Great deal")
+                score = freq * acceptance_weight(ratio)
             else:
-                value_label = "Unknown"
+                ratio, value_label, score = 1.0, "Unknown", float(freq)
 
             n          = len(assets)
             size_label = "1-for-1" if n == 1 else f"{n}-for-1"
             results.append({"assets": assets, "frequency": freq,
                              "value_label": value_label, "size_label": size_label,
-                             "receive_value": round(recv_val)})
+                             "receive_value": round(recv_val), "_score": score})
 
-        results.sort(key=lambda x: -x["frequency"])
+        results.sort(key=lambda x: -x["_score"])
+        for r in results:
+            del r["_score"]
+
         return jsonify({"packages": results[:limit], "total_trades": total_trades,
                         "total_packages": len(results), "player_name": player_name,
                         "player_id": player_id, "focus_value": round(focus_value)})
