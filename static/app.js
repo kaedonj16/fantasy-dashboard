@@ -9383,15 +9383,19 @@ function setupFunAwardsGrid() {
         // Get viewer roster_id from hidden input injected by server, or getCurrentRosterId()
         const viewerRid = (typeof getCurrentRosterId === 'function' ? getCurrentRosterId() : null)
           || document.querySelector('#viewerRosterIdInput')?.value || '';
-        if (!viewerRid) throw new Error('no viewer roster_id');
-        const needsUrl = `/api/draft-needs?league_id=${leagueId}&platform=${platform}&season=${season}&roster_id=${encodeURIComponent(viewerRid)}`;
-        const nr = await fetch(needsUrl);
-        if (nr.ok) {
-          const nd = await nr.json();
-          if (!nd.error) {
-            daNeeds      = nd.needs || {};
-            daLeagueType = nd.league_type || daLeagueType;
-            daLeagueSize = nd.league_size || daLeagueSize;
+        if (!viewerRid) {
+          const np = document.getElementById('daNeedsPanel');
+          if (np) np.innerHTML = '<div class="da-needs-title">Roster Needs</div><div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Log in with your league to see personalized needs.</div>';
+        } else {
+          const needsUrl = `/api/draft-needs?league_id=${leagueId}&platform=${platform}&season=${season}&roster_id=${encodeURIComponent(viewerRid)}`;
+          const nr = await fetch(needsUrl);
+          if (nr.ok) {
+            const nd = await nr.json();
+            if (!nd.error) {
+              daNeeds      = nd.needs || {};
+              daLeagueType = nd.league_type || daLeagueType;
+              daLeagueSize = nd.league_size || daLeagueSize;
+            }
           }
         }
       } catch (_) {}

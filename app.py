@@ -3613,6 +3613,22 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     team_rows.sort(key=lambda x: x["total"], reverse=True)
 
+    # ── Compute value share and projected production share ─────────────────────
+    league_value_total = sum(r["total"] for r in team_rows) or 1.0
+    # Offseason projected scoring from playoff odds simulation
+    rid_to_proj: dict[str, float] = {}
+    try:
+        from data_building.simulate_playoff_odds import _estimate_from_rosters
+        est_teams = _estimate_from_rosters(ctx)
+        for t in est_teams:
+            rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
+    except Exception:
+        pass
+    proj_total = sum(rid_to_proj.values()) or 1.0
+    for r in team_rows:
+        r["value_pct"] = r["total"] / league_value_total * 100
+        r["prod_pct"]  = rid_to_proj.get(r["rid"], 0.0) / proj_total * 100
+
     # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
     raw_vals = [r["total"] for r in team_rows]
     raw_max  = max(raw_vals) if raw_vals else 1
@@ -3819,6 +3835,8 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"<td class='num'>{picks_label}</td>"
+            f"<td class='num'>{row['value_pct']:.1f}%</td>"
+            f"<td class='num'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 
@@ -3832,6 +3850,8 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 <th>Value</th>
                 <th>Players</th>
                 <th>Draft Capital</th>
+                <th>Val%</th>
+                <th>Proj%</th>
               </tr>
             </thead>
             <tbody>{table_rows_html}</tbody>
@@ -3840,18 +3860,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
     """
 
-    share_html = render_share_rankings(ctx)
-
     return f"""
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
           <div class="os-vr-header">Value Rankings</div>
           {table_html}
-          <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
-            <div class="os-vr-header" style="margin-bottom:12px;">Value &amp; Production Share</div>
-            {share_html}
-          </div>
         </div>
       </div>
       <div class="standings-col">
@@ -14613,6 +14627,7 @@ def api_team_trades(roster_id: str):
 def api_draft_needs():
     """
     Returns positional needs for a team relative to league averages.
+    Uses the same weighted positional strength + z-score approach as the Teams page.
     Need levels: -2 stacked, -1 depth, 0 neutral, 1 need, 2 major need.
     """
     try:
@@ -14620,7 +14635,11 @@ def api_draft_needs():
         league_id = request.args.get("league_id")
         platform  = request.args.get("platform", "sleeper")
         season    = int(request.args.get("season") or datetime.now().year)
-        roster_id = request.args.get("roster_id")
+        roster_id = request.args.get("roster_id") or ""
+
+        # Fall back to the session viewer when roster_id is absent or the sentinel
+        if not roster_id or roster_id == "viewer":
+            roster_id = session.get("viewer_roster_id") or ""
 
         if not league_id or not roster_id:
             return jsonify({"error": "league_id and roster_id required"}), 400
@@ -14638,45 +14657,62 @@ def api_draft_needs():
 
         CORE = ("QB", "RB", "WR", "TE")
 
-        # Build per-roster positional values
-        roster_pos_vals: dict[str, dict[str, float]] = {}
+        # Count roster slots for _weighted_pos_strength
+        slot_counts: dict[str, int] = {}
+        for rp in roster_positions:
+            rp_str = str(rp).upper()
+            slot_counts[rp_str] = slot_counts.get(rp_str, 0) + 1
+
+        # Build per-roster positional value lists (same as teams page)
+        roster_pos_vals: dict[str, dict[str, list]] = {}
         for r in rosters:
             rid = str(r.get("roster_id", ""))
-            pv: dict[str, float] = {p: 0.0 for p in CORE}
+            pv: dict[str, list] = {p: [] for p in CORE}
             for pid in (r.get("players") or []):
                 meta = players_index.get(str(pid)) or {}
                 pos  = str(meta.get("pos") or "").upper()
                 if pos not in CORE:
                     continue
                 vrow = values_by_id.get(str(pid)) or {}
-                pv[pos] += float(vrow.get(vfield) or vrow.get("value") or 0)
+                val  = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pv[pos].append(val)
             roster_pos_vals[rid] = pv
 
         if not roster_pos_vals:
             return jsonify({"needs": {}, "league_type": "sf" if is_sf else "1qb"})
 
-        # League averages per position
-        n = len(roster_pos_vals)
-        league_avg = {pos: sum(rv[pos] for rv in roster_pos_vals.values()) / n for pos in CORE}
+        # Compute weighted positional strength per roster (mirrors _weighted_pos_strength)
+        roster_strength: dict[str, dict[str, float]] = {}
+        for rid, pv in roster_pos_vals.items():
+            roster_strength[rid] = {
+                pos: _weighted_pos_strength(pv[pos], pos, slot_counts)
+                for pos in CORE
+            }
 
-        viewer = roster_pos_vals.get(str(roster_id), {p: 0.0 for p in CORE})
+        # League avg + std per position
+        import math
+        n = len(roster_strength)
+        league_avg = {pos: sum(rv[pos] for rv in roster_strength.values()) / n for pos in CORE}
+        league_std = {}
+        for pos in CORE:
+            variance = sum((rv[pos] - league_avg[pos]) ** 2 for rv in roster_strength.values()) / n
+            league_std[pos] = math.sqrt(variance) if variance > 0 else 1.0
+
+        viewer = roster_strength.get(str(roster_id), {p: 0.0 for p in CORE})
 
         needs: dict = {}
         for pos in CORE:
-            avg = league_avg[pos] or 1.0
-            ratio = viewer[pos] / avg  # 1.0 = exactly average
-            # Map ratio to need level
-            if   ratio >= 1.35: level = -2   # stacked (35%+ above avg)
-            elif ratio >= 1.10: level = -1   # depth   (10-35% above avg)
-            elif ratio >= 0.90: level =  0   # neutral (within ±10%)
-            elif ratio >= 0.65: level =  1   # need    (10-35% below avg)
-            else:               level =  2   # major need (35%+ below avg)
+            mu    = league_avg[pos]
+            sigma = league_std[pos]
+            z     = (viewer[pos] - mu) / sigma if sigma > 0 else 0.0
+            # Map z-score to need level (same thresholds as teams page z-score usage)
+            if   z >= 1.0:  level = -2   # stacked
+            elif z >= 0.35: level = -1   # depth
+            elif z >= -0.35:level =  0   # neutral
+            elif z >= -1.0: level =  1   # need
+            else:           level =  2   # major need
             needs[pos]              = level
-            needs[f"{pos}_count"]   = sum(
-                1 for r in rosters if str(r.get("roster_id")) == str(roster_id)
-                for pid in (r.get("players") or [])
-                if (players_index.get(str(pid)) or {}).get("pos", "").upper() == pos
-            )
+            needs[f"{pos}_count"]   = len(roster_pos_vals.get(str(roster_id), {}).get(pos, []))
             needs[f"{pos}_value"]   = round(viewer[pos], 1)
             needs[f"{pos}_avg"]     = round(league_avg[pos], 1)
 

@@ -200,25 +200,25 @@ def build_prospects_body() -> str:
   /* Page-level tabs (Rankings / Draft Board) */
   .rk-page-tabs {
     display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
+    gap: 0;
+    border-bottom: 2px solid var(--border);
     padding: 0;
-    margin-top: 12px;
+    margin: 16px -24px 0;
+    padding: 0 24px;
   }
   .rk-page-tab {
     background: none;
     border: none;
-    border-bottom: 2px solid transparent;
-    padding: 9px 16px;
-    font-size: 13px;
+    border-bottom: 3px solid transparent;
+    padding: 10px 18px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--text-muted);
     cursor: pointer;
-    letter-spacing: .02em;
+    letter-spacing: .04em;
     text-transform: uppercase;
-    font-size: 12px;
     transition: color .12s, border-color .12s;
-    margin-bottom: -1px;
+    margin-bottom: -2px;
   }
   .rk-page-tab:hover { color: var(--text); }
   .rk-page-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -226,20 +226,20 @@ def build_prospects_body() -> str:
   /* DA sub-tabs (Available / Drafted) */
   .da-sub-tabs {
     display: flex;
-    gap: 2px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 8px;
   }
   .da-sub-tab {
     background: none;
     border: none;
-    border-bottom: 2px solid transparent;
-    padding: 7px 14px;
+    border-bottom: 3px solid transparent;
+    padding: 8px 16px;
     font-size: 12px;
     font-weight: 600;
     color: var(--text-muted);
     cursor: pointer;
-    margin-bottom: -1px;
+    margin-bottom: -2px;
     transition: color .12s, border-color .12s;
   }
   .da-sub-tab:hover { color: var(--text); }
