@@ -12116,10 +12116,11 @@ img, svg, canvas {
   align-items: flex-start;
 }
 #tm-panel-charts .team-modal-section {
-  flex: 1;
   min-width: 0;
   margin-bottom: 0;
 }
+.tm-chart-weekly { flex: 0 0 58%; }
+.tm-chart-radar  { flex: 0 0 calc(42% - 24px); }
 
 .team-modal-loading,
 .team-modal-error {
@@ -12301,83 +12302,6 @@ img, svg, canvas {
 
 #teamRadarChart {
   height: 280px;
-}
-
-/* Team modal trades tab */
-.tm-trade-card {
-  background: var(--card-soft);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-}
-
-.tm-trade-card:last-child { margin-bottom: 0; }
-
-.tm-trade-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.tm-trade-week {
-  font-weight: 600;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.tm-trade-body {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 8px;
-  align-items: start;
-}
-
-.tm-trade-side { display: flex; flex-direction: column; gap: 4px; }
-.tm-trade-side-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-.tm-trade-side-label.got { color: #10b981; }
-.tm-trade-side-label.sent { color: #ef4444; }
-
-.tm-trade-divider {
-  align-self: center;
-  color: var(--text-muted);
-  font-size: 18px;
-  padding: 0 4px;
-}
-
-.tm-trade-asset {
-  font-size: 13px;
-  color: var(--text);
-  padding: 2px 0;
-}
-
-.tm-trade-asset .asset-pos {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-left: 4px;
-}
-
-.tm-trade-pick {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.tm-trade-empty-state {
-  text-align: center;
-  padding: 48px 20px;
-  color: var(--text-muted);
-  font-size: 14px;
 }
 
 /* Clickable team cards / names */

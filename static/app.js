@@ -7690,45 +7690,42 @@ async function tmLoadTrades(rosterId) {
 
     const trades = data.trades || [];
     if (!trades.length) {
-      panel.innerHTML = '<div class="tm-trade-empty-state">No trades found for this team this season.</div>';
+      panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No trades found for this team this season.</div></div>';
       return;
     }
 
+    const renderAssets = (players, picks) => {
+      const parts = [
+        ...players.map(p => `<div class="pm-trade-asset player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}${p.position ? `<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${p.position}</span>` : ''}</div>`),
+        ...picks.map(p => `<div class="pm-trade-asset pm-pick">${p.season} Rd ${p.round}</div>`),
+      ];
+      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">—</div>';
+    };
+
     const cards = trades.map(tr => {
-      const gotAssets = [
-        ...tr.my_gets.map(p => `<div class="tm-trade-asset"><strong class="player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}</strong><span class="asset-pos">${p.position}</span></div>`),
-        ...tr.my_pick_gets.map(p => `<div class="tm-trade-pick">${p.season} Rd ${p.round}</div>`),
-      ].join('') || '<div class="tm-trade-asset" style="color:var(--text-muted)">—</div>';
+      const weekLabel = tr.week ? `Week ${tr.week}` : '';
+      const dateLabel = tr.date || '';
+      const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
 
-      const sentAssets = [
-        ...tr.my_sends.map(p => `<div class="tm-trade-asset"><strong class="player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}</strong><span class="asset-pos">${p.position}</span></div>`),
-        ...tr.my_pick_sends.map(p => `<div class="tm-trade-pick">${p.season} Rd ${p.round}</div>`),
-      ].join('') || '<div class="tm-trade-asset" style="color:var(--text-muted)">—</div>';
-
-      const dateStr = tr.date ? `· ${tr.date}` : '';
-      const weekStr = tr.week ? `Week ${tr.week}` : '';
-
-      return `
-        <div class="tm-trade-card">
-          <div class="tm-trade-header">
-            <span class="tm-trade-week">${weekStr}</span>
-            <span>${dateStr}</span>
+      return `<div class="pm-trade-card">
+        <div class="pm-trade-head">
+          <span class="pm-trade-date">${headRight}</span>
+        </div>
+        <div class="pm-trade-body">
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#10b981;margin-bottom:4px;">Received</div>
+            ${renderAssets(tr.my_gets, tr.my_pick_gets)}
           </div>
-          <div class="tm-trade-body">
-            <div class="tm-trade-side">
-              <div class="tm-trade-side-label got">Received</div>
-              ${gotAssets}
-            </div>
-            <div class="tm-trade-divider">⇄</div>
-            <div class="tm-trade-side">
-              <div class="tm-trade-side-label sent">Sent</div>
-              ${sentAssets}
-            </div>
+          <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#ef4444;margin-bottom:4px;">Sent</div>
+            ${renderAssets(tr.my_sends, tr.my_pick_sends)}
           </div>
-        </div>`;
+        </div>
+      </div>`;
     }).join('');
 
-    panel.innerHTML = cards;
+    panel.innerHTML = `<div style="padding:4px 0;">${cards}</div>`;
   } catch (err) {
     panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
   }
@@ -8259,10 +8256,10 @@ function renderTeamDetails(data) {
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-modal-section"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
     }
     if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-modal-section"><h3>Position Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
   }
 
