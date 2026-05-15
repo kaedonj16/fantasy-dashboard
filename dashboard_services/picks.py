@@ -472,20 +472,25 @@ def load_pick_value_table(
                         wls_raw[key] = float(val)
 
                 if wls_raw:
-                    # Enforce year-over-year monotonicity: a pick 2 years away
-                    # should never exceed the same bucket 1 year away.  Sparse
-                    # data years (e.g. 2029) can end up above their prior after
-                    # WLS normalization; this caps them without changing values
-                    # that are already in the correct order.
+                    # Drop rounds > 5 (keeper league junk from trade data)
+                    wls_final = {k: v for k, v in wls_raw.items()
+                                 if not (len(k.split("_")) >= 2
+                                         and k.split("_")[1].isdigit()
+                                         and int(k.split("_")[1]) > 5)}
+
+                    # Enforce year-over-year monotonicity on bucket picks:
+                    # a far-year bucket should never exceed the same near-year bucket.
+                    # Slot picks (third part is numeric) are current-year only, skip them.
                     years = sorted({int(k.split("_")[0])
-                                    for k in wls_raw if k.split("_")[0].isdigit()})
-                    wls_final = dict(wls_raw)
+                                    for k in wls_final if k.split("_")[0].isdigit()})
                     for i in range(1, len(years)):
                         yr_far, yr_near = years[i], years[i - 1]
                         for key in list(wls_final):
                             parts = key.split("_")
-                            if not parts[0].isdigit() or int(parts[0]) != yr_far:
-                                continue
+                            if (not parts[0].isdigit()
+                                    or int(parts[0]) != yr_far
+                                    or (len(parts) == 3 and parts[2].isdigit())):
+                                continue  # skip slot picks
                             near_key = str(yr_near) + "_" + "_".join(parts[1:])
                             if near_key in wls_final:
                                 wls_final[key] = min(wls_final[key], wls_final[near_key])
