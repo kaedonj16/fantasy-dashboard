@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from typing import Optional, Iterable
 
@@ -12,6 +13,27 @@ _SNAPSHOT_TTL = 300  # 5 minutes
 # Per-player history cache: (player_id, days, source, league_type, league_size) -> (result, cached_at_ts)
 _player_history_cache: dict = {}
 _PLAYER_HISTORY_TTL = 600  # 10 minutes - history only updates daily
+
+_PICK_ID_RE = re.compile(r'^(\d{4})_(\d+)(?:_(.+))?$')
+
+def _format_pick_id(pid: str) -> str | None:
+    """Return a human-readable label for a pick ID, or None if not a pick."""
+    m = _PICK_ID_RE.match(pid)
+    if not m:
+        return None
+    year, rd_str, third = m.group(1), m.group(2), m.group(3)
+    rd = int(rd_str)
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rd, "th")
+    if not third:
+        return f"{year} {rd}{suffix}"
+    bucket = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+    if bucket:
+        return f"{year} {rd}{suffix} ({bucket})"
+    try:
+        slot = int(third)
+        return f"{year} {rd}.{slot:02d}"
+    except ValueError:
+        return f"{year} {rd}{suffix} {third.title()}"
 
 
 def init_value_history_db() -> None:
@@ -568,7 +590,13 @@ def get_top_movers(
         if resolved:
             row_dict["name"] = resolved
         elif not row_dict.get("name") or row_dict["name"] == "Unknown":
-            row_dict["name"] = f"Player {player_id}"
+            pick_label = _format_pick_id(player_id)
+            row_dict["name"] = pick_label if pick_label else f"Player {player_id}"
+        else:
+            # Name came from DB but might be a raw pick ID (e.g. "2027_1")
+            pick_label = _format_pick_id(str(row_dict["name"]))
+            if pick_label:
+                row_dict["name"] = pick_label
 
         # Filter out brand-new players (e.g. just-drafted rookies who went from
         # ~0 to a real value).  Require old_value >= new_value * min_baseline_ratio
