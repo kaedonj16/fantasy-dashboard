@@ -2597,7 +2597,7 @@ window.initTradePage = function initTradePage(root = document) {
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}">
-            Analyze →
+            Analyze
           </button>
         </div>`;
       }).join("");
@@ -2728,7 +2728,7 @@ window.initTradePage = function initTradePage(root = document) {
             <span class="otc-sugg-target-name">${t.name || ""}</span>
             <button class="sugg-target-get-btn otc-sugg-target-btn"
               data-pid="${safePid}" data-name="${safeName}">
-              Find packages →
+              Find packages
             </button>
           </div>`;
         }
