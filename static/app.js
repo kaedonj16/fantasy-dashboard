@@ -9210,7 +9210,8 @@ function setupFunAwardsGrid() {
   let daDrafted   = new Set();
   let daFilter    = 'ALL';
   let daSubView   = 'available'; // 'available' | 'drafted'
-  let daNeeds     = {};
+  let daNeeds      = {};
+  let daLocalNeeds = {}; // position -> level delta from drafted picks
   let daLeagueType = '1qb';
   let daLeagueSize = 10;
   let daYear       = new Date().getFullYear();
@@ -9221,8 +9222,40 @@ function setupFunAwardsGrid() {
   const NEED_COLOR = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
   const NEED_BONUS = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
 
+  function effectiveNeed(pos) {
+    const raw   = daNeeds[pos] ?? 0;
+    const delta = daLocalNeeds[pos] || 0;
+    let need    = Math.max(-2, Math.min(2, raw + delta));
+    // In 1QB leagues cap QB need at Neutral once total (existing + drafted) reaches 2
+    if (pos === 'QB' && daLeagueType !== 'sf') {
+      const drafted = -(daLocalNeeds.QB || 0);
+      const total   = (daNeeds.QB_count || 0) + drafted;
+      if (total >= 2) need = Math.min(0, need);
+    }
+    return need;
+  }
+
   function needBonus(pos) {
-    return NEED_BONUS[String(daNeeds[pos] ?? 0)] ?? 1.0;
+    return NEED_BONUS[String(effectiveNeed(pos))] ?? 1.0;
+  }
+
+  function adjustNeedsForDraft(playerId, delta) {
+    const p = daProspects.find(x => String(x.player_id) === String(playerId));
+    if (!p || !p.position) return;
+    const pos = p.position.toUpperCase();
+    daLocalNeeds[pos] = (daLocalNeeds[pos] || 0) + delta;
+    renderNeeds();
+  }
+
+  function recalcLocalNeeds() {
+    daLocalNeeds = {};
+    daDrafted.forEach(id => {
+      const p = daProspects.find(x => String(x.player_id) === String(id));
+      if (p && p.position) {
+        const pos = p.position.toUpperCase();
+        daLocalNeeds[pos] = (daLocalNeeds[pos] || 0) - 1;
+      }
+    });
   }
 
   function daScore(p) {
@@ -9257,9 +9290,10 @@ function setupFunAwardsGrid() {
       return;
     }
     const rows = ['QB','RB','WR','TE'].map(pos => {
-      const need  = daNeeds[pos] ?? 0;
+      const need  = effectiveNeed(pos);
       const col   = POS_COLORS[pos] || '#9ca3af';
-      const count = daNeeds[`${pos}_count`] ?? 0;
+      const drafted = -(daLocalNeeds[pos] || 0);
+      const count = (daNeeds[`${pos}_count`] ?? 0) + drafted;
       const val   = Math.round(daNeeds[`${pos}_value`] || 0);
       const avg   = Math.round(daNeeds[`${pos}_avg`]   || 0);
       return `<div class="da-need-row">
@@ -9363,8 +9397,8 @@ function setupFunAwardsGrid() {
   }
 
   window._da = {
-    draft(id)      { daDrafted.add(String(id));    saveSession(); render(); },
-    undraft(id)    { daDrafted.delete(String(id)); saveSession(); render(); },
+    draft(id)      { daDrafted.add(String(id));    adjustNeedsForDraft(id, -1); saveSession(); render(); },
+    undraft(id)    { daDrafted.delete(String(id)); adjustNeedsForDraft(id, +1); saveSession(); render(); },
     toggleNeeds()  { daToggleNeeds(); },
   };
 
@@ -9454,6 +9488,8 @@ function setupFunAwardsGrid() {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       daProspects = data.rankings || [];
+      recalcLocalNeeds();
+      renderNeeds();
       render();
     } catch (e) {
       if (listEl) listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Could not load prospects: ${e.message}</div>`;
