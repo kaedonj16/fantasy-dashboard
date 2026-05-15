@@ -9399,6 +9399,12 @@ function setupFunAwardsGrid() {
     const leagueId = parts[2];
     daYear         = parseInt(season);
 
+    // Fetch the active draft class year (may differ from NFL season in URL)
+    try {
+      const acr = await fetch('/api/prospects/active-class');
+      if (acr.ok) { const acd = await acr.json(); if (acd.year) daYear = acd.year; }
+    } catch (_) {}
+
     // Fetch league-calibrated prospect rankings settings if in a league
     if (leagueId && !['players','breakouts','prospects','trade-database','trade-intel'].includes(platform)) {
       try {
