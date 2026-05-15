@@ -18,7 +18,6 @@ def fetch_league_adp_from_db(
     sample_size, position} or empty dict when data is sparse.
     """
     try:
-        from dashboard_services.db import get_conn
         from utils.paths import DATA_DIR
         import json as _json
 
@@ -37,6 +36,7 @@ def fetch_league_adp_from_db(
             except Exception:
                 pass
 
+        from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
                 """
