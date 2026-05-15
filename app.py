@@ -471,6 +471,7 @@ FORM_BODY = """
   </section>
 
   <div class="home-content-wrapper">
+    <section class="home-feature-list-card">
     <section class="home-feature-list">
       <div class="home-feature-row">
         <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
@@ -508,6 +509,7 @@ FORM_BODY = """
         <div class="home-feature-row-icon"><i class="fa-solid fa-trophy" style="font-size:18px;color:#eab308;" aria-hidden="true"></i></div>
         <div class="home-feature-row-body"><span class="home-feature-row-title">Historical Insights</span><span class="home-feature-row-desc">AI season recaps, rivalry records, draft grades, and full championship history</span></div>
       </div>
+    </section>
     </section>
 
     <aside class="home-updates-sidebar">

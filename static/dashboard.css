@@ -6589,12 +6589,20 @@ thead th {
   gap: 20px;
 }
 
+.home-feature-list-card {
+  flex: 1;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
 .home-feature-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
-  flex: 1;
-  min-width: 0;
 }
 
 .home-feature-row {
@@ -6751,24 +6759,21 @@ thead th {
 .home-content-wrapper {
   display: flex;
   gap: 32px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
-.home-feature-grid,
-.home-feature-list {
+.home-feature-grid {
   flex: 1;
   min-width: 0;
 }
 
 /* Updates sidebar */
 .home-updates-sidebar {
-  flex: 0 0 320px;
+  flex: 0 0 300px;
   background: var(--card-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  align-self: flex-start;
-  max-height: 829px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
