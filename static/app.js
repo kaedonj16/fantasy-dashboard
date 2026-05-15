@@ -9206,10 +9206,11 @@ function setupFunAwardsGrid() {
 
 // ── Rookie Draft Assistant ────────────────────────────────────────────────────
 (function () {
-  let daProspects = [];
-  let daDrafted   = new Set();
-  let myPicks     = new Set(); // player IDs the user marked as their own pick
-  let myPickOrder = [];        // ordered list for grading (pick 1, 2, 3...)
+  let daProspects    = [];
+  let daDrafted      = new Set();
+  let myPicks        = new Set(); // player IDs the user marked as their own pick
+  let myPickOrder    = [];        // ordered list for grading (pick 1, 2, 3...)
+  let myPickNumbers  = {};        // playerId -> actual draft pick number (user-entered)
   let daFilter    = 'ALL';
   let daSubView   = 'available'; // 'available' | 'drafted'
   let daNeeds      = {};
@@ -9326,10 +9327,21 @@ function setupFunAwardsGrid() {
         const dAdp  = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
         const dTeam = p.actual_nfl_team || p.school || '';
         const dMeta = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
-        const minePickNum = isMine ? myPickOrder.indexOf(sid) + 1 : 0;
+        const storedPickNum = myPickNumbers[sid] || '';
+        const mineSeq = isMine ? myPickOrder.indexOf(sid) + 1 : 0;
+        const infoHtml = isMine
+          ? `<span class="da-name">${p.name || '—'}</span>
+             <span class="da-meta" style="display:flex;align-items:center;gap:4px;">
+               Pick&nbsp;#<input type="number" min="1" value="${storedPickNum}"
+                 placeholder="—"
+                 style="width:46px;padding:1px 4px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);"
+                 onchange="window._da.setPickNum('${p.player_id}',this.value)"
+                 onclick="event.stopPropagation()">
+             </span>`
+          : `<span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span>`;
         return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
-          <div class="da-rank">${isMine ? `<span style="color:var(--accent);font-weight:800;">${minePickNum}</span>` : `<span style="color:var(--text-muted);">${i + 1}</span>`}</div>
-          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
+          <div class="da-rank">${isMine ? `<span style="color:var(--accent);font-weight:800;">${mineSeq}</span>` : `<span style="color:var(--text-muted);">${i + 1}</span>`}</div>
+          <div class="da-info">${infoHtml}</div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
           <button class="da-mine-btn${isMine ? ' active' : ''}" onclick="window._da.toggleMine('${p.player_id}')">${isMine ? 'Mine' : 'Mine?'}</button>
           <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
@@ -9394,67 +9406,86 @@ function setupFunAwardsGrid() {
     try {
       sessionStorage.setItem(key, JSON.stringify([...daDrafted]));
       sessionStorage.setItem(key + '_mine', JSON.stringify(myPickOrder));
+      sessionStorage.setItem(key + '_nums', JSON.stringify(myPickNumbers));
     } catch (_) {}
   }
 
+  // Exact port of pick_grade() and team_grade() from app.py
+  function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams) {
+    if (adpDiff === null) return 'N/A';
+    const bigReach = -(numTeams * 1.1);
+    let score;
+    if      (adpDiff >= 4)          score = 4;
+    else if (adpDiff >= 2)          score = 3;
+    else if (adpDiff >= -3)         score = 2;
+    else if (adpDiff >= bigReach)   score = 1;
+    else                            score = 0;
+
+    if (need) {
+      score += 1;
+    } else {
+      if (pos === 'QB' && !isSF && qbCount >= 2) score = Math.max(score - 2, 0);
+      else if (pos === 'QB' && !isSF && qbCount >= 1) score = Math.max(score - 1, 0);
+    }
+    if (adpDiff >= -3)            score = Math.max(score, 1);
+    if (need && adpDiff >= -4)    score = Math.max(score, 2);
+    return ({5:'A+',4:'A',3:'B',2:'C',1:'D',0:'F'})[Math.min(score, 5)] || 'F';
+  }
+
+  function _teamGrade(grades) {
+    if (!grades.length) return 'N/A';
+    const v = {'A+':5,'A':4,'B':3,'C':2,'D':1,'F':0,'N/A':2};
+    const avg = grades.reduce((s, g) => s + (v[g] ?? 2), 0) / grades.length;
+    if (avg >= 4.5) return 'A+';
+    if (avg >= 3.5) return 'A';
+    if (avg >= 2.5) return 'B';
+    if (avg >= 1.5) return 'C';
+    if (avg >= 0.5) return 'D';
+    return 'F';
+  }
+
   function showDraftGrade() {
-    const TIER_SCORE = { 'elite': 5, 'high': 4, 'mid': 3, 'late': 2, 'developmental': 1 };
-    const GRADE_MAP  = { 7: 'A+', 6: 'A', 5: 'B', 4: 'C', 3: 'D', 2: 'F' };
-    const gradeVal   = { 'A+': 7, 'A': 6, 'B': 5, 'C': 4, 'D': 3, 'F': 2 };
-    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#6b7280' };
+    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#6b7280', 'N/A': '#9ca3af' };
     const isSF = daLeagueType === 'sf';
 
     const picks = myPickOrder.map((sid, idx) => {
       const p = daProspects.find(x => String(x.player_id) === sid);
       if (!p) return null;
-      const pickNum = idx + 1;
+      const actualPick = myPickNumbers[sid] ? parseInt(myPickNumbers[sid]) : null;
       const adp = parseFloat(isSF ? p.sf_avg_pick : p.avg_pick) || null;
-      const need = daNeeds[p.position] ?? 0;
-      const tier = (p.tier_label || '').toLowerCase();
-      const tierScore = TIER_SCORE[tier] || 3;
-
-      // Value: compare ADP rank to pick order (positive = value, negative = reach)
-      let score = tierScore;
-      if (adp !== null) {
-        const adpDiff = adp - pickNum;
-        if (adpDiff >= 4)       score += 2;
-        else if (adpDiff >= 1)  score += 1;
-        else if (adpDiff < -5)  score -= 2;
-        else if (adpDiff < -2)  score -= 1;
-      }
-      // Need bonus
-      if (need >= 1) score += 1;
-      else if (need <= -1) score -= 1;
-      // QB redundancy in 1QB
-      if (p.position === 'QB' && !isSF) {
-        const myQBsBefore = myPickOrder.slice(0, idx).filter(id => {
-          const q = daProspects.find(x => String(x.player_id) === id);
-          return q && q.position === 'QB';
-        }).length;
-        if ((daNeeds.QB_count || 0) + myQBsBefore >= 2) score -= 2;
-        else if ((daNeeds.QB_count || 0) + myQBsBefore >= 1) score -= 1;
-      }
-      score = Math.max(2, Math.min(7, score));
-      const grade = GRADE_MAP[score] || 'C';
-      const needLabel = NEED_LABEL[String(need)] || 'Neutral';
-      return { p, pickNum, grade, tier, need, needLabel, adp };
+      const adpDiff = (actualPick !== null && adp !== null) ? actualPick - adp : null;
+      const need = (daNeeds[p.position] ?? 0) >= 1;
+      const qbsBefore = myPickOrder.slice(0, idx).filter(id => {
+        const q = daProspects.find(x => String(x.player_id) === id);
+        return q && q.position === 'QB';
+      }).length;
+      const qbCount = (daNeeds.QB_count || 0) + qbsBefore;
+      const grade = _pickGrade(adpDiff, need, p.position, isSF, qbCount, daLeagueSize);
+      const needLabel = NEED_LABEL[String(daNeeds[p.position] ?? 0)] || 'Neutral';
+      const tier = p.tier_label || '';
+      return { p, actualPick, adp, adpDiff, grade, need, needLabel, tier };
     }).filter(Boolean);
 
     if (!picks.length) return;
 
-    const overallAvg = picks.reduce((s, x) => s + (gradeVal[x.grade] || 4), 0) / picks.length;
-    const overall = overallAvg >= 6.5 ? 'A+' : overallAvg >= 5.5 ? 'A' : overallAvg >= 4.5 ? 'B' : overallAvg >= 3.5 ? 'C' : overallAvg >= 2.5 ? 'D' : 'F';
+    const gradableGrades = picks.filter(x => x.grade !== 'N/A').map(x => x.grade);
+    const overall = _teamGrade(gradableGrades);
 
-    const rows = picks.map(({ p, pickNum, grade, tier, needLabel, adp }) => {
-      const col = POS_COLORS[p.position] || '#9ca3af';
-      const gc  = GRADE_COLOR[grade] || '#9ca3af';
+    const hasMissingPickNums = picks.some(x => x.actualPick === null);
+    const rows = picks.map(({ p, actualPick, adp, adpDiff, grade, needLabel, tier }) => {
+      const col    = POS_COLORS[p.position] || '#9ca3af';
+      const gc     = GRADE_COLOR[grade] || '#9ca3af';
       const adpTxt = adp ? `ADP ${adp.toFixed(1)}` : '';
+      const pickTxt = actualPick ? `Pick ${actualPick}` : '—';
+      const diffTxt = adpDiff !== null ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`) : '';
+      const diffCol = adpDiff !== null ? (adpDiff >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)';
       const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
-      return `<div style="display:grid;grid-template-columns:28px 1fr 44px 36px;align-items:center;gap:8px;padding:9px 16px;border-top:1px solid var(--border);">
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-align:center;">${pickNum}</div>
+      const meta = [pickTxt, adpTxt, tierTxt, needLabel].filter(Boolean).join(' · ');
+      return `<div style="display:grid;grid-template-columns:1fr 44px 36px;align-items:center;gap:8px;padding:9px 16px;border-top:1px solid var(--border);">
         <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
           <span style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</span>
-          <span style="font-size:11px;color:var(--text-muted);">${[tierTxt, needLabel, adpTxt].filter(Boolean).join(' · ')}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${meta}</span>
+          ${diffTxt ? `<span style="font-size:11px;font-weight:600;color:${diffCol};">${diffTxt}</span>` : ''}
         </div>
         <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;text-align:center;">${p.position}</span>
         <div style="font-size:18px;font-weight:800;color:${gc};text-align:center;">${grade}</div>
@@ -9462,6 +9493,9 @@ function setupFunAwardsGrid() {
     }).join('');
 
     const gc = GRADE_COLOR[overall] || '#9ca3af';
+    const missingWarning = hasMissingPickNums
+      ? `<div style="margin:8px 16px 0;padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:11px;color:#f59e0b;">Enter pick numbers on the Drafted tab for accurate grades. Missing picks are graded N/A.</div>`
+      : '';
     const html = `
       <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
         <div>
@@ -9473,7 +9507,8 @@ function setupFunAwardsGrid() {
           <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
         </div>
       </div>
-      <div style="margin-top:12px;">${rows}</div>
+      ${missingWarning}
+      <div style="margin-top:8px;">${rows}</div>
       <div style="padding:16px;text-align:center;">
         <button onclick="document.getElementById('daGradeModal').style.display='none'" style="padding:8px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Done</button>
       </div>`;
@@ -9518,6 +9553,12 @@ function setupFunAwardsGrid() {
     },
     toggleNeeds()  { daToggleNeeds(); },
     endDraft()     { showDraftGrade(); },
+    setPickNum(id, val) {
+      const n = parseInt(val);
+      if (n > 0) myPickNumbers[String(id)] = n;
+      else delete myPickNumbers[String(id)];
+      saveSession();
+    },
   };
 
   window.daFilterPos = function (pos) {
@@ -9536,6 +9577,7 @@ function setupFunAwardsGrid() {
     daDrafted.clear();
     myPicks.clear();
     myPickOrder = [];
+    myPickNumbers = {};
     daLocalNeeds = {};
     daFilter  = 'ALL';
     daSubView = 'available';
@@ -9560,6 +9602,7 @@ function setupFunAwardsGrid() {
     const _sessKey = 'da_' + location.pathname;
     try { daDrafted = new Set(JSON.parse(sessionStorage.getItem(_sessKey) || '[]')); } catch (_) {}
     try { myPickOrder = JSON.parse(sessionStorage.getItem(_sessKey + '_mine') || '[]'); myPicks = new Set(myPickOrder); } catch (_) {}
+    try { myPickNumbers = JSON.parse(sessionStorage.getItem(_sessKey + '_nums') || '{}'); } catch (_) {}
 
     // Derive league context from URL: /<platform>/<season>/<league_id>/...
     const parts    = location.pathname.split('/').filter(Boolean);
