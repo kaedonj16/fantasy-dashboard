@@ -5487,20 +5487,19 @@ thead th {
 
 @media (max-width: 720px) {
   .da-layout { flex-direction: column; }
-  .da-needs { flex: 1 1 auto; width: 100%; }
-  /* hide badge column (col 4) on mobile; tighten rank and button cols */
+  .da-needs { flex: 1 1 auto; width: 100%; box-sizing: border-box; }
+  /* Drop badge column (col 4) from the template; display:none shifts items 5+6 into slots 4+5 */
   .da-board-header,
-  .da-row { grid-template-columns: 28px 1fr 44px 0px 48px 60px; gap: 4px; }
-  /* col 4 is the badge slot — collapse it */
+  .da-row { grid-template-columns: 28px 1fr 44px 48px 60px; gap: 4px; }
   .da-board-header span:nth-child(4),
   .da-row > :nth-child(4) { display: none; }
   .da-rec-badge { display: none; }
-  /* show need badge inline in da-meta on mobile */
-  .da-need-badge { display: inline; font-size: 10px; margin-left: 4px; }
+  /* Let the page scroll naturally on mobile instead of clipping the board */
+  .da-board-list { max-height: none; overflow-y: visible; }
 }
 @media (max-width: 400px) {
   .da-board-header,
-  .da-row { grid-template-columns: 24px 1fr 40px 0px 44px 52px; }
+  .da-row { grid-template-columns: 24px 1fr 40px 44px 52px; }
   .da-draft-btn, .da-undraft-btn { padding: 5px 6px; font-size: 11px; }
   .da-name { font-size: 12px; }
 }
