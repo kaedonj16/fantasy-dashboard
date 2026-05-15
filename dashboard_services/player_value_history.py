@@ -460,10 +460,12 @@ def load_current_values_from_db() -> list[dict]:
                             return f"{n}th"
                     
                     # Handle special pick designations
-                    if pick_num.lower() == "mid":
-                        asset["name"] = f"{year} Mid {get_ordinal(round_num)}"
-                    elif pick_num.lower() == "late":
-                        asset["name"] = f"{year} Late {get_ordinal(round_num)}"
+                    _bucket_labels = {"early": "Early", "mid": "Mid", "late": "Late"}
+                    _blabel = _bucket_labels.get(pick_num.lower())
+                    if _blabel:
+                        _rnd_int = int(round_num)
+                        _sfx = {1: "st", 2: "nd", 3: "rd"}.get(_rnd_int, "th")
+                        asset["name"] = f"{year} {_rnd_int}{_sfx} ({_blabel})"
                     else:
                         # Regular pick number: 01 -> 1.01, 12 -> 1.12
                         try:

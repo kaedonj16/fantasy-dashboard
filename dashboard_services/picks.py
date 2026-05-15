@@ -456,6 +456,13 @@ def load_pick_value_table(
     # and as a bootstrap fallback before the first WLS run.
     if use_wls_overlay:
         wls_path = DATA_DIR / "pick_values_wls_latest.json"
+        if not wls_path.exists():
+            # Fall back to the most recent dated WLS file
+            candidates = sorted(DATA_DIR.glob("pick_values_wls_*.json"), reverse=True)
+            # Exclude the _latest symlink/copy itself (it would fail the exists check above anyway)
+            dated = [p for p in candidates if p.name != "pick_values_wls_latest.json"]
+            if dated:
+                wls_path = dated[0]
         if wls_path.exists():
             try:
                 import json
