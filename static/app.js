@@ -9331,7 +9331,7 @@ function setupFunAwardsGrid() {
           <div class="da-rank">${isMine ? `<span style="color:var(--accent);font-weight:800;">${minePickNum}</span>` : `<span style="color:var(--text-muted);">${i + 1}</span>`}</div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
-          <button class="da-mine-btn${isMine ? ' active' : ''}" onclick="window._da.toggleMine('${p.player_id}')">${isMine ? '✓ Mine' : 'Mine?'}</button>
+          <button class="da-mine-btn${isMine ? ' active' : ''}" onclick="window._da.toggleMine('${p.player_id}')">${isMine ? 'Mine' : 'Mine?'}</button>
           <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
           <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩</button>
         </div>`;
