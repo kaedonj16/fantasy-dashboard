@@ -218,15 +218,19 @@ def update_player_values_with_rankings() -> int:
             'pos_rank_change_7d': pos_rank_change_7d,
         })
     
+    # Picks come from model_values.json exclusively; don't persist them in the DB
+    # to avoid stale/duplicate entries from old name formats accumulating.
+    players_only = [p for p in updated_players if p.get("position") != "PICK"]
+
     # Save to player_values table
-    saved_count = save_daily_values_to_db(updated_players)
-    
+    saved_count = save_daily_values_to_db(players_only)
+
     # Save to player_value_history table
-    history_count = save_to_player_value_history(updated_players)
-    
+    history_count = save_to_player_value_history(players_only)
+
     print(f"[update_player_values] Updated {saved_count} players with rankings")
     print(f"[update_player_values] Saved {history_count} entries to player_value_history")
-    
+
     return saved_count
 
 
