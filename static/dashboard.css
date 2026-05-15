@@ -817,7 +817,8 @@ ul {
 /* Settings Gear Dropdown */
 .settings-gear-wrapper {
   position: relative;
-  display: inline-flex;
+  display: flex;
+  align-items: center;
 }
 
 /* Keep changelog bell hidden but functional */
