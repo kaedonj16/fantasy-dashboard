@@ -14,15 +14,21 @@ def build_prospects_body() -> str:
   <div class="card-header">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
-        <h2 id="rookiesTitle">Prospect Rankings</h2>
+        <h2 id="rookiesTitle">Rookie Prospects</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Dynasty prospect rankings - production, athleticism, and draft capital combined
         </div>
       </div>
     </div>
+    <!-- Page-level tab bar -->
+    <div class="rk-page-tabs">
+      <button class="rk-page-tab active" data-tab="rankings" onclick="rkPageTab('rankings')">Rankings</button>
+      <button class="rk-page-tab" data-tab="draft" onclick="rkPageTab('draft')">Draft Board</button>
+    </div>
   </div>
 
-  <div class="card-body" style="padding-top:0;">
+  <!-- Rankings panel -->
+  <div id="rk-panel-rankings" class="card-body" style="padding-top:0;">
 
     <!-- Controls -->
     <div class="filter-controls-container">
@@ -140,7 +146,42 @@ def build_prospects_body() -> str:
       </div>
     </div>
 
+  </div><!-- end rk-panel-rankings -->
+
+  <!-- Draft Board panel -->
+  <div id="rk-panel-draft" style="display:none;" class="card-body" style="padding-top:0;">
+    <div class="da-toolbar">
+      <button class="da-filter active" data-pos="ALL" onclick="daFilterPos('ALL')">All</button>
+      <button class="da-filter" data-pos="QB"  onclick="daFilterPos('QB')">QB</button>
+      <button class="da-filter" data-pos="RB"  onclick="daFilterPos('RB')">RB</button>
+      <button class="da-filter" data-pos="WR"  onclick="daFilterPos('WR')">WR</button>
+      <button class="da-filter" data-pos="TE"  onclick="daFilterPos('TE')">TE</button>
+      <button class="da-reset-btn" onclick="daReset()" style="margin-left:auto;">Reset Board</button>
+    </div>
+    <div class="da-layout">
+      <div class="da-board">
+        <!-- Available / Drafted sub-tabs -->
+        <div class="da-sub-tabs">
+          <button class="da-sub-tab active" data-sub="available" onclick="daSubTab('available')">Available</button>
+          <button class="da-sub-tab" data-sub="drafted" onclick="daSubTab('drafted')">Drafted <span id="daDraftedCount"></span></button>
+        </div>
+        <div class="da-board-header">
+          <span>#</span><span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
+        </div>
+        <div class="da-board-list" id="daBoardList">
+          <div class="da-loading">
+            <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
+            <span>Loading prospects…</span>
+          </div>
+        </div>
+      </div>
+      <aside class="da-needs" id="daNeedsPanel">
+        <div class="da-needs-title">My Roster Needs</div>
+        <div class="da-loading" style="padding:12px 0;"><div class="loading-spinner" style="width:18px;height:18px;flex-shrink:0;"></div></div>
+      </aside>
+    </div>
   </div>
+
 </div>
 
 <!-- Prospect detail modal -->
@@ -156,6 +197,62 @@ def build_prospects_body() -> str:
 </div>
 
 <style>
+  /* Page-level tabs (Rankings / Draft Board) */
+  .rk-page-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+    margin-top: 12px;
+  }
+  .rk-page-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    font-size: 12px;
+    transition: color .12s, border-color .12s;
+    margin-bottom: -1px;
+  }
+  .rk-page-tab:hover { color: var(--text); }
+  .rk-page-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* DA sub-tabs (Available / Drafted) */
+  .da-sub-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .da-sub-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: color .12s, border-color .12s;
+  }
+  .da-sub-tab:hover { color: var(--text); }
+  .da-sub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .da-sub-tab span {
+    font-size: 11px;
+    background: var(--border);
+    border-radius: 10px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    color: var(--text-muted);
+  }
+
   /* Filter Controls */
   .filter-controls-container {
     display: flex;

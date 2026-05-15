@@ -9207,20 +9207,22 @@ function setupFunAwardsGrid() {
 // ── Rookie Draft Assistant ────────────────────────────────────────────────────
 (function () {
   let daProspects = [];
-  let daDrafted = new Set();
-  let daFilter = 'ALL';
-  let daNeeds = {};
+  let daDrafted   = new Set();
+  let daFilter    = 'ALL';
+  let daSubView   = 'available'; // 'available' | 'drafted'
+  let daNeeds     = {};
   let daLeagueType = '1qb';
   let daLeagueSize = 10;
-  let daYear = new Date().getFullYear();
+  let daYear       = new Date().getFullYear();
+  let daInitialized = false;
 
   const POS_COLORS = { QB: '#a78bfa', RB: '#34d399', WR: '#60a5fa', TE: '#fb923c' };
+  const NEED_LABEL = { 2: 'Major Need', 1: 'Need', 0: 'Neutral', '-1': 'Depth', '-2': 'Stacked' };
+  const NEED_COLOR = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
+  const NEED_BONUS = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
 
   function needBonus(pos) {
-    const n = daNeeds[pos];
-    if (n == null) return 1.0;
-    const map = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
-    return map[String(n)] ?? 1.0;
+    return NEED_BONUS[String(daNeeds[pos] ?? 0)] ?? 1.0;
   }
 
   function daScore(p) {
@@ -9228,70 +9230,93 @@ function setupFunAwardsGrid() {
     return val * 0.6 + val * needBonus(p.position) * 0.4;
   }
 
+  // 1 rec normally; 2 if any position has major need (level 2)
+  function recCount() {
+    return Object.values(daNeeds).some(v => typeof v === 'number' && v === 2) ? 2 : 1;
+  }
+
   function renderNeeds() {
     const panel = document.getElementById('daNeedsPanel');
     if (!panel) return;
-    const positions = ['QB', 'RB', 'WR', 'TE'];
-    const labelMap = { 2: 'Major Need', 1: 'Need', 0: 'Neutral', '-1': 'Depth', '-2': 'Stacked' };
-    const colorMap = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
-    const rows = positions.map(pos => {
-      const need = daNeeds[pos] ?? 0;
-      const col = POS_COLORS[pos] || '#9ca3af';
-      const needColor = colorMap[String(need)] || '#9ca3af';
+    if (!Object.keys(daNeeds).length) {
+      panel.innerHTML = '<div class="da-needs-title">My Roster Needs</div><div style="font-size:12px;color:var(--text-muted);padding-top:8px;">Log in with your league to see personalized needs.</div>';
+      return;
+    }
+    const rows = ['QB','RB','WR','TE'].map(pos => {
+      const need  = daNeeds[pos] ?? 0;
+      const col   = POS_COLORS[pos] || '#9ca3af';
       const count = daNeeds[`${pos}_count`] ?? 0;
-      const val = Math.round(daNeeds[`${pos}_value`] || 0);
+      const val   = Math.round(daNeeds[`${pos}_value`] || 0);
+      const avg   = Math.round(daNeeds[`${pos}_avg`]   || 0);
       return `<div class="da-need-row">
-        <span class="da-need-pos pos-badge ${pos}" style="background:${col}22;color:${col};border:1px solid ${col}44;">${pos}</span>
+        <span class="pos-badge ${pos}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 7px;">${pos}</span>
         <div class="da-need-info">
-          <span class="da-need-label" style="color:${needColor}">${labelMap[String(need)] ?? 'Neutral'}</span>
-          <span class="da-need-meta">${count} players · ${val} val</span>
+          <span class="da-need-label" style="color:${NEED_COLOR[String(need)] || '#9ca3af'}">${NEED_LABEL[String(need)] ?? 'Neutral'}</span>
+          <span class="da-need-meta">${count} players · ${val} (avg ${avg})</span>
         </div>
       </div>`;
     }).join('');
     panel.innerHTML = `<div class="da-needs-title">My Roster Needs</div>${rows}`;
   }
 
+  function updateDraftedBadge() {
+    const el = document.getElementById('daDraftedCount');
+    if (el) el.textContent = daDrafted.size || '';
+  }
+
   function render() {
     const listEl = document.getElementById('daBoardList');
     if (!listEl) return;
+    updateDraftedBadge();
 
+    if (daSubView === 'drafted') {
+      const drafted = daProspects.filter(p => daDrafted.has(String(p.player_id)));
+      if (!drafted.length) {
+        listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
+        return;
+      }
+      listEl.innerHTML = drafted.map(p => {
+        const col = POS_COLORS[p.position] || '#9ca3af';
+        return `<div class="da-row">
+          <div class="da-rank">—</div>
+          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${p.school || ''}</span></div>
+          <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+          <div></div>
+          <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
+          <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩ Remove</button>
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    // Available view
     let visible = daProspects.filter(p => !daDrafted.has(String(p.player_id)));
     if (daFilter !== 'ALL') visible = visible.filter(p => p.position === daFilter);
-
     const scored = visible.map(p => ({ ...p, _s: daScore(p) })).sort((a, b) => b._s - a._s);
-    const recSet = new Set(scored.slice(0, 3).map(p => String(p.player_id)));
+    const nRec   = recCount();
+    const recIds = new Set(scored.slice(0, nRec).map(p => String(p.player_id)));
 
-    const drafted = daProspects.filter(p => daDrafted.has(String(p.player_id)));
+    if (!scored.length) {
+      listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No prospects available.</div>';
+      return;
+    }
 
-    const rows = scored.map((p, i) => {
-      const isRec = recSet.has(String(p.player_id));
-      const val = Math.round(parseFloat(p.display_value || 0));
-      const col = POS_COLORS[p.position] || '#9ca3af';
-      return `<div class="da-row${isRec ? ' da-recommended' : ''}" data-pid="${p.player_id}">
+    listEl.innerHTML = scored.map((p, i) => {
+      const isRec = recIds.has(String(p.player_id));
+      const col   = POS_COLORS[p.position] || '#9ca3af';
+      const val   = Math.round(parseFloat(p.display_value || 0));
+      return `<div class="da-row${isRec ? ' da-recommended' : ''}">
         <div class="da-rank">${i + 1}</div>
         <div class="da-info">
           <span class="da-name">${p.name || '—'}</span>
           <span class="da-meta">${p.school || ''}</span>
         </div>
         <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
-        ${isRec ? '<div class="da-rec-badge">REC</div>' : '<div></div>'}
+        ${isRec ? '<div class="da-rec-badge">PICK</div>' : '<div></div>'}
         <div class="da-col-right da-val">${val || '—'}</div>
         <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
       </div>`;
     }).join('');
-
-    const draftedRows = drafted.length ? `
-      <div class="da-drafted-sep">Drafted (${drafted.length})</div>
-      ${drafted.map(p => `<div class="da-row da-drafted">
-        <div class="da-rank">—</div>
-        <div class="da-info"><span class="da-name">${p.name || '—'}</span></div>
-        <span class="pos-badge ${p.position}" style="font-size:10px;padding:2px 6px;">${p.position}</span>
-        <div></div><div></div>
-        <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩ Undo</button>
-      </div>`).join('')}` : '';
-
-    listEl.innerHTML = rows + draftedRows ||
-      '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No prospects match this filter.</div>';
   }
 
   function saveSession() {
@@ -9299,7 +9324,7 @@ function setupFunAwardsGrid() {
   }
 
   window._da = {
-    draft(id) { daDrafted.add(String(id)); saveSession(); render(); },
+    draft(id)   { daDrafted.add(String(id));    saveSession(); render(); },
     undraft(id) { daDrafted.delete(String(id)); saveSession(); render(); },
   };
 
@@ -9309,30 +9334,74 @@ function setupFunAwardsGrid() {
     render();
   };
 
+  window.daSubTab = function (sub) {
+    daSubView = sub;
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+    render();
+  };
+
   window.daReset = function () {
     daDrafted.clear();
-    daFilter = 'ALL';
+    daFilter  = 'ALL';
+    daSubView = 'available';
     document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === 'ALL'));
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === 'available'));
     saveSession();
     render();
   };
 
-  async function init() {
-    const card = document.getElementById('draftAssistantCard');
-    if (!card) return;
+  // Page-level tab switcher (Rankings / Draft Board)
+  window.rkPageTab = function (tab) {
+    document.querySelectorAll('.rk-page-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('rk-panel-rankings').style.display = tab === 'rankings' ? '' : 'none';
+    document.getElementById('rk-panel-draft').style.display    = tab === 'draft'    ? '' : 'none';
+    if (tab === 'draft' && !daInitialized) {
+      daInitialized = true;
+      initDA();
+    }
+  };
 
-    daLeagueType = card.dataset.leagueType || '1qb';
-    daLeagueSize = parseInt(card.dataset.leagueSize || '10');
-    daNeeds = JSON.parse(card.dataset.needs || '{}');
-    daYear = parseInt(card.dataset.year || new Date().getFullYear());
-
+  async function initDA() {
     try { daDrafted = new Set(JSON.parse(sessionStorage.getItem('da_' + location.pathname) || '[]')); } catch (_) {}
+
+    // Derive league context from URL: /<platform>/<season>/<league_id>/...
+    const parts    = location.pathname.split('/').filter(Boolean);
+    const platform = parts[0] || 'sleeper';
+    const season   = parts[1] || new Date().getFullYear();
+    const leagueId = parts[2];
+    daYear         = parseInt(season);
+
+    // Fetch league-calibrated prospect rankings settings if in a league
+    if (leagueId && !['players','breakouts','prospects','trade-database','trade-intel'].includes(platform)) {
+      try {
+        // Detect league type / size from rankings context (use rkLeagueType/rkLeagueSize if set by the Rankings tab)
+        daLeagueType = (typeof rkLeagueType !== 'undefined' ? rkLeagueType : null)
+          || localStorage.getItem('rk_league_type') || '1qb';
+        daLeagueSize = parseInt((typeof rkLeagueSize !== 'undefined' ? rkLeagueSize : null)
+          || localStorage.getItem('rk_league_size') || '10');
+
+        // Get viewer roster_id from hidden input injected by server, or getCurrentRosterId()
+        const viewerRid = (typeof getCurrentRosterId === 'function' ? getCurrentRosterId() : null)
+          || document.querySelector('#viewerRosterIdInput')?.value || '';
+        if (!viewerRid) throw new Error('no viewer roster_id');
+        const needsUrl = `/api/draft-needs?league_id=${leagueId}&platform=${platform}&season=${season}&roster_id=${encodeURIComponent(viewerRid)}`;
+        const nr = await fetch(needsUrl);
+        if (nr.ok) {
+          const nd = await nr.json();
+          if (!nd.error) {
+            daNeeds      = nd.needs || {};
+            daLeagueType = nd.league_type || daLeagueType;
+            daLeagueSize = nd.league_size || daLeagueSize;
+          }
+        }
+      } catch (_) {}
+    }
 
     renderNeeds();
 
     const listEl = document.getElementById('daBoardList');
     try {
-      const r = await fetch(`/api/prospects/rankings?year=${daYear}&league_type=${encodeURIComponent(daLeagueType)}&league_size=${daLeagueSize}&limit=150`);
+      const r = await fetch(`/api/prospects/rankings?year=${daYear}&league_type=${encodeURIComponent(daLeagueType)}&league_size=${daLeagueSize}&limit=200`);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       daProspects = data.rankings || [];
@@ -9340,11 +9409,5 @@ function setupFunAwardsGrid() {
     } catch (e) {
       if (listEl) listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Could not load prospects: ${e.message}</div>`;
     }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
   }
 })();

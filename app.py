@@ -4693,8 +4693,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         {matchup_html}
 
-        {build_draft_assistant_html(ctx)}
-
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
@@ -14605,6 +14603,88 @@ def api_team_trades(roster_id: str):
 
         trades.sort(key=lambda x: x["week"], reverse=True)
         return jsonify({"trades": trades, "total": len(trades)})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/draft-needs")
+def api_draft_needs():
+    """
+    Returns positional needs for a team relative to league averages.
+    Need levels: -2 stacked, -1 depth, 0 neutral, 1 need, 2 major need.
+    """
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        league_id = request.args.get("league_id")
+        platform  = request.args.get("platform", "sleeper")
+        season    = int(request.args.get("season") or datetime.now().year)
+        roster_id = request.args.get("roster_id")
+
+        if not league_id or not roster_id:
+            return jsonify({"error": "league_id and roster_id required"}), 400
+
+        rosters = get_rosters(platform, league_id, season) or []
+        league  = get_league(platform, league_id, season) or {}
+        players_index = load_players_index() or {}
+        value_table   = load_model_value_table() or []
+
+        roster_positions = (league.get("roster_positions") or [])
+        is_sf  = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+        vfield = "sf_value" if is_sf else "value"
+
+        values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+        CORE = ("QB", "RB", "WR", "TE")
+
+        # Build per-roster positional values
+        roster_pos_vals: dict[str, dict[str, float]] = {}
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            pv: dict[str, float] = {p: 0.0 for p in CORE}
+            for pid in (r.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                pos  = str(meta.get("pos") or "").upper()
+                if pos not in CORE:
+                    continue
+                vrow = values_by_id.get(str(pid)) or {}
+                pv[pos] += float(vrow.get(vfield) or vrow.get("value") or 0)
+            roster_pos_vals[rid] = pv
+
+        if not roster_pos_vals:
+            return jsonify({"needs": {}, "league_type": "sf" if is_sf else "1qb"})
+
+        # League averages per position
+        n = len(roster_pos_vals)
+        league_avg = {pos: sum(rv[pos] for rv in roster_pos_vals.values()) / n for pos in CORE}
+
+        viewer = roster_pos_vals.get(str(roster_id), {p: 0.0 for p in CORE})
+
+        needs: dict = {}
+        for pos in CORE:
+            avg = league_avg[pos] or 1.0
+            ratio = viewer[pos] / avg  # 1.0 = exactly average
+            # Map ratio to need level
+            if   ratio >= 1.35: level = -2   # stacked (35%+ above avg)
+            elif ratio >= 1.10: level = -1   # depth   (10-35% above avg)
+            elif ratio >= 0.90: level =  0   # neutral (within ±10%)
+            elif ratio >= 0.65: level =  1   # need    (10-35% below avg)
+            else:               level =  2   # major need (35%+ below avg)
+            needs[pos]              = level
+            needs[f"{pos}_count"]   = sum(
+                1 for r in rosters if str(r.get("roster_id")) == str(roster_id)
+                for pid in (r.get("players") or [])
+                if (players_index.get(str(pid)) or {}).get("pos", "").upper() == pos
+            )
+            needs[f"{pos}_value"]   = round(viewer[pos], 1)
+            needs[f"{pos}_avg"]     = round(league_avg[pos], 1)
+
+        return jsonify({
+            "needs": needs,
+            "league_type": "sf" if is_sf else "1qb",
+            "league_size": len(rosters),
+        })
 
     except Exception as e:
         import traceback; traceback.print_exc()
