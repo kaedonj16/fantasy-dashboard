@@ -197,79 +197,63 @@ def build_prospects_body() -> str:
 </div>
 
 <style>
-  /* Page-level tabs (Rankings / Draft Board) — mirrors .pm-tab-bar / .pm-tab */
+  /* Page-level tabs (Rankings / Draft Board) — OTC pill style */
   .rk-page-tabs {
     display: flex;
-    background: var(--bg-alt, rgba(0,0,0,.03));
-    border-bottom: 1px solid var(--border);
-    padding: 0 12px;
-    margin: 16px -24px 0;
-    gap: 2px;
-    overflow-x: auto;
-    scrollbar-width: none;
+    gap: 4px;
+    background: var(--row);
+    padding: 3px;
+    border-radius: 10px;
+    margin: 16px 0 0;
+    width: fit-content;
   }
-  .rk-page-tabs::-webkit-scrollbar { display: none; }
   .rk-page-tab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 9px 13px;
-    font-size: 12px;
+    padding: 7px 16px;
+    font-size: 13px;
     font-weight: 700;
+    border: none;
+    background: transparent;
     color: var(--text-muted);
+    border-radius: 8px;
     cursor: pointer;
+    transition: background 0.15s, color 0.15s;
     white-space: nowrap;
-    letter-spacing: .02em;
-    text-transform: uppercase;
-    transition: color .12s, border-color .12s, background .12s;
-    border-radius: 6px 6px 0 0;
-    margin-bottom: -1px;
   }
-  .rk-page-tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
-  .rk-page-tab.active {
-    color: var(--accent, #3b82f6);
-    border-bottom-color: var(--accent, #3b82f6);
-    background: rgba(59,130,246,.06);
-  }
+  .rk-page-tab:hover { color: var(--text); background: var(--border); }
+  .rk-page-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 
-  /* DA sub-tabs (Available / Drafted) — same style, slightly smaller */
+  /* DA sub-tabs (Available / Drafted) — OTC pill style, smaller */
   .da-sub-tabs {
     display: flex;
-    background: var(--bg-alt, rgba(0,0,0,.03));
-    border-bottom: 1px solid var(--border);
-    padding: 0 4px;
-    gap: 2px;
-    margin-bottom: 8px;
+    gap: 4px;
+    background: var(--row);
+    padding: 3px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    width: fit-content;
   }
   .da-sub-tab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 7px 12px;
+    padding: 5px 14px;
     font-size: 12px;
     font-weight: 700;
+    border: none;
+    background: transparent;
     color: var(--text-muted);
+    border-radius: 6px;
     cursor: pointer;
+    transition: background 0.15s, color 0.15s;
     white-space: nowrap;
-    letter-spacing: .02em;
-    text-transform: uppercase;
-    transition: color .12s, border-color .12s, background .12s;
-    border-radius: 6px 6px 0 0;
-    margin-bottom: -1px;
   }
-  .da-sub-tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
-  .da-sub-tab.active {
-    color: var(--accent, #3b82f6);
-    border-bottom-color: var(--accent, #3b82f6);
-    background: rgba(59,130,246,.06);
-  }
+  .da-sub-tab:hover { color: var(--text); background: var(--border); }
+  .da-sub-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
   .da-sub-tab span {
     font-size: 11px;
-    background: var(--border);
+    background: var(--accent-soft, rgba(59,130,246,.15));
+    color: var(--accent, #3b82f6);
     border-radius: 10px;
     padding: 1px 6px;
     margin-left: 4px;
-    color: var(--text-muted);
+    font-weight: 700;
   }
 
   /* Filter Controls */

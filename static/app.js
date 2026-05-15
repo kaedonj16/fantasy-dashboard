@@ -9230,9 +9230,12 @@ function setupFunAwardsGrid() {
     return val * 0.6 + val * needBonus(p.position) * 0.4;
   }
 
-  // 1 rec normally; 2 if any position has major need (level 2)
-  function recCount() {
-    return Object.values(daNeeds).some(v => typeof v === 'number' && v === 2) ? 2 : 1;
+  // 1 rec normally; 2 only if there's a major need AND the top pick doesn't address a need
+  function recCount(scored) {
+    const hasMajorNeed = Object.values(daNeeds).some(v => typeof v === 'number' && v === 2);
+    if (!hasMajorNeed) return 1;
+    const topNeed = scored[0] ? (daNeeds[scored[0].position] ?? 0) : 0;
+    return topNeed >= 1 ? 1 : 2;
   }
 
   function renderNeeds() {
@@ -9261,7 +9264,9 @@ function setupFunAwardsGrid() {
 
   function updateDraftedBadge() {
     const el = document.getElementById('daDraftedCount');
-    if (el) el.textContent = daDrafted.size || '';
+    if (!el) return;
+    if (daDrafted.size === 0) { el.style.display = 'none'; }
+    else { el.style.display = ''; el.textContent = daDrafted.size; }
   }
 
   function render() {
@@ -9293,7 +9298,7 @@ function setupFunAwardsGrid() {
     let visible = daProspects.filter(p => !daDrafted.has(String(p.player_id)));
     if (daFilter !== 'ALL') visible = visible.filter(p => p.position === daFilter);
     const scored = visible.map(p => ({ ...p, _s: daScore(p) })).sort((a, b) => b._s - a._s);
-    const nRec   = recCount();
+    const nRec   = recCount(scored);
     const recIds = new Set(scored.slice(0, nRec).map(p => String(p.player_id)));
 
     if (!scored.length) {
@@ -9302,16 +9307,33 @@ function setupFunAwardsGrid() {
     }
 
     listEl.innerHTML = scored.map((p, i) => {
-      const isRec = recIds.has(String(p.player_id));
-      const col   = POS_COLORS[p.position] || '#9ca3af';
-      const val   = Math.round(parseFloat(p.display_value || 0));
+      const isRec    = recIds.has(String(p.player_id));
+      const col      = POS_COLORS[p.position] || '#9ca3af';
+      const val      = Math.round(parseFloat(p.display_value || 0));
+      const needLvl  = daNeeds[p.position] ?? 0;
+      const isNeed   = needLvl >= 1;
+      const needCol  = NEED_COLOR[String(needLvl)] || '#9ca3af';
+      const needTxt  = NEED_LABEL[String(needLvl)] || '';
+
+      // Recommendation row: add grade + ADP in meta
+      const adpVal   = daLeagueType === 'sf' ? (p.sf_avg_pick || p.avg_pick) : p.avg_pick;
+      const adpTxt   = adpVal ? `ADP ${parseFloat(adpVal).toFixed(1)}` : '';
+      const gradeTxt = p.tier_label || '';
+      const recMeta  = isRec
+        ? [p.school, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        : p.school || '';
+
+      const needTag  = isNeed && !isRec
+        ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:1px 5px;margin-left:4px;">${needTxt}</span>`
+        : '';
+
       return `<div class="da-row${isRec ? ' da-recommended' : ''}">
         <div class="da-rank">${i + 1}</div>
         <div class="da-info">
-          <span class="da-name">${p.name || '—'}</span>
-          <span class="da-meta">${p.school || ''}</span>
+          <span class="da-name">${p.name || '—'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
+          <span class="da-meta">${recMeta}</span>
         </div>
-        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}${needTag}</span>
         ${isRec ? '<div class="da-rec-badge">PICK</div>' : '<div></div>'}
         <div class="da-col-right da-val">${val || '—'}</div>
         <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
