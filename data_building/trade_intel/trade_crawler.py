@@ -424,10 +424,20 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
         _mark_crawled_batch(mark_batch)
 
     # Print summary by league type
+    total_trades  = dynasty_trades + redraft_trades
+    total_leagues = dynasty_leagues + redraft_leagues
     print(f"[crawler] Dynasty: {dynasty_trades} trades from {dynasty_leagues} leagues")
     print(f"[crawler] Redraft: {redraft_trades} trades from {redraft_leagues} leagues")
-    print(f"[crawler] Done. {dynasty_trades + redraft_trades} new trades across {dynasty_leagues + redraft_leagues} leagues.")
-    return {"dynasty_trades": dynasty_trades, "redraft_trades": redraft_trades, "dynasty_leagues": dynasty_leagues, "redraft_leagues": redraft_leagues}
+    print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")
+    return {
+        "dynasty_trades":  dynasty_trades,
+        "redraft_trades":  redraft_trades,
+        "dynasty_leagues": dynasty_leagues,
+        "redraft_leagues": redraft_leagues,
+        # Aliases expected by run_trade_intel_extended.py
+        "new_trades":      total_trades,
+        "leagues_crawled": total_leagues,
+    }
 
 
 if __name__ == "__main__":
