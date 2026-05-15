@@ -14251,11 +14251,25 @@ def api_team_details(roster_id: str):
                         all_picks.append({
                             "year": year,
                             "round": rnd,
-                            "via": via
+                            "via": via,
+                            "original_owner": pick_info["original_owner"],
                         })
 
         # Sort picks by year then round
         all_picks.sort(key=lambda p: (p["year"], p["round"]))
+
+        # Add pick values to total (match offseason snapshot calculation)
+        try:
+            from dashboard_services.picks import load_pick_value_table
+            pick_by_key = load_pick_value_table() or {}
+            picks_for_value = [
+                {"season": p["year"], "round": p["round"], "original_owner": p.get("original_owner")}
+                for p in all_picks
+            ]
+            total_value += _team_pick_value(picks_for_value, pick_by_key, platform=platform,
+                                            league_id=league_id, season=season)
+        except Exception:
+            pass
 
         # Get graph data for team modal
         graphs_data = {}

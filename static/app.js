@@ -8254,23 +8254,16 @@ function renderTeamDetails(data) {
 
   picksHTML += '</div>';
 
-  // Build graphs section
+  // Build graphs section — each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
-    graphsHTML += '<div class="team-modal-section"><h3>Performance Charts</h3>';
-
-    // Weekly scores line chart
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart"></div>';
+      graphsHTML += '<div class="team-modal-section"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
     }
-
-    // Radar chart
     if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-chart-container" id="teamRadarChart"></div>';
+      graphsHTML += '<div class="team-modal-section"><h3>Position Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
-
-    graphsHTML += '</div>';
   }
 
   // Populate tab panels
