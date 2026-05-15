@@ -2580,11 +2580,6 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
           <div class="otc-sugg-pkg-sides">
             <div class="otc-sugg-pkg-side">
-              <div class="otc-sugg-pkg-side-label">You give</div>
-              <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
-            </div>
-            <div class="otc-sugg-pkg-divider">→</div>
-            <div class="otc-sugg-pkg-side">
               <div class="otc-sugg-pkg-side-label">You get</div>
               <div class="otc-sugg-pkg-assets">
                 <div class="otc-sugg-pkg-asset">
@@ -2592,6 +2587,11 @@ window.initTradePage = function initTradePage(root = document) {
                   ${playerName}
                 </div>
               </div>
+            </div>
+            <div class="otc-sugg-pkg-divider">←</div>
+            <div class="otc-sugg-pkg-side">
+              <div class="otc-sugg-pkg-side-label">You give</div>
+              <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
             </div>
           </div>
           <button class="otc-sugg-pkg-load-btn"
@@ -2641,13 +2641,17 @@ window.initTradePage = function initTradePage(root = document) {
             if (a.type === "pick") {
               const yr    = String(a.pick_season || "").replace(/\D/g, "");
               const rd    = String(a.pick_round  || "").replace(/\D/g, "");
-              const order = (a.pick_order || "mid").toLowerCase();
-              const pickId  = yr && rd ? `${yr}_${rd}_${order || "mid"}` : null;
-              const pickObj = pickId && allPlayers.find(p => p.id === pickId);
+              const order = (a.pick_order || "mid").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              const pickId = yr && rd ? `${yr}_${rd}_${order}` : null;
+              // Try exact match, then partial (same year+round with any bucket)
+              const pickObj = pickId && (
+                allPlayers.find(p => p.id === pickId) ||
+                allPlayers.find(p => yr && rd && p.id && p.id.startsWith(`${yr}_${rd}_`))
+              );
               if (pickObj) {
                 state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
               } else if (pickId) {
-                state.sideBPicks.push({ id: pickId, display: a.name });
+                state.sideBPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
               }
             } else {
               const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
