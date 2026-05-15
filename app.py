@@ -15969,7 +15969,8 @@ def api_player_packages(player_id: str):
             name  = (f"{s} Pick {rd}.{str(slot).zfill(2)}" if slot
                      else f"{s} Round {rd}" + (f" ({order})" if order else ""))
             return {"type": "pick", "name": name, "value": 0,
-                    "pick_season": s, "pick_round": rd, "pick_order": order}
+                    "pick_season": s, "pick_round": rd, "pick_order": order,
+                    "pick_slot": str(slot).zfill(2) if slot else None}
 
         def pick_approx_value(a) -> float:
             return {1: 4500, 2: 2000, 3: 800}.get(int(a.get("pick_round") or 4), 400)

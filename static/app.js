@@ -2639,11 +2639,12 @@ window.initTradePage = function initTradePage(root = document) {
           // Side B = what you give (the package)
           assets.forEach(a => {
             if (a.type === "pick") {
-              const yr    = String(a.pick_season || "").replace(/\D/g, "");
-              const rd    = String(a.pick_round  || "").replace(/\D/g, "");
-              const order = (a.pick_order || "mid").toLowerCase().replace(/[^a-z]/g, "") || "mid";
-              const pickId = yr && rd ? `${yr}_${rd}_${order}` : null;
-              // Try exact match, then partial (same year+round with any bucket)
+              const yr   = String(a.pick_season || "").replace(/\D/g, "");
+              const rd   = String(a.pick_round  || "").replace(/\D/g, "");
+              const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+              const order = (a.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
+              const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
               const pickObj = pickId && (
                 allPlayers.find(p => p.id === pickId) ||
                 allPlayers.find(p => yr && rd && p.id && p.id.startsWith(`${yr}_${rd}_`))
