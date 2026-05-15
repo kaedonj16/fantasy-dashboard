@@ -3833,7 +3833,7 @@ thead th {
   border-radius: 4px;
 }
 
-.otc-sugg-pkg-value.fair    { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.otc-sugg-pkg-value.fair    { background: rgba(34, 197, 94, 0.12);  color: #16a34a; }
 .otc-sugg-pkg-value.great   { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
 .otc-sugg-pkg-value.overpay { background: rgba(239, 68, 68, 0.10);  color: #dc2626; }
 

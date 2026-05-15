@@ -15995,10 +15995,10 @@ def api_player_packages(player_id: str):
             )
             if focus_value > 0:
                 ratio       = recv_val / focus_value
-                value_label = ("Great deal"   if ratio >= 1.10 else
-                               "Fair value"   if ratio >= 0.90 else
-                               "Slight overpay" if ratio >= 0.75 else
-                               "Overpay")
+                value_label = ("Overpay"        if ratio >= 1.25 else
+                               "Slight overpay" if ratio >= 1.08 else
+                               "Fair value"     if ratio >= 0.92 else
+                               "Great deal")
             else:
                 value_label = "Unknown"
 

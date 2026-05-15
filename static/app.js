@@ -2507,8 +2507,8 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Render package cards ─────────────────────────────────────
     function renderPackages(packages, playerName, playerId, focusValue) {
       function valueClass(label) {
-        if (label === "Fair value" || label === "Great deal") return "fair";
         if (label === "Great deal") return "great";
+        if (label === "Fair value") return "fair";
         return "overpay";
       }
 
@@ -2527,7 +2527,7 @@ window.initTradePage = function initTradePage(root = document) {
       const focusPos    = focusPlayer?.position || "WR";
       const focusCol    = posColor(focusPos);
 
-      resultsList.innerHTML = packages.map((pkg, i) => {
+      resultsList.innerHTML = packages.map((pkg) => {
         const vc = valueClass(pkg.value_label);
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-header">
@@ -2540,15 +2540,15 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="otc-sugg-pkg-sides">
             <div>
               <div class="otc-sugg-pkg-side-label">You give</div>
-              <div class="otc-sugg-pkg-asset">
-                <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                ${playerName}
-              </div>
+              ${pkg.assets.map(assetHtml).join("")}
             </div>
             <div class="otc-sugg-pkg-arrow">→</div>
             <div>
               <div class="otc-sugg-pkg-side-label">You get</div>
-              ${pkg.assets.map(assetHtml).join("")}
+              <div class="otc-sugg-pkg-asset">
+                <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                ${playerName}
+              </div>
             </div>
           </div>
           <button class="otc-sugg-pkg-load-btn"
@@ -2566,23 +2566,21 @@ window.initTradePage = function initTradePage(root = document) {
           const focusPObj = allPlayers.find(p => String(p.id) === String(focusId));
           if (!focusPObj) return;
 
-          // Clear both sides
           state.sideAPlayers.length = 0;
           state.sideBPlayers.length = 0;
           state.sideAPicks.length   = 0;
           state.sideBPicks.length   = 0;
 
-          // Side A = what you give (focus player)
+          // Side A = what you receive (the focus/target player)
           state.sideAPlayers.push(focusPObj);
 
-          // Side B = what you receive (the package)
+          // Side B = what you give (the package)
           assets.forEach(a => {
             if (a.type === "pick") {
-              // Best-effort: match to an allPlayers pick entry by season+round
-              const yr = String(a.pick_season || "").replace(/\D/g,"");
-              const rd = String(a.pick_round  || "").replace(/\D/g,"");
+              const yr    = String(a.pick_season || "").replace(/\D/g, "");
+              const rd    = String(a.pick_round  || "").replace(/\D/g, "");
               const order = (a.pick_order || "mid").toLowerCase();
-              const pickId = yr && rd ? `${yr}_${rd}_${order || "mid"}` : null;
+              const pickId  = yr && rd ? `${yr}_${rd}_${order || "mid"}` : null;
               const pickObj = pickId && allPlayers.find(p => p.id === pickId);
               if (pickObj) {
                 state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
@@ -2608,12 +2606,98 @@ window.initTradePage = function initTradePage(root = document) {
       });
     }
 
-    // ── Load targets into suggestions tab ────────────────────────
-    function loadSuggTargets() {
+    // ── Suggestions-tab Trade Targets (different from sidebar) ───
+    async function loadSuggTargets() {
       suggTargetsLoaded = true;
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
-      loadTradeTargets(container);
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
+      const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
+      const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+
+      if (!leagueId || !viewerRosterId) {
+        container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
+        return;
+      }
+
+      const pathParts  = window.location.pathname.split("/").filter(Boolean);
+      const platform   = pathParts[0] || "sleeper";
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+
+      container.innerHTML = '<div class="otc-movers-empty">Loading targets…</div>';
+
+      try {
+        const res = await fetch(
+          `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
+          `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+
+        const grouped     = data.by_position || {};
+        const allGrouped  = data.all_positions || {};
+        const isBalanced  = !Object.keys(grouped).length;
+        const posColor2   = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+
+        function renderRow(t, pos) {
+          const col      = posColor2[pos] || "var(--accent)";
+          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+          const safePid  = (t.player_id || "");
+          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;background:${col}20;color:${col};flex-shrink:0;">${pos}</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.name || ""}</span>
+            <button class="sugg-target-get-btn"
+              data-pid="${safePid}" data-name="${safeName}"
+              style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);cursor:pointer;white-space:nowrap;margin:0;">
+              Find packages →
+            </button>
+          </div>`;
+        }
+
+        let html = "";
+        if (isBalanced) {
+          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced — top available at each position:</div>`;
+          Object.keys(allGrouped).forEach(pos => {
+            (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        } else {
+          Object.keys(grouped).forEach(pos => {
+            (grouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        }
+
+        container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+
+        container.addEventListener("click", e => {
+          const btn = e.target.closest(".sugg-target-get-btn");
+          if (!btn) return;
+          const pid  = btn.dataset.pid;
+          const name = btn.dataset.name;
+          if (!pid || !name) return;
+          // Populate the search input and fetch packages
+          if (playerInput) {
+            playerInput.value = name;
+            playerDropdown.style.display = "none";
+          }
+          fetchPackages(pid, name);
+          // Scroll search into view
+          const buildHead = root.querySelector(".otc-sugg-build-head");
+          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, { once: false });
+
+      } catch (e) {
+        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
+      }
     }
   })();
 
