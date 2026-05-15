@@ -3652,15 +3652,6 @@ thead th {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
-.otc-pro-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(251, 191, 36, 0.15);
-  color: #f59e0b;
-  letter-spacing: 0.02em;
-}
 
 /* ── Suggestions tab layout ─────────────────────────────────── */
 .otc-sugg-tab-layout {

@@ -148,7 +148,7 @@ def build_trade_calculator_body(
           <div class="otc-main-tabs">
             <button class="otc-main-tab is-active" data-tab="calculator">Calculator</button>
             <button class="otc-main-tab" data-tab="suggestions">
-              Suggestions <span class="otc-pro-badge">★ PRO</span>
+              Suggestions <span class="nav-pro-badge">PRO</span>
             </button>
           </div>
 
