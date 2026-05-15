@@ -15845,6 +15845,179 @@ def api_trade_intel_similar_trades():
         return jsonify({"error": "Internal error"}), 500
 
 
+@app.route("/api/trade-intel/player-packages/<player_id>")
+def api_player_packages(player_id: str):
+    """
+    Grouped trade packages for a single player, sorted by frequency.
+    Each package = the assets that appeared on the opposite side when
+    this player was traded in real dynasty leagues.
+    """
+    try:
+        season      = int(request.args.get("season") or datetime.now().year)
+        league_type = (request.args.get("league_type") or "all").strip().lower()
+        league_id   = (request.args.get("league_id") or "").strip()
+        platform    = (request.args.get("platform") or "sleeper").strip()
+        limit       = min(int(request.args.get("limit") or 25), 50)
+
+        user_id = session.get("viewer_username")
+        if not has_premium_access(user_id, league_id or None, platform):
+            return jsonify({"paywall": True}), 403
+
+        sf_param  = True if league_type == "sf" else (False if league_type == "1qb" else None)
+        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+        from collections import defaultdict
+
+        players_map = load_players_index() or {}
+        player_info = players_map.get(str(player_id)) or {}
+        player_name = player_info.get("name") or str(player_id)
+
+        with get_conn() as conn:
+            val_rows = conn.execute(
+                """
+                SELECT pv.player_id,
+                    COALESCE(tips.weighted_market_value_1qb,
+                             pv.calibrated_value_1qb,
+                             pv.value_1qb) AS val
+                FROM player_values pv
+                LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
+                """,
+            ).fetchall()
+            value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
+            focus_value = value_map.get(str(player_id), 0)
+
+            base_args = [str(player_id), season] + ([sf_param] if sf_param is not None else [])
+            count_row = conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT t.id) AS n
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.season = %s {sf_clause}
+                """,
+                base_args,
+            ).fetchone()
+            total_trades = int(count_row["n"]) if count_row else 0
+
+            if not total_trades:
+                return jsonify({"packages": [], "total_trades": 0,
+                                "player_name": player_name, "player_id": player_id})
+
+            trade_id_rows = conn.execute(
+                f"""
+                SELECT DISTINCT t.id
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.season = %s {sf_clause}
+                ORDER BY t.id DESC
+                LIMIT 3000
+                """,
+                base_args,
+            ).fetchall()
+            trade_ids = [r["id"] for r in trade_id_rows]
+
+            asset_rows = conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order, pick_slot
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()
+
+        by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in by_trade:
+                by_trade[tid] = {"a": [], "b": []}
+            by_trade[tid][a["side"]].append(a)
+
+        def describe(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = str(a["player_id"])
+                info = players_map.get(pid) or {}
+                return {"type": "player", "player_id": pid,
+                        "name": info.get("name") or pid,
+                        "position": info.get("pos") or "?",
+                        "value": value_map.get(pid, 0)}
+            s     = str(a["pick_season"] or "?")
+            rd    = str(a["pick_round"] or "?")
+            slot  = a.get("pick_slot")
+            order = a.get("pick_order") or ""
+            name  = (f"{s} Pick {rd}.{str(slot).zfill(2)}" if slot
+                     else f"{s} Round {rd}" + (f" ({order})" if order else ""))
+            return {"type": "pick", "name": name, "value": 0,
+                    "pick_round": rd, "pick_order": order}
+
+        def pick_approx_value(a) -> float:
+            return {1: 4500, 2: 2000, 3: 800}.get(int(a.get("pick_round") or 4), 400)
+
+        focus_pid      = str(player_id)
+        package_groups: dict = defaultdict(list)
+
+        for tid, sides in by_trade.items():
+            focus_side = next(
+                (sk for sk in ("a", "b")
+                 if any(x["asset_type"] == "player" and str(x["player_id"]) == focus_pid
+                        for x in sides[sk])),
+                None,
+            )
+            if not focus_side:
+                continue
+            other_key  = "b" if focus_side == "a" else "a"
+            other_side = [describe(x) for x in sides[other_key]
+                          if not (x["asset_type"] == "player"
+                                  and str(x["player_id"]) == focus_pid)]
+            if not other_side:
+                continue
+
+            canonical = tuple(sorted(
+                f"p:{x['player_id']}" if x["type"] == "player" else f"pick:{x['name']}"
+                for x in other_side
+            ))
+            package_groups[canonical].append(other_side)
+
+        results = []
+        for canonical, occurrences in package_groups.items():
+            assets   = occurrences[0]
+            freq     = len(occurrences)
+            recv_val = sum(
+                a["value"] if a["type"] == "player" and a["value"] > 0
+                else pick_approx_value(a)
+                for a in assets
+            )
+            if focus_value > 0:
+                ratio       = recv_val / focus_value
+                value_label = ("Great deal"   if ratio >= 1.10 else
+                               "Fair value"   if ratio >= 0.90 else
+                               "Slight overpay" if ratio >= 0.75 else
+                               "Overpay")
+            else:
+                value_label = "Unknown"
+
+            n          = len(assets)
+            size_label = "1-for-1" if n == 1 else f"{n}-for-1"
+            results.append({"assets": assets, "frequency": freq,
+                             "value_label": value_label, "size_label": size_label,
+                             "receive_value": round(recv_val)})
+
+        results.sort(key=lambda x: -x["frequency"])
+        return jsonify({"packages": results[:limit], "total_trades": total_trades,
+                        "total_packages": len(results), "player_name": player_name,
+                        "player_id": player_id, "focus_value": round(focus_value)})
+
+    except Exception:
+        logger.exception("[player-packages] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
 @app.route("/api/trade-intel/run-crawl", methods=["POST"])
 @limiter.limit("2 per hour")
 def api_trade_intel_run_crawl():

@@ -145,6 +145,14 @@ def build_trade_calculator_body(
         <input type="hidden" id="otcHasPremium" value="{has_premium_str}">
 
         <div class="otc-shell">
+          <div class="otc-main-tabs">
+            <button class="otc-main-tab is-active" data-tab="calculator">Calculator</button>
+            <button class="otc-main-tab" data-tab="suggestions">
+              💡 Suggestions <span class="otc-pro-badge">★ PRO</span>
+            </button>
+          </div>
+
+          <div id="otcCalcTab">
           <div class="otc-page-head">
             <div class="otc-page-title-wrap">
               <div style="display: flex; align-items: center; gap: 8px;">
@@ -402,7 +410,41 @@ def build_trade_calculator_body(
             }}
           </style>
 
-        </div>
+          </div><!-- /#otcCalcTab -->
+
+          <div id="otcSuggestionsTab" style="display:none;">
+            <div class="otc-sugg-tab-layout">
+
+              <!-- Build Around section -->
+              <div class="otc-sugg-build-section">
+                <div class="otc-sugg-build-head">
+                  <span class="otc-sugg-build-label">Build around</span>
+                  <div class="otc-sugg-search-wrap">
+                    <input id="suggPlayerInput" class="otc-sugg-player-input"
+                      type="text" autocomplete="off"
+                      placeholder="Search any player…" />
+                    <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
+                  </div>
+                </div>
+                <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
+                <div id="suggResultsList" class="otc-sugg-list"></div>
+              </div>
+
+              <!-- Trade Targets section -->
+              <div class="otc-sugg-targets-section">
+                <div class="otc-sugg-section-head">
+                  <span class="otc-sugg-section-title">Trade Targets</span>
+                  <span class="otc-sugg-section-sub">Based on your roster gaps</span>
+                </div>
+                <div id="otcSuggTargetsBody" style="display:flex;flex-direction:column;gap:8px;">
+                  <div class="otc-movers-empty">Select your team above to see targets.</div>
+                </div>
+              </div>
+
+            </div>
+          </div><!-- /#otcSuggestionsTab -->
+
+        </div><!-- /.otc-shell -->
       </main>
 
       <aside class="otc-side">

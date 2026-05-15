@@ -2204,13 +2204,13 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // loadTradeTargets - surfaces players to pursue based on positional rank gaps
   // ------------------------------------------------------------
-  async function loadTradeTargets() {
-    const body = root.querySelector("#tradeTargetsBody");
+  async function loadTradeTargets(containerEl) {
+    const body = containerEl || root.querySelector("#tradeTargetsBody");
     if (!body) return;
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+      body.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
       return;
     }
 
@@ -2372,6 +2372,250 @@ window.initTradePage = function initTradePage(root = document) {
     const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
     if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  // ── Suggestions tab ─────────────────────────────────────────────────────
+  (function initSuggestionsTab() {
+    const calcTab  = root.querySelector("#otcCalcTab");
+    const suggTab  = root.querySelector("#otcSuggestionsTab");
+    if (!calcTab || !suggTab) return;
+
+    const tabs = root.querySelectorAll(".otc-main-tab");
+
+    let suggTargetsLoaded = false;
+    let suggCurrentPlayerId = null;
+
+    function switchTab(name) {
+      tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
+      calcTab.style.display  = name === "calculator"   ? "" : "none";
+      suggTab.style.display  = name === "suggestions"  ? "" : "none";
+      if (name === "suggestions" && !suggTargetsLoaded) {
+        loadSuggTargets();
+      }
+    }
+
+    tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    // expose so Load & Analyze can switch back
+    function switchToCalc() { switchTab("calculator"); }
+
+    // ── Player search ────────────────────────────────────────────
+    const playerInput    = root.querySelector("#suggPlayerInput");
+    const playerDropdown = root.querySelector("#suggPlayerDropdown");
+    const resultsMeta    = root.querySelector("#suggResultsMeta");
+    const resultsList    = root.querySelector("#suggResultsList");
+    if (!playerInput) return;
+
+    function posColor(pos) {
+      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
+    }
+
+    function renderDropdown(matches) {
+      if (!matches.length) { playerDropdown.style.display = "none"; return; }
+      playerDropdown.innerHTML = matches.slice(0, 12).map(p => {
+        const col = posColor(p.position);
+        return `<div class="otc-sugg-dropdown-item" data-id="${p.id}" data-name="${(p.name||"").replace(/"/g,"&quot;")}">
+          <span class="otc-sugg-dropdown-pos" style="background:${col}20;color:${col};">${p.position}</span>
+          <span class="otc-sugg-dropdown-name">${p.name || p.id}</span>
+          <span class="otc-sugg-dropdown-val">${p.value ? Math.round(p.value) : ""}</span>
+        </div>`;
+      }).join("");
+      playerDropdown.style.display = "block";
+    }
+
+    playerInput.addEventListener("input", () => {
+      const q = playerInput.value.trim().toLowerCase();
+      if (q.length < 2) { playerDropdown.style.display = "none"; return; }
+      const matches = allPlayers.filter(p =>
+        ["QB","RB","WR","TE"].includes(p.position) &&
+        (p.name || "").toLowerCase().includes(q)
+      ).sort((a,b) => (b.value||0)-(a.value||0));
+      renderDropdown(matches);
+    });
+
+    playerDropdown.addEventListener("click", e => {
+      const item = e.target.closest(".otc-sugg-dropdown-item");
+      if (!item) return;
+      playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
+      playerDropdown.style.display = "none";
+      fetchPackages(item.dataset.id, item.dataset.name);
+    });
+
+    document.addEventListener("click", e => {
+      if (!playerInput.contains(e.target) && !playerDropdown.contains(e.target))
+        playerDropdown.style.display = "none";
+    });
+
+    // ── Fetch packages from API ──────────────────────────────────
+    async function fetchPackages(playerId, playerName) {
+      if (!playerId) return;
+      suggCurrentPlayerId = playerId;
+
+      resultsMeta.style.display = "none";
+      resultsList.innerHTML = `<div class="otc-sugg-empty">
+        <div class="otc-sugg-empty-sub">Loading packages…</div></div>`;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-title">Pro Feature</div>
+          <div class="otc-sugg-empty-sub">Upgrade to see real trade packages for any player.</div>
+        </div>`;
+        return;
+      }
+
+      const leagueId  = root.querySelector("#leagueIdInput")?.value  || "";
+      const season    = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const platform  = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+      const leagueType = getLeagueType();
+
+      try {
+        const res = await fetch(
+          `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
+          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}&platform=${encodeURIComponent(platform)}`
+        );
+
+        if (res.status === 403) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">Pro Feature</div>
+            <div class="otc-sugg-empty-sub">Upgrade to unlock trade package history for any player.</div>
+          </div>`;
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!data.packages || !data.packages.length) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">No packages found</div>
+            <div class="otc-sugg-empty-sub">Not enough trade history for ${playerName} yet.</div>
+          </div>`;
+          return;
+        }
+
+        resultsMeta.textContent =
+          `${data.total_packages} packages · ${data.total_trades} real trades · sorted by frequency`;
+        resultsMeta.style.display = "block";
+
+        renderPackages(data.packages, data.player_name, playerId, data.focus_value);
+
+      } catch (err) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
+      }
+    }
+
+    // ── Render package cards ─────────────────────────────────────
+    function renderPackages(packages, playerName, playerId, focusValue) {
+      function valueClass(label) {
+        if (label === "Fair value" || label === "Great deal") return "fair";
+        if (label === "Great deal") return "great";
+        return "overpay";
+      }
+
+      function assetHtml(a) {
+        if (a.type === "pick") {
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${a.name}</div>`;
+        }
+        const col = posColor(a.position);
+        return `<div class="otc-sugg-pkg-asset">
+          <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
+          ${a.name}
+        </div>`;
+      }
+
+      const focusPlayer = allPlayers.find(p => String(p.id) === String(playerId));
+      const focusPos    = focusPlayer?.position || "WR";
+      const focusCol    = posColor(focusPos);
+
+      resultsList.innerHTML = packages.map((pkg, i) => {
+        const vc = valueClass(pkg.value_label);
+        return `<div class="otc-sugg-package">
+          <div class="otc-sugg-pkg-header">
+            <div class="otc-sugg-pkg-badges">
+              <span class="otc-sugg-pkg-size">${pkg.size_label}</span>
+              <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
+            </div>
+            <span class="otc-sugg-pkg-freq">traded ${pkg.frequency}×</span>
+          </div>
+          <div class="otc-sugg-pkg-sides">
+            <div>
+              <div class="otc-sugg-pkg-side-label">You give</div>
+              <div class="otc-sugg-pkg-asset">
+                <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                ${playerName}
+              </div>
+            </div>
+            <div class="otc-sugg-pkg-arrow">→</div>
+            <div>
+              <div class="otc-sugg-pkg-side-label">You get</div>
+              ${pkg.assets.map(assetHtml).join("")}
+            </div>
+          </div>
+          <button class="otc-sugg-pkg-load-btn"
+            data-focus-id="${playerId}"
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}">
+            Load &amp; Analyze →
+          </button>
+        </div>`;
+      }).join("");
+
+      resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const focusId   = btn.dataset.focusId;
+          const assets    = JSON.parse(decodeURIComponent(btn.dataset.assets));
+          const focusPObj = allPlayers.find(p => String(p.id) === String(focusId));
+          if (!focusPObj) return;
+
+          // Clear both sides
+          state.sideAPlayers.length = 0;
+          state.sideBPlayers.length = 0;
+          state.sideAPicks.length   = 0;
+          state.sideBPicks.length   = 0;
+
+          // Side A = what you give (focus player)
+          state.sideAPlayers.push(focusPObj);
+
+          // Side B = what you receive (the package)
+          assets.forEach(a => {
+            if (a.type === "pick") {
+              // Best-effort: match to an allPlayers pick entry by season+round
+              const yr = String(a.pick_season || "").replace(/\D/g,"");
+              const rd = String(a.pick_round  || "").replace(/\D/g,"");
+              const order = (a.pick_order || "mid").toLowerCase();
+              const pickId = yr && rd ? `${yr}_${rd}_${order || "mid"}` : null;
+              const pickObj = pickId && allPlayers.find(p => p.id === pickId);
+              if (pickObj) {
+                state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
+              } else if (pickId) {
+                state.sideBPicks.push({ id: pickId, display: a.name });
+              }
+            } else {
+              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
+              if (pObj) state.sideBPlayers.push(pObj);
+            }
+          });
+
+          saveState();
+          renderChips("A");
+          renderChips("B");
+          syncEmptyState("A");
+          syncEmptyState("B");
+          analyzeTrade();
+          switchToCalc();
+          const shell = root.querySelector(".otc-shell");
+          if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    }
+
+    // ── Load targets into suggestions tab ────────────────────────
+    function loadSuggTargets() {
+      suggTargetsLoaded = true;
+      const container = root.querySelector("#otcSuggTargetsBody");
+      if (!container) return;
+      loadTradeTargets(container);
+    }
+  })();
 
   window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
     try {
