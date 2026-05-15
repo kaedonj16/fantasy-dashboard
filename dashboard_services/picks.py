@@ -14,8 +14,8 @@ import pandas as pd
 from dashboard_services.api import get_nfl_state
 from utils.paths import DATA_DIR
 
-DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
-FANTASYCALC_VALUES_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
+DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
+FANTASYCALC_VALUES_PATH = DATA_DIR / "fantasycalc_api_values.csv"
 
 # FantasyCalc examples handled:
 #   2026 Pick 1.01
@@ -178,9 +178,10 @@ def _build_pick_key(
 
     bucket = _normalize_bucket_label(bucket)
 
-    # Important for values like "2027 1st" from FantasyCalc
+    # Important for values like "2027 1st" from FantasyCalc — no bucket
+    # specified means we don't know the slot, treat it as mid
     if not bucket:
-        bucket = "early"
+        bucket = "mid"
 
     return ("bucket", year, rnd, bucket)
 
@@ -208,6 +209,7 @@ def load_pick_value_table(
         w_fc: float = 0.55,
         w_dp: float = 0.45,
         current_year: int | None = None,
+        use_wls_overlay: bool = True,
 ) -> Dict[str, float]:
     """
     Build a draft pick value table by merging FantasyCalc + DynastyProcess.
@@ -418,10 +420,6 @@ def load_pick_value_table(
         else:
             continue
 
-        # CRITICAL FIX: Apply explicit time discount to future picks
-        _, pick_year, _, _ = key  # Extract year from key tuple (kind, year, rnd, detail)
-        val = _apply_time_discount(val, pick_year, current_year)
-
         key_str = _pick_key_to_output_string(key)
         final[key_str] = round(float(val), 1)
 
@@ -453,17 +451,72 @@ def load_pick_value_table(
             if all_vals and f"{current_year}_{rnd_num}" not in final:
                 final[f"{current_year}_{rnd_num}"] = round(sum(all_vals) / len(all_vals), 1)
 
-    # Overlay WLS-derived pick values when available - trade-market estimates
-    # take priority over external CSV sources for buckets that have enough data.
-    wls_path = DATA_DIR / "pick_values_wls_latest.json"
-    if wls_path.exists():
-        try:
-            import json
-            wls = json.loads(wls_path.read_text())
-            for key, val in wls.get("1qb", {}).items():
-                if val and val > 0:
-                    final[key] = float(val)
-        except Exception:
-            pass
+    # WLS is the authoritative source for all pick values when available.
+    # FC/DP values above serve only as the WLS prior (via use_wls_overlay=False)
+    # and as a bootstrap fallback before the first WLS run.
+    if use_wls_overlay:
+        wls_path = DATA_DIR / "pick_values_wls_latest.json"
+        if not wls_path.exists():
+            # Fall back to the most recent dated WLS file
+            candidates = sorted(DATA_DIR.glob("pick_values_wls_*.json"), reverse=True)
+            # Exclude the _latest symlink/copy itself (it would fail the exists check above anyway)
+            dated = [p for p in candidates if p.name != "pick_values_wls_latest.json"]
+            if dated:
+                wls_path = dated[0]
+        if wls_path.exists():
+            try:
+                import json
+                wls_raw: Dict[str, float] = {}
+                for key, val in json.loads(wls_path.read_text()).get("1qb", {}).items():
+                    if val and val > 0:
+                        wls_raw[key] = float(val)
+
+                if wls_raw:
+                    # Drop rounds > 5 (keeper league junk from trade data)
+                    wls_final = {k: v for k, v in wls_raw.items()
+                                 if not (len(k.split("_")) >= 2
+                                         and k.split("_")[1].isdigit()
+                                         and int(k.split("_")[1]) > 5)}
+
+                    # Enforce slot monotonicity within each year+round:
+                    # pick 1.01 must be worth >= 1.02 >= ... >= 1.10.
+                    # Group slot picks by (year, round), sort by slot, then
+                    # cap each slot at the value of the previous (better) slot.
+                    from collections import defaultdict as _dd
+                    slot_groups: dict = _dd(list)
+                    for k in list(wls_final):
+                        p = k.split("_")
+                        if len(p) == 3 and p[2].isdigit():
+                            try:
+                                slot_groups[(int(p[0]), int(p[1]))].append((int(p[2]), k))
+                            except ValueError:
+                                pass
+                    for (yr, rnd), entries in slot_groups.items():
+                        entries.sort()  # ascending slot order (1.01, 1.02, ...)
+                        for i in range(1, len(entries)):
+                            prev_key = entries[i - 1][1]
+                            curr_key = entries[i][1]
+                            # Later slot must not exceed earlier slot
+                            wls_final[curr_key] = min(wls_final[curr_key], wls_final[prev_key])
+
+                    # Enforce year-over-year monotonicity on bucket picks:
+                    # a far-year bucket should never exceed the same near-year bucket.
+                    # Slot picks (third part is numeric) are current-year only, skip them.
+                    years = sorted({int(k.split("_")[0])
+                                    for k in wls_final if k.split("_")[0].isdigit()})
+                    for i in range(1, len(years)):
+                        yr_far, yr_near = years[i], years[i - 1]
+                        for key in list(wls_final):
+                            parts = key.split("_")
+                            if (not parts[0].isdigit()
+                                    or int(parts[0]) != yr_far
+                                    or (len(parts) == 3 and parts[2].isdigit())):
+                                continue  # skip slot picks
+                            near_key = str(yr_near) + "_" + "_".join(parts[1:])
+                            if near_key in wls_final:
+                                wls_final[key] = min(wls_final[key], wls_final[near_key])
+                    return wls_final
+            except Exception:
+                pass
 
     return final

@@ -32,9 +32,9 @@ from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_
 # ------------------------------------------------
 
 MODEL_PATH = DATA_DIR / "trade_value_model.pkl"
-DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
-FANTASYCALC_VALUES_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
-ENGINE_VALUES_PATH = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
+FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
+ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
 
 FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
@@ -1096,8 +1096,7 @@ def build_ml_value_table() -> Dict[str, float]:
 # ------------------------------------------------
 
 def rewrite_value_table_with_model() -> Path:
-    date_str = date.today().isoformat()
-    source_path = DATA_DIR / f"usage_table_{date_str}.json"
+    source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
         raise FileNotFoundError(f"No usage table file at {source_path}")
 
@@ -1184,7 +1183,7 @@ def rewrite_value_table_with_model() -> Path:
     sf_vendor_values: dict[str, float] = {}
 
     # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
-    engine_values_path = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+    engine_values_path = DATA_DIR / "engine_values.csv"
     sf_engine_map: dict[str, float] = {}
     # Per-league-size engine maps: {size: {pid: value}}
     engine_size_map: dict[int, dict[str, float]] = {}
@@ -1231,7 +1230,7 @@ def rewrite_value_table_with_model() -> Path:
     dp_df_full = pd.DataFrame()  # Full DP dataframe for outlier detection
     # Always try to load DP dataframe for outlier detection
     try:
-        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
         if "player" in dp_raw.columns and "value_1qb" in dp_raw.columns:
             dp_df_full = dp_raw
     except Exception as e:
@@ -1247,7 +1246,7 @@ def rewrite_value_table_with_model() -> Path:
     # NOTE: dp_df_full intentionally kept from the load above - it is used below
     # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
     try:
-        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
         dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
         if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
             for _, row in dp_raw.iterrows():
@@ -1445,54 +1444,62 @@ def rewrite_value_table_with_model() -> Path:
 
     pick_values = load_pick_value_table() or {}
 
+    # Track which (year, round) pairs have slot entries (YYYY_R_NN where NN is numeric).
+    # For those pairs, skip bucket picks — slots are more precise.
+    # Also track bucket pairs to skip redundant plain YYYY_R generic keys.
+    slot_pairs: set[tuple[int, int]] = set()
+    bucket_pairs: set[tuple[int, int]] = set()
+    for key in pick_values:
+        parts = key.split("_")
+        if len(parts) == 3:
+            try:
+                yr, rnd = int(parts[0]), int(parts[1])
+            except ValueError:
+                continue
+            if parts[2].isdigit():
+                slot_pairs.add((yr, rnd))
+            else:
+                bucket_pairs.add((yr, rnd))
+
     for key, val in pick_values.items():
         parts = key.split("_")
 
         name = None
 
-        # Exact slotted pick format: YYYY_R_PPPOS  ->  2026 1.01
-        # Example keys:
-        #   2026_1_01
-        #   2026_2_04
+        # Exact slotted pick format: YYYY_R_PP  ->  2026 1.01
         if len(parts) == 3 and parts[2].isdigit():
-            year_str, rnd_str, pick_str = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
-                pick_in_round = int(pick_str)
+                year, rnd, pick_in_round = int(parts[0]), int(parts[1]), int(parts[2])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
             name = f"{year} {rnd}.{pick_in_round:02d}"
 
-        # Bucketed future pick format: YYYY_R_bucket  ->  2027 1st (Early)
-        # Example keys:
-        #   2027_1_early
-        #   2027_2_mid
+        # Bucketed format: YYYY_R_bucket  ->  2027 1st (Early)
+        # Skip if slot picks already exist for this year/round (slots are more precise)
         elif len(parts) == 3:
-            year_str, rnd_str, bucket = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
+                year, rnd = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
+            if (year, rnd) in slot_pairs:
+                continue
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-            bucket_label = bucket.lower().capitalize()
-            name = f"{year} {rnd}{suffix} ({bucket_label})"
+            name = f"{year} {rnd}{suffix} ({parts[2].capitalize()})"
 
-        # Plain round-only format: YYYY_R  ->  2027 1st
+        # Plain round-only format: YYYY_R — skip if slot or bucket entries exist for this pair
         elif len(parts) == 2:
-            year_str, rnd_str = parts
-
             try:
-                year = int(year_str)
-                rnd = int(rnd_str)
+                year, rnd = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
-
+            if rnd > 5:
+                continue
+            if (year, rnd) in slot_pairs or (year, rnd) in bucket_pairs:
+                continue
             suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
             name = f"{year} {rnd}{suffix}"
 
@@ -1613,18 +1620,8 @@ def rewrite_value_table_with_model() -> Path:
             else:
                 asset["pos_rank_change_7d"] = None
 
-    out_path = DATA_DIR / f"model_values_{date_str}.json"
+    out_path = DATA_DIR / "model_values.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
-
-    # Remove all previous model_values files now that today's has been written
-    today_name = out_path.name
-    for old_file in DATA_DIR.glob("model_values_*.json"):
-        if old_file.name != today_name:
-            try:
-                old_file.unlink()
-                print(f"[model_values] Removed old value file: {old_file.name}")
-            except Exception as e:
-                print(f"[model_values] Failed to remove {old_file.name}: {e}")
 
     return out_path

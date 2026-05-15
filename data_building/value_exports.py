@@ -1,6 +1,5 @@
 # dashboard_services/value_exports.py
 import csv
-from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +7,7 @@ from data_building.player_value import build_value_table_for_usage
 from utils.utils import load_relevant_index
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-ENGINE_VALUES_CSV = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+ENGINE_VALUES_CSV = DATA_DIR / "engine_values.csv"
 
 LEAGUE_SIZES = [8, 10, 12, 14]
 
@@ -102,27 +101,6 @@ def export_engine_values(out_csv: Path = ENGINE_VALUES_CSV) -> None:
 
     out_csv = Path(out_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-
-    stem = out_csv.stem
-    suffix = out_csv.suffix or ".csv"
-
-    yesterday_file = None
-    try:
-        tail = stem.split("_")[-1]
-        date.fromisoformat(tail)
-        base = "_".join(stem.split("_")[:-1])
-        yesterday_file = out_csv.parent / f"{base}_{yesterday.isoformat()}{suffix}"
-    except Exception:
-        yesterday_file = None
-
-    if yesterday_file and yesterday_file.exists():
-        try:
-            yesterday_file.unlink()
-        except Exception as e:
-            print(f"[engine_values] Failed to remove yesterday's file: {e}")
 
     fieldnames = [
         "player_id", "name", "position", "team",

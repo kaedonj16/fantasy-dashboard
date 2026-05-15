@@ -406,20 +406,7 @@ def write_usage_table_snapshot(
     players_index: Dict[str, dict] = load_players_index()
     usage_by_pid: Dict[str, dict] = build_usage_map_for_season(season, weeks)
 
-    today_str = date.today().isoformat()
-    out_path = DATA_DIR / f"usage_table_{today_str}.json"
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-
-    pattern = f"usage_table_{yesterday.isoformat()}.json"
-    yesterday_file = DATA_DIR / pattern
-
-    if yesterday_file.exists():
-        print(f"[usage_table] Removing yesterday's value file: {yesterday_file.name}")
-        try:
-            yesterday_file.unlink()
-        except Exception as e:
-            print(f"[usage_table] Failed to remove yesterday's file: {e}")
+    out_path = DATA_DIR / "usage_table.json"
 
     players_out = []
 

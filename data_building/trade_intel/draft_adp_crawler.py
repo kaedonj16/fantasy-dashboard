@@ -77,17 +77,18 @@ def _classify_draft(draft_meta: dict) -> Optional[str]:
     return None
 
 
-def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int) -> int:
+def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int) -> tuple[int, int]:
     """
     Fetch completed drafts for one league and persist new picks.
 
-    Returns the number of newly inserted pick rows.
+    Returns (new_picks, new_drafts).
     """
     drafts = _get(f"/league/{league_id}/drafts")
     if not drafts:
-        return 0
+        return 0, 0
 
-    new_picks = 0
+    new_picks  = 0
+    new_drafts = 0
 
     for draft in drafts:
         draft_id = str(draft.get("draft_id") or "")
@@ -166,8 +167,9 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int) -> i
                     [v for row in rows for v in row],
                 )
                 new_picks += len(rows)
+                new_drafts += 1
 
-    return new_picks
+    return new_picks, new_drafts
 
 
 def _mark_leagues_crawled(league_ids: list[str]) -> None:
@@ -308,7 +310,8 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10, crawl_mode: s
 
     print(f"[draft_adp] Crawling drafts for {len(leagues)} leagues with {workers} workers")
 
-    total_new_picks = 0
+    total_new_picks  = 0
+    total_new_drafts = 0
     crawled_ids: list[str] = []
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -324,13 +327,13 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10, crawl_mode: s
         for fut in as_completed(futures):
             league_id = futures[fut]
             try:
-                n = fut.result()
-                total_new_picks += n
+                n_picks, n_drafts = fut.result()
+                total_new_picks  += n_picks
+                total_new_drafts += n_drafts
             except Exception as exc:
                 logger.warning("[draft_adp] League %s failed: %s", league_id, exc)
             crawled_ids.append(league_id)
 
-            # Flush stamps in batches of 50 to avoid large single-update delays
             if len(crawled_ids) >= 50:
                 _mark_leagues_crawled(crawled_ids)
                 crawled_ids = []
@@ -338,11 +341,11 @@ def run_draft_adp_crawl(batch_size: int = 2000, workers: int = 10, crawl_mode: s
     if crawled_ids:
         _mark_leagues_crawled(crawled_ids)
 
-    print(f"[draft_adp] {total_new_picks} new picks stored - recomputing ADP...")
+    print(f"[draft_adp] {total_new_drafts} new drafts, {total_new_picks} new picks - recomputing ADP...")
     adp_count = compute_adp()
     print(f"[draft_adp] Done. {adp_count} ADP entries across all segments.")
 
-    return {"new_picks": total_new_picks, "adp_entries": adp_count}
+    return {"new_picks": total_new_picks, "new_drafts": total_new_drafts, "adp_entries": adp_count}
 
 
 def run_draft_adp_crawl_continuous(
@@ -367,30 +370,33 @@ def run_draft_adp_crawl_continuous(
     deadline = datetime.now() + timedelta(hours=hours)
     logger.info("Starting continuous draft ADP crawl. Deadline: %s", deadline.strftime("%H:%M:%S"))
     
-    batch_num = 0
-    total_new_picks = 0
+    batch_num         = 0
+    total_new_picks   = 0
+    total_new_drafts  = 0
     total_adp_entries = 0
-    
+
     while datetime.now() < deadline:
         batch_num += 1
         remaining_minutes = (deadline - datetime.now()).total_seconds() / 60
-        
+
         logger.info(
             "Batch %d | batch_size=%d | time remaining=%.1f min",
-            batch_num,
-            batch_size,
-            remaining_minutes,
+            batch_num, batch_size, remaining_minutes,
         )
-        
+
         result = run_draft_adp_crawl(batch_size=batch_size, workers=workers)
-        new_picks = result.get("new_picks", 0)
+        new_picks   = result.get("new_picks", 0)
+        new_drafts  = result.get("new_drafts", 0)
         adp_entries = result.get("adp_entries", 0)
-        total_new_picks += new_picks
-        total_adp_entries = adp_entries  # ADP entries are total count, not cumulative
-        
+        total_new_picks   += new_picks
+        total_new_drafts  += new_drafts
+        total_adp_entries  = adp_entries  # total count, not cumulative
+
         logger.info(
-            "Batch %d done: %d new picks, %d ADP entries (cumulative picks: %d)",
-            batch_num, new_picks, adp_entries, total_new_picks,
+            "Batch %d done: %d new drafts, %d new picks, %d ADP entries "
+            "(cumulative: %d drafts, %d picks)",
+            batch_num, new_drafts, new_picks, adp_entries,
+            total_new_drafts, total_new_picks,
         )
         
         if datetime.now() >= deadline:
@@ -405,13 +411,14 @@ def run_draft_adp_crawl_continuous(
         time.sleep(max(sleep_secs, 0))
     
     logger.info(
-        "Continuous crawl complete. %d batches | %d total new picks | %d final ADP entries",
-        batch_num, total_new_picks, total_adp_entries,
+        "Continuous crawl complete. %d batches | %d total new drafts | %d total new picks | %d final ADP entries",
+        batch_num, total_new_drafts, total_new_picks, total_adp_entries,
     )
-    
+
     return {
-        "batches": batch_num,
-        "total_new_picks": total_new_picks,
+        "batches":           batch_num,
+        "total_new_drafts":  total_new_drafts,
+        "total_new_picks":   total_new_picks,
         "final_adp_entries": total_adp_entries,
     }
 

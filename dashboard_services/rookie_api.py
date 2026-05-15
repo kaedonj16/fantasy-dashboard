@@ -215,56 +215,50 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP - same fallback chain as draft-grades tab:
-        # DB real draft data -> FantasyCalc -> model fallback
+        # Overlay dynasty rookie ADP — read directly from dated cache files,
+        # no DB connection required. Falls back to adp_service chain if files absent.
         try:
-            import re as _re
-            from dashboard_services.adp_service import (
-                fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
-            )
-            result_sids = {str(d.get("sleeper_id") or "") for d in result if d.get("sleeper_id")}
+            import re as _re, glob as _glob, json as _adpj
+            from utils.paths import DATA_DIR as _DATA_DIR
 
-            def _build_adp_map(is_sf: bool) -> Dict[str, float]:
-                adp: dict = {}
-                for _s in (year - 1, year):
-                    for pid, entry in fetch_league_adp_from_db(is_sf=is_sf, season=_s, draft_type='rookie').items():
-                        adp[pid] = entry  # later season (year) wins on conflict
-                missing = result_sids - set(adp.keys())
-                if missing:
-                    fc = fetch_fc_rookie_adp(is_sf=is_sf, season=year)
-                    for sid in missing:
-                        if sid in fc:
-                            adp[sid] = fc[sid]
-                missing = result_sids - set(adp.keys())
-                if missing:
-                    model = build_model_adp_fallback(is_sf=is_sf, season=year)
-                    for sid in missing:
-                        if sid in model:
-                            adp[sid] = model[sid]
-                return {
-                    sid: float(d.get("avg_pick") or d.get("adp_rank") or 0)
-                    for sid, d in adp.items()
-                    if d.get("avg_pick") or d.get("adp_rank")
-                }
+            def _load_adp_file(is_sf: bool) -> dict:
+                suffix = "sf" if is_sf else "1qb"
+                plain = _DATA_DIR / f"league_adp_rookie_{suffix}_{year}.json"
+                if plain.exists():
+                    return _adpj.loads(plain.read_text())
+                dated = sorted(_glob.glob(str(_DATA_DIR / f"league_adp_rookie_{suffix}_{year}_*.json")))
+                if dated:
+                    return _adpj.loads(open(dated[-1]).read())
+                return {}
 
-            sf_map  = _build_adp_map(True)
-            qb1_map = _build_adp_map(False)
+            def _extract(raw: dict) -> Dict[str, float]:
+                out: Dict[str, float] = {}
+                for pid, entry in raw.items():
+                    if isinstance(entry, dict):
+                        v = entry.get("avg_pick")
+                    else:
+                        v = float(entry) if entry else None
+                    if v:
+                        out[str(pid)] = float(v)
+                return out
 
-            # Build a sleeper_id -> normalised name lookup from players_index.json
-            # so we can fall back to name matching for prospects missing sleeper_id.
+            sf_map  = _extract(_load_adp_file(True))
+            qb1_map = _extract(_load_adp_file(False))
+
+            # Name-based fallback using players_index for prospects missing sleeper_id
             def _norm(n: str) -> str:
+                import re as _r
                 n = n.lower()
-                n = _re.sub(r"['\.\-]", "", n)
-                n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-                return _re.sub(r"\s+", " ", n).strip()
+                n = _r.sub(r"['\.\-]", "", n)
+                n = _r.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                return _r.sub(r"\s+", " ", n).strip()
 
             _sid_to_norm: Dict[str, str] = {}
             try:
-                import json as _json
-                from utils.paths import CACHE_DIR as _CACHE_DIR
-                _pi_path = _CACHE_DIR / "players_index.json"
+                from utils.paths import CACHE_DIR as _CD
+                _pi_path = _CD / "players_index.json"
                 if _pi_path.exists():
-                    _pi = _json.loads(_pi_path.read_text())
+                    _pi = _adpj.loads(_pi_path.read_text())
                     for _sid, _pdata in _pi.items():
                         _pn = _pdata.get("name", "")
                         if _pn:
@@ -272,33 +266,19 @@ def rankings():
             except Exception:
                 pass
 
-            # name -> avg_pick for all players in the ADP maps
-            sf_by_name: Dict[str, float] = {}
-            qb1_by_name: Dict[str, float] = {}
-            for _sid, _val in sf_map.items():
-                _nm = _sid_to_norm.get(_sid)
-                if _nm:
-                    sf_by_name[_nm] = _val
-            for _sid, _val in qb1_map.items():
-                _nm = _sid_to_norm.get(_sid)
-                if _nm:
-                    qb1_by_name[_nm] = _val
+            sf_by_name:  Dict[str, float] = {_sid_to_norm[s]: v for s, v in sf_map.items()  if s in _sid_to_norm}
+            qb1_by_name: Dict[str, float] = {_sid_to_norm[s]: v for s, v in qb1_map.items() if s in _sid_to_norm}
 
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
                 if sid:
-                    if sid in sf_map:
-                        d["sf_avg_pick"] = sf_map[sid]
-                    if sid in qb1_map:
-                        d["avg_pick"] = qb1_map[sid]
+                    if sid in sf_map:  d["sf_avg_pick"] = sf_map[sid]
+                    if sid in qb1_map: d["avg_pick"]    = qb1_map[sid]
                 else:
-                    # Name-based fallback for prospects without a linked sleeper_id
                     pname = _norm(d.get("name") or "")
                     if pname:
-                        if pname in sf_by_name:
-                            d["sf_avg_pick"] = sf_by_name[pname]
-                        if pname in qb1_by_name:
-                            d["avg_pick"] = qb1_by_name[pname]
+                        if pname in sf_by_name:  d["sf_avg_pick"] = sf_by_name[pname]
+                        if pname in qb1_by_name: d["avg_pick"]    = qb1_by_name[pname]
         except Exception:
             pass
 

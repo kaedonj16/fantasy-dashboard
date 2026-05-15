@@ -144,11 +144,7 @@ def safe_owner_name(roster_map: dict, rid) -> str:
 # ------------------------------------------------
 
 def path_week_schedule(season: int, week: int) -> str:
-    # one file per season/week/day
-    return os.path.join(
-        CACHE_DIR,
-        f"schedule/schedule_s{season}_w{week}_d{date.today().isoformat()}.json",
-    )
+    return os.path.join(CACHE_DIR, f"schedule/schedule_s{season}_w{week}.json")
 
 
 def path_players_index() -> str:
@@ -160,23 +156,15 @@ def path_relevant_index() -> str:
 
 
 def path_usage_table() -> str:
-    return os.path.join(DATA_DIR, f"usage_table_{date.today().isoformat()}.json")
+    return os.path.join(DATA_DIR, "usage_table.json")
 
 
 def path_engine_table() -> str:
-    return os.path.join(DATA_DIR, f"engine_values_{date.today().isoformat()}.csv")
+    return os.path.join(DATA_DIR, "engine_values.csv")
 
 
 def path_model_value_table() -> str:
-    """Return the path to today's model value file, or the most recent available."""
-    today_path = DATA_DIR / f"model_values_{date.today().isoformat()}.json"
-    if today_path.exists():
-        return str(today_path)
-    # Fall back to most recent existing file
-    candidates = sorted(DATA_DIR.glob("model_values_*.json"), reverse=True)
-    if candidates:
-        return str(candidates[0])
-    return str(today_path)  # Return today's path even if it doesn't exist (will be None on read)
+    return str(DATA_DIR / "model_values.json")
 
 
 def path_teams_index() -> str:
@@ -188,10 +176,7 @@ def path_idp_index() -> str:
 
 
 def path_week_proj(season: int, week: int) -> str:
-    return os.path.join(
-        CACHE_DIR,
-        f"projections/projections_s{season}_w{week}_d{date.today().isoformat()}.json",
-    )
+    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}.json")
 
 
 def path_week_stats(season: int, week: int) -> str:
@@ -199,15 +184,15 @@ def path_week_stats(season: int, week: int) -> str:
 
 
 def path_fantasycalc_values() -> str:
-    return os.path.join(DATA_DIR, f"fantasycalc_api_values_{date.today().isoformat()}.csv")
+    return os.path.join(DATA_DIR, "fantasycalc_api_values.csv")
 
 
 def path_dynastyprocess_values() -> str:
-    return os.path.join(DATA_DIR, f"dynastyprocess_values_{date.today().isoformat()}.csv")
+    return os.path.join(DATA_DIR, "dynastyprocess_values.csv")
 
 
 def path_ktc_values() -> str:
-    return os.path.join(DATA_DIR, f"ktc_rankings_{date.today().isoformat()}.csv")
+    return os.path.join(DATA_DIR, "ktc_rankings.csv")
 
 
 # ------------------------------------------------
@@ -287,10 +272,10 @@ def load_model_value_table(apply_calibration: bool = True):
             import csv as _csv
             from pathlib import Path as _Path
             _data_dir = _Path(__file__).parent.parent / "data"
-            _fc_files = sorted(_data_dir.glob("fantasycalc_api_values_*.csv"))
-            if _fc_files:
+            _fc_file = _data_dir / "fantasycalc_api_values.csv"
+            if _fc_file.exists():
                 _fc_ids: set = set()
-                with open(_fc_files[-1], newline="") as _f:
+                with open(_fc_file, newline="") as _f:
                     for _row in _csv.DictReader(_f):
                         _sid = str(_row.get("sleeper_id") or "").strip()
                         if _sid:

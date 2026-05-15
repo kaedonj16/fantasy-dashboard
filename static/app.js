@@ -2204,19 +2204,19 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // loadTradeTargets - surfaces players to pursue based on positional rank gaps
   // ------------------------------------------------------------
-  async function loadTradeTargets() {
-    const body = root.querySelector("#tradeTargetsBody");
+  async function loadTradeTargets(containerEl) {
+    const body = containerEl || root.querySelector("#tradeTargetsBody");
     if (!body) return;
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+      body.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
       return;
     }
 
     const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
     const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
-    const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+    const viewerRosterId = getCurrentRosterId();
 
     if (!leagueId || !viewerRosterId) {
       body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Sign in to see targets.</div>';
@@ -2372,6 +2372,422 @@ window.initTradePage = function initTradePage(root = document) {
     const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
     if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  // ── Suggestions tab ─────────────────────────────────────────────────────
+  (function initSuggestionsTab() {
+    const calcTab  = root.querySelector("#otcCalcTab");
+    const suggTab  = root.querySelector("#otcSuggestionsTab");
+    if (!calcTab || !suggTab) return;
+
+    const tabs = root.querySelectorAll(".otc-main-tab");
+
+    let suggTargetsLoaded = false;
+    let suggCurrentPlayerId = null;
+
+    function switchTab(name) {
+      if (name === "suggestions") {
+        const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+        if (!hasPremium) {
+          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+          return;
+        }
+      }
+      tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
+      calcTab.style.display  = name === "calculator"   ? "" : "none";
+      suggTab.style.display  = name === "suggestions"  ? "" : "none";
+      if (name === "suggestions" && !suggTargetsLoaded) {
+        loadSuggTargets();
+      }
+    }
+
+    tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    // Retry targets automatically once a roster ID becomes available.
+    // Covers both teamSelect changes and cases where viewerRosterIdInput is set late.
+    const teamSelEl = root.querySelector("#teamSelect");
+    const rosterInputEl = root.querySelector("#viewerRosterIdInput");
+    function _onRosterReady() {
+      if (!suggTargetsLoaded && getCurrentRosterId()) loadSuggTargets();
+    }
+    if (teamSelEl) teamSelEl.addEventListener("change", _onRosterReady);
+    if (rosterInputEl) {
+      new MutationObserver(_onRosterReady).observe(rosterInputEl, { attributes: true, attributeFilter: ["value"] });
+    }
+
+    // expose so Load & Analyze can switch back
+    function switchToCalc() { switchTab("calculator"); }
+
+    // ── Player search ────────────────────────────────────────────
+    const playerInput    = root.querySelector("#suggPlayerInput");
+    const playerDropdown = root.querySelector("#suggPlayerDropdown");
+    const resultsMeta    = root.querySelector("#suggResultsMeta");
+    const resultsList    = root.querySelector("#suggResultsList");
+    if (!playerInput) return;
+
+    function posColor(pos) {
+      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
+    }
+
+    function renderDropdown(matches) {
+      if (!matches.length) { playerDropdown.style.display = "none"; return; }
+      playerDropdown.innerHTML = matches.slice(0, 12).map(p => {
+        const col = posColor(p.position);
+        return `<div class="otc-sugg-dropdown-item" data-id="${p.id}" data-name="${(p.name||"").replace(/"/g,"&quot;")}">
+          <span class="otc-sugg-dropdown-pos" style="background:${col}20;color:${col};">${p.position}</span>
+          <span class="otc-sugg-dropdown-name">${p.name || p.id}</span>
+          <span class="otc-sugg-dropdown-val">${p.value ? Math.round(p.value) : ""}</span>
+        </div>`;
+      }).join("");
+      playerDropdown.style.display = "block";
+    }
+
+    playerInput.addEventListener("input", () => {
+      const q = playerInput.value.trim().toLowerCase();
+      if (q.length < 2) { playerDropdown.style.display = "none"; return; }
+      const matches = allPlayers.filter(p =>
+        ["QB","RB","WR","TE"].includes(p.position) &&
+        (p.name || "").toLowerCase().includes(q)
+      ).sort((a,b) => (b.value||0)-(a.value||0));
+      renderDropdown(matches);
+    });
+
+    playerDropdown.addEventListener("click", e => {
+      const item = e.target.closest(".otc-sugg-dropdown-item");
+      if (!item) return;
+      playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
+      playerDropdown.style.display = "none";
+      fetchPackages(item.dataset.id, item.dataset.name);
+    });
+
+    document.addEventListener("click", e => {
+      if (!playerInput.contains(e.target) && !playerDropdown.contains(e.target))
+        playerDropdown.style.display = "none";
+    });
+
+    // ── Fetch packages from API ──────────────────────────────────
+    async function fetchPackages(playerId, playerName) {
+      if (!playerId) return;
+      suggCurrentPlayerId = playerId;
+
+      resultsMeta.style.display = "none";
+      resultsList.innerHTML = `<div class="otc-sugg-loading">
+        ${[1,2,3,4,5].map((_, i) => `<div class="otc-sugg-skeleton" style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
+          <div style="flex-shrink:0;width:64px;">
+            <div class="otc-sugg-skeleton-line" style="height:18px;border-radius:5px;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+            <div class="otc-sugg-skeleton-line" style="height:10px;width:70%;animation-delay:${i*0.1+0.05}s;"></div>
+          </div>
+          <div style="flex:1;display:flex;align-items:center;gap:6px;">
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:45%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${70+i*5}%;animation-delay:${i*0.1+0.05}s;"></div>
+            </div>
+            <div class="otc-sugg-skeleton-line" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;animation-delay:${i*0.1}s;"></div>
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:40%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${60+i*4}%;animation-delay:${i*0.1+0.05}s;"></div>
+            </div>
+          </div>
+          <div class="otc-sugg-skeleton-line" style="flex-shrink:0;width:64px;height:28px;border-radius:8px;animation-delay:${i*0.1}s;"></div>
+        </div>`).join("")}
+      </div>`;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-title">Pro Feature</div>
+          <div class="otc-sugg-empty-sub">Upgrade to see real trade packages for any player.</div>
+        </div>`;
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
+      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+      const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+      const leagueType     = getLeagueType();
+
+      try {
+        const res = await fetch(
+          `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
+          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`
+        );
+
+        if (res.status === 403) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">Pro Feature</div>
+            <div class="otc-sugg-empty-sub">Upgrade to unlock trade package history for any player.</div>
+          </div>`;
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!data.packages || !data.packages.length) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">No packages found</div>
+            <div class="otc-sugg-empty-sub">Not enough trade history for ${playerName} yet.</div>
+          </div>`;
+          return;
+        }
+
+        const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
+        resultsMeta.textContent = roosterFiltered
+          ? `${data.packages.length} packages from your roster · sorted by likelihood`
+          : `${data.packages.length} packages · sorted by likelihood`;
+        resultsMeta.style.display = "block";
+
+        renderPackages(data.packages, data.player_name, playerId, data.focus_value);
+
+      } catch (err) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
+      }
+    }
+
+    // ── Render package cards (paginated, 5 per page) ────────────
+    const PAGE_SIZE = 5;
+    let _pkgPage = 0;
+    let _pkgAll  = [];
+    let _pkgPlayerId   = null;
+    let _pkgPlayerName = null;
+
+    function renderPackages(packages, playerName, playerId, focusValue) {
+      _pkgAll        = packages;
+      _pkgPage       = 0;
+      _pkgPlayerId   = playerId;
+      _pkgPlayerName = playerName;
+      renderPackagePage();
+    }
+
+    function renderPackagePage() {
+      const packages   = _pkgAll;
+      const playerId   = _pkgPlayerId;
+      const playerName = _pkgPlayerName;
+
+      function valueClass(label) {
+        if (label === "Great deal") return "great";
+        if (label === "Fair value") return "fair";
+        return "overpay";
+      }
+
+      function assetHtml(a) {
+        if (a.type === "pick") {
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${a.name}</div>`;
+        }
+        const col = posColor(a.position);
+        return `<div class="otc-sugg-pkg-asset">
+          <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
+          ${a.name}
+        </div>`;
+      }
+
+      const focusPlayer = allPlayers.find(p => String(p.id) === String(playerId));
+      const focusPos    = focusPlayer?.position || "WR";
+      const focusCol    = posColor(focusPos);
+
+      const totalPages = Math.ceil(packages.length / PAGE_SIZE);
+      const page       = _pkgPage;
+      const slice      = packages.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+      const cardsHtml = slice.map((pkg) => {
+        const vc = valueClass(pkg.value_label);
+        return `<div class="otc-sugg-package">
+          <div class="otc-sugg-pkg-meta">
+            <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
+            <span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>
+          </div>
+          <div class="otc-sugg-pkg-sides">
+            <div class="otc-sugg-pkg-side">
+              <div class="otc-sugg-pkg-side-label">You get</div>
+              <div class="otc-sugg-pkg-assets">
+                <div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                  ${playerName}
+                </div>
+              </div>
+            </div>
+            <div class="otc-sugg-pkg-divider">←</div>
+            <div class="otc-sugg-pkg-side">
+              <div class="otc-sugg-pkg-side-label">You give</div>
+              <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
+            </div>
+          </div>
+          <button class="otc-sugg-pkg-load-btn"
+            data-focus-id="${playerId}"
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}">
+            Analyze
+          </button>
+        </div>`;
+      }).join("");
+
+      const paginationHtml = totalPages > 1 ? `
+        <div class="otc-sugg-pagination">
+          <button class="otc-sugg-page-btn" data-dir="-1" ${page === 0 ? "disabled" : ""}>← Prev</button>
+          <span class="otc-sugg-page-label">${page + 1} / ${totalPages}</span>
+          <button class="otc-sugg-page-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next →</button>
+        </div>` : "";
+
+      resultsList.innerHTML = cardsHtml + paginationHtml;
+
+      resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const newPage = _pkgPage + parseInt(btn.dataset.dir);
+          if (newPage < 0 || newPage >= totalPages) return;
+          _pkgPage = newPage;
+          renderPackagePage();
+          resultsList.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      });
+
+      resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const focusId   = btn.dataset.focusId;
+          const assets    = JSON.parse(decodeURIComponent(btn.dataset.assets));
+          const focusPObj = allPlayers.find(p => String(p.id) === String(focusId));
+          if (!focusPObj) return;
+
+          state.sideAPlayers.length = 0;
+          state.sideBPlayers.length = 0;
+          state.sideAPicks.length   = 0;
+          state.sideBPicks.length   = 0;
+
+          // Side A = what you receive (the focus/target player)
+          state.sideAPlayers.push(focusPObj);
+
+          // Side B = what you give (the package)
+          assets.forEach(a => {
+            if (a.type === "pick") {
+              const yr   = String(a.pick_season || "").replace(/\D/g, "");
+              const rd   = String(a.pick_round  || "").replace(/\D/g, "");
+              const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+              const order = (a.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
+              const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
+              const pickObj = pickId && (
+                allPlayers.find(p => p.id === pickId) ||
+                allPlayers.find(p => yr && rd && p.id && p.id.startsWith(`${yr}_${rd}_`))
+              );
+              if (pickObj) {
+                state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
+              } else if (pickId) {
+                state.sideBPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
+              }
+            } else {
+              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
+              if (pObj) state.sideBPlayers.push(pObj);
+            }
+          });
+
+          saveState();
+          renderChips("A");
+          renderChips("B");
+          syncEmptyState("A");
+          syncEmptyState("B");
+          analyzeTrade();
+          switchToCalc();
+          const shell = root.querySelector(".otc-shell");
+          if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    }
+
+    // ── Suggestions-tab Trade Targets (different from sidebar) ───
+    async function loadSuggTargets() {
+      const container = root.querySelector("#otcSuggTargetsBody");
+      if (!container) return;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        suggTargetsLoaded = true;
+        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
+      const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+
+      if (!leagueId || !viewerRosterId) {
+        // Don't mark loaded — retry next time the tab is opened
+        container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
+        return;
+      }
+
+      suggTargetsLoaded = true;
+
+      const pathParts  = window.location.pathname.split("/").filter(Boolean);
+      const platform   = pathParts[0] || "sleeper";
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+
+      container.innerHTML = '<div class="otc-movers-empty">Loading targets…</div>';
+
+      try {
+        const res = await fetch(
+          `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
+          `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+
+        const grouped     = data.by_position || {};
+        const allGrouped  = data.all_positions || {};
+        const isBalanced  = !Object.keys(grouped).length;
+        const posColor2   = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+
+        function renderRow(t, pos) {
+          const col      = posColor2[pos] || "var(--accent)";
+          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+          const safePid  = (t.player_id || "");
+          return `<div class="otc-sugg-target-row">
+            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-name">${t.name || ""}</span>
+            <button class="sugg-target-get-btn otc-sugg-target-btn"
+              data-pid="${safePid}" data-name="${safeName}">
+              Find packages
+            </button>
+          </div>`;
+        }
+
+        let html = "";
+        if (isBalanced) {
+          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced — top available at each position:</div>`;
+          Object.keys(allGrouped).forEach(pos => {
+            (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        } else {
+          Object.keys(grouped).forEach(pos => {
+            (grouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        }
+
+        container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+
+        container.addEventListener("click", e => {
+          const btn = e.target.closest(".sugg-target-get-btn");
+          if (!btn) return;
+          const pid  = btn.dataset.pid;
+          const name = btn.dataset.name;
+          if (!pid || !name) return;
+          // Populate the search input and fetch packages
+          if (playerInput) {
+            playerInput.value = name;
+            playerDropdown.style.display = "none";
+          }
+          fetchPackages(pid, name);
+          // Scroll search into view
+          const buildHead = root.querySelector(".otc-sugg-build-head");
+          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, { once: false });
+
+      } catch (e) {
+        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
+      }
+    }
+  })();
 
   window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
     try {
@@ -7189,6 +7605,8 @@ function openTeamModal(rosterId, teamName) {
   modal.className = 'team-modal';
   modal.id = 'teamModal';
 
+  window._tmRosterId = rosterId;
+
   modal.innerHTML = `
     <div class="team-modal-header">
       <div class="team-modal-avatar" id="teamModalAvatar">
@@ -7202,11 +7620,20 @@ function openTeamModal(rosterId, teamName) {
       </div>
       <button class="team-modal-close" onclick="closeTeamModal()">×</button>
     </div>
-    <div class="team-modal-body" id="teamModalBody">
-      <div class="team-modal-loading">
-        <div class="loading-spinner"></div>
-        <div>Loading team details...</div>
+    <div class="tm-tab-bar">
+      <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
+      <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Charts</button>
+      <button class="tm-tab" data-tab="trades" onclick="tmSwitchTab('trades')">Trades</button>
+    </div>
+    <div class="team-modal-body">
+      <div class="tm-panel active" id="tm-panel-roster">
+        <div class="team-modal-loading">
+          <div class="loading-spinner"></div>
+          <div>Loading team details...</div>
+        </div>
       </div>
+      <div class="tm-panel" id="tm-panel-charts"></div>
+      <div class="tm-panel" id="tm-panel-trades"></div>
     </div>
   `;
 
@@ -7225,6 +7652,83 @@ function closeTeamModal() {
   if (overlay) overlay.remove();
   if (modal) modal.remove();
   document.body.style.overflow = '';
+  window._tmRosterId = null;
+  window._tmTradesLoaded = false;
+}
+
+function tmSwitchTab(tab) {
+  document.querySelectorAll('.tm-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tm-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('tm-panel-' + tab);
+  const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (tab === 'trades' && !window._tmTradesLoaded) {
+    window._tmTradesLoaded = true;
+    tmLoadTrades(window._tmRosterId);
+  }
+}
+
+async function tmLoadTrades(rosterId) {
+  const panel = document.getElementById('tm-panel-trades');
+  if (!panel) return;
+  panel.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading trade history…</div></div>';
+
+  try {
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const platform = pathParts[0] || 'sleeper';
+    const season = pathParts[1] || new Date().getFullYear();
+    const leagueId = pathParts[2];
+
+    if (!leagueId) throw new Error('League ID not found');
+
+    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const trades = data.trades || [];
+    if (!trades.length) {
+      panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No trades found for this team this season.</div></div>';
+      return;
+    }
+
+    const renderAssets = (players, picks) => {
+      const parts = [
+        ...players.map(p => `<div class="pm-trade-asset player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}${p.position ? `<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${p.position}</span>` : ''}</div>`),
+        ...picks.map(p => `<div class="pm-trade-asset pm-pick">${p.season} Rd ${p.round}</div>`),
+      ];
+      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">—</div>';
+    };
+
+    const cards = trades.map(tr => {
+      const weekLabel = tr.week ? `Week ${tr.week}` : '';
+      const dateLabel = tr.date || '';
+      const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
+
+      return `<div class="pm-trade-card">
+        <div class="pm-trade-head">
+          <span class="pm-trade-date">${headRight}</span>
+        </div>
+        <div class="pm-trade-body">
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#10b981;margin-bottom:4px;">Received</div>
+            ${renderAssets(tr.my_gets, tr.my_pick_gets)}
+          </div>
+          <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#ef4444;margin-bottom:4px;">Sent</div>
+            ${renderAssets(tr.my_sends, tr.my_pick_sends)}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML = `<div style="padding:4px 0;">${cards}</div>`;
+  } catch (err) {
+    panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
+  }
 }
 
 async function checkTradeOutcome(btn) {
@@ -7348,7 +7852,8 @@ async function fetchTeamDetails(rosterId) {
 
   } catch (error) {
     console.error('[team-modal] Error fetching team details:', error);
-    document.getElementById('teamModalBody').innerHTML = `
+    const _errPanel = document.getElementById('tm-panel-roster');
+    if (_errPanel) _errPanel.innerHTML = `
       <div class="team-modal-error">
         <div>Failed to load team details</div>
         <div style="color: #9ca3af; font-size: 14px;">${error.message}</div>
@@ -7746,29 +8251,27 @@ function renderTeamDetails(data) {
 
   picksHTML += '</div>';
 
-  // Build graphs section
+  // Build graphs section — each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
-    graphsHTML += '<div class="team-modal-section"><h3>Performance Charts</h3>';
-
-    // Weekly scores line chart
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart"></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
     }
-
-    // Radar chart
     if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-chart-container" id="teamRadarChart"></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
-
-    graphsHTML += '</div>';
   }
 
-  // Set body content with two-column layout
-  const leftColumn = `<div class="team-modal-body-left">${rosterHTML}</div>`;
-  const rightColumn = `<div class="team-modal-body-right">${graphsHTML}${picksHTML}</div>`;
-  document.getElementById('teamModalBody').innerHTML = leftColumn + rightColumn;
+  // Populate tab panels
+  const rosterPanel = document.getElementById('tm-panel-roster');
+  if (rosterPanel) {
+    rosterPanel.innerHTML = `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`;
+  }
+  const chartsPanel = document.getElementById('tm-panel-charts');
+  if (chartsPanel) {
+    chartsPanel.innerHTML = graphsHTML || '<div class="team-modal-empty">No chart data available</div>';
+  }
 
   // Helper function to get theme-appropriate Plotly styling
   function getPlotlyTheme() {
@@ -8698,5 +9201,244 @@ function setupFunAwardsGrid() {
     document.addEventListener('DOMContentLoaded', setup);
   } else {
     setup();
+  }
+})();
+
+// ── Rookie Draft Assistant ────────────────────────────────────────────────────
+(function () {
+  let daProspects = [];
+  let daDrafted   = new Set();
+  let daFilter    = 'ALL';
+  let daSubView   = 'available'; // 'available' | 'drafted'
+  let daNeeds     = {};
+  let daLeagueType = '1qb';
+  let daLeagueSize = 10;
+  let daYear       = new Date().getFullYear();
+  let daInitialized = false;
+
+  const POS_COLORS = { QB: '#a78bfa', RB: '#34d399', WR: '#60a5fa', TE: '#fb923c' };
+  const NEED_LABEL = { 2: 'Major Need', 1: 'Need', 0: 'Neutral', '-1': 'Depth', '-2': 'Stacked' };
+  const NEED_COLOR = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
+  const NEED_BONUS = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
+
+  function needBonus(pos) {
+    return NEED_BONUS[String(daNeeds[pos] ?? 0)] ?? 1.0;
+  }
+
+  function daScore(p) {
+    const val = parseFloat(p.display_value || p.rookie_value || 0);
+    return val * 0.6 + val * needBonus(p.position) * 0.4;
+  }
+
+  // 1 rec normally; 2 only if there's a major need AND the top pick doesn't address a need
+  function recCount(scored) {
+    const hasMajorNeed = Object.values(daNeeds).some(v => typeof v === 'number' && v === 2);
+    if (!hasMajorNeed) return 1;
+    const topNeed = scored[0] ? (daNeeds[scored[0].position] ?? 0) : 0;
+    return topNeed >= 1 ? 1 : 2;
+  }
+
+  function renderNeeds() {
+    const panel = document.getElementById('daNeedsPanel');
+    if (!panel) return;
+    if (!Object.keys(daNeeds).length) {
+      panel.innerHTML = '<div class="da-needs-title">My Roster Needs</div><div style="font-size:12px;color:var(--text-muted);padding-top:8px;">Log in with your league to see personalized needs.</div>';
+      return;
+    }
+    const rows = ['QB','RB','WR','TE'].map(pos => {
+      const need  = daNeeds[pos] ?? 0;
+      const col   = POS_COLORS[pos] || '#9ca3af';
+      const count = daNeeds[`${pos}_count`] ?? 0;
+      const val   = Math.round(daNeeds[`${pos}_value`] || 0);
+      const avg   = Math.round(daNeeds[`${pos}_avg`]   || 0);
+      return `<div class="da-need-row">
+        <span class="pos-badge ${pos}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 7px;">${pos}</span>
+        <div class="da-need-info">
+          <span class="da-need-label" style="color:${NEED_COLOR[String(need)] || '#9ca3af'}">${NEED_LABEL[String(need)] ?? 'Neutral'}</span>
+          <span class="da-need-meta">${count} players · ${val} (avg ${avg})</span>
+        </div>
+      </div>`;
+    }).join('');
+    panel.innerHTML = `<div class="da-needs-title">My Roster Needs</div>${rows}`;
+  }
+
+  function updateDraftedBadge() {
+    const el = document.getElementById('daDraftedCount');
+    if (!el) return;
+    if (daDrafted.size === 0) { el.style.display = 'none'; }
+    else { el.style.display = ''; el.textContent = daDrafted.size; }
+  }
+
+  function render() {
+    const listEl = document.getElementById('daBoardList');
+    if (!listEl) return;
+    updateDraftedBadge();
+
+    if (daSubView === 'drafted') {
+      const drafted = daProspects.filter(p => daDrafted.has(String(p.player_id)));
+      if (!drafted.length) {
+        listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
+        return;
+      }
+      listEl.innerHTML = drafted.map((p, i) => {
+        const col    = POS_COLORS[p.position] || '#9ca3af';
+        const dAdp   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+        const dTeam  = p.actual_nfl_team || p.school || '';
+        const dMeta  = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+        return `<div class="da-row">
+          <div class="da-rank">${i + 1}</div>
+          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
+          <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+          <div></div>
+          <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
+          <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩ Remove</button>
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    // Available view
+    let visible = daProspects.filter(p => !daDrafted.has(String(p.player_id)));
+    if (daFilter !== 'ALL') visible = visible.filter(p => p.position === daFilter);
+    const scored = visible.map(p => ({ ...p, _s: daScore(p) })).sort((a, b) => b._s - a._s);
+    const nRec   = recCount(scored);
+    const recIds = new Set(scored.slice(0, nRec).map(p => String(p.player_id)));
+
+    if (!scored.length) {
+      listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No prospects available.</div>';
+      return;
+    }
+
+    listEl.innerHTML = scored.map((p, i) => {
+      const isRec    = recIds.has(String(p.player_id));
+      const col      = POS_COLORS[p.position] || '#9ca3af';
+      const val      = Math.round(parseFloat(p.display_value || 0));
+      const needLvl  = daNeeds[p.position] ?? 0;
+      const isNeed   = needLvl >= 1;
+      const needCol  = NEED_COLOR[String(needLvl)] || '#9ca3af';
+      const needTxt  = NEED_LABEL[String(needLvl)] || '';
+
+      // Recommendation row: add grade + ADP in meta
+      const adpRaw   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      const adpTxt   = adpRaw != null ? `ADP ${parseFloat(adpRaw).toFixed(1)}` : '';
+      const gradeTxt = p.tier_label || '';
+      const teamTxt  = p.actual_nfl_team || p.school || '';
+      const baseMeta = [teamTxt, adpTxt].filter(Boolean).join(' · ');
+      const recMeta  = isRec
+        ? [teamTxt, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        : baseMeta;
+
+      // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
+      const needBadge = isNeed && !isRec
+        ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:2px 6px;">${needTxt}</span>`
+        : '';
+
+      return `<div class="da-row${isRec ? ' da-recommended' : ''}">
+        <div class="da-rank">${i + 1}</div>
+        <div class="da-info">
+          <span class="da-name">${p.name || '—'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
+          <span class="da-meta">${recMeta}</span>
+        </div>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+        ${isRec ? '<div class="da-rec-badge">PICK</div>' : (needBadge || '<div></div>')}
+        <div class="da-col-right da-val">${val || '—'}</div>
+        <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
+      </div>`;
+    }).join('');
+  }
+
+  function saveSession() {
+    try { sessionStorage.setItem('da_' + location.pathname, JSON.stringify([...daDrafted])); } catch (_) {}
+  }
+
+  window._da = {
+    draft(id)   { daDrafted.add(String(id));    saveSession(); render(); },
+    undraft(id) { daDrafted.delete(String(id)); saveSession(); render(); },
+  };
+
+  window.daFilterPos = function (pos) {
+    daFilter = pos;
+    document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
+    render();
+  };
+
+  window.daSubTab = function (sub) {
+    daSubView = sub;
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+    render();
+  };
+
+  window.daReset = function () {
+    daDrafted.clear();
+    daFilter  = 'ALL';
+    daSubView = 'available';
+    document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === 'ALL'));
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === 'available'));
+    saveSession();
+    render();
+  };
+
+  // Page-level tab switcher (Rankings / Draft Board)
+  window.rkPageTab = function (tab) {
+    document.querySelectorAll('.rk-page-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('rk-panel-rankings').style.display = tab === 'rankings' ? '' : 'none';
+    document.getElementById('rk-panel-draft').style.display    = tab === 'draft'    ? '' : 'none';
+    if (tab === 'draft' && !daInitialized) {
+      daInitialized = true;
+      initDA();
+    }
+  };
+
+  async function initDA() {
+    try { daDrafted = new Set(JSON.parse(sessionStorage.getItem('da_' + location.pathname) || '[]')); } catch (_) {}
+
+    // Derive league context from URL: /<platform>/<season>/<league_id>/...
+    const parts    = location.pathname.split('/').filter(Boolean);
+    const platform = parts[0] || 'sleeper';
+    const season   = parts[1] || new Date().getFullYear();
+    const leagueId = parts[2];
+    daYear         = parseInt(season);
+
+    // Fetch league-calibrated prospect rankings settings if in a league
+    if (leagueId && !['players','breakouts','prospects','trade-database','trade-intel'].includes(platform)) {
+      try {
+        // Detect league type / size from rankings context (use rkLeagueType/rkLeagueSize if set by the Rankings tab)
+        daLeagueType = (typeof rkLeagueType !== 'undefined' ? rkLeagueType : null)
+          || localStorage.getItem('rk_league_type') || '1qb';
+        daLeagueSize = parseInt((typeof rkLeagueSize !== 'undefined' ? rkLeagueSize : null)
+          || localStorage.getItem('rk_league_size') || '10');
+
+        // Get viewer roster_id if available on this page; backend falls back to session
+        const viewerRid = (typeof getCurrentRosterId === 'function' ? getCurrentRosterId() : null)
+          || document.querySelector('#viewerRosterIdInput')?.value || '';
+        const needsUrl = `/api/draft-needs?league_id=${leagueId}&platform=${platform}&season=${season}`
+          + (viewerRid ? `&roster_id=${encodeURIComponent(viewerRid)}` : '');
+        const nr = await fetch(needsUrl);
+        if (nr.ok) {
+          const nd = await nr.json();
+          if (nd.error) {
+            const np = document.getElementById('daNeedsPanel');
+            if (np) np.innerHTML = '<div class="da-needs-title">Roster Needs</div><div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Log in with your league to see personalized needs.</div>';
+          } else {
+            daNeeds      = nd.needs || {};
+            daLeagueType = nd.league_type || daLeagueType;
+            daLeagueSize = nd.league_size || daLeagueSize;
+          }
+        }
+      } catch (_) {}
+    }
+
+    renderNeeds();
+
+    const listEl = document.getElementById('daBoardList');
+    try {
+      const r = await fetch(`/api/prospects/rankings?year=${daYear}&league_type=${encodeURIComponent(daLeagueType)}&league_size=${daLeagueSize}&limit=200`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      daProspects = data.rankings || [];
+      render();
+    } catch (e) {
+      if (listEl) listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Could not load prospects: ${e.message}</div>`;
+    }
   }
 })();

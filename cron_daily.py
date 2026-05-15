@@ -3,6 +3,7 @@ import gc
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -10,7 +11,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from dashboard_services.api import get_nfl_state
-from utils.paths import DATA_DIR
+from utils.paths import DATA_DIR, CACHE_DIR
+
+
+# ---------------------------------------------------------------------------
+# Cleanup: delete old date-stamped files left from before the undated migration
+# ---------------------------------------------------------------------------
+
+import re
+_DATED_PATTERN = re.compile(r'_\d{4}-\d{2}-\d{2}')
+
+
+def cleanup_dated_files() -> int:
+    """Delete any files whose names contain a YYYY-MM-DD date stamp."""
+    removed = 0
+    search_dirs = [DATA_DIR]
+    try:
+        search_dirs.append(CACHE_DIR)
+    except Exception:
+        pass
+    for base in search_dirs:
+        if not Path(base).exists():
+            continue
+        for p in Path(base).rglob("*"):
+            if p.is_file() and _DATED_PATTERN.search(p.stem):
+                try:
+                    p.unlink()
+                    print(f"[cron] Removed dated file: {p}")
+                    removed += 1
+                except Exception as e:
+                    print(f"[cron] Could not remove {p}: {e}")
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -21,19 +52,27 @@ def _today() -> date:
     return date.today()
 
 
+def _file_fresh_today(path: Path) -> bool:
+    """True if the file exists and was last modified today."""
+    if not path.exists():
+        return False
+    return date.fromtimestamp(path.stat().st_mtime) == _today()
+
+
 def _model_values_fresh() -> bool:
-    return (DATA_DIR / f"model_values_{_today().isoformat()}.json").exists()
+    return _file_fresh_today(DATA_DIR / "model_values.json")
 
 
 def _vendor_values_fresh() -> bool:
-    fc  = DATA_DIR / f"fantasycalc_api_values_{_today().isoformat()}.csv"
-    dp  = DATA_DIR / f"dynastyprocess_values_{_today().isoformat()}.csv"
-    eng = DATA_DIR / f"engine_values_{_today().isoformat()}.csv"
-    return fc.exists() and dp.exists() and eng.exists()
+    return (
+        _file_fresh_today(DATA_DIR / "fantasycalc_api_values.csv") and
+        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv") and
+        _file_fresh_today(DATA_DIR / "engine_values.csv")
+    )
 
 
 def _usage_table_fresh() -> bool:
-    return (DATA_DIR / f"usage_table_{_today().isoformat()}.json").exists()
+    return _file_fresh_today(DATA_DIR / "usage_table.json")
 
 
 def _player_values_fresh() -> bool:
@@ -120,6 +159,10 @@ def main():
     today_weekday = date.today().weekday()  # 6 = Sunday
 
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
+
+    n_cleaned = cleanup_dated_files()
+    if n_cleaned:
+        print(f"[cron] Cleaned up {n_cleaned} old dated file(s)")
 
     # ------------------------------------------------------------------ #
     # Step 1: Vendor data + usage table                                   #

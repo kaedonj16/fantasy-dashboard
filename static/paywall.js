@@ -55,7 +55,7 @@ window.showPaywall = function showPaywall(feature) {
     'advanced-metrics': 'Advanced Metrics',
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade History',
-    'trade-suggestions': 'Trade Suggestions',
+    'trade-suggestions': 'Roster-Based Trade Suggestions',
     'auction-values': 'Auction Values'
   };
 
@@ -75,10 +75,9 @@ window.showPaywall = function showPaywall(feature) {
         <h3>${featureName}</h3>
         <p>This is a premium feature. Upgrade to access:</p>
         <ul class="paywall-features">
-          <li>✓ AI-powered trade suggestions</li>
+          <li>✓ Roster-Based Trade Suggestions</li>
           <li>✓ Full Trade Intelligence feed &amp; history</li>
           <li>✓ Breakout Engine candidate predictions</li>
-          <li>✓ Advanced player metrics and analytics</li>
           <li>✓ All future premium features</li>
         </ul>
         <div class="paywall-pricing">

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+import time
 from typing import Dict
 
 
@@ -18,18 +18,25 @@ def fetch_league_adp_from_db(
     sample_size, position} or empty dict when data is sparse.
     """
     try:
-        from dashboard_services.db import get_conn
         from utils.paths import DATA_DIR
         import json as _json
 
-        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{season}_{date.today().isoformat()}.json"
-        cache_path = DATA_DIR / cache_key
-        if cache_path.exists():
+        prefix = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{season}"
+        cache_path = DATA_DIR / f"{prefix}.json"
+        # Also search for dated variants (e.g. league_adp_rookie_sf_2026_2026-05-14.json)
+        # and prefer the most recent one if the undated file doesn't exist
+        if not cache_path.exists():
+            import glob as _glob
+            dated = sorted(_glob.glob(str(DATA_DIR / f"{prefix}_*.json")))
+            if dated:
+                cache_path = type(DATA_DIR)(dated[-1])
+        if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < 86400:
             try:
                 return _json.load(open(cache_path))
             except Exception:
                 pass
 
+        from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
                 """

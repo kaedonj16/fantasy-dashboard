@@ -513,7 +513,8 @@ def _upsert_player_stats(stats: list[dict]) -> int:
                     {sz_update}
                 """
     with get_conn() as conn:
-        conn.executemany(sql, stats)
+        with conn.cursor() as cur:
+            cur.executemany(sql, stats)
     return len(stats)
 
 
@@ -521,18 +522,19 @@ def _upsert_packages(packages: list[dict]) -> int:
     if not packages:
         return 0
     with get_conn() as conn:
-        conn.executemany(
-            """
-            INSERT INTO trade_intel_packages
-                (anchor_player_id, package_key, season, occurrence_count, avg_value_diff, last_seen_at)
-            VALUES (%(anchor_player_id)s, %(package_key)s, %(season)s, %(occurrence_count)s, %(avg_value_diff)s, NOW())
-            ON CONFLICT (anchor_player_id, package_key, season) DO UPDATE SET
-                occurrence_count = EXCLUDED.occurrence_count,
-                avg_value_diff   = EXCLUDED.avg_value_diff,
-                last_seen_at     = NOW()
-            """,
-            packages,
-        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO trade_intel_packages
+                    (anchor_player_id, package_key, season, occurrence_count, avg_value_diff, last_seen_at)
+                VALUES (%(anchor_player_id)s, %(package_key)s, %(season)s, %(occurrence_count)s, %(avg_value_diff)s, NOW())
+                ON CONFLICT (anchor_player_id, package_key, season) DO UPDATE SET
+                    occurrence_count = EXCLUDED.occurrence_count,
+                    avg_value_diff   = EXCLUDED.avg_value_diff,
+                    last_seen_at     = NOW()
+                """,
+                packages,
+            )
     return len(packages)
 
 

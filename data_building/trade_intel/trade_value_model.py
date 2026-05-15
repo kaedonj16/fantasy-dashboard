@@ -68,21 +68,34 @@ def _slot_to_bucket(slot: int, num_teams: int = 12) -> str:
     return "late"
 
 
-def _pick_key(asset: dict) -> str:
+def _pick_key(asset: dict, current_year: int | None = None) -> str:
     """
-    Map a pick asset to its WLS bucket key, e.g. 'pick_2026_1_early'.
-    Uses pick_slot → bucket when available, then pick_order, then round only.
+    Map a pick asset to its WLS key.
+    Current-year picks with a known slot keep exact slot: 'pick_2026_1_03'.
+    Future picks (or current-year without slot) use buckets: 'pick_2027_1_early'.
     """
+    if current_year is None:
+        current_year = datetime.now().year
     try:
         rd = int(asset.get("pick_round") or 4)
     except (ValueError, TypeError):
         rd = 4
     try:
-        year = int(asset.get("pick_season") or datetime.now().year)
+        year = int(asset.get("pick_season") or current_year)
     except (ValueError, TypeError):
-        year = datetime.now().year
+        year = current_year
 
     slot = asset.get("pick_slot")
+
+    # For current-year picks, use exact slot number when available
+    if year == current_year and slot:
+        try:
+            slot_int = int(slot)
+            return f"pick_{year}_{rd}_{slot_int:02d}"
+        except (ValueError, TypeError):
+            pass
+
+    # Future picks (or current-year without slot): use bucket
     bucket: str | None = None
     if slot:
         try:
@@ -115,11 +128,13 @@ def _col_names(league_type: int, league_size: int) -> tuple[str, str]:
 
 
 def _teams_filter(league_size: int) -> str:
-    """SQL fragment to filter trade_intel_leagues by num_teams. Empty = no filter (10-team)."""
+    """SQL fragment to filter trade_intel_leagues by num_teams."""
     if league_size == 8:
         return "AND l.num_teams BETWEEN 6 AND 9"
+    if league_size == 10:
+        return "AND l.num_teams BETWEEN 9 AND 11"
     if league_size == 12:
-        return "AND l.num_teams BETWEEN 10 AND 13"
+        return "AND l.num_teams BETWEEN 11 AND 13"
     if league_size == 14:
         return "AND l.num_teams >= 14"
     return ""
@@ -279,10 +294,11 @@ def _build_normal_equations(
     trades: list[dict],
     all_idx: dict[str, int],
     N: int,
+    current_year: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full matrix.
-    Both players and pick buckets are unknowns - b_t = 0 for every trade.
+    Both players and pick unknowns are included - b_t = 0 for every trade.
 
     Returns (AtWA, AtWb, n_constraints).
     """
@@ -299,7 +315,7 @@ def _build_normal_equations(
             if a["asset_type"] == "player" and a["player_id"]:
                 key = a["player_id"]
             elif a["asset_type"] == "pick":
-                key = _pick_key(a)
+                key = _pick_key(a, current_year)
             else:
                 continue
             if key not in all_idx:
@@ -464,9 +480,10 @@ def run_trade_value_model(
     trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type, league_size=league_size)
     trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type, league_size=league_size)
 
-    # External pick table is the regularization prior for pick buckets
+    # External pick table is the regularization prior for pick buckets.
+    # Must bypass WLS overlay to avoid using our own previous output as prior.
     try:
-        ext_pick_values = load_pick_value_table()
+        ext_pick_values = load_pick_value_table(use_wls_overlay=False)
         logger.info("[trade_value_model] Loaded %d external pick values (prior)", len(ext_pick_values))
     except Exception as e:
         logger.warning("[trade_value_model] Failed to load pick value prior: %s", e)
@@ -485,16 +502,16 @@ def run_trade_value_model(
         logger.warning("[trade_value_model] No prior data - nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
-    # Collect all pick bucket keys seen in trades (iterate separately - avoids list copy)
+    # Collect all pick keys seen in trades (exact slots for current year, buckets for future)
     pick_keys_seen: set[str] = set()
     for trade in trades_1qb:
         for a in trade["assets"]:
             if a["asset_type"] == "pick":
-                pick_keys_seen.add(_pick_key(a))
+                pick_keys_seen.add(_pick_key(a, season))
     for trade in trades_sf:
         for a in trade["assets"]:
             if a["asset_type"] == "pick":
-                pick_keys_seen.add(_pick_key(a))
+                pick_keys_seen.add(_pick_key(a, season))
 
     player_ids = sorted(player_prior.keys())
     pick_keys  = sorted(pick_keys_seen)
@@ -534,9 +551,9 @@ def run_trade_value_model(
         logger.info("  pid=%-12s  prior=%.2f", player_ids[i], prior_1qb[i])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N)
+    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
     del trades_1qb
-    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N)
+    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
     del trades_sf
     M = M_1qb
 
@@ -556,7 +573,7 @@ def run_trade_value_model(
         if prior_sf[i] > 0:
             v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i])
             v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
-    # Picks: just floor at 0 (let market move them freely)
+    # Picks: floor at 0, let trade data determine the value freely
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
     v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 

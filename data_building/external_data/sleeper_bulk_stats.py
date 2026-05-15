@@ -22,7 +22,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def _week_cache_path(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"sleeper_stats/sleeper_stats_s{season}_w{week}_{date.today().isoformat()}.json")
+    return os.path.join(CACHE_DIR, f"sleeper_stats/sleeper_stats_s{season}_w{week}.json")
 
 
 def _is_cache_fresh(path: str) -> bool:
@@ -51,17 +51,6 @@ def fetch_week_stats(season: int, week: int) -> Dict[str, Any]:
             print(f"[sleeper_bulk_stats] Corrupt JSON at {cache_path.name}: {e}. Refetching...")
         except Exception as e:
             print(f"[sleeper_bulk_stats] Error reading {cache_path.name}: {e}. Refetching...")
-
-    stats_dir = Path(CACHE_DIR) / "sleeper_stats"
-    if not stats_dir.exists():
-        return
-
-    pattern = f"sleeper_stats_s{season}_w{week}_*.json"
-    for p in stats_dir.glob(pattern):
-        try:
-            p.unlink()
-        except Exception:
-            pass
 
     # 2) Fetch if missing / bad
     url = f"{SLEEPER_BASE}/v1/stats/nfl/regular/{season}/{week}"
@@ -110,10 +99,10 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
         }
     """
     # Check cache first (daily cache)
-    cache_path = Path(CACHE_DIR) / "sleeper_stats" / f"redzone_stats_{season}_{date.today().isoformat()}.json"
+    cache_path = Path(CACHE_DIR) / "sleeper_stats" / f"redzone_stats_{season}.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if cache_path.exists():
+    if _is_cache_fresh(str(cache_path)):
         try:
             print(f"[sleeper_redzone] Loading from cache: {cache_path.name}")
             cached_data = read_json(str(cache_path))
@@ -122,15 +111,6 @@ def fetch_season_redzone_stats(season: int) -> Dict[str, dict]:
                 return cached_data
         except Exception as e:
             print(f"[sleeper_redzone] Cache read failed: {e}, fetching fresh data")
-
-    # Remove old cache files for this season
-    for old_file in cache_path.parent.glob(f"redzone_stats_{season}_*.json"):
-        if old_file != cache_path:
-            try:
-                old_file.unlink()
-                print(f"[sleeper_redzone] Removed old cache: {old_file.name}")
-            except Exception:
-                pass
 
     players_index = load_relevant_index()
 
