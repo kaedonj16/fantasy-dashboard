@@ -573,13 +573,9 @@ def run_trade_value_model(
         if prior_sf[i] > 0:
             v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i])
             v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
-    # Picks: floor at FC/DP prior — trade data can push values up but picks
-    # shouldn't drop far below external consensus (managers undervalue picks).
-    for i in range(n_pl, N):
-        if prior_1qb[i] > 0:
-            v_1qb_pos[i] = max(v_1qb[i], prior_1qb[i])
-        if prior_sf[i] > 0:
-            v_sf_pos[i]  = max(v_sf[i],  prior_sf[i])
+    # Picks: floor at 0, let trade data determine the value freely
+    v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
+    v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 
     # Normalize so TOP_N_AT_MAX players land at MAX_VALUE
     def _normalize(vec: np.ndarray) -> np.ndarray:
