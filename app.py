@@ -3840,12 +3840,18 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
     """
 
+    share_html = render_share_rankings(ctx)
+
     return f"""
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
           <div class="os-vr-header">Value Rankings</div>
           {table_html}
+          <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+            <div class="os-vr-header" style="margin-bottom:12px;">Value &amp; Production Share</div>
+            {share_html}
+          </div>
         </div>
       </div>
       <div class="standings-col">
@@ -4070,6 +4076,103 @@ def build_standings_body(ctx: dict) -> str:
     """
 
     return body
+
+
+def build_draft_assistant_html(ctx: dict) -> str:
+    """Rookie Draft Assistant section for the offseason hub."""
+    import json as _json_da
+
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+    roster_positions = ctx.get("roster_positions") or []
+    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+    league_type = "sf" if is_sf else "1qb"
+    league_size = max(6, min(14, int(ctx.get("total_rosters") or 10)))
+    current_year = int(ctx.get("season") or datetime.now().year)
+
+    needs: dict = {}
+    if viewer_roster_id:
+        rosters = ctx.get("rosters") or []
+        roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+        if roster:
+            players_index = ctx.get("players_index") or {}
+            value_table = ctx.get("model_value_table") or []
+            val_field = "sf_value" if is_sf else "value"
+            values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
+
+            pos_counts: dict = {}
+            pos_values: dict = {}
+            for pid in (roster.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                pos = str(meta.get("pos") or "").upper()
+                if pos not in ("QB", "RB", "WR", "TE"):
+                    continue
+                vrow = values_by_id.get(str(pid)) or {}
+                val = float(vrow.get(val_field) or vrow.get("value") or 0)
+                pos_counts[pos] = pos_counts.get(pos, 0) + 1
+                pos_values[pos] = pos_values.get(pos, 0.0) + val
+
+            thresholds = {
+                "QB":  [(-2, 600), (-1, 400), (0, 200), (1, 50)],
+                "RB":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
+                "WR":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
+                "TE":  [(-2, 600), (-1, 400), (0, 150), (1, 50)],
+            }
+            for pos in ("QB", "RB", "WR", "TE"):
+                val = pos_values.get(pos, 0.0)
+                needs[f"{pos}_count"] = pos_counts.get(pos, 0)
+                needs[f"{pos}_value"] = round(val, 1)
+                need_level = 2
+                for level, cutoff in thresholds.get(pos, []):
+                    if val >= cutoff:
+                        need_level = level
+                        break
+                needs[pos] = need_level
+
+    needs_json = _json_da.dumps(needs)
+
+    return f"""
+    <section class="os-card os-col-fill" id="draftAssistantCard"
+             data-league-type="{league_type}"
+             data-league-size="{league_size}"
+             data-needs='{needs_json}'
+             data-year="{current_year}">
+      <div class="os-section-head">
+        <div class="os-section-head-content">
+          <h2 class="os-section-title">Rookie Draft Assistant</h2>
+          <div class="os-section-subtitle">Personalized pick recommendations based on your roster</div>
+        </div>
+        <div class="os-section-head-actions">
+          <button type="button" class="da-reset-btn" onclick="daReset()">Reset Board</button>
+          <button type="button" class="card-collapse-toggle" data-target="draft-assistant-body">▼</button>
+        </div>
+      </div>
+      <div class="card-collapsible-body" id="draft-assistant-body">
+        <div class="da-toolbar">
+          <button class="da-filter active" data-pos="ALL" onclick="daFilterPos('ALL')">All</button>
+          <button class="da-filter" data-pos="QB" onclick="daFilterPos('QB')">QB</button>
+          <button class="da-filter" data-pos="RB" onclick="daFilterPos('RB')">RB</button>
+          <button class="da-filter" data-pos="WR" onclick="daFilterPos('WR')">WR</button>
+          <button class="da-filter" data-pos="TE" onclick="daFilterPos('TE')">TE</button>
+        </div>
+        <div class="da-layout">
+          <div class="da-board">
+            <div class="da-board-header">
+              <span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
+            </div>
+            <div class="da-board-list" id="daBoardList">
+              <div class="da-loading">
+                <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
+                <span>Loading prospects…</span>
+              </div>
+            </div>
+          </div>
+          <aside class="da-needs" id="daNeedsPanel">
+          </aside>
+        </div>
+      </div>
+    </section>
+    """
 
 
 def build_offseason_dashboard_body(ctx: dict) -> str:
@@ -4589,6 +4692,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         {front_office_card_html}
 
         {matchup_html}
+
+        {build_draft_assistant_html(ctx)}
 
         <section class="os-card os-col-fill">
           <div class="os-section-head">
