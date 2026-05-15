@@ -178,9 +178,10 @@ def _build_pick_key(
 
     bucket = _normalize_bucket_label(bucket)
 
-    # Important for values like "2027 1st" from FantasyCalc
+    # Important for values like "2027 1st" from FantasyCalc — no bucket
+    # specified means we don't know the slot, treat it as mid
     if not bucket:
-        bucket = "early"
+        bucket = "mid"
 
     return ("bucket", year, rnd, bucket)
 
@@ -417,10 +418,6 @@ def load_pick_value_table(
             val = dp_val
         else:
             continue
-
-        # CRITICAL FIX: Apply explicit time discount to future picks
-        _, pick_year, _, _ = key  # Extract year from key tuple (kind, year, rnd, detail)
-        val = _apply_time_discount(val, pick_year, current_year)
 
         key_str = _pick_key_to_output_string(key)
         final[key_str] = round(float(val), 1)
