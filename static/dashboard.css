@@ -3785,26 +3785,27 @@ thead th {
 .otc-sugg-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .otc-sugg-package {
   border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--row);
-  padding: 14px 16px;
-  transition: border-color 0.14s;
+  border-radius: 16px;
+  background: var(--card);
+  padding: 16px;
+  transition: border-color 0.14s, box-shadow 0.14s;
 }
 
 .otc-sugg-package:hover {
   border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .otc-sugg-pkg-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   gap: 8px;
 }
 
@@ -3817,17 +3818,18 @@ thead th {
 .otc-sugg-pkg-size {
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--row);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .otc-sugg-pkg-value {
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
 }
 
 .otc-sugg-pkg-value.fair    { background: rgba(34, 197, 94, 0.12);  color: #16a34a; }
@@ -3835,26 +3837,41 @@ thead th {
 .otc-sugg-pkg-value.overpay { background: rgba(239, 68, 68, 0.10);  color: #dc2626; }
 
 .otc-sugg-pkg-freq {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: 500;
+  margin-left: auto;
 }
 
 .otc-sugg-pkg-sides {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 8px;
-  align-items: start;
-  margin-bottom: 12px;
+  grid-template-columns: 1fr 28px 1fr;
+  gap: 0;
+  align-items: center;
+  margin-bottom: 14px;
+  background: var(--row);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.otc-sugg-pkg-side {
+  padding: 10px 12px;
 }
 
 .otc-sugg-pkg-side-label {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-subtle);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.otc-sugg-pkg-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .otc-sugg-pkg-asset {
@@ -3863,45 +3880,75 @@ thead th {
   color: var(--text);
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .otc-sugg-pkg-asset-pos {
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  padding: 2px 5px;
+  border-radius: 4px;
   flex-shrink: 0;
+  min-width: 28px;
+  text-align: center;
 }
 
-.otc-sugg-pkg-arrow {
-  font-size: 14px;
+.otc-sugg-pkg-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  height: 100%;
   color: var(--text-subtle);
-  padding-top: 20px;
-  align-self: start;
+  font-size: 13px;
+  align-self: stretch;
 }
 
 .otc-sugg-pkg-load-btn {
   width: 100%;
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--row);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: background 0.14s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
   margin-top: 0;
 }
 
 .otc-sugg-pkg-load-btn:hover {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Loading skeleton */
+.otc-sugg-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.otc-sugg-skeleton {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--card);
+}
+
+.otc-sugg-skeleton-line {
+  border-radius: 6px;
+  background: var(--row);
+  animation: otcSuggShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes otcSuggShimmer {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
 }
 
 /* Targets side column */
