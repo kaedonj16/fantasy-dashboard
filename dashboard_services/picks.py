@@ -14,8 +14,8 @@ import pandas as pd
 from dashboard_services.api import get_nfl_state
 from utils.paths import DATA_DIR
 
-DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
-FANTASYCALC_VALUES_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
+DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
+FANTASYCALC_VALUES_PATH = DATA_DIR / "fantasycalc_api_values.csv"
 
 # FantasyCalc examples handled:
 #   2026 Pick 1.01

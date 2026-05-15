@@ -180,19 +180,7 @@ def write_fantasycalc_api_to_csv(
       redraft_value, combined_value,
       trend_30_day, tier, trade_frequency
     """
-    today = date.today()
-    yesterday = today - timedelta(days=1)
     out_csv = Path(out_csv)
-    dirname = out_csv.parent
-    pattern = f"fantasycalc_api_values_{yesterday.isoformat()}.csv"
-    yesterday_file = dirname / pattern
-
-    if yesterday_file.exists():
-        print(f"[FantasyCalcAPI] Removing yesterday's value file: {yesterday_file.name}")
-        try:
-            yesterday_file.unlink()
-        except Exception as e:
-            print(f"[FantasyCalcAPI] Failed to remove yesterday's file: {e}")
 
     rows = []
     for entry in values:
@@ -268,19 +256,7 @@ def download_dynastyprocess_values_csv(
       https://github.com/dynastyprocess/data/blob/master/files/values.csv
     (we use the raw.githubusercontent.com version)
     """
-    today = date.today()
-    yesterday = today - timedelta(days=1)
     out_csv = Path(out_csv)
-    dirname = out_csv.parent
-    pattern = f"dynastyprocess_values_{yesterday.isoformat()}.csv"
-    yesterday_file = dirname / pattern
-
-    if yesterday_file.exists():
-        print(f"[DynastyProcess] Removing yesterday's value file: {yesterday_file.name}")
-        try:
-            yesterday_file.unlink()
-        except Exception as e:
-            print(f"[DynastyProcess] Failed to remove yesterday's file: {e}")
 
     print(f"[DynastyProcess] Downloading values.csv to {out_csv}")
     resp = requests.get(DYNASTYPROCESS_VALUES_URL, headers=HEADERS, timeout=30)

@@ -272,10 +272,10 @@ def load_model_value_table(apply_calibration: bool = True):
             import csv as _csv
             from pathlib import Path as _Path
             _data_dir = _Path(__file__).parent.parent / "data"
-            _fc_files = sorted(_data_dir.glob("fantasycalc_api_values_*.csv"))
-            if _fc_files:
+            _fc_file = _data_dir / "fantasycalc_api_values.csv"
+            if _fc_file.exists():
                 _fc_ids: set = set()
-                with open(_fc_files[-1], newline="") as _f:
+                with open(_fc_file, newline="") as _f:
                     for _row in _csv.DictReader(_f):
                         _sid = str(_row.get("sleeper_id") or "").strip()
                         if _sid:
