@@ -3870,6 +3870,123 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     """
 
 
+def render_share_rankings(ctx: dict) -> str:
+    """
+    Table showing each team's value share and production share within the league.
+    Value share  = roster value / total league value (dynasty player_values).
+    Production share = team PF / total league PF.
+    """
+    team_stats = ctx.get("team_stats")
+    rosters    = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    df_weekly  = ctx.get("df_weekly")
+
+    if team_stats is None or team_stats.empty or not rosters:
+        return '<div class="otc-movers-empty">Not enough data to compute shares.</div>'
+
+    # ── owner → roster_id map ─────────────────────────────────────
+    if df_weekly is not None and not df_weekly.empty and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns:
+        owner_to_rid = (df_weekly[["owner", "roster_id"]]
+                        .drop_duplicates("owner")
+                        .set_index("owner")["roster_id"]
+                        .astype(str).to_dict())
+    else:
+        owner_to_rid = {v: k for k, v in roster_map.items()}
+
+    # ── Value: load from player_values DB ─────────────────────────
+    roster_positions = ctx.get("roster_positions") or []
+    is_sf = any(str(p).upper() in {"SUPER_FLEX", "SFLEX"} for p in roster_positions)
+    val_col = "value_sf" if is_sf else "value_1qb"
+
+    values_by_pid: Dict[str, float] = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as _conn:
+            rows = _conn.execute(
+                f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
+            ).fetchall()
+        for r in rows:
+            values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
+    except Exception:
+        pass
+
+    rid_to_roster = {str(r.get("roster_id")): r for r in rosters}
+
+    # ── Roster value per team ─────────────────────────────────────
+    rid_to_value: Dict[str, float] = {}
+    for rid, r in rid_to_roster.items():
+        pids = [str(p) for p in (r.get("players") or [])]
+        rid_to_value[rid] = sum(values_by_pid.get(pid, 0.0) for pid in pids)
+
+    league_value_total = sum(rid_to_value.values()) or 1.0
+
+    # ── Production (PF) per team ──────────────────────────────────
+    league_pf_total = float(team_stats["PF"].sum()) if "PF" in team_stats.columns else 0.0
+
+    # ── Build rows ────────────────────────────────────────────────
+    rows_data = []
+    for _, row in team_stats.iterrows():
+        owner = row.get("owner", "")
+        pf    = float(row.get("PF", 0) or 0)
+        rid   = str(owner_to_rid.get(owner, ""))
+        rval  = rid_to_value.get(rid, 0.0)
+
+        prod_pct  = (pf   / league_pf_total    * 100) if league_pf_total    > 0 else 0.0
+        value_pct = (rval / league_value_total  * 100) if league_value_total > 0 else 0.0
+        rows_data.append({"owner": owner, "pf": pf, "roster_value": rval,
+                          "prod_pct": prod_pct, "value_pct": value_pct})
+
+    rows_data.sort(key=lambda x: -x["value_pct"])
+    league_teams = len(rows_data) or 1
+    fair_share   = 100.0 / league_teams
+
+    def bar(pct: float) -> str:
+        width = min(pct / (fair_share * 2) * 100, 100)
+        over  = pct > fair_share
+        color = "var(--accent)" if over else "var(--text-muted)"
+        return (f'<div style="height:6px;border-radius:3px;background:var(--border);flex:1;">'
+                f'<div style="height:100%;width:{width:.1f}%;border-radius:3px;background:{color};"></div></div>')
+
+    rows_html = ""
+    for i, d in enumerate(rows_data):
+        rows_html += f"""
+        <tr>
+          <td style="width:24px;color:var(--text-muted);font-size:11px;text-align:center;">{i+1}</td>
+          <td style="font-weight:600;font-size:13px;">{d['owner']}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              {bar(d['value_pct'])}
+              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['value_pct']:.1f}%</span>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              {bar(d['prod_pct'])}
+              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['prod_pct']:.1f}%</span>
+            </div>
+          </td>
+        </tr>"""
+
+    fair_pct = f"{fair_share:.1f}%"
+    return f"""
+    <div style="padding:4px 0 8px;font-size:11px;color:var(--text-muted);">
+      Fair share per team: {fair_pct} &nbsp;·&nbsp; bar fills to 2× fair share
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">
+          <th style="width:24px;"></th>
+          <th style="text-align:left;padding:0 8px 6px 0;">Team</th>
+          <th style="text-align:left;padding:0 8px 6px 0;min-width:160px;">Value Share</th>
+          <th style="text-align:left;padding:0 0 6px 0;min-width:160px;">Production Share</th>
+        </tr>
+      </thead>
+      <tbody style="border-top:1px solid var(--border);">
+        {rows_html}
+      </tbody>
+    </table>"""
+
+
 def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
@@ -3898,6 +4015,7 @@ def build_standings_body(ctx: dict) -> str:
         detailed_df = pd.DataFrame()
 
     table_html = render_team_stats(team_stats, detailed_df)
+    share_html = render_share_rankings(ctx)
     power_playoffs_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -3915,6 +4033,7 @@ def build_standings_body(ctx: dict) -> str:
             <div class="tab-strip">
               <button class="tab-btn active" data-tab="standings">Standings</button>
               <button class="tab-btn" data-tab="details">Detailed Stats</button>
+              <button class="tab-btn" data-tab="shares">Value &amp; Production</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
                   {standings_html}
@@ -3924,6 +4043,9 @@ def build_standings_body(ctx: dict) -> str:
                   <div class="footer">
                     Default sort: Win% ↓ then PF ↓. Click headers to sort.
                   </div>
+                </div>
+                <div class="tab-panel" data-tab="shares">
+                  {share_html}
                 </div>
               </div>
             </div>
