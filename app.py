@@ -12359,12 +12359,8 @@ def api_league_players():
                     except Exception:
                         continue
             elif len(_parts) == 2:
-                try:
-                    _yr, _rnd = int(_parts[0]), int(_parts[1])
-                except ValueError:
-                    continue
-                _sfx = _ORD.get(_rnd, "th")
-                _pname = f"{_yr} {_rnd}{_sfx}"
+                # Generic YYYY_R keys are redundant when slots or buckets exist — skip
+                continue
             else:
                 continue
             model_value_table.append({
