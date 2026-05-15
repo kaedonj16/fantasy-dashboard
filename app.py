@@ -1241,7 +1241,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-    nav_pills.append(nav_pill_dropdown("Teams", [
+    nav_pills.append(nav_pill_dropdown("League", [
         ("Standings", "page_standings", "standings", False, False),
         ("Teams",     "page_teams",     "teams",     False, False),
         ("Activity",  "page_activity",  "activity",  False, False),
