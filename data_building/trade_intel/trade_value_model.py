@@ -464,9 +464,10 @@ def run_trade_value_model(
     trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type, league_size=league_size)
     trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type, league_size=league_size)
 
-    # External pick table is the regularization prior for pick buckets
+    # External pick table is the regularization prior for pick buckets.
+    # Must bypass WLS overlay to avoid using our own previous output as prior.
     try:
-        ext_pick_values = load_pick_value_table()
+        ext_pick_values = load_pick_value_table(use_wls_overlay=False)
         logger.info("[trade_value_model] Loaded %d external pick values (prior)", len(ext_pick_values))
     except Exception as e:
         logger.warning("[trade_value_model] Failed to load pick value prior: %s", e)
