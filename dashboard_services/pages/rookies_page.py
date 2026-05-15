@@ -862,11 +862,12 @@ def build_prospects_body() -> str:
   }
 
   function rkAdpField(r) {
-    return r.avg_pick != null ? parseFloat(r.avg_pick).toFixed(1) : '-';
+    var v = rkLeague === 'sf' ? r.sf_avg_pick : r.avg_pick;
+    return v != null ? parseFloat(v).toFixed(1) : '-';
   }
   function rkAdpSort(a, b) {
-    var af = a.avg_pick;
-    var bf = b.avg_pick;
+    var af = rkLeague === 'sf' ? a.sf_avg_pick : a.avg_pick;
+    var bf = rkLeague === 'sf' ? b.sf_avg_pick : b.avg_pick;
     return (af != null ? af : 999) - (bf != null ? bf : 999);
   }
 
