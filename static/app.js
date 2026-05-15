@@ -9280,10 +9280,10 @@ function setupFunAwardsGrid() {
         listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
         return;
       }
-      listEl.innerHTML = drafted.map(p => {
+      listEl.innerHTML = drafted.map((p, i) => {
         const col = POS_COLORS[p.position] || '#9ca3af';
         return `<div class="da-row">
-          <div class="da-rank">—</div>
+          <div class="da-rank">${i + 1}</div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${p.school || ''}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
           <div></div>
@@ -9316,15 +9316,17 @@ function setupFunAwardsGrid() {
       const needTxt  = NEED_LABEL[String(needLvl)] || '';
 
       // Recommendation row: add grade + ADP in meta
-      const adpVal   = daLeagueType === 'sf' ? (p.sf_avg_pick || p.avg_pick) : p.avg_pick;
-      const adpTxt   = adpVal ? `ADP ${parseFloat(adpVal).toFixed(1)}` : '';
+      const adpVal   = daLeagueType === 'sf' ? (p.sf_avg_pick || p.avg_pick) : (p.avg_pick || p.sf_avg_pick);
+      const adpTxt   = adpVal ? `ADP ${parseFloat(adpVal).toFixed(1)}` : (p.draft_capital_label ? p.draft_capital_label : '');
       const gradeTxt = p.tier_label || '';
+      const baseMeta = p.school || '';
       const recMeta  = isRec
-        ? [p.school, gradeTxt, adpTxt].filter(Boolean).join(' · ')
-        : p.school || '';
+        ? [baseMeta, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        : baseMeta;
 
-      const needTag  = isNeed && !isRec
-        ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:1px 5px;margin-left:4px;">${needTxt}</span>`
+      // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
+      const needBadge = isNeed && !isRec
+        ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:2px 6px;">${needTxt}</span>`
         : '';
 
       return `<div class="da-row${isRec ? ' da-recommended' : ''}">
@@ -9333,8 +9335,8 @@ function setupFunAwardsGrid() {
           <span class="da-name">${p.name || '—'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
           <span class="da-meta">${recMeta}</span>
         </div>
-        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}${needTag}</span>
-        ${isRec ? '<div class="da-rec-badge">PICK</div>' : '<div></div>'}
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+        ${isRec ? '<div class="da-rec-badge">PICK</div>' : (needBadge || '<div></div>')}
         <div class="da-col-right da-val">${val || '—'}</div>
         <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
       </div>`;
