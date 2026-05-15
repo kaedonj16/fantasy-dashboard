@@ -4432,20 +4432,12 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         sig_cls, sig_label = _waiver_signal(p)
 
-        rank_arrow = ""
-        chg = p["rank_change_7d"]
-        if chg and chg != 0:
-            arrow_cls = "waiver-arrow-up" if chg > 0 else "waiver-arrow-down"
-            arrow_sym = "▲" if chg > 0 else "▼"
-            rank_arrow = f'<span class="{arrow_cls}">{arrow_sym}{abs(chg)}</span>'
-
         waiver_html.append(
             f"""
             <div class="os-waiver-row">
               <div class="os-waiver-main">
                 <div class="os-waiver-name-row">
                   <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
-                  {rank_arrow}
                 </div>
                 <div class="os-waiver-sub">{subline}</div>
               </div>
