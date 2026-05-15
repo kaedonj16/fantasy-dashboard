@@ -3920,10 +3920,28 @@ def render_share_rankings(ctx: dict) -> str:
 
     league_value_total = sum(rid_to_value.values()) or 1.0
 
-    # ── Production (PF) per team ──────────────────────────────────
+    # ── Production: actual PF in-season, projected avg offseason ─────────────
     league_pf_total = float(team_stats["PF"].sum()) if "PF" in team_stats.columns else 0.0
+    is_offseason    = league_pf_total == 0.0
+    prod_label      = "Proj. Production Share" if is_offseason else "Production Share"
 
-    # ── Build rows ────────────────────────────────────────────────
+    # Offseason: use the same projected-avg pipeline as playoff odds
+    rid_to_proj: Dict[str, float] = {}
+    if is_offseason:
+        try:
+            from data_building.simulate_playoff_odds import _estimate_from_rosters
+            est_teams = _estimate_from_rosters(ctx)
+            for t in est_teams:
+                rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
+        except Exception:
+            pass
+
+    # ── Build rows ────────────────────────────────────────────────────────────
+    if is_offseason:
+        proj_total = sum(rid_to_proj.values()) or 1.0
+    else:
+        proj_total = league_pf_total or 1.0
+
     rows_data = []
     for _, row in team_stats.iterrows():
         owner = row.get("owner", "")
@@ -3931,9 +3949,14 @@ def render_share_rankings(ctx: dict) -> str:
         rid   = str(owner_to_rid.get(owner, ""))
         rval  = rid_to_value.get(rid, 0.0)
 
-        prod_pct  = (pf   / league_pf_total    * 100) if league_pf_total    > 0 else 0.0
-        value_pct = (rval / league_value_total  * 100) if league_value_total > 0 else 0.0
-        rows_data.append({"owner": owner, "pf": pf, "roster_value": rval,
+        if is_offseason:
+            prod_val = rid_to_proj.get(rid, 0.0)
+        else:
+            prod_val = pf
+
+        prod_pct  = prod_val / proj_total  * 100
+        value_pct = rval     / league_value_total * 100
+        rows_data.append({"owner": owner, "prod_val": prod_val, "roster_value": rval,
                           "prod_pct": prod_pct, "value_pct": value_pct})
 
     rows_data.sort(key=lambda x: -x["value_pct"])
@@ -3942,8 +3965,7 @@ def render_share_rankings(ctx: dict) -> str:
 
     def bar(pct: float) -> str:
         width = min(pct / (fair_share * 2) * 100, 100)
-        over  = pct > fair_share
-        color = "var(--accent)" if over else "var(--text-muted)"
+        color = "var(--accent)" if pct > fair_share else "var(--text-muted)"
         return (f'<div style="height:6px;border-radius:3px;background:var(--border);flex:1;">'
                 f'<div style="height:100%;width:{width:.1f}%;border-radius:3px;background:{color};"></div></div>')
 
@@ -3967,10 +3989,11 @@ def render_share_rankings(ctx: dict) -> str:
           </td>
         </tr>"""
 
-    fair_pct = f"{fair_share:.1f}%"
+    proj_note = " · projected from roster" if is_offseason else ""
+    fair_pct  = f"{fair_share:.1f}%"
     return f"""
     <div style="padding:4px 0 8px;font-size:11px;color:var(--text-muted);">
-      Fair share per team: {fair_pct} &nbsp;·&nbsp; bar fills to 2× fair share
+      Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
     </div>
     <table style="width:100%;border-collapse:collapse;">
       <thead>
@@ -3978,7 +4001,7 @@ def render_share_rankings(ctx: dict) -> str:
           <th style="width:24px;"></th>
           <th style="text-align:left;padding:0 8px 6px 0;">Team</th>
           <th style="text-align:left;padding:0 8px 6px 0;min-width:160px;">Value Share</th>
-          <th style="text-align:left;padding:0 0 6px 0;min-width:160px;">Production Share</th>
+          <th style="text-align:left;padding:0 0 6px 0;min-width:160px;">{prod_label}</th>
         </tr>
       </thead>
       <tbody style="border-top:1px solid var(--border);">
