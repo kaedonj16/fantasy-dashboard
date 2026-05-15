@@ -2385,6 +2385,13 @@ window.initTradePage = function initTradePage(root = document) {
     let suggCurrentPlayerId = null;
 
     function switchTab(name) {
+      if (name === "suggestions") {
+        const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+        if (!hasPremium) {
+          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+          return;
+        }
+      }
       tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
       calcTab.style.display  = name === "calculator"   ? "" : "none";
       suggTab.style.display  = name === "suggestions"  ? "" : "none";
